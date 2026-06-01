@@ -14,7 +14,9 @@ use crate::constant_opening::{
     load_constant_opening_segment_from_segments, validate_constant_opening_units_match_query_units,
     LoadConstantOpeningSegmentError, LoadConstantOpeningUnitError,
 };
-use crate::pcs_evaluation::{load_pcs_evaluation_unit_from_segments, LoadPcsEvaluationUnitError};
+use crate::pcs_evaluation::{
+    load_pcs_evaluation_unit_for_identity_from_segments, LoadPcsEvaluationUnitError,
+};
 use crate::pcs_transcript_segments::PcsTranscriptUnitChallenges;
 use crate::proof_values::{load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError};
 use crate::verifier_eval::{
@@ -678,9 +680,13 @@ pub fn validate_verifier_query_outputs_from_segments(
                     && unit.trace_instance_index == query_unit.trace_instance_index
             })
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
-        let evaluation_unit =
-            load_pcs_evaluation_unit_from_segments(unit_index, unit, request.segments)
-                .map_err(VerifierFriQueryOutputSegmentsError::Evaluation)?;
+        let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_segments(
+            unit_index,
+            query_unit.trace_instance_index,
+            unit,
+            request.segments,
+        )
+        .map_err(VerifierFriQueryOutputSegmentsError::Evaluation)?;
         let challenges = request
             .transcript_challenges
             .iter()

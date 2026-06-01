@@ -72,7 +72,7 @@ use crate::proof_values::{
     ProvePcsProofValuesSegmentError,
 };
 use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
-use crate::unit_values::{load_unit_values_from_segments, LoadUnitValuesSegmentError};
+use crate::unit_values::{load_unit_values_for_identity_from_segments, LoadUnitValuesSegmentError};
 use crate::witness_commitment::{
     load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
 };
@@ -740,11 +740,10 @@ fn validate_optional_unit_value_segments(
         .map_err(LoadUnitValuesSegmentError::Segment)
         .map_err(SetupPreflightError::UnitValues)?;
     for unit_value in unit_values.units {
-        if !query_plan
-            .units
-            .iter()
-            .any(|query_unit| query_unit.unit_index == unit_value.unit_index)
-        {
+        if !query_plan.units.iter().any(|query_unit| {
+            query_unit.unit_index == unit_value.unit_index
+                && query_unit.trace_instance_index == unit_value.trace_instance_index
+        }) {
             let unit_index = usize::try_from(unit_value.unit_index).map_err(|_| {
                 SetupPreflightError::UnitValues(LoadUnitValuesSegmentError::UnitIndexOverflow {
                     unit_index: usize::MAX,
@@ -765,9 +764,14 @@ fn validate_optional_unit_value_segments(
             .ok_or(SetupPreflightError::UnitValues(
                 LoadUnitValuesSegmentError::MissingUnit { unit_index },
             ))?;
-        load_unit_values_from_segments(unit_index, &unit.unit_value_map, &proof.segments)
-            .map(|_| ())
-            .map_err(SetupPreflightError::UnitValues)?;
+        load_unit_values_for_identity_from_segments(
+            unit_index,
+            unit_value.trace_instance_index,
+            &unit.unit_value_map,
+            &proof.segments,
+        )
+        .map(|_| ())
+        .map_err(SetupPreflightError::UnitValues)?;
     }
     Ok(())
 }

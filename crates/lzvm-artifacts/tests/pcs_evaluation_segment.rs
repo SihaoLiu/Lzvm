@@ -11,10 +11,12 @@ fn sample_segment() -> PcsEvaluationSegment {
         units: vec![
             PcsEvaluationUnitSegment {
                 unit_index: 0,
+                trace_instance_index: 0,
                 values: vec![[1, 2, 3], [4, 5, 6]],
             },
             PcsEvaluationUnitSegment {
                 unit_index: 2,
+                trace_instance_index: 0,
                 values: vec![[7, 8, 9]],
             },
         ],
@@ -40,18 +42,56 @@ fn encodes_and_parses_pcs_evaluation_segments() {
     let parsed = parse_pcs_evaluation_segment(&encoded).expect("evaluation segment should parse");
 
     assert_eq!(&encoded[0..4], b"evs0");
+    assert_eq!(u32::from_le_bytes(encoded[4..8].try_into().unwrap()), 1);
     assert_eq!(parsed, sample_segment());
+}
+
+#[test]
+fn encodes_and_parses_trace_instance_pcs_evaluation_segments() {
+    let segment = PcsEvaluationSegment {
+        units: vec![
+            PcsEvaluationUnitSegment {
+                unit_index: 1,
+                trace_instance_index: 0,
+                values: vec![[11, 12, 13]],
+            },
+            PcsEvaluationUnitSegment {
+                unit_index: 1,
+                trace_instance_index: 2,
+                values: vec![[21, 22, 23]],
+            },
+        ],
+    };
+
+    let encoded =
+        encode_pcs_evaluation_segment(&segment).expect("evaluation segment should encode");
+    let parsed = parse_pcs_evaluation_segment(&encoded).expect("evaluation segment should parse");
+
+    assert_eq!(u32::from_le_bytes(encoded[4..8].try_into().unwrap()), 2);
+    assert_eq!(parsed, segment);
+}
+
+#[test]
+fn parses_legacy_pcs_evaluation_segments_as_base_trace_instances() {
+    let encoded =
+        encode_pcs_evaluation_segment(&sample_segment()).expect("evaluation segment should encode");
+    let parsed = parse_pcs_evaluation_segment(&encoded).expect("evaluation segment should parse");
+
+    assert!(parsed
+        .units
+        .iter()
+        .all(|unit| unit.trace_instance_index == 0));
 }
 
 #[test]
 fn rejects_unsupported_pcs_evaluation_segment_versions() {
     let mut encoded =
         encode_pcs_evaluation_segment(&sample_segment()).expect("evaluation segment should encode");
-    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+    encoded[4..8].copy_from_slice(&3_u32.to_le_bytes());
 
     assert!(matches!(
         parse_pcs_evaluation_segment(&encoded),
-        Err(PcsEvaluationSegmentError::UnsupportedVersion { version: 2 })
+        Err(PcsEvaluationSegmentError::UnsupportedVersion { version: 3 })
     ));
 }
 
@@ -96,6 +136,7 @@ fn rejects_pcs_evaluation_units_without_values() {
     let segment = PcsEvaluationSegment {
         units: vec![PcsEvaluationUnitSegment {
             unit_index: 0,
+            trace_instance_index: 0,
             values: Vec::new(),
         }],
     };
@@ -112,10 +153,12 @@ fn rejects_duplicate_pcs_evaluation_units() {
         units: vec![
             PcsEvaluationUnitSegment {
                 unit_index: 1,
+                trace_instance_index: 0,
                 values: vec![[1, 2, 3]],
             },
             PcsEvaluationUnitSegment {
                 unit_index: 1,
+                trace_instance_index: 0,
                 values: vec![[4, 5, 6]],
             },
         ],
@@ -124,6 +167,32 @@ fn rejects_duplicate_pcs_evaluation_units() {
     assert!(matches!(
         encode_pcs_evaluation_segment(&segment),
         Err(PcsEvaluationSegmentError::DuplicateUnitIndex { unit_index: 1 })
+    ));
+}
+
+#[test]
+fn rejects_duplicate_pcs_evaluation_unit_identities() {
+    let segment = PcsEvaluationSegment {
+        units: vec![
+            PcsEvaluationUnitSegment {
+                unit_index: 1,
+                trace_instance_index: 2,
+                values: vec![[1, 2, 3]],
+            },
+            PcsEvaluationUnitSegment {
+                unit_index: 1,
+                trace_instance_index: 2,
+                values: vec![[4, 5, 6]],
+            },
+        ],
+    };
+
+    assert!(matches!(
+        encode_pcs_evaluation_segment(&segment),
+        Err(PcsEvaluationSegmentError::DuplicateUnitIdentity {
+            unit_index: 1,
+            trace_instance_index: 2
+        })
     ));
 }
 

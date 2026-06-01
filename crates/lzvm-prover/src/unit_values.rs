@@ -32,6 +32,7 @@ pub enum ProveUnitValuesSegmentError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveUnitValues {
     pub unit_index: usize,
+    pub trace_instance_index: u32,
     pub unit_value_map: Vec<StageValue>,
     pub packed_values: Vec<Felt>,
 }
@@ -159,7 +160,26 @@ pub fn build_unit_values_segment_from_packed_values(
     unit_value_map: &[StageValue],
     packed_values: &[Felt],
 ) -> Result<Option<ProofSegment>, ProveUnitValuesSegmentError> {
-    let Some(unit) = build_unit_values_unit_segment(unit_index, unit_value_map, packed_values)?
+    build_unit_values_segment_from_packed_values_for_identity(
+        unit_index,
+        0,
+        unit_value_map,
+        packed_values,
+    )
+}
+
+pub fn build_unit_values_segment_from_packed_values_for_identity(
+    unit_index: usize,
+    trace_instance_index: u32,
+    unit_value_map: &[StageValue],
+    packed_values: &[Felt],
+) -> Result<Option<ProofSegment>, ProveUnitValuesSegmentError> {
+    let Some(unit) = build_unit_values_unit_segment(
+        unit_index,
+        trace_instance_index,
+        unit_value_map,
+        packed_values,
+    )?
     else {
         return Ok(None);
     };
@@ -178,6 +198,7 @@ pub fn build_unit_values_segment_from_packed_values_batch(
     for input in inputs {
         if let Some(unit) = build_unit_values_unit_segment(
             input.unit_index,
+            input.trace_instance_index,
             &input.unit_value_map,
             &input.packed_values,
         )? {
@@ -187,7 +208,7 @@ pub fn build_unit_values_segment_from_packed_values_batch(
     if units.is_empty() {
         return Ok(None);
     }
-    units.sort_by_key(|unit| unit.unit_index);
+    units.sort_by_key(|unit| (unit.unit_index, unit.trace_instance_index));
 
     let segment = UnitValuesSegment { units };
     Ok(Some(ProofSegment {
@@ -198,6 +219,7 @@ pub fn build_unit_values_segment_from_packed_values_batch(
 
 fn build_unit_values_unit_segment(
     unit_index: usize,
+    trace_instance_index: u32,
     unit_value_map: &[StageValue],
     packed_values: &[Felt],
 ) -> Result<Option<UnitValuesUnitSegment>, ProveUnitValuesSegmentError> {
@@ -223,12 +245,22 @@ fn build_unit_values_unit_segment(
     Ok(Some(UnitValuesUnitSegment {
         unit_index: u32::try_from(unit_index)
             .map_err(|_| ProveUnitValuesSegmentError::UnitIndexOverflow { unit_index })?,
+        trace_instance_index,
         values: packed_values.iter().map(|value| value.to_u64()).collect(),
     }))
 }
 
 pub fn load_unit_values_from_segments(
     unit_index: usize,
+    unit_value_map: &[StageValue],
+    segments: &[ProofSegment],
+) -> Result<Vec<Felt>, LoadUnitValuesSegmentError> {
+    load_unit_values_for_identity_from_segments(unit_index, 0, unit_value_map, segments)
+}
+
+pub fn load_unit_values_for_identity_from_segments(
+    unit_index: usize,
+    trace_instance_index: u32,
     unit_value_map: &[StageValue],
     segments: &[ProofSegment],
 ) -> Result<Vec<Felt>, LoadUnitValuesSegmentError> {
@@ -251,10 +283,9 @@ pub fn load_unit_values_from_segments(
     let unit_index_u32 = u32::try_from(unit_index)
         .map_err(|_| LoadUnitValuesSegmentError::UnitIndexOverflow { unit_index })?;
     let unit_values = parsed.as_ref().and_then(|parsed| {
-        parsed
-            .units
-            .iter()
-            .find(|unit| unit.unit_index == unit_index_u32)
+        parsed.units.iter().find(|unit| {
+            unit.unit_index == unit_index_u32 && unit.trace_instance_index == trace_instance_index
+        })
     });
 
     if expected_count == 0 {
@@ -311,10 +342,10 @@ pub(crate) fn validate_unit_values_units_match_query_units(
     let parsed =
         parse_unit_values_segment(&segment.data).map_err(LoadUnitValuesSegmentError::Segment)?;
     for unit in parsed.units {
-        if !query_units
-            .iter()
-            .any(|query_unit| query_unit.unit_index == unit.unit_index)
-        {
+        if !query_units.iter().any(|query_unit| {
+            query_unit.unit_index == unit.unit_index
+                && query_unit.trace_instance_index == unit.trace_instance_index
+        }) {
             let unit_index = usize::try_from(unit.unit_index).map_err(|_| {
                 LoadUnitValuesSegmentError::UnitIndexOverflow {
                     unit_index: usize::MAX,

@@ -93,16 +93,28 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
         build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
     let witness = sample_witness_commitment_segment(0, &[10, 20]);
     let witness_segment = ProofSegment {
-        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1,
         data: encode_witness_commitment_segment(&witness).expect("witness segment should encode"),
     };
+    let base_evaluations = vec![
+        Ext3::from_u64s([130, 131, 132]),
+        Ext3::from_u64s([140, 141, 142]),
+    ];
     let evaluations = vec![Ext3::from_u64s([30, 31, 32]), Ext3::from_u64s([40, 41, 42])];
     let evaluation_segment = build_pcs_evaluation_segment(
         &schedule,
-        &[ProvePcsEvaluationValues {
-            unit_index: 0,
-            values: evaluations.clone(),
-        }],
+        &[
+            ProvePcsEvaluationValues {
+                unit_index: 0,
+                trace_instance_index: 0,
+                values: base_evaluations,
+            },
+            ProvePcsEvaluationValues {
+                unit_index: 0,
+                trace_instance_index: 1,
+                values: evaluations.clone(),
+            },
+        ],
     )
     .expect("evaluation segment should build");
     let auxiliary = ProveWitnessAuxiliaryInputs::default();
@@ -111,7 +123,7 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
         &schedule,
         &[ProvePcsFriTranscriptTraceSegmentValues {
             unit_index: 0,
-            trace_instance_index: 0,
+            trace_instance_index: 1,
             execution_unit: &execution_unit,
             trace: &trace,
             publics: &[],
@@ -188,7 +200,7 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
         &query_segment,
         &[ProvePcsFriTranscriptTraceSegmentValues {
             unit_index: 0,
-            trace_instance_index: 0,
+            trace_instance_index: 1,
             execution_unit: &execution_unit,
             trace: &trace,
             publics: &[],
@@ -208,8 +220,9 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
 
     assert_eq!(values.len(), 1);
     assert_eq!(transcript_value.unit_index, 0);
+    assert_eq!(transcript_value.trace_instance_index, 1);
     assert_eq!(
-        parsed_evaluations.units[0].values,
+        parsed_evaluations.units[1].values,
         vec![[30, 31, 32], [40, 41, 42]]
     );
     assert_eq!(transcript_value.commitments.challenges, expected_challenges);
@@ -334,10 +347,12 @@ fn derives_fri_transcript_values_and_openings_for_multiple_units() {
         &[
             ProvePcsEvaluationValues {
                 unit_index: 0,
+                trace_instance_index: 0,
                 values: evaluations0.clone(),
             },
             ProvePcsEvaluationValues {
                 unit_index: 1,
+                trace_instance_index: 0,
                 values: evaluations1.clone(),
             },
         ],

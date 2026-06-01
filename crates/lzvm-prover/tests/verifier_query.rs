@@ -183,6 +183,7 @@ fn assembles_single_query_verifier_inputs_from_opening_segments() {
     };
     let evaluations = PcsEvaluationUnitSegment {
         unit_index: 7,
+        trace_instance_index: 0,
         values: vec![[43, 47, 53], [59, 61, 67]],
     };
 
@@ -312,6 +313,7 @@ fn evaluates_all_unit_query_verifier_outputs() {
     };
     let evaluations = PcsEvaluationUnitSegment {
         unit_index: 7,
+        trace_instance_index: 0,
         values: vec![[59, 61, 67]],
     };
     let code = VerifierCode {
@@ -495,6 +497,7 @@ fn validates_verifier_query_outputs_against_fri_opening() {
     };
     let evaluations = PcsEvaluationUnitSegment {
         unit_index: 7,
+        trace_instance_index: 0,
         values: vec![[59, 61, 67]],
     };
     let code = VerifierCode {
@@ -646,6 +649,26 @@ fn validates_verifier_query_outputs_by_trace_identity() {
     witness_opening.units.push(trace_witness);
     witness_segment.data =
         encode_witness_opening_segment(&witness_opening).expect("opening should encode");
+
+    let evaluation_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+        .expect("evaluation segment should exist");
+    evaluation_segment.data = encode_pcs_evaluation_segment(&PcsEvaluationSegment {
+        units: vec![
+            PcsEvaluationUnitSegment {
+                unit_index: 0,
+                trace_instance_index: 0,
+                values: vec![[59, 61, 67]],
+            },
+            PcsEvaluationUnitSegment {
+                unit_index: 0,
+                trace_instance_index: 1,
+                values: vec![[149, 151, 157]],
+            },
+        ],
+    })
+    .expect("evaluation segment should encode");
 
     let expected_first = e([503, 509, 521]) + e([71, 0, 0]);
     let expected_second = e([701, 709, 719]) + e([83, 0, 0]);
@@ -884,6 +907,7 @@ fn verifier_query_output_segments_fixture(
     };
     let evaluations = PcsEvaluationUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         values: vec![[59, 61, 67]],
     };
     let code = VerifierCode {

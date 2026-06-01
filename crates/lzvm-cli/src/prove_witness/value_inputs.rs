@@ -15,7 +15,7 @@ use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::group_values::load_group_values_from_segments;
 use lzvm_prover::proof_values::{flatten_pcs_proof_values, load_pcs_proof_values_from_segments};
-use lzvm_prover::unit_values::{load_unit_values_from_segments, ProveUnitValues};
+use lzvm_prover::unit_values::{load_unit_values_for_identity_from_segments, ProveUnitValues};
 use lzvm_prover::ProveSchedule;
 
 pub(super) fn read_evaluation_values_segment_input(path: &Path) -> Result<ProofSegment, String> {
@@ -165,6 +165,7 @@ pub(super) fn load_batch_unit_values_inputs(
                 .collect::<Result<Vec<_>, _>>()?;
             values.push(ProveUnitValues {
                 unit_index,
+                trace_instance_index: unit.trace_instance_index,
                 unit_value_map: schedule_unit.unit_value_map.clone(),
                 packed_values,
             });
@@ -178,6 +179,7 @@ pub(super) fn load_batch_unit_values_inputs(
         .enumerate()
         .map(|(unit_index, unit)| ProveUnitValues {
             unit_index,
+            trace_instance_index: 0,
             unit_value_map: unit.unit_value_map.clone(),
             packed_values: shared_unit_values.to_vec(),
         })
@@ -187,6 +189,7 @@ pub(super) fn load_batch_unit_values_inputs(
 pub(super) fn read_packed_unit_values_segment_for_unit(
     schedule: &ProveSchedule,
     unit_index: usize,
+    trace_instance_index: u32,
     path: &Path,
 ) -> Result<Vec<Felt>, String> {
     let bytes = fs::read(path).map_err(|error| {
@@ -203,8 +206,9 @@ pub(super) fn read_packed_unit_values_segment_for_unit(
         id: UNIT_VALUES_SEGMENT_ID,
         data: bytes,
     };
-    load_unit_values_from_segments(
+    load_unit_values_for_identity_from_segments(
         unit_index,
+        trace_instance_index,
         &unit.unit_value_map,
         std::slice::from_ref(&segment),
     )

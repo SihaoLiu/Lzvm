@@ -713,6 +713,7 @@ fn sample_witness(unit_index: u32, root_seeds: &[u64]) -> WitnessCommitmentSegme
 fn sample_evaluations(unit_index: u32, value_seeds: &[u64]) -> PcsEvaluationUnitSegment {
     PcsEvaluationUnitSegment {
         unit_index,
+        trace_instance_index: 0,
         values: value_seeds.iter().copied().map(ext_words).collect(),
     }
 }

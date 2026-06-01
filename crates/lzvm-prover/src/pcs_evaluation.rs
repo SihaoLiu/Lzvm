@@ -14,6 +14,7 @@ use crate::ProveUnitSchedule;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProvePcsEvaluationValues {
     pub unit_index: usize,
+    pub trace_instance_index: u32,
     pub values: Vec<Ext3>,
 }
 
@@ -155,6 +156,15 @@ pub fn load_pcs_evaluation_unit_from_segments(
     unit: &ProveUnitSchedule,
     segments: &[ProofSegment],
 ) -> Result<PcsEvaluationUnitSegment, LoadPcsEvaluationUnitError> {
+    load_pcs_evaluation_unit_for_identity_from_segments(unit_index, 0, unit, segments)
+}
+
+pub fn load_pcs_evaluation_unit_for_identity_from_segments(
+    unit_index: usize,
+    trace_instance_index: u32,
+    unit: &ProveUnitSchedule,
+    segments: &[ProofSegment],
+) -> Result<PcsEvaluationUnitSegment, LoadPcsEvaluationUnitError> {
     let mut matching_segments = segments
         .iter()
         .filter(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID);
@@ -171,7 +181,9 @@ pub fn load_pcs_evaluation_unit_from_segments(
     let evaluation_unit = evaluations
         .units
         .into_iter()
-        .find(|unit| unit.unit_index == unit_index_u32)
+        .find(|unit| {
+            unit.unit_index == unit_index_u32 && unit.trace_instance_index == trace_instance_index
+        })
         .ok_or(LoadPcsEvaluationUnitError::MissingUnit { unit_index })?;
 
     let expected_value_count = unit.expected_evaluation_value_count();
@@ -221,10 +233,10 @@ pub(crate) fn validate_pcs_evaluation_units_match_query_units(
     let evaluations =
         parse_pcs_evaluation_segment(&segment.data).map_err(LoadPcsEvaluationUnitError::Segment)?;
     for unit in evaluations.units {
-        if !query_units
-            .iter()
-            .any(|query_unit| query_unit.unit_index == unit.unit_index)
-        {
+        if !query_units.iter().any(|query_unit| {
+            query_unit.unit_index == unit.unit_index
+                && query_unit.trace_instance_index == unit.trace_instance_index
+        }) {
             let unit_index = usize::try_from(unit.unit_index)
                 .map_err(|_| LoadPcsEvaluationUnitError::UnitIndexOverflow)?;
             return Err(LoadPcsEvaluationUnitError::UnexpectedUnit { unit_index });
@@ -259,10 +271,11 @@ pub fn build_pcs_evaluation_segment(
                     unit_index: input.unit_index,
                 }
             })?,
+            trace_instance_index: input.trace_instance_index,
             values: input.values.iter().copied().map(Ext3::to_u64s).collect(),
         });
     }
-    units.sort_by_key(|unit| unit.unit_index);
+    units.sort_by_key(|unit| (unit.unit_index, unit.trace_instance_index));
 
     let segment = PcsEvaluationSegment { units };
     Ok(ProofSegment {

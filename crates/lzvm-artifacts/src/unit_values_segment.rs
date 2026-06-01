@@ -6,9 +6,11 @@ use lzvm_field::{Felt, FieldError};
 pub const UNIT_VALUES_SEGMENT_ID: u32 = 10_009;
 
 const UNIT_VALUES_MAGIC: [u8; 4] = *b"uvs0";
-const UNIT_VALUES_VERSION: u32 = 1;
+const UNIT_VALUES_V1_VERSION: u32 = 1;
+const UNIT_VALUES_V2_VERSION: u32 = 2;
 const HEADER_BYTES: usize = 4 + 4 + 4;
-const UNIT_HEADER_BYTES: usize = 4 + 4;
+const V1_UNIT_HEADER_BYTES: usize = 4 + 4;
+const V2_UNIT_HEADER_BYTES: usize = 4 + 4 + 4;
 const WORD_BYTES: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +21,7 @@ pub struct UnitValuesSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnitValuesUnitSegment {
     pub unit_index: u32,
+    pub trace_instance_index: u32,
     pub values: Vec<u64>,
 }
 
@@ -41,6 +44,10 @@ pub enum UnitValuesSegmentError {
     },
     DuplicateUnitIndex {
         unit_index: u32,
+    },
+    DuplicateUnitIdentity {
+        unit_index: u32,
+        trace_instance_index: u32,
     },
     ValueNonCanonical {
         unit_index: u32,
@@ -71,6 +78,13 @@ impl fmt::Display for UnitValuesSegmentError {
             Self::DuplicateUnitIndex { unit_index } => {
                 write!(f, "duplicate unit values unit index: {unit_index}")
             }
+            Self::DuplicateUnitIdentity {
+                unit_index,
+                trace_instance_index,
+            } => write!(
+                f,
+                "duplicate unit values unit identity: unit {unit_index}, trace instance {trace_instance_index}"
+            ),
             Self::ValueNonCanonical {
                 unit_index,
                 value_index,
@@ -95,6 +109,7 @@ impl std::error::Error for UnitValuesSegmentError {
             | Self::EmptyUnits
             | Self::EmptyValues { .. }
             | Self::DuplicateUnitIndex { .. }
+            | Self::DuplicateUnitIdentity { .. }
             | Self::LengthOverflow => None,
         }
     }
@@ -106,14 +121,18 @@ pub fn encode_unit_values_segment(
     validate_unit_values_segment(value)?;
     let unit_count =
         u32::try_from(value.units.len()).map_err(|_| UnitValuesSegmentError::LengthOverflow)?;
+    let version = segment_version(value);
     let expected_len = encoded_len(value)?;
 
     let mut out = Vec::with_capacity(expected_len);
     out.extend_from_slice(&UNIT_VALUES_MAGIC);
-    write_u32(&mut out, UNIT_VALUES_VERSION);
+    write_u32(&mut out, version);
     write_u32(&mut out, unit_count);
     for unit in &value.units {
         write_u32(&mut out, unit.unit_index);
+        if version == UNIT_VALUES_V2_VERSION {
+            write_u32(&mut out, unit.trace_instance_index);
+        }
         write_u32(
             &mut out,
             u32::try_from(unit.values.len()).map_err(|_| UnitValuesSegmentError::LengthOverflow)?,
@@ -134,7 +153,7 @@ pub fn parse_unit_values_segment(
         return Err(UnitValuesSegmentError::InvalidMagic);
     }
     let version = reader.read_u32()?;
-    if version != UNIT_VALUES_VERSION {
+    if version != UNIT_VALUES_V1_VERSION && version != UNIT_VALUES_V2_VERSION {
         return Err(UnitValuesSegmentError::UnsupportedVersion { version });
     }
     let unit_count =
@@ -142,13 +161,23 @@ pub fn parse_unit_values_segment(
     if unit_count == 0 {
         return Err(UnitValuesSegmentError::EmptyUnits);
     }
-    if unit_count > reader.remaining_len() / UNIT_HEADER_BYTES {
+    let unit_header_bytes = if version == UNIT_VALUES_V2_VERSION {
+        V2_UNIT_HEADER_BYTES
+    } else {
+        V1_UNIT_HEADER_BYTES
+    };
+    if unit_count > reader.remaining_len() / unit_header_bytes {
         return Err(UnitValuesSegmentError::LengthOverflow);
     }
 
     let mut units = Vec::with_capacity(unit_count);
     for _ in 0..unit_count {
         let unit_index = reader.read_u32()?;
+        let trace_instance_index = if version == UNIT_VALUES_V2_VERSION {
+            reader.read_u32()?
+        } else {
+            0
+        };
         let value_count = usize::try_from(reader.read_u32()?)
             .map_err(|_| UnitValuesSegmentError::LengthOverflow)?;
         if value_count > reader.remaining_len() / WORD_BYTES {
@@ -158,7 +187,11 @@ pub fn parse_unit_values_segment(
         for _ in 0..value_count {
             values.push(reader.read_u64()?);
         }
-        units.push(UnitValuesUnitSegment { unit_index, values });
+        units.push(UnitValuesUnitSegment {
+            unit_index,
+            trace_instance_index,
+            values,
+        });
     }
     reader.finish()?;
 
@@ -167,15 +200,33 @@ pub fn parse_unit_values_segment(
     Ok(out)
 }
 
+fn segment_version(value: &UnitValuesSegment) -> u32 {
+    if value
+        .units
+        .iter()
+        .any(|unit| unit.trace_instance_index != 0)
+    {
+        UNIT_VALUES_V2_VERSION
+    } else {
+        UNIT_VALUES_V1_VERSION
+    }
+}
+
 fn validate_unit_values_segment(value: &UnitValuesSegment) -> Result<(), UnitValuesSegmentError> {
     if value.units.is_empty() {
         return Err(UnitValuesSegmentError::EmptyUnits);
     }
     let mut seen_units = BTreeSet::new();
     for unit in &value.units {
-        if !seen_units.insert(unit.unit_index) {
-            return Err(UnitValuesSegmentError::DuplicateUnitIndex {
+        if !seen_units.insert((unit.unit_index, unit.trace_instance_index)) {
+            if unit.trace_instance_index == 0 {
+                return Err(UnitValuesSegmentError::DuplicateUnitIndex {
+                    unit_index: unit.unit_index,
+                });
+            }
+            return Err(UnitValuesSegmentError::DuplicateUnitIdentity {
                 unit_index: unit.unit_index,
+                trace_instance_index: unit.trace_instance_index,
             });
         }
         if unit.values.is_empty() {
@@ -197,13 +248,18 @@ fn validate_unit_values_segment(value: &UnitValuesSegment) -> Result<(), UnitVal
 }
 
 fn encoded_len(value: &UnitValuesSegment) -> Result<usize, UnitValuesSegmentError> {
+    let unit_header_bytes = if segment_version(value) == UNIT_VALUES_V2_VERSION {
+        V2_UNIT_HEADER_BYTES
+    } else {
+        V1_UNIT_HEADER_BYTES
+    };
     value.units.iter().try_fold(HEADER_BYTES, |acc, unit| {
         let value_bytes = unit
             .values
             .len()
             .checked_mul(WORD_BYTES)
             .ok_or(UnitValuesSegmentError::LengthOverflow)?;
-        acc.checked_add(UNIT_HEADER_BYTES)
+        acc.checked_add(unit_header_bytes)
             .and_then(|bytes| bytes.checked_add(value_bytes))
             .ok_or(UnitValuesSegmentError::LengthOverflow)
     })

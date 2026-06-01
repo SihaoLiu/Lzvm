@@ -446,7 +446,10 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs(
             .get(input.evaluation_segment)?
             .units
             .iter()
-            .find(|unit| unit.unit_index == unit_index_u32)
+            .find(|unit| {
+                unit.unit_index == unit_index_u32
+                    && unit.trace_instance_index == input.trace_instance_index
+            })
             .ok_or(
                 ProvePcsFriTranscriptTraceValuesError::MissingEvaluationUnit {
                     unit_index: input.unit_index,
@@ -874,6 +877,7 @@ mod tests {
     fn evaluation_unit(unit_index: u32) -> PcsEvaluationUnitSegment {
         PcsEvaluationUnitSegment {
             unit_index,
+            trace_instance_index: 0,
             values: vec![[0, 0, 0]],
         }
     }

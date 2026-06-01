@@ -118,6 +118,7 @@ fn derives_trace_instance_transcript_challenge_queries() {
     let mut segments = transcript_segments(0);
     replace_query_plan_trace_instance(&mut segments, 1);
     replace_witness_commitment_trace_instance(&mut segments, 1);
+    replace_evaluation_trace_instance(&mut segments, 1);
     replace_fri_opening_trace_instance(&mut segments, 1);
 
     let actual =
@@ -173,6 +174,7 @@ fn rejects_transcript_challenge_extra_unit_values_units() {
         data: encode_unit_values_segment(&UnitValuesSegment {
             units: vec![UnitValuesUnitSegment {
                 unit_index: 1,
+                trace_instance_index: 0,
                 values: vec![31],
             }],
         })
@@ -256,6 +258,7 @@ fn transcript_segments(query_unit_index: u32) -> Vec<ProofSegment> {
             data: encode_pcs_evaluation_segment(&PcsEvaluationSegment {
                 units: vec![PcsEvaluationUnitSegment {
                     unit_index: 0,
+                    trace_instance_index: 0,
                     values: vec![ext_words(20)],
                 }],
             })
@@ -300,6 +303,20 @@ fn replace_witness_commitment_trace_instance(
         .find(|segment| segment.id == WITNESS_COMMITMENT_SEGMENT_BASE_ID)
         .expect("witness segment should exist");
     witness_segment.id = WITNESS_COMMITMENT_SEGMENT_BASE_ID + trace_instance_index;
+}
+
+fn replace_evaluation_trace_instance(segments: &mut [ProofSegment], trace_instance_index: u32) {
+    let evaluation_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+        .expect("evaluation segment should exist");
+    let mut evaluations = lzvm_artifacts::pcs_evaluation_segment::parse_pcs_evaluation_segment(
+        &evaluation_segment.data,
+    )
+    .expect("evaluation segment should parse");
+    evaluations.units[0].trace_instance_index = trace_instance_index;
+    evaluation_segment.data =
+        encode_pcs_evaluation_segment(&evaluations).expect("evaluation segment should encode");
 }
 
 fn replace_fri_opening_trace_instance(segments: &mut [ProofSegment], trace_instance_index: u32) {

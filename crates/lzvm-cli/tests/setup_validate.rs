@@ -580,6 +580,7 @@ fn sample_pcs_evaluation_segment_with_values(
     let segment = PcsEvaluationSegment {
         units: vec![PcsEvaluationUnitSegment {
             unit_index: unit_index as u32,
+            trace_instance_index: 0,
             values,
         }],
     };
@@ -618,7 +619,11 @@ fn sample_group_values_segment(values: Vec<[u64; 3]>) -> ProofSegment {
 
 fn sample_unit_values_segment(unit_index: u32, values: Vec<u64>) -> ProofSegment {
     let segment = UnitValuesSegment {
-        units: vec![UnitValuesUnitSegment { unit_index, values }],
+        units: vec![UnitValuesUnitSegment {
+            unit_index,
+            trace_instance_index: 0,
+            values,
+        }],
     };
     ProofSegment {
         id: UNIT_VALUES_SEGMENT_ID,
@@ -10390,11 +10395,13 @@ fn builds_witness_proof_artifact_for_multiple_units_with_unit_values() {
     let unit_values = vec![
         ProveUnitValues {
             unit_index: 0,
+            trace_instance_index: 0,
             unit_value_map: plan.run_plan.schedule.units[0].unit_value_map.clone(),
             packed_values: packed_unit_values.clone(),
         },
         ProveUnitValues {
             unit_index: 1,
+            trace_instance_index: 0,
             unit_value_map: plan.run_plan.schedule.units[1].unit_value_map.clone(),
             packed_values: packed_unit_values.clone(),
         },
@@ -10486,11 +10493,13 @@ fn builds_witness_proof_artifact_for_multiple_units_with_tail_segments() {
     let unit_values = vec![
         ProveUnitValues {
             unit_index: 0,
+            trace_instance_index: 0,
             unit_value_map: plan.run_plan.schedule.units[0].unit_value_map.clone(),
             packed_values: packed_unit_values.clone(),
         },
         ProveUnitValues {
             unit_index: 1,
+            trace_instance_index: 0,
             unit_value_map: plan.run_plan.schedule.units[1].unit_value_map.clone(),
             packed_values: packed_unit_values.clone(),
         },
@@ -11084,10 +11093,12 @@ fn runs_prove_witness_for_aggregate_with_unit_values_segment() {
             units: vec![
                 UnitValuesUnitSegment {
                     unit_index: 0,
+                    trace_instance_index: 0,
                     values: vec![101, 201, 202, 203],
                 },
                 UnitValuesUnitSegment {
                     unit_index: 1,
+                    trace_instance_index: 0,
                     values: vec![111, 211, 212, 213],
                 },
             ],
@@ -11183,10 +11194,12 @@ fn runs_prove_witness_for_aggregate_with_proof_and_group_segments() {
             units: vec![
                 UnitValuesUnitSegment {
                     unit_index: 0,
+                    trace_instance_index: 0,
                     values: vec![101, 201, 202, 203],
                 },
                 UnitValuesUnitSegment {
                     unit_index: 1,
+                    trace_instance_index: 0,
                     values: vec![111, 211, 212, 213],
                 },
             ],
@@ -11480,18 +11493,22 @@ fn runs_prove_witness_for_aggregate_with_evaluation_values_segment() {
     let expected_evaluations = vec![
         PcsEvaluationUnitSegment {
             unit_index: 0,
+            trace_instance_index: 0,
             values: vec![[30, 31, 32], [40, 41, 42]],
         },
         PcsEvaluationUnitSegment {
             unit_index: 1,
+            trace_instance_index: 0,
             values: vec![[50, 51, 52], [60, 61, 62]],
         },
         PcsEvaluationUnitSegment {
             unit_index: 2,
+            trace_instance_index: 0,
             values: vec![[70, 71, 72], [80, 81, 82]],
         },
         PcsEvaluationUnitSegment {
             unit_index: 3,
+            trace_instance_index: 0,
             values: vec![[90, 91, 92], [100, 101, 102]],
         },
     ];
@@ -11609,18 +11626,22 @@ fn runs_prove_witness_for_aggregate_fri_with_unit_values_segment() {
     let expected_evaluations = vec![
         PcsEvaluationUnitSegment {
             unit_index: 0,
+            trace_instance_index: 0,
             values: vec![[30, 31, 32], [40, 41, 42]],
         },
         PcsEvaluationUnitSegment {
             unit_index: 1,
+            trace_instance_index: 0,
             values: vec![[50, 51, 52], [60, 61, 62]],
         },
         PcsEvaluationUnitSegment {
             unit_index: 2,
+            trace_instance_index: 0,
             values: vec![[70, 71, 72], [80, 81, 82]],
         },
         PcsEvaluationUnitSegment {
             unit_index: 3,
+            trace_instance_index: 0,
             values: vec![[90, 91, 92], [100, 101, 102]],
         },
     ];
@@ -11628,18 +11649,22 @@ fn runs_prove_witness_for_aggregate_fri_with_unit_values_segment() {
         units: vec![
             UnitValuesUnitSegment {
                 unit_index: 0,
+                trace_instance_index: 0,
                 values: vec![101, 201, 202, 203],
             },
             UnitValuesUnitSegment {
                 unit_index: 1,
+                trace_instance_index: 0,
                 values: vec![111, 211, 212, 213],
             },
             UnitValuesUnitSegment {
                 unit_index: 2,
+                trace_instance_index: 0,
                 values: vec![121, 221, 222, 223],
             },
             UnitValuesUnitSegment {
                 unit_index: 3,
+                trace_instance_index: 0,
                 values: vec![131, 231, 232, 233],
             },
         ],
@@ -12366,6 +12391,7 @@ fn saves_prove_witness_unit_values_segment_when_requested() {
         encode_unit_values_segment(&UnitValuesSegment {
             units: vec![UnitValuesUnitSegment {
                 unit_index: 0,
+                trace_instance_index: 0,
                 values: vec![101, 201, 202, 203],
             }],
         })

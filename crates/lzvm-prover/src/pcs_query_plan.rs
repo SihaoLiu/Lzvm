@@ -35,8 +35,8 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_field::{Ext3, Felt};
 
 use crate::pcs_evaluation::{
-    load_pcs_evaluation_unit_from_segments, validate_pcs_evaluation_units_match_query_units,
-    LoadPcsEvaluationUnitError,
+    load_pcs_evaluation_unit_for_identity_from_segments,
+    validate_pcs_evaluation_units_match_query_units, LoadPcsEvaluationUnitError,
 };
 use crate::pcs_fri::{
     load_pcs_fri_opening_segment_from_segments, validate_pcs_fri_opening_units_match_query_units,
@@ -47,7 +47,7 @@ use crate::pcs_transcript::{
     PcsTranscriptError, PcsTranscriptSegmentInputs,
 };
 use crate::unit_values::{
-    load_unit_values_from_segments, validate_unit_values_units_match_query_units,
+    load_unit_values_for_identity_from_segments, validate_unit_values_units_match_query_units,
     LoadUnitValuesSegmentError,
 };
 use crate::witness_commitment::{
@@ -305,8 +305,13 @@ fn validate_transcript_query_plan_unit_inputs(
             parse_witness_commitment_segment(&witness_segment.data).map_err(|source| {
                 ValidatePcsQueryPlanSegmentsError::WitnessSegment { unit_index, source }
             })?;
-        let evaluations = load_pcs_evaluation_unit_from_segments(unit_index, unit, segments)
-            .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
+        let evaluations = load_pcs_evaluation_unit_for_identity_from_segments(
+            unit_index,
+            query_unit.trace_instance_index,
+            unit,
+            segments,
+        )
+        .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
         let fri = load_pcs_fri_opening_segment_from_segments(segments)
             .map_err(|error| ValidatePcsQueryPlanSegmentsError::Fri(error.into()))?
             .units
@@ -316,9 +321,13 @@ fn validate_transcript_query_plan_unit_inputs(
                     && unit.trace_instance_index == query_unit.trace_instance_index
             })
             .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
-        let unit_values =
-            load_unit_values_from_segments(unit_index, &unit.unit_value_map, segments)
-                .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
+        let unit_values = load_unit_values_for_identity_from_segments(
+            unit_index,
+            query_unit.trace_instance_index,
+            &unit.unit_value_map,
+            segments,
+        )
+        .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
         let final_query_challenge =
             derive_pcs_final_query_challenge_from_segments(PcsTranscriptSegmentInputs {
                 unit_index,

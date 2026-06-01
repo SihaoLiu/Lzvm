@@ -701,6 +701,7 @@ fn sample_transcript_query_fixture() -> TranscriptQueryFixture {
     };
     let evaluations = PcsEvaluationUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         values: vec![[30, 31, 32], [40, 41, 42]],
     };
     let fri = PcsFriOpeningUnitSegment {
@@ -2520,6 +2521,86 @@ fn rejects_all_units_proof_output_with_multiple_trace_instances_for_unit() {
 }
 
 #[test]
+fn builds_unit_proof_artifact_unit_values_for_trace_identity() {
+    let dir = temp_dir("proof-artifact-unit-values-trace-identity");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    )
+    .expect("guest image should be written");
+
+    let mut unit = sample_zisk_main_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
+        .expect("constant tree should be written");
+    let catalog = sample_catalog(unit);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: Vec::new(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let outputs = run_prove_witness_commitments_with_guest_pc_trace_segments(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        16,
+    )
+    .expect("segmented guest PC trace commitments should run");
+
+    let proof =
+        lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_unit: &plan.units[0],
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            unit_values: None,
+            output: &outputs[1],
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        })
+        .expect("proof artifact should build")
+        .expect("proof artifact should exist");
+    let unit_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID)
+        .expect("unit values segment should exist");
+    let unit_values =
+        parse_unit_values_segment(&unit_values_segment.data).expect("unit values should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(unit_values.units.len(), 1);
+    assert_eq!(unit_values.units[0].unit_index, 0);
+    assert_eq!(unit_values.units[0].trace_instance_index, 1);
+    assert_eq!(unit_values.units[0].values, vec![1, 1, 0x8000_0008]);
+}
+
+#[test]
 fn builds_all_units_contribution_proof_artifact_from_output_proof_values() {
     let dir = temp_dir("contribution-proof-all-units-output-proof-values");
     let _ = fs::remove_dir_all(&dir);
@@ -3032,10 +3113,12 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
         &[
             ProvePcsEvaluationValues {
                 unit_index: 0,
+                trace_instance_index: 0,
                 values: evaluation_values.clone(),
             },
             ProvePcsEvaluationValues {
                 unit_index: 1,
+                trace_instance_index: 0,
                 values: evaluation_values.clone(),
             },
         ],
@@ -4066,6 +4149,7 @@ fn builds_pcs_evaluation_segments_from_values() {
         &schedule,
         &[ProvePcsEvaluationValues {
             unit_index: 0,
+            trace_instance_index: 0,
             values: values.clone(),
         }],
     )
@@ -4509,6 +4593,7 @@ fn rejects_pcs_evaluation_segments_with_wrong_value_count() {
         &schedule,
         &[ProvePcsEvaluationValues {
             unit_index: 0,
+            trace_instance_index: 0,
             values: vec![Ext3::from_u64s([30, 31, 32])],
         }],
     );

@@ -11,10 +11,12 @@ fn sample_segment() -> UnitValuesSegment {
         units: vec![
             UnitValuesUnitSegment {
                 unit_index: 0,
+                trace_instance_index: 0,
                 values: vec![1, 2, 3, 4],
             },
             UnitValuesUnitSegment {
                 unit_index: 2,
+                trace_instance_index: 0,
                 values: vec![5, 6],
             },
         ],
@@ -39,17 +41,53 @@ fn encodes_and_parses_unit_values_segments() {
     let parsed = parse_unit_values_segment(&encoded).expect("segment should parse");
 
     assert_eq!(&encoded[0..4], b"uvs0");
+    assert_eq!(u32::from_le_bytes(encoded[4..8].try_into().unwrap()), 1);
     assert_eq!(parsed, sample_segment());
+}
+
+#[test]
+fn encodes_and_parses_trace_instance_unit_values_segments() {
+    let segment = UnitValuesSegment {
+        units: vec![
+            UnitValuesUnitSegment {
+                unit_index: 1,
+                trace_instance_index: 0,
+                values: vec![11],
+            },
+            UnitValuesUnitSegment {
+                unit_index: 1,
+                trace_instance_index: 2,
+                values: vec![13],
+            },
+        ],
+    };
+
+    let encoded = encode_unit_values_segment(&segment).expect("segment should encode");
+    let parsed = parse_unit_values_segment(&encoded).expect("segment should parse");
+
+    assert_eq!(u32::from_le_bytes(encoded[4..8].try_into().unwrap()), 2);
+    assert_eq!(parsed, segment);
+}
+
+#[test]
+fn parses_legacy_unit_values_segments_as_base_trace_instances() {
+    let encoded = encode_unit_values_segment(&sample_segment()).expect("segment should encode");
+    let parsed = parse_unit_values_segment(&encoded).expect("segment should parse");
+
+    assert!(parsed
+        .units
+        .iter()
+        .all(|unit| unit.trace_instance_index == 0));
 }
 
 #[test]
 fn rejects_unsupported_unit_values_segment_versions() {
     let mut encoded = encode_unit_values_segment(&sample_segment()).expect("segment should encode");
-    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+    encoded[4..8].copy_from_slice(&3_u32.to_le_bytes());
 
     assert!(matches!(
         parse_unit_values_segment(&encoded),
-        Err(UnitValuesSegmentError::UnsupportedVersion { version: 2 })
+        Err(UnitValuesSegmentError::UnsupportedVersion { version: 3 })
     ));
 }
 
@@ -93,6 +131,7 @@ fn rejects_unit_values_units_without_values() {
     let segment = UnitValuesSegment {
         units: vec![UnitValuesUnitSegment {
             unit_index: 0,
+            trace_instance_index: 0,
             values: Vec::new(),
         }],
     };
@@ -109,10 +148,12 @@ fn rejects_duplicate_unit_values_units() {
         units: vec![
             UnitValuesUnitSegment {
                 unit_index: 1,
+                trace_instance_index: 0,
                 values: vec![1],
             },
             UnitValuesUnitSegment {
                 unit_index: 1,
+                trace_instance_index: 0,
                 values: vec![2],
             },
         ],
@@ -121,6 +162,32 @@ fn rejects_duplicate_unit_values_units() {
     assert!(matches!(
         encode_unit_values_segment(&segment),
         Err(UnitValuesSegmentError::DuplicateUnitIndex { unit_index: 1 })
+    ));
+}
+
+#[test]
+fn rejects_duplicate_unit_values_unit_identities() {
+    let segment = UnitValuesSegment {
+        units: vec![
+            UnitValuesUnitSegment {
+                unit_index: 1,
+                trace_instance_index: 2,
+                values: vec![1],
+            },
+            UnitValuesUnitSegment {
+                unit_index: 1,
+                trace_instance_index: 2,
+                values: vec![2],
+            },
+        ],
+    };
+
+    assert!(matches!(
+        encode_unit_values_segment(&segment),
+        Err(UnitValuesSegmentError::DuplicateUnitIdentity {
+            unit_index: 1,
+            trace_instance_index: 2
+        })
     ));
 }
 

@@ -7,7 +7,8 @@ use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{Ext3, FieldError, MODULUS};
 use lzvm_prover::pcs_evaluation::{
-    load_pcs_evaluation_unit_from_segments, LoadPcsEvaluationUnitError,
+    load_pcs_evaluation_unit_for_identity_from_segments, load_pcs_evaluation_unit_from_segments,
+    LoadPcsEvaluationUnitError,
 };
 use lzvm_prover::{
     build_pcs_evaluation_segment, ProvePcsEvaluationValues, ProveSchedule, ProveUnitSchedule,
@@ -23,6 +24,20 @@ fn loads_pcs_evaluation_unit_from_segments() {
         .expect("evaluation unit should load");
 
     assert_eq!(loaded, evaluation_unit(0, vec![[1, 2, 3]]));
+}
+
+#[test]
+fn loads_pcs_evaluation_unit_by_trace_identity() {
+    let segment = pcs_evaluation_proof_segment(vec![
+        evaluation_unit(0, vec![[1, 2, 3]]),
+        evaluation_unit_with_trace(0, 1, vec![[4, 5, 6]]),
+    ]);
+
+    let loaded =
+        load_pcs_evaluation_unit_for_identity_from_segments(0, 1, &sample_unit(1), &[segment])
+            .expect("evaluation unit should load");
+
+    assert_eq!(loaded, evaluation_unit_with_trace(0, 1, vec![[4, 5, 6]]));
 }
 
 #[test]
@@ -102,10 +117,12 @@ fn builds_pcs_evaluation_segments_in_unit_index_order() {
         &[
             ProvePcsEvaluationValues {
                 unit_index: 1,
+                trace_instance_index: 0,
                 values: vec![Ext3::from_u64s([4, 5, 6])],
             },
             ProvePcsEvaluationValues {
                 unit_index: 0,
+                trace_instance_index: 0,
                 values: vec![Ext3::from_u64s([1, 2, 3])],
             },
         ],
@@ -118,6 +135,32 @@ fn builds_pcs_evaluation_segments_in_unit_index_order() {
     assert_eq!(parsed.units[1].unit_index, 1);
 }
 
+#[test]
+fn builds_pcs_evaluation_segments_in_trace_identity_order() {
+    let schedule = sample_schedule();
+    let segment = build_pcs_evaluation_segment(
+        &schedule,
+        &[
+            ProvePcsEvaluationValues {
+                unit_index: 0,
+                trace_instance_index: 2,
+                values: vec![Ext3::from_u64s([4, 5, 6])],
+            },
+            ProvePcsEvaluationValues {
+                unit_index: 0,
+                trace_instance_index: 0,
+                values: vec![Ext3::from_u64s([1, 2, 3])],
+            },
+        ],
+    )
+    .expect("evaluation segment should build");
+    let parsed =
+        parse_pcs_evaluation_segment(&segment.data).expect("evaluation segment should parse");
+
+    assert_eq!(parsed.units[0].trace_instance_index, 0);
+    assert_eq!(parsed.units[1].trace_instance_index, 2);
+}
+
 fn pcs_evaluation_proof_segment(units: Vec<PcsEvaluationUnitSegment>) -> ProofSegment {
     ProofSegment {
         id: PCS_EVALUATION_SEGMENT_ID,
@@ -127,7 +170,19 @@ fn pcs_evaluation_proof_segment(units: Vec<PcsEvaluationUnitSegment>) -> ProofSe
 }
 
 fn evaluation_unit(unit_index: u32, values: Vec<[u64; 3]>) -> PcsEvaluationUnitSegment {
-    PcsEvaluationUnitSegment { unit_index, values }
+    evaluation_unit_with_trace(unit_index, 0, values)
+}
+
+fn evaluation_unit_with_trace(
+    unit_index: u32,
+    trace_instance_index: u32,
+    values: Vec<[u64; 3]>,
+) -> PcsEvaluationUnitSegment {
+    PcsEvaluationUnitSegment {
+        unit_index,
+        trace_instance_index,
+        values,
+    }
 }
 
 fn sample_schedule() -> ProveSchedule {

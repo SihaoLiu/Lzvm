@@ -472,6 +472,7 @@ fn rejects_transcript_pcs_query_plan_missing_later_material_unit() {
     let second_witness_segment = witness_segment(1);
     let evaluations = PcsEvaluationUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         values: vec![[9, 10, 11]],
     };
     let fri = PcsFriOpeningUnitSegment {
@@ -578,10 +579,12 @@ fn rejects_transcript_pcs_query_plan_not_bound_to_each_unit_challenge() {
 
     let first_evaluations = PcsEvaluationUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         values: vec![[9, 10, 11]],
     };
     let second_evaluations = PcsEvaluationUnitSegment {
         unit_index: 1,
+        trace_instance_index: 0,
         values: vec![[29, 30, 31]],
     };
     let first_fri = PcsFriOpeningUnitSegment {
@@ -680,6 +683,7 @@ fn rejects_transcript_query_plan_builder_with_multiple_witness_units() {
     let second_witness_segment = witness_segment(1);
     let evaluations = PcsEvaluationUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         values: Vec::new(),
     };
     let fri = PcsFriOpeningUnitSegment {
@@ -737,6 +741,7 @@ fn rejects_transcript_query_plan_builder_with_mismatched_witness_unit() {
     let witness_segment = witness_segment(1);
     let evaluations = PcsEvaluationUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         values: Vec::new(),
     };
     let fri = PcsFriOpeningUnitSegment {
@@ -827,6 +832,7 @@ fn rejects_transcript_pcs_query_plan_mismatches_with_program_image_cache_segment
     let witness_segment = witness_segment(0);
     let evaluations = PcsEvaluationUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         values: vec![[9, 10, 11]],
     };
     let fri = PcsFriOpeningUnitSegment {
@@ -956,6 +962,7 @@ fn rejects_transcript_pcs_query_plan_mismatches_with_challenge_values_segment() 
     let witness_segment = witness_segment(0);
     let evaluations = PcsEvaluationUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         values: vec![[9, 10, 11]],
     };
     let fri = PcsFriOpeningUnitSegment {
@@ -1045,10 +1052,12 @@ fn rejects_transcript_pcs_query_plan_extra_evaluation_units() {
         units: vec![
             PcsEvaluationUnitSegment {
                 unit_index: 0,
+                trace_instance_index: 0,
                 values: vec![[9, 10, 11]],
             },
             PcsEvaluationUnitSegment {
                 unit_index: 1,
+                trace_instance_index: 0,
                 values: vec![[19, 20, 21]],
             },
         ],
@@ -1106,6 +1115,7 @@ fn rejects_transcript_pcs_query_plan_extra_unit_values_units() {
         data: encode_unit_values_segment(&UnitValuesSegment {
             units: vec![UnitValuesUnitSegment {
                 unit_index: 1,
+                trace_instance_index: 0,
                 values: vec![31],
             }],
         })
@@ -1137,6 +1147,7 @@ fn transcript_query_plan_segments() -> (ProveSchedule, Vec<ProofSegment>) {
     let witness = witness_commitment(0);
     let evaluations = PcsEvaluationUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         values: vec![[9, 10, 11]],
     };
     let fri = PcsFriOpeningUnitSegment {

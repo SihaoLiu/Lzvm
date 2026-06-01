@@ -12,8 +12,8 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_field::{Ext3, Felt};
 
 use crate::pcs_evaluation::{
-    load_pcs_evaluation_unit_from_segments, validate_pcs_evaluation_units_match_query_units,
-    LoadPcsEvaluationUnitError,
+    load_pcs_evaluation_unit_for_identity_from_segments,
+    validate_pcs_evaluation_units_match_query_units, LoadPcsEvaluationUnitError,
 };
 use crate::pcs_fri::{
     load_pcs_fri_opening_segment_from_segments, validate_pcs_fri_opening_units_match_query_units,
@@ -25,7 +25,7 @@ use crate::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptError, PcsTranscriptSegmentInputs,
 };
 use crate::unit_values::{
-    load_unit_values_from_segments, validate_unit_values_units_match_query_units,
+    load_unit_values_for_identity_from_segments, validate_unit_values_units_match_query_units,
     LoadUnitValuesSegmentError,
 };
 use crate::witness_commitment::{
@@ -189,8 +189,13 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
             parse_witness_commitment_segment(&witness_segment.data).map_err(|source| {
                 PcsTranscriptProofSegmentsError::WitnessSegment { unit_index, source }
             })?;
-        let evaluation_unit = load_pcs_evaluation_unit_from_segments(unit_index, unit, segments)
-            .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
+        let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_segments(
+            unit_index,
+            query_unit.trace_instance_index,
+            unit,
+            segments,
+        )
+        .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
         let fri_unit = fri
             .units
             .iter()
@@ -199,9 +204,13 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
                     && unit.trace_instance_index == query_unit.trace_instance_index
             })
             .ok_or(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index })?;
-        let unit_values =
-            load_unit_values_from_segments(unit_index, &unit.unit_value_map, segments)
-                .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
+        let unit_values = load_unit_values_for_identity_from_segments(
+            unit_index,
+            query_unit.trace_instance_index,
+            &unit.unit_value_map,
+            segments,
+        )
+        .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
         let mut unit_challenges =
             derive_pcs_transcript_challenges_from_segments(PcsTranscriptSegmentInputs {
                 unit_index,

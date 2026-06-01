@@ -1202,10 +1202,12 @@ fn build_proof_bytes(
         .map_err(|error| error.to_string())?;
     }
     let unit_index = request.output.commitments().unit_index();
+    let trace_instance_index = request.output.commitments().trace_instance_index();
     let unit_values = match request.unit_values_segment_input {
         Some(path) => Some(read_packed_unit_values_segment_for_unit(
             request.schedule,
             unit_index,
+            trace_instance_index,
             path,
         )?),
         None => None,

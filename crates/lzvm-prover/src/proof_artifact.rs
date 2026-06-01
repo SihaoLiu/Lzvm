@@ -41,8 +41,8 @@ use crate::prove_fri_opening::{
 };
 use crate::setup_preflight::{validate_setup_preflight, validate_setup_preflight_hashes};
 use crate::unit_values::{
-    build_unit_values_segment_from_packed_values,
-    build_unit_values_segment_from_packed_values_batch, ProveUnitValues,
+    build_unit_values_segment_from_packed_values_batch,
+    build_unit_values_segment_from_packed_values_for_identity, ProveUnitValues,
 };
 use crate::witness_execution::ProveWitnessAuxiliaryInputSlices;
 use crate::{
@@ -56,6 +56,29 @@ use crate::{
     ProvePcsFriTranscriptTraceSegmentValues, ProveSchedule, ProveWitnessAuxiliaryInputs,
     ProveWitnessCommitments, ProveWitnessTraceCommitments,
 };
+
+trait ProveUnitValuesSliceExt {
+    fn packed_values_for_identity(
+        &self,
+        unit_index: usize,
+        trace_instance_index: u32,
+    ) -> Option<&[Felt]>;
+}
+
+impl ProveUnitValuesSliceExt for [ProveUnitValues] {
+    fn packed_values_for_identity(
+        &self,
+        unit_index: usize,
+        trace_instance_index: u32,
+    ) -> Option<&[Felt]> {
+        self.iter()
+            .find(|values| {
+                values.unit_index == unit_index
+                    && values.trace_instance_index == trace_instance_index
+            })
+            .map(|values| values.packed_values.as_slice())
+    }
+}
 
 pub fn build_witness_proof_core_artifact(
     catalog: &KeyDirectoryCatalog,
@@ -247,6 +270,7 @@ pub fn build_witness_proof_artifact_for_unit(
             request.schedule,
             &[ProvePcsEvaluationValues {
                 unit_index: commitments.unit_index(),
+                trace_instance_index: commitments.trace_instance_index(),
                 values: request.output.auxiliary_inputs().evaluations.clone(),
             }],
         )
@@ -336,9 +360,13 @@ pub fn build_witness_proof_artifact_for_unit(
     let unit_values = request
         .unit_values
         .unwrap_or(&request.output.auxiliary_inputs().unit_values);
-    let unit_values_segment =
-        build_unit_values_segment_from_packed_values(unit_index, &unit.unit_value_map, unit_values)
-            .map_err(|error| format!("build unit values segment failed: {error}"))?;
+    let unit_values_segment = build_unit_values_segment_from_packed_values_for_identity(
+        unit_index,
+        commitments.trace_instance_index(),
+        &unit.unit_value_map,
+        unit_values,
+    )
+    .map_err(|error| format!("build unit values segment failed: {error}"))?;
     let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
         &request.catalog.layout.global_info,
         &request.output.auxiliary_inputs().proof_values,
@@ -521,12 +549,13 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
         .outputs
         .iter()
         .map(|output| {
-            let unit_index = output.commitments().unit_index();
+            let commitments = output.commitments();
             let packed_unit_values = request
                 .unit_values
-                .iter()
-                .find(|values| values.unit_index == unit_index)
-                .map(|values| values.packed_values.as_slice())
+                .packed_values_for_identity(
+                    commitments.unit_index(),
+                    commitments.trace_instance_index(),
+                )
                 .unwrap_or_else(|| output.auxiliary_inputs().unit_values.as_slice());
             WitnessContributionSource {
                 output,
@@ -650,11 +679,12 @@ pub fn build_witness_proof_artifact_for_all_units(
             .outputs
             .iter()
             .map(|output| {
-                let unit_index = output.commitments().unit_index();
+                let commitments = output.commitments();
                 let packed_unit_values = proof_unit_values
-                    .iter()
-                    .find(|values| values.unit_index == unit_index)
-                    .map(|values| values.packed_values.as_slice())
+                    .packed_values_for_identity(
+                        commitments.unit_index(),
+                        commitments.trace_instance_index(),
+                    )
                     .unwrap_or_else(|| output.auxiliary_inputs().unit_values.as_slice());
                 WitnessContributionSource {
                     output,
@@ -964,9 +994,12 @@ fn all_units_transcript_required(
             .ok_or_else(|| format!("output unit index out of range: {unit_index}"))?;
         if execution_unit.fri_expression_id.is_some() {
             has_fri_unit = true;
-            let has_unit_evaluations = evaluation_values
-                .iter()
-                .any(|values| values.unit_index == unit_index && !values.values.is_empty());
+            let trace_instance_index = output.commitments().trace_instance_index();
+            let has_unit_evaluations = evaluation_values.iter().any(|values| {
+                values.unit_index == unit_index
+                    && values.trace_instance_index == trace_instance_index
+                    && !values.values.is_empty()
+            });
             if !has_unit_evaluations && !has_evaluation_segment {
                 return Err(format!(
                     "missing evaluation values for unit {unit_index}: expected {}",
@@ -1017,10 +1050,8 @@ fn build_witness_transcript_proof_artifact_for_all_units(
             let output_auxiliary_inputs = output.auxiliary_inputs();
             let unit_values = proof_inputs
                 .unit_values
-                .iter()
-                .find(|values| values.unit_index == unit_index)
-                .map(|values| values.packed_values.as_slice())
-                .unwrap_or_else(|| output_auxiliary_inputs.unit_values.as_slice());
+                .packed_values_for_identity(unit_index, commitments.trace_instance_index())
+                .unwrap_or(output_auxiliary_inputs.unit_values.as_slice());
             let proof_values = if proof_inputs.proof_values.is_empty() {
                 output_auxiliary_inputs.proof_values.as_slice()
             } else {
@@ -1033,7 +1064,10 @@ fn build_witness_transcript_proof_artifact_for_all_units(
             };
             let evaluations = transcript_evaluation_values
                 .iter()
-                .find(|values| values.unit_index == unit_index)
+                .find(|values| {
+                    values.unit_index == unit_index
+                        && values.trace_instance_index == commitments.trace_instance_index()
+                })
                 .map(|values| values.values.as_slice())
                 .unwrap_or_else(|| output_auxiliary_inputs.evaluations.as_slice());
             let execution_unit = request
@@ -1220,7 +1254,11 @@ fn collect_evaluation_values_from_segment(
                     Ok(Ext3::new(c0, c1, c2))
                 })
                 .collect::<Result<Vec<_>, String>>()?;
-            Ok(ProvePcsEvaluationValues { unit_index, values })
+            Ok(ProvePcsEvaluationValues {
+                unit_index,
+                trace_instance_index: unit.trace_instance_index,
+                values,
+            })
         })
         .collect()
 }
@@ -1292,6 +1330,7 @@ fn collect_all_units_evaluation_values(
             .iter()
             .map(|output| ProvePcsEvaluationValues {
                 unit_index: output.commitments().unit_index(),
+                trace_instance_index: output.commitments().trace_instance_index(),
                 values: explicit_values.to_vec(),
             })
             .collect();
@@ -1306,6 +1345,7 @@ fn collect_all_units_evaluation_values(
             } else {
                 Some(ProvePcsEvaluationValues {
                     unit_index: output.commitments().unit_index(),
+                    trace_instance_index: output.commitments().trace_instance_index(),
                     values,
                 })
             }
@@ -1333,6 +1373,7 @@ fn collect_proof_unit_values(
         if !packed_values.is_empty() || !unit.unit_value_map.is_empty() {
             values.push(ProveUnitValues {
                 unit_index,
+                trace_instance_index: output.commitments().trace_instance_index(),
                 unit_value_map: unit.unit_value_map.clone(),
                 packed_values,
             });
@@ -1349,6 +1390,31 @@ mod tests {
     use lzvm_artifacts::program_image::ProgramImageGpuMode;
     use lzvm_artifacts::public_values::PublicValueEntry;
     use lzvm_field::MODULUS;
+
+    #[test]
+    fn selects_packed_unit_values_by_trace_identity() {
+        let values = [
+            ProveUnitValues {
+                unit_index: 0,
+                trace_instance_index: 0,
+                unit_value_map: Vec::new(),
+                packed_values: vec![Felt::from_u64(11)],
+            },
+            ProveUnitValues {
+                unit_index: 0,
+                trace_instance_index: 2,
+                unit_value_map: Vec::new(),
+                packed_values: vec![Felt::from_u64(29)],
+            },
+        ];
+
+        let selected = values
+            .packed_values_for_identity(0, 2)
+            .expect("trace identity values should be selected");
+
+        assert_eq!(selected, &[Felt::from_u64(29)]);
+        assert!(values.packed_values_for_identity(0, 1).is_none());
+    }
 
     #[test]
     fn rejects_eth_block_public_values_without_bound_input() {

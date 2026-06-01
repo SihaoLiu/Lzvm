@@ -6,9 +6,11 @@ use lzvm_field::{Felt, FieldError};
 pub const PCS_EVALUATION_SEGMENT_ID: u32 = 10_006;
 
 const PCS_EVALUATION_MAGIC: [u8; 4] = *b"evs0";
-const PCS_EVALUATION_VERSION: u32 = 1;
+const PCS_EVALUATION_V1_VERSION: u32 = 1;
+const PCS_EVALUATION_V2_VERSION: u32 = 2;
 const HEADER_BYTES: usize = 4 + 4 + 4;
-const UNIT_HEADER_BYTES: usize = 4 + 4;
+const V1_UNIT_HEADER_BYTES: usize = 4 + 4;
+const V2_UNIT_HEADER_BYTES: usize = 4 + 4 + 4;
 const WORD_BYTES: usize = 8;
 const EXTENSION_WORDS: usize = 3;
 const EXTENSION_BYTES: usize = EXTENSION_WORDS * WORD_BYTES;
@@ -21,6 +23,7 @@ pub struct PcsEvaluationSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PcsEvaluationUnitSegment {
     pub unit_index: u32,
+    pub trace_instance_index: u32,
     pub values: Vec<[u64; EXTENSION_WORDS]>,
 }
 
@@ -43,6 +46,10 @@ pub enum PcsEvaluationSegmentError {
     },
     DuplicateUnitIndex {
         unit_index: u32,
+    },
+    DuplicateUnitIdentity {
+        unit_index: u32,
+        trace_instance_index: u32,
     },
     ValueNonCanonical {
         unit_index: u32,
@@ -74,6 +81,13 @@ impl fmt::Display for PcsEvaluationSegmentError {
             Self::DuplicateUnitIndex { unit_index } => {
                 write!(f, "duplicate PCS evaluation unit index: {unit_index}")
             }
+            Self::DuplicateUnitIdentity {
+                unit_index,
+                trace_instance_index,
+            } => write!(
+                f,
+                "duplicate PCS evaluation unit identity: unit {unit_index}, trace instance {trace_instance_index}"
+            ),
             Self::ValueNonCanonical {
                 unit_index,
                 value_index,
@@ -99,6 +113,7 @@ impl std::error::Error for PcsEvaluationSegmentError {
             | Self::EmptyUnits
             | Self::EmptyValues { .. }
             | Self::DuplicateUnitIndex { .. }
+            | Self::DuplicateUnitIdentity { .. }
             | Self::LengthOverflow => None,
         }
     }
@@ -110,14 +125,18 @@ pub fn encode_pcs_evaluation_segment(
     validate_pcs_evaluation_segment(value)?;
     let unit_count =
         u32::try_from(value.units.len()).map_err(|_| PcsEvaluationSegmentError::LengthOverflow)?;
+    let version = segment_version(value);
     let expected_len = encoded_len(value)?;
 
     let mut out = Vec::with_capacity(expected_len);
     out.extend_from_slice(&PCS_EVALUATION_MAGIC);
-    write_u32(&mut out, PCS_EVALUATION_VERSION);
+    write_u32(&mut out, version);
     write_u32(&mut out, unit_count);
     for unit in &value.units {
         write_u32(&mut out, unit.unit_index);
+        if version == PCS_EVALUATION_V2_VERSION {
+            write_u32(&mut out, unit.trace_instance_index);
+        }
         write_u32(
             &mut out,
             u32::try_from(unit.values.len())
@@ -139,7 +158,7 @@ pub fn parse_pcs_evaluation_segment(
         return Err(PcsEvaluationSegmentError::InvalidMagic);
     }
     let version = reader.read_u32()?;
-    if version != PCS_EVALUATION_VERSION {
+    if version != PCS_EVALUATION_V1_VERSION && version != PCS_EVALUATION_V2_VERSION {
         return Err(PcsEvaluationSegmentError::UnsupportedVersion { version });
     }
     let unit_count = usize::try_from(reader.read_u32()?)
@@ -147,13 +166,23 @@ pub fn parse_pcs_evaluation_segment(
     if unit_count == 0 {
         return Err(PcsEvaluationSegmentError::EmptyUnits);
     }
-    if unit_count > reader.remaining_len() / UNIT_HEADER_BYTES {
+    let unit_header_bytes = if version == PCS_EVALUATION_V2_VERSION {
+        V2_UNIT_HEADER_BYTES
+    } else {
+        V1_UNIT_HEADER_BYTES
+    };
+    if unit_count > reader.remaining_len() / unit_header_bytes {
         return Err(PcsEvaluationSegmentError::LengthOverflow);
     }
 
     let mut units = Vec::with_capacity(unit_count);
     for _ in 0..unit_count {
         let unit_index = reader.read_u32()?;
+        let trace_instance_index = if version == PCS_EVALUATION_V2_VERSION {
+            reader.read_u32()?
+        } else {
+            0
+        };
         let value_count = usize::try_from(reader.read_u32()?)
             .map_err(|_| PcsEvaluationSegmentError::LengthOverflow)?;
         if value_count > reader.remaining_len() / EXTENSION_BYTES {
@@ -163,13 +192,29 @@ pub fn parse_pcs_evaluation_segment(
         for _ in 0..value_count {
             values.push(reader.read_extension()?);
         }
-        units.push(PcsEvaluationUnitSegment { unit_index, values });
+        units.push(PcsEvaluationUnitSegment {
+            unit_index,
+            trace_instance_index,
+            values,
+        });
     }
     reader.finish()?;
 
     let out = PcsEvaluationSegment { units };
     validate_pcs_evaluation_segment(&out)?;
     Ok(out)
+}
+
+fn segment_version(value: &PcsEvaluationSegment) -> u32 {
+    if value
+        .units
+        .iter()
+        .any(|unit| unit.trace_instance_index != 0)
+    {
+        PCS_EVALUATION_V2_VERSION
+    } else {
+        PCS_EVALUATION_V1_VERSION
+    }
 }
 
 fn validate_pcs_evaluation_segment(
@@ -180,9 +225,15 @@ fn validate_pcs_evaluation_segment(
     }
     let mut seen_units = BTreeSet::new();
     for unit in &value.units {
-        if !seen_units.insert(unit.unit_index) {
-            return Err(PcsEvaluationSegmentError::DuplicateUnitIndex {
+        if !seen_units.insert((unit.unit_index, unit.trace_instance_index)) {
+            if unit.trace_instance_index == 0 {
+                return Err(PcsEvaluationSegmentError::DuplicateUnitIndex {
+                    unit_index: unit.unit_index,
+                });
+            }
+            return Err(PcsEvaluationSegmentError::DuplicateUnitIdentity {
                 unit_index: unit.unit_index,
+                trace_instance_index: unit.trace_instance_index,
             });
         }
         if unit.values.is_empty() {
@@ -207,6 +258,11 @@ fn validate_pcs_evaluation_segment(
 }
 
 fn encoded_len(value: &PcsEvaluationSegment) -> Result<usize, PcsEvaluationSegmentError> {
+    let unit_header_bytes = if segment_version(value) == PCS_EVALUATION_V2_VERSION {
+        V2_UNIT_HEADER_BYTES
+    } else {
+        V1_UNIT_HEADER_BYTES
+    };
     value.units.iter().try_fold(HEADER_BYTES, |acc, unit| {
         let value_bytes = unit
             .values
@@ -214,7 +270,7 @@ fn encoded_len(value: &PcsEvaluationSegment) -> Result<usize, PcsEvaluationSegme
             .checked_mul(EXTENSION_WORDS)
             .and_then(|words| words.checked_mul(WORD_BYTES))
             .ok_or(PcsEvaluationSegmentError::LengthOverflow)?;
-        acc.checked_add(UNIT_HEADER_BYTES)
+        acc.checked_add(unit_header_bytes)
             .and_then(|bytes| bytes.checked_add(value_bytes))
             .ok_or(PcsEvaluationSegmentError::LengthOverflow)
     })

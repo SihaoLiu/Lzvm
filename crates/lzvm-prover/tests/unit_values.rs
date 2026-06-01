@@ -7,9 +7,10 @@ use lzvm_artifacts::unit_values_segment::{
 use lzvm_field::{Felt, FieldError, MODULUS};
 use lzvm_prover::unit_values::{
     build_unit_values_segment_from_packed_values,
-    build_unit_values_segment_from_packed_values_batch, expected_packed_unit_value_count,
-    load_unit_values_from_segments, LoadUnitValuesSegmentError, ProveUnitValues,
-    ProveUnitValuesSegmentError,
+    build_unit_values_segment_from_packed_values_batch,
+    build_unit_values_segment_from_packed_values_for_identity, expected_packed_unit_value_count,
+    load_unit_values_for_identity_from_segments, load_unit_values_from_segments,
+    LoadUnitValuesSegmentError, ProveUnitValues, ProveUnitValuesSegmentError,
 };
 
 const FIRST_UNIT_VALUE_OFFSET: usize = 12 + 4 + 4;
@@ -75,11 +76,13 @@ fn builds_unit_values_segment_for_multiple_units() {
     let inputs = vec![
         ProveUnitValues {
             unit_index: 7,
+            trace_instance_index: 0,
             unit_value_map: vec![stage_value("unit.gamma", 1)],
             packed_values: values(&[31]),
         },
         ProveUnitValues {
             unit_index: 3,
+            trace_instance_index: 0,
             unit_value_map: vec![stage_value("unit.alpha", 1), stage_value("unit.beta", 2)],
             packed_values: values(&[11, 21, 22, 23]),
         },
@@ -99,6 +102,54 @@ fn builds_unit_values_segment_for_multiple_units() {
 }
 
 #[test]
+fn builds_unit_values_segment_for_multiple_trace_instances() {
+    let inputs = vec![
+        ProveUnitValues {
+            unit_index: 3,
+            trace_instance_index: 2,
+            unit_value_map: vec![stage_value("unit.gamma", 1)],
+            packed_values: values(&[31]),
+        },
+        ProveUnitValues {
+            unit_index: 3,
+            trace_instance_index: 0,
+            unit_value_map: vec![stage_value("unit.alpha", 1)],
+            packed_values: values(&[11]),
+        },
+    ];
+
+    let segment = build_unit_values_segment_from_packed_values_batch(&inputs)
+        .expect("segment should build")
+        .expect("segment should be present");
+
+    let parsed = parse_unit_values_segment(&segment.data).expect("segment should parse");
+    assert_eq!(parsed.units.len(), 2);
+    assert_eq!(parsed.units[0].unit_index, 3);
+    assert_eq!(parsed.units[0].trace_instance_index, 0);
+    assert_eq!(parsed.units[1].unit_index, 3);
+    assert_eq!(parsed.units[1].trace_instance_index, 2);
+}
+
+#[test]
+fn builds_single_unit_values_segment_for_trace_identity() {
+    let segment = build_unit_values_segment_from_packed_values_for_identity(
+        3,
+        2,
+        &[stage_value("unit.alpha", 1)],
+        &values(&[31]),
+    )
+    .expect("segment should build")
+    .expect("segment should be present");
+
+    let parsed = parse_unit_values_segment(&segment.data).expect("segment should parse");
+
+    assert_eq!(parsed.units.len(), 1);
+    assert_eq!(parsed.units[0].unit_index, 3);
+    assert_eq!(parsed.units[0].trace_instance_index, 2);
+    assert_eq!(parsed.units[0].values, vec![31]);
+}
+
+#[test]
 fn loads_unit_values_from_segments() {
     let map = vec![stage_value("unit.alpha", 1), stage_value("unit.beta", 2)];
     let segment = unit_values_segment(3, &[11, 21, 22, 23]);
@@ -107,6 +158,34 @@ fn loads_unit_values_from_segments() {
         load_unit_values_from_segments(3, &map, &[segment]).expect("unit values should load");
 
     assert_eq!(loaded, values(&[11, 21, 22, 23]));
+}
+
+#[test]
+fn loads_unit_values_by_trace_identity() {
+    let map = vec![stage_value("unit.alpha", 1)];
+    let segment = ProofSegment {
+        id: UNIT_VALUES_SEGMENT_ID,
+        data: encode_unit_values_segment(&UnitValuesSegment {
+            units: vec![
+                UnitValuesUnitSegment {
+                    unit_index: 3,
+                    trace_instance_index: 0,
+                    values: vec![11],
+                },
+                UnitValuesUnitSegment {
+                    unit_index: 3,
+                    trace_instance_index: 2,
+                    values: vec![31],
+                },
+            ],
+        })
+        .expect("segment should encode"),
+    };
+
+    let loaded = load_unit_values_for_identity_from_segments(3, 2, &map, &[segment])
+        .expect("unit values should load");
+
+    assert_eq!(loaded, values(&[31]));
 }
 
 #[test]
@@ -238,6 +317,7 @@ fn unit_values_segment(unit_index: u32, values: &[u64]) -> ProofSegment {
         data: encode_unit_values_segment(&UnitValuesSegment {
             units: vec![UnitValuesUnitSegment {
                 unit_index,
+                trace_instance_index: 0,
                 values: values.to_vec(),
             }],
         })
