@@ -2463,6 +2463,8 @@ fn guest_pc_trace_backend_splits_zisk_main_segments() {
         unit_value(first, "segment_last_c"),
         &[Felt::from_u64(10), Felt::ZERO]
     );
+    assert_eq!(proof_value(first, "enable_rom_data"), &[Felt::ONE]);
+    assert_eq!(proof_value(first, "enable_input_data"), &[Felt::ZERO]);
     let first_last_reg_mem_step = unit_value(first, "last_reg_mem_step");
     assert_eq!(first_last_reg_mem_step[0], Felt::from_u64(5));
     assert_eq!(first_last_reg_mem_step[1], Felt::from_u64(7));
@@ -2495,6 +2497,7 @@ fn guest_pc_trace_backend_splits_zisk_main_segments() {
         unit_value(second, "segment_last_c"),
         &[Felt::ZERO, Felt::ZERO]
     );
+    assert_eq!(second.proof_values(), first.proof_values());
 
     let last_reg_value = unit_value(second, "last_reg_value");
     assert_eq!(last_reg_value[0..2], [Felt::from_u64(7), Felt::ZERO]);
@@ -2641,6 +2644,7 @@ fn guest_pc_trace_backend_adds_terminal_segment_when_final_segment_is_full() {
 
     let terminal = segments[1].output();
     assert_eq!(segments[1].trace_instance_index(), 1);
+    assert_eq!(terminal.proof_values(), first.proof_values());
     assert_eq!(
         terminal.trace().value(0, 7),
         Some(Felt::from_canonical(ENTRY + 12).expect("canonical"))
