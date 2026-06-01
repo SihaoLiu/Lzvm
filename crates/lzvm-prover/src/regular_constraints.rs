@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::fmt;
 
 use lzvm_artifacts::constraint_program::{ConstraintEntry, ConstraintProgram};
@@ -245,20 +247,21 @@ fn evaluate_entry(
             .checked_mul(3)
             .ok_or(RegularConstraintEvalError::LengthOverflow)?
     ];
-    let layout = BufferLayout::new(inputs);
-    let context = RowEvaluationContext {
+    let mut context = RowEvaluationContext {
         constraint_index,
         entry,
         ops,
         args,
+        operations: vec![None; ops.len()],
+        sources: vec![[None, None]; ops.len()],
         program,
         inputs,
-        layout,
+        layout: BufferLayout::new(inputs),
     };
     let mut invalid_rows = Vec::new();
 
     for row in active_rows {
-        let value = evaluate_row(row, &context, &mut tmp1, &mut tmp3)?;
+        let value = evaluate_row(row, &mut context, &mut tmp1, &mut tmp3)?;
         if value != Ext3::ZERO {
             invalid_rows.push(RegularConstraintViolation { row, value });
         }
@@ -277,6 +280,8 @@ struct RowEvaluationContext<'a, 'input> {
     entry: &'a ConstraintEntry,
     ops: &'a [u8],
     args: &'a [u16],
+    operations: Vec<Option<DecodedOperation>>,
+    sources: Vec<[Option<DecodedSource<'input>>; 2]>,
     program: &'a ConstraintProgram,
     inputs: RegularConstraintInputs<'input>,
     layout: BufferLayout,
@@ -284,55 +289,105 @@ struct RowEvaluationContext<'a, 'input> {
 
 fn evaluate_row(
     row: usize,
-    context: &RowEvaluationContext<'_, '_>,
+    context: &mut RowEvaluationContext<'_, '_>,
     tmp1: &mut [Felt],
     tmp3: &mut [Felt],
 ) -> Result<Ext3, RegularConstraintEvalError> {
     tmp1.fill(Felt::ZERO);
     tmp3.fill(Felt::ZERO);
-    let mut cursor = 0usize;
 
-    for shape in context.ops {
-        let op_args = read_operation_args(context.constraint_index, context.args, cursor)?;
-        cursor += 8;
-        match *shape {
-            0 => {
+    for operation_index in 0..context.ops.len() {
+        let operation = decoded_operation(context, operation_index)?;
+        match operation.shape {
+            OperationShape::BaseBase => {
                 let value = apply_base_op(
-                    op_args.kind,
-                    read_base(op_args.src0, row, tmp1, tmp3, context)?,
-                    read_base(op_args.src1, row, tmp1, tmp3, context)?,
+                    operation.kind,
+                    read_base_source(context, operation_index, 0, operation.src0, row, tmp1, tmp3)?,
+                    read_base_source(context, operation_index, 1, operation.src1, row, tmp1, tmp3)?,
                 )?;
-                write_base(tmp1, op_args.destination_offset, value)?;
+                write_base(tmp1, operation.destination_offset, value)?;
             }
-            1 => {
+            OperationShape::ExtBase => {
                 let value = apply_ext_op(
-                    op_args.kind,
-                    read_ext(op_args.src0, row, tmp1, tmp3, context)?,
-                    scalar_ext(read_base(op_args.src1, row, tmp1, tmp3, context)?),
+                    operation.kind,
+                    read_ext_source(context, operation_index, 0, operation.src0, row, tmp1, tmp3)?,
+                    scalar_ext(read_base_source(
+                        context,
+                        operation_index,
+                        1,
+                        operation.src1,
+                        row,
+                        tmp1,
+                        tmp3,
+                    )?),
                 )?;
-                write_ext(tmp3, op_args.destination_offset, value)?;
+                write_ext(tmp3, operation.destination_offset, value)?;
             }
-            2 => {
+            OperationShape::ExtExt => {
                 let value = apply_ext_op(
-                    op_args.kind,
-                    read_ext(op_args.src0, row, tmp1, tmp3, context)?,
-                    read_ext(op_args.src1, row, tmp1, tmp3, context)?,
+                    operation.kind,
+                    read_ext_source(context, operation_index, 0, operation.src0, row, tmp1, tmp3)?,
+                    read_ext_source(context, operation_index, 1, operation.src1, row, tmp1, tmp3)?,
                 )?;
-                write_ext(tmp3, op_args.destination_offset, value)?;
+                write_ext(tmp3, operation.destination_offset, value)?;
             }
-            shape => return Err(RegularConstraintEvalError::UnsupportedOperationShape { shape }),
         }
     }
 
-    if cursor != context.args.len() {
+    let consumed = context
+        .ops
+        .len()
+        .checked_mul(8)
+        .ok_or(RegularConstraintEvalError::LengthOverflow)?;
+    if consumed != context.args.len() {
         return Err(RegularConstraintEvalError::ArgumentCountMismatch {
             constraint_index: context.constraint_index,
-            consumed: cursor,
+            consumed,
             declared: context.args.len(),
         });
     }
 
     read_destination(context.entry, tmp1, tmp3)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OperationShape {
+    BaseBase,
+    ExtBase,
+    ExtExt,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DecodedOperation {
+    shape: OperationShape,
+    kind: u16,
+    destination_offset: usize,
+    src0: SourceRef,
+    src1: SourceRef,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DecodedSource<'input> {
+    offset: usize,
+    row_offset: i64,
+    kind: DecodedSourceKind<'input>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum DecodedSourceKind<'input> {
+    Fixed(RegularColumnMatrix<'input>),
+    Stage(RegularColumnMatrix<'input>),
+    CustomFixed(RegularColumnMatrix<'input>),
+    DomainOrZerofier,
+    Tmp1,
+    Tmp3,
+    Public,
+    Number,
+    UnitValue,
+    ProofValue,
+    GroupValue,
+    Challenge,
+    Evaluation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -410,6 +465,104 @@ fn read_operation_args(
     })
 }
 
+fn decoded_operation(
+    context: &mut RowEvaluationContext<'_, '_>,
+    operation_index: usize,
+) -> Result<DecodedOperation, RegularConstraintEvalError> {
+    if let Some(operation) = context.operations[operation_index] {
+        return Ok(operation);
+    }
+
+    let cursor = operation_index
+        .checked_mul(8)
+        .ok_or(RegularConstraintEvalError::LengthOverflow)?;
+    let op_args = read_operation_args(context.constraint_index, context.args, cursor)?;
+    let shape = match context.ops[operation_index] {
+        0 => OperationShape::BaseBase,
+        1 => OperationShape::ExtBase,
+        2 => OperationShape::ExtExt,
+        shape => return Err(RegularConstraintEvalError::UnsupportedOperationShape { shape }),
+    };
+    let operation = DecodedOperation {
+        shape,
+        kind: op_args.kind,
+        destination_offset: op_args.destination_offset,
+        src0: op_args.src0,
+        src1: op_args.src1,
+    };
+    context.operations[operation_index] = Some(operation);
+    Ok(operation)
+}
+
+fn cached_source<'input>(
+    context: &mut RowEvaluationContext<'_, 'input>,
+    operation_index: usize,
+    source_index: usize,
+    source: SourceRef,
+) -> Result<DecodedSource<'input>, RegularConstraintEvalError> {
+    if let Some(source) = context.sources[operation_index][source_index] {
+        return Ok(source);
+    }
+
+    let source = decode_source(source, context.inputs, context.layout)?;
+    context.sources[operation_index][source_index] = Some(source);
+    Ok(source)
+}
+
+fn decode_source<'input>(
+    source: SourceRef,
+    inputs: RegularConstraintInputs<'input>,
+    layout: BufferLayout,
+) -> Result<DecodedSource<'input>, RegularConstraintEvalError> {
+    let kind = match layout.resolve(source.buffer)? {
+        BufferKind::Fixed => DecodedSourceKind::Fixed(inputs.fixed_columns),
+        BufferKind::Stage(stage_index) => {
+            DecodedSourceKind::Stage(find_stage_columns(inputs, stage_index)?)
+        }
+        BufferKind::CustomFixed(index) => {
+            DecodedSourceKind::CustomFixed(*inputs.custom_fixed_columns.get(index).ok_or(
+                RegularConstraintEvalError::SourceIndexOutOfRange {
+                    buffer: "custom fixed column",
+                    offset: index,
+                    width: 1,
+                    len: inputs.custom_fixed_columns.len(),
+                },
+            )?)
+        }
+        BufferKind::DomainOrZerofier => DecodedSourceKind::DomainOrZerofier,
+        BufferKind::Tmp1 => DecodedSourceKind::Tmp1,
+        BufferKind::Tmp3 => DecodedSourceKind::Tmp3,
+        BufferKind::Public => DecodedSourceKind::Public,
+        BufferKind::Number => DecodedSourceKind::Number,
+        BufferKind::UnitValue => DecodedSourceKind::UnitValue,
+        BufferKind::ProofValue => DecodedSourceKind::ProofValue,
+        BufferKind::GroupValue => DecodedSourceKind::GroupValue,
+        BufferKind::Challenge => DecodedSourceKind::Challenge,
+        BufferKind::Evaluation => DecodedSourceKind::Evaluation,
+    };
+    let row_offset = match kind {
+        DecodedSourceKind::Fixed(_)
+        | DecodedSourceKind::Stage(_)
+        | DecodedSourceKind::CustomFixed(_) => source_row_offset(source, inputs)?,
+        DecodedSourceKind::DomainOrZerofier
+        | DecodedSourceKind::Tmp1
+        | DecodedSourceKind::Tmp3
+        | DecodedSourceKind::Public
+        | DecodedSourceKind::Number
+        | DecodedSourceKind::UnitValue
+        | DecodedSourceKind::ProofValue
+        | DecodedSourceKind::GroupValue
+        | DecodedSourceKind::Challenge
+        | DecodedSourceKind::Evaluation => 0,
+    };
+
+    Ok(DecodedSource {
+        offset: source.offset,
+        row_offset,
+        kind,
+    })
+}
+
 fn active_rows(
     entry: &ConstraintEntry,
     domain_size: usize,
@@ -439,103 +592,131 @@ fn apply_ext_op(kind: u16, left: Ext3, right: Ext3) -> Result<Ext3, RegularConst
     }
 }
 
-fn read_base(
+fn read_base_source(
+    context: &mut RowEvaluationContext<'_, '_>,
+    operation_index: usize,
+    source_index: usize,
     source: SourceRef,
     row: usize,
     tmp1: &[Felt],
     tmp3: &[Felt],
-    context: &RowEvaluationContext<'_, '_>,
 ) -> Result<Felt, RegularConstraintEvalError> {
-    let inputs = context.inputs;
-    match context.layout.resolve(source.buffer)? {
-        BufferKind::Fixed => read_matrix_base(
+    let source = cached_source(context, operation_index, source_index, source)?;
+    read_base(source, row, tmp1, tmp3, context.program, context.inputs)
+}
+
+fn read_ext_source(
+    context: &mut RowEvaluationContext<'_, '_>,
+    operation_index: usize,
+    source_index: usize,
+    source: SourceRef,
+    row: usize,
+    tmp1: &[Felt],
+    tmp3: &[Felt],
+) -> Result<Ext3, RegularConstraintEvalError> {
+    let source = cached_source(context, operation_index, source_index, source)?;
+    read_ext(source, row, tmp1, tmp3, context.program, context.inputs)
+}
+
+fn read_base(
+    source: DecodedSource<'_>,
+    row: usize,
+    tmp1: &[Felt],
+    tmp3: &[Felt],
+    program: &ConstraintProgram,
+    inputs: RegularConstraintInputs<'_>,
+) -> Result<Felt, RegularConstraintEvalError> {
+    match source.kind {
+        DecodedSourceKind::Fixed(matrix) => read_matrix_base(
             "fixed column",
-            inputs.fixed_columns,
+            matrix,
             source.offset,
-            source_row(source, row, inputs)?,
+            source_row_with_offset(row, source.row_offset, inputs.domain_size)?,
         ),
-        BufferKind::Stage(stage_index) => read_matrix_base(
+        DecodedSourceKind::Stage(matrix) => read_matrix_base(
             "stage column",
-            find_stage_columns(inputs, stage_index)?,
+            matrix,
             source.offset,
-            source_row(source, row, inputs)?,
+            source_row_with_offset(row, source.row_offset, inputs.domain_size)?,
         ),
-        BufferKind::CustomFixed(index) => read_matrix_base(
+        DecodedSourceKind::CustomFixed(matrix) => read_matrix_base(
             "custom fixed column",
-            *inputs.custom_fixed_columns.get(index).ok_or(
-                RegularConstraintEvalError::SourceIndexOutOfRange {
-                    buffer: "custom fixed column",
-                    offset: index,
-                    width: 1,
-                    len: inputs.custom_fixed_columns.len(),
-                },
-            )?,
+            matrix,
             source.offset,
-            source_row(source, row, inputs)?,
+            source_row_with_offset(row, source.row_offset, inputs.domain_size)?,
         ),
-        BufferKind::DomainOrZerofier => read_domain_or_zerofier(source.offset, row, inputs),
-        BufferKind::Tmp1 => read_felt("tmp1", tmp1, source.offset),
-        BufferKind::Tmp3 => read_felt("tmp3", tmp3, source.offset),
-        BufferKind::Public => read_felt("public", inputs.publics, source.offset),
-        BufferKind::Number => read_number(context.program, source.offset),
-        BufferKind::UnitValue => read_felt("unit value", inputs.unit_values, source.offset),
-        BufferKind::ProofValue => read_felt("proof value", inputs.proof_values, source.offset),
-        BufferKind::GroupValue => read_ext_field("group value", inputs.group_values, source.offset),
-        BufferKind::Challenge => read_ext_field("challenge", inputs.challenges, source.offset),
-        BufferKind::Evaluation => read_ext_field("evaluation", inputs.evaluations, source.offset),
+        DecodedSourceKind::DomainOrZerofier => read_domain_or_zerofier(source.offset, row, inputs),
+        DecodedSourceKind::Tmp1 => read_felt("tmp1", tmp1, source.offset),
+        DecodedSourceKind::Tmp3 => read_felt("tmp3", tmp3, source.offset),
+        DecodedSourceKind::Public => read_felt("public", inputs.publics, source.offset),
+        DecodedSourceKind::Number => read_number(program, source.offset),
+        DecodedSourceKind::UnitValue => read_felt("unit value", inputs.unit_values, source.offset),
+        DecodedSourceKind::ProofValue => {
+            read_felt("proof value", inputs.proof_values, source.offset)
+        }
+        DecodedSourceKind::GroupValue => {
+            read_ext_field("group value", inputs.group_values, source.offset)
+        }
+        DecodedSourceKind::Challenge => {
+            read_ext_field("challenge", inputs.challenges, source.offset)
+        }
+        DecodedSourceKind::Evaluation => {
+            read_ext_field("evaluation", inputs.evaluations, source.offset)
+        }
     }
 }
 
 fn read_ext(
-    source: SourceRef,
+    source: DecodedSource<'_>,
     row: usize,
     tmp1: &[Felt],
     tmp3: &[Felt],
-    context: &RowEvaluationContext<'_, '_>,
+    program: &ConstraintProgram,
+    inputs: RegularConstraintInputs<'_>,
 ) -> Result<Ext3, RegularConstraintEvalError> {
-    let inputs = context.inputs;
-    match context.layout.resolve(source.buffer)? {
-        BufferKind::Fixed => read_matrix_ext(
+    match source.kind {
+        DecodedSourceKind::Fixed(matrix) => read_matrix_ext(
             "fixed column",
-            inputs.fixed_columns,
+            matrix,
             source.offset,
-            source_row(source, row, inputs)?,
+            source_row_with_offset(row, source.row_offset, inputs.domain_size)?,
         ),
-        BufferKind::Stage(stage_index) => read_matrix_ext(
+        DecodedSourceKind::Stage(matrix) => read_matrix_ext(
             "stage column",
-            find_stage_columns(inputs, stage_index)?,
+            matrix,
             source.offset,
-            source_row(source, row, inputs)?,
+            source_row_with_offset(row, source.row_offset, inputs.domain_size)?,
         ),
-        BufferKind::CustomFixed(index) => read_matrix_ext(
+        DecodedSourceKind::CustomFixed(matrix) => read_matrix_ext(
             "custom fixed column",
-            *inputs.custom_fixed_columns.get(index).ok_or(
-                RegularConstraintEvalError::SourceIndexOutOfRange {
-                    buffer: "custom fixed column",
-                    offset: index,
-                    width: 1,
-                    len: inputs.custom_fixed_columns.len(),
-                },
-            )?,
+            matrix,
             source.offset,
-            source_row(source, row, inputs)?,
+            source_row_with_offset(row, source.row_offset, inputs.domain_size)?,
         ),
-        BufferKind::DomainOrZerofier => Ok(scalar_ext(read_domain_or_zerofier(
+        DecodedSourceKind::DomainOrZerofier => Ok(scalar_ext(read_domain_or_zerofier(
             source.offset,
             row,
             inputs,
         )?)),
-        BufferKind::Tmp1 => read_felt_ext("tmp1", tmp1, source.offset),
-        BufferKind::Tmp3 => read_felt_ext("tmp3", tmp3, source.offset),
-        BufferKind::Public => read_felt_ext("public", inputs.publics, source.offset),
-        BufferKind::Number => read_number_ext(context.program, source.offset),
-        BufferKind::UnitValue => read_felt_ext("unit value", inputs.unit_values, source.offset),
-        BufferKind::ProofValue => read_felt_ext("proof value", inputs.proof_values, source.offset),
-        BufferKind::GroupValue => {
+        DecodedSourceKind::Tmp1 => read_felt_ext("tmp1", tmp1, source.offset),
+        DecodedSourceKind::Tmp3 => read_felt_ext("tmp3", tmp3, source.offset),
+        DecodedSourceKind::Public => read_felt_ext("public", inputs.publics, source.offset),
+        DecodedSourceKind::Number => read_number_ext(program, source.offset),
+        DecodedSourceKind::UnitValue => {
+            read_felt_ext("unit value", inputs.unit_values, source.offset)
+        }
+        DecodedSourceKind::ProofValue => {
+            read_felt_ext("proof value", inputs.proof_values, source.offset)
+        }
+        DecodedSourceKind::GroupValue => {
             read_ext_fields("group value", inputs.group_values, source.offset)
         }
-        BufferKind::Challenge => read_ext_fields("challenge", inputs.challenges, source.offset),
-        BufferKind::Evaluation => read_ext_fields("evaluation", inputs.evaluations, source.offset),
+        DecodedSourceKind::Challenge => {
+            read_ext_fields("challenge", inputs.challenges, source.offset)
+        }
+        DecodedSourceKind::Evaluation => {
+            read_ext_fields("evaluation", inputs.evaluations, source.offset)
+        }
     }
 }
 
@@ -571,6 +752,9 @@ impl BufferLayout {
     }
 
     fn resolve(&self, buffer: u16) -> Result<BufferKind, RegularConstraintEvalError> {
+        #[cfg(test)]
+        BUFFER_RESOLVE_COUNT.with(|count| count.set(count.get() + 1));
+
         let buffer = buffer as usize;
         if buffer == 0 {
             return Ok(BufferKind::Fixed);
@@ -610,6 +794,11 @@ impl BufferLayout {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static BUFFER_RESOLVE_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
 fn find_stage_columns(
     inputs: RegularConstraintInputs<'_>,
     stage_index: u16,
@@ -625,24 +814,31 @@ fn find_stage_columns(
         .ok_or(RegularConstraintEvalError::MissingStageColumns { stage_index })
 }
 
-fn source_row(
+fn source_row_offset(
     source: SourceRef,
-    row: usize,
     inputs: RegularConstraintInputs<'_>,
-) -> Result<usize, RegularConstraintEvalError> {
-    let offset = inputs
+) -> Result<i64, RegularConstraintEvalError> {
+    inputs
         .opening_point_offsets
         .get(source.row_offset_index)
+        .copied()
         .ok_or(RegularConstraintEvalError::SourceIndexOutOfRange {
             buffer: "opening point",
             offset: source.row_offset_index,
             width: 1,
             len: inputs.opening_point_offsets.len(),
-        })?;
-    let domain_size = i128::try_from(inputs.domain_size)
-        .map_err(|_| RegularConstraintEvalError::LengthOverflow)?;
+        })
+}
+
+fn source_row_with_offset(
+    row: usize,
+    row_offset: i64,
+    domain_size: usize,
+) -> Result<usize, RegularConstraintEvalError> {
+    let domain_size =
+        i128::try_from(domain_size).map_err(|_| RegularConstraintEvalError::LengthOverflow)?;
     let shifted = i128::try_from(row).map_err(|_| RegularConstraintEvalError::LengthOverflow)?
-        + i128::from(*offset);
+        + i128::from(row_offset);
     Ok(shifted.rem_euclid(domain_size) as usize)
 }
 
@@ -895,4 +1091,56 @@ fn scalar_ext(value: Felt) -> Ext3 {
 
 fn to_usize(value: u32) -> Result<usize, RegularConstraintEvalError> {
     usize::try_from(value).map_err(|_| RegularConstraintEvalError::LengthOverflow)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn regular_constraint_buffer_resolution_is_per_source_not_per_row() {
+        let program = ConstraintProgram {
+            entries: vec![ConstraintEntry {
+                stage: 1,
+                destination_dimension: 1,
+                destination_id: 0,
+                first_row: 0,
+                last_row: 8,
+                temp1_count: 1,
+                temp3_count: 0,
+                ops_count: 1,
+                ops_offset: 0,
+                args_count: 8,
+                args_offset: 0,
+                intermediate: false,
+                source_line: "layout resolution residual".to_owned(),
+            }],
+            ops: vec![0],
+            args: vec![1, 0, 0, 0, 0, 8, 0, 0],
+            numbers: vec![3],
+        };
+        let fixed = vec![Felt::from_u64(3); 8];
+
+        BUFFER_RESOLVE_COUNT.with(|count| count.set(0));
+        let results = evaluate_regular_constraints(
+            &program,
+            RegularConstraintInputs {
+                domain_size: 8,
+                stage_count: 1,
+                fixed_columns: RegularColumnMatrix {
+                    column_count: 1,
+                    values: &fixed,
+                },
+                opening_point_offsets: &[0],
+                ..RegularConstraintInputs::default()
+            },
+        )
+        .expect("regular constraint should evaluate");
+
+        assert_eq!(results[0].invalid_rows, Vec::new());
+        assert!(
+            BUFFER_RESOLVE_COUNT.with(Cell::get) <= 2,
+            "buffer layout should be resolved once per operation source"
+        );
+    }
 }

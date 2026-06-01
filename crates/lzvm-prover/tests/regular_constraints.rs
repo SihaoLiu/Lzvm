@@ -297,6 +297,59 @@ fn applies_opening_point_row_offsets_cyclically() {
     );
 }
 
+#[test]
+fn reports_first_executed_source_error_before_later_source_decode_error() {
+    let program = ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 1,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 2,
+            ops_offset: 0,
+            args_count: 16,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "source error precedence residual".to_owned(),
+        }],
+        ops: vec![0, 0],
+        args: vec![
+            0, 0, 0, 1, 0, 8, 0, 0, //
+            0, 0, 1, 0, 0, 8, 0, 0,
+        ],
+        numbers: vec![0],
+    };
+    let fixed = [felt(7)];
+
+    let error = evaluate_regular_constraints(
+        &program,
+        RegularConstraintInputs {
+            domain_size: 1,
+            stage_count: 1,
+            fixed_columns: RegularColumnMatrix {
+                column_count: 1,
+                values: &fixed,
+            },
+            opening_point_offsets: &[0],
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect_err("first executed source error should be reported first");
+
+    assert_eq!(
+        error,
+        RegularConstraintEvalError::SourceIndexOutOfRange {
+            buffer: "column matrix",
+            offset: 1,
+            width: 1,
+            len: 1,
+        }
+    );
+}
+
 fn felt(value: u64) -> Felt {
     Felt::from_u64(value)
 }
