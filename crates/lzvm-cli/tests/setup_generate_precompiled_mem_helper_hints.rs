@@ -64,6 +64,44 @@ fn precompiled_mem_source() -> &'static str {
      col fixed main.left = [5, 1];"
 }
 
+fn positional_precompiled_mem_source() -> &'static str {
+    "const int MEMORY_ID = 10;\n\
+     const int MEMORY_LOAD_OP = 1;\n\
+     const int MEMORY_STORE_OP = 2;\n\
+     const int RESERVED_MEM_STEPS = 1;\n\
+     const int MAX_MEM_STEPS_PER_MAIN_STEP = 4;\n\
+     airtemplate UnitA() {\n\
+         col witness main_step;\n\
+         col witness is_write;\n\
+         col witness addr;\n\
+         col witness value[2];\n\
+         col witness selector;\n\
+         precompiled_mem_proves(MEMORY_ID, addr, main_step, value, selector, is_write);\n\
+         precompiled_mem_op(addr: addr, main_step: main_step, value: value, sel: selector, is_write: is_write);\n\
+     }\n\
+     airgroup GroupA { UnitA(); }\n\
+     col fixed main.left = [5, 1];"
+}
+
+fn positional_precompiled_mem_op_source() -> &'static str {
+    "const int MEMORY_ID = 10;\n\
+     const int MEMORY_LOAD_OP = 1;\n\
+     const int MEMORY_STORE_OP = 2;\n\
+     const int RESERVED_MEM_STEPS = 1;\n\
+     const int MAX_MEM_STEPS_PER_MAIN_STEP = 4;\n\
+     airtemplate UnitA() {\n\
+         col witness main_step;\n\
+         col witness is_write;\n\
+         col witness addr;\n\
+         col witness value[2];\n\
+         col witness selector;\n\
+         precompiled_mem_proves(addr: addr, main_step: main_step, value: value, sel: selector, is_write: is_write);\n\
+         precompiled_mem_op(MEMORY_ID, addr, main_step, value, selector, is_write);\n\
+     }\n\
+     airgroup GroupA { UnitA(); }\n\
+     col fixed main.left = [5, 1];"
+}
+
 fn generate_key(source: &str, dir: &Path) -> (i32, Vec<u8>, Vec<u8>) {
     let source_path = dir.join("source").join("main.pil");
     write_file(&source_path, source);
@@ -243,6 +281,40 @@ fn generate_key_lowers_precompiled_mem_proves_helper() {
             row_offset_index: 0
         }
     );
+}
+
+#[test]
+fn positional_precompiled_mem_proves_uses_write_flag() {
+    let dir = temp_dir("positional-precompiled-mem-proves-helper");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(&dir, positional_precompiled_mem_source());
+
+    let trace_values = &[3, 1, 96, 0xffff_ffff, 0, 2, 4, 0, 128, 7, 0, 2];
+    let (code, stdout, stderr) = run_witness(&dir, trace_values);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .starts_with("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn positional_precompiled_mem_op_uses_write_flag() {
+    let dir = temp_dir("positional-precompiled-mem-op-helper");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(&dir, positional_precompiled_mem_op_source());
+
+    let trace_values = &[3, 1, 96, 0xffff_ffff, 0, 2, 4, 0, 128, 7, 0, 2];
+    let (code, stdout, stderr) = run_witness(&dir, trace_values);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .starts_with("status=ok\n"));
+    assert!(stderr.is_empty());
 }
 
 #[test]

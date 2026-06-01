@@ -88,8 +88,7 @@ pub(super) fn source_memory_helper_lookup_line(
             let main_step = source_helper_argument(line, tokens, arguments, "main_step", 2, None)?;
             let value = source_helper_argument(line, tokens, arguments, "value", 3, None)?;
             let sel = source_helper_argument(line, tokens, arguments, "sel", 4, Some("1"))?;
-            let is_write =
-                source_helper_argument(line, tokens, arguments, "is_write", 6, Some("0"))?;
+            let is_write = source_precompiled_mem_is_write(line, tokens, arguments)?;
             let op = format!("{is_write} * (MEMORY_STORE_OP - MEMORY_LOAD_OP) + MEMORY_LOAD_OP");
             let mem_step = source_precompiled_mem_step(&main_step, &is_write);
             let values = source_helper_value_list(&value);
@@ -102,8 +101,7 @@ pub(super) fn source_memory_helper_lookup_line(
             let main_step = source_helper_argument(line, tokens, arguments, "main_step", 2, None)?;
             let value = source_helper_argument(line, tokens, arguments, "value", 3, None)?;
             let sel = source_helper_argument(line, tokens, arguments, "sel", 4, Some("1"))?;
-            let is_write =
-                source_helper_argument(line, tokens, arguments, "is_write", 6, Some("0"))?;
+            let is_write = source_precompiled_mem_is_write(line, tokens, arguments)?;
             let op = format!("{is_write} * (MEMORY_STORE_OP - MEMORY_LOAD_OP) + MEMORY_LOAD_OP");
             let mem_step = source_precompiled_mem_step(&main_step, &is_write);
             let values = source_helper_value_list(&value);
@@ -120,6 +118,26 @@ pub(super) fn source_memory_helper_lookup_line(
         }
         _ => None,
     }
+}
+
+fn source_precompiled_mem_is_write(
+    line: &str,
+    tokens: &[Token],
+    arguments: &[SourceLookupArgument],
+) -> Option<String> {
+    let positional_count = arguments
+        .iter()
+        .filter(|argument| argument.name.is_none())
+        .count();
+    let positional_index = if positional_count >= 7 { 6 } else { 5 };
+    source_helper_argument(
+        line,
+        tokens,
+        arguments,
+        "is_write",
+        positional_index,
+        Some("0"),
+    )
 }
 
 fn source_precompiled_mem_step(main_step: &str, is_write: &str) -> String {
