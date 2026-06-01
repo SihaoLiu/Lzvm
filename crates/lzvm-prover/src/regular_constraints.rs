@@ -278,18 +278,42 @@ fn evaluate_entry(
     }
 
     let prepared_operations = prepared_operations(&mut context)?;
-    for row in active_rows {
-        let value = evaluate_prepared_row(
-            row,
-            entry,
-            &prepared_operations,
-            program,
-            inputs,
-            &mut tmp1,
-            &mut tmp3,
-        )?;
-        if value != Ext3::ZERO {
-            invalid_rows.push(RegularConstraintViolation { row, value });
+    if let Some(base_operations) =
+        prepared_base_operations(entry, &prepared_operations, program, inputs)?
+    {
+        for row in active_rows {
+            #[cfg(test)]
+            BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(count.get() + 1));
+
+            let value = evaluate_prepared_base_row(
+                row,
+                entry,
+                &base_operations,
+                inputs.domain_size,
+                &mut tmp1,
+                &mut tmp3,
+            );
+            if value != Felt::ZERO {
+                invalid_rows.push(RegularConstraintViolation {
+                    row,
+                    value: scalar_ext(value),
+                });
+            }
+        }
+    } else {
+        for row in active_rows {
+            let value = evaluate_prepared_row(
+                row,
+                entry,
+                &prepared_operations,
+                program,
+                inputs,
+                &mut tmp1,
+                &mut tmp3,
+            )?;
+            if value != Ext3::ZERO {
+                invalid_rows.push(RegularConstraintViolation { row, value });
+            }
         }
     }
 
@@ -399,6 +423,33 @@ struct PreparedOperation<'input> {
     destination_offset: usize,
     src0: DecodedSource<'input>,
     src1: DecodedSource<'input>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreparedBaseOperation<'input> {
+    kind: u16,
+    destination_offset: usize,
+    src0: PreparedBaseSource<'input>,
+    src1: PreparedBaseSource<'input>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PreparedBaseSource<'input> {
+    Matrix {
+        values: &'input [Felt],
+        column_count: usize,
+        column: usize,
+        row_offset: usize,
+    },
+    DomainPoint(&'input [Felt]),
+    Zerofier {
+        values: &'input [Felt],
+        column_count: usize,
+        column: usize,
+    },
+    Tmp1(usize),
+    Tmp3(usize),
+    Constant(Felt),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -544,6 +595,178 @@ fn prepared_operations<'input>(
         });
     }
     Ok(operations)
+}
+
+fn prepared_base_operations<'input>(
+    entry: &ConstraintEntry,
+    operations: &[PreparedOperation<'input>],
+    program: &ConstraintProgram,
+    inputs: RegularConstraintInputs<'input>,
+) -> Result<Option<Vec<PreparedBaseOperation<'input>>>, RegularConstraintEvalError> {
+    if entry.destination_dimension != 1 {
+        return Ok(None);
+    }
+
+    let tmp1_len = to_usize(entry.temp1_count)?;
+    let tmp3_len = to_usize(entry.temp3_count)?
+        .checked_mul(3)
+        .ok_or(RegularConstraintEvalError::LengthOverflow)?;
+    let destination_index = to_usize(entry.destination_id)?;
+    validate_felt_index("tmp1", tmp1_len, destination_index)?;
+
+    let mut base_operations = Vec::with_capacity(operations.len());
+    for operation in operations {
+        if operation.shape != OperationShape::BaseBase {
+            return Ok(None);
+        }
+        validate_felt_index("tmp1", tmp1_len, operation.destination_offset)?;
+        base_operations.push(PreparedBaseOperation {
+            kind: operation.kind,
+            destination_offset: operation.destination_offset,
+            src0: prepared_base_source(operation.src0, program, inputs, tmp1_len, tmp3_len)?,
+            src1: prepared_base_source(operation.src1, program, inputs, tmp1_len, tmp3_len)?,
+        });
+    }
+    Ok(Some(base_operations))
+}
+
+fn prepared_base_source<'input>(
+    source: DecodedSource<'input>,
+    program: &ConstraintProgram,
+    inputs: RegularConstraintInputs<'input>,
+    tmp1_len: usize,
+    tmp3_len: usize,
+) -> Result<PreparedBaseSource<'input>, RegularConstraintEvalError> {
+    Ok(match source.kind {
+        DecodedSourceKind::Fixed(matrix)
+        | DecodedSourceKind::Stage(matrix)
+        | DecodedSourceKind::CustomFixed(matrix) => {
+            validate_matrix_source(matrix, source.offset, 1, inputs.domain_size)?;
+            PreparedBaseSource::Matrix {
+                values: matrix.values,
+                column_count: matrix.column_count,
+                column: source.offset,
+                row_offset: source.row_offset,
+            }
+        }
+        DecodedSourceKind::DomainOrZerofier if source.offset == 0 => {
+            if inputs.domain_points.len() < inputs.domain_size {
+                return Err(RegularConstraintEvalError::SourceIndexOutOfRange {
+                    buffer: "domain point",
+                    offset: inputs.domain_points.len(),
+                    width: inputs
+                        .domain_size
+                        .saturating_sub(inputs.domain_points.len()),
+                    len: inputs.domain_points.len(),
+                });
+            }
+            PreparedBaseSource::DomainPoint(inputs.domain_points)
+        }
+        DecodedSourceKind::DomainOrZerofier => {
+            validate_matrix_source(
+                inputs.zerofier_values,
+                source.offset - 1,
+                1,
+                inputs.domain_size,
+            )?;
+            PreparedBaseSource::Zerofier {
+                values: inputs.zerofier_values.values,
+                column_count: inputs.zerofier_values.column_count,
+                column: source.offset - 1,
+            }
+        }
+        DecodedSourceKind::Tmp1 => {
+            validate_felt_index("tmp1", tmp1_len, source.offset)?;
+            PreparedBaseSource::Tmp1(source.offset)
+        }
+        DecodedSourceKind::Tmp3 => {
+            validate_felt_index("tmp3", tmp3_len, source.offset)?;
+            PreparedBaseSource::Tmp3(source.offset)
+        }
+        DecodedSourceKind::Public => {
+            PreparedBaseSource::Constant(read_felt("public", inputs.publics, source.offset)?)
+        }
+        DecodedSourceKind::Number => {
+            PreparedBaseSource::Constant(read_number(program, source.offset)?)
+        }
+        DecodedSourceKind::UnitValue => PreparedBaseSource::Constant(read_felt(
+            "unit value",
+            inputs.unit_values,
+            source.offset,
+        )?),
+        DecodedSourceKind::ProofValue => PreparedBaseSource::Constant(read_felt(
+            "proof value",
+            inputs.proof_values,
+            source.offset,
+        )?),
+        DecodedSourceKind::GroupValue => PreparedBaseSource::Constant(read_ext_field(
+            "group value",
+            inputs.group_values,
+            source.offset,
+        )?),
+        DecodedSourceKind::Challenge => PreparedBaseSource::Constant(read_ext_field(
+            "challenge",
+            inputs.challenges,
+            source.offset,
+        )?),
+        DecodedSourceKind::Evaluation => PreparedBaseSource::Constant(read_ext_field(
+            "evaluation",
+            inputs.evaluations,
+            source.offset,
+        )?),
+    })
+}
+
+fn validate_matrix_source(
+    matrix: RegularColumnMatrix<'_>,
+    column: usize,
+    width: usize,
+    domain_size: usize,
+) -> Result<(), RegularConstraintEvalError> {
+    if column
+        .checked_add(width)
+        .is_none_or(|end| end > matrix.column_count)
+    {
+        return Err(RegularConstraintEvalError::SourceIndexOutOfRange {
+            buffer: "column matrix",
+            offset: column,
+            width,
+            len: matrix.column_count,
+        });
+    }
+    if domain_size != 0 {
+        let last_row = domain_size - 1;
+        let last_index = last_row
+            .checked_mul(matrix.column_count)
+            .and_then(|base| base.checked_add(column + width - 1))
+            .ok_or(RegularConstraintEvalError::LengthOverflow)?;
+        if last_index >= matrix.values.len() {
+            return Err(RegularConstraintEvalError::SourceIndexOutOfRange {
+                buffer: "column matrix",
+                offset: last_index,
+                width: 1,
+                len: matrix.values.len(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_felt_index(
+    buffer: &'static str,
+    len: usize,
+    offset: usize,
+) -> Result<(), RegularConstraintEvalError> {
+    if offset < len {
+        Ok(())
+    } else {
+        Err(RegularConstraintEvalError::SourceIndexOutOfRange {
+            buffer,
+            offset,
+            width: 1,
+            len,
+        })
+    }
 }
 
 fn prepared_source<'input>(
@@ -732,6 +955,83 @@ fn evaluate_prepared_row(
     read_destination(entry, tmp1, tmp3)
 }
 
+fn evaluate_prepared_base_row(
+    row: usize,
+    entry: &ConstraintEntry,
+    operations: &[PreparedBaseOperation<'_>],
+    domain_size: usize,
+    tmp1: &mut [Felt],
+    tmp3: &mut [Felt],
+) -> Felt {
+    tmp1.fill(Felt::ZERO);
+    tmp3.fill(Felt::ZERO);
+
+    for operation in operations {
+        let left = read_prepared_base(operation.src0, row, domain_size, tmp1, tmp3);
+        let right = read_prepared_base(operation.src1, row, domain_size, tmp1, tmp3);
+        tmp1[operation.destination_offset] = apply_prepared_base_op(operation.kind, left, right);
+    }
+
+    tmp1[to_usize(entry.destination_id).expect("destination index was prepared")]
+}
+
+#[inline(always)]
+fn apply_prepared_base_op(kind: u16, left: Felt, right: Felt) -> Felt {
+    match kind {
+        0 => left + right,
+        1 => left - right,
+        2 => left * right,
+        3 => right - left,
+        _ => unreachable!("operation kind was validated by the first row"),
+    }
+}
+
+#[inline(always)]
+fn read_prepared_base(
+    source: PreparedBaseSource<'_>,
+    row: usize,
+    domain_size: usize,
+    tmp1: &[Felt],
+    tmp3: &[Felt],
+) -> Felt {
+    match source {
+        PreparedBaseSource::Matrix {
+            values,
+            column_count,
+            column,
+            row_offset,
+        } => {
+            let row = source_row_with_offset_prepared(row, row_offset, domain_size);
+            values[row * column_count + column]
+        }
+        PreparedBaseSource::DomainPoint(values) => values[row],
+        PreparedBaseSource::Zerofier {
+            values,
+            column_count,
+            column,
+        } => values[row * column_count + column],
+        PreparedBaseSource::Tmp1(offset) => tmp1[offset],
+        PreparedBaseSource::Tmp3(offset) => tmp3[offset],
+        PreparedBaseSource::Constant(value) => value,
+    }
+}
+
+#[inline(always)]
+fn source_row_with_offset_prepared(row: usize, row_offset: usize, domain_size: usize) -> usize {
+    if row < domain_size && row_offset < domain_size {
+        if row_offset == 0 {
+            return row;
+        }
+        let wrap_at = domain_size - row_offset;
+        if row < wrap_at {
+            return row + row_offset;
+        } else {
+            return row - wrap_at;
+        }
+    }
+    ((row as u128 + row_offset as u128) % domain_size as u128) as usize
+}
+
 fn read_base(
     source: DecodedSource<'_>,
     row: usize,
@@ -912,6 +1212,7 @@ impl BufferLayout {
 thread_local! {
     static BUFFER_RESOLVE_COUNT: Cell<usize> = const { Cell::new(0) };
     static CACHED_SOURCE_COUNT: Cell<usize> = const { Cell::new(0) };
+    static BASE_ONLY_PREPARED_ROW_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 fn find_stage_columns(
@@ -1294,5 +1595,103 @@ mod tests {
     fn source_row_offset_fallback_wraps_out_of_range_rows() {
         assert_eq!(source_row_with_offset(5, 0, 3).expect("row should wrap"), 2);
         assert_eq!(source_row_with_offset(5, 1, 3).expect("row should wrap"), 0);
+    }
+
+    #[test]
+    fn prepared_source_row_offset_matches_fallback_wrap() {
+        assert_eq!(source_row_with_offset_prepared(5, 0, 3), 2);
+        assert_eq!(source_row_with_offset_prepared(5, 1, 3), 0);
+        assert_eq!(source_row_with_offset_prepared(1, 9, 8), 2);
+    }
+
+    #[test]
+    fn base_only_regular_constraints_use_prepared_rows_after_first_row() {
+        let program = ConstraintProgram {
+            entries: vec![ConstraintEntry {
+                stage: 1,
+                destination_dimension: 1,
+                destination_id: 0,
+                first_row: 0,
+                last_row: 8,
+                temp1_count: 2,
+                temp3_count: 0,
+                ops_count: 2,
+                ops_offset: 0,
+                args_count: 16,
+                args_offset: 0,
+                intermediate: false,
+                source_line: "base-only prepared rows".to_owned(),
+            }],
+            ops: vec![0, 0],
+            args: vec![2, 1, 0, 0, 0, 8, 0, 0, 1, 0, 5, 1, 0, 8, 1, 0],
+            numbers: vec![3, 9],
+        };
+        let fixed = vec![Felt::from_u64(3); 8];
+
+        BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
+        let results = evaluate_regular_constraints(
+            &program,
+            RegularConstraintInputs {
+                domain_size: 8,
+                stage_count: 1,
+                fixed_columns: RegularColumnMatrix {
+                    column_count: 1,
+                    values: &fixed,
+                },
+                opening_point_offsets: &[0],
+                ..RegularConstraintInputs::default()
+            },
+        )
+        .expect("regular constraint should evaluate");
+
+        assert_eq!(results[0].invalid_rows, Vec::new());
+        assert_eq!(BASE_ONLY_PREPARED_ROW_COUNT.with(Cell::get), 7);
+    }
+
+    #[test]
+    fn base_only_regular_constraints_validate_kind_before_prepared_rows() {
+        let program = ConstraintProgram {
+            entries: vec![ConstraintEntry {
+                stage: 1,
+                destination_dimension: 1,
+                destination_id: 0,
+                first_row: 0,
+                last_row: 8,
+                temp1_count: 1,
+                temp3_count: 0,
+                ops_count: 1,
+                ops_offset: 0,
+                args_count: 8,
+                args_offset: 0,
+                intermediate: false,
+                source_line: "base-only invalid operation".to_owned(),
+            }],
+            ops: vec![0],
+            args: vec![9, 0, 0, 0, 0, 8, 0, 0],
+            numbers: vec![3],
+        };
+        let fixed = vec![Felt::from_u64(3); 8];
+
+        BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
+        let error = evaluate_regular_constraints(
+            &program,
+            RegularConstraintInputs {
+                domain_size: 8,
+                stage_count: 1,
+                fixed_columns: RegularColumnMatrix {
+                    column_count: 1,
+                    values: &fixed,
+                },
+                opening_point_offsets: &[0],
+                ..RegularConstraintInputs::default()
+            },
+        )
+        .expect_err("unsupported operation kind should fail before prepared rows");
+
+        assert_eq!(
+            error,
+            RegularConstraintEvalError::UnsupportedOperationKind { kind: 9 }
+        );
+        assert_eq!(BASE_ONLY_PREPARED_ROW_COUNT.with(Cell::get), 0);
     }
 }
