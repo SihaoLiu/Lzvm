@@ -1,11 +1,13 @@
 use std::fmt;
 
-use crate::guest_instruction::{RiscvInstruction, RiscvPrecompileKind};
+use crate::guest_instruction::{
+    RiscvDmaKind, RiscvInstruction, RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind,
+};
 use crate::guest_machine::{
-    run_guest_machine_trace_slice_with_fcalls, run_guest_machine_trace_with_fcalls,
-    GuestDmaProofValueFlags, GuestMachineHalt, GuestMachineMemory, GuestMachineReport,
-    GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus, GuestMemoryAccess,
-    GuestMemoryAccessKind, GuestRegisterWrite,
+    decode_current_guest_instruction, run_guest_machine_trace_slice_with_fcalls,
+    run_guest_machine_trace_with_fcalls, GuestDmaProofValueFlags, GuestMachineHalt,
+    GuestMachineMemory, GuestMachineReport, GuestMachineRunError, GuestMachineState,
+    GuestMachineTraceSliceStatus, GuestMemoryAccess, GuestMemoryAccessKind, GuestRegisterWrite,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{WitnessTraceBuildError, WitnessTraceLayout};
@@ -19,7 +21,7 @@ use crate::witness_runner::{
 use crate::witness_trace::parse_witness_trace;
 use crate::zisk_main::{
     lower_guest_report, ZiskMainInstruction, ZiskMainLowerError, ZiskMainOp, ZiskMainSource,
-    ZiskMainStore,
+    ZiskMainStore, ZISK_EXTRA_PARAMS_ADDRESS,
 };
 use lzvm_field::{Felt, FieldError};
 
@@ -494,9 +496,16 @@ fn compute_guest_pc_trace_segments(
             .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "guest instruction count overflow".to_owned(),
             })?;
-        let (halted, terminal_pc) = match slice.status {
-            GuestMachineTraceSliceStatus::Halted(halt) => (true, guest_machine_halt_pc(&halt)),
-            GuestMachineTraceSliceStatus::Paused { pc } => (false, pc),
+        let (halted, terminal_pc, lookahead_instruction) = match slice.status {
+            GuestMachineTraceSliceStatus::Halted(halt) => {
+                (true, guest_machine_halt_pc(&halt), None)
+            }
+            GuestMachineTraceSliceStatus::Paused { pc } => {
+                let instruction = decode_current_guest_instruction(&memory, pc)
+                    .map_err(GuestMachineRunError::from)
+                    .map_err(GuestPcTraceBackendError::GuestRun)?;
+                (false, pc, Some(instruction))
+            }
         };
         let needs_terminal_segment = halted && slice.reports.len() == row_count;
         let is_last_segment = halted && !needs_terminal_segment;
@@ -520,6 +529,7 @@ fn compute_guest_pc_trace_segments(
             terminal_pc,
             &mut bytes,
             &trace_state,
+            lookahead_instruction,
             ZiskMainTraceSegmentInfo {
                 trace_instance_index,
                 is_last_segment,
@@ -744,6 +754,10 @@ impl ZiskMainTraceColumns {
     fn has_required_b_memory_source_columns(&self) -> bool {
         self.b_src_mem.is_some() && self.b_offset_imm0.is_some()
     }
+
+    fn has_required_memory_store_columns(&self) -> bool {
+        self.store_mem.is_some() && self.store_offset.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -758,8 +772,15 @@ struct ExpectedMemoryAccess {
 struct ZiskMainTraceState {
     registers: [u64; 32],
     register_mem_steps: [u64; 32],
+    pending_dma: Option<ZiskMainPendingDma>,
     last_c: u64,
     next_pc: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ZiskMainPendingDma {
+    kind: RiscvDmaKind,
+    first_arg_reg: u8,
 }
 
 impl ZiskMainTraceState {
@@ -767,6 +788,7 @@ impl ZiskMainTraceState {
         Self {
             registers: [0; 32],
             register_mem_steps: [0; 32],
+            pending_dma: None,
             last_c: 0,
             next_pc: 0,
         }
@@ -795,6 +817,12 @@ struct ZiskMainReportTraceValues {
     register_accesses: ZiskMainRegisterAccessValues,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ZiskMainReportWindow<'a> {
+    current: &'a GuestMachineReport,
+    next_instruction: Option<RiscvInstruction>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ZiskMainRegisterAccessValues {
     a_prev_mem_step: Option<u64>,
@@ -812,13 +840,14 @@ struct ZiskMainRegisterAccessUpdate {
 fn validate_and_apply_zisk_main_report(
     row: usize,
     report: &GuestMachineReport,
+    next_instruction: Option<RiscvInstruction>,
     state: &mut ZiskMainTraceState,
     columns: Option<&ZiskMainTraceColumns>,
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
 ) -> Result<ZiskMainReportTraceValues, GuestPcTraceBackendError> {
-    let instruction = lower_guest_report(report)
-        .map_err(|source| GuestPcTraceBackendError::ZiskMainLower { row, source })?;
+    let consumed_pending_dma = state.pending_dma.is_some();
+    let instruction = lower_stateful_zisk_main_report(row, report, next_instruction, state)?;
     if let Some(columns) = columns {
         validate_zisk_main_memory_columns(row, &instruction, columns)?;
     }
@@ -839,6 +868,11 @@ fn validate_and_apply_zisk_main_report(
     validate_zisk_main_memory_accesses(row, &instruction, report, a, c, a_access, b_access)?;
     apply_zisk_main_store(row, &instruction, c, report, state)?;
     state.register_mem_steps = register_accesses.next_mem_steps;
+    state.pending_dma = if consumed_pending_dma {
+        None
+    } else {
+        zisk_main_pending_dma(report)
+    };
     Ok(ZiskMainReportTraceValues {
         instruction,
         a,
@@ -847,6 +881,239 @@ fn validate_and_apply_zisk_main_report(
         flag,
         register_accesses: register_accesses.values,
     })
+}
+
+fn lower_stateful_zisk_main_report(
+    row: usize,
+    report: &GuestMachineReport,
+    next_instruction: Option<RiscvInstruction>,
+    state: &ZiskMainTraceState,
+) -> Result<ZiskMainInstruction, GuestPcTraceBackendError> {
+    if let Some(pending) = state.pending_dma {
+        return lower_pending_dma_report(row, report, pending);
+    }
+    let instruction = lower_guest_report(report)
+        .map_err(|source| GuestPcTraceBackendError::ZiskMainLower { row, source })?;
+    if let RiscvInstruction::ZiskDmaPrepare { kind, .. } = report.instruction {
+        return lower_dma_prepare_report(row, instruction, kind, next_instruction);
+    }
+    Ok(instruction)
+}
+
+fn lower_dma_prepare_report(
+    row: usize,
+    mut instruction: ZiskMainInstruction,
+    kind: RiscvDmaKind,
+    next_instruction: Option<RiscvInstruction>,
+) -> Result<ZiskMainInstruction, GuestPcTraceBackendError> {
+    if matches!(kind, RiscvDmaKind::Memcpy | RiscvDmaKind::Memcmp) {
+        if let Some(RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rs2,
+            ..
+        }) = next_instruction
+        {
+            instruction.a = ZiskMainSource::Immediate(0);
+            instruction.b = zisk_main_register_source(rs2);
+            instruction.store = ZiskMainStore::Memory(ZISK_EXTRA_PARAMS_ADDRESS as i64);
+            instruction.jmp_offset1 = 0;
+            return Ok(instruction);
+        }
+    }
+    if next_instruction.is_none() {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: "DMA prepare row is missing the following execute row".to_owned(),
+        });
+    }
+    Ok(instruction)
+}
+
+fn lower_pending_dma_report(
+    row: usize,
+    report: &GuestMachineReport,
+    pending: ZiskMainPendingDma,
+) -> Result<ZiskMainInstruction, GuestPcTraceBackendError> {
+    let instruction_size = zisk_main_report_instruction_size(row, report)?;
+    match report.instruction {
+        RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd,
+            rs1,
+            rs2,
+        } => Ok(lower_pending_dma_add(
+            report.address,
+            instruction_size,
+            pending,
+            rd,
+            rs1,
+            rs2,
+        )),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd,
+            rs1,
+            immediate,
+        } => Ok(lower_pending_dma_addi(
+            report.address,
+            instruction_size,
+            pending,
+            rd,
+            rs1,
+            immediate,
+        )),
+        instruction => Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!("DMA prepare is followed by unsupported instruction {instruction:?}"),
+        }),
+    }
+}
+
+fn lower_pending_dma_add(
+    pc: u64,
+    instruction_size: i64,
+    pending: ZiskMainPendingDma,
+    rd: u8,
+    rs1: u8,
+    rs2: u8,
+) -> ZiskMainInstruction {
+    let mut instruction = zisk_main_base_instruction(
+        pc,
+        zisk_main_register_source(rs1),
+        dma_register_b_source(pending, rs2),
+        dma_register_op(pending.kind),
+        zisk_main_register_store(rd),
+        instruction_size,
+    );
+    if pending.kind == RiscvDmaKind::Memset {
+        instruction.jmp_offset1 = 0;
+    }
+    instruction
+}
+
+fn lower_pending_dma_addi(
+    pc: u64,
+    instruction_size: i64,
+    pending: ZiskMainPendingDma,
+    rd: u8,
+    rs1: u8,
+    immediate: i64,
+) -> ZiskMainInstruction {
+    let (a, b, op, jmp_offset1) = match pending.kind {
+        RiscvDmaKind::Memcpy => (
+            zisk_main_register_source(rs1),
+            zisk_main_register_source(pending.first_arg_reg),
+            ZiskMainOp::DmaXMemCpy,
+            immediate,
+        ),
+        RiscvDmaKind::Memcmp => (
+            zisk_main_register_source(rs1),
+            zisk_main_register_source(pending.first_arg_reg),
+            ZiskMainOp::DmaXMemCmp,
+            immediate,
+        ),
+        RiscvDmaKind::Inputcpy => (
+            zisk_main_register_source(rs1),
+            ZiskMainSource::Immediate(immediate as u64),
+            ZiskMainOp::DmaInputCpy,
+            instruction_size,
+        ),
+        RiscvDmaKind::Memset => (
+            zisk_main_register_source(pending.first_arg_reg),
+            zisk_main_register_source(rs1),
+            ZiskMainOp::DmaXMemSet,
+            i64::from(immediate as u8),
+        ),
+    };
+    let mut instruction =
+        zisk_main_base_instruction(pc, a, b, op, zisk_main_register_store(rd), instruction_size);
+    instruction.jmp_offset1 = jmp_offset1;
+    instruction
+}
+
+fn dma_register_b_source(pending: ZiskMainPendingDma, count_reg: u8) -> ZiskMainSource {
+    match pending.kind {
+        RiscvDmaKind::Memcpy | RiscvDmaKind::Memcmp => {
+            zisk_main_register_source(pending.first_arg_reg)
+        }
+        RiscvDmaKind::Inputcpy | RiscvDmaKind::Memset => zisk_main_register_source(count_reg),
+    }
+}
+
+fn dma_register_op(kind: RiscvDmaKind) -> ZiskMainOp {
+    match kind {
+        RiscvDmaKind::Memcpy => ZiskMainOp::DmaMemCpy,
+        RiscvDmaKind::Memcmp => ZiskMainOp::DmaMemCmp,
+        RiscvDmaKind::Inputcpy => ZiskMainOp::DmaInputCpy,
+        RiscvDmaKind::Memset => ZiskMainOp::DmaXMemSet,
+    }
+}
+
+fn zisk_main_pending_dma(report: &GuestMachineReport) -> Option<ZiskMainPendingDma> {
+    match report.instruction {
+        RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Some(ZiskMainPendingDma {
+            kind,
+            first_arg_reg: rs1,
+        }),
+        _ => None,
+    }
+}
+
+fn zisk_main_report_instruction_size(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<i64, GuestPcTraceBackendError> {
+    match report.instruction_byte_len {
+        2 | 4 => Ok(report.instruction_byte_len as i64),
+        byte_len => Err(GuestPcTraceBackendError::ZiskMainLower {
+            row,
+            source: ZiskMainLowerError::InvalidInstructionByteLen {
+                pc: report.address,
+                byte_len,
+            },
+        }),
+    }
+}
+
+fn zisk_main_base_instruction(
+    pc: u64,
+    a: ZiskMainSource,
+    b: ZiskMainSource,
+    op: ZiskMainOp,
+    store: ZiskMainStore,
+    instruction_size: i64,
+) -> ZiskMainInstruction {
+    ZiskMainInstruction {
+        pc,
+        a,
+        b,
+        op,
+        store,
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: instruction_size,
+        jmp_offset2: instruction_size,
+        ind_width: 0,
+        m32: false,
+        is_external_op: !matches!(op, ZiskMainOp::Flag | ZiskMainOp::CopyB),
+        is_precompiled: false,
+    }
+}
+
+fn zisk_main_register_source(index: u8) -> ZiskMainSource {
+    if index == 0 {
+        ZiskMainSource::Immediate(0)
+    } else {
+        ZiskMainSource::Register(index)
+    }
+}
+
+fn zisk_main_register_store(index: u8) -> ZiskMainStore {
+    if index == 0 {
+        ZiskMainStore::None
+    } else {
+        ZiskMainStore::Register(index)
+    }
 }
 
 fn zisk_main_register_access_values(
@@ -1001,6 +1268,7 @@ fn write_layout_zisk_main_trace(
         halt_pc,
         output,
         &ZiskMainTraceState::new(),
+        None,
         ZiskMainTraceSegmentInfo {
             trace_instance_index: 0,
             is_last_segment: true,
@@ -1019,6 +1287,7 @@ fn write_layout_zisk_main_trace_segment(
     terminal_pc: u64,
     output: &mut [u8],
     initial_state: &ZiskMainTraceState,
+    lookahead_instruction: Option<RiscvInstruction>,
     segment: ZiskMainTraceSegmentInfo,
 ) -> Result<Option<ZiskMainTraceSegmentWrite>, GuestPcTraceBackendError> {
     let Some(columns) = zisk_main_trace_columns(layout)? else {
@@ -1036,10 +1305,21 @@ fn write_layout_zisk_main_trace_segment(
         .map_err(GuestPcTraceBackendError::TraceBuild)?;
     let mut state = initial_state.clone();
     for (row, report) in reports.iter().enumerate() {
+        let next_instruction = reports
+            .get(row + 1)
+            .map(|next| next.instruction)
+            .or_else(|| {
+                (row + 1 == reports.len())
+                    .then_some(lookahead_instruction)
+                    .flatten()
+            });
         write_zisk_main_report_columns(
             &mut builder,
             row,
-            report,
+            ZiskMainReportWindow {
+                current: report,
+                next_instruction,
+            },
             &columns,
             &mut state,
             layout.row_count(),
@@ -1189,14 +1469,21 @@ fn proof_value_bool(name: &str, enabled: bool) -> WitnessTraceProofValue {
 fn write_zisk_main_report_columns(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
-    report: &GuestMachineReport,
+    reports: ZiskMainReportWindow<'_>,
     columns: &ZiskMainTraceColumns,
     state: &mut ZiskMainTraceState,
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
 ) -> Result<(), GuestPcTraceBackendError> {
-    let values =
-        validate_and_apply_zisk_main_report(row, report, state, Some(columns), row_count, segment)?;
+    let values = validate_and_apply_zisk_main_report(
+        row,
+        reports.current,
+        reports.next_instruction,
+        state,
+        Some(columns),
+        row_count,
+        segment,
+    )?;
     let instruction = values.instruction;
 
     write_wide_column(builder, row, &columns.a, values.a)?;
@@ -1419,11 +1706,17 @@ fn validate_zisk_main_memory_columns(
             ),
         });
     }
+    if matches!(instruction.store, ZiskMainStore::Memory(_))
+        && !columns.has_required_memory_store_columns()
+    {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "Zisk Main memory store rows require store_mem and store_offset columns at row {row}"
+            ),
+        });
+    }
     let uses_indirect_memory_row = matches!(instruction.b, ZiskMainSource::Indirect(_))
-        || matches!(
-            instruction.store,
-            ZiskMainStore::Indirect(_) | ZiskMainStore::Memory(_)
-        );
+        || matches!(instruction.store, ZiskMainStore::Indirect(_));
     if uses_indirect_memory_row && !columns.has_required_indirect_memory_columns() {
         return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: format!(
@@ -1741,7 +2034,13 @@ fn zisk_main_store_offset(
         ZiskMainStore::None => Ok(0),
         ZiskMainStore::Register(index) => Ok(i64::from(*index)),
         ZiskMainStore::Indirect(offset) => Ok(*offset),
-        ZiskMainStore::Memory(_) => Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row }),
+        ZiskMainStore::Memory(address) => {
+            if *address == ZISK_EXTRA_PARAMS_ADDRESS as i64 {
+                Ok(*address)
+            } else {
+                Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row })
+            }
+        }
     }
 }
 
@@ -1869,7 +2168,13 @@ fn zisk_main_op_result(op: ZiskMainOp, a: u64, b: u64) -> (u64, bool) {
         ZiskMainOp::SignExtendB => ((b as i8) as u64, false),
         ZiskMainOp::SignExtendH => ((b as i16) as u64, false),
         ZiskMainOp::SignExtendW => ((b as i32) as u64, false),
-        ZiskMainOp::Add256
+        ZiskMainOp::DmaMemCpy
+        | ZiskMainOp::DmaMemCmp
+        | ZiskMainOp::DmaInputCpy
+        | ZiskMainOp::DmaXMemCpy
+        | ZiskMainOp::DmaXMemCmp
+        | ZiskMainOp::DmaXMemSet
+        | ZiskMainOp::Add256
         | ZiskMainOp::Keccak
         | ZiskMainOp::Arith256
         | ZiskMainOp::Arith256Mod
@@ -1886,6 +2191,13 @@ fn zisk_main_instruction_result(
     report: &GuestMachineReport,
 ) -> Result<(u64, bool), GuestPcTraceBackendError> {
     match instruction.op {
+        ZiskMainOp::DmaMemCpy
+        | ZiskMainOp::DmaInputCpy
+        | ZiskMainOp::DmaXMemCpy
+        | ZiskMainOp::DmaXMemSet => zisk_main_dma_result(row, instruction, report, Some(a)),
+        ZiskMainOp::DmaMemCmp | ZiskMainOp::DmaXMemCmp => {
+            zisk_main_dma_result(row, instruction, report, None)
+        }
         ZiskMainOp::Add256 if instruction.is_precompiled => {
             zisk_main_add256_result(row, instruction, report)
         }
@@ -1899,6 +2211,60 @@ fn zisk_main_instruction_result(
             Ok((0, false))
         }
         _ => Ok(zisk_main_op_result(instruction.op, a, b)),
+    }
+}
+
+fn zisk_main_dma_result(
+    row: usize,
+    instruction: &ZiskMainInstruction,
+    report: &GuestMachineReport,
+    expected_value: Option<u64>,
+) -> Result<(u64, bool), GuestPcTraceBackendError> {
+    match instruction.store {
+        ZiskMainStore::Register(index) => {
+            let [write] = report.register_writes.as_slice() else {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row,
+                    message: format!(
+                        "DMA row reported {} register writes",
+                        report.register_writes.len()
+                    ),
+                });
+            };
+            if write.index != index {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row,
+                    message: format!("expected DMA result in x{index}, found x{}", write.index),
+                });
+            }
+            if let Some(expected_value) = expected_value {
+                if write.value != expected_value {
+                    return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                        row,
+                        message: format!(
+                            "expected DMA result {expected_value}, found {}",
+                            write.value
+                        ),
+                    });
+                }
+            }
+            Ok((write.value, false))
+        }
+        ZiskMainStore::None => {
+            if !report.register_writes.is_empty() {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row,
+                    message: "DMA row with no store reported register writes".to_owned(),
+                });
+            }
+            let Some(value) = expected_value else {
+                return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row });
+            };
+            Ok((value, false))
+        }
+        ZiskMainStore::Indirect(_) | ZiskMainStore::Memory(_) => {
+            Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row })
+        }
     }
 }
 
@@ -2087,8 +2453,16 @@ fn apply_zisk_main_store(
                 });
             }
         }
-        ZiskMainStore::Memory(_) => {
-            return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row });
+        ZiskMainStore::Memory(address) => {
+            if address != ZISK_EXTRA_PARAMS_ADDRESS as i64 {
+                return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row });
+            }
+            if !report.register_writes.is_empty() {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row,
+                    message: "store memory row reported register writes".to_owned(),
+                });
+            }
         }
     }
     state.last_c = c;

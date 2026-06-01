@@ -1010,7 +1010,7 @@ fn guest_pc_trace_backend_rejects_unsupported_zisk_main_instruction() {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("fixture directory should be created");
     let guest_image = dir.join("guest.elf");
-    let guest_image_bytes = sample_guest_image_with_words(&[csrrs(0, 0x0813, 0), 0x0000_0073]);
+    let guest_image_bytes = sample_guest_image_with_words(&[csrrs(5, 0x0c00, 0), 0x0000_0073]);
     fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
     let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
     let unit = sample_unit_with_zisk_main_columns();

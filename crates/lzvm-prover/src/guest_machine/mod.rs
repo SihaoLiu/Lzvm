@@ -1028,7 +1028,7 @@ fn advance_guest_machine_inner(
     })
 }
 
-fn decode_current_guest_instruction(
+pub(crate) fn decode_current_guest_instruction(
     memory: &GuestMachineMemory,
     address: u64,
 ) -> Result<RiscvInstruction, GuestMachineError> {

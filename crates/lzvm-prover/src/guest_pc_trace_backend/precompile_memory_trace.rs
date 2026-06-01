@@ -45,9 +45,11 @@ pub(super) fn write_layout_precompile_memory_trace(
     };
     let mut output_row = 0_usize;
     for (main_step, report) in reports.iter().enumerate() {
+        let next_instruction = reports.get(main_step + 1).map(|next| next.instruction);
         validate_and_apply_zisk_main_report(
             main_step,
             report,
+            next_instruction,
             &mut state,
             None,
             reports.len(),

@@ -1,7 +1,7 @@
 use lzvm_prover::guest_instruction::{
-    RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvFenceKind, RiscvInstruction, RiscvLoadKind,
-    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind,
-    RiscvStoreKind,
+    RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvDmaKind, RiscvFenceKind, RiscvInstruction,
+    RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind,
+    RiscvPrecompileKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::{GuestMachineReport, ZISK_ARCHITECTURE_ID};
 use lzvm_prover::zisk_fcalls::ZISK_INPUT_ADDRESS;
@@ -790,6 +790,34 @@ fn uses_zisk_sign_extension_op_codes() {
     assert_eq!(ZiskMainOp::SignExtendB.code(), 0x27);
     assert_eq!(ZiskMainOp::SignExtendH.code(), 0x28);
     assert_eq!(ZiskMainOp::SignExtendW.code(), 0x29);
+}
+
+#[test]
+fn uses_zisk_dma_op_codes() {
+    assert_eq!(ZiskMainOp::DmaMemCpy.code(), 0xd0);
+    assert_eq!(ZiskMainOp::DmaMemCmp.code(), 0xd1);
+    assert_eq!(ZiskMainOp::DmaInputCpy.code(), 0xd2);
+    assert_eq!(ZiskMainOp::DmaXMemCpy.code(), 0xd6);
+    assert_eq!(ZiskMainOp::DmaXMemCmp.code(), 0xd7);
+    assert_eq!(ZiskMainOp::DmaXMemSet.code(), 0xd9);
+}
+
+#[test]
+fn lowers_zisk_dma_prepare_as_internal_copy() {
+    let instruction = lower_guest_report(&report(
+        4,
+        RiscvInstruction::ZiskDmaPrepare {
+            kind: RiscvDmaKind::Memcpy,
+            rs1: 11,
+        },
+    ))
+    .expect("dma prepare should lower");
+
+    assert_eq!(instruction.a, ZiskMainSource::Immediate(0x0813));
+    assert_eq!(instruction.b, ZiskMainSource::Register(11));
+    assert_eq!(instruction.op, ZiskMainOp::CopyB);
+    assert_eq!(instruction.store, ZiskMainStore::None);
+    assert!(!instruction.is_external_op);
 }
 
 #[test]

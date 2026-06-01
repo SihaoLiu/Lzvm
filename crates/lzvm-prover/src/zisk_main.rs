@@ -1,11 +1,14 @@
 use std::fmt;
 
 use crate::guest_instruction::{
-    RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind,
-    RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind, RiscvStoreKind,
+    RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvDmaKind, RiscvInstruction, RiscvLoadKind,
+    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind,
+    RiscvStoreKind,
 };
 use crate::guest_machine::{fixed_csr_value, GuestMachineReport};
 use crate::zisk_fcalls::ZISK_INPUT_ADDRESS;
+
+pub const ZISK_EXTRA_PARAMS_ADDRESS: u64 = 0xa000_0f00;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZiskMainSource {
@@ -60,6 +63,12 @@ pub enum ZiskMainOp {
     SignExtendB,
     SignExtendH,
     SignExtendW,
+    DmaMemCpy,
+    DmaMemCmp,
+    DmaInputCpy,
+    DmaXMemCpy,
+    DmaXMemCmp,
+    DmaXMemSet,
     Add256,
     Keccak,
     Arith256,
@@ -105,6 +114,12 @@ impl ZiskMainOp {
             Self::SignExtendB => 0x27,
             Self::SignExtendH => 0x28,
             Self::SignExtendW => 0x29,
+            Self::DmaMemCpy => 0xd0,
+            Self::DmaMemCmp => 0xd1,
+            Self::DmaInputCpy => 0xd2,
+            Self::DmaXMemCpy => 0xd6,
+            Self::DmaXMemCmp => 0xd7,
+            Self::DmaXMemSet => 0xd9,
             Self::Add256 => 0xf0,
             Self::Keccak => 0xf1,
             Self::Arith256 => 0xf2,
@@ -332,6 +347,12 @@ pub fn lower_guest_report(
             kind,
             rs1,
             rd,
+        )),
+        RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Ok(lower_dma_prepare(
+            report.address,
+            instruction_size,
+            kind,
+            rs1,
         )),
         RiscvInstruction::ZiskFcallParam { port, rs1 } => {
             lower_fcall_param(report.address, instruction_size, port, rs1)
@@ -632,6 +653,22 @@ fn lower_precompile(
     instruction
 }
 
+fn lower_dma_prepare(
+    pc: u64,
+    instruction_size: i64,
+    kind: RiscvDmaKind,
+    rs1: u8,
+) -> ZiskMainInstruction {
+    base_instruction(
+        pc,
+        ZiskMainSource::Immediate(dma_prepare_id(kind)),
+        register_source(rs1),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::None,
+        instruction_size,
+    )
+}
+
 fn lower_fcall_param(
     pc: u64,
     instruction_size: i64,
@@ -838,6 +875,15 @@ fn precompile_op(kind: RiscvPrecompileKind) -> ZiskMainOp {
         RiscvPrecompileKind::Arith256Mod => ZiskMainOp::Arith256Mod,
         RiscvPrecompileKind::Secp256k1Add => ZiskMainOp::Secp256k1Add,
         RiscvPrecompileKind::Secp256k1Dbl => ZiskMainOp::Secp256k1Dbl,
+    }
+}
+
+fn dma_prepare_id(kind: RiscvDmaKind) -> u64 {
+    match kind {
+        RiscvDmaKind::Memcpy => 0x0813,
+        RiscvDmaKind::Memcmp => 0x0814,
+        RiscvDmaKind::Inputcpy => 0x0815,
+        RiscvDmaKind::Memset => 0x0816,
     }
 }
 

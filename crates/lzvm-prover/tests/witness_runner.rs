@@ -794,6 +794,281 @@ fn guest_pc_trace_backend_writes_zisk_main_fcall_result_source() {
 }
 
 #[test]
+fn guest_pc_trace_backend_writes_zisk_main_dma_memcpy_pair() {
+    let dir = temp_dir("guest-zisk-main-dma-memcpy-pair");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(10, 0xa000_0000),
+        slli(10, 10, 32),
+        srli(10, 10, 32),
+        addi(11, 10, 16),
+        addi(12, 0, 16),
+        csrrs(0, 0x0813, 11),
+        add(13, 10, 12),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_address_columns(8);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should write Zisk Main DMA memcpy pair");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 8);
+    assert_eq!(trace.column_count(), 29);
+    assert_eq!(
+        trace.value(5, 2),
+        Some(Felt::from_canonical(16).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 8),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 21),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 18),
+        Some(Felt::from_canonical(0xa000_0f00).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 2),
+        Some(Felt::from_canonical(0xa000_0010).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 4),
+        Some(Felt::from_canonical(0xa000_0000).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 8),
+        Some(Felt::from_canonical(0xd0).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 13),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 18),
+        Some(Felt::from_canonical(13).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 25),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_segments_keep_zisk_dma_prepare_lookahead() {
+    let dir = temp_dir("guest-zisk-main-dma-segment-lookahead");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(10, 0xa000_0000),
+        slli(10, 10, 32),
+        srli(10, 10, 32),
+        addi(11, 10, 16),
+        addi(12, 0, 16),
+        csrrs(0, 0x0813, 11),
+        add(13, 10, 12),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_address_columns(6);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let segments = run_guest_pc_trace_segments_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should carry DMA lookahead across segments");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(segments.len(), 2);
+    let first = segments[0].output().trace();
+    assert_eq!(
+        first.value(5, 2),
+        Some(Felt::from_canonical(16).expect("canonical"))
+    );
+    assert_eq!(
+        first.value(5, 8),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        first.value(5, 21),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        first.value(5, 18),
+        Some(Felt::from_canonical(0xa000_0f00).expect("canonical"))
+    );
+
+    let second = segments[1].output().trace();
+    assert_eq!(
+        second.value(0, 2),
+        Some(Felt::from_canonical(0xa000_0010).expect("canonical"))
+    );
+    assert_eq!(
+        second.value(0, 4),
+        Some(Felt::from_canonical(0xa000_0000).expect("canonical"))
+    );
+    assert_eq!(
+        second.value(0, 8),
+        Some(Felt::from_canonical(0xd0).expect("canonical"))
+    );
+    assert_eq!(
+        unit_value(segments[0].output(), "segment_next_pc"),
+        &[Felt::from_canonical(ENTRY + 24).expect("canonical")]
+    );
+    assert_eq!(
+        unit_value(segments[1].output(), "segment_initial_pc"),
+        &[Felt::from_canonical(ENTRY + 24).expect("canonical")]
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_zisk_main_dma_memset_add_fill_zero() {
+    let dir = temp_dir("guest-zisk-main-dma-memset-add-fill-zero");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(10, 0xa000_0000),
+        slli(10, 10, 32),
+        srli(10, 10, 32),
+        addi(12, 0, 8),
+        csrrs(0, 0x0816, 10),
+        add(13, 10, 12),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_address_columns(6);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should write Zisk Main DMA memset add pair");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        trace.value(5, 2),
+        Some(Felt::from_canonical(8).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 4),
+        Some(Felt::from_canonical(0xa000_0000).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 8),
+        Some(Felt::from_canonical(0xd9).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 13),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 18),
+        Some(Felt::from_canonical(13).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 27),
+        Some(Felt::from_canonical(0).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_zisk_main_dma_memcmp_result() {
+    let dir = temp_dir("guest-zisk-main-dma-memcmp-result");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(10, 0xa000_0000),
+        slli(10, 10, 32),
+        srli(10, 10, 32),
+        addi(11, 10, 16),
+        addi(5, 0, 1),
+        sb(10, 5, 0),
+        addi(12, 0, 16),
+        csrrs(0, 0x0814, 11),
+        add(13, 10, 12),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_address_columns(9);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should write Zisk Main DMA memcmp pair");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        trace.value(7, 2),
+        Some(Felt::from_canonical(16).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(7, 21),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 2),
+        Some(Felt::from_canonical(0xa000_0010).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 4),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 8),
+        Some(Felt::from_canonical(0xd1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 13),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 18),
+        Some(Felt::from_canonical(13).expect("canonical"))
+    );
+}
+
+#[test]
 fn guest_pc_trace_backend_reports_input_and_rom_proof_values() {
     let dir = temp_dir("guest-pc-proof-values-input-rom");
     let _ = fs::remove_dir_all(&dir);
