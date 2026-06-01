@@ -225,22 +225,22 @@ fn rejects_duplicate_witness_commitment_segments() {
 }
 
 #[test]
-fn rejects_unexpected_witness_commitment_segments() {
+fn rejects_later_trace_instance_witness_commitment_unit_mismatches() {
     let units = vec![sample_unit(2, vec![1])];
     let expected_segment = witness_commitment_proof_segment(0, &units[0]);
     let unexpected_segment = witness_commitment_proof_segment_with_payload_unit(1, 1, &units[0]);
 
     let error = load_witness_commitment_segments(&units, &[expected_segment, unexpected_segment])
-        .expect_err("unexpected segment should be rejected");
+        .expect_err("segment id and payload unit should match");
 
     assert_eq!(
-        error.to_string(),
-        "unexpected witness commitment segment for unit 1"
+        error,
+        LoadWitnessCommitmentSegmentsError::UnitMismatch { unit_index: 0 }
     );
 }
 
 #[test]
-fn rejects_later_trace_instance_witness_commitment_segments() {
+fn loads_later_trace_instance_witness_commitment_segments() {
     let units = vec![sample_unit(2, vec![1])];
     let expected_segment = witness_commitment_proof_segment(0, &units[0]);
     let later_id = witness_commitment_segment_id(
@@ -257,13 +257,12 @@ fn rejects_later_trace_instance_witness_commitment_segments() {
         data: encode_witness_commitment_segment(&later_payload).expect("segment should encode"),
     };
 
-    let error = load_witness_commitment_segments(&units, &[expected_segment, later_segment])
-        .expect_err("later trace instance should be rejected until verifier artifacts bind it");
+    let loaded = load_witness_commitment_segments(&units, &[expected_segment, later_segment])
+        .expect("later trace instance should load");
 
-    assert_eq!(
-        error.to_string(),
-        "unexpected witness commitment segment for unit 1"
-    );
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded[0].id, WITNESS_COMMITMENT_SEGMENT_BASE_ID);
+    assert_eq!(loaded[1].id, later_id);
 }
 
 #[test]

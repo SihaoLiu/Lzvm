@@ -2156,6 +2156,143 @@ fn generate_key_lowers_source_function_calls_with_local_lookup_arrays() {
 }
 
 #[test]
+fn generate_key_lowers_source_function_lookup_arrays_with_air_qualified_columns() {
+    let dir = temp_dir("source-function-air-qualified-lookup-arrays");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "const int TABLE_ID = 77;\n\
+         const int CHUNK_SIZE = 3;\n\
+         const int BASE = 2;\n\
+         function pack_lookup_chunk(const int chunk, const int num_bits, const expr acc,\n\
+                                    const expr values[], const expr sel) {\n\
+             const int bit_offset = chunk * CHUNK_SIZE;\n\
+             expr packed = 0;\n\
+             for (int j = 0; j < num_bits; j++) {\n\
+                 packed += values[bit_offset + j] * (BASE ** j);\n\
+             }\n\
+             acc === packed;\n\
+             const expr lookup_values[CHUNK_SIZE + 1];\n\
+             lookup_values[0] = acc;\n\
+             for (int j = 0; j < num_bits; j++) {\n\
+                 lookup_values[j + 1] = air.state[bit_offset + j]';\n\
+             }\n\
+             for (int j = num_bits + 1; j < CHUNK_SIZE + 1; j++) {\n\
+                 lookup_values[j] = 0;\n\
+             }\n\
+             lookup_assumes(TABLE_ID, lookup_values, sel: sel);\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             col witness selector;\n\
+             col witness accs[2];\n\
+             col witness state[4];\n\
+             const expr round[4] = [state[0], state[1], state[2], state[3]];\n\
+             pack_lookup_chunk(chunk: 0, num_bits: CHUNK_SIZE, acc: accs[0],\n\
+                               values: round, sel: selector);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(
+        expressions
+            .hints
+            .iter()
+            .filter(|hint| hint.name == SOURCE_UNSUPPORTED_CALL_HINT)
+            .count(),
+        0
+    );
+    assert_eq!(expressions.hints.len(), 1);
+    assert_eq!(expressions.hints[0].name, SOURCE_LOOKUP_ASSUMES_HINT);
+    assert_eq!(expressions.constraints.len(), 1);
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+    assert_eq!(regular.hints.hints.len(), 1);
+    assert_eq!(regular.hints.hints[0].name, SOURCE_LOOKUP_ASSUMES_HINT);
+    assert_eq!(regular.hints.hints[0].fields.len(), 3);
+    assert_eq!(regular.hints.hints[0].fields[0].name, "bus_id");
+    assert_eq!(
+        regular.hints.hints[0].fields[0].values[0].operand,
+        HintOperand::Number(77)
+    );
+    assert_eq!(regular.hints.hints[0].fields[1].name, "values");
+    let values = &regular.hints.hints[0].fields[1].values;
+    assert_eq!(values.len(), 4);
+    assert_eq!(
+        values[0].operand,
+        HintOperand::CommitmentElement {
+            id: 1,
+            element: 0,
+            row_offset_index: 0
+        }
+    );
+    assert_eq!(
+        values[1].operand,
+        HintOperand::CommitmentElement {
+            id: 2,
+            element: 0,
+            row_offset_index: 1
+        }
+    );
+    assert_eq!(
+        values[2].operand,
+        HintOperand::CommitmentElement {
+            id: 2,
+            element: 1,
+            row_offset_index: 1
+        }
+    );
+    assert_eq!(
+        values[3].operand,
+        HintOperand::CommitmentElement {
+            id: 2,
+            element: 2,
+            row_offset_index: 1
+        }
+    );
+    assert_eq!(regular.hints.hints[0].fields[2].name, "selector");
+    assert_eq!(
+        regular.hints.hints[0].fields[2].values[0].operand,
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 0
+        }
+    );
+    assert_eq!(regular.constraints.entries.len(), 1);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_source_function_calls_with_nested_returned_scalars() {
     let dir = temp_dir("source-function-nested-returned-scalars");
     let _ = fs::remove_dir_all(&dir);

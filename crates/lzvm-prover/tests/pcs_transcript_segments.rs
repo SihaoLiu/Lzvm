@@ -113,6 +113,22 @@ fn rejects_transcript_challenge_query_unit_mismatches() {
 }
 
 #[test]
+fn rejects_trace_instance_transcript_challenge_queries() {
+    let schedule = sample_schedule();
+    let mut segments = transcript_segments(0);
+    replace_query_plan_trace_instance(&mut segments, 1);
+
+    let error =
+        derive_pcs_transcript_unit_challenges_from_proof_segments(&schedule, &[], &segments)
+            .expect_err("trace instance queries should be unsupported");
+
+    assert_eq!(
+        error.to_string(),
+        "unsupported PCS query plan trace instance 1 for unit 0"
+    );
+}
+
+#[test]
 fn rejects_transcript_challenge_extra_fri_opening_units() {
     let schedule = sample_schedule();
     let mut segments = transcript_segments(0);
@@ -255,6 +271,21 @@ fn transcript_segments(query_unit_index: u32) -> Vec<ProofSegment> {
             .expect("FRI segment should encode"),
         },
     ]
+}
+
+fn replace_query_plan_trace_instance(segments: &mut [ProofSegment], trace_instance_index: u32) {
+    let query_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+        .expect("query segment should exist");
+    query_segment.data = encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+        units: vec![PcsQueryPlanUnit {
+            unit_index: 0,
+            trace_instance_index,
+            queries: vec![3, 5],
+        }],
+    })
+    .expect("query plan should encode");
 }
 
 fn sample_schedule() -> ProveSchedule {

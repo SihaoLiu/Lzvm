@@ -16,8 +16,8 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_field::{Felt, FieldError};
 
 use crate::pcs_query_plan::{
-    load_pcs_query_plan_from_segments, unsupported_pcs_query_trace_instance,
-    LoadPcsQueryPlanSegmentError,
+    load_pcs_query_plan_from_segments, reject_unsupported_pcs_query_trace_instances,
+    unsupported_pcs_query_trace_instance, LoadPcsQueryPlanSegmentError,
 };
 use crate::witness_commitment::{
     load_witness_commitment_segments, open_witness_stage_commitment,
@@ -348,6 +348,8 @@ pub fn validate_witness_opening_segments(
     segments: &[ProofSegment],
 ) -> Result<(), ValidateWitnessOpeningSegmentsError> {
     let query_plan = load_pcs_query_plan_from_segments(segments)
+        .map_err(ValidateWitnessOpeningSegmentsError::QueryPlan)?;
+    reject_unsupported_pcs_query_trace_instances(&query_plan.units)
         .map_err(ValidateWitnessOpeningSegmentsError::QueryPlan)?;
     let opening = load_witness_opening_segment_from_segments(segments)
         .map_err(ValidateWitnessOpeningSegmentsError::Opening)?;

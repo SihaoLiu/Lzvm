@@ -20,7 +20,10 @@ use crate::pcs_fri::{
     LoadPcsFriOpeningUnitError,
 };
 use crate::pcs_query_plan::checked_proof_binding_segments;
-use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
+use crate::pcs_query_plan::{
+    load_pcs_query_plan_from_segments, reject_unsupported_pcs_query_trace_instances,
+    LoadPcsQueryPlanSegmentError,
+};
 use crate::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptError, PcsTranscriptSegmentInputs,
 };
@@ -147,6 +150,8 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
         return Err(PcsTranscriptProofSegmentsError::DuplicateMaterialSegment);
     }
     let query_plan = load_pcs_query_plan_from_segments(segments)
+        .map_err(PcsTranscriptProofSegmentsError::QueryPlan)?;
+    reject_unsupported_pcs_query_trace_instances(&query_plan.units)
         .map_err(PcsTranscriptProofSegmentsError::QueryPlan)?;
     let material = parse_pcs_material_manifest_segment(&material_segment.data)
         .map_err(PcsTranscriptProofSegmentsError::Material)?;

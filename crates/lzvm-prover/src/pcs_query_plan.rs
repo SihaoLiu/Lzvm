@@ -212,15 +212,7 @@ pub fn load_pcs_query_plan_from_segments(
     if matching_segments.next().is_some() {
         return Err(LoadPcsQueryPlanSegmentError::DuplicateSegment);
     }
-    let query_plan = parse_pcs_query_plan_segment(&segment.data)
-        .map_err(LoadPcsQueryPlanSegmentError::Segment)?;
-    if let Some(unsupported) = unsupported_pcs_query_trace_instance(&query_plan.units) {
-        return Err(LoadPcsQueryPlanSegmentError::UnsupportedTraceInstance {
-            unit_index: unsupported.unit_index,
-            trace_instance_index: unsupported.trace_instance_index,
-        });
-    }
-    Ok(query_plan)
+    parse_pcs_query_plan_segment(&segment.data).map_err(LoadPcsQueryPlanSegmentError::Segment)
 }
 
 pub(crate) fn unsupported_pcs_query_trace_instance(
@@ -233,6 +225,18 @@ pub(crate) fn unsupported_pcs_query_trace_instance(
             unit_index: unit.unit_index,
             trace_instance_index: unit.trace_instance_index,
         })
+}
+
+pub(crate) fn reject_unsupported_pcs_query_trace_instances(
+    units: &[PcsQueryPlanUnit],
+) -> Result<(), LoadPcsQueryPlanSegmentError> {
+    if let Some(unsupported) = unsupported_pcs_query_trace_instance(units) {
+        return Err(LoadPcsQueryPlanSegmentError::UnsupportedTraceInstance {
+            unit_index: unsupported.unit_index,
+            trace_instance_index: unsupported.trace_instance_index,
+        });
+    }
+    Ok(())
 }
 
 pub fn uses_transcript_pcs_query_plan_inputs(segments: &[ProofSegment]) -> bool {
@@ -439,6 +443,8 @@ pub fn validate_transcript_pcs_query_plan_segments(
     let material_segment = single_material_manifest_segment(segments)?;
     let nonce_segment = single_query_nonce_segment(segments)?;
     let query_plan = load_pcs_query_plan_from_segments(segments)
+        .map_err(ValidatePcsQueryPlanSegmentsError::QueryPlan)?;
+    reject_unsupported_pcs_query_trace_instances(&query_plan.units)
         .map_err(ValidatePcsQueryPlanSegmentsError::QueryPlan)?;
     let query_segment = segments
         .iter()

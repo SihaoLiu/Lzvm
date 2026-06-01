@@ -19,8 +19,8 @@ use crate::constant_tree_opening::{
     ConstantTreeOpeningError,
 };
 use crate::pcs_query_plan::{
-    load_pcs_query_plan_from_segments, unsupported_pcs_query_trace_instance,
-    LoadPcsQueryPlanSegmentError,
+    load_pcs_query_plan_from_segments, reject_unsupported_pcs_query_trace_instances,
+    unsupported_pcs_query_trace_instance, LoadPcsQueryPlanSegmentError,
 };
 use crate::ProveSchedule;
 use crate::ProveUnitSchedule;
@@ -304,6 +304,8 @@ pub fn validate_constant_opening_segments(
     segments: &[ProofSegment],
 ) -> Result<(), ValidateConstantOpeningSegmentsError> {
     let query_plan = load_pcs_query_plan_from_segments(segments)
+        .map_err(ValidateConstantOpeningSegmentsError::QueryPlan)?;
+    reject_unsupported_pcs_query_trace_instances(&query_plan.units)
         .map_err(ValidateConstantOpeningSegmentsError::QueryPlan)?;
     let opening = load_constant_opening_segment_from_segments(segments)
         .map_err(ValidateConstantOpeningSegmentsError::Opening)?;

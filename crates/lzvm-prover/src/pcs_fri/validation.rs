@@ -15,7 +15,8 @@ use super::{
     verify_fri_opening_folds, verify_fri_query_path,
 };
 use crate::pcs_query_plan::{
-    load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
+    load_pcs_query_plan_from_segments, reject_unsupported_pcs_query_trace_instances,
+    uses_transcript_pcs_query_plan_inputs,
 };
 use crate::pcs_transcript_segments::{
     derive_pcs_transcript_unit_challenges_from_proof_segments, PcsTranscriptUnitChallenges,
@@ -30,6 +31,8 @@ pub fn validate_pcs_fri_opening_segments(
     segments: &[ProofSegment],
 ) -> Result<(), ValidatePcsFriOpeningSegmentsError> {
     let query_plan = load_pcs_query_plan_from_segments(segments)
+        .map_err(ValidatePcsFriOpeningSegmentsError::QueryPlan)?;
+    reject_unsupported_pcs_query_trace_instances(&query_plan.units)
         .map_err(ValidatePcsFriOpeningSegmentsError::QueryPlan)?;
     let opening = load_pcs_fri_opening_segment_from_segments(segments)
         .map_err(ValidatePcsFriOpeningSegmentsError::Opening)?;

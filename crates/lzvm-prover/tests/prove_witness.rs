@@ -104,7 +104,7 @@ use lzvm_prover::{
     ProvePartitionPlan, ProvePassRequest, ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues,
     ProvePcsFriOpeningValues, ProvePcsFriTranscriptTraceValues, ProvePcsQueryPlanSegmentError,
     ProveRunOptions, ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs,
-    ProveWitnessCommitmentError,
+    ProveWitnessCommitmentError, ProveWitnessSegmentError,
 };
 use sha2::{Digest, Sha256};
 
@@ -3462,6 +3462,59 @@ fn builds_witness_commitment_proof_segments() {
         let expected_digest: [u8; 32] = Sha256::digest(commitment.tree_bytes()).into();
         assert_eq!(stage.tree_digest, expected_digest);
     }
+}
+
+#[test]
+fn builds_trace_instance_witness_commitment_proof_segments() {
+    let dir = temp_dir("trace-instance-segment");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [13_u8]).expect("input data should be written");
+
+    let catalog = sample_catalog(sample_unit());
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output = run_prove_witness_commitments(&plan, 0)
+        .expect("witness commitments should run")
+        .with_trace_instance_index(1);
+
+    let segment =
+        build_witness_commitment_segment_for_schedule(plan.run_plan.schedule.units.len(), &output)
+            .expect("scheduled witness segment should build");
+    let multi_unit_segment = build_witness_commitment_segment_for_schedule(2, &output)
+        .expect("scheduled witness segment should build with later unit capacity");
+    let standalone_error = build_witness_commitment_segment(&output)
+        .expect_err("standalone witness segment build should reject trace instances");
+    let parsed =
+        parse_witness_commitment_segment(&segment.data).expect("witness segment should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(segment.id, WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1);
+    assert_eq!(
+        multi_unit_segment.id,
+        WITNESS_COMMITMENT_SEGMENT_BASE_ID + 2
+    );
+    assert!(matches!(
+        standalone_error,
+        ProveWitnessSegmentError::UnsupportedTraceInstance {
+            unit_index: 0,
+            trace_instance_index: 1
+        }
+    ));
+    assert_eq!(output.trace_instance_index(), 1);
+    assert_eq!(parsed.unit_index, 0);
 }
 
 #[test]

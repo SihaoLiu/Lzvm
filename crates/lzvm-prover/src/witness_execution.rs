@@ -45,8 +45,31 @@ use crate::witness_trace::{parse_witness_trace, WitnessTraceBuffer};
 use crate::{ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassRequest, ProveUnitSchedule};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProveWitnessCommitments {
+struct ProveTraceIdentity {
     unit_index: usize,
+    trace_instance_index: u32,
+}
+
+impl ProveTraceIdentity {
+    fn new(unit_index: usize, trace_instance_index: u32) -> Self {
+        Self {
+            unit_index,
+            trace_instance_index,
+        }
+    }
+
+    fn unit_index(&self) -> usize {
+        self.unit_index
+    }
+
+    fn trace_instance_index(&self) -> u32 {
+        self.trace_instance_index
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProveWitnessCommitments {
+    identity: ProveTraceIdentity,
     input_byte_count: usize,
     trace_rows: usize,
     trace_columns: usize,
@@ -55,7 +78,11 @@ pub struct ProveWitnessCommitments {
 
 impl ProveWitnessCommitments {
     pub fn unit_index(&self) -> usize {
-        self.unit_index
+        self.identity.unit_index()
+    }
+
+    pub fn trace_instance_index(&self) -> u32 {
+        self.identity.trace_instance_index()
     }
 
     pub fn input_byte_count(&self) -> usize {
@@ -72,6 +99,11 @@ impl ProveWitnessCommitments {
 
     pub fn stage_commitments(&self) -> &WitnessTraceCommitments {
         &self.stage_commitments
+    }
+
+    pub fn with_trace_instance_index(mut self, trace_instance_index: u32) -> Self {
+        self.identity.trace_instance_index = trace_instance_index;
+        self
     }
 }
 
@@ -1056,7 +1088,7 @@ fn run_prove_witness_commitments_from_trace_inner(
     )?;
 
     let commitments = ProveWitnessCommitments {
-        unit_index,
+        identity: ProveTraceIdentity::new(unit_index, 0),
         input_byte_count,
         trace_rows,
         trace_columns,

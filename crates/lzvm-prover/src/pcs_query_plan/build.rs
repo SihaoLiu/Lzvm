@@ -10,7 +10,7 @@ use lzvm_artifacts::pcs_query_segment::{
 };
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    parse_witness_commitment_segment, witness_commitment_segment_identity,
 };
 use lzvm_field::{Ext3, Felt};
 use sha2::{Digest, Sha256};
@@ -66,13 +66,14 @@ pub fn build_pcs_query_plan_segment_with_bindings(
 
     let query_units = collect_witness_query_units(schedule, &witness_segments)?;
     let mut units = Vec::with_capacity(query_units.len());
-    for (unit_index_u32, unit) in query_units {
+    for (identity, unit) in query_units {
         units.push(PcsQueryPlanUnit {
-            unit_index: unit_index_u32,
-            trace_instance_index: 0,
+            unit_index: identity.unit_index,
+            trace_instance_index: identity.trace_instance_index,
             queries: derive_unit_queries(
                 &seed,
-                unit_index_u32,
+                identity.unit_index,
+                identity.trace_instance_index,
                 unit.query_count,
                 unit.extended_domain_size,
             )?,
@@ -149,7 +150,7 @@ pub fn build_pcs_query_plan_segment_from_transcript_segments(
             },
         );
     }
-    let witness_unit_index = query_units[0].0;
+    let witness_unit_index = query_units[0].0.unit_index;
     if witness_unit_index != input_unit_index {
         return Err(
             ProvePcsQueryPlanSegmentError::TranscriptWitnessUnitMismatch {
@@ -195,8 +196,8 @@ pub fn build_pcs_query_plan_segment_from_challenge(
     let witness_segments = sorted_witness_commitment_segments(witness_segments)?;
     let query_units = collect_witness_query_units(schedule, &witness_segments)?;
     let mut units = Vec::with_capacity(query_units.len());
-    for (unit_index_u32, unit) in query_units {
-        let unit_index = usize::try_from(unit_index_u32)
+    for (identity, unit) in query_units {
+        let unit_index = usize::try_from(identity.unit_index)
             .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?;
         if !verify_query_nonce(challenge, nonce, unit.proof_of_work_bits)? {
             return Err(ProvePcsQueryPlanSegmentError::QueryNonceMismatch {
@@ -209,8 +210,8 @@ pub fn build_pcs_query_plan_segment_from_challenge(
             .ok_or(ProvePcsQueryPlanSegmentError::MissingTranscriptArity { unit_index })?
             as usize;
         units.push(PcsQueryPlanUnit {
-            unit_index: unit_index_u32,
-            trace_instance_index: 0,
+            unit_index: identity.unit_index,
+            trace_instance_index: identity.trace_instance_index,
             queries: derive_fri_queries(
                 arity,
                 challenge,
@@ -242,15 +243,22 @@ fn sorted_witness_commitment_segments(
 fn collect_witness_query_units<'a>(
     schedule: &'a ProveSchedule,
     witness_segments: &[ProofSegment],
-) -> Result<Vec<(u32, &'a crate::ProveUnitSchedule)>, ProvePcsQueryPlanSegmentError> {
+) -> Result<
+    Vec<(
+        lzvm_artifacts::witness_segment::WitnessCommitmentSegmentIdentity,
+        &'a crate::ProveUnitSchedule,
+    )>,
+    ProvePcsQueryPlanSegmentError,
+> {
     let mut units = Vec::with_capacity(witness_segments.len());
     let mut seen_units = BTreeSet::new();
+    let unit_count = u32::try_from(schedule.units.len())
+        .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?;
     for segment in witness_segments {
-        let unit_index_u32 = segment
-            .id
-            .checked_sub(WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+        let identity = witness_commitment_segment_identity(unit_count, segment.id)
+            .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?
             .ok_or(ProvePcsQueryPlanSegmentError::LengthOverflow)?;
-        let unit_index = usize::try_from(unit_index_u32)
+        let unit_index = usize::try_from(identity.unit_index)
             .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?;
         let unit = schedule.units.get(unit_index).ok_or(
             ProvePcsQueryPlanSegmentError::UnitIndexOutOfRange {
@@ -261,20 +269,21 @@ fn collect_witness_query_units<'a>(
         let witness = parse_witness_commitment_segment(&segment.data).map_err(|source| {
             ProvePcsQueryPlanSegmentError::InvalidWitnessSegment { unit_index, source }
         })?;
-        if witness.unit_index != unit_index_u32 {
+        if witness.unit_index != identity.unit_index {
             return Err(ProvePcsQueryPlanSegmentError::WitnessUnitMismatch {
-                segment_unit_index: unit_index_u32,
+                segment_unit_index: identity.unit_index,
                 payload_unit_index: witness.unit_index,
             });
         }
-        if !seen_units.insert(unit_index_u32) {
+        if !seen_units.insert((identity.unit_index, identity.trace_instance_index)) {
             return Err(ProvePcsQueryPlanSegmentError::Segment(
-                PcsQueryPlanSegmentError::DuplicateUnitIndex {
-                    unit_index: unit_index_u32,
+                PcsQueryPlanSegmentError::DuplicateUnitIdentity {
+                    unit_index: identity.unit_index,
+                    trace_instance_index: identity.trace_instance_index,
                 },
             ));
         }
-        units.push((unit_index_u32, unit));
+        units.push((identity, unit));
     }
     Ok(units)
 }
@@ -282,6 +291,7 @@ fn collect_witness_query_units<'a>(
 fn derive_unit_queries(
     seed: &[u8; 32],
     unit_index: u32,
+    trace_instance_index: u32,
     query_count: u32,
     domain_size: u64,
 ) -> Result<Vec<u64>, ProvePcsQueryPlanSegmentError> {
@@ -302,6 +312,9 @@ fn derive_unit_queries(
         let mut hasher = Sha256::new();
         hasher.update(seed);
         hasher.update(unit_index.to_le_bytes());
+        if trace_instance_index != 0 {
+            hasher.update(trace_instance_index.to_le_bytes());
+        }
         hasher.update(draw.to_le_bytes());
         let digest: [u8; 32] = hasher.finalize().into();
         let raw = u64::from_le_bytes(digest[..8].try_into().expect("slice length checked"));

@@ -25,7 +25,8 @@ use lzvm_prover::unit_values::ProveUnitValues;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::load_witness_library;
 use lzvm_prover::{
-    build_witness_commitment_segment, derive_prove_execution_plan_with_program_image_cache,
+    build_witness_commitment_segment_for_schedule,
+    derive_prove_execution_plan_with_program_image_cache,
     run_prove_witness_commitments_for_all_units,
     run_prove_witness_commitments_for_all_units_with_trace_bundle,
     run_prove_witness_commitments_with_trace_backend,
@@ -437,7 +438,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
     if plan.run_plan.options.save_outputs {
-        let segment = match build_witness_commitment_segment(commitments) {
+        let segment = match build_witness_commitment_segment_for_schedule(
+            plan.run_plan.schedule.units.len(),
+            commitments,
+        ) {
             Ok(segment) => segment,
             Err(error) => {
                 let _ = writeln!(
@@ -928,8 +932,11 @@ fn finish_all_units_witness_run(
     if plan.run_plan.options.save_outputs {
         for output in outputs {
             let commitments = output.commitments();
-            let segment = build_witness_commitment_segment(commitments)
-                .map_err(|error| format!("build witness segment failed: {error}"))?;
+            let segment = build_witness_commitment_segment_for_schedule(
+                plan.run_plan.schedule.units.len(),
+                commitments,
+            )
+            .map_err(|error| format!("build witness segment failed: {error}"))?;
             let output_unit_index = commitments.unit_index();
             let execution_unit = plan
                 .units

@@ -524,6 +524,20 @@ fn rejects_trace_instance_pcs_fri_opening_queries() {
 }
 
 #[test]
+fn rejects_trace_instance_pcs_fri_opening_validation_queries() {
+    let (unit, mut segments) = valid_pcs_fri_opening_segments();
+    replace_query_plan_trace_instance(&mut segments, 1);
+
+    let error = validate_pcs_fri_opening_segments(&[unit], &segments)
+        .expect_err("trace instance queries should be unsupported");
+
+    assert_eq!(
+        error.to_string(),
+        "unsupported PCS query plan trace instance 1 for unit 0"
+    );
+}
+
+#[test]
 fn validates_optional_pcs_fri_opening_when_segment_is_absent() {
     let unit = sample_validation_unit();
     let schedule = sample_prove_schedule(unit);
@@ -853,6 +867,21 @@ fn fold_full_layer(
             .expect("fold should evaluate")
         })
         .collect()
+}
+
+fn replace_query_plan_trace_instance(segments: &mut [ProofSegment], trace_instance_index: u32) {
+    let query_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+        .expect("query segment should exist");
+    query_segment.data = encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+        units: vec![PcsQueryPlanUnit {
+            unit_index: 0,
+            trace_instance_index,
+            queries: vec![1, 6],
+        }],
+    })
+    .expect("query plan should encode");
 }
 
 fn digest_from_u64s(values: [u64; 4]) -> [Felt; 4] {

@@ -12,6 +12,10 @@ use crate::witness_layout::WitnessTraceLayoutError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveWitnessSegmentError {
+    UnsupportedTraceInstance {
+        unit_index: usize,
+        trace_instance_index: u32,
+    },
     LengthOverflow,
     SegmentId(WitnessCommitmentSegmentIdError),
     Segment(WitnessCommitmentSegmentError),
@@ -20,6 +24,13 @@ pub enum ProveWitnessSegmentError {
 impl fmt::Display for ProveWitnessSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnsupportedTraceInstance {
+                unit_index,
+                trace_instance_index,
+            } => write!(
+                f,
+                "prove witness segment trace instance {trace_instance_index} for unit {unit_index} requires schedule unit count"
+            ),
             Self::LengthOverflow => write!(f, "prove witness segment length overflow"),
             Self::SegmentId(error) => write!(f, "prove witness segment id failed: {error}"),
             Self::Segment(error) => write!(f, "prove witness segment encode failed: {error}"),
@@ -32,7 +43,7 @@ impl std::error::Error for ProveWitnessSegmentError {
         match self {
             Self::SegmentId(error) => Some(error),
             Self::Segment(error) => Some(error),
-            Self::LengthOverflow => None,
+            Self::UnsupportedTraceInstance { .. } | Self::LengthOverflow => None,
         }
     }
 }

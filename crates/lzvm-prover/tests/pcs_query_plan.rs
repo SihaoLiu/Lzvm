@@ -30,7 +30,8 @@ use lzvm_artifacts::unit_values_segment::{
     encode_unit_values_segment, UnitValuesSegment, UnitValuesUnitSegment, UNIT_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::witness_segment::{
-    encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
+    encode_witness_commitment_segment, witness_commitment_segment_id, WitnessCommitmentSegment,
+    WitnessCommitmentSegmentIdentity, WitnessCommitmentStageSegment,
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_field::{Ext3, Felt};
@@ -73,21 +74,23 @@ fn loads_pcs_query_plan_from_segments() {
 }
 
 #[test]
-fn rejects_nonzero_trace_instance_pcs_query_plan_units() {
+fn loads_trace_instance_pcs_query_plan_units() {
     let segment = pcs_query_plan_proof_segment(vec![PcsQueryPlanUnit {
         unit_index: 0,
         trace_instance_index: 1,
         queries: vec![1, 3],
     }]);
 
-    let error = load_pcs_query_plan_from_segments(&[segment])
-        .expect_err("nonzero trace instance query units should be rejected");
+    let loaded = load_pcs_query_plan_from_segments(&[segment]).expect("query plan should load");
 
     assert_eq!(
-        error,
-        LoadPcsQueryPlanSegmentError::UnsupportedTraceInstance {
-            unit_index: 0,
-            trace_instance_index: 1
+        loaded,
+        PcsQueryPlanSegment {
+            units: vec![PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 1,
+                queries: vec![1, 3]
+            }]
         }
     );
 }
@@ -156,6 +159,30 @@ fn validates_seeded_pcs_query_plan_segments() {
 
     validate_seeded_pcs_query_plan_segments(&schedule, public_hash, &segments)
         .expect("query plan should validate");
+}
+
+#[test]
+fn builds_seeded_pcs_query_plan_for_trace_instance_witness_segment() {
+    let schedule = sample_schedule();
+    let public_hash = [7; 32];
+    let material = material_segment();
+    let witness = witness_segment_with_trace_instance(0, 1, schedule.units.len());
+    let query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&witness),
+    )
+    .expect("query plan should build");
+    let loaded = load_pcs_query_plan_from_segments(std::slice::from_ref(&query))
+        .expect("query plan should load");
+    let segments = vec![material, witness, query];
+
+    assert_eq!(loaded.units.len(), 1);
+    assert_eq!(loaded.units[0].unit_index, 0);
+    assert_eq!(loaded.units[0].trace_instance_index, 1);
+    validate_seeded_pcs_query_plan_segments(&schedule, public_hash, &segments)
+        .expect("trace instance query plan should validate");
 }
 
 #[test]
@@ -345,6 +372,25 @@ fn validates_transcript_pcs_query_plan_segments() {
 
     validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
         .expect("query plan should validate");
+}
+
+#[test]
+fn rejects_trace_instance_transcript_pcs_query_plan_validation_queries() {
+    let (schedule, mut segments) = transcript_query_plan_segments();
+    replace_query_plan_trace_instance(&mut segments, 1);
+
+    let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+        .expect_err("trace instance queries should be unsupported");
+
+    assert_eq!(
+        error,
+        ValidatePcsQueryPlanSegmentsError::QueryPlan(
+            LoadPcsQueryPlanSegmentError::UnsupportedTraceInstance {
+                unit_index: 0,
+                trace_instance_index: 1
+            }
+        )
+    );
 }
 
 #[test]
@@ -1163,6 +1209,21 @@ fn transcript_query_plan_segments() -> (ProveSchedule, Vec<ProofSegment>) {
     )
 }
 
+fn replace_query_plan_trace_instance(segments: &mut [ProofSegment], trace_instance_index: u32) {
+    let query_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+        .expect("query segment should exist");
+    query_segment.data = encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+        units: vec![PcsQueryPlanUnit {
+            unit_index: 0,
+            trace_instance_index,
+            queries: vec![3, 5],
+        }],
+    })
+    .expect("query plan should encode");
+}
+
 fn material_segment() -> ProofSegment {
     ProofSegment {
         id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
@@ -1188,6 +1249,26 @@ fn witness_segment(unit_index: u32) -> ProofSegment {
     let witness = witness_commitment(unit_index);
     ProofSegment {
         id: WITNESS_COMMITMENT_SEGMENT_BASE_ID + unit_index,
+        data: encode_witness_commitment_segment(&witness).expect("witness segment should encode"),
+    }
+}
+
+fn witness_segment_with_trace_instance(
+    unit_index: u32,
+    trace_instance_index: u32,
+    unit_count: usize,
+) -> ProofSegment {
+    let unit_count = u32::try_from(unit_count).expect("unit count should fit u32");
+    let witness = witness_commitment(unit_index);
+    ProofSegment {
+        id: witness_commitment_segment_id(
+            unit_count,
+            WitnessCommitmentSegmentIdentity {
+                unit_index,
+                trace_instance_index,
+            },
+        )
+        .expect("witness segment id should encode"),
         data: encode_witness_commitment_segment(&witness).expect("witness segment should encode"),
     }
 }

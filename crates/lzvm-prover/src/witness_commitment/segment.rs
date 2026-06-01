@@ -12,6 +12,12 @@ use super::ProveWitnessSegmentError;
 pub fn build_witness_commitment_segment(
     output: &ProveWitnessCommitments,
 ) -> Result<ProofSegment, ProveWitnessSegmentError> {
+    if output.trace_instance_index() != 0 {
+        return Err(ProveWitnessSegmentError::UnsupportedTraceInstance {
+            unit_index: output.unit_index(),
+            trace_instance_index: output.trace_instance_index(),
+        });
+    }
     let unit_count = output
         .unit_index()
         .checked_add(1)
@@ -31,7 +37,7 @@ pub fn build_witness_commitment_segment_for_schedule(
         unit_count,
         WitnessCommitmentSegmentIdentity {
             unit_index,
-            trace_instance_index: 0,
+            trace_instance_index: output.trace_instance_index(),
         },
     )?;
     let mut stages = Vec::with_capacity(output.stage_commitments().stage_count());
