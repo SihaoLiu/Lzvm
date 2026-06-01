@@ -143,7 +143,7 @@ fn guest_pc_trace_backend_writes_zisk_main_add256_precompile_row() {
     assert_cell(&trace, 1, 11, 1);
     assert_cell(&trace, 1, 12, 1);
     assert_cell(&trace, 1, 15, 0xf0);
-    assert_eq!(trace.value(1, 19), Some(Felt::ZERO));
+    assert_cell(&trace, 1, 19, 1);
     assert_cell(&trace, 1, 20, 1);
     assert_cell(&trace, 1, 24, 2);
 

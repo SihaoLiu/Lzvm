@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::guest_instruction::{RiscvInstruction, RiscvPrecompileKind};
 use crate::guest_machine::{
-    run_guest_machine_trace_with_fcalls, GuestMachineMemory, GuestMachineReport,
+    run_guest_machine_trace_with_fcalls, GuestMachineHalt, GuestMachineMemory, GuestMachineReport,
     GuestMachineRunError, GuestMemoryAccess, GuestMemoryAccessKind, GuestRegisterWrite,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
@@ -271,9 +271,12 @@ fn compute_guest_pc_trace(
         }
     };
     if let Some(layout) = context.trace_layout {
-        if let Some(produced_len) =
-            write_layout_zisk_main_trace(layout, &trace.reports, buffers.output_mut())?
-        {
+        if let Some(produced_len) = write_layout_zisk_main_trace(
+            layout,
+            &trace.reports,
+            guest_machine_halt_pc(&trace.run.halt),
+            buffers.output_mut(),
+        )? {
             return Ok(WitnessTraceOutput { produced_len });
         }
         if let Some(produced_len) = precompile_memory_trace::write_layout_precompile_memory_trace(
@@ -401,6 +404,12 @@ fn is_raw_pc_pair_layout(layout: &WitnessTraceLayout) -> bool {
     layout.column_count() == 2 && layout.columns().is_empty()
 }
 
+fn guest_machine_halt_pc(halt: &GuestMachineHalt) -> u64 {
+    match halt {
+        GuestMachineHalt::Ecall { address } => *address,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TraceColumnTarget {
     stage_index: usize,
@@ -443,7 +452,10 @@ struct ZiskMainTraceColumns {
     flag: TraceColumnTarget,
     pc: TraceColumnTarget,
     a_src_imm: Option<TraceColumnTarget>,
+    a_offset_imm0: Option<TraceColumnTarget>,
+    a_imm1: Option<TraceColumnTarget>,
     b_src_imm: Option<TraceColumnTarget>,
+    b_imm1: Option<TraceColumnTarget>,
     a_src_reg: Option<TraceColumnTarget>,
     b_src_reg: Option<TraceColumnTarget>,
     b_src_ind: Option<TraceColumnTarget>,
@@ -488,6 +500,7 @@ struct ExpectedMemoryAccess {
 struct ZiskMainTraceState {
     registers: [u64; 32],
     last_c: u64,
+    next_pc: u64,
 }
 
 impl ZiskMainTraceState {
@@ -495,6 +508,7 @@ impl ZiskMainTraceState {
         Self {
             registers: [0; 32],
             last_c: 0,
+            next_pc: 0,
         }
     }
 }
@@ -544,6 +558,7 @@ fn validate_and_apply_zisk_main_report(
 fn write_layout_zisk_main_trace(
     layout: &WitnessTraceLayout,
     reports: &[GuestMachineReport],
+    halt_pc: u64,
     output: &mut [u8],
 ) -> Result<Option<usize>, GuestPcTraceBackendError> {
     let Some(columns) = zisk_main_trace_columns(layout)? else {
@@ -562,6 +577,12 @@ fn write_layout_zisk_main_trace(
     let mut state = ZiskMainTraceState::new();
     for (row, report) in reports.iter().enumerate() {
         write_zisk_main_report_columns(&mut builder, row, report, &columns, &mut state)?;
+    }
+    if reports.len() < layout.row_count() {
+        validate_zisk_main_halt_pc(reports, &state, halt_pc)?;
+        for row in reports.len()..layout.row_count() {
+            write_zisk_main_terminal_row(&mut builder, row, &columns, halt_pc)?;
+        }
     }
     let trace = builder.build();
     let produced_len =
@@ -607,11 +628,29 @@ fn write_zisk_main_report_columns(
         &columns.a_src_imm,
         u64::from(matches!(instruction.a, ZiskMainSource::Immediate(_))),
     )?;
+    write_optional_signed_column(
+        builder,
+        row,
+        &columns.a_offset_imm0,
+        zisk_main_source_offset(row, instruction.a)?,
+    )?;
+    write_optional_column(
+        builder,
+        row,
+        &columns.a_imm1,
+        zisk_main_source_high_limb(instruction.a),
+    )?;
     write_optional_column(
         builder,
         row,
         &columns.b_src_imm,
         u64::from(matches!(instruction.b, ZiskMainSource::Immediate(_))),
+    )?;
+    write_optional_column(
+        builder,
+        row,
+        &columns.b_imm1,
+        zisk_main_source_high_limb(instruction.b),
     )?;
     write_optional_column(
         builder,
@@ -696,6 +735,44 @@ fn write_zisk_main_report_columns(
         row,
         &columns.is_precompiled,
         u64::from(instruction.is_precompiled),
+    )
+}
+
+fn validate_zisk_main_halt_pc(
+    reports: &[GuestMachineReport],
+    state: &ZiskMainTraceState,
+    halt_pc: u64,
+) -> Result<(), GuestPcTraceBackendError> {
+    if !reports.is_empty() && state.next_pc != halt_pc {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: reports.len() - 1,
+            message: format!(
+                "last next pc {} does not match halt pc {}",
+                state.next_pc, halt_pc
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn write_zisk_main_terminal_row(
+    builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
+    row: usize,
+    columns: &ZiskMainTraceColumns,
+    halt_pc: u64,
+) -> Result<(), GuestPcTraceBackendError> {
+    write_wide_column(builder, row, &columns.a, 0)?;
+    write_wide_column(builder, row, &columns.b, 0)?;
+    write_wide_column(builder, row, &columns.c, 0)?;
+    write_column(builder, row, &columns.flag, 0)?;
+    write_column(builder, row, &columns.pc, halt_pc)?;
+    write_optional_column(builder, row, &columns.a_src_imm, 1)?;
+    write_optional_column(builder, row, &columns.b_src_imm, 1)?;
+    write_column(
+        builder,
+        row,
+        &columns.op,
+        u64::from(ZiskMainOp::CopyB.code()),
     )
 }
 
@@ -1002,12 +1079,22 @@ fn zisk_main_source_offset(
 ) -> Result<i64, GuestPcTraceBackendError> {
     match source {
         ZiskMainSource::LastC => Ok(0),
-        ZiskMainSource::Immediate(value) => Ok(value as i64),
+        ZiskMainSource::Immediate(value) => Ok((value & 0xffff_ffff) as i64),
         ZiskMainSource::Register(index) => Ok(i64::from(index)),
         ZiskMainSource::Indirect(offset) => Ok(offset),
         ZiskMainSource::Memory(_) => {
             Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row })
         }
+    }
+}
+
+fn zisk_main_source_high_limb(source: ZiskMainSource) -> u64 {
+    match source {
+        ZiskMainSource::Immediate(value) => value >> 32,
+        ZiskMainSource::LastC
+        | ZiskMainSource::Register(_)
+        | ZiskMainSource::Indirect(_)
+        | ZiskMainSource::Memory(_) => 0,
     }
 }
 
@@ -1338,6 +1425,7 @@ fn apply_zisk_main_store(
         }
     }
     state.last_c = c;
+    state.next_pc = report.next_pc;
     Ok(())
 }
 
@@ -1574,7 +1662,10 @@ fn zisk_main_trace_columns(
         flag: required_trace_column_target(layout, "flag")?,
         pc: required_trace_column_target(layout, "pc")?,
         a_src_imm: trace_column_target(layout, "a_src_imm")?,
+        a_offset_imm0: trace_column_target(layout, "a_offset_imm0")?,
+        a_imm1: trace_column_target_aliases(layout, &["a_imm1", "air.a_imm1"])?,
         b_src_imm: trace_column_target(layout, "b_src_imm")?,
+        b_imm1: trace_column_target_aliases(layout, &["b_imm1", "air.b_imm1"])?,
         a_src_reg: trace_column_target(layout, "a_src_reg")?,
         b_src_reg: trace_column_target(layout, "b_src_reg")?,
         b_src_ind: trace_column_target(layout, "b_src_ind")?,

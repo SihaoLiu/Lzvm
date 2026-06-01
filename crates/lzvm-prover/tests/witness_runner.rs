@@ -291,7 +291,7 @@ fn sample_unit_with_register_effect_columns() -> ProveUnitSchedule {
 fn sample_unit_with_zisk_main_address_columns(base_domain_size: u64) -> ProveUnitSchedule {
     sample_unit_with_trace_columns(
         base_domain_size,
-        vec![23],
+        vec![29],
         vec![
             commitment_column("a", 1, 0, 2),
             commitment_column("b", 1, 2, 2),
@@ -313,6 +313,33 @@ fn sample_unit_with_zisk_main_address_columns(base_domain_size: u64) -> ProveUni
             commitment_column("air.addr2", 1, 20, 1),
             commitment_column("store_mem", 1, 21, 1),
             commitment_column("ind_width", 1, 22, 1),
+            commitment_column("air.a_imm1", 1, 23, 1),
+            commitment_column("air.b_imm1", 1, 24, 1),
+            commitment_column("is_external_op", 1, 25, 1),
+            commitment_column("a_src_imm", 1, 26, 1),
+            commitment_column("jmp_offset1", 1, 27, 1),
+            commitment_column("jmp_offset2", 1, 28, 1),
+        ],
+    )
+}
+
+fn sample_unit_with_zisk_rom_columns(base_domain_size: u64) -> ProveUnitSchedule {
+    sample_unit_with_trace_columns(
+        base_domain_size,
+        vec![12],
+        vec![
+            commitment_column("line", 1, 0, 1),
+            commitment_column("a_offset_imm0", 1, 1, 1),
+            commitment_column("a_imm1", 1, 2, 1),
+            commitment_column("b_offset_imm0", 1, 3, 1),
+            commitment_column("b_imm1", 1, 4, 1),
+            commitment_column("ind_width", 1, 5, 1),
+            commitment_column("op", 1, 6, 1),
+            commitment_column("store_offset", 1, 7, 1),
+            commitment_column("jmp_offset1", 1, 8, 1),
+            commitment_column("jmp_offset2", 1, 9, 1),
+            commitment_column("flags", 1, 10, 1),
+            commitment_column("multiplicity", 1, 11, 1),
         ],
     )
 }
@@ -1077,7 +1104,7 @@ fn guest_pc_trace_backend_writes_zisk_main_address_columns() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(trace.row_count(), 2);
-    assert_eq!(trace.column_count(), 23);
+    assert_eq!(trace.column_count(), 29);
     assert_eq!(
         trace.value(0, 16),
         Some(Felt::from_canonical(7).expect("canonical"))
@@ -1157,6 +1184,153 @@ fn guest_pc_trace_backend_writes_indirect_zisk_main_address_columns() {
         trace.value(2, 20),
         Some(Felt::from_canonical(56).expect("canonical"))
     );
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_zisk_main_negative_immediate_limbs() {
+    let dir = temp_dir("guest-zisk-main-negative-immediate-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[lui(15, 4096), addi(15, 15, -1878), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_address_columns(4);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should write negative immediate limbs");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let low = 0xffff_f8aa_u64;
+    assert_eq!(
+        trace.value(1, 2),
+        Some(Felt::from_canonical(low).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 3),
+        Some(Felt::from_canonical(0xffff_ffff).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 16),
+        Some(Felt::from_canonical(low).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 24),
+        Some(Felt::from_canonical(0xffff_ffff).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 25),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_pads_zisk_main_rows_with_terminal_copy() {
+    let dir = temp_dir("guest-zisk-main-terminal-padding-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[addi(1, 0, 7), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_address_columns(4);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should pad Zisk Main rows");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 4);
+    assert_eq!(trace.value(1, 0), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 2), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 4), Some(Felt::ZERO));
+    assert_eq!(
+        trace.value(1, 7),
+        Some(Felt::from_canonical(ENTRY + 4).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 8),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 14),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(trace.value(1, 23), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 24), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 25), Some(Felt::ZERO));
+    assert_eq!(
+        trace.value(1, 26),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(trace.value(1, 27), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 28), Some(Felt::ZERO));
+    assert_eq!(trace.value(2, 0), Some(Felt::ZERO));
+    assert_eq!(trace.value(2, 4), Some(Felt::ZERO));
+    assert_eq!(
+        trace.value(2, 7),
+        Some(Felt::from_canonical(ENTRY + 4).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 8),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 14),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(trace.value(2, 25), Some(Felt::ZERO));
+    assert_eq!(
+        trace.value(2, 26),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_rejects_zisk_rom_layout_without_program_trace_context() {
+    let dir = temp_dir("guest-zisk-rom-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[addi(1, 0, 7), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_rom_columns(4);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let result = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let error = result.expect_err("Zisk Rom layout should require program trace context");
+    assert!(error
+        .to_string()
+        .contains("does not expose guest trace columns"));
 }
 
 #[test]

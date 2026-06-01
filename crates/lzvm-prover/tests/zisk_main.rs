@@ -49,6 +49,7 @@ fn lowers_register_add_as_binary_op() {
     assert_eq!(instruction.b, ZiskMainSource::Register(5));
     assert_eq!(instruction.op, ZiskMainOp::Add);
     assert_eq!(instruction.store, ZiskMainStore::Register(6));
+    assert!(instruction.is_external_op);
 }
 
 #[test]
@@ -81,6 +82,7 @@ fn lowers_register_alu_ops_as_binary_ops() {
         assert_eq!(instruction.b, ZiskMainSource::Register(5));
         assert_eq!(instruction.op, op);
         assert_eq!(instruction.store, ZiskMainStore::Register(6));
+        assert!(instruction.is_external_op);
     }
 }
 
@@ -113,6 +115,7 @@ fn lowers_immediate_alu_ops_as_binary_ops() {
         assert_eq!(instruction.b, ZiskMainSource::Immediate((-3_i64) as u64));
         assert_eq!(instruction.op, op);
         assert_eq!(instruction.store, ZiskMainStore::Register(6));
+        assert!(instruction.is_external_op);
     }
 }
 
@@ -142,6 +145,7 @@ fn lowers_immediate_word_ops_as_m32_binary_ops() {
         assert_eq!(instruction.op.code(), op_code);
         assert_eq!(instruction.store, ZiskMainStore::Register(6));
         assert!(instruction.m32);
+        assert!(instruction.is_external_op);
     }
 }
 
@@ -172,6 +176,7 @@ fn lowers_register_word_ops_as_m32_binary_ops() {
         assert_eq!(instruction.op.code(), op_code);
         assert_eq!(instruction.store, ZiskMainStore::Register(6));
         assert!(instruction.m32);
+        assert!(instruction.is_external_op);
     }
 }
 
@@ -354,7 +359,7 @@ fn lowers_zisk_precompile_ops_as_precompiled_rows() {
         assert_eq!(instruction.op.code(), op_code);
         assert_eq!(instruction.store, register_store(rd));
         assert!(instruction.is_precompiled);
-        assert!(!instruction.is_external_op);
+        assert!(instruction.is_external_op);
         assert!(!instruction.m32);
     }
 }

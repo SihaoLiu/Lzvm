@@ -725,16 +725,16 @@ fn op_imm_32_kind(kind: RiscvOpImm32Kind) -> ZiskMainOp {
 
 fn op_kind(kind: RiscvOpKind) -> (ZiskMainOp, bool) {
     match kind {
-        RiscvOpKind::Add => (ZiskMainOp::Add, false),
-        RiscvOpKind::Sub => (ZiskMainOp::Sub, false),
-        RiscvOpKind::Sll => (ZiskMainOp::Sll, false),
-        RiscvOpKind::Slt => (ZiskMainOp::Lt, false),
-        RiscvOpKind::Sltu => (ZiskMainOp::Ltu, false),
-        RiscvOpKind::Xor => (ZiskMainOp::Xor, false),
-        RiscvOpKind::Srl => (ZiskMainOp::Srl, false),
-        RiscvOpKind::Sra => (ZiskMainOp::Sra, false),
-        RiscvOpKind::Or => (ZiskMainOp::Or, false),
-        RiscvOpKind::And => (ZiskMainOp::And, false),
+        RiscvOpKind::Add => (ZiskMainOp::Add, true),
+        RiscvOpKind::Sub => (ZiskMainOp::Sub, true),
+        RiscvOpKind::Sll => (ZiskMainOp::Sll, true),
+        RiscvOpKind::Slt => (ZiskMainOp::Lt, true),
+        RiscvOpKind::Sltu => (ZiskMainOp::Ltu, true),
+        RiscvOpKind::Xor => (ZiskMainOp::Xor, true),
+        RiscvOpKind::Srl => (ZiskMainOp::Srl, true),
+        RiscvOpKind::Sra => (ZiskMainOp::Sra, true),
+        RiscvOpKind::Or => (ZiskMainOp::Or, true),
+        RiscvOpKind::And => (ZiskMainOp::And, true),
         RiscvOpKind::Mul => (ZiskMainOp::Mul, true),
         RiscvOpKind::Mulh => (ZiskMainOp::Mulh, true),
         RiscvOpKind::Mulhsu => (ZiskMainOp::Mulhsu, true),
@@ -748,11 +748,11 @@ fn op_kind(kind: RiscvOpKind) -> (ZiskMainOp, bool) {
 
 fn op_32_kind(kind: RiscvOp32Kind) -> (ZiskMainOp, bool) {
     match kind {
-        RiscvOp32Kind::Addw => (ZiskMainOp::AddW, false),
-        RiscvOp32Kind::Subw => (ZiskMainOp::SubW, false),
-        RiscvOp32Kind::Sllw => (ZiskMainOp::SllW, false),
-        RiscvOp32Kind::Srlw => (ZiskMainOp::SrlW, false),
-        RiscvOp32Kind::Sraw => (ZiskMainOp::SraW, false),
+        RiscvOp32Kind::Addw => (ZiskMainOp::AddW, true),
+        RiscvOp32Kind::Subw => (ZiskMainOp::SubW, true),
+        RiscvOp32Kind::Sllw => (ZiskMainOp::SllW, true),
+        RiscvOp32Kind::Srlw => (ZiskMainOp::SrlW, true),
+        RiscvOp32Kind::Sraw => (ZiskMainOp::SraW, true),
         RiscvOp32Kind::Mulw => (ZiskMainOp::MulW, true),
         RiscvOp32Kind::Divw => (ZiskMainOp::DivW, true),
         RiscvOp32Kind::Divuw => (ZiskMainOp::DivuW, true),
@@ -801,9 +801,13 @@ fn base_instruction(
         jmp_offset2: instruction_size,
         ind_width: 0,
         m32: false,
-        is_external_op: false,
+        is_external_op: zisk_main_op_is_external(op),
         is_precompiled: false,
     }
+}
+
+fn zisk_main_op_is_external(op: ZiskMainOp) -> bool {
+    !matches!(op, ZiskMainOp::Flag | ZiskMainOp::CopyB)
 }
 
 fn register_source(index: u8) -> ZiskMainSource {
