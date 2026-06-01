@@ -330,8 +330,26 @@ pub fn expected_packed_unit_value_count(
     unit_value_map: &[StageValue],
 ) -> Result<usize, ProveUnitValuesSegmentError> {
     unit_value_map.iter().try_fold(0_usize, |count, value| {
+        let dimension = stage_value_dimension(value)?;
+        let width = if value.stage == 1 { 1 } else { EXTENSION_WORDS };
+        let value_count = dimension
+            .checked_mul(width)
+            .ok_or(ProveUnitValuesSegmentError::LengthOverflow)?;
         count
-            .checked_add(if value.stage == 1 { 1 } else { EXTENSION_WORDS })
+            .checked_add(value_count)
+            .ok_or(ProveUnitValuesSegmentError::LengthOverflow)
+    })
+}
+
+fn stage_value_dimension(value: &StageValue) -> Result<usize, ProveUnitValuesSegmentError> {
+    value.lengths.iter().try_fold(1_usize, |dimension, length| {
+        let length =
+            usize::try_from(*length).map_err(|_| ProveUnitValuesSegmentError::LengthOverflow)?;
+        if length == 0 {
+            return Err(ProveUnitValuesSegmentError::LengthOverflow);
+        }
+        dimension
+            .checked_mul(length)
             .ok_or(ProveUnitValuesSegmentError::LengthOverflow)
     })
 }

@@ -7,8 +7,9 @@ use lzvm_artifacts::unit_values_segment::{
 use lzvm_field::{Felt, FieldError, MODULUS};
 use lzvm_prover::unit_values::{
     build_unit_values_segment_from_packed_values,
-    build_unit_values_segment_from_packed_values_batch, load_unit_values_from_segments,
-    LoadUnitValuesSegmentError, ProveUnitValues, ProveUnitValuesSegmentError,
+    build_unit_values_segment_from_packed_values_batch, expected_packed_unit_value_count,
+    load_unit_values_from_segments, LoadUnitValuesSegmentError, ProveUnitValues,
+    ProveUnitValuesSegmentError,
 };
 
 const FIRST_UNIT_VALUE_OFFSET: usize = 12 + 4 + 4;
@@ -18,6 +19,14 @@ fn stage_value(name: &str, stage: u32) -> StageValue {
         name: name.to_owned(),
         stage,
         lengths: Vec::new(),
+    }
+}
+
+fn stage_value_with_lengths(name: &str, stage: u32, lengths: &[u32]) -> StageValue {
+    StageValue {
+        name: name.to_owned(),
+        stage,
+        lengths: lengths.to_vec(),
     }
 }
 
@@ -41,6 +50,24 @@ fn builds_unit_values_segment_from_packed_values() {
     assert_eq!(parsed.units.len(), 1);
     assert_eq!(parsed.units[0].unit_index, 3);
     assert_eq!(parsed.units[0].values, vec![11, 21, 22, 23]);
+}
+
+#[test]
+fn builds_dimensioned_unit_values_segment_from_packed_values() {
+    let map = vec![
+        stage_value_with_lengths("unit.array", 1, &[2, 3]),
+        stage_value_with_lengths("unit.extension", 2, &[2]),
+    ];
+    let packed_values: Vec<u64> = (1..=12).collect();
+
+    let segment = build_unit_values_segment_from_packed_values(5, &map, &values(&packed_values))
+        .expect("dimensioned segment should build")
+        .expect("segment should be present");
+
+    let parsed = parse_unit_values_segment(&segment.data).expect("segment should parse");
+    assert_eq!(parsed.units.len(), 1);
+    assert_eq!(parsed.units[0].unit_index, 5);
+    assert_eq!(parsed.units[0].values, packed_values);
 }
 
 #[test]
@@ -80,6 +107,21 @@ fn loads_unit_values_from_segments() {
         load_unit_values_from_segments(3, &map, &[segment]).expect("unit values should load");
 
     assert_eq!(loaded, values(&[11, 21, 22, 23]));
+}
+
+#[test]
+fn loads_dimensioned_unit_values_from_segments() {
+    let map = vec![
+        stage_value_with_lengths("unit.array", 1, &[2, 3]),
+        stage_value_with_lengths("unit.extension", 2, &[2]),
+    ];
+    let packed_values: Vec<u64> = (1..=12).collect();
+    let segment = unit_values_segment(3, &packed_values);
+
+    let loaded =
+        load_unit_values_from_segments(3, &map, &[segment]).expect("unit values should load");
+
+    assert_eq!(loaded, values(&packed_values));
 }
 
 #[test]
@@ -216,5 +258,25 @@ fn rejects_unit_value_count_mismatches() {
             expected: 4,
             found: 3
         }
+    );
+}
+
+#[test]
+fn rejects_zero_length_unit_value_dimensions() {
+    let map = vec![stage_value_with_lengths("unit.empty", 1, &[0])];
+
+    assert_eq!(
+        expected_packed_unit_value_count(&map),
+        Err(ProveUnitValuesSegmentError::LengthOverflow)
+    );
+    assert_eq!(
+        build_unit_values_segment_from_packed_values(0, &map, &[])
+            .expect_err("zero dimensions should be rejected"),
+        ProveUnitValuesSegmentError::LengthOverflow
+    );
+    assert_eq!(
+        load_unit_values_from_segments(0, &map, &[])
+            .expect_err("zero dimensions should be rejected"),
+        LoadUnitValuesSegmentError::LengthOverflow
     );
 }
