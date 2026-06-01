@@ -30,8 +30,9 @@ use lzvm_prover::{
     run_prove_witness_commitments_for_all_units_with_trace_bundle,
     run_prove_witness_commitments_with_trace_backend,
     run_prove_witness_commitments_with_trace_bytes, ProveExecutionInputArtifacts,
-    ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassKind, ProveSchedule,
-    ProveWitnessAuxiliaryInputs, ProveWitnessCommitments, ProveWitnessTraceCommitments,
+    ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassKind, ProvePassRequest,
+    ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitments,
+    ProveWitnessTraceCommitments,
 };
 
 use crate::eth_block_prove_input::{
@@ -74,6 +75,11 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+
+    if let Err(message) = validate_guest_pc_trace_eth_input_binding(&parsed) {
+        let _ = writeln!(stderr, "prove witness failed: {message}");
+        return 1;
+    }
 
     let prepared_eth_block_input = match prepare_eth_block_input(&parsed) {
         Ok(value) => value,
@@ -505,6 +511,25 @@ struct PublicInputSummary {
 fn contribution_artifact_requested(plan: &ProveExecutionPlan) -> bool {
     plan.run_plan.pass.kind() == ProvePassKind::Contributions
         || plan.run_plan.options.remote_aggregation
+}
+
+fn partition_input_data(request: &ProveRunRequest) -> Option<&Path> {
+    match &request.pass {
+        ProvePassRequest::Contributions(partitions) | ProvePassRequest::Full(partitions) => {
+            partitions.input_data.as_deref()
+        }
+        ProvePassRequest::Internal { .. } => None,
+    }
+}
+
+fn validate_guest_pc_trace_eth_input_binding(parsed: &ParsedWitnessArgs) -> Result<(), String> {
+    if parsed.guest_pc_trace_instruction_limit.is_some()
+        && (parsed.eth_block_input.is_some() || parsed.eth_public_input.is_some())
+        && partition_input_data(&parsed.run_args.request).is_none()
+    {
+        return Err("--eth-block-input/--eth-public-input with --guest-pc-trace requires --input-data with framed guest stdin".to_owned());
+    }
+    Ok(())
 }
 
 fn selected_single_unit_index(

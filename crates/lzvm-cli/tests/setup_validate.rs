@@ -8352,6 +8352,96 @@ fn prove_witness_uses_eth_block_input_as_default_witness_input() {
 }
 
 #[test]
+fn prove_witness_guest_pc_trace_requires_explicit_framed_input_with_eth_block_input() {
+    let dir = temp_dir("prove-witness-guest-pc-trace-eth-explicit-input");
+    let _ = fs::remove_dir_all(&dir);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let block_input_path = dir.join("block.input");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
+    write_bytes(&guest_image, sample_guest_pc_trace_image());
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--guest-pc-trace",
+            "8",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: --eth-block-input/--eth-public-input with --guest-pc-trace requires --input-data with framed guest stdin\n"
+    );
+}
+
+#[test]
+fn prove_witness_guest_pc_trace_rejects_eth_public_input_before_generating_block_input() {
+    let dir = temp_dir("prove-witness-guest-pc-trace-eth-public-explicit-input");
+    let _ = fs::remove_dir_all(&dir);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let public_input_path = dir.join("public.bin");
+    let generated_block_input_path = output_dir.join("eth-block.input");
+    let public_input = sample_public_block_bytes_with_matching_roots();
+    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
+    let block_input = build_eth_block_input(&public_block.block_rlp()).expect("input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
+    write_bytes(&guest_image, sample_guest_pc_trace_image());
+    write_bytes(&public_input_path, public_input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--guest-pc-trace",
+            "8",
+            "--eth-public-input",
+            public_input_path
+                .to_str()
+                .expect("public input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let generated_block_input_exists = generated_block_input_path.exists();
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: --eth-block-input/--eth-public-input with --guest-pc-trace requires --input-data with framed guest stdin\n"
+    );
+    assert!(!generated_block_input_exists);
+}
+
+#[test]
 fn prove_witness_generates_eth_block_public_values_when_missing() {
     let dir = temp_dir("prove-witness-eth-public-values");
     let _ = fs::remove_dir_all(&dir);
