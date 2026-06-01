@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::fmt;
 use std::ops::{Add, Mul, Neg, Sub};
 
@@ -43,6 +45,11 @@ const ROOTS_OF_UNITY: [u64; 33] = [
     3_524_815_499_551_269_279,
     7_277_203_076_849_721_926,
 ];
+
+#[cfg(test)]
+thread_local! {
+    static FELT_POW_CALLS: Cell<usize> = const { Cell::new(0) };
+}
 
 const POSEIDON2_WIDTH_4_DIAG: [u64; 4] = [
     0xf0ce_126f_e8a8_3094,
@@ -497,6 +504,9 @@ impl Felt {
     }
 
     pub fn pow(self, mut exponent: u64) -> Self {
+        #[cfg(test)]
+        FELT_POW_CALLS.with(|calls| calls.set(calls.get() + 1));
+
         let mut base = self;
         let mut result = Self::ONE;
         while exponent > 0 {
@@ -513,7 +523,7 @@ impl Felt {
         if self == Self::ZERO {
             None
         } else {
-            Some(self.pow(MODULUS - 2))
+            Some(Self(invert_nonzero_base(self.0)))
         }
     }
 
@@ -993,6 +1003,42 @@ fn add_wrapping_modulus(lhs: u64, rhs: u64) -> u64 {
     }
 }
 
+#[inline(always)]
+fn invert_nonzero_base(value: u64) -> u64 {
+    debug_assert_ne!(value, 0);
+
+    let mut low = value;
+    let mut high = MODULUS;
+    let mut low_coeff = 1_u64;
+    let mut high_coeff = 0_u64;
+
+    while low > 1 {
+        let quotient = high / low;
+        let next = high - quotient * low;
+        let next_coeff = sub_mod(
+            high_coeff,
+            reduce_goldilocks_product(quotient as u128 * low_coeff as u128),
+        );
+        high = low;
+        high_coeff = low_coeff;
+        low = next;
+        low_coeff = next_coeff;
+    }
+
+    low_coeff
+}
+
+#[inline(always)]
+fn sub_mod(lhs: u64, rhs: u64) -> u64 {
+    debug_assert!(rhs < MODULUS);
+
+    if lhs >= rhs {
+        lhs - rhs
+    } else {
+        MODULUS - (rhs - lhs)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ext3 {
     pub c0: Felt,
@@ -1126,5 +1172,29 @@ impl Mul for Ext3 {
             c1: (((a + c) - e) - e) - d,
             c2: b - g,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reset_felt_pow_calls() {
+        FELT_POW_CALLS.with(|calls| calls.set(0));
+    }
+
+    fn felt_pow_calls() -> usize {
+        FELT_POW_CALLS.with(Cell::get)
+    }
+
+    #[test]
+    fn base_inverse_uses_specialized_algorithm() {
+        let value = Felt::from_canonical(7).expect("input is canonical");
+
+        reset_felt_pow_calls();
+        let inverse = value.inverse().expect("nonzero value has an inverse");
+
+        assert_eq!(felt_pow_calls(), 0);
+        assert_eq!(value * inverse, Felt::ONE);
     }
 }

@@ -119,6 +119,45 @@ fn inverts_nonzero_values() {
 }
 
 #[test]
+fn inverses_match_fermat_reference_for_representative_values() {
+    let boundary_values = [
+        1,
+        2,
+        3,
+        7,
+        (1_u64 << 32) - 2,
+        (1_u64 << 32) - 1,
+        1_u64 << 32,
+        (1_u64 << 32) + 1,
+        MODULUS / 2,
+        MODULUS - 3,
+        MODULUS - 2,
+        MODULUS - 1,
+    ];
+
+    for value in boundary_values {
+        let element = Felt::from_canonical(value).expect("input is canonical");
+        let inverse = element.inverse().expect("nonzero value has an inverse");
+
+        assert_eq!(inverse, element.pow(MODULUS - 2));
+        assert_eq!(element * inverse, Felt::ONE);
+    }
+
+    for index in 1..=10_000_u64 {
+        let value = index
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407)
+            % MODULUS;
+        let value = if value == 0 { 1 } else { value };
+        let element = Felt::from_canonical(value).expect("input is canonical");
+        let inverse = element.inverse().expect("nonzero value has an inverse");
+
+        assert_eq!(inverse, element.pow(MODULUS - 2));
+        assert_eq!(element * inverse, Felt::ONE);
+    }
+}
+
+#[test]
 fn zero_has_no_inverse() {
     assert!(Felt::ZERO.inverse().is_none());
 }
