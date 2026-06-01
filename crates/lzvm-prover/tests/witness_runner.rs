@@ -192,6 +192,10 @@ fn csrs(csr: u16, rs1: u8) -> u32 {
     encode_csr(0, csr, 2, rs1)
 }
 
+fn csrrs(rd: u8, csr: u16, rs1: u8) -> u32 {
+    encode_csr(rd, csr, 2, rs1)
+}
+
 fn csrwi(csr: u16, immediate: u8) -> u32 {
     encode_csr(0, csr, 5, immediate)
 }
@@ -1017,6 +1021,130 @@ fn guest_pc_trace_backend_writes_effect_only_layout_without_pc_columns() {
     );
     assert_eq!(trace.value(1, 0), Some(Felt::ZERO));
     assert_eq!(trace.value(1, 1), Some(Felt::ZERO));
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_precompile_memory_access_layout() {
+    let dir = temp_dir("guest-precompile-memory-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let data_address = 64_u64;
+    let params_address = data_address;
+    let a_address = data_address + 32;
+    let b_address = a_address + 32;
+    let out_address = b_address + 32;
+    let code_words = [
+        addi(1, 0, params_address as i16),
+        csrrs(2, 0x0811, 1),
+        0x0000_0073,
+    ];
+    let mut code = Vec::with_capacity(code_words.len() * 4);
+    for word in code_words {
+        code.extend_from_slice(&word.to_le_bytes());
+    }
+    let data_offset = 176_u64 + code.len() as u64;
+    let mut data = Vec::new();
+    data.extend_from_slice(&a_address.to_le_bytes());
+    data.extend_from_slice(&b_address.to_le_bytes());
+    data.extend_from_slice(&1_u64.to_le_bytes());
+    data.extend_from_slice(&out_address.to_le_bytes());
+    for _ in 0..4 {
+        data.extend_from_slice(&u64::MAX.to_le_bytes());
+    }
+    data.extend_from_slice(&1_u64.to_le_bytes());
+    data.extend_from_slice(&[0; 24]);
+    data.extend_from_slice(&[0; 32]);
+    let headers = [
+        program_header_at(176, ENTRY, code.len() as u64),
+        program_header_at(data_offset, data_address, data.len() as u64),
+    ];
+    let mut guest_image_bytes = sample_guest_image_with_program_headers(&headers);
+    guest_image_bytes.resize(176, 0);
+    guest_image_bytes.extend_from_slice(&code);
+    guest_image_bytes.resize(data_offset as usize, 0);
+    guest_image_bytes.extend_from_slice(&data);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_trace_columns(
+        17,
+        vec![7],
+        vec![
+            commitment_column("precompile_mem_main_step", 1, 0, 1),
+            commitment_column("precompile_mem_is_write", 1, 1, 1),
+            commitment_column("precompile_mem_address", 1, 2, 1),
+            commitment_column("precompile_mem_value", 1, 3, 2),
+            commitment_column("precompile_mem_byte_len", 1, 5, 1),
+            commitment_column("precompile_mem_selector", 1, 6, 1),
+        ],
+    );
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should write precompile memory access columns");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 17);
+    assert_eq!(trace.column_count(), 7);
+    assert_precompile_mem_row(&trace, 0, 1, false, params_address, a_address);
+    assert_precompile_mem_row(&trace, 3, 1, false, params_address + 24, out_address);
+    assert_precompile_mem_row(&trace, 4, 1, false, a_address, u64::MAX);
+    assert_precompile_mem_row(&trace, 8, 1, false, b_address, 1);
+    assert_precompile_mem_row(&trace, 12, 1, true, out_address, 1);
+    assert_precompile_mem_row(&trace, 15, 1, true, out_address + 24, 0);
+    assert_eq!(trace.value(16, 0), Some(Felt::ZERO));
+    assert_eq!(trace.value(16, 1), Some(Felt::ZERO));
+    assert_eq!(trace.value(16, 2), Some(Felt::ZERO));
+    assert_eq!(trace.value(16, 3), Some(Felt::ZERO));
+    assert_eq!(trace.value(16, 4), Some(Felt::ZERO));
+    assert_eq!(trace.value(16, 5), Some(Felt::ZERO));
+    assert_eq!(trace.value(16, 6), Some(Felt::ZERO));
+}
+
+fn assert_precompile_mem_row(
+    trace: &lzvm_prover::witness_trace::WitnessTraceBuffer,
+    row: usize,
+    main_step: u64,
+    is_write: bool,
+    address: u64,
+    value: u64,
+) {
+    assert_eq!(
+        trace.value(row, 0),
+        Some(Felt::from_canonical(main_step).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(row, 1),
+        Some(Felt::from_canonical(u64::from(is_write)).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(row, 2),
+        Some(Felt::from_canonical(address).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(row, 3),
+        Some(Felt::from_canonical(value & 0xffff_ffff).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(row, 4),
+        Some(Felt::from_canonical(value >> 32).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(row, 5),
+        Some(Felt::from_canonical(8).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(row, 6),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
 }
 
 #[test]

@@ -19,6 +19,8 @@ use lzvm_field::{Felt, FieldError};
 
 use crate::zisk_fcalls::{ZiskInputFcallError, ZiskInputFcallHandler};
 
+mod precompile_memory_trace;
+
 const ZISK_RAM_ADDRESS: u64 = 0xa000_0000;
 const ZISK_RAM_SIZE: u64 = 0x2000_0000;
 
@@ -257,6 +259,13 @@ fn compute_guest_pc_trace(
         {
             return Ok(WitnessTraceOutput { produced_len });
         }
+        if let Some(produced_len) = precompile_memory_trace::write_layout_precompile_memory_trace(
+            layout,
+            &trace.reports,
+            buffers.output_mut(),
+        )? {
+            return Ok(WitnessTraceOutput { produced_len });
+        }
         if let Some(produced_len) =
             write_layout_pc_trace(layout, &trace.reports, buffers.output_mut())?
         {
@@ -301,19 +310,29 @@ fn layout_trace_capacity(
     let Some(layout) = layout else {
         return Ok(None);
     };
-    let row_width = if zisk_main_trace_columns(layout)?.is_some() {
-        layout.column_count()
+    let (row_width, instruction_limit) = if zisk_main_trace_columns(layout)?.is_some() {
+        (
+            layout.column_count(),
+            u64::try_from(layout.row_count()).unwrap_or(u64::MAX),
+        )
+    } else if precompile_memory_trace::precompile_memory_trace_columns(layout)?.is_some() {
+        (layout.column_count(), u64::MAX)
     } else {
         match guest_trace_columns(layout)? {
-            Some(_) => layout.column_count(),
-            None if is_raw_pc_pair_layout(layout) => 2,
+            Some(_) => (
+                layout.column_count(),
+                u64::try_from(layout.row_count()).unwrap_or(u64::MAX),
+            ),
+            None if is_raw_pc_pair_layout(layout) => {
+                (2, u64::try_from(layout.row_count()).unwrap_or(u64::MAX))
+            }
             None => return Err(GuestPcTraceBackendError::UnmappedTraceLayout),
         }
     };
     Ok(Some(LayoutTraceCapacity {
         row_count: layout.row_count(),
         row_width,
-        instruction_limit: u64::try_from(layout.row_count()).unwrap_or(u64::MAX),
+        instruction_limit,
     }))
 }
 
@@ -449,6 +468,48 @@ impl ZiskMainTraceState {
     }
 }
 
+struct ZiskMainReportTraceValues {
+    instruction: ZiskMainInstruction,
+    a: u64,
+    b: u64,
+    c: u64,
+    flag: bool,
+}
+
+fn validate_and_apply_zisk_main_report(
+    row: usize,
+    report: &GuestMachineReport,
+    state: &mut ZiskMainTraceState,
+    columns: Option<&ZiskMainTraceColumns>,
+) -> Result<ZiskMainReportTraceValues, GuestPcTraceBackendError> {
+    let instruction = lower_guest_report(report)
+        .map_err(|source| GuestPcTraceBackendError::ZiskMainLower { row, source })?;
+    if let Some(columns) = columns {
+        validate_zisk_main_memory_columns(row, &instruction, columns)?;
+    }
+    let (a, a_access) = zisk_main_source_value(row, instruction.a, state, report, None, 0)?;
+    let (b, b_access) = zisk_main_source_value(
+        row,
+        instruction.b,
+        state,
+        report,
+        Some(a),
+        instruction.ind_width,
+    )?;
+    validate_zisk_main_precompile_memory_accesses(row, report, b)?;
+    let (c, flag) = zisk_main_instruction_result(row, &instruction, a, b, report)?;
+    validate_zisk_main_next_pc(row, &instruction, report, c, flag)?;
+    validate_zisk_main_memory_accesses(row, &instruction, report, a, c, a_access, b_access)?;
+    apply_zisk_main_store(row, &instruction, c, report, state)?;
+    Ok(ZiskMainReportTraceValues {
+        instruction,
+        a,
+        b,
+        c,
+        flag,
+    })
+}
+
 fn write_layout_zisk_main_trace(
     layout: &WitnessTraceLayout,
     reports: &[GuestMachineReport],
@@ -501,27 +562,13 @@ fn write_zisk_main_report_columns(
     columns: &ZiskMainTraceColumns,
     state: &mut ZiskMainTraceState,
 ) -> Result<(), GuestPcTraceBackendError> {
-    let instruction = lower_guest_report(report)
-        .map_err(|source| GuestPcTraceBackendError::ZiskMainLower { row, source })?;
-    validate_zisk_main_memory_columns(row, &instruction, columns)?;
-    let (a, a_access) = zisk_main_source_value(row, instruction.a, state, report, None, 0)?;
-    let (b, b_access) = zisk_main_source_value(
-        row,
-        instruction.b,
-        state,
-        report,
-        Some(a),
-        instruction.ind_width,
-    )?;
-    validate_zisk_main_precompile_memory_accesses(row, report, b)?;
-    let (c, flag) = zisk_main_instruction_result(row, &instruction, a, b, report)?;
-    validate_zisk_main_next_pc(row, &instruction, report, c, flag)?;
-    validate_zisk_main_memory_accesses(row, &instruction, report, a, c, a_access, b_access)?;
+    let values = validate_and_apply_zisk_main_report(row, report, state, Some(columns))?;
+    let instruction = values.instruction;
 
-    write_wide_column(builder, row, &columns.a, a)?;
-    write_wide_column(builder, row, &columns.b, b)?;
-    write_wide_column(builder, row, &columns.c, c)?;
-    write_column(builder, row, &columns.flag, u64::from(flag))?;
+    write_wide_column(builder, row, &columns.a, values.a)?;
+    write_wide_column(builder, row, &columns.b, values.b)?;
+    write_wide_column(builder, row, &columns.c, values.c)?;
+    write_column(builder, row, &columns.flag, u64::from(values.flag))?;
     write_column(builder, row, &columns.pc, instruction.pc)?;
     write_optional_column(
         builder,
@@ -606,9 +653,7 @@ fn write_zisk_main_report_columns(
         row,
         &columns.is_precompiled,
         u64::from(instruction.is_precompiled),
-    )?;
-
-    apply_zisk_main_store(row, &instruction, c, report, state)
+    )
 }
 
 fn validate_zisk_main_memory_columns(
@@ -1683,77 +1728,4 @@ fn signed_trace_value(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::guest_instruction::{RiscvInstruction, RiscvPrecompileKind};
-
-    #[test]
-    fn rejects_add256_precompile_memory_access_address_mismatch() {
-        let mut report = add256_report();
-        report.precompile_memory_accesses[4].address += 8;
-
-        let error = validate_zisk_main_precompile_memory_accesses(3, &report, 64)
-            .expect_err("mismatched Add256 precompile memory access should fail");
-
-        assert!(error.to_string().contains("precompile memory access 4"));
-    }
-
-    fn add256_report() -> GuestMachineReport {
-        let params_address = 64;
-        let a_address = 96;
-        let b_address = 128;
-        let c_address = 160;
-        let mut precompile_memory_accesses = vec![
-            memory_read(params_address, a_address),
-            memory_read(params_address + 8, b_address),
-            memory_read(params_address + 16, 0),
-            memory_read(params_address + 24, c_address),
-        ];
-        precompile_memory_accesses.extend([
-            memory_read(a_address, u64::MAX),
-            memory_read(a_address + 8, u64::MAX),
-            memory_read(a_address + 16, u64::MAX),
-            memory_read(a_address + 24, u64::MAX),
-            memory_read(b_address, 1),
-            memory_read(b_address + 8, 0),
-            memory_read(b_address + 16, 0),
-            memory_read(b_address + 24, 0),
-            memory_write(c_address, 0),
-            memory_write(c_address + 8, 0),
-            memory_write(c_address + 16, 0),
-            memory_write(c_address + 24, 0),
-        ]);
-        GuestMachineReport {
-            address: 0x8000_0000,
-            instruction_byte_len: 4,
-            instruction: RiscvInstruction::ZiskPrecompile {
-                kind: RiscvPrecompileKind::Add256,
-                rs1: 1,
-                rd: 2,
-            },
-            next_pc: 0x8000_0004,
-            register_writes: vec![GuestRegisterWrite { index: 2, value: 1 }],
-            memory_accesses: Vec::new(),
-            precompile_memory_accesses,
-            precompile_result: Some(1),
-        }
-    }
-
-    fn memory_read(address: u64, value: u64) -> GuestMemoryAccess {
-        GuestMemoryAccess {
-            kind: GuestMemoryAccessKind::Read,
-            address,
-            byte_len: 8,
-            value,
-        }
-    }
-
-    fn memory_write(address: u64, value: u64) -> GuestMemoryAccess {
-        GuestMemoryAccess {
-            kind: GuestMemoryAccessKind::Write,
-            address,
-            byte_len: 8,
-            value,
-        }
-    }
-}
+mod tests;
