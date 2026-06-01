@@ -1,5 +1,6 @@
 use std::fmt;
 
+use crate::guest_instruction::{RiscvInstruction, RiscvPrecompileKind};
 use crate::guest_machine::{
     run_guest_machine_trace_with_fcalls, GuestMachineMemory, GuestMachineReport,
     GuestMachineRunError, GuestMemoryAccess, GuestMemoryAccessKind, GuestRegisterWrite,
@@ -512,6 +513,7 @@ fn write_zisk_main_report_columns(
         Some(a),
         instruction.ind_width,
     )?;
+    validate_zisk_main_precompile_memory_accesses(row, report, b)?;
     let (c, flag) = zisk_main_instruction_result(row, &instruction, a, b, report)?;
     validate_zisk_main_next_pc(row, &instruction, report, c, flag)?;
     validate_zisk_main_memory_accesses(row, &instruction, report, a, c, a_access, b_access)?;
@@ -753,6 +755,145 @@ fn validate_zisk_main_memory_accesses(
         }
     }
     Ok(())
+}
+
+fn validate_zisk_main_precompile_memory_accesses(
+    row: usize,
+    report: &GuestMachineReport,
+    operand_address: u64,
+) -> Result<(), GuestPcTraceBackendError> {
+    let RiscvInstruction::ZiskPrecompile { kind, .. } = report.instruction else {
+        if report.precompile_memory_accesses.is_empty() {
+            return Ok(());
+        }
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!(
+                "non-precompile row reported {} precompile memory accesses",
+                report.precompile_memory_accesses.len()
+            ),
+        });
+    };
+
+    let mut cursor = PrecompileMemoryAccessCursor {
+        row,
+        accesses: &report.precompile_memory_accesses,
+        offset: 0,
+    };
+    match kind {
+        RiscvPrecompileKind::Keccak => {
+            cursor.expect_reads(operand_address, 25)?;
+            cursor.expect_writes(operand_address, 25)?;
+        }
+        RiscvPrecompileKind::Arith256 => {
+            let params = cursor.expect_reads(operand_address, 5)?;
+            cursor.expect_reads(params[0], 4)?;
+            cursor.expect_reads(params[1], 4)?;
+            cursor.expect_reads(params[2], 4)?;
+            cursor.expect_writes(params[3], 4)?;
+            cursor.expect_writes(params[4], 4)?;
+        }
+        RiscvPrecompileKind::Arith256Mod => {
+            let params = cursor.expect_reads(operand_address, 5)?;
+            cursor.expect_reads(params[0], 4)?;
+            cursor.expect_reads(params[1], 4)?;
+            cursor.expect_reads(params[2], 4)?;
+            cursor.expect_reads(params[3], 4)?;
+            cursor.expect_writes(params[4], 4)?;
+        }
+        RiscvPrecompileKind::Secp256k1Add => {
+            let params = cursor.expect_reads(operand_address, 2)?;
+            cursor.expect_reads(params[0], 8)?;
+            cursor.expect_reads(params[1], 8)?;
+            cursor.expect_writes(params[0], 8)?;
+        }
+        RiscvPrecompileKind::Secp256k1Dbl => {
+            cursor.expect_reads(operand_address, 8)?;
+            cursor.expect_writes(operand_address, 8)?;
+        }
+        RiscvPrecompileKind::Add256 => {
+            let params = cursor.expect_reads(operand_address, 4)?;
+            cursor.expect_reads(params[0], 4)?;
+            cursor.expect_reads(params[1], 4)?;
+            cursor.expect_writes(params[3], 4)?;
+        }
+    }
+    cursor.finish()
+}
+
+struct PrecompileMemoryAccessCursor<'a> {
+    row: usize,
+    accesses: &'a [GuestMemoryAccess],
+    offset: usize,
+}
+
+impl PrecompileMemoryAccessCursor<'_> {
+    fn expect_reads(
+        &mut self,
+        base_address: u64,
+        word_count: usize,
+    ) -> Result<Vec<u64>, GuestPcTraceBackendError> {
+        let mut values = Vec::with_capacity(word_count);
+        for index in 0..word_count {
+            values.push(
+                self.expect_access(GuestMemoryAccessKind::Read, base_address + index as u64 * 8)?,
+            );
+        }
+        Ok(values)
+    }
+
+    fn expect_writes(
+        &mut self,
+        base_address: u64,
+        word_count: usize,
+    ) -> Result<Vec<u64>, GuestPcTraceBackendError> {
+        let mut values = Vec::with_capacity(word_count);
+        for index in 0..word_count {
+            values.push(self.expect_access(
+                GuestMemoryAccessKind::Write,
+                base_address + index as u64 * 8,
+            )?);
+        }
+        Ok(values)
+    }
+
+    fn expect_access(
+        &mut self,
+        kind: GuestMemoryAccessKind,
+        address: u64,
+    ) -> Result<u64, GuestPcTraceBackendError> {
+        let Some(access) = self.accesses.get(self.offset) else {
+            return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                row: self.row,
+                message: format!("missing precompile memory access {}", self.offset),
+            });
+        };
+        if access.kind != kind || access.address != address || access.byte_len != 8 {
+            return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                row: self.row,
+                message: format!(
+                    "expected precompile memory access {} as {:?} at {} byte length 8, found {:?} at {} byte length {}",
+                    self.offset, kind, address, access.kind, access.address, access.byte_len
+                ),
+            });
+        }
+        self.offset += 1;
+        Ok(access.value)
+    }
+
+    fn finish(self) -> Result<(), GuestPcTraceBackendError> {
+        if self.offset != self.accesses.len() {
+            return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                row: self.row,
+                message: format!(
+                    "expected {} precompile memory accesses, found {}",
+                    self.offset,
+                    self.accesses.len()
+                ),
+            });
+        }
+        Ok(())
+    }
 }
 
 fn zisk_main_store_offset(
@@ -1538,5 +1679,81 @@ fn signed_trace_value(
         canonical_trace_value(row, column, value as u64)
     } else {
         Ok(-canonical_trace_value(row, column, value.unsigned_abs())?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::guest_instruction::{RiscvInstruction, RiscvPrecompileKind};
+
+    #[test]
+    fn rejects_add256_precompile_memory_access_address_mismatch() {
+        let mut report = add256_report();
+        report.precompile_memory_accesses[4].address += 8;
+
+        let error = validate_zisk_main_precompile_memory_accesses(3, &report, 64)
+            .expect_err("mismatched Add256 precompile memory access should fail");
+
+        assert!(error.to_string().contains("precompile memory access 4"));
+    }
+
+    fn add256_report() -> GuestMachineReport {
+        let params_address = 64;
+        let a_address = 96;
+        let b_address = 128;
+        let c_address = 160;
+        let mut precompile_memory_accesses = vec![
+            memory_read(params_address, a_address),
+            memory_read(params_address + 8, b_address),
+            memory_read(params_address + 16, 0),
+            memory_read(params_address + 24, c_address),
+        ];
+        precompile_memory_accesses.extend([
+            memory_read(a_address, u64::MAX),
+            memory_read(a_address + 8, u64::MAX),
+            memory_read(a_address + 16, u64::MAX),
+            memory_read(a_address + 24, u64::MAX),
+            memory_read(b_address, 1),
+            memory_read(b_address + 8, 0),
+            memory_read(b_address + 16, 0),
+            memory_read(b_address + 24, 0),
+            memory_write(c_address, 0),
+            memory_write(c_address + 8, 0),
+            memory_write(c_address + 16, 0),
+            memory_write(c_address + 24, 0),
+        ]);
+        GuestMachineReport {
+            address: 0x8000_0000,
+            instruction_byte_len: 4,
+            instruction: RiscvInstruction::ZiskPrecompile {
+                kind: RiscvPrecompileKind::Add256,
+                rs1: 1,
+                rd: 2,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: vec![GuestRegisterWrite { index: 2, value: 1 }],
+            memory_accesses: Vec::new(),
+            precompile_memory_accesses,
+            precompile_result: Some(1),
+        }
+    }
+
+    fn memory_read(address: u64, value: u64) -> GuestMemoryAccess {
+        GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address,
+            byte_len: 8,
+            value,
+        }
+    }
+
+    fn memory_write(address: u64, value: u64) -> GuestMemoryAccess {
+        GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address,
+            byte_len: 8,
+            value,
+        }
     }
 }

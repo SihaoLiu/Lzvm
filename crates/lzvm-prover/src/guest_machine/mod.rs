@@ -529,6 +529,7 @@ pub struct GuestMemoryAccess {
 struct GuestInstructionEffects {
     register_writes: Vec<GuestRegisterWrite>,
     memory_accesses: Vec<GuestMemoryAccess>,
+    precompile_memory_accesses: Vec<GuestMemoryAccess>,
     precompile_result: Option<u64>,
 }
 
@@ -542,6 +543,24 @@ impl GuestInstructionEffects {
 
     fn record_precompile_result(&mut self, value: u64) {
         self.precompile_result = Some(value);
+    }
+
+    fn record_precompile_memory_read(&mut self, address: u64, byte_len: usize, value: u64) {
+        self.precompile_memory_accesses.push(GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address,
+            byte_len,
+            value,
+        });
+    }
+
+    fn record_precompile_memory_write(&mut self, address: u64, byte_len: usize, value: u64) {
+        self.precompile_memory_accesses.push(GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address,
+            byte_len,
+            value,
+        });
     }
 
     fn record_memory_read(&mut self, address: u64, byte_len: usize, value: u64) {
@@ -571,6 +590,7 @@ pub struct GuestMachineReport {
     pub next_pc: u64,
     pub register_writes: Vec<GuestRegisterWrite>,
     pub memory_accesses: Vec<GuestMemoryAccess>,
+    pub precompile_memory_accesses: Vec<GuestMemoryAccess>,
     pub precompile_result: Option<u64>,
 }
 
@@ -903,6 +923,7 @@ fn advance_guest_machine_inner(
         next_pc,
         register_writes: effects.register_writes,
         memory_accesses: effects.memory_accesses,
+        precompile_memory_accesses: effects.precompile_memory_accesses,
         precompile_result: effects.precompile_result,
     })
 }
@@ -1094,7 +1115,8 @@ fn execute_guest_instruction(
         }
         RiscvInstruction::ZiskPrecompile { kind, rs1, rd } => {
             let operand_address = state.read_decoded_register(rs1);
-            let result = execute_precompile(memory, state, kind, address, operand_address)?;
+            let result =
+                execute_precompile(memory, state, effects, kind, address, operand_address)?;
             effects.record_precompile_result(result);
             write_reported_register(state, effects, rd, result);
         }

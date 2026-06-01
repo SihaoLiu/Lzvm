@@ -1,6 +1,7 @@
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_prover::guest_machine::{
     advance_guest_machine, GuestMachineError, GuestMachineMemory, GuestMachineState,
+    GuestMemoryAccess, GuestMemoryAccessKind,
 };
 use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryImage};
 use tiny_keccak::keccakf;
@@ -290,13 +291,52 @@ fn advances_zisk_keccak_precompile() {
         .set_register(10, data_address)
         .expect("state pointer register should set");
 
-    advance_guest_machine(&mut memory, &mut state).expect("keccak precompile should execute");
+    let report =
+        advance_guest_machine(&mut memory, &mut state).expect("keccak precompile should execute");
 
     let mut stored = vec![0_u8; expected.len()];
     memory
         .read_range_into(data_address, &mut stored)
         .expect("keccak state should read");
     assert_eq!(stored, expected);
+    assert!(report.memory_accesses.is_empty());
+    assert_eq!(report.precompile_memory_accesses.len(), 50);
+    assert_eq!(
+        report.precompile_memory_accesses[0],
+        GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address: data_address,
+            byte_len: 8,
+            value: state_words[0],
+        }
+    );
+    assert_eq!(
+        report.precompile_memory_accesses[24],
+        GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address: data_address + 24 * 8,
+            byte_len: 8,
+            value: state_words[24],
+        }
+    );
+    assert_eq!(
+        report.precompile_memory_accesses[25],
+        GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address: data_address,
+            byte_len: 8,
+            value: expected_words[0],
+        }
+    );
+    assert_eq!(
+        report.precompile_memory_accesses[49],
+        GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address: data_address + 24 * 8,
+            byte_len: 8,
+            value: expected_words[24],
+        }
+    );
     assert_eq!(state.register(10), Some(data_address));
     assert_eq!(state.pc(), ENTRY + 4);
 }
@@ -548,6 +588,64 @@ fn advances_zisk_add256_precompile() {
 
     assert_eq!(read_u64_array(&memory, c_address), [0, 0, 0, 0]);
     assert_eq!(state.register(5), Some(1));
+    assert!(report.memory_accesses.is_empty());
     assert_eq!(report.precompile_result, Some(1));
+    assert_eq!(report.precompile_memory_accesses.len(), 16);
+    assert_eq!(
+        &report.precompile_memory_accesses[..4],
+        [
+            GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Read,
+                address: params_address,
+                byte_len: 8,
+                value: a_address,
+            },
+            GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Read,
+                address: params_address + 8,
+                byte_len: 8,
+                value: b_address,
+            },
+            GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Read,
+                address: params_address + 16,
+                byte_len: 8,
+                value: 0,
+            },
+            GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Read,
+                address: params_address + 24,
+                byte_len: 8,
+                value: c_address,
+            },
+        ]
+    );
+    assert_eq!(
+        report.precompile_memory_accesses[4],
+        GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address: a_address,
+            byte_len: 8,
+            value: u64::MAX,
+        }
+    );
+    assert_eq!(
+        report.precompile_memory_accesses[8],
+        GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address: b_address,
+            byte_len: 8,
+            value: 1,
+        }
+    );
+    assert_eq!(
+        report.precompile_memory_accesses[12],
+        GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address: c_address,
+            byte_len: 8,
+            value: 0,
+        }
+    );
     assert_eq!(state.pc(), ENTRY + 4);
 }
