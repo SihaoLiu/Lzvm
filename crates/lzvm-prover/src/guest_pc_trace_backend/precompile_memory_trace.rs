@@ -38,9 +38,21 @@ pub(super) fn write_layout_precompile_memory_trace(
         .trace_builder()
         .map_err(GuestPcTraceBackendError::TraceBuild)?;
     let mut state = ZiskMainTraceState::new();
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: true,
+        previous_c: 0,
+    };
     let mut output_row = 0_usize;
     for (main_step, report) in reports.iter().enumerate() {
-        validate_and_apply_zisk_main_report(main_step, report, &mut state, None)?;
+        validate_and_apply_zisk_main_report(
+            main_step,
+            report,
+            &mut state,
+            None,
+            reports.len(),
+            segment,
+        )?;
         for access in &report.precompile_memory_accesses {
             write_precompile_memory_access(
                 &mut builder,

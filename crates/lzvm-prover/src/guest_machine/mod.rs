@@ -663,6 +663,19 @@ pub struct GuestMachineExecutionTrace {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GuestMachineTraceSlice {
+    pub executed_instructions: u64,
+    pub status: GuestMachineTraceSliceStatus,
+    pub reports: Vec<GuestMachineReport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum GuestMachineTraceSliceStatus {
+    Halted(GuestMachineHalt),
+    Paused { pc: u64 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GuestMachineHalt {
     Ecall { address: u64 },
 }
@@ -876,6 +889,37 @@ pub fn run_guest_machine_trace_with_fcalls(
     instruction_limit: u64,
 ) -> Result<GuestMachineExecutionTrace, GuestMachineRunError> {
     run_guest_machine_trace_inner(memory, state, Some(handler), instruction_limit)
+}
+
+pub(crate) fn run_guest_machine_trace_slice_with_fcalls(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    instruction_limit: u64,
+) -> Result<GuestMachineTraceSlice, GuestMachineRunError> {
+    let mut reports = Vec::new();
+    let mut executed_instructions = 0_u64;
+    loop {
+        let current = decode_current_guest_instruction(memory, state.pc())?;
+        if current == RiscvInstruction::Ecall {
+            return Ok(GuestMachineTraceSlice {
+                executed_instructions,
+                status: GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall {
+                    address: state.pc(),
+                }),
+                reports,
+            });
+        }
+        if executed_instructions == instruction_limit {
+            return Ok(GuestMachineTraceSlice {
+                executed_instructions,
+                status: GuestMachineTraceSliceStatus::Paused { pc: state.pc() },
+                reports,
+            });
+        }
+        reports.push(advance_guest_machine_with_fcalls(memory, state, handler)?);
+        executed_instructions += 1;
+    }
 }
 
 fn run_guest_machine_trace_inner(

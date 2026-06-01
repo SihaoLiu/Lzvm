@@ -22,6 +22,18 @@ pub struct WitnessTraceRunOutput {
 }
 
 impl WitnessTraceRunOutput {
+    pub(crate) fn from_parts(
+        trace: WitnessTraceBuffer,
+        unit_values: Vec<WitnessTraceUnitValue>,
+        proof_values: Vec<WitnessTraceProofValue>,
+    ) -> Self {
+        Self {
+            trace,
+            unit_values,
+            proof_values,
+        }
+    }
+
     pub fn trace(&self) -> &WitnessTraceBuffer {
         &self.trace
     }
@@ -151,11 +163,11 @@ pub fn run_witness_trace_output_with_context(
         request.rows,
         request.columns,
     )?;
-    Ok(WitnessTraceRunOutput {
+    Ok(WitnessTraceRunOutput::from_parts(
         trace,
-        unit_values: output.unit_values,
-        proof_values: output.proof_values,
-    })
+        output.unit_values,
+        output.proof_values,
+    ))
 }
 
 pub(crate) fn trace_output_byte_len(

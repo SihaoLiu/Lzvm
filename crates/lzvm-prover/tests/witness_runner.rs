@@ -7,7 +7,9 @@ use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::setup_info::CommitmentColumn;
 use lzvm_field::{Felt, MODULUS};
-use lzvm_prover::guest_pc_trace_backend::GuestPcTraceBackend;
+use lzvm_prover::guest_pc_trace_backend::{
+    run_guest_pc_trace_segments_with_context, GuestPcTraceBackend,
+};
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::{
     load_witness_library, WitnessBackend, WitnessCallError, WitnessComputeContext,
@@ -1619,6 +1621,266 @@ fn guest_pc_trace_backend_reports_zisk_main_unit_values_and_register_steps() {
     assert!(last_reg_mem_step[2..]
         .iter()
         .all(|value| *value == Felt::ZERO));
+}
+
+#[test]
+fn guest_pc_trace_backend_splits_zisk_main_segments() {
+    let dir = temp_dir("guest-zisk-main-segments");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), addi(3, 2, 5), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_register_step_columns(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let segments = run_guest_pc_trace_segments_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should split Zisk Main output");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(segments.len(), 2);
+    assert_eq!(segments[0].trace_instance_index(), 0);
+    assert_eq!(segments[1].trace_instance_index(), 1);
+
+    let first = segments[0].output();
+    assert_eq!(first.trace().row_count(), 2);
+    assert_eq!(
+        first.trace().value(0, 7),
+        Some(Felt::from_canonical(ENTRY).expect("canonical"))
+    );
+    assert_eq!(
+        first.trace().value(1, 7),
+        Some(Felt::from_canonical(ENTRY + 4).expect("canonical"))
+    );
+    assert_eq!(unit_value(first, "main_last_segment"), &[Felt::ZERO]);
+    assert_eq!(unit_value(first, "main_segment"), &[Felt::ZERO]);
+    assert_eq!(
+        unit_value(first, "segment_initial_pc"),
+        &[Felt::from_canonical(ENTRY).expect("canonical")]
+    );
+    assert_eq!(
+        unit_value(first, "segment_next_pc"),
+        &[Felt::from_canonical(ENTRY + 8).expect("canonical")]
+    );
+    assert_eq!(
+        unit_value(first, "segment_last_c"),
+        &[Felt::from_u64(10), Felt::ZERO]
+    );
+    let first_last_reg_mem_step = unit_value(first, "last_reg_mem_step");
+    assert_eq!(first_last_reg_mem_step[0], Felt::from_u64(5));
+    assert_eq!(first_last_reg_mem_step[1], Felt::from_u64(7));
+
+    let second = segments[1].output();
+    assert_eq!(
+        second.trace().value(0, 7),
+        Some(Felt::from_canonical(ENTRY + 8).expect("canonical"))
+    );
+    assert_eq!(second.trace().value(0, 29), Some(Felt::from_u64(8)));
+    assert_eq!(
+        second.trace().value(1, 7),
+        Some(Felt::from_canonical(ENTRY + 12).expect("canonical"))
+    );
+    assert_eq!(unit_value(second, "main_last_segment"), &[Felt::ONE]);
+    assert_eq!(unit_value(second, "main_segment"), &[Felt::ONE]);
+    assert_eq!(
+        unit_value(second, "segment_initial_pc"),
+        &[Felt::from_canonical(ENTRY + 8).expect("canonical")]
+    );
+    assert_eq!(
+        unit_value(second, "segment_previous_c"),
+        &[Felt::from_u64(10), Felt::ZERO]
+    );
+    assert_eq!(
+        unit_value(second, "segment_next_pc"),
+        &[Felt::from_canonical(ENTRY + 12).expect("canonical")]
+    );
+    assert_eq!(
+        unit_value(second, "segment_last_c"),
+        &[Felt::ZERO, Felt::ZERO]
+    );
+
+    let last_reg_value = unit_value(second, "last_reg_value");
+    assert_eq!(last_reg_value[0..2], [Felt::from_u64(7), Felt::ZERO]);
+    assert_eq!(last_reg_value[2..4], [Felt::from_u64(10), Felt::ZERO]);
+    assert_eq!(last_reg_value[4..6], [Felt::from_u64(15), Felt::ZERO]);
+
+    let last_reg_mem_step = unit_value(second, "last_reg_mem_step");
+    assert_eq!(last_reg_mem_step[0], Felt::from_u64(8));
+    assert_eq!(last_reg_mem_step[1], Felt::from_u64(9));
+    assert_eq!(last_reg_mem_step[2], Felt::from_u64(11));
+}
+
+#[test]
+fn guest_pc_trace_backend_single_zisk_main_output_reports_capacity() {
+    let dir = temp_dir("guest-zisk-main-single-capacity");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), addi(3, 2, 5), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_register_step_columns(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let result = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    match result.expect_err("single Zisk Main output should still report capacity") {
+        WitnessTraceRunError::Call(WitnessCallError::Backend { message }) => assert_eq!(
+            message,
+            "guest PC trace backend exceeded trace layout capacity: rows 2, row width 40, required rows at least 3, required same-capacity trace instances at least 2"
+        ),
+        other => panic!("unexpected single Zisk Main capacity result: {other:?}"),
+    }
+}
+
+#[test]
+fn guest_pc_trace_segments_reject_request_shape_mismatch() {
+    let unit = sample_unit_with_zisk_main_register_step_columns(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let result = run_guest_pc_trace_segments_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: None,
+            guest_image_info: None,
+            trace_layout: Some(&layout),
+        },
+        WitnessTraceRequest::new(Vec::new(), 4, 20),
+    );
+
+    match result.expect_err("segmented request should reject mismatched shape") {
+        WitnessTraceRunError::Call(WitnessCallError::Backend { message }) => assert_eq!(
+            message,
+            "guest PC trace segmented request shape mismatch: layout 2x40, request 4x20"
+        ),
+        other => panic!("unexpected segmented request shape result: {other:?}"),
+    }
+}
+
+#[test]
+fn guest_pc_trace_backend_single_full_zisk_main_output_preserves_contract() {
+    let dir = temp_dir("guest-zisk-main-single-full-contract");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), addi(3, 2, 5), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_register_step_columns(3);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let output = run_witness_trace_output_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("single full Zisk Main output should preserve current contract");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(output.trace().row_count(), 3);
+    assert_eq!(unit_value(&output, "main_last_segment"), &[Felt::ONE]);
+    assert_eq!(unit_value(&output, "main_segment"), &[Felt::ZERO]);
+    assert_eq!(
+        unit_value(&output, "segment_next_pc"),
+        &[Felt::from_canonical(ENTRY + 12).expect("canonical")]
+    );
+    assert_eq!(
+        unit_value(&output, "segment_last_c"),
+        &[Felt::from_u64(15), Felt::ZERO]
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_adds_terminal_segment_when_final_segment_is_full() {
+    let dir = temp_dir("guest-zisk-main-full-final-segment");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), addi(3, 2, 5), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_register_step_columns(3);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let segments = run_guest_pc_trace_segments_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should add a terminal Zisk Main output");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(segments.len(), 2);
+    let first = segments[0].output();
+    assert_eq!(unit_value(first, "main_last_segment"), &[Felt::ZERO]);
+    assert_eq!(
+        unit_value(first, "segment_next_pc"),
+        &[Felt::from_canonical(ENTRY + 12).expect("canonical")]
+    );
+    assert_eq!(
+        unit_value(first, "segment_last_c"),
+        &[Felt::from_u64(15), Felt::ZERO]
+    );
+
+    let terminal = segments[1].output();
+    assert_eq!(segments[1].trace_instance_index(), 1);
+    assert_eq!(
+        terminal.trace().value(0, 7),
+        Some(Felt::from_canonical(ENTRY + 12).expect("canonical"))
+    );
+    assert_eq!(terminal.trace().value(0, 4), Some(Felt::ZERO));
+    assert_eq!(unit_value(terminal, "main_last_segment"), &[Felt::ONE]);
+    assert_eq!(unit_value(terminal, "main_segment"), &[Felt::ONE]);
+    assert_eq!(
+        unit_value(terminal, "segment_initial_pc"),
+        &[Felt::from_canonical(ENTRY + 12).expect("canonical")]
+    );
+    assert_eq!(
+        unit_value(terminal, "segment_previous_c"),
+        &[Felt::from_u64(15), Felt::ZERO]
+    );
+    assert_eq!(
+        unit_value(terminal, "segment_next_pc"),
+        &[Felt::from_canonical(ENTRY + 12).expect("canonical")]
+    );
+    assert_eq!(
+        unit_value(terminal, "segment_last_c"),
+        &[Felt::ZERO, Felt::ZERO]
+    );
+    let last_reg_mem_step = unit_value(terminal, "last_reg_mem_step");
+    assert_eq!(last_reg_mem_step[0], Felt::from_u64(12));
+    assert_eq!(last_reg_mem_step[1], Felt::from_u64(12));
+    assert_eq!(last_reg_mem_step[2], Felt::from_u64(12));
 }
 
 fn unit_value<'a>(
