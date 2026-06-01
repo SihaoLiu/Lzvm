@@ -278,7 +278,7 @@ fn evaluate_entry(
     }
 
     let prepared_operations = prepared_operations(&mut context)?;
-    if let Some(base_operations) =
+    if let Some(base_program) =
         prepared_base_operations(entry, &prepared_operations, program, inputs)?
     {
         for row in active_rows {
@@ -288,7 +288,7 @@ fn evaluate_entry(
             let value = evaluate_prepared_base_row(
                 row,
                 entry,
-                &base_operations,
+                &base_program,
                 inputs.domain_size,
                 &mut tmp1,
                 &mut tmp3,
@@ -423,6 +423,12 @@ struct PreparedOperation<'input> {
     destination_offset: usize,
     src0: DecodedSource<'input>,
     src1: DecodedSource<'input>,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedBaseProgram<'input> {
+    operations: Vec<PreparedBaseOperation<'input>>,
+    clear_tmp1: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -602,7 +608,7 @@ fn prepared_base_operations<'input>(
     operations: &[PreparedOperation<'input>],
     program: &ConstraintProgram,
     inputs: RegularConstraintInputs<'input>,
-) -> Result<Option<Vec<PreparedBaseOperation<'input>>>, RegularConstraintEvalError> {
+) -> Result<Option<PreparedBaseProgram<'input>>, RegularConstraintEvalError> {
     if entry.destination_dimension != 1 {
         return Ok(None);
     }
@@ -615,19 +621,34 @@ fn prepared_base_operations<'input>(
     validate_felt_index("tmp1", tmp1_len, destination_index)?;
 
     let mut base_operations = Vec::with_capacity(operations.len());
+    let mut written_tmp1 = vec![false; tmp1_len];
+    let mut clear_tmp1 = false;
     for operation in operations {
         if operation.shape != OperationShape::BaseBase {
             return Ok(None);
         }
         validate_felt_index("tmp1", tmp1_len, operation.destination_offset)?;
+        let src0 = prepared_base_source(operation.src0, program, inputs, tmp1_len, tmp3_len)?;
+        let src1 = prepared_base_source(operation.src1, program, inputs, tmp1_len, tmp3_len)?;
+        clear_tmp1 |=
+            reads_unwritten_tmp1(src0, &written_tmp1) || reads_unwritten_tmp1(src1, &written_tmp1);
+        written_tmp1[operation.destination_offset] = true;
         base_operations.push(PreparedBaseOperation {
             kind: operation.kind,
             destination_offset: operation.destination_offset,
-            src0: prepared_base_source(operation.src0, program, inputs, tmp1_len, tmp3_len)?,
-            src1: prepared_base_source(operation.src1, program, inputs, tmp1_len, tmp3_len)?,
+            src0,
+            src1,
         });
     }
-    Ok(Some(base_operations))
+    clear_tmp1 |= !written_tmp1[destination_index];
+    Ok(Some(PreparedBaseProgram {
+        operations: base_operations,
+        clear_tmp1,
+    }))
+}
+
+fn reads_unwritten_tmp1(source: PreparedBaseSource<'_>, written_tmp1: &[bool]) -> bool {
+    matches!(source, PreparedBaseSource::Tmp1(offset) if !written_tmp1[offset])
 }
 
 fn prepared_base_source<'input>(
@@ -958,15 +979,19 @@ fn evaluate_prepared_row(
 fn evaluate_prepared_base_row(
     row: usize,
     entry: &ConstraintEntry,
-    operations: &[PreparedBaseOperation<'_>],
+    program: &PreparedBaseProgram<'_>,
     domain_size: usize,
     tmp1: &mut [Felt],
     tmp3: &mut [Felt],
 ) -> Felt {
-    tmp1.fill(Felt::ZERO);
+    if program.clear_tmp1 {
+        #[cfg(test)]
+        BASE_ONLY_TMP1_CLEAR_COUNT.with(|count| count.set(count.get() + 1));
+        tmp1.fill(Felt::ZERO);
+    }
     tmp3.fill(Felt::ZERO);
 
-    for operation in operations {
+    for operation in &program.operations {
         let left = read_prepared_base(operation.src0, row, domain_size, tmp1, tmp3);
         let right = read_prepared_base(operation.src1, row, domain_size, tmp1, tmp3);
         tmp1[operation.destination_offset] = apply_prepared_base_op(operation.kind, left, right);
@@ -1213,6 +1238,7 @@ thread_local! {
     static BUFFER_RESOLVE_COUNT: Cell<usize> = const { Cell::new(0) };
     static CACHED_SOURCE_COUNT: Cell<usize> = const { Cell::new(0) };
     static BASE_ONLY_PREPARED_ROW_COUNT: Cell<usize> = const { Cell::new(0) };
+    static BASE_ONLY_TMP1_CLEAR_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 fn find_stage_columns(
@@ -1629,6 +1655,7 @@ mod tests {
         let fixed = vec![Felt::from_u64(3); 8];
 
         BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
+        BASE_ONLY_TMP1_CLEAR_COUNT.with(|count| count.set(0));
         let results = evaluate_regular_constraints(
             &program,
             RegularConstraintInputs {
@@ -1646,6 +1673,48 @@ mod tests {
 
         assert_eq!(results[0].invalid_rows, Vec::new());
         assert_eq!(BASE_ONLY_PREPARED_ROW_COUNT.with(Cell::get), 7);
+        assert_eq!(BASE_ONLY_TMP1_CLEAR_COUNT.with(Cell::get), 0);
+    }
+
+    #[test]
+    fn base_only_regular_constraints_clear_tmp1_for_unwritten_reads() {
+        let program = ConstraintProgram {
+            entries: vec![ConstraintEntry {
+                stage: 1,
+                destination_dimension: 1,
+                destination_id: 0,
+                first_row: 0,
+                last_row: 8,
+                temp1_count: 1,
+                temp3_count: 0,
+                ops_count: 1,
+                ops_offset: 0,
+                args_count: 8,
+                args_offset: 0,
+                intermediate: false,
+                source_line: "base-only clear tmp1".to_owned(),
+            }],
+            ops: vec![0],
+            args: vec![0, 0, 5, 0, 0, 8, 0, 0],
+            numbers: vec![0],
+        };
+
+        BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
+        BASE_ONLY_TMP1_CLEAR_COUNT.with(|count| count.set(0));
+        let results = evaluate_regular_constraints(
+            &program,
+            RegularConstraintInputs {
+                domain_size: 8,
+                stage_count: 1,
+                opening_point_offsets: &[0],
+                ..RegularConstraintInputs::default()
+            },
+        )
+        .expect("regular constraint should evaluate");
+
+        assert_eq!(results[0].invalid_rows, Vec::new());
+        assert_eq!(BASE_ONLY_PREPARED_ROW_COUNT.with(Cell::get), 7);
+        assert_eq!(BASE_ONLY_TMP1_CLEAR_COUNT.with(Cell::get), 7);
     }
 
     #[test]
