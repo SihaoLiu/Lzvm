@@ -35,6 +35,10 @@ impl GuestPcTraceBackend {
     }
 }
 
+pub fn is_guest_pc_trace_layout_supported(layout: &WitnessTraceLayout) -> bool {
+    layout_trace_capacity(Some(layout)).is_ok()
+}
+
 impl WitnessBackend for GuestPcTraceBackend {
     fn compute(
         &self,

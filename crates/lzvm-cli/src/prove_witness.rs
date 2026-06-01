@@ -18,8 +18,11 @@ use lzvm_artifacts::public_values::{
 };
 use lzvm_artifacts::trace_bundle::{parse_trace_bundle_ref, read_trace_bundle_file_bytes};
 use lzvm_field::{Ext3, Felt};
-use lzvm_prover::guest_pc_trace_backend::GuestPcTraceBackend;
+use lzvm_prover::guest_pc_trace_backend::{
+    is_guest_pc_trace_layout_supported, GuestPcTraceBackend,
+};
 use lzvm_prover::unit_values::ProveUnitValues;
+use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::load_witness_library;
 use lzvm_prover::{
     build_witness_commitment_segment, derive_prove_execution_plan_with_program_image_cache,
@@ -63,7 +66,6 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
-    let single_unit_index = parsed.unit_index.unwrap_or(0);
 
     let catalog = match read_checked_setup_catalog(&parsed.run_args.positionals[0]) {
         Ok(catalog) => catalog,
@@ -120,6 +122,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     }
+    let single_unit_index = match selected_single_unit_index(&plan, &parsed) {
+        Ok(unit_index) => unit_index,
+        Err(message) => {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
+            return 1;
+        }
+    };
     let public_inputs_summary = match summarize_public_inputs(plan.inputs.public_inputs.as_deref())
     {
         Ok(summary) => summary,
@@ -496,6 +505,38 @@ struct PublicInputSummary {
 fn contribution_artifact_requested(plan: &ProveExecutionPlan) -> bool {
     plan.run_plan.pass.kind() == ProvePassKind::Contributions
         || plan.run_plan.options.remote_aggregation
+}
+
+fn selected_single_unit_index(
+    plan: &ProveExecutionPlan,
+    parsed: &ParsedWitnessArgs,
+) -> Result<usize, String> {
+    if let Some(unit_index) = parsed.unit_index {
+        return Ok(unit_index);
+    }
+    if parsed.guest_pc_trace_instruction_limit.is_some() {
+        return selected_guest_pc_trace_unit_index(plan);
+    }
+    Ok(0)
+}
+
+fn selected_guest_pc_trace_unit_index(plan: &ProveExecutionPlan) -> Result<usize, String> {
+    let mut fallback = None;
+    for (unit_index, unit) in plan.run_plan.schedule.units.iter().enumerate() {
+        let layout = derive_witness_trace_layout(unit).map_err(|error| {
+            format!("guest PC trace unit layout failed for unit {unit_index}: {error}")
+        })?;
+        if is_guest_pc_trace_layout_supported(&layout) {
+            if unit.unit_name.as_deref() == Some("Main") {
+                return Ok(unit_index);
+            }
+            fallback.get_or_insert(unit_index);
+        }
+    }
+    fallback.ok_or_else(|| {
+        "no prove witness unit exposes guest PC trace columns; use a setup with a compatible guest trace layout"
+            .to_owned()
+    })
 }
 
 fn summarize_public_inputs(path: Option<&Path>) -> Result<Option<PublicInputSummary>, String> {
