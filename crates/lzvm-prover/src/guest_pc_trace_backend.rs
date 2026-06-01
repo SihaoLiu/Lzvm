@@ -2,14 +2,15 @@ use std::fmt;
 
 use crate::guest_instruction::{RiscvInstruction, RiscvPrecompileKind};
 use crate::guest_machine::{
-    run_guest_machine_trace_with_fcalls, GuestMachineHalt, GuestMachineMemory, GuestMachineReport,
-    GuestMachineRunError, GuestMemoryAccess, GuestMemoryAccessKind, GuestRegisterWrite,
+    run_guest_machine_trace_with_fcalls, GuestDmaProofValueFlags, GuestMachineHalt,
+    GuestMachineMemory, GuestMachineReport, GuestMachineRunError, GuestMemoryAccess,
+    GuestMemoryAccessKind, GuestRegisterWrite,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{WitnessTraceBuildError, WitnessTraceLayout};
 use crate::witness_loader::{
     WitnessBackend, WitnessCallError, WitnessComputeContext, WitnessTraceBuffers,
-    WitnessTraceOutput, WitnessTraceUnitValue,
+    WitnessTraceOutput, WitnessTraceProofValue, WitnessTraceUnitValue,
 };
 use crate::zisk_main::{
     lower_guest_report, ZiskMainInstruction, ZiskMainLowerError, ZiskMainOp, ZiskMainSource,
@@ -277,6 +278,11 @@ fn compute_guest_pc_trace(
             return Err(GuestPcTraceBackendError::GuestRun(error));
         }
     };
+    let proof_values = zisk_runtime_proof_values(
+        !trace.reports.is_empty(),
+        fcall_handler.input_data_was_mapped(),
+        state.dma_proof_value_flags(),
+    );
     if let Some(layout) = context.trace_layout {
         if let Some(output) = write_layout_zisk_main_trace(
             layout,
@@ -284,6 +290,8 @@ fn compute_guest_pc_trace(
             guest_machine_halt_pc(&trace.run.halt),
             buffers.output_mut(),
         )? {
+            let mut output = output;
+            output.proof_values = proof_values;
             return Ok(output);
         }
         if let Some(produced_len) = precompile_memory_trace::write_layout_precompile_memory_trace(
@@ -291,12 +299,20 @@ fn compute_guest_pc_trace(
             &trace.reports,
             buffers.output_mut(),
         )? {
-            return Ok(WitnessTraceOutput::new(produced_len));
+            return Ok(WitnessTraceOutput::with_values(
+                produced_len,
+                Vec::new(),
+                proof_values,
+            ));
         }
         if let Some(produced_len) =
             write_layout_pc_trace(layout, &trace.reports, buffers.output_mut())?
         {
-            return Ok(WitnessTraceOutput::new(produced_len));
+            return Ok(WitnessTraceOutput::with_values(
+                produced_len,
+                Vec::new(),
+                proof_values,
+            ));
         }
     }
     let produced_len =
@@ -321,7 +337,11 @@ fn compute_guest_pc_trace(
         output[offset..offset + 8].copy_from_slice(&report.address.to_le_bytes());
         output[offset + 8..offset + 16].copy_from_slice(&report.next_pc.to_le_bytes());
     }
-    Ok(WitnessTraceOutput::new(produced_len))
+    Ok(WitnessTraceOutput::with_values(
+        produced_len,
+        Vec::new(),
+        proof_values,
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -752,6 +772,36 @@ fn zisk_main_unit_values(
         WitnessTraceUnitValue::new("last_reg_value", last_reg_value),
         WitnessTraceUnitValue::new("last_reg_mem_step", last_reg_mem_step),
     ]
+}
+
+fn zisk_runtime_proof_values(
+    enable_rom_data: bool,
+    enable_input_data: bool,
+    dma: GuestDmaProofValueFlags,
+) -> Vec<WitnessTraceProofValue> {
+    vec![
+        proof_value_bool("enable_input_data", enable_input_data),
+        proof_value_bool("enable_rom_data", enable_rom_data),
+        proof_value_bool("enable_dma_64_aligned", false),
+        proof_value_bool(
+            "enable_dma_64_aligned_inputcpy",
+            dma.enable_dma_64_aligned_inputcpy,
+        ),
+        proof_value_bool("enable_dma_64_aligned_mem", dma.enable_dma_64_aligned_mem),
+        proof_value_bool(
+            "enable_dma_64_aligned_memcpy",
+            dma.enable_dma_64_aligned_memcpy,
+        ),
+        proof_value_bool(
+            "enable_dma_64_aligned_memset",
+            dma.enable_dma_64_aligned_memset,
+        ),
+        proof_value_bool("enable_dma_unaligned", dma.enable_dma_unaligned),
+    ]
+}
+
+fn proof_value_bool(name: &str, enabled: bool) -> WitnessTraceProofValue {
+    WitnessTraceProofValue::new(name, vec![if enabled { Felt::ONE } else { Felt::ZERO }])
 }
 
 fn write_zisk_main_report_columns(

@@ -3,7 +3,7 @@ use std::fmt;
 
 use crate::witness_loader::{
     WitnessBackend, WitnessCallError, WitnessComputeContext, WitnessTraceBuffers,
-    WitnessTraceUnitValue,
+    WitnessTraceProofValue, WitnessTraceUnitValue,
 };
 use crate::witness_trace::{parse_witness_trace, WitnessTraceBuffer, WitnessTraceError};
 
@@ -18,6 +18,7 @@ pub struct WitnessTraceRequest<'a> {
 pub struct WitnessTraceRunOutput {
     trace: WitnessTraceBuffer,
     unit_values: Vec<WitnessTraceUnitValue>,
+    proof_values: Vec<WitnessTraceProofValue>,
 }
 
 impl WitnessTraceRunOutput {
@@ -27,6 +28,10 @@ impl WitnessTraceRunOutput {
 
     pub fn unit_values(&self) -> &[WitnessTraceUnitValue] {
         &self.unit_values
+    }
+
+    pub fn proof_values(&self) -> &[WitnessTraceProofValue] {
+        &self.proof_values
     }
 
     pub fn into_trace(self) -> WitnessTraceBuffer {
@@ -149,6 +154,7 @@ pub fn run_witness_trace_output_with_context(
     Ok(WitnessTraceRunOutput {
         trace,
         unit_values: output.unit_values,
+        proof_values: output.proof_values,
     })
 }
 

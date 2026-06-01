@@ -97,9 +97,33 @@ impl WitnessTraceUnitValue {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WitnessTraceProofValue {
+    name: String,
+    values: Vec<Felt>,
+}
+
+impl WitnessTraceProofValue {
+    pub fn new(name: impl Into<String>, values: Vec<Felt>) -> Self {
+        Self {
+            name: name.into(),
+            values,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn values(&self) -> &[Felt] {
+        &self.values
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WitnessTraceOutput {
     pub produced_len: usize,
     pub unit_values: Vec<WitnessTraceUnitValue>,
+    pub proof_values: Vec<WitnessTraceProofValue>,
 }
 
 impl WitnessTraceOutput {
@@ -107,6 +131,7 @@ impl WitnessTraceOutput {
         Self {
             produced_len,
             unit_values: Vec::new(),
+            proof_values: Vec::new(),
         }
     }
 
@@ -114,6 +139,19 @@ impl WitnessTraceOutput {
         Self {
             produced_len,
             unit_values,
+            proof_values: Vec::new(),
+        }
+    }
+
+    pub fn with_values(
+        produced_len: usize,
+        unit_values: Vec<WitnessTraceUnitValue>,
+        proof_values: Vec<WitnessTraceProofValue>,
+    ) -> Self {
+        Self {
+            produced_len,
+            unit_values,
+            proof_values,
         }
     }
 }

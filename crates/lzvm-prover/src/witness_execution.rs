@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use lzvm_artifacts::fixed::FixedColumns;
+use lzvm_artifacts::global_info::{GlobalInfo, NamedStageValue};
 use lzvm_artifacts::hint_program::{
     source_unimplemented_hint_name, HintProgram, SOURCE_ASSIGNMENT_CHECK_HINT,
 };
@@ -35,7 +36,7 @@ use crate::witness_layout::{
 };
 use crate::witness_loader::{
     load_witness_library, WitnessBackend, WitnessCallError, WitnessComputeContext,
-    WitnessLoadError, WitnessTraceUnitValue,
+    WitnessLoadError, WitnessTraceProofValue, WitnessTraceUnitValue,
 };
 use crate::witness_runner::{
     run_witness_trace_output_with_context, trace_output_byte_len, WitnessTraceRunError,
@@ -244,6 +245,10 @@ pub enum ProveWitnessCommitmentError {
         unit_index: usize,
         message: String,
     },
+    BackendProofValue {
+        unit_index: usize,
+        message: String,
+    },
     FixedColumns {
         unit_index: usize,
         path: PathBuf,
@@ -370,6 +375,13 @@ impl fmt::Display for ProveWitnessCommitmentError {
             } => write!(
                 f,
                 "prove witness commitment backend unit values failed for unit {unit_index}: {message}"
+            ),
+            Self::BackendProofValue {
+                unit_index,
+                message,
+            } => write!(
+                f,
+                "prove witness commitment backend proof values failed for unit {unit_index}: {message}"
             ),
             Self::FixedColumns {
                 unit_index,
@@ -519,6 +531,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             | Self::PublicInputsSetupHashMismatch
             | Self::PublicInputNonCanonical { .. }
             | Self::BackendUnitValue { .. }
+            | Self::BackendProofValue { .. }
             | Self::FixedRowCountTooLarge { .. }
             | Self::FixedRowCountMismatch { .. }
             | Self::FixedColumnCountMismatch { .. }
@@ -743,6 +756,12 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
         auxiliary_inputs,
         trace_output.unit_values(),
     )?;
+    let auxiliary_inputs = merge_backend_proof_values(
+        unit_index,
+        &plan.global_info,
+        auxiliary_inputs,
+        trace_output.proof_values(),
+    )?;
     let trace = trace_output.into_trace();
     run_prove_witness_commitments_from_trace_inner(
         plan,
@@ -773,6 +792,75 @@ fn merge_backend_unit_values(
     let mut merged = auxiliary_inputs.as_ref().clone();
     merged.unit_values = packed_values;
     Ok(Arc::new(merged))
+}
+
+fn merge_backend_proof_values(
+    unit_index: usize,
+    global_info: &GlobalInfo,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    backend_proof_values: &[WitnessTraceProofValue],
+) -> Result<Arc<ProveWitnessAuxiliaryInputs>, ProveWitnessCommitmentError> {
+    if backend_proof_values.is_empty() || global_info.proof_values_map.is_empty() {
+        return Ok(auxiliary_inputs);
+    }
+
+    let packed_values = pack_backend_proof_values(unit_index, global_info, backend_proof_values)?;
+    if auxiliary_inputs.proof_values.is_empty() {
+        let mut merged = auxiliary_inputs.as_ref().clone();
+        merged.proof_values = packed_values;
+        return Ok(Arc::new(merged));
+    }
+    if auxiliary_inputs.proof_values == packed_values {
+        return Ok(auxiliary_inputs);
+    }
+    Err(ProveWitnessCommitmentError::BackendProofValue {
+        unit_index,
+        message: "backend proof values conflict with provided proof values".to_owned(),
+    })
+}
+
+fn pack_backend_proof_values(
+    unit_index: usize,
+    global_info: &GlobalInfo,
+    backend_proof_values: &[WitnessTraceProofValue],
+) -> Result<Vec<Felt>, ProveWitnessCommitmentError> {
+    let mut packed_values = Vec::new();
+    for entry in &global_info.proof_values_map {
+        let mut matches = backend_proof_values
+            .iter()
+            .filter(|value| value.name() == entry.name);
+        let Some(value) = matches.next() else {
+            return Err(ProveWitnessCommitmentError::BackendProofValue {
+                unit_index,
+                message: format!("missing {}", entry.name),
+            });
+        };
+        if matches.next().is_some() {
+            return Err(ProveWitnessCommitmentError::BackendProofValue {
+                unit_index,
+                message: format!("duplicate {}", entry.name),
+            });
+        }
+        let expected = named_stage_value_packed_field_count(entry).map_err(|message| {
+            ProveWitnessCommitmentError::BackendProofValue {
+                unit_index,
+                message,
+            }
+        })?;
+        if value.values().len() != expected {
+            return Err(ProveWitnessCommitmentError::BackendProofValue {
+                unit_index,
+                message: format!(
+                    "{} value count mismatch: expected {}, found {}",
+                    entry.name,
+                    expected,
+                    value.values().len()
+                ),
+            });
+        }
+        packed_values.extend_from_slice(value.values());
+    }
+    Ok(packed_values)
 }
 
 fn pack_backend_unit_values(
@@ -817,6 +905,29 @@ fn pack_backend_unit_values(
         packed_values.extend_from_slice(value.values());
     }
     Ok(packed_values)
+}
+
+fn named_stage_value_packed_field_count(value: &NamedStageValue) -> Result<usize, String> {
+    let dimension = value
+        .lengths
+        .iter()
+        .try_fold(1_usize, |dimension, length| {
+            let length =
+                usize::try_from(*length).map_err(|_| "proof value length overflow".to_owned())?;
+            if length == 0 {
+                return Err("proof value length must be nonzero".to_owned());
+            }
+            dimension
+                .checked_mul(length)
+                .ok_or_else(|| "proof value dimension overflow".to_owned())
+        })?;
+    if dimension == 0 {
+        return Err("proof value dimension must be nonzero".to_owned());
+    }
+    let width = if value.stage == 1 { 1 } else { 3 };
+    dimension
+        .checked_mul(width)
+        .ok_or_else(|| "proof value packed field count overflow".to_owned())
 }
 
 fn stage_value_packed_field_count(value: &StageValue) -> Result<usize, String> {

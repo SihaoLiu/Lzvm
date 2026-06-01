@@ -85,7 +85,8 @@ use lzvm_prover::witness_commitment::commit_witness_trace_stages;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::{
     load_witness_library, TraceBytesBackend, WitnessBackend, WitnessCallError,
-    WitnessComputeContext, WitnessTraceBuffers, WitnessTraceOutput, WitnessTraceUnitValue,
+    WitnessComputeContext, WitnessTraceBuffers, WitnessTraceOutput, WitnessTraceProofValue,
+    WitnessTraceUnitValue,
 };
 use lzvm_prover::witness_runner::{run_witness_trace, WitnessTraceRunError};
 use lzvm_prover::{
@@ -942,6 +943,26 @@ impl WitnessBackend for UnitValueBackend {
     }
 }
 
+struct ProofValueBackend {
+    values: Vec<WitnessTraceProofValue>,
+}
+
+impl WitnessBackend for ProofValueBackend {
+    fn compute(
+        &self,
+        buffers: &mut WitnessTraceBuffers,
+    ) -> Result<WitnessTraceOutput, WitnessCallError> {
+        let trace_bytes = sample_trace_bytes(17);
+        let produced_len = trace_bytes.len();
+        buffers.output_mut()[..produced_len].copy_from_slice(&trace_bytes);
+        Ok(WitnessTraceOutput::with_values(
+            produced_len,
+            Vec::new(),
+            self.values.clone(),
+        ))
+    }
+}
+
 #[test]
 fn runs_witness_and_commits_stages_from_execution_plan() {
     let dir = temp_dir("commitments");
@@ -1094,6 +1115,154 @@ fn uses_backend_unit_values_for_output_auxiliary_inputs() {
         output.auxiliary_inputs().proof_values,
         vec![Felt::from_u64(31)]
     );
+}
+
+#[test]
+fn uses_backend_proof_values_for_output_auxiliary_inputs() {
+    let dir = temp_dir("backend-proof-values");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut catalog = sample_catalog(sample_unit());
+    catalog.layout.global_info.num_proof_values = vec![1];
+    catalog.layout.global_info.proof_values_map = vec![NamedStageValue {
+        name: "enable_rom_data".to_owned(),
+        stage: 1,
+        id: None,
+        lengths: vec![1],
+    }];
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let backend = ProofValueBackend {
+        values: vec![WitnessTraceProofValue::new(
+            "enable_rom_data",
+            vec![Felt::ONE],
+        )],
+    };
+
+    let output = run_prove_witness_commitments_with_trace_backend(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        &backend,
+    )
+    .expect("backend proof values should be used");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(output.auxiliary_inputs().proof_values, vec![Felt::ONE]);
+}
+
+#[test]
+fn uses_backend_extension_stage_proof_values_for_output_auxiliary_inputs() {
+    let dir = temp_dir("backend-extension-proof-values");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut catalog = sample_catalog(sample_unit());
+    catalog.layout.global_info.num_proof_values = vec![1];
+    catalog.layout.global_info.proof_values_map = vec![NamedStageValue {
+        name: "stage_two_value".to_owned(),
+        stage: 2,
+        id: None,
+        lengths: vec![1],
+    }];
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let backend = ProofValueBackend {
+        values: vec![WitnessTraceProofValue::new(
+            "stage_two_value",
+            vec![Felt::from_u64(11), Felt::from_u64(12), Felt::from_u64(13)],
+        )],
+    };
+
+    let output = run_prove_witness_commitments_with_trace_backend(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        &backend,
+    )
+    .expect("extension-stage backend proof values should be used");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        output.auxiliary_inputs().proof_values,
+        vec![Felt::from_u64(11), Felt::from_u64(12), Felt::from_u64(13)]
+    );
+}
+
+#[test]
+fn rejects_conflicting_backend_proof_values() {
+    let dir = temp_dir("backend-proof-values-conflict");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut catalog = sample_catalog(sample_unit());
+    catalog.layout.global_info.num_proof_values = vec![1];
+    catalog.layout.global_info.proof_values_map = vec![NamedStageValue {
+        name: "enable_rom_data".to_owned(),
+        stage: 1,
+        id: None,
+        lengths: vec![1],
+    }];
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let auxiliary_inputs = ProveWitnessAuxiliaryInputs {
+        proof_values: vec![Felt::ZERO],
+        ..ProveWitnessAuxiliaryInputs::default()
+    };
+    let backend = ProofValueBackend {
+        values: vec![WitnessTraceProofValue::new(
+            "enable_rom_data",
+            vec![Felt::ONE],
+        )],
+    };
+
+    let error =
+        run_prove_witness_commitments_with_trace_backend(&plan, 0, auxiliary_inputs, &backend)
+            .expect_err("conflicting proof values should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        error,
+        ProveWitnessCommitmentError::BackendProofValue { unit_index: 0, message }
+            if message.contains("conflict")
+    ));
 }
 
 #[test]

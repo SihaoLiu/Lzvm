@@ -342,6 +342,7 @@ pub struct GuestMachineState {
     fcall_params: Vec<GuestFcallParam>,
     fcall_results: VecDeque<u64>,
     retired_instructions: u64,
+    dma_proof_value_flags: GuestDmaProofValueFlags,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -365,6 +366,15 @@ struct GuestDmaExecute {
     fill_byte: Option<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GuestDmaProofValueFlags {
+    pub enable_dma_64_aligned_inputcpy: bool,
+    pub enable_dma_64_aligned_mem: bool,
+    pub enable_dma_64_aligned_memcpy: bool,
+    pub enable_dma_64_aligned_memset: bool,
+    pub enable_dma_unaligned: bool,
+}
+
 impl GuestMachineState {
     pub fn new(entry_address: u64) -> Self {
         Self {
@@ -375,6 +385,7 @@ impl GuestMachineState {
             fcall_params: Vec::new(),
             fcall_results: VecDeque::new(),
             retired_instructions: 0,
+            dma_proof_value_flags: GuestDmaProofValueFlags::default(),
         }
     }
 
@@ -388,6 +399,10 @@ impl GuestMachineState {
 
     pub fn registers(&self) -> &[u64; GUEST_REGISTER_COUNT] {
         &self.registers
+    }
+
+    pub fn dma_proof_value_flags(&self) -> GuestDmaProofValueFlags {
+        self.dma_proof_value_flags
     }
 
     pub fn set_register(&mut self, index: usize, value: u64) -> Result<(), GuestMachineError> {
@@ -443,6 +458,47 @@ impl GuestMachineState {
 
     fn retire_instruction(&mut self) {
         self.retired_instructions = self.retired_instructions.wrapping_add(1);
+    }
+
+    fn record_dma_proof_value_flags(&mut self, kind: RiscvDmaKind, dst: u64, src: u64, count: u64) {
+        if dma_loop_count(dst, count) == 0 {
+            return;
+        }
+        match kind {
+            RiscvDmaKind::Memcpy => {
+                if dma_dst_is_aligned_with_src(dst, src) {
+                    self.dma_proof_value_flags.enable_dma_64_aligned_memcpy = true;
+                } else {
+                    self.dma_proof_value_flags.enable_dma_unaligned = true;
+                }
+            }
+            RiscvDmaKind::Memcmp => {
+                self.record_dma_memcmp_proof_value_flags(dst, src, count, false);
+            }
+            RiscvDmaKind::Memset => {
+                self.dma_proof_value_flags.enable_dma_64_aligned_memset = true;
+            }
+            RiscvDmaKind::Inputcpy => {
+                self.dma_proof_value_flags.enable_dma_64_aligned_inputcpy = true;
+            }
+        }
+    }
+
+    fn record_dma_memcmp_proof_value_flags(
+        &mut self,
+        dst: u64,
+        src: u64,
+        effective_count: u64,
+        mismatch: bool,
+    ) {
+        if dma_memcmp_loop_count(dst, effective_count, mismatch) == 0 {
+            return;
+        }
+        if dma_dst_is_aligned_with_src(dst, src) {
+            self.dma_proof_value_flags.enable_dma_64_aligned_mem = true;
+        } else {
+            self.dma_proof_value_flags.enable_dma_unaligned = true;
+        }
     }
 
     fn push_fcall_param(&mut self, port: u8, value: u64) {
@@ -1479,7 +1535,17 @@ fn execute_dma(
             dma_memcpy(memory, state, dst, pending.first_arg, count)?;
             dst
         }
-        RiscvDmaKind::Memcmp => dma_memcmp(memory, dst, pending.first_arg, count)?,
+        RiscvDmaKind::Memcmp => {
+            let (result, effective_count) = dma_memcmp(memory, dst, pending.first_arg, count)?;
+            state.record_dma_memcmp_proof_value_flags(
+                dst,
+                pending.first_arg,
+                effective_count,
+                result != 0,
+            );
+            write_reported_register(state, effects, rd, result);
+            return Ok(());
+        }
         RiscvDmaKind::Memset => {
             let fill_byte = fill_byte.unwrap_or(0);
             dma_memset(memory, state, dst, count, fill_byte)?;
@@ -1490,6 +1556,7 @@ fn execute_dma(
             dst
         }
     };
+    state.record_dma_proof_value_flags(pending.kind, dst, pending.first_arg, count);
     write_reported_register(state, effects, rd, result);
     Ok(())
 }
@@ -1517,21 +1584,25 @@ fn dma_memcmp(
     lhs: u64,
     rhs: u64,
     count: u64,
-) -> Result<u64, GuestMachineError> {
+) -> Result<(u64, u64), GuestMachineError> {
     let count = dma_count_to_usize(lhs, count)?;
     if count == 0 {
-        return Ok(0);
+        return Ok((0, 0));
     }
     let mut lhs_bytes = vec![0_u8; count];
     let mut rhs_bytes = vec![0_u8; count];
     memory.read_range_into(lhs, &mut lhs_bytes)?;
     memory.read_range_into(rhs, &mut rhs_bytes)?;
-    for (lhs_byte, rhs_byte) in lhs_bytes.into_iter().zip(rhs_bytes) {
+    for (index, (lhs_byte, rhs_byte)) in lhs_bytes.into_iter().zip(rhs_bytes).enumerate() {
         if lhs_byte != rhs_byte {
-            return Ok(((lhs_byte as i64) - (rhs_byte as i64)) as u64);
+            let effective_count = u64::try_from(index + 1).unwrap_or(u64::MAX);
+            return Ok((
+                ((lhs_byte as i64) - (rhs_byte as i64)) as u64,
+                effective_count,
+            ));
         }
     }
-    Ok(0)
+    Ok((0, u64::try_from(count).unwrap_or(u64::MAX)))
 }
 
 fn dma_memset(
@@ -1572,6 +1643,44 @@ fn dma_count_to_usize(address: u64, count: u64) -> Result<usize, GuestMemoryErro
         address,
         byte_len: usize::MAX,
     })
+}
+
+fn dma_loop_count(dst: u64, count: u64) -> u64 {
+    let dst_offset = dst & 0x07;
+    let pending = if dst_offset == 0 {
+        count
+    } else {
+        let pre_count = 8 - dst_offset;
+        count.saturating_sub(pre_count)
+    };
+    pending >> 3
+}
+
+fn dma_memcmp_loop_count(dst: u64, count: u64, mismatch: bool) -> u64 {
+    let loop_count = dma_loop_count(dst, count);
+    let post_count = dma_post_count(dst, count);
+    if mismatch && post_count == 0 {
+        loop_count.saturating_sub(1)
+    } else {
+        loop_count
+    }
+}
+
+fn dma_post_count(dst: u64, count: u64) -> u64 {
+    let dst_offset = dst & 0x07;
+    if dst_offset > 0 && count <= 8 - dst_offset {
+        return 0;
+    }
+    let aligned_count = if dst_offset == 0 {
+        count
+    } else {
+        count - (8 - dst_offset)
+    };
+    aligned_count & 0x07
+}
+
+fn dma_dst_is_aligned_with_src(dst: u64, src: u64) -> bool {
+    (dst & 0x07) == (src & 0x07)
 }
 
 fn branch_is_taken(kind: RiscvBranchKind, lhs: u64, rhs: u64) -> bool {

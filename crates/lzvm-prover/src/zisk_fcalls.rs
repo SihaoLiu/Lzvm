@@ -106,6 +106,10 @@ impl ZiskInputFcallHandler {
         })
     }
 
+    pub fn input_data_was_mapped(&self) -> bool {
+        self.input_image.is_none()
+    }
+
     fn handle_input_ready(
         &mut self,
         request: GuestFcallRequest,

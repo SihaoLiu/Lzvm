@@ -110,6 +110,24 @@ fn addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
     encode_i(immediate, rs1, 0, rd, 0x13)
 }
 
+fn encode_r(funct7: u8, rs2: u8, rs1: u8, funct3: u8, rd: u8) -> u32 {
+    assert!(funct7 < 128);
+    assert!(rs2 < 32);
+    assert!(rs1 < 32);
+    assert!(funct3 < 8);
+    assert!(rd < 32);
+    (u32::from(funct7) << 25)
+        | (u32::from(rs2) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(funct3) << 12)
+        | (u32::from(rd) << 7)
+        | 0x33
+}
+
+fn add(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(0, rs2, rs1, 0, rd)
+}
+
 fn op_imm_shift(funct6: u8, rd: u8, rs1: u8, shamt: u8) -> u32 {
     assert!(funct6 < 64);
     assert!(rd < 32);
@@ -666,6 +684,201 @@ fn guest_pc_trace_backend_uses_framed_input_for_zisk_free_calls() {
         trace.value(6, 1),
         Some(Felt::from_canonical(ENTRY + 36).expect("canonical"))
     );
+}
+
+#[test]
+fn guest_pc_trace_backend_reports_input_and_rom_proof_values() {
+    let dir = temp_dir("guest-pc-proof-values-input-rom");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(5, ZISK_INPUT_ADDRESS as u32),
+        addi(6, 5, 16),
+        csrs(0x08f0, 6),
+        csrwi(0x08c0, ZISK_INPUT_READY_FCALL_ID as u8),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+
+    let output = run_witness_trace_output_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: None,
+        },
+        WitnessTraceRequest::new(framed_stdin_chunk(&[7]), 4, 2),
+    )
+    .expect("guest PC trace should report proof values");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(proof_value(&output, "enable_rom_data"), &[Felt::ONE]);
+    assert_eq!(proof_value(&output, "enable_input_data"), &[Felt::ONE]);
+    assert_eq!(
+        proof_value(&output, "enable_dma_64_aligned_memcpy"),
+        &[Felt::ZERO]
+    );
+    assert_eq!(proof_value(&output, "enable_dma_unaligned"), &[Felt::ZERO]);
+}
+
+#[test]
+fn guest_pc_trace_backend_reports_aligned_dma_proof_values() {
+    let dir = temp_dir("guest-pc-proof-values-dma");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(10, 0xa000_0000),
+        slli(10, 10, 32),
+        srli(10, 10, 32),
+        addi(11, 10, 16),
+        addi(12, 0, 16),
+        csrrs(0, 0x0813, 11),
+        add(13, 10, 12),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+
+    let output = run_witness_trace_output_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: None,
+        },
+        WitnessTraceRequest::new(Vec::new(), 7, 2),
+    )
+    .expect("guest PC trace should report DMA proof values");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(proof_value(&output, "enable_rom_data"), &[Felt::ONE]);
+    assert_eq!(proof_value(&output, "enable_input_data"), &[Felt::ZERO]);
+    assert_eq!(
+        proof_value(&output, "enable_dma_64_aligned_memcpy"),
+        &[Felt::ONE]
+    );
+    assert_eq!(proof_value(&output, "enable_dma_unaligned"), &[Felt::ZERO]);
+}
+
+#[test]
+fn guest_pc_trace_backend_reports_unaligned_dma_proof_values() {
+    let dir = temp_dir("guest-pc-proof-values-unaligned-dma");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(10, 0xa000_0000),
+        slli(10, 10, 32),
+        srli(10, 10, 32),
+        addi(11, 10, 17),
+        addi(12, 0, 16),
+        csrrs(0, 0x0813, 11),
+        add(13, 10, 12),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+
+    let output = run_witness_trace_output_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: None,
+        },
+        WitnessTraceRequest::new(Vec::new(), 7, 2),
+    )
+    .expect("guest PC trace should report unaligned DMA proof values");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        proof_value(&output, "enable_dma_64_aligned_memcpy"),
+        &[Felt::ZERO]
+    );
+    assert_eq!(proof_value(&output, "enable_dma_unaligned"), &[Felt::ONE]);
+}
+
+#[test]
+fn guest_pc_trace_backend_uses_effective_memcmp_count_for_proof_values() {
+    let dir = temp_dir("guest-pc-proof-values-memcmp-effective");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(10, 0xa000_0000),
+        slli(10, 10, 32),
+        srli(10, 10, 32),
+        addi(11, 10, 16),
+        addi(5, 0, 1),
+        sb(11, 5, 0),
+        addi(12, 0, 16),
+        csrrs(0, 0x0814, 11),
+        add(13, 10, 12),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+
+    let output = run_witness_trace_output_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: None,
+        },
+        WitnessTraceRequest::new(Vec::new(), 9, 2),
+    )
+    .expect("guest PC trace should classify memcmp from effective count");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        proof_value(&output, "enable_dma_64_aligned_mem"),
+        &[Felt::ZERO]
+    );
+    assert_eq!(proof_value(&output, "enable_dma_unaligned"), &[Felt::ZERO]);
+}
+
+#[test]
+fn guest_pc_trace_backend_treats_memcmp_boundary_mismatch_as_post_work() {
+    let dir = temp_dir("guest-pc-proof-values-memcmp-boundary");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(10, 0xa000_0000),
+        slli(10, 10, 32),
+        srli(10, 10, 32),
+        addi(11, 10, 16),
+        addi(5, 0, 1),
+        sb(11, 5, 7),
+        addi(12, 0, 16),
+        csrrs(0, 0x0814, 11),
+        add(13, 10, 12),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+
+    let output = run_witness_trace_output_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: None,
+        },
+        WitnessTraceRequest::new(Vec::new(), 9, 2),
+    )
+    .expect("guest PC trace should classify memcmp boundary mismatch");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        proof_value(&output, "enable_dma_64_aligned_mem"),
+        &[Felt::ZERO]
+    );
+    assert_eq!(proof_value(&output, "enable_dma_unaligned"), &[Felt::ZERO]);
 }
 
 #[test]
@@ -1417,6 +1630,18 @@ fn unit_value<'a>(
         .iter()
         .find(|value| value.name() == name)
         .unwrap_or_else(|| panic!("missing unit value {name}"))
+        .values()
+}
+
+fn proof_value<'a>(
+    output: &'a lzvm_prover::witness_runner::WitnessTraceRunOutput,
+    name: &str,
+) -> &'a [Felt] {
+    output
+        .proof_values()
+        .iter()
+        .find(|value| value.name() == name)
+        .unwrap_or_else(|| panic!("missing proof value {name}"))
         .values()
 }
 
