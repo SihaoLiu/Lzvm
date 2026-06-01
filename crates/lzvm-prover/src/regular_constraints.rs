@@ -228,10 +228,37 @@ fn evaluate_entry(
 ) -> Result<RegularConstraintResult, RegularConstraintEvalError> {
     let ops = entry_ops(constraint_index, entry, program)?;
     let args = entry_args(constraint_index, entry, program)?;
+    let active_rows = active_rows(entry, inputs.domain_size)?;
+    if active_rows.is_empty() {
+        return Ok(RegularConstraintResult {
+            constraint_index,
+            stage: entry.stage,
+            intermediate: entry.intermediate,
+            invalid_rows: Vec::new(),
+        });
+    }
+
+    let mut tmp1 = vec![Felt::ZERO; to_usize(entry.temp1_count)?];
+    let mut tmp3 = vec![
+        Felt::ZERO;
+        to_usize(entry.temp3_count)?
+            .checked_mul(3)
+            .ok_or(RegularConstraintEvalError::LengthOverflow)?
+    ];
+    let layout = BufferLayout::new(inputs);
+    let context = RowEvaluationContext {
+        constraint_index,
+        entry,
+        ops,
+        args,
+        program,
+        inputs,
+        layout,
+    };
     let mut invalid_rows = Vec::new();
 
-    for row in active_rows(entry, inputs.domain_size)? {
-        let value = evaluate_row(constraint_index, row, entry, ops, args, program, inputs)?;
+    for row in active_rows {
+        let value = evaluate_row(row, &context, &mut tmp1, &mut tmp3)?;
         if value != Ext3::ZERO {
             invalid_rows.push(RegularConstraintViolation { row, value });
         }
@@ -245,60 +272,67 @@ fn evaluate_entry(
     })
 }
 
-fn evaluate_row(
+struct RowEvaluationContext<'a, 'input> {
     constraint_index: usize,
+    entry: &'a ConstraintEntry,
+    ops: &'a [u8],
+    args: &'a [u16],
+    program: &'a ConstraintProgram,
+    inputs: RegularConstraintInputs<'input>,
+    layout: BufferLayout,
+}
+
+fn evaluate_row(
     row: usize,
-    entry: &ConstraintEntry,
-    ops: &[u8],
-    args: &[u16],
-    program: &ConstraintProgram,
-    inputs: RegularConstraintInputs<'_>,
+    context: &RowEvaluationContext<'_, '_>,
+    tmp1: &mut [Felt],
+    tmp3: &mut [Felt],
 ) -> Result<Ext3, RegularConstraintEvalError> {
-    let mut tmp1 = vec![Felt::ZERO; to_usize(entry.temp1_count)?];
-    let mut tmp3 = vec![Felt::ZERO; to_usize(entry.temp3_count)?.saturating_mul(3)];
+    tmp1.fill(Felt::ZERO);
+    tmp3.fill(Felt::ZERO);
     let mut cursor = 0usize;
 
-    for shape in ops {
-        let op_args = read_operation_args(constraint_index, args, cursor)?;
+    for shape in context.ops {
+        let op_args = read_operation_args(context.constraint_index, context.args, cursor)?;
         cursor += 8;
         match *shape {
             0 => {
                 let value = apply_base_op(
                     op_args.kind,
-                    read_base(op_args.src0, row, &tmp1, &tmp3, program, inputs)?,
-                    read_base(op_args.src1, row, &tmp1, &tmp3, program, inputs)?,
+                    read_base(op_args.src0, row, tmp1, tmp3, context)?,
+                    read_base(op_args.src1, row, tmp1, tmp3, context)?,
                 )?;
-                write_base(&mut tmp1, op_args.destination_offset, value)?;
+                write_base(tmp1, op_args.destination_offset, value)?;
             }
             1 => {
                 let value = apply_ext_op(
                     op_args.kind,
-                    read_ext(op_args.src0, row, &tmp1, &tmp3, program, inputs)?,
-                    scalar_ext(read_base(op_args.src1, row, &tmp1, &tmp3, program, inputs)?),
+                    read_ext(op_args.src0, row, tmp1, tmp3, context)?,
+                    scalar_ext(read_base(op_args.src1, row, tmp1, tmp3, context)?),
                 )?;
-                write_ext(&mut tmp3, op_args.destination_offset, value)?;
+                write_ext(tmp3, op_args.destination_offset, value)?;
             }
             2 => {
                 let value = apply_ext_op(
                     op_args.kind,
-                    read_ext(op_args.src0, row, &tmp1, &tmp3, program, inputs)?,
-                    read_ext(op_args.src1, row, &tmp1, &tmp3, program, inputs)?,
+                    read_ext(op_args.src0, row, tmp1, tmp3, context)?,
+                    read_ext(op_args.src1, row, tmp1, tmp3, context)?,
                 )?;
-                write_ext(&mut tmp3, op_args.destination_offset, value)?;
+                write_ext(tmp3, op_args.destination_offset, value)?;
             }
             shape => return Err(RegularConstraintEvalError::UnsupportedOperationShape { shape }),
         }
     }
 
-    if cursor != args.len() {
+    if cursor != context.args.len() {
         return Err(RegularConstraintEvalError::ArgumentCountMismatch {
-            constraint_index,
+            constraint_index: context.constraint_index,
             consumed: cursor,
-            declared: args.len(),
+            declared: context.args.len(),
         });
     }
 
-    read_destination(entry, &tmp1, &tmp3)
+    read_destination(context.entry, tmp1, tmp3)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -410,11 +444,10 @@ fn read_base(
     row: usize,
     tmp1: &[Felt],
     tmp3: &[Felt],
-    program: &ConstraintProgram,
-    inputs: RegularConstraintInputs<'_>,
+    context: &RowEvaluationContext<'_, '_>,
 ) -> Result<Felt, RegularConstraintEvalError> {
-    let layout = BufferLayout::new(inputs);
-    match layout.resolve(source.buffer)? {
+    let inputs = context.inputs;
+    match context.layout.resolve(source.buffer)? {
         BufferKind::Fixed => read_matrix_base(
             "fixed column",
             inputs.fixed_columns,
@@ -444,7 +477,7 @@ fn read_base(
         BufferKind::Tmp1 => read_felt("tmp1", tmp1, source.offset),
         BufferKind::Tmp3 => read_felt("tmp3", tmp3, source.offset),
         BufferKind::Public => read_felt("public", inputs.publics, source.offset),
-        BufferKind::Number => read_number(program, source.offset),
+        BufferKind::Number => read_number(context.program, source.offset),
         BufferKind::UnitValue => read_felt("unit value", inputs.unit_values, source.offset),
         BufferKind::ProofValue => read_felt("proof value", inputs.proof_values, source.offset),
         BufferKind::GroupValue => read_ext_field("group value", inputs.group_values, source.offset),
@@ -458,11 +491,10 @@ fn read_ext(
     row: usize,
     tmp1: &[Felt],
     tmp3: &[Felt],
-    program: &ConstraintProgram,
-    inputs: RegularConstraintInputs<'_>,
+    context: &RowEvaluationContext<'_, '_>,
 ) -> Result<Ext3, RegularConstraintEvalError> {
-    let layout = BufferLayout::new(inputs);
-    match layout.resolve(source.buffer)? {
+    let inputs = context.inputs;
+    match context.layout.resolve(source.buffer)? {
         BufferKind::Fixed => read_matrix_ext(
             "fixed column",
             inputs.fixed_columns,
@@ -496,7 +528,7 @@ fn read_ext(
         BufferKind::Tmp1 => read_felt_ext("tmp1", tmp1, source.offset),
         BufferKind::Tmp3 => read_felt_ext("tmp3", tmp3, source.offset),
         BufferKind::Public => read_felt_ext("public", inputs.publics, source.offset),
-        BufferKind::Number => read_number_ext(program, source.offset),
+        BufferKind::Number => read_number_ext(context.program, source.offset),
         BufferKind::UnitValue => read_felt_ext("unit value", inputs.unit_values, source.offset),
         BufferKind::ProofValue => read_felt_ext("proof value", inputs.proof_values, source.offset),
         BufferKind::GroupValue => {
