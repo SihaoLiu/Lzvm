@@ -10,15 +10,12 @@ use lzvm_artifacts::witness_opening_segment::{
     WitnessOpeningStageSegment, WitnessOpeningUnitSegment, WITNESS_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, WitnessCommitmentSegmentError,
-    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    parse_witness_commitment_segment, witness_commitment_segment_id, WitnessCommitmentSegmentError,
+    WitnessCommitmentSegmentIdentity,
 };
 use lzvm_field::{Felt, FieldError};
 
-use crate::pcs_query_plan::{
-    load_pcs_query_plan_from_segments, reject_unsupported_pcs_query_trace_instances,
-    unsupported_pcs_query_trace_instance, LoadPcsQueryPlanSegmentError,
-};
+use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
 use crate::witness_commitment::{
     load_witness_commitment_segments, open_witness_stage_commitment,
     verify_witness_stage_opening_root, LoadWitnessCommitmentSegmentsError, WitnessStageOpening,
@@ -321,7 +318,7 @@ pub fn load_witness_opening_unit_from_segments(
     opening
         .units
         .into_iter()
-        .find(|unit| unit.unit_index == unit_index_u32)
+        .find(|unit| unit.unit_index == unit_index_u32 && unit.trace_instance_index == 0)
         .ok_or(LoadWitnessOpeningUnitError::MissingUnit { unit_index })
 }
 
@@ -331,10 +328,10 @@ pub(crate) fn validate_witness_opening_units_match_query_units(
 ) -> Result<(), LoadWitnessOpeningUnitError> {
     let opening = load_witness_opening_segment_from_segments(segments)?;
     for unit in opening.units {
-        if !query_units
-            .iter()
-            .any(|query_unit| query_unit.unit_index == unit.unit_index)
-        {
+        if !query_units.iter().any(|query_unit| {
+            query_unit.unit_index == unit.unit_index
+                && query_unit.trace_instance_index == unit.trace_instance_index
+        }) {
             let unit_index = usize::try_from(unit.unit_index)
                 .map_err(|_| LoadWitnessOpeningUnitError::UnitIndexOverflow)?;
             return Err(LoadWitnessOpeningUnitError::UnexpectedUnit { unit_index });
@@ -348,8 +345,6 @@ pub fn validate_witness_opening_segments(
     segments: &[ProofSegment],
 ) -> Result<(), ValidateWitnessOpeningSegmentsError> {
     let query_plan = load_pcs_query_plan_from_segments(segments)
-        .map_err(ValidateWitnessOpeningSegmentsError::QueryPlan)?;
-    reject_unsupported_pcs_query_trace_instances(&query_plan.units)
         .map_err(ValidateWitnessOpeningSegmentsError::QueryPlan)?;
     let opening = load_witness_opening_segment_from_segments(segments)
         .map_err(ValidateWitnessOpeningSegmentsError::Opening)?;
@@ -368,15 +363,25 @@ pub fn validate_witness_opening_segments(
         let opening_unit = opening
             .units
             .iter()
-            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .find(|unit| {
+                unit.unit_index == query_unit.unit_index
+                    && unit.trace_instance_index == query_unit.trace_instance_index
+            })
             .ok_or(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index })?;
         if opening_unit.queries.len() != query_unit.queries.len() {
             return Err(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index });
         }
 
-        let witness_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
-            .checked_add(query_unit.unit_index)
-            .ok_or(ValidateWitnessOpeningSegmentsError::SegmentIdOverflow)?;
+        let unit_count = u32::try_from(units.len())
+            .map_err(|_| ValidateWitnessOpeningSegmentsError::SegmentIdOverflow)?;
+        let witness_segment_id = witness_commitment_segment_id(
+            unit_count,
+            WitnessCommitmentSegmentIdentity {
+                unit_index: query_unit.unit_index,
+                trace_instance_index: query_unit.trace_instance_index,
+            },
+        )
+        .map_err(|_| ValidateWitnessOpeningSegmentsError::SegmentIdOverflow)?;
         let witness_segment = witness_segments
             .iter()
             .find(|segment| segment.id == witness_segment_id)
@@ -480,14 +485,7 @@ pub fn build_witness_opening_segment_batch(
 fn parse_query_plan_segment(
     query_segment: &ProofSegment,
 ) -> Result<PcsQueryPlanSegment, ProveWitnessOpeningSegmentError> {
-    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
-    if let Some(unsupported) = unsupported_pcs_query_trace_instance(&query_plan.units) {
-        return Err(ProveWitnessOpeningSegmentError::UnsupportedTraceInstance {
-            unit_index: unsupported.unit_index,
-            trace_instance_index: unsupported.trace_instance_index,
-        });
-    }
-    Ok(query_plan)
+    Ok(parse_pcs_query_plan_segment(&query_segment.data)?)
 }
 
 fn build_witness_opening_segment_from_query_plan(
@@ -502,7 +500,8 @@ fn build_witness_opening_segment_from_query_plan(
                 unit_index: output.unit_index(),
             }
         })?;
-        if outputs_by_unit.insert(unit_index_u32, *output).is_some() {
+        let identity = (unit_index_u32, output.trace_instance_index());
+        if outputs_by_unit.insert(identity, *output).is_some() {
             return Err(ProveWitnessOpeningSegmentError::DuplicateOutputUnit {
                 unit_index: output.unit_index(),
             });
@@ -512,10 +511,10 @@ fn build_witness_opening_segment_from_query_plan(
     let query_units = query_plan
         .units
         .iter()
-        .map(|unit| unit.unit_index)
+        .map(|unit| (unit.unit_index, unit.trace_instance_index))
         .collect::<std::collections::BTreeSet<_>>();
-    for unit_index_u32 in outputs_by_unit.keys() {
-        if !query_units.contains(unit_index_u32) {
+    for (unit_index_u32, trace_instance_index) in outputs_by_unit.keys() {
+        if !query_units.contains(&(*unit_index_u32, *trace_instance_index)) {
             return Err(ProveWitnessOpeningSegmentError::MissingQueryUnit {
                 unit_index: *unit_index_u32 as usize,
             });
@@ -526,7 +525,7 @@ fn build_witness_opening_segment_from_query_plan(
     for query_unit in &query_plan.units {
         let unit_index = query_unit.unit_index as usize;
         let output = outputs_by_unit
-            .get(&query_unit.unit_index)
+            .get(&(query_unit.unit_index, query_unit.trace_instance_index))
             .ok_or(ProveWitnessOpeningSegmentError::MissingOutputUnit { unit_index })?;
         units.push(build_witness_opening_unit_segment(
             schedule, query_unit, output,
@@ -551,6 +550,11 @@ fn build_witness_opening_unit_segment(
         }
     })?;
     if query_unit.unit_index != unit_index_u32 {
+        return Err(ProveWitnessOpeningSegmentError::MissingQueryUnit {
+            unit_index: output.unit_index(),
+        });
+    }
+    if query_unit.trace_instance_index != output.trace_instance_index() {
         return Err(ProveWitnessOpeningSegmentError::MissingQueryUnit {
             unit_index: output.unit_index(),
         });
@@ -621,6 +625,7 @@ fn build_witness_opening_unit_segment(
 
     Ok(WitnessOpeningUnitSegment {
         unit_index: unit_index_u32,
+        trace_instance_index: query_unit.trace_instance_index,
         queries,
     })
 }

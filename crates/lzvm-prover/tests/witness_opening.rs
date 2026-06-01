@@ -101,6 +101,7 @@ fn rejects_witness_opening_row_mismatches() {
     let (unit, mut segments) = valid_witness_opening_segments(2);
     let bad_opening = witness_opening_proof_segment(vec![WitnessOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         queries: vec![WitnessOpeningQuerySegment {
             row_index: 1,
             stages: vec![WitnessOpeningStageSegment {
@@ -126,17 +127,14 @@ fn rejects_witness_opening_row_mismatches() {
 }
 
 #[test]
-fn rejects_trace_instance_witness_opening_validation_queries() {
+fn validates_trace_instance_witness_opening_queries() {
     let (unit, mut segments) = valid_witness_opening_segments(2);
     replace_query_plan_trace_instance(&mut segments, 1);
+    replace_opening_trace_instance(&mut segments, 1);
+    replace_witness_commitment_trace_instance(&mut segments, 1);
 
-    let error = validate_witness_opening_segments(&[unit], &segments)
-        .expect_err("trace instance queries should be unsupported");
-
-    assert_eq!(
-        error.to_string(),
-        "unsupported PCS query plan trace instance 1 for unit 0"
-    );
+    validate_witness_opening_segments(&[unit], &segments)
+        .expect("trace instance opening should validate");
 }
 
 fn replace_query_plan_trace_instance(segments: &mut [ProofSegment], trace_instance_index: u32) {
@@ -154,6 +152,31 @@ fn replace_query_plan_trace_instance(segments: &mut [ProofSegment], trace_instan
     .expect("query plan should encode");
 }
 
+fn replace_opening_trace_instance(segments: &mut [ProofSegment], trace_instance_index: u32) {
+    let opening_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == WITNESS_OPENING_SEGMENT_ID)
+        .expect("opening segment should exist");
+    let mut opening = lzvm_artifacts::witness_opening_segment::parse_witness_opening_segment(
+        &opening_segment.data,
+    )
+    .expect("opening segment should parse");
+    opening.units[0].trace_instance_index = trace_instance_index;
+    opening_segment.data =
+        encode_witness_opening_segment(&opening).expect("opening segment should encode");
+}
+
+fn replace_witness_commitment_trace_instance(
+    segments: &mut [ProofSegment],
+    trace_instance_index: u32,
+) {
+    let commitment_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+        .expect("witness commitment segment should exist");
+    commitment_segment.id = WITNESS_COMMITMENT_SEGMENT_BASE_ID + trace_instance_index;
+}
+
 fn witness_opening_proof_segment(units: Vec<WitnessOpeningUnitSegment>) -> ProofSegment {
     ProofSegment {
         id: WITNESS_OPENING_SEGMENT_ID,
@@ -165,6 +188,7 @@ fn witness_opening_proof_segment(units: Vec<WitnessOpeningUnitSegment>) -> Proof
 fn witness_opening_unit(unit_index: u32) -> WitnessOpeningUnitSegment {
     WitnessOpeningUnitSegment {
         unit_index,
+        trace_instance_index: 0,
         queries: vec![WitnessOpeningQuerySegment {
             row_index: 3,
             stages: vec![WitnessOpeningStageSegment {
@@ -217,6 +241,7 @@ fn valid_witness_opening_segments(query_row: u64) -> (ProveUnitSchedule, Vec<Pro
     };
     let opening_segment = witness_opening_proof_segment(vec![WitnessOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         queries: vec![WitnessOpeningQuerySegment {
             row_index: query_row,
             stages: vec![witness_opening_stage(1, &opening)],

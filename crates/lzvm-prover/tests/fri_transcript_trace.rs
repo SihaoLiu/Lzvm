@@ -111,6 +111,7 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
         &schedule,
         &[ProvePcsFriTranscriptTraceSegmentValues {
             unit_index: 0,
+            trace_instance_index: 0,
             execution_unit: &execution_unit,
             trace: &trace,
             publics: &[],
@@ -187,6 +188,7 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
         &query_segment,
         &[ProvePcsFriTranscriptTraceSegmentValues {
             unit_index: 0,
+            trace_instance_index: 0,
             execution_unit: &execution_unit,
             trace: &trace,
             publics: &[],
@@ -348,6 +350,7 @@ fn derives_fri_transcript_values_and_openings_for_multiple_units() {
     let transcript_inputs = [
         ProvePcsFriTranscriptTraceSegmentValues {
             unit_index: 0,
+            trace_instance_index: 0,
             execution_unit: &first_execution_unit,
             trace: &trace0,
             publics: &[],
@@ -359,6 +362,7 @@ fn derives_fri_transcript_values_and_openings_for_multiple_units() {
         },
         ProvePcsFriTranscriptTraceSegmentValues {
             unit_index: 1,
+            trace_instance_index: 0,
             execution_unit: &second_execution_unit,
             trace: &trace1,
             publics: &[],

@@ -375,21 +375,16 @@ fn validates_transcript_pcs_query_plan_segments() {
 }
 
 #[test]
-fn rejects_trace_instance_transcript_pcs_query_plan_validation_queries() {
+fn rejects_trace_instance_transcript_pcs_query_plan_mismatches() {
     let (schedule, mut segments) = transcript_query_plan_segments();
     replace_query_plan_trace_instance(&mut segments, 1);
 
     let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
-        .expect_err("trace instance queries should be unsupported");
+        .expect_err("trace instance mismatch should be rejected");
 
     assert_eq!(
         error,
-        ValidatePcsQueryPlanSegmentsError::QueryPlan(
-            LoadPcsQueryPlanSegmentError::UnsupportedTraceInstance {
-                unit_index: 0,
-                trace_instance_index: 1
-            }
-        )
+        ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index: 0 }
     );
 }
 
@@ -481,6 +476,7 @@ fn rejects_transcript_pcs_query_plan_missing_later_material_unit() {
     };
     let fri = PcsFriOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         layers: Vec::new(),
         final_polynomial: vec![[12, 13, 14]],
     };
@@ -590,11 +586,13 @@ fn rejects_transcript_pcs_query_plan_not_bound_to_each_unit_challenge() {
     };
     let first_fri = PcsFriOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         layers: Vec::new(),
         final_polynomial: vec![[12, 13, 14]],
     };
     let second_fri = PcsFriOpeningUnitSegment {
         unit_index: 1,
+        trace_instance_index: 0,
         layers: Vec::new(),
         final_polynomial: vec![[32, 33, 34]],
     };
@@ -686,6 +684,7 @@ fn rejects_transcript_query_plan_builder_with_multiple_witness_units() {
     };
     let fri = PcsFriOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         layers: Vec::new(),
         final_polynomial: vec![[12, 13, 14]],
     };
@@ -742,6 +741,7 @@ fn rejects_transcript_query_plan_builder_with_mismatched_witness_unit() {
     };
     let fri = PcsFriOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         layers: Vec::new(),
         final_polynomial: vec![[12, 13, 14]],
     };
@@ -831,6 +831,7 @@ fn rejects_transcript_pcs_query_plan_mismatches_with_program_image_cache_segment
     };
     let fri = PcsFriOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         layers: Vec::new(),
         final_polynomial: vec![[12, 13, 14]],
     };
@@ -959,6 +960,7 @@ fn rejects_transcript_pcs_query_plan_mismatches_with_challenge_values_segment() 
     };
     let fri = PcsFriOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         layers: Vec::new(),
         final_polynomial: vec![[12, 13, 14]],
     };
@@ -1073,11 +1075,13 @@ fn rejects_transcript_pcs_query_plan_extra_fri_opening_units() {
         units: vec![
             PcsFriOpeningUnitSegment {
                 unit_index: 0,
+                trace_instance_index: 0,
                 layers: Vec::new(),
                 final_polynomial: vec![[12, 13, 14]],
             },
             PcsFriOpeningUnitSegment {
                 unit_index: 1,
+                trace_instance_index: 0,
                 layers: Vec::new(),
                 final_polynomial: vec![[22, 23, 24]],
             },
@@ -1137,6 +1141,7 @@ fn transcript_query_plan_segments() -> (ProveSchedule, Vec<ProofSegment>) {
     };
     let fri = PcsFriOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         layers: Vec::new(),
         final_polynomial: vec![[12, 13, 14]],
     };

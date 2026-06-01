@@ -18,6 +18,7 @@ pub struct PcsFriOpeningFoldRequest<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct PcsFriOpeningBuildRequest<'a> {
     pub unit_index: u32,
+    pub trace_instance_index: u32,
     pub query_rows: &'a [u64],
     pub challenges: &'a [Ext3],
     pub polynomial: &'a [Ext3],

@@ -20,7 +20,8 @@ use lzvm_artifacts::pcs_material_segment::{
 use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    parse_witness_commitment_segment, witness_commitment_segment_id,
+    WitnessCommitmentSegmentIdentity,
 };
 use lzvm_field::{Ext3, Felt, FieldError};
 
@@ -28,7 +29,6 @@ use crate::pcs_fri::{
     build_pcs_fri_opening_unit, build_pcs_fri_transcript_commitments, PcsFriOpeningBuildRequest,
     PcsFriTranscriptCommitmentRequest,
 };
-use crate::pcs_query_plan::unsupported_pcs_query_trace_instance;
 use crate::pcs_transcript::{derive_pcs_transcript_prefix_challenges, PcsTranscriptPrefixInputs};
 use crate::prove_fri_polynomial::{
     build_pcs_fri_polynomial_values, build_pcs_fri_polynomial_values_with_slices,
@@ -165,12 +165,14 @@ fn same_segment_data(left: &[u8], right: &[u8]) -> bool {
 #[derive(Debug, Clone, Copy)]
 struct PcsFriOpeningValueRef<'a> {
     unit_index: usize,
+    trace_instance_index: u32,
     challenges: &'a [Ext3],
     polynomial: &'a [Ext3],
 }
 
 struct PcsFriOpeningTraceValue<'a> {
     unit_index: usize,
+    trace_instance_index: u32,
     challenges: &'a [Ext3],
     polynomial: Vec<Ext3>,
 }
@@ -185,6 +187,7 @@ pub fn build_pcs_fri_opening_segment(
         query_segment,
         values.iter().map(|value| PcsFriOpeningValueRef {
             unit_index: value.unit_index,
+            trace_instance_index: value.trace_instance_index,
             challenges: &value.challenges,
             polynomial: &value.polynomial,
         }),
@@ -204,16 +207,10 @@ fn build_pcs_fri_opening_segment_from_value_refs<'a>(
         });
     }
     let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
-    if let Some(unsupported) = unsupported_pcs_query_trace_instance(&query_plan.units) {
-        return Err(ProvePcsFriOpeningSegmentError::UnsupportedTraceInstance {
-            unit_index: unsupported.unit_index,
-            trace_instance_index: unsupported.trace_instance_index,
-        });
-    }
     let mut seen_units = BTreeSet::new();
     let mut units = Vec::with_capacity(value_count);
     for input in values {
-        if !seen_units.insert(input.unit_index) {
+        if !seen_units.insert((input.unit_index, input.trace_instance_index)) {
             return Err(ProvePcsFriOpeningSegmentError::DuplicateUnitIndex {
                 unit_index: input.unit_index,
             });
@@ -232,7 +229,10 @@ fn build_pcs_fri_opening_segment_from_value_refs<'a>(
         let query_unit = query_plan
             .units
             .iter()
-            .find(|unit| unit.unit_index == unit_index_u32)
+            .find(|unit| {
+                unit.unit_index == unit_index_u32
+                    && unit.trace_instance_index == input.trace_instance_index
+            })
             .ok_or(ProvePcsFriOpeningSegmentError::MissingQueryUnit {
                 unit_index: input.unit_index,
             })?;
@@ -240,6 +240,7 @@ fn build_pcs_fri_opening_segment_from_value_refs<'a>(
             unit,
             PcsFriOpeningBuildRequest {
                 unit_index: unit_index_u32,
+                trace_instance_index: input.trace_instance_index,
                 query_rows: &query_unit.queries,
                 challenges: input.challenges,
                 polynomial: input.polynomial,
@@ -334,6 +335,7 @@ fn build_pcs_fri_transcript_values_from_trace_refs(
         })?;
         out.push(ProvePcsFriTranscriptValues {
             unit_index: input.unit_index,
+            trace_instance_index: 0,
             polynomial,
             commitments,
         });
@@ -349,6 +351,7 @@ pub fn build_pcs_fri_transcript_values_from_trace_segments(
         .iter()
         .map(|input| ProvePcsFriTranscriptTraceSegmentValueRef {
             unit_index: input.unit_index,
+            trace_instance_index: input.trace_instance_index,
             execution_unit: input.execution_unit,
             trace: input.trace,
             publics: input.publics,
@@ -387,11 +390,23 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs(
             },
         )? as usize;
         validate_material_segment_id(input.material_segment)?;
-        let expected_witness_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
-            .checked_add(unit_index_u32)
-            .ok_or(ProvePcsFriTranscriptTraceValuesError::UnitIndexOverflow {
+        let unit_count = u32::try_from(schedule.units.len()).map_err(|_| {
+            ProvePcsFriTranscriptTraceValuesError::UnitIndexOverflow {
                 unit_index: input.unit_index,
-            })?;
+            }
+        })?;
+        let expected_witness_id = witness_commitment_segment_id(
+            unit_count,
+            WitnessCommitmentSegmentIdentity {
+                unit_index: unit_index_u32,
+                trace_instance_index: input.trace_instance_index,
+            },
+        )
+        .map_err(
+            |_| ProvePcsFriTranscriptTraceValuesError::UnitIndexOverflow {
+                unit_index: input.unit_index,
+            },
+        )?;
         if input.witness_segment.id != expected_witness_id {
             return Err(
                 ProvePcsFriTranscriptTraceValuesError::InvalidWitnessSegmentId {
@@ -511,6 +526,9 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs(
                 binding_segments: input.binding_segments,
             }],
         )?;
+        for value in &mut built {
+            value.trace_instance_index = input.trace_instance_index;
+        }
         out.append(&mut built);
     }
     Ok(out)
@@ -526,6 +544,7 @@ pub fn build_pcs_fri_opening_segment_from_transcript_values(
         query_segment,
         values.iter().map(|value| PcsFriOpeningValueRef {
             unit_index: value.unit_index,
+            trace_instance_index: value.trace_instance_index,
             challenges: &value.commitments.challenges,
             polynomial: &value.polynomial,
         }),
@@ -561,6 +580,7 @@ pub fn build_pcs_fri_opening_segment_from_trace(
         })?;
         opening_values.push(PcsFriOpeningTraceValue {
             unit_index: input.unit_index,
+            trace_instance_index: 0,
             challenges: input.challenges,
             polynomial,
         });
@@ -571,6 +591,7 @@ pub fn build_pcs_fri_opening_segment_from_trace(
         query_segment,
         opening_values.iter().map(|value| PcsFriOpeningValueRef {
             unit_index: value.unit_index,
+            trace_instance_index: value.trace_instance_index,
             challenges: value.challenges,
             polynomial: &value.polynomial,
         }),

@@ -705,6 +705,7 @@ fn sample_transcript_query_fixture() -> TranscriptQueryFixture {
     };
     let fri = PcsFriOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         layers: vec![PcsFriOpeningLayerSegment {
             layer_index: 0,
             root: [50, 51, 52, 53],
@@ -2444,6 +2445,81 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
 }
 
 #[test]
+fn rejects_all_units_proof_output_with_multiple_trace_instances_for_unit() {
+    let dir = temp_dir("proof-artifact-all-units-duplicate-trace-unit");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    )
+    .expect("guest image should be written");
+
+    let mut unit = sample_zisk_main_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
+        .expect("constant tree should be written");
+    let catalog = sample_catalog(unit);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: Vec::new(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let outputs = run_prove_witness_commitments_with_guest_pc_trace_segments(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        16,
+    )
+    .expect("segmented guest PC trace commitments should run");
+
+    let error = lzvm_prover::build_witness_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &outputs,
+            auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+            unit_values: &[],
+            evaluation_values_segment: None,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        },
+    )
+    .expect_err("multiple trace instances for one unit should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        error,
+        "all-units proof output has multiple trace instances for unit 0"
+    );
+}
+
+#[test]
 fn builds_all_units_contribution_proof_artifact_from_output_proof_values() {
     let dir = temp_dir("contribution-proof-all-units-output-proof-values");
     let _ = fs::remove_dir_all(&dir);
@@ -4033,6 +4109,7 @@ fn builds_pcs_fri_opening_segments_from_polynomial_values() {
         &query_segment,
         &[ProvePcsFriOpeningValues {
             unit_index: 0,
+            trace_instance_index: 0,
             challenges: challenges.clone(),
             polynomial,
         }],
@@ -4377,6 +4454,7 @@ fn builds_pcs_fri_transcript_values_from_execution_material() {
         &query_segment,
         &[ProvePcsFriOpeningValues {
             unit_index: transcript_value.unit_index,
+            trace_instance_index: 0,
             challenges: transcript_value.commitments.challenges.clone(),
             polynomial: transcript_value.polynomial.clone(),
         }],
@@ -4574,6 +4652,26 @@ fn builds_witness_opening_segments_from_query_plans() {
         parse_pcs_query_plan_segment(&query_segment.data).expect("query segment should parse");
     let opening =
         parse_witness_opening_segment(&opening_segment.data).expect("opening segment should parse");
+    let trace_output = output.clone().with_trace_instance_index(1);
+    let trace_witness_segment = build_witness_commitment_segment_for_schedule(
+        plan.run_plan.schedule.units.len(),
+        &trace_output,
+    )
+    .expect("trace instance witness segment should build");
+    let trace_query_segment = build_pcs_query_plan_segment(
+        &plan.run_plan.schedule,
+        [0x56; 32],
+        &material_segment,
+        std::slice::from_ref(&trace_witness_segment),
+    )
+    .expect("trace instance query segment should build");
+    let trace_opening_segment =
+        build_witness_opening_segment(&plan.run_plan.schedule, &trace_query_segment, &trace_output)
+            .expect("trace instance opening segment should build");
+    let trace_query_plan = parse_pcs_query_plan_segment(&trace_query_segment.data)
+        .expect("trace instance query segment should parse");
+    let trace_opening = parse_witness_opening_segment(&trace_opening_segment.data)
+        .expect("trace instance opening segment should parse");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     let unit = &plan.run_plan.schedule.units[0];
@@ -4593,6 +4691,12 @@ fn builds_witness_opening_segments_from_query_plans() {
             assert_eq!(stage.siblings.len(), 3);
         }
     }
+    assert_eq!(trace_query_plan.units[0].trace_instance_index, 1);
+    assert_eq!(trace_opening.units[0].trace_instance_index, 1);
+    assert_eq!(
+        trace_opening.units[0].trace_instance_index,
+        trace_query_plan.units[0].trace_instance_index
+    );
 }
 
 #[test]

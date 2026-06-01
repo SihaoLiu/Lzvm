@@ -29,8 +29,7 @@ use lzvm_prover::pcs_transcript_segments::{
     PcsTranscriptProofSegmentsError, PcsTranscriptUnitChallenges,
 };
 use lzvm_prover::{
-    build_pcs_fri_opening_segment, ProvePcsFriOpeningSegmentError, ProvePcsFriOpeningValues,
-    ProveSchedule, ProveUnitSchedule,
+    build_pcs_fri_opening_segment, ProvePcsFriOpeningValues, ProveSchedule, ProveUnitSchedule,
 };
 
 #[test]
@@ -209,6 +208,7 @@ fn verifies_fri_opening_fold_chain_to_final_polynomial() {
     .expect("second fold should evaluate");
     let fri = PcsFriOpeningUnitSegment {
         unit_index: 3,
+        trace_instance_index: 0,
         layers: vec![
             PcsFriOpeningLayerSegment {
                 layer_index: 0,
@@ -330,6 +330,7 @@ fn builds_fri_opening_unit_from_polynomial_values() {
         &schedule,
         PcsFriOpeningBuildRequest {
             unit_index: 5,
+            trace_instance_index: 0,
             query_rows: &query_rows,
             challenges: &challenges,
             polynomial: &polynomial,
@@ -481,7 +482,7 @@ fn validates_pcs_fri_opening_segments() {
 }
 
 #[test]
-fn rejects_trace_instance_pcs_fri_opening_queries() {
+fn builds_trace_instance_pcs_fri_opening_queries() {
     let unit = sample_validation_unit();
     let schedule = sample_prove_schedule(unit);
     let query_rows = [1_u64, 6_u64];
@@ -503,38 +504,31 @@ fn rejects_trace_instance_pcs_fri_opening_queries() {
     challenges[7] = Ext3::from_u64s([31, 32, 33]);
     challenges[8] = Ext3::from_u64s([41, 42, 43]);
 
-    let error = build_pcs_fri_opening_segment(
+    let segment = build_pcs_fri_opening_segment(
         &schedule,
         &query_segment,
         &[ProvePcsFriOpeningValues {
             unit_index: 0,
+            trace_instance_index: 1,
             challenges,
             polynomial,
         }],
     )
-    .expect_err("trace instance queries should be unsupported");
+    .expect("trace instance FRI opening should build");
+    let opening =
+        load_pcs_fri_opening_segment_from_segments(&[segment]).expect("FRI opening should load");
 
-    assert!(matches!(
-        error,
-        ProvePcsFriOpeningSegmentError::UnsupportedTraceInstance {
-            unit_index: 0,
-            trace_instance_index: 1
-        }
-    ));
+    assert_eq!(opening.units[0].trace_instance_index, 1);
 }
 
 #[test]
-fn rejects_trace_instance_pcs_fri_opening_validation_queries() {
+fn validates_trace_instance_pcs_fri_opening_queries() {
     let (unit, mut segments) = valid_pcs_fri_opening_segments();
     replace_query_plan_trace_instance(&mut segments, 1);
+    replace_fri_opening_trace_instance(&mut segments, 1);
 
-    let error = validate_pcs_fri_opening_segments(&[unit], &segments)
-        .expect_err("trace instance queries should be unsupported");
-
-    assert_eq!(
-        error.to_string(),
-        "unsupported PCS query plan trace instance 1 for unit 0"
-    );
+    validate_pcs_fri_opening_segments(&[unit], &segments)
+        .expect("trace instance FRI opening should validate");
 }
 
 #[test]
@@ -797,6 +791,7 @@ fn derives_fri_transcript_commitments_from_polynomial_values() {
         &schedule,
         PcsFriOpeningBuildRequest {
             unit_index: 0,
+            trace_instance_index: 0,
             query_rows: &[1, 6],
             challenges: &commitments.challenges,
             polynomial: &polynomial,
@@ -884,6 +879,17 @@ fn replace_query_plan_trace_instance(segments: &mut [ProofSegment], trace_instan
     .expect("query plan should encode");
 }
 
+fn replace_fri_opening_trace_instance(segments: &mut [ProofSegment], trace_instance_index: u32) {
+    let fri_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+        .expect("FRI opening segment should exist");
+    let mut fri = lzvm_artifacts::pcs_fri_segment::parse_pcs_fri_opening_segment(&fri_segment.data)
+        .expect("FRI opening should load");
+    fri.units[0].trace_instance_index = trace_instance_index;
+    fri_segment.data = encode_pcs_fri_opening_segment(&fri).expect("FRI opening should encode");
+}
+
 fn digest_from_u64s(values: [u64; 4]) -> [Felt; 4] {
     values.map(Felt::from_u64)
 }
@@ -909,6 +915,7 @@ fn valid_pcs_fri_opening_segments() -> (ProveUnitSchedule, Vec<ProofSegment>) {
         &unit,
         PcsFriOpeningBuildRequest {
             unit_index: 0,
+            trace_instance_index: 0,
             query_rows: &query_rows,
             challenges: &challenges,
             polynomial: &polynomial,
@@ -937,6 +944,7 @@ fn sample_fold_challenges() -> PcsTranscriptUnitChallenges {
     challenges[8] = Ext3::from_u64s([41, 42, 43]);
     PcsTranscriptUnitChallenges {
         unit_index: 0,
+        trace_instance_index: 0,
         challenges,
     }
 }
@@ -974,6 +982,7 @@ fn global_info_without_proof_values() -> GlobalInfo {
 fn sample_fri_opening_unit(unit_index: u32) -> PcsFriOpeningUnitSegment {
     PcsFriOpeningUnitSegment {
         unit_index,
+        trace_instance_index: 0,
         layers: vec![PcsFriOpeningLayerSegment {
             layer_index: 0,
             root: [10, 11, 12, 13],

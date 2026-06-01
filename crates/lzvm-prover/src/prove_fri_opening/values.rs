@@ -9,6 +9,7 @@ use crate::{ProveExecutionUnitArtifacts, ProveWitnessAuxiliaryInputs};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProvePcsFriOpeningValues {
     pub unit_index: usize,
+    pub trace_instance_index: u32,
     pub challenges: Vec<Ext3>,
     pub polynomial: Vec<Ext3>,
 }
@@ -41,6 +42,7 @@ pub struct ProvePcsFriTranscriptTraceValues<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct ProvePcsFriTranscriptTraceSegmentValues<'a> {
     pub unit_index: usize,
+    pub trace_instance_index: u32,
     pub execution_unit: &'a ProveExecutionUnitArtifacts,
     pub trace: &'a WitnessTraceBuffer,
     pub publics: &'a [Felt],
@@ -68,6 +70,7 @@ pub(crate) struct ProvePcsFriTranscriptTraceValueRef<'a> {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ProvePcsFriTranscriptTraceSegmentValueRef<'a> {
     pub unit_index: usize,
+    pub trace_instance_index: u32,
     pub execution_unit: &'a ProveExecutionUnitArtifacts,
     pub trace: &'a WitnessTraceBuffer,
     pub publics: &'a [Felt],
@@ -81,6 +84,7 @@ pub(crate) struct ProvePcsFriTranscriptTraceSegmentValueRef<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProvePcsFriTranscriptValues {
     pub unit_index: usize,
+    pub trace_instance_index: u32,
     pub polynomial: Vec<Ext3>,
     pub commitments: PcsFriTranscriptCommitments,
 }

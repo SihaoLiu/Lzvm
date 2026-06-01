@@ -113,19 +113,19 @@ fn rejects_transcript_challenge_query_unit_mismatches() {
 }
 
 #[test]
-fn rejects_trace_instance_transcript_challenge_queries() {
+fn derives_trace_instance_transcript_challenge_queries() {
     let schedule = sample_schedule();
     let mut segments = transcript_segments(0);
     replace_query_plan_trace_instance(&mut segments, 1);
+    replace_witness_commitment_trace_instance(&mut segments, 1);
+    replace_fri_opening_trace_instance(&mut segments, 1);
 
-    let error =
+    let actual =
         derive_pcs_transcript_unit_challenges_from_proof_segments(&schedule, &[], &segments)
-            .expect_err("trace instance queries should be unsupported");
+            .expect("trace instance challenges should derive");
 
-    assert_eq!(
-        error.to_string(),
-        "unsupported PCS query plan trace instance 1 for unit 0"
-    );
+    assert_eq!(actual[0].unit_index, 0);
+    assert_eq!(actual[0].trace_instance_index, 1);
 }
 
 #[test]
@@ -140,11 +140,13 @@ fn rejects_transcript_challenge_extra_fri_opening_units() {
         units: vec![
             PcsFriOpeningUnitSegment {
                 unit_index: 0,
+                trace_instance_index: 0,
                 layers: Vec::new(),
                 final_polynomial: vec![ext_words(40)],
             },
             PcsFriOpeningUnitSegment {
                 unit_index: 1,
+                trace_instance_index: 0,
                 layers: Vec::new(),
                 final_polynomial: vec![ext_words(50)],
             },
@@ -264,6 +266,7 @@ fn transcript_segments(query_unit_index: u32) -> Vec<ProofSegment> {
             data: encode_pcs_fri_opening_segment(&PcsFriOpeningSegment {
                 units: vec![PcsFriOpeningUnitSegment {
                     unit_index: 0,
+                    trace_instance_index: 0,
                     layers: Vec::new(),
                     final_polynomial: vec![ext_words(40)],
                 }],
@@ -286,6 +289,28 @@ fn replace_query_plan_trace_instance(segments: &mut [ProofSegment], trace_instan
         }],
     })
     .expect("query plan should encode");
+}
+
+fn replace_witness_commitment_trace_instance(
+    segments: &mut [ProofSegment],
+    trace_instance_index: u32,
+) {
+    let witness_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+        .expect("witness segment should exist");
+    witness_segment.id = WITNESS_COMMITMENT_SEGMENT_BASE_ID + trace_instance_index;
+}
+
+fn replace_fri_opening_trace_instance(segments: &mut [ProofSegment], trace_instance_index: u32) {
+    let fri_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+        .expect("FRI opening segment should exist");
+    let mut fri = lzvm_artifacts::pcs_fri_segment::parse_pcs_fri_opening_segment(&fri_segment.data)
+        .expect("FRI opening segment should parse");
+    fri.units[0].trace_instance_index = trace_instance_index;
+    fri_segment.data = encode_pcs_fri_opening_segment(&fri).expect("FRI segment should encode");
 }
 
 fn sample_schedule() -> ProveSchedule {

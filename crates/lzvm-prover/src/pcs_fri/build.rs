@@ -262,6 +262,7 @@ pub fn build_pcs_fri_opening_unit(
 
     Ok(PcsFriOpeningUnitSegment {
         unit_index: request.unit_index,
+        trace_instance_index: request.trace_instance_index,
         layers,
         final_polynomial: current.iter().map(|value| value.to_u64s()).collect(),
     })

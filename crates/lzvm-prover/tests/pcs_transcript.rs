@@ -724,6 +724,7 @@ fn sample_fri(
 ) -> PcsFriOpeningUnitSegment {
     PcsFriOpeningUnitSegment {
         unit_index,
+        trace_instance_index: 0,
         layers: layer_root_seeds
             .iter()
             .enumerate()

@@ -6,9 +6,11 @@ use lzvm_field::{Felt, FieldError};
 pub const CONSTANT_OPENING_SEGMENT_ID: u32 = 10_003;
 
 const CONSTANT_OPENING_MAGIC: [u8; 4] = *b"cos0";
-const CONSTANT_OPENING_VERSION: u32 = 1;
+const CONSTANT_OPENING_V1_VERSION: u32 = 1;
+const CONSTANT_OPENING_V2_VERSION: u32 = 2;
 const HEADER_BYTES: usize = 4 + 4 + 4;
-const UNIT_HEADER_BYTES: usize = 4 + 4;
+const V1_UNIT_HEADER_BYTES: usize = 4 + 4;
+const V2_UNIT_HEADER_BYTES: usize = 4 + 4 + 4;
 const QUERY_HEADER_BYTES: usize = 8 + 4 + 4;
 const LEVEL_HEADER_BYTES: usize = 4;
 const WORD_BYTES: usize = 8;
@@ -23,6 +25,7 @@ pub struct ConstantOpeningSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstantOpeningUnitSegment {
     pub unit_index: u32,
+    pub trace_instance_index: u32,
     pub queries: Vec<ConstantOpeningQuerySegment>,
 }
 
@@ -61,6 +64,10 @@ pub enum ConstantOpeningSegmentError {
     },
     DuplicateUnitIndex {
         unit_index: u32,
+    },
+    DuplicateUnitIdentity {
+        unit_index: u32,
+        trace_instance_index: u32,
     },
     ValueNonCanonical {
         unit_index: u32,
@@ -107,6 +114,13 @@ impl fmt::Display for ConstantOpeningSegmentError {
             Self::DuplicateUnitIndex { unit_index } => {
                 write!(f, "duplicate constant opening unit index: {unit_index}")
             }
+            Self::DuplicateUnitIdentity {
+                unit_index,
+                trace_instance_index,
+            } => write!(
+                f,
+                "duplicate constant opening unit identity: unit {unit_index}, trace instance {trace_instance_index}"
+            ),
             Self::ValueNonCanonical {
                 unit_index,
                 row_index,
@@ -145,6 +159,7 @@ impl std::error::Error for ConstantOpeningSegmentError {
             | Self::EmptyQueries { .. }
             | Self::EmptyValues { .. }
             | Self::DuplicateUnitIndex { .. }
+            | Self::DuplicateUnitIdentity { .. }
             | Self::LengthOverflow => None,
         }
     }
@@ -156,14 +171,18 @@ pub fn encode_constant_opening_segment(
     validate_constant_opening_segment(value)?;
     let unit_count = u32::try_from(value.units.len())
         .map_err(|_| ConstantOpeningSegmentError::LengthOverflow)?;
-    let expected_len = encoded_len(value)?;
+    let version = constant_opening_version(value);
+    let expected_len = encoded_len(value, unit_header_bytes(version)?)?;
 
     let mut out = Vec::with_capacity(expected_len);
     out.extend_from_slice(&CONSTANT_OPENING_MAGIC);
-    write_u32(&mut out, CONSTANT_OPENING_VERSION);
+    write_u32(&mut out, version);
     write_u32(&mut out, unit_count);
     for unit in &value.units {
         write_u32(&mut out, unit.unit_index);
+        if version == CONSTANT_OPENING_V2_VERSION {
+            write_u32(&mut out, unit.trace_instance_index);
+        }
         write_u32(
             &mut out,
             u32::try_from(unit.queries.len())
@@ -210,7 +229,10 @@ pub fn parse_constant_opening_segment(
         return Err(ConstantOpeningSegmentError::InvalidMagic);
     }
     let version = reader.read_u32()?;
-    if version != CONSTANT_OPENING_VERSION {
+    if !matches!(
+        version,
+        CONSTANT_OPENING_V1_VERSION | CONSTANT_OPENING_V2_VERSION
+    ) {
         return Err(ConstantOpeningSegmentError::UnsupportedVersion { version });
     }
     let unit_count = usize::try_from(reader.read_u32()?)
@@ -218,13 +240,19 @@ pub fn parse_constant_opening_segment(
     if unit_count == 0 {
         return Err(ConstantOpeningSegmentError::EmptyUnits);
     }
-    if unit_count > reader.remaining_len() / UNIT_HEADER_BYTES {
+    let unit_header_bytes = unit_header_bytes(version)?;
+    if unit_count > reader.remaining_len() / unit_header_bytes {
         return Err(ConstantOpeningSegmentError::LengthOverflow);
     }
 
     let mut units = Vec::with_capacity(unit_count);
     for _ in 0..unit_count {
         let unit_index = reader.read_u32()?;
+        let trace_instance_index = if version == CONSTANT_OPENING_V2_VERSION {
+            reader.read_u32()?
+        } else {
+            0
+        };
         let query_count = usize::try_from(reader.read_u32()?)
             .map_err(|_| ConstantOpeningSegmentError::LengthOverflow)?;
         if query_count > reader.remaining_len() / QUERY_HEADER_BYTES {
@@ -272,6 +300,7 @@ pub fn parse_constant_opening_segment(
         }
         units.push(ConstantOpeningUnitSegment {
             unit_index,
+            trace_instance_index,
             queries,
         });
     }
@@ -282,6 +311,26 @@ pub fn parse_constant_opening_segment(
     Ok(out)
 }
 
+fn constant_opening_version(value: &ConstantOpeningSegment) -> u32 {
+    if value
+        .units
+        .iter()
+        .any(|unit| unit.trace_instance_index != 0)
+    {
+        CONSTANT_OPENING_V2_VERSION
+    } else {
+        CONSTANT_OPENING_V1_VERSION
+    }
+}
+
+fn unit_header_bytes(version: u32) -> Result<usize, ConstantOpeningSegmentError> {
+    match version {
+        CONSTANT_OPENING_V1_VERSION => Ok(V1_UNIT_HEADER_BYTES),
+        CONSTANT_OPENING_V2_VERSION => Ok(V2_UNIT_HEADER_BYTES),
+        _ => Err(ConstantOpeningSegmentError::UnsupportedVersion { version }),
+    }
+}
+
 fn validate_constant_opening_segment(
     value: &ConstantOpeningSegment,
 ) -> Result<(), ConstantOpeningSegmentError> {
@@ -290,9 +339,15 @@ fn validate_constant_opening_segment(
     }
     let mut seen_units = BTreeSet::new();
     for unit in &value.units {
-        if !seen_units.insert(unit.unit_index) {
-            return Err(ConstantOpeningSegmentError::DuplicateUnitIndex {
+        if !seen_units.insert((unit.unit_index, unit.trace_instance_index)) {
+            if unit.trace_instance_index == 0 {
+                return Err(ConstantOpeningSegmentError::DuplicateUnitIndex {
+                    unit_index: unit.unit_index,
+                });
+            }
+            return Err(ConstantOpeningSegmentError::DuplicateUnitIdentity {
                 unit_index: unit.unit_index,
+                trace_instance_index: unit.trace_instance_index,
             });
         }
         if unit.queries.is_empty() {
@@ -338,12 +393,15 @@ fn validate_constant_opening_segment(
     Ok(())
 }
 
-fn encoded_len(value: &ConstantOpeningSegment) -> Result<usize, ConstantOpeningSegmentError> {
+fn encoded_len(
+    value: &ConstantOpeningSegment,
+    unit_header_bytes: usize,
+) -> Result<usize, ConstantOpeningSegmentError> {
     value.units.iter().try_fold(HEADER_BYTES, |acc, unit| {
         let query_bytes = unit
             .queries
             .iter()
-            .try_fold(UNIT_HEADER_BYTES, |query_acc, query| {
+            .try_fold(unit_header_bytes, |query_acc, query| {
                 let values_bytes = query
                     .values
                     .len()

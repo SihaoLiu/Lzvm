@@ -29,8 +29,8 @@ use lzvm_artifacts::pcs_query_segment::{
 use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, WitnessCommitmentSegmentError,
-    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    parse_witness_commitment_segment, witness_commitment_segment_id, WitnessCommitmentSegmentError,
+    WitnessCommitmentSegmentIdentity,
 };
 use lzvm_field::{Ext3, Felt};
 
@@ -39,7 +39,7 @@ use crate::pcs_evaluation::{
     LoadPcsEvaluationUnitError,
 };
 use crate::pcs_fri::{
-    load_pcs_fri_opening_unit_from_segments, validate_pcs_fri_opening_units_match_query_units,
+    load_pcs_fri_opening_segment_from_segments, validate_pcs_fri_opening_units_match_query_units,
     LoadPcsFriOpeningUnitError,
 };
 use crate::pcs_transcript::{
@@ -94,12 +94,6 @@ pub enum ValidatePcsQueryPlanSegmentsError {
     UnitMismatch {
         unit_index: usize,
     },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct UnsupportedPcsQueryTraceInstance {
-    pub unit_index: u32,
-    pub trace_instance_index: u32,
 }
 
 impl fmt::Display for LoadPcsQueryPlanSegmentError {
@@ -215,30 +209,6 @@ pub fn load_pcs_query_plan_from_segments(
     parse_pcs_query_plan_segment(&segment.data).map_err(LoadPcsQueryPlanSegmentError::Segment)
 }
 
-pub(crate) fn unsupported_pcs_query_trace_instance(
-    units: &[PcsQueryPlanUnit],
-) -> Option<UnsupportedPcsQueryTraceInstance> {
-    units
-        .iter()
-        .find(|unit| unit.trace_instance_index != 0)
-        .map(|unit| UnsupportedPcsQueryTraceInstance {
-            unit_index: unit.unit_index,
-            trace_instance_index: unit.trace_instance_index,
-        })
-}
-
-pub(crate) fn reject_unsupported_pcs_query_trace_instances(
-    units: &[PcsQueryPlanUnit],
-) -> Result<(), LoadPcsQueryPlanSegmentError> {
-    if let Some(unsupported) = unsupported_pcs_query_trace_instance(units) {
-        return Err(LoadPcsQueryPlanSegmentError::UnsupportedTraceInstance {
-            unit_index: unsupported.unit_index,
-            trace_instance_index: unsupported.trace_instance_index,
-        });
-    }
-    Ok(())
-}
-
 pub fn uses_transcript_pcs_query_plan_inputs(segments: &[ProofSegment]) -> bool {
     segments
         .iter()
@@ -317,9 +287,16 @@ fn validate_transcript_query_plan_unit_inputs(
             .iter()
             .find(|unit| unit.unit_index == unit_index_u32)
             .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
-        let witness_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
-            .checked_add(unit_index_u32)
-            .ok_or(ValidatePcsQueryPlanSegmentsError::WitnessSegmentIdOverflow)?;
+        let unit_count = u32::try_from(schedule.units.len())
+            .map_err(|_| ValidatePcsQueryPlanSegmentsError::WitnessSegmentIdOverflow)?;
+        let witness_segment_id = witness_commitment_segment_id(
+            unit_count,
+            WitnessCommitmentSegmentIdentity {
+                unit_index: unit_index_u32,
+                trace_instance_index: query_unit.trace_instance_index,
+            },
+        )
+        .map_err(|_| ValidatePcsQueryPlanSegmentsError::WitnessSegmentIdOverflow)?;
         let witness_segment = witness_segments
             .iter()
             .find(|segment| segment.id == witness_segment_id)
@@ -330,8 +307,15 @@ fn validate_transcript_query_plan_unit_inputs(
             })?;
         let evaluations = load_pcs_evaluation_unit_from_segments(unit_index, unit, segments)
             .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
-        let fri = load_pcs_fri_opening_unit_from_segments(unit_index, segments)
-            .map_err(ValidatePcsQueryPlanSegmentsError::Fri)?;
+        let fri = load_pcs_fri_opening_segment_from_segments(segments)
+            .map_err(|error| ValidatePcsQueryPlanSegmentsError::Fri(error.into()))?
+            .units
+            .into_iter()
+            .find(|unit| {
+                unit.unit_index == query_unit.unit_index
+                    && unit.trace_instance_index == query_unit.trace_instance_index
+            })
+            .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
         let unit_values =
             load_unit_values_from_segments(unit_index, &unit.unit_value_map, segments)
                 .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
@@ -443,8 +427,6 @@ pub fn validate_transcript_pcs_query_plan_segments(
     let material_segment = single_material_manifest_segment(segments)?;
     let nonce_segment = single_query_nonce_segment(segments)?;
     let query_plan = load_pcs_query_plan_from_segments(segments)
-        .map_err(ValidatePcsQueryPlanSegmentsError::QueryPlan)?;
-    reject_unsupported_pcs_query_trace_instances(&query_plan.units)
         .map_err(ValidatePcsQueryPlanSegmentsError::QueryPlan)?;
     let query_segment = segments
         .iter()

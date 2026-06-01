@@ -18,10 +18,7 @@ use crate::constant_tree_opening::{
     constant_tree_merkle_level_count, verify_constant_tree_opening_root, ConstantTreeOpening,
     ConstantTreeOpeningError,
 };
-use crate::pcs_query_plan::{
-    load_pcs_query_plan_from_segments, reject_unsupported_pcs_query_trace_instances,
-    unsupported_pcs_query_trace_instance, LoadPcsQueryPlanSegmentError,
-};
+use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
 use crate::ProveSchedule;
 use crate::ProveUnitSchedule;
 
@@ -277,7 +274,7 @@ pub fn load_constant_opening_unit_from_segments(
     opening
         .units
         .into_iter()
-        .find(|unit| unit.unit_index == unit_index_u32)
+        .find(|unit| unit.unit_index == unit_index_u32 && unit.trace_instance_index == 0)
         .ok_or(LoadConstantOpeningUnitError::MissingUnit { unit_index })
 }
 
@@ -287,10 +284,10 @@ pub(crate) fn validate_constant_opening_units_match_query_units(
 ) -> Result<(), LoadConstantOpeningUnitError> {
     let opening = load_constant_opening_segment_from_segments(segments)?;
     for unit in opening.units {
-        if !query_units
-            .iter()
-            .any(|query_unit| query_unit.unit_index == unit.unit_index)
-        {
+        if !query_units.iter().any(|query_unit| {
+            query_unit.unit_index == unit.unit_index
+                && query_unit.trace_instance_index == unit.trace_instance_index
+        }) {
             let unit_index = usize::try_from(unit.unit_index)
                 .map_err(|_| LoadConstantOpeningUnitError::UnitIndexOverflow)?;
             return Err(LoadConstantOpeningUnitError::UnexpectedUnit { unit_index });
@@ -304,8 +301,6 @@ pub fn validate_constant_opening_segments(
     segments: &[ProofSegment],
 ) -> Result<(), ValidateConstantOpeningSegmentsError> {
     let query_plan = load_pcs_query_plan_from_segments(segments)
-        .map_err(ValidateConstantOpeningSegmentsError::QueryPlan)?;
-    reject_unsupported_pcs_query_trace_instances(&query_plan.units)
         .map_err(ValidateConstantOpeningSegmentsError::QueryPlan)?;
     let opening = load_constant_opening_segment_from_segments(segments)
         .map_err(ValidateConstantOpeningSegmentsError::Opening)?;
@@ -322,7 +317,10 @@ pub fn validate_constant_opening_segments(
         let opening_unit = opening
             .units
             .iter()
-            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .find(|unit| {
+                unit.unit_index == query_unit.unit_index
+                    && unit.trace_instance_index == query_unit.trace_instance_index
+            })
             .ok_or(ValidateConstantOpeningSegmentsError::UnitMismatch { unit_index })?;
         if opening_unit.queries.len() != query_unit.queries.len() {
             return Err(ValidateConstantOpeningSegmentsError::UnitMismatch { unit_index });
@@ -391,12 +389,6 @@ pub fn build_constant_opening_segment(
     query_segment: &ProofSegment,
 ) -> Result<ProofSegment, ProveConstantOpeningSegmentError> {
     let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
-    if let Some(unsupported) = unsupported_pcs_query_trace_instance(&query_plan.units) {
-        return Err(ProveConstantOpeningSegmentError::UnsupportedTraceInstance {
-            unit_index: unsupported.unit_index,
-            trace_instance_index: unsupported.trace_instance_index,
-        });
-    }
     let mut units = Vec::with_capacity(query_plan.units.len());
     for query_unit in &query_plan.units {
         let unit_index = usize::try_from(query_unit.unit_index).map_err(|_| {
@@ -451,6 +443,7 @@ pub fn build_constant_opening_segment(
         }
         units.push(ConstantOpeningUnitSegment {
             unit_index: query_unit.unit_index,
+            trace_instance_index: query_unit.trace_instance_index,
             queries,
         });
     }

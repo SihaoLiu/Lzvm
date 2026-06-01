@@ -558,6 +558,7 @@ fn sample_witness_opening_segment(
     let segment = WitnessOpeningSegment {
         units: vec![WitnessOpeningUnitSegment {
             unit_index: unit_index as u32,
+            trace_instance_index: 0,
             queries,
         }],
     };
@@ -698,6 +699,7 @@ fn sample_pcs_fri_opening_segment(
     let segment = PcsFriOpeningSegment {
         units: vec![PcsFriOpeningUnitSegment {
             unit_index: unit_index as u32,
+            trace_instance_index: 0,
             layers,
             final_polynomial: vec![[21, 22, 23]; 1_usize << unit.final_layer_bits],
         }],
@@ -764,6 +766,7 @@ fn sample_stable_pcs_fri_opening_unit(
         .collect();
     PcsFriOpeningUnitSegment {
         unit_index: unit_index as u32,
+        trace_instance_index: 0,
         layers,
         final_polynomial: vec![[21, 22, 23]; 1_usize << unit.final_layer_bits],
     }
@@ -842,6 +845,7 @@ fn sample_folded_pcs_fri_opening_template_with_values_and_unit_values(
     let root = sample_digest_tree_root(last_level.clone(), unit.merkle_tree_arity as usize);
     let mut template = PcsFriOpeningUnitSegment {
         unit_index: unit_index as u32,
+        trace_instance_index: 0,
         layers: vec![PcsFriOpeningLayerSegment {
             layer_index: 0,
             root,

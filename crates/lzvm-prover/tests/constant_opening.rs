@@ -92,6 +92,7 @@ fn rejects_constant_opening_row_mismatches() {
     let (unit, mut segments) = valid_constant_opening_segments(2);
     let bad_opening = constant_opening_proof_segment(vec![ConstantOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         queries: vec![ConstantOpeningQuerySegment {
             row_index: 1,
             values: vec![3, 30],
@@ -114,17 +115,13 @@ fn rejects_constant_opening_row_mismatches() {
 }
 
 #[test]
-fn rejects_trace_instance_constant_opening_validation_queries() {
+fn validates_trace_instance_constant_opening_queries() {
     let (unit, mut segments) = valid_constant_opening_segments(2);
     replace_query_plan_trace_instance(&mut segments, 1);
+    replace_opening_trace_instance(&mut segments, 1);
 
-    let error = validate_constant_opening_segments(&[unit], &segments)
-        .expect_err("trace instance queries should be unsupported");
-
-    assert_eq!(
-        error.to_string(),
-        "unsupported PCS query plan trace instance 1 for unit 0"
-    );
+    validate_constant_opening_segments(&[unit], &segments)
+        .expect("trace instance opening should validate");
 }
 
 fn replace_query_plan_trace_instance(segments: &mut [ProofSegment], trace_instance_index: u32) {
@@ -142,6 +139,20 @@ fn replace_query_plan_trace_instance(segments: &mut [ProofSegment], trace_instan
     .expect("query plan should encode");
 }
 
+fn replace_opening_trace_instance(segments: &mut [ProofSegment], trace_instance_index: u32) {
+    let opening_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == CONSTANT_OPENING_SEGMENT_ID)
+        .expect("opening segment should exist");
+    let mut opening = lzvm_artifacts::constant_opening_segment::parse_constant_opening_segment(
+        &opening_segment.data,
+    )
+    .expect("opening segment should parse");
+    opening.units[0].trace_instance_index = trace_instance_index;
+    opening_segment.data =
+        encode_constant_opening_segment(&opening).expect("opening segment should encode");
+}
+
 fn constant_opening_proof_segment(units: Vec<ConstantOpeningUnitSegment>) -> ProofSegment {
     ProofSegment {
         id: CONSTANT_OPENING_SEGMENT_ID,
@@ -153,6 +164,7 @@ fn constant_opening_proof_segment(units: Vec<ConstantOpeningUnitSegment>) -> Pro
 fn constant_opening_unit(unit_index: u32) -> ConstantOpeningUnitSegment {
     ConstantOpeningUnitSegment {
         unit_index,
+        trace_instance_index: 0,
         queries: vec![ConstantOpeningQuerySegment {
             row_index: 3,
             values: vec![5],
@@ -178,6 +190,7 @@ fn valid_constant_opening_segments(query_row: u64) -> (ProveUnitSchedule, Vec<Pr
     };
     let opening_segment = constant_opening_proof_segment(vec![ConstantOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         queries: vec![constant_opening_query(&opening)],
     }]);
 

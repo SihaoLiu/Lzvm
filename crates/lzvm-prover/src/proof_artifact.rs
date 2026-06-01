@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use lzvm_artifacts::challenge_values_segment::{
     parse_challenge_values_segment, CHALLENGE_VALUES_SEGMENT_ID,
 };
@@ -17,7 +19,9 @@ use lzvm_artifacts::program_image_segment::{
 };
 use lzvm_artifacts::proof::{validate_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, PublicValues};
-use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
+use lzvm_artifacts::witness_segment::{
+    witness_commitment_segment_id, WitnessCommitmentSegmentIdentity,
+};
 use lzvm_field::{Ext3, Felt};
 
 use crate::contribution::{
@@ -251,6 +255,7 @@ pub fn build_witness_proof_artifact_for_unit(
             request.schedule,
             &[ProvePcsFriTranscriptTraceSegmentValues {
                 unit_index: commitments.unit_index(),
+                trace_instance_index: commitments.trace_instance_index(),
                 execution_unit: request.execution_unit,
                 trace: request.output.trace(),
                 publics: request.output.publics(),
@@ -572,6 +577,7 @@ pub fn build_witness_proof_artifact_for_all_units(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    reject_multiple_trace_instances_per_unit(request.outputs)?;
     validate_proof_bindings(
         public_values,
         request.program_image_cache,
@@ -686,6 +692,24 @@ pub fn build_witness_proof_artifact_for_all_units(
             .map_err(|error| format!("verify proof output failed: {error}"))?;
     }
     Ok(Some(proof))
+}
+
+fn reject_multiple_trace_instances_per_unit(
+    outputs: &[ProveWitnessTraceCommitments],
+) -> Result<(), String> {
+    let mut trace_instances = BTreeMap::new();
+    for output in outputs {
+        let unit_index = output.commitments().unit_index();
+        let trace_instance_index = output.commitments().trace_instance_index();
+        if let Some(existing) = trace_instances.insert(unit_index, trace_instance_index) {
+            if existing != trace_instance_index {
+                return Err(format!(
+                    "all-units proof output has multiple trace instances for unit {unit_index}"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn build_program_image_cache_proof_segment(
@@ -1019,15 +1043,23 @@ fn build_witness_transcript_proof_artifact_for_all_units(
             let unit_index_u32 = u32::try_from(unit_index).map_err(|_| {
                 format!("witness segment unit index does not fit u32: {unit_index}")
             })?;
-            let expected_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
-                .checked_add(unit_index_u32)
-                .ok_or_else(|| format!("witness segment unit index overflow: {unit_index}"))?;
+            let unit_count = u32::try_from(request.schedule.units.len())
+                .map_err(|_| "witness segment unit count overflow".to_owned())?;
+            let expected_segment_id = witness_commitment_segment_id(
+                unit_count,
+                WitnessCommitmentSegmentIdentity {
+                    unit_index: unit_index_u32,
+                    trace_instance_index: commitments.trace_instance_index(),
+                },
+            )
+            .map_err(|error| format!("witness segment id failed: {error}"))?;
             let witness_segment = witness_segments
                 .iter()
                 .find(|segment| segment.id == expected_segment_id)
                 .ok_or_else(|| format!("missing witness segment for unit {unit_index}"))?;
             Ok(ProvePcsFriTranscriptTraceSegmentValueRef {
                 unit_index,
+                trace_instance_index: commitments.trace_instance_index(),
                 execution_unit,
                 trace: output.trace(),
                 publics: output.publics(),

@@ -6,9 +6,11 @@ use lzvm_field::{Felt, FieldError};
 pub const PCS_FRI_OPENING_SEGMENT_ID: u32 = 10_004;
 
 const PCS_FRI_OPENING_MAGIC: [u8; 4] = *b"fos0";
-const PCS_FRI_OPENING_VERSION: u32 = 1;
+const PCS_FRI_OPENING_V1_VERSION: u32 = 1;
+const PCS_FRI_OPENING_V2_VERSION: u32 = 2;
 const HEADER_BYTES: usize = 4 + 4 + 4;
-const UNIT_HEADER_BYTES: usize = 4 + 4 + 4;
+const V1_UNIT_HEADER_BYTES: usize = 4 + 4 + 4;
+const V2_UNIT_HEADER_BYTES: usize = 4 + 4 + 4 + 4;
 const LAYER_HEADER_BYTES: usize = 4 + ROOT_WORDS * WORD_BYTES + 4 + 4;
 const QUERY_HEADER_BYTES: usize = 8 + 4 + 4;
 const LEVEL_HEADER_BYTES: usize = 4;
@@ -26,6 +28,7 @@ pub struct PcsFriOpeningSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PcsFriOpeningUnitSegment {
     pub unit_index: u32,
+    pub trace_instance_index: u32,
     pub layers: Vec<PcsFriOpeningLayerSegment>,
     pub final_polynomial: Vec<[u64; EXTENSION_WORDS]>,
 }
@@ -78,6 +81,10 @@ pub enum PcsFriOpeningSegmentError {
     },
     DuplicateUnitIndex {
         unit_index: u32,
+    },
+    DuplicateUnitIdentity {
+        unit_index: u32,
+        trace_instance_index: u32,
     },
     DuplicateLayerIndex {
         unit_index: u32,
@@ -162,6 +169,13 @@ impl fmt::Display for PcsFriOpeningSegmentError {
             Self::DuplicateUnitIndex { unit_index } => {
                 write!(f, "duplicate PCS FRI opening unit index: {unit_index}")
             }
+            Self::DuplicateUnitIdentity {
+                unit_index,
+                trace_instance_index,
+            } => write!(
+                f,
+                "duplicate PCS FRI opening unit identity: unit {unit_index}, trace instance {trace_instance_index}"
+            ),
             Self::DuplicateLayerIndex {
                 unit_index,
                 layer_index,
@@ -242,6 +256,7 @@ impl std::error::Error for PcsFriOpeningSegmentError {
             | Self::EmptyLayerQueries { .. }
             | Self::EmptyQueryValues { .. }
             | Self::DuplicateUnitIndex { .. }
+            | Self::DuplicateUnitIdentity { .. }
             | Self::DuplicateLayerIndex { .. }
             | Self::LengthOverflow => None,
         }
@@ -254,14 +269,18 @@ pub fn encode_pcs_fri_opening_segment(
     validate_pcs_fri_opening_segment(value)?;
     let unit_count =
         u32::try_from(value.units.len()).map_err(|_| PcsFriOpeningSegmentError::LengthOverflow)?;
-    let expected_len = encoded_len(value)?;
+    let version = pcs_fri_opening_version(value);
+    let expected_len = encoded_len(value, unit_header_bytes(version)?)?;
 
     let mut out = Vec::with_capacity(expected_len);
     out.extend_from_slice(&PCS_FRI_OPENING_MAGIC);
-    write_u32(&mut out, PCS_FRI_OPENING_VERSION);
+    write_u32(&mut out, version);
     write_u32(&mut out, unit_count);
     for unit in &value.units {
         write_u32(&mut out, unit.unit_index);
+        if version == PCS_FRI_OPENING_V2_VERSION {
+            write_u32(&mut out, unit.trace_instance_index);
+        }
         write_u32(
             &mut out,
             u32::try_from(unit.layers.len())
@@ -331,7 +350,10 @@ pub fn parse_pcs_fri_opening_segment(
         return Err(PcsFriOpeningSegmentError::InvalidMagic);
     }
     let version = reader.read_u32()?;
-    if version != PCS_FRI_OPENING_VERSION {
+    if !matches!(
+        version,
+        PCS_FRI_OPENING_V1_VERSION | PCS_FRI_OPENING_V2_VERSION
+    ) {
         return Err(PcsFriOpeningSegmentError::UnsupportedVersion { version });
     }
     let unit_count = usize::try_from(reader.read_u32()?)
@@ -339,13 +361,19 @@ pub fn parse_pcs_fri_opening_segment(
     if unit_count == 0 {
         return Err(PcsFriOpeningSegmentError::EmptyUnits);
     }
-    if unit_count > reader.remaining_len() / UNIT_HEADER_BYTES {
+    let unit_header_bytes = unit_header_bytes(version)?;
+    if unit_count > reader.remaining_len() / unit_header_bytes {
         return Err(PcsFriOpeningSegmentError::LengthOverflow);
     }
 
     let mut units = Vec::with_capacity(unit_count);
     for _ in 0..unit_count {
         let unit_index = reader.read_u32()?;
+        let trace_instance_index = if version == PCS_FRI_OPENING_V2_VERSION {
+            reader.read_u32()?
+        } else {
+            0
+        };
         let layer_count = usize::try_from(reader.read_u32()?)
             .map_err(|_| PcsFriOpeningSegmentError::LengthOverflow)?;
         let final_count = usize::try_from(reader.read_u32()?)
@@ -423,6 +451,7 @@ pub fn parse_pcs_fri_opening_segment(
         }
         units.push(PcsFriOpeningUnitSegment {
             unit_index,
+            trace_instance_index,
             layers,
             final_polynomial,
         });
@@ -434,6 +463,26 @@ pub fn parse_pcs_fri_opening_segment(
     Ok(out)
 }
 
+fn pcs_fri_opening_version(value: &PcsFriOpeningSegment) -> u32 {
+    if value
+        .units
+        .iter()
+        .any(|unit| unit.trace_instance_index != 0)
+    {
+        PCS_FRI_OPENING_V2_VERSION
+    } else {
+        PCS_FRI_OPENING_V1_VERSION
+    }
+}
+
+fn unit_header_bytes(version: u32) -> Result<usize, PcsFriOpeningSegmentError> {
+    match version {
+        PCS_FRI_OPENING_V1_VERSION => Ok(V1_UNIT_HEADER_BYTES),
+        PCS_FRI_OPENING_V2_VERSION => Ok(V2_UNIT_HEADER_BYTES),
+        _ => Err(PcsFriOpeningSegmentError::UnsupportedVersion { version }),
+    }
+}
+
 fn validate_pcs_fri_opening_segment(
     value: &PcsFriOpeningSegment,
 ) -> Result<(), PcsFriOpeningSegmentError> {
@@ -442,9 +491,15 @@ fn validate_pcs_fri_opening_segment(
     }
     let mut seen_units = BTreeSet::new();
     for unit in &value.units {
-        if !seen_units.insert(unit.unit_index) {
-            return Err(PcsFriOpeningSegmentError::DuplicateUnitIndex {
+        if !seen_units.insert((unit.unit_index, unit.trace_instance_index)) {
+            if unit.trace_instance_index == 0 {
+                return Err(PcsFriOpeningSegmentError::DuplicateUnitIndex {
+                    unit_index: unit.unit_index,
+                });
+            }
+            return Err(PcsFriOpeningSegmentError::DuplicateUnitIdentity {
                 unit_index: unit.unit_index,
+                trace_instance_index: unit.trace_instance_index,
             });
         }
         if unit.final_polynomial.is_empty() {
@@ -546,7 +601,10 @@ fn validate_pcs_fri_opening_segment(
     Ok(())
 }
 
-fn encoded_len(value: &PcsFriOpeningSegment) -> Result<usize, PcsFriOpeningSegmentError> {
+fn encoded_len(
+    value: &PcsFriOpeningSegment,
+    unit_header_bytes: usize,
+) -> Result<usize, PcsFriOpeningSegmentError> {
     value.units.iter().try_fold(HEADER_BYTES, |acc, unit| {
         let final_bytes = unit
             .final_polynomial
@@ -591,7 +649,7 @@ fn encoded_len(value: &PcsFriOpeningSegment) -> Result<usize, PcsFriOpeningSegme
                 .and_then(|bytes| bytes.checked_add(query_bytes))
                 .ok_or(PcsFriOpeningSegmentError::LengthOverflow)
         })?;
-        acc.checked_add(UNIT_HEADER_BYTES)
+        acc.checked_add(unit_header_bytes)
             .and_then(|bytes| bytes.checked_add(final_bytes))
             .and_then(|bytes| bytes.checked_add(layer_bytes))
             .ok_or(PcsFriOpeningSegmentError::LengthOverflow)

@@ -13,6 +13,7 @@ fn sample_segment() -> ConstantOpeningSegment {
     ConstantOpeningSegment {
         units: vec![ConstantOpeningUnitSegment {
             unit_index: 0,
+            trace_instance_index: 0,
             queries: vec![ConstantOpeningQuerySegment {
                 row_index: 3,
                 values: vec![11, 12],
@@ -37,6 +38,14 @@ fn segment_header(unit_count: u32) -> Vec<u8> {
     bytes
 }
 
+fn v2_segment_header(unit_count: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"cos0");
+    push_u32(&mut bytes, 2);
+    push_u32(&mut bytes, unit_count);
+    bytes
+}
+
 fn push_u32(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
 }
@@ -53,6 +62,46 @@ fn encodes_and_parses_constant_opening_segments() {
 
     assert_eq!(&encoded[0..4], b"cos0");
     assert_eq!(parsed, sample_segment());
+}
+
+#[test]
+fn encodes_and_parses_trace_instance_constant_opening_segments() {
+    let mut segment = sample_segment();
+    let mut later = segment.units[0].clone();
+    later.trace_instance_index = 1;
+    later.queries[0].values[0] = 21;
+    segment.units.push(later);
+
+    let encoded = encode_constant_opening_segment(&segment).expect("opening segment should encode");
+    let parsed = parse_constant_opening_segment(&encoded).expect("opening segment should parse");
+
+    assert_eq!(&encoded[4..8], &2_u32.to_le_bytes());
+    assert_eq!(parsed, segment);
+}
+
+#[test]
+fn parses_legacy_constant_opening_units_as_base_trace_instances() {
+    let encoded =
+        encode_constant_opening_segment(&sample_segment()).expect("opening segment should encode");
+    let parsed = parse_constant_opening_segment(&encoded).expect("opening segment should parse");
+
+    assert_eq!(&encoded[4..8], &1_u32.to_le_bytes());
+    assert_eq!(parsed.units[0].trace_instance_index, 0);
+}
+
+#[test]
+fn rejects_duplicate_trace_instance_constant_opening_units() {
+    let mut segment = sample_segment();
+    segment.units[0].trace_instance_index = 1;
+    segment.units.push(segment.units[0].clone());
+
+    assert!(matches!(
+        encode_constant_opening_segment(&segment),
+        Err(ConstantOpeningSegmentError::DuplicateUnitIdentity {
+            unit_index: 0,
+            trace_instance_index: 1
+        })
+    ));
 }
 
 #[test]
@@ -115,11 +164,11 @@ fn rejects_non_canonical_constant_opening_sibling_roots_when_parsing() {
 fn rejects_unsupported_constant_opening_segment_versions() {
     let mut encoded =
         encode_constant_opening_segment(&sample_segment()).expect("opening segment should encode");
-    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+    encoded[4..8].copy_from_slice(&3_u32.to_le_bytes());
 
     assert!(matches!(
         parse_constant_opening_segment(&encoded),
-        Err(ConstantOpeningSegmentError::UnsupportedVersion { version: 2 })
+        Err(ConstantOpeningSegmentError::UnsupportedVersion { version: 3 })
     ));
 }
 
@@ -138,6 +187,7 @@ fn rejects_constant_opening_queries_without_values() {
     let segment = ConstantOpeningSegment {
         units: vec![ConstantOpeningUnitSegment {
             unit_index: 0,
+            trace_instance_index: 0,
             queries: vec![ConstantOpeningQuerySegment {
                 row_index: 3,
                 values: Vec::new(),
@@ -190,6 +240,19 @@ fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
 fn rejects_query_count_that_exceeds_remaining_query_headers() {
     let mut bytes = segment_header(1);
     push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 1);
+
+    assert!(matches!(
+        parse_constant_opening_segment(&bytes),
+        Err(ConstantOpeningSegmentError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_v2_query_count_that_exceeds_remaining_query_headers() {
+    let mut bytes = v2_segment_header(1);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 1);
     push_u32(&mut bytes, 1);
 
     assert!(matches!(

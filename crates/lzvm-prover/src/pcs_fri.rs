@@ -46,7 +46,7 @@ pub fn load_pcs_fri_opening_unit_from_segments(
     opening
         .units
         .into_iter()
-        .find(|unit| unit.unit_index == unit_index_u32)
+        .find(|unit| unit.unit_index == unit_index_u32 && unit.trace_instance_index == 0)
         .ok_or(LoadPcsFriOpeningUnitError::MissingUnit { unit_index })
 }
 
@@ -56,10 +56,10 @@ pub(crate) fn validate_pcs_fri_opening_units_match_query_units(
 ) -> Result<(), LoadPcsFriOpeningUnitError> {
     let opening = load_pcs_fri_opening_segment_from_segments(segments)?;
     for unit in opening.units {
-        if !query_units
-            .iter()
-            .any(|query_unit| query_unit.unit_index == unit.unit_index)
-        {
+        if !query_units.iter().any(|query_unit| {
+            query_unit.unit_index == unit.unit_index
+                && query_unit.trace_instance_index == unit.trace_instance_index
+        }) {
             let unit_index = usize::try_from(unit.unit_index)
                 .map_err(|_| LoadPcsFriOpeningUnitError::UnitIndexOverflow)?;
             return Err(LoadPcsFriOpeningUnitError::UnexpectedUnit { unit_index });

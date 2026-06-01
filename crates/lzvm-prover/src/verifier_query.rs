@@ -657,17 +657,26 @@ pub fn validate_verifier_query_outputs_from_segments(
         let opening_unit = request
             .opening_units
             .iter()
-            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .find(|unit| {
+                unit.unit_index == query_unit.unit_index
+                    && unit.trace_instance_index == query_unit.trace_instance_index
+            })
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
         let constant_unit = constant_opening
             .units
             .iter()
-            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .find(|unit| {
+                unit.unit_index == query_unit.unit_index
+                    && unit.trace_instance_index == query_unit.trace_instance_index
+            })
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
         let witness_unit = witness_opening
             .units
             .iter()
-            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .find(|unit| {
+                unit.unit_index == query_unit.unit_index
+                    && unit.trace_instance_index == query_unit.trace_instance_index
+            })
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
         let evaluation_unit =
             load_pcs_evaluation_unit_from_segments(unit_index, unit, request.segments)
@@ -675,7 +684,10 @@ pub fn validate_verifier_query_outputs_from_segments(
         let challenges = request
             .transcript_challenges
             .iter()
-            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .find(|unit| {
+                unit.unit_index == query_unit.unit_index
+                    && unit.trace_instance_index == query_unit.trace_instance_index
+            })
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
         let code = verifier_code_with_proof_value_offsets(code, request.global_info).map_err(
             |source| VerifierFriQueryOutputSegmentsError::Validation {

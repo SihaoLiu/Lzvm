@@ -155,6 +155,7 @@ fn assembles_single_query_verifier_inputs_from_opening_segments() {
     let proof_values = vec![e([23, 0, 0])];
     let constants = ConstantOpeningUnitSegment {
         unit_index: 7,
+        trace_instance_index: 0,
         queries: vec![ConstantOpeningQuerySegment {
             row_index: 9,
             values: vec![31, 37, 41],
@@ -163,6 +164,7 @@ fn assembles_single_query_verifier_inputs_from_opening_segments() {
     };
     let witness = WitnessOpeningUnitSegment {
         unit_index: 7,
+        trace_instance_index: 0,
         queries: vec![WitnessOpeningQuerySegment {
             row_index: 9,
             stages: vec![
@@ -258,6 +260,7 @@ fn evaluates_all_unit_query_verifier_outputs() {
     ];
     let constants = ConstantOpeningUnitSegment {
         unit_index: 7,
+        trace_instance_index: 0,
         queries: vec![
             ConstantOpeningQuerySegment {
                 row_index: 9,
@@ -273,6 +276,7 @@ fn evaluates_all_unit_query_verifier_outputs() {
     };
     let witness = WitnessOpeningUnitSegment {
         unit_index: 7,
+        trace_instance_index: 0,
         queries: vec![
             WitnessOpeningQuerySegment {
                 row_index: 9,
@@ -362,6 +366,7 @@ fn compares_query_verifier_outputs_to_first_fri_layer_values() {
     let expected_second = e([307, 311, 313]);
     let fri = PcsFriOpeningUnitSegment {
         unit_index: 7,
+        trace_instance_index: 0,
         layers: vec![PcsFriOpeningLayerSegment {
             layer_index: 0,
             root: [0, 0, 0, 0],
@@ -438,6 +443,7 @@ fn validates_verifier_query_outputs_against_fri_opening() {
     ];
     let constants = ConstantOpeningUnitSegment {
         unit_index: 7,
+        trace_instance_index: 0,
         queries: vec![
             ConstantOpeningQuerySegment {
                 row_index: 9,
@@ -453,6 +459,7 @@ fn validates_verifier_query_outputs_against_fri_opening() {
     };
     let witness = WitnessOpeningUnitSegment {
         unit_index: 7,
+        trace_instance_index: 0,
         queries: vec![
             WitnessOpeningQuerySegment {
                 row_index: 9,
@@ -508,6 +515,7 @@ fn validates_verifier_query_outputs_against_fri_opening() {
     let expected_second = e([307, 311, 313]) + e([43, 0, 0]);
     let mut fri = PcsFriOpeningUnitSegment {
         unit_index: 7,
+        trace_instance_index: 0,
         layers: vec![PcsFriOpeningLayerSegment {
             layer_index: 0,
             root: [0, 0, 0, 0],
@@ -595,6 +603,77 @@ fn validates_verifier_query_outputs_from_proof_segments() {
         segments: &segments,
     })
     .expect("query outputs should validate");
+}
+
+#[test]
+fn validates_verifier_query_outputs_by_trace_identity() {
+    let (unit, code, base_query, base_fri, base_challenges, mut segments) =
+        verifier_query_output_segments_fixture(false);
+    let mut trace_query = base_query.clone();
+    trace_query.trace_instance_index = 1;
+    trace_query.queries = vec![11, 19];
+
+    let constant_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == CONSTANT_OPENING_SEGMENT_ID)
+        .expect("constant opening segment should exist");
+    let mut constant_opening =
+        parse_constant_opening_segment(&constant_segment.data).expect("opening should parse");
+    let mut trace_constant = constant_opening.units[0].clone();
+    trace_constant.trace_instance_index = 1;
+    trace_constant.queries[0].row_index = 11;
+    trace_constant.queries[0].values = vec![71, 73, 79];
+    trace_constant.queries[1].row_index = 12;
+    trace_constant.queries[1].values = vec![83, 89, 97];
+    constant_opening.units.push(trace_constant);
+    constant_segment.data =
+        encode_constant_opening_segment(&constant_opening).expect("opening should encode");
+
+    let witness_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == WITNESS_OPENING_SEGMENT_ID)
+        .expect("witness opening segment should exist");
+    let mut witness_opening =
+        parse_witness_opening_segment(&witness_segment.data).expect("opening should parse");
+    let mut trace_witness = witness_opening.units[0].clone();
+    trace_witness.trace_instance_index = 1;
+    trace_witness.queries[0].row_index = 11;
+    trace_witness.queries[0].stages[0].values = vec![401, 409];
+    trace_witness.queries[0].stages[1].values = vec![503, 509, 521];
+    trace_witness.queries[1].row_index = 12;
+    trace_witness.queries[1].stages[0].values = vec![601, 607];
+    trace_witness.queries[1].stages[1].values = vec![701, 709, 719];
+    witness_opening.units.push(trace_witness);
+    witness_segment.data =
+        encode_witness_opening_segment(&witness_opening).expect("opening should encode");
+
+    let expected_first = e([503, 509, 521]) + e([71, 0, 0]);
+    let expected_second = e([701, 709, 719]) + e([83, 0, 0]);
+    let mut trace_fri = base_fri.clone();
+    trace_fri.trace_instance_index = 1;
+    trace_fri.layers[0].queries[0].row_index = 11;
+    trace_fri.layers[0].queries[0].values[0] = expected_first.to_u64s();
+    trace_fri.layers[0].queries[1].row_index = 3;
+    trace_fri.layers[0].queries[1].values[1] = expected_second.to_u64s();
+
+    let mut trace_challenges = base_challenges.clone();
+    trace_challenges.trace_instance_index = 1;
+    let code_refs = [&code];
+    let query_units = [trace_query, base_query];
+    let opening_units = [base_fri, trace_fri];
+    let transcript_challenges = [base_challenges, trace_challenges];
+
+    validate_verifier_query_outputs_from_segments(VerifierFriQueryOutputSegmentsRequest {
+        units: &[unit],
+        verifier_codes: &code_refs,
+        global_info: &global_info_without_proof_values(),
+        public_values: &[],
+        query_units: &query_units,
+        opening_units: &opening_units,
+        transcript_challenges: &transcript_challenges,
+        segments: &segments,
+    })
+    .expect("query outputs should match by trace identity");
 }
 
 #[test]
@@ -753,6 +832,7 @@ fn verifier_query_output_segments_fixture(
     };
     let constants = ConstantOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         queries: vec![
             ConstantOpeningQuerySegment {
                 row_index: 9,
@@ -768,6 +848,7 @@ fn verifier_query_output_segments_fixture(
     };
     let witness = WitnessOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         queries: vec![
             WitnessOpeningQuerySegment {
                 row_index: 9,
@@ -828,6 +909,7 @@ fn verifier_query_output_segments_fixture(
     };
     let fri = PcsFriOpeningUnitSegment {
         unit_index: 0,
+        trace_instance_index: 0,
         layers: vec![PcsFriOpeningLayerSegment {
             layer_index: 0,
             root: [0, 0, 0, 0],
@@ -859,6 +941,7 @@ fn verifier_query_output_segments_fixture(
     };
     let challenges = PcsTranscriptUnitChallenges {
         unit_index: 0,
+        trace_instance_index: 0,
         challenges: vec![
             e([2, 0, 0]),
             e([3, 0, 0]),
