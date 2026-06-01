@@ -311,7 +311,13 @@ pub fn build_witness_proof_artifact_for_unit(
                 unit_index: commitments.unit_index(),
                 trace_instance_index: commitments.trace_instance_index(),
                 execution_unit: request.execution_unit,
-                trace: request.output.trace(),
+                trace: request.output.trace_if_available().ok_or_else(|| {
+                    format!(
+                        "witness trace is required for transcript unit {} trace instance {}",
+                        commitments.unit_index(),
+                        commitments.trace_instance_index()
+                    )
+                })?,
                 publics: request.output.publics(),
                 auxiliary_inputs: request.output.auxiliary_inputs(),
                 material_segment: &material_segment,
@@ -1113,7 +1119,11 @@ fn build_witness_transcript_proof_artifact_for_all_units(
                 unit_index,
                 trace_instance_index,
                 execution_unit,
-                trace: output.trace(),
+                trace: output.trace_if_available().ok_or_else(|| {
+                    format!(
+                        "witness trace is required for transcript unit {unit_index} trace instance {trace_instance_index}"
+                    )
+                })?,
                 publics: output.publics(),
                 auxiliary_inputs: ProveWitnessAuxiliaryInputSlices {
                     unit_values,

@@ -30,6 +30,7 @@ use lzvm_prover::{
     derive_prove_execution_plan_with_program_image_cache,
     run_prove_witness_commitments_for_all_units,
     run_prove_witness_commitments_for_all_units_with_trace_bundle,
+    run_prove_witness_commitments_with_guest_pc_trace_segment_commitments,
     run_prove_witness_commitments_with_guest_pc_trace_segments,
     run_prove_witness_commitments_with_trace_backend,
     run_prove_witness_commitments_with_trace_bytes, ProveExecutionInputArtifacts,
@@ -371,12 +372,27 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         };
         if is_guest_pc_trace_segmented_layout_supported(&layout) {
             let finish_auxiliary_inputs = auxiliary_inputs.clone();
-            let mut outputs = match run_prove_witness_commitments_with_guest_pc_trace_segments(
-                &plan,
-                single_unit_index,
-                auxiliary_inputs,
-                instruction_limit,
-            ) {
+            let trace_can_be_dropped = parsed.evaluation_values_segment.is_none()
+                && auxiliary_inputs.evaluations.is_empty()
+                && plan
+                    .units
+                    .get(single_unit_index)
+                    .is_some_and(|unit| unit.fri_expression_id.is_none());
+            let mut outputs = match if trace_can_be_dropped {
+                run_prove_witness_commitments_with_guest_pc_trace_segment_commitments(
+                    &plan,
+                    single_unit_index,
+                    auxiliary_inputs,
+                    instruction_limit,
+                )
+            } else {
+                run_prove_witness_commitments_with_guest_pc_trace_segments(
+                    &plan,
+                    single_unit_index,
+                    auxiliary_inputs,
+                    instruction_limit,
+                )
+            } {
                 Ok(outputs) => outputs,
                 Err(error) => {
                     let _ = writeln!(stderr, "prove witness failed: {error}");

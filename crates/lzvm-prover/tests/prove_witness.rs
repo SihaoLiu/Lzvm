@@ -100,6 +100,7 @@ use lzvm_prover::{
     build_witness_commitment_segment_for_schedule, build_witness_opening_segment,
     build_witness_opening_segment_batch, derive_prove_execution_plan, derive_prove_schedule,
     run_prove_witness_commitments, run_prove_witness_commitments_with_auxiliary_inputs,
+    run_prove_witness_commitments_with_guest_pc_trace_segment_commitments,
     run_prove_witness_commitments_with_guest_pc_trace_segments,
     run_prove_witness_commitments_with_trace, run_prove_witness_commitments_with_trace_backend,
     run_prove_witness_commitments_with_trace_bytes, GpuRunOptions, ProveExecutionInputArtifacts,
@@ -1276,6 +1277,165 @@ fn runs_segmented_guest_pc_trace_commitments_for_zisk_main_unit() {
         build_witness_commitment_segment_for_schedule(plan.run_plan.schedule.units.len(), second)
             .expect("second witness segment should build");
     assert_ne!(first_segment.id, second_segment.id);
+}
+
+#[test]
+fn runs_segmented_guest_pc_trace_commitments_without_retaining_traces() {
+    let dir = temp_dir("segmented-guest-pc-compact-commitments");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    )
+    .expect("guest image should be written");
+
+    let mut unit = sample_zisk_main_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
+        .expect("constant tree should be written");
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.num_proof_values = vec![1];
+    catalog.layout.global_info.proof_values_map = vec![NamedStageValue {
+        name: "enable_rom_data".to_owned(),
+        stage: 1,
+        id: None,
+        lengths: vec![1],
+    }];
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: Vec::new(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let outputs = run_prove_witness_commitments_with_guest_pc_trace_segment_commitments(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        16,
+    )
+    .expect("compact segmented guest PC trace commitments should run");
+
+    assert_eq!(outputs.len(), 2);
+    assert!(outputs.iter().all(|output| !output.retains_trace()));
+    assert!(outputs
+        .iter()
+        .all(|output| output.auxiliary_inputs().proof_values == vec![Felt::ONE]));
+    let proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &outputs,
+            auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+            unit_values: &[],
+            evaluation_values_segment: None,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        },
+    )
+    .expect("proof artifact should build")
+    .expect("proof artifact should exist");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(proof.setup_hash, setup_hash);
+}
+
+#[test]
+fn compact_segmented_guest_pc_trace_rejects_single_unit_transcript_without_trace() {
+    let dir = temp_dir("segmented-guest-pc-compact-single-unit-transcript");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    )
+    .expect("guest image should be written");
+
+    let mut unit = sample_zisk_main_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
+        .expect("constant tree should be written");
+    let catalog = sample_catalog(unit);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: Vec::new(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let outputs = run_prove_witness_commitments_with_guest_pc_trace_segment_commitments(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs {
+            evaluations: vec![Ext3::ZERO; plan.units[0].expected_evaluation_value_count()],
+            ..ProveWitnessAuxiliaryInputs::default()
+        },
+        16,
+    )
+    .expect("compact segmented guest PC trace commitments should run");
+
+    let error =
+        lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_unit: &plan.units[0],
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            unit_values: None,
+            output: &outputs[0],
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        })
+        .expect_err("compact output without trace should reject transcript proof");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(error.contains("witness trace is required for transcript unit 0 trace instance 0"));
 }
 
 #[test]
