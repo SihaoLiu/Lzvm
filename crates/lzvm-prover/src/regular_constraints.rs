@@ -369,7 +369,7 @@ struct DecodedOperation {
 #[derive(Debug, Clone, Copy)]
 struct DecodedSource<'input> {
     offset: usize,
-    row_offset: i64,
+    row_offset: usize,
     kind: DecodedSourceKind<'input>,
 }
 
@@ -817,8 +817,8 @@ fn find_stage_columns(
 fn source_row_offset(
     source: SourceRef,
     inputs: RegularConstraintInputs<'_>,
-) -> Result<i64, RegularConstraintEvalError> {
-    inputs
+) -> Result<usize, RegularConstraintEvalError> {
+    let offset = inputs
         .opening_point_offsets
         .get(source.row_offset_index)
         .copied()
@@ -827,19 +827,45 @@ fn source_row_offset(
             offset: source.row_offset_index,
             width: 1,
             len: inputs.opening_point_offsets.len(),
-        })
+        })?;
+    normalize_row_offset(offset, inputs.domain_size)
+}
+
+fn normalize_row_offset(
+    offset: i64,
+    domain_size: usize,
+) -> Result<usize, RegularConstraintEvalError> {
+    if let Ok(domain_size) = i64::try_from(domain_size) {
+        return Ok(offset.rem_euclid(domain_size) as usize);
+    }
+
+    let domain_size =
+        i128::try_from(domain_size).map_err(|_| RegularConstraintEvalError::LengthOverflow)?;
+    Ok(i128::from(offset).rem_euclid(domain_size) as usize)
 }
 
 fn source_row_with_offset(
     row: usize,
-    row_offset: i64,
+    row_offset: usize,
     domain_size: usize,
 ) -> Result<usize, RegularConstraintEvalError> {
+    if row < domain_size && row_offset < domain_size {
+        if row_offset == 0 {
+            return Ok(row);
+        }
+        let wrap_at = domain_size - row_offset;
+        return if row < wrap_at {
+            Ok(row + row_offset)
+        } else {
+            Ok(row - wrap_at)
+        };
+    }
+
     let domain_size =
         i128::try_from(domain_size).map_err(|_| RegularConstraintEvalError::LengthOverflow)?;
-    let shifted = i128::try_from(row).map_err(|_| RegularConstraintEvalError::LengthOverflow)?
-        + i128::from(row_offset);
-    Ok(shifted.rem_euclid(domain_size) as usize)
+    let shifted = u128::try_from(row).map_err(|_| RegularConstraintEvalError::LengthOverflow)?
+        + u128::try_from(row_offset).map_err(|_| RegularConstraintEvalError::LengthOverflow)?;
+    Ok((shifted % domain_size as u128) as usize)
 }
 
 fn read_domain_or_zerofier(
@@ -1142,5 +1168,11 @@ mod tests {
             BUFFER_RESOLVE_COUNT.with(Cell::get) <= 2,
             "buffer layout should be resolved once per operation source"
         );
+    }
+
+    #[test]
+    fn source_row_offset_fallback_wraps_out_of_range_rows() {
+        assert_eq!(source_row_with_offset(5, 0, 3).expect("row should wrap"), 2);
+        assert_eq!(source_row_with_offset(5, 1, 3).expect("row should wrap"), 0);
     }
 }

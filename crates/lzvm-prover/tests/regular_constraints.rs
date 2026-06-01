@@ -298,6 +298,69 @@ fn applies_opening_point_row_offsets_cyclically() {
 }
 
 #[test]
+fn applies_negative_and_large_opening_point_row_offsets_cyclically() {
+    let program = ConstraintProgram {
+        entries: vec![
+            ConstraintEntry {
+                stage: 1,
+                destination_dimension: 1,
+                destination_id: 0,
+                first_row: 0,
+                last_row: 1,
+                temp1_count: 1,
+                temp3_count: 0,
+                ops_count: 1,
+                ops_offset: 0,
+                args_count: 8,
+                args_offset: 0,
+                intermediate: false,
+                source_line: "negative shifted row residual".to_owned(),
+            },
+            ConstraintEntry {
+                stage: 1,
+                destination_dimension: 1,
+                destination_id: 0,
+                first_row: 1,
+                last_row: 2,
+                temp1_count: 1,
+                temp3_count: 0,
+                ops_count: 1,
+                ops_offset: 1,
+                args_count: 8,
+                args_offset: 8,
+                intermediate: false,
+                source_line: "large shifted row residual".to_owned(),
+            },
+        ],
+        ops: vec![0, 0],
+        args: vec![
+            1, 0, 0, 0, 1, 8, 0, 0, //
+            1, 0, 0, 0, 2, 8, 0, 0,
+        ],
+        numbers: vec![30],
+    };
+    let fixed = [felt(10), felt(20), felt(30)];
+
+    let results = evaluate_regular_constraints(
+        &program,
+        RegularConstraintInputs {
+            domain_size: 3,
+            stage_count: 1,
+            fixed_columns: RegularColumnMatrix {
+                column_count: 1,
+                values: &fixed,
+            },
+            opening_point_offsets: &[0, -1, 4],
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect("shifted regular constraints should evaluate");
+
+    assert_eq!(results[0].invalid_rows, Vec::new());
+    assert_eq!(results[1].invalid_rows, Vec::new());
+}
+
+#[test]
 fn reports_first_executed_source_error_before_later_source_decode_error() {
     let program = ConstraintProgram {
         entries: vec![ConstraintEntry {
