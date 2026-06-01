@@ -19,6 +19,7 @@ use crate::fri_polynomial::{
 };
 use crate::global_constraints::GlobalConstraintInputs;
 use crate::guest_pc_trace_backend::{
+    for_each_guest_pc_trace_segment_collecting_proof_values_with_context,
     for_each_guest_pc_trace_segment_with_context,
     run_guest_pc_trace_runtime_proof_values_with_context, run_guest_pc_trace_segments_with_context,
     GuestPcTraceBackend, GuestPcTraceSegmentStreamError,
@@ -48,6 +49,8 @@ use crate::witness_runner::{
 };
 use crate::witness_trace::{parse_witness_trace, WitnessTraceBuffer};
 use crate::{ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassRequest, ProveUnitSchedule};
+
+mod proof_value_dependency;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProveTraceIdentity {
@@ -1027,6 +1030,13 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             unit_count,
         },
     )?;
+    let execution_unit =
+        plan.units
+            .get(unit_index)
+            .ok_or(ProveWitnessCommitmentError::UnitIndexOutOfRange {
+                unit_index,
+                unit_count: plan.units.len(),
+            })?;
     let layout = derive_witness_trace_layout(unit)?;
     let backend = GuestPcTraceBackend::new(instruction_limit);
     let context = WitnessComputeContext {
@@ -1034,6 +1044,65 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         guest_image_info: Some(&plan.guest_image_info),
         trace_layout: Some(&layout),
     };
+    if auxiliary_inputs.proof_values.is_empty()
+        && !proof_value_dependency::regular_program_uses_proof_values(
+            execution_unit.stage_count,
+            &execution_unit.regular_constraints,
+            &execution_unit.regular_hints,
+        )
+    {
+        let mut outputs = Vec::new();
+        let mut source_lookup_balance = source_lookup_balance;
+        let proof_values = for_each_guest_pc_trace_segment_collecting_proof_values_with_context(
+            &backend,
+            context,
+            layout.request(&shared_inputs.input[..]),
+            |segment_output| {
+                let trace_instance_index = segment_output.trace_instance_index();
+                let trace_output = segment_output.into_output();
+                let merged_inputs = merge_backend_unit_values(
+                    unit_index,
+                    unit,
+                    Arc::clone(&auxiliary_inputs),
+                    trace_output.unit_values(),
+                )?;
+                let regular_hint_mode = match source_lookup_balance {
+                    Some(ref mut balance) => WitnessRegularHintMode::Balanced(balance),
+                    None => WitnessRegularHintMode::AssignmentsOnly,
+                };
+                let mut output = run_prove_witness_commitments_from_trace_inner(
+                    plan,
+                    unit_index,
+                    shared_inputs,
+                    merged_inputs,
+                    WitnessTraceCommitmentInput {
+                        unit,
+                        layout: layout.clone(),
+                        trace: trace_output.into_trace(),
+                    },
+                    regular_hint_mode,
+                )?;
+                output.commitments.identity.trace_instance_index = trace_instance_index;
+                outputs.push(output.without_trace());
+                Ok(())
+            },
+        )
+        .map_err(|error| match error {
+            GuestPcTraceSegmentStreamError::Trace(error) => {
+                ProveWitnessCommitmentError::from(error)
+            }
+            GuestPcTraceSegmentStreamError::Emit(error) => error,
+        })?;
+        for output in &mut outputs {
+            output.auxiliary_inputs = merge_backend_proof_values(
+                unit_index,
+                &plan.global_info,
+                Arc::clone(&output.auxiliary_inputs),
+                &proof_values,
+            )?;
+        }
+        return Ok(outputs);
+    }
     let proof_values = run_guest_pc_trace_runtime_proof_values_with_context(
         &backend,
         context,

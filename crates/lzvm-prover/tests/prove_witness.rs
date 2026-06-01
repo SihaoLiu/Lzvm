@@ -19,7 +19,9 @@ use lzvm_artifacts::eth_block_input_segment::{
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
-use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn, FixedColumns};
+use lzvm_artifacts::fixed::{
+    expected_raw_fixed_column_byte_count, write_raw_fixed_columns_file, FixedColumn, FixedColumns,
+};
 use lzvm_artifacts::global_info::{
     AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue, PublicValue,
 };
@@ -489,6 +491,29 @@ fn challenge_row_zero_stage_constraint() -> ConstraintProgram {
         ops: vec![0],
         args: vec![1, 0, 12, 0, 0, 1, 0, 0],
         numbers: Vec::new(),
+    }
+}
+
+fn zisk_main_proof_value_one_constraint() -> ConstraintProgram {
+    ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 1,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "proof value one residual".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![1, 0, 9, 0, 0, 7, 0, 0],
+        numbers: vec![1],
     }
 }
 
@@ -1490,6 +1515,122 @@ fn segmented_guest_pc_trace_proof_values_feed_global_hints() {
         16,
     )
     .expect("segmented backend proof values should feed global hints");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(outputs.len(), 2);
+    assert_eq!(outputs[0].auxiliary_inputs().proof_values, vec![Felt::ONE]);
+    assert_eq!(outputs[1].auxiliary_inputs().proof_values, vec![Felt::ONE]);
+}
+
+#[test]
+fn compact_segmented_guest_pc_trace_proof_values_feed_global_hints() {
+    let dir = temp_dir("compact-segmented-guest-pc-proof-values-global-hints");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    )
+    .expect("guest image should be written");
+
+    let mut catalog = sample_catalog(sample_zisk_main_unit());
+    catalog.layout.global_info.num_proof_values = vec![1];
+    catalog.layout.global_info.proof_values_map = vec![NamedStageValue {
+        name: "enable_rom_data".to_owned(),
+        stage: 1,
+        id: None,
+        lengths: vec![1],
+    }];
+    catalog.global_hints = HintProgram {
+        hints: vec![
+            global_source_lookup_balance_hint(SOURCE_LOOKUP_PROVES_HINT, HintOperand::Number(1)),
+            global_source_lookup_balance_hint(
+                SOURCE_LOOKUP_ASSUMES_HINT,
+                HintOperand::ProofValue { id: 0 },
+            ),
+        ],
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let outputs = run_prove_witness_commitments_with_guest_pc_trace_segment_commitments(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        16,
+    )
+    .expect("compact segmented backend proof values should feed global hints");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(outputs.len(), 2);
+    assert_eq!(outputs[0].auxiliary_inputs().proof_values, vec![Felt::ONE]);
+    assert_eq!(outputs[1].auxiliary_inputs().proof_values, vec![Felt::ONE]);
+}
+
+#[test]
+fn compact_segmented_guest_pc_trace_preruns_for_regular_proof_values() {
+    let dir = temp_dir("compact-segmented-guest-pc-regular-proof-values");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    )
+    .expect("guest image should be written");
+
+    let mut unit = sample_zisk_main_unit();
+    unit.paths.fixed_columns = dir.join("unit.const");
+    let fixed_bytes = expected_raw_fixed_column_byte_count(&unit.metadata.setup)
+        .expect("fixed-column size should derive");
+    fs::write(&unit.paths.fixed_columns, vec![0_u8; fixed_bytes])
+        .expect("fixed columns should be written");
+    unit.regular_constraints = zisk_main_proof_value_one_constraint();
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.num_proof_values = vec![1];
+    catalog.layout.global_info.proof_values_map = vec![NamedStageValue {
+        name: "enable_rom_data".to_owned(),
+        stage: 1,
+        id: None,
+        lengths: vec![1],
+    }];
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let outputs = run_prove_witness_commitments_with_guest_pc_trace_segment_commitments(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        16,
+    )
+    .expect("compact segmented backend should precompute regular proof values");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(outputs.len(), 2);

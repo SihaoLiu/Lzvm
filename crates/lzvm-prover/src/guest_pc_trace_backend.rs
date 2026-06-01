@@ -174,7 +174,55 @@ pub(crate) fn for_each_guest_pc_trace_segment_with_context<E>(
         backend.instruction_limit,
         context,
         request.input.as_ref(),
-        proof_values,
+        Some(proof_values),
+        |segment| {
+            emit(GuestPcTraceSegmentRunOutput {
+                trace_instance_index: segment.trace_instance_index,
+                output: WitnessTraceRunOutput::from_parts(
+                    segment.trace,
+                    segment.unit_values,
+                    segment.proof_values,
+                ),
+            })
+            .map_err(GuestPcTraceSegmentStreamError::Emit)
+        },
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn for_each_guest_pc_trace_segment_collecting_proof_values_with_context<E>(
+    backend: &GuestPcTraceBackend,
+    context: WitnessComputeContext<'_>,
+    request: WitnessTraceRequest<'_>,
+    mut emit: impl FnMut(GuestPcTraceSegmentRunOutput) -> Result<(), E>,
+) -> Result<Vec<WitnessTraceProofValue>, GuestPcTraceSegmentStreamError<E>> {
+    let layout = context
+        .trace_layout
+        .ok_or_else(|| WitnessCallError::Backend {
+            message: "guest PC trace segmented backend requires trace layout".to_owned(),
+        })
+        .map_err(WitnessTraceRunError::from)
+        .map_err(GuestPcTraceSegmentStreamError::Trace)?;
+    if request.rows != layout.row_count() || request.columns != layout.column_count() {
+        return Err(GuestPcTraceSegmentStreamError::Trace(
+            WitnessCallError::Backend {
+                message: format!(
+                    "guest PC trace segmented request shape mismatch: layout {}x{}, request {}x{}",
+                    layout.row_count(),
+                    layout.column_count(),
+                    request.rows,
+                    request.columns
+                ),
+            }
+            .into(),
+        ));
+    }
+
+    for_each_guest_pc_trace_segment(
+        backend.instruction_limit,
+        context,
+        request.input.as_ref(),
+        None,
         |segment| {
             emit(GuestPcTraceSegmentRunOutput {
                 trace_instance_index: segment.trace_instance_index,
@@ -779,9 +827,9 @@ fn for_each_guest_pc_trace_segment<E>(
     instruction_limit: u64,
     context: WitnessComputeContext<'_>,
     input: &[u8],
-    proof_values: &[WitnessTraceProofValue],
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
     mut emit: impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceSegmentStreamError<E>>,
-) -> Result<(), GuestPcTraceSegmentStreamError<E>> {
+) -> Result<Vec<WitnessTraceProofValue>, GuestPcTraceSegmentStreamError<E>> {
     let layout = context
         .trace_layout
         .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)
@@ -873,7 +921,7 @@ fn for_each_guest_pc_trace_segment<E>(
             trace_instance_index,
             trace: written.trace,
             unit_values: written.output.unit_values,
-            proof_values: proof_values.to_vec(),
+            proof_values: expected_proof_values.unwrap_or_default().to_vec(),
         })?;
         trace_instance_count = trace_instance_count.checked_add(1).ok_or_else(|| {
             stream_backend_error(GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -901,14 +949,14 @@ fn for_each_guest_pc_trace_segment<E>(
         fcall_handler.input_data_was_mapped(),
         state.dma_proof_value_flags(),
     );
-    if actual_proof_values != proof_values {
+    if expected_proof_values.is_some_and(|expected| actual_proof_values.as_slice() != expected) {
         return Err(stream_backend_error(
             GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "guest PC trace runtime proof values changed between passes".to_owned(),
             },
         ));
     }
-    Ok(())
+    Ok(actual_proof_values)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
