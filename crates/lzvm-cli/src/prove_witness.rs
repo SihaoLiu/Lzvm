@@ -19,7 +19,8 @@ use lzvm_artifacts::public_values::{
 use lzvm_artifacts::trace_bundle::{parse_trace_bundle_ref, read_trace_bundle_file_bytes};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::guest_pc_trace_backend::{
-    is_guest_pc_trace_layout_supported, GuestPcTraceBackend,
+    is_guest_pc_trace_layout_supported, is_guest_pc_trace_segmented_layout_supported,
+    GuestPcTraceBackend,
 };
 use lzvm_prover::unit_values::ProveUnitValues;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
@@ -29,6 +30,7 @@ use lzvm_prover::{
     derive_prove_execution_plan_with_program_image_cache,
     run_prove_witness_commitments_for_all_units,
     run_prove_witness_commitments_for_all_units_with_trace_bundle,
+    run_prove_witness_commitments_with_guest_pc_trace_segments,
     run_prove_witness_commitments_with_trace_backend,
     run_prove_witness_commitments_with_trace_bytes, ProveExecutionInputArtifacts,
     ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassKind, ProvePassRequest,
@@ -347,17 +349,94 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             }
         }
     } else if let Some(instruction_limit) = parsed.guest_pc_trace_instruction_limit {
-        let backend = GuestPcTraceBackend::new(instruction_limit);
-        match run_prove_witness_commitments_with_trace_backend(
-            &plan,
-            single_unit_index,
-            auxiliary_inputs,
-            &backend,
-        ) {
-            Ok(output) => output,
-            Err(error) => {
-                let _ = writeln!(stderr, "prove witness failed: {error}");
+        let unit = match plan.run_plan.schedule.units.get(single_unit_index) {
+            Some(unit) => unit,
+            None => {
+                let _ = writeln!(
+                    stderr,
+                    "prove witness failed: unit index out of range: {single_unit_index}"
+                );
                 return 1;
+            }
+        };
+        let layout = match derive_witness_trace_layout(unit) {
+            Ok(layout) => layout,
+            Err(error) => {
+                let _ = writeln!(
+                    stderr,
+                    "prove witness failed: guest PC trace unit layout failed for unit {single_unit_index}: {error}"
+                );
+                return 1;
+            }
+        };
+        if is_guest_pc_trace_segmented_layout_supported(&layout) {
+            let finish_auxiliary_inputs = auxiliary_inputs.clone();
+            let mut outputs = match run_prove_witness_commitments_with_guest_pc_trace_segments(
+                &plan,
+                single_unit_index,
+                auxiliary_inputs,
+                instruction_limit,
+            ) {
+                Ok(outputs) => outputs,
+                Err(error) => {
+                    let _ = writeln!(stderr, "prove witness failed: {error}");
+                    return 1;
+                }
+            };
+            if outputs.len() > 1 {
+                if plan.inputs.public_inputs.is_some() {
+                    let _ = writeln!(
+                        stderr,
+                        "prove witness failed: segmented guest PC trace proof output is unsupported"
+                    );
+                    return 1;
+                }
+                if let Err(message) = finish_all_units_witness_run(
+                    FinishAllUnitsWitnessRunRequest {
+                        catalog: &catalog,
+                        plan: &plan,
+                        parsed: &parsed,
+                        auxiliary_inputs: &finish_auxiliary_inputs,
+                        outputs: &outputs,
+                        eth_block_input: FinishEthBlockInput {
+                            summary: prepared_eth_block_input.summary.as_ref(),
+                            generated_public_inputs,
+                            generated_from_public_input: prepared_eth_block_input
+                                .generated_from_public_input,
+                            public_input: parsed.eth_public_input.as_deref(),
+                        },
+                        challenge_values_segment: challenge_values_segment.as_ref(),
+                    },
+                    stdout,
+                ) {
+                    let _ = writeln!(stderr, "prove witness failed: {message}");
+                    return 1;
+                }
+                return 0;
+            }
+            match outputs.pop() {
+                Some(output) => output,
+                None => {
+                    let _ = writeln!(
+                        stderr,
+                        "prove witness failed: segmented guest PC trace produced no outputs"
+                    );
+                    return 1;
+                }
+            }
+        } else {
+            let backend = GuestPcTraceBackend::new(instruction_limit);
+            match run_prove_witness_commitments_with_trace_backend(
+                &plan,
+                single_unit_index,
+                auxiliary_inputs,
+                &backend,
+            ) {
+                Ok(output) => output,
+                Err(error) => {
+                    let _ = writeln!(stderr, "prove witness failed: {error}");
+                    return 1;
+                }
             }
         }
     } else if let Some(bundle) = &trace_bundle {
@@ -805,16 +884,18 @@ fn save_witness_outputs(
     let commitments = request.output.commitments();
 
     for commitment in commitments.stage_commitments().commitments() {
-        let root_path = request.output_dir.join(format!(
-            "unit-{}-stage-{}.witness-root",
-            commitments.unit_index(),
-            commitment.stage_index()
-        ));
-        let tree_path = request.output_dir.join(format!(
-            "unit-{}-stage-{}.witness-tree",
-            commitments.unit_index(),
-            commitment.stage_index()
-        ));
+        let root_path = witness_stage_output_path(
+            request.output_dir,
+            commitments,
+            commitment.stage_index(),
+            "witness-root",
+        );
+        let tree_path = witness_stage_output_path(
+            request.output_dir,
+            commitments,
+            commitment.stage_index(),
+            "witness-tree",
+        );
         let mut root_bytes = Vec::with_capacity(32);
         for value in commitment.root() {
             root_bytes.extend_from_slice(&value.to_le_bytes());
@@ -822,15 +903,67 @@ fn save_witness_outputs(
         write_output_file(&root_path, &root_bytes)?;
         write_output_file(&tree_path, commitment.tree_bytes())?;
     }
-    let segment_path = request
-        .output_dir
-        .join(format!("unit-{}.witness-segment", commitments.unit_index()));
+    let segment_path = witness_segment_output_path(request.output_dir, commitments);
     write_output_file(&segment_path, &segment.data)?;
     Ok(())
 }
 
+fn witness_stage_output_path(
+    output_dir: &Path,
+    commitments: &ProveWitnessCommitments,
+    stage_index: usize,
+    suffix: &str,
+) -> std::path::PathBuf {
+    if commitments.trace_instance_index() == 0 {
+        output_dir.join(format!(
+            "unit-{}-stage-{}.{}",
+            commitments.unit_index(),
+            stage_index,
+            suffix
+        ))
+    } else {
+        output_dir.join(format!(
+            "unit-{}-trace-{}-stage-{}.{}",
+            commitments.unit_index(),
+            commitments.trace_instance_index(),
+            stage_index,
+            suffix
+        ))
+    }
+}
+
+fn witness_segment_output_path(
+    output_dir: &Path,
+    commitments: &ProveWitnessCommitments,
+) -> std::path::PathBuf {
+    if commitments.trace_instance_index() == 0 {
+        output_dir.join(format!("unit-{}.witness-segment", commitments.unit_index()))
+    } else {
+        output_dir.join(format!(
+            "unit-{}-trace-{}.witness-segment",
+            commitments.unit_index(),
+            commitments.trace_instance_index()
+        ))
+    }
+}
+
 fn write_witness_output_summary(stdout: &mut dyn Write, commitments: &ProveWitnessCommitments) {
+    write_witness_output_summary_with_trace(stdout, commitments, false);
+}
+
+fn write_witness_output_summary_with_trace(
+    stdout: &mut dyn Write,
+    commitments: &ProveWitnessCommitments,
+    include_trace_instance: bool,
+) {
     let _ = writeln!(stdout, "unit_index={}", commitments.unit_index());
+    if include_trace_instance {
+        let _ = writeln!(
+            stdout,
+            "trace_instance_index={}",
+            commitments.trace_instance_index()
+        );
+    }
     let _ = writeln!(stdout, "input_bytes={}", commitments.input_byte_count());
     let _ = writeln!(stdout, "trace_rows={}", commitments.trace_row_count());
     let _ = writeln!(stdout, "trace_columns={}", commitments.trace_column_count());
@@ -1004,8 +1137,15 @@ fn finish_all_units_witness_run(
     if let Some(summary) = eth_block_input.summary {
         write_eth_block_input_summary(stdout, summary);
     }
+    let include_trace_instance = outputs
+        .iter()
+        .any(|output| output.commitments().trace_instance_index() != 0);
     for output in outputs {
-        write_witness_output_summary(stdout, output.commitments());
+        write_witness_output_summary_with_trace(
+            stdout,
+            output.commitments(),
+            include_trace_instance,
+        );
     }
     Ok(())
 }

@@ -80,6 +80,7 @@ use lzvm_artifacts::public_values::{
 use lzvm_artifacts::rlp::parse_rlp;
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{encode_unit_setup_info, UnitSetupInfo};
+use lzvm_artifacts::setup_info::{CommitmentColumn, FriStep, StageValue};
 use lzvm_artifacts::setup_manifest::{
     encode_setup_directory_manifest, read_setup_directory_manifest_file,
     SETUP_DIRECTORY_MANIFEST_FILE,
@@ -2109,6 +2110,100 @@ fn run_generate_key_command(root: &Path) {
 fn write_execution_ready_setup_directory(root: &Path) {
     write_setup_directory(root);
     run_generate_key_command(root);
+}
+
+fn write_execution_ready_setup_directory_with_main_trace_unit(root: &Path) {
+    write_global_files(root);
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    for unit in &layout.units {
+        write_unit_files_with_setup_info_verifier_and_regular_constraints(
+            unit,
+            &sample_main_trace_setup_info(),
+            &fixtures::sample_verifier_info(),
+            sample_regular_constraint_program(),
+        );
+    }
+    run_generate_key_command(root);
+}
+
+fn sample_main_trace_setup_info() -> UnitSetupInfo {
+    let mut setup = fixtures::sample_setup_info();
+    setup.n_stages = 1;
+    setup.stark.n_bits = 1;
+    setup.stark.n_bits_ext = 2;
+    setup.stark.n_queries = 1;
+    setup.stark.pow_bits = 0;
+    setup.stark.steps = vec![FriStep { n_bits: 2 }, FriStep { n_bits: 1 }];
+    setup.section_widths.clear();
+    setup.section_widths.insert("cm1".to_owned(), 40);
+    setup.section_widths.insert("cm2".to_owned(), 1);
+    setup.commitment_columns = main_trace_commitment_columns();
+    setup.unit_value_map = vec![
+        StageValue {
+            name: "main_last_segment".to_owned(),
+            stage: 1,
+            lengths: vec![1],
+        },
+        StageValue {
+            name: "main_segment".to_owned(),
+            stage: 1,
+            lengths: vec![1],
+        },
+        StageValue {
+            name: "segment_initial_pc".to_owned(),
+            stage: 1,
+            lengths: vec![1],
+        },
+    ];
+    setup
+}
+
+fn main_trace_commitment_columns() -> Vec<CommitmentColumn> {
+    vec![
+        commitment_column("a", 0, 2),
+        commitment_column("b", 2, 2),
+        commitment_column("c", 4, 2),
+        commitment_column("flag", 6, 1),
+        commitment_column("pc", 7, 1),
+        commitment_column("op", 8, 1),
+        commitment_column("store_pc", 9, 1),
+        commitment_column("set_pc", 10, 1),
+        commitment_column("a_src_reg", 11, 1),
+        commitment_column("b_src_reg", 12, 1),
+        commitment_column("store_reg", 13, 1),
+        commitment_column("b_src_imm", 14, 1),
+        commitment_column("b_src_ind", 15, 1),
+        commitment_column("b_offset_imm0", 16, 1),
+        commitment_column("store_ind", 17, 1),
+        commitment_column("store_offset", 18, 1),
+        commitment_column("air.addr1", 19, 1),
+        commitment_column("air.addr2", 20, 1),
+        commitment_column("store_mem", 21, 1),
+        commitment_column("ind_width", 22, 1),
+        commitment_column("air.a_imm1", 23, 1),
+        commitment_column("air.b_imm1", 24, 1),
+        commitment_column("is_external_op", 25, 1),
+        commitment_column("a_src_imm", 26, 1),
+        commitment_column("jmp_offset1", 27, 1),
+        commitment_column("jmp_offset2", 28, 1),
+        commitment_column("a_reg_prev_mem_step", 29, 1),
+        commitment_column("b_reg_prev_mem_step", 30, 1),
+        commitment_column("store_reg_prev_mem_step", 31, 1),
+        commitment_column("store_reg_prev_value", 32, 2),
+    ]
+}
+
+fn commitment_column(name: &str, stage_position: u32, dimension: u32) -> CommitmentColumn {
+    CommitmentColumn {
+        name: name.to_owned(),
+        stage: 1,
+        dimension,
+        pols_map_id: 0,
+        stage_id: 0,
+        stage_position,
+        intermediate: false,
+        lengths: Vec::new(),
+    }
 }
 
 fn sample_unmapped_guest_pc_trace_setup_info() -> UnitSetupInfo {
@@ -5754,6 +5849,187 @@ fn runs_prove_witness_commitments_from_guest_pc_trace() {
         )
     );
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn runs_prove_witness_commitments_from_segmented_guest_pc_trace() {
+    let dir = temp_dir("prove-witness-segmented-guest-pc-trace");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_main_trace_unit(&dir);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    write_bytes(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--guest-pc-trace",
+            "16",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert_eq!(stdout.matches("unit_index=0\n").count(), 2, "{stdout}");
+    assert!(stdout.contains("trace_instance_index=0\n"), "{stdout}");
+    assert!(stdout.contains("trace_instance_index=1\n"), "{stdout}");
+    assert_eq!(stdout.matches("trace_rows=2\n").count(), 2, "{stdout}");
+    assert_eq!(stdout.matches("trace_columns=41\n").count(), 2, "{stdout}");
+}
+
+#[test]
+fn segmented_guest_pc_trace_rejects_proof_output() {
+    let dir = temp_dir("prove-witness-segmented-guest-pc-trace-proof");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_main_trace_unit(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&sample_public_values(setup_hash))
+            .expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--guest-pc-trace",
+            "16",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(String::from_utf8(stderr)
+        .expect("stderr should be utf-8")
+        .contains("segmented guest PC trace proof output is unsupported"));
+}
+
+#[test]
+fn segmented_guest_pc_trace_save_outputs_keeps_trace_instances_distinct() {
+    let dir = temp_dir("prove-witness-segmented-guest-pc-trace-save");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_main_trace_unit(&dir);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    write_bytes(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--guest-pc-trace",
+            "16",
+            "--save-outputs",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert!(output_dir.join("unit-0.witness-segment").is_file());
+    assert!(output_dir.join("unit-0-trace-1.witness-segment").is_file());
+    assert!(output_dir.join("unit-0-stage-1.witness-root").is_file());
+    assert!(output_dir
+        .join("unit-0-trace-1-stage-1.witness-root")
+        .is_file());
+    assert!(output_dir.join("unit-0-stage-1.witness-tree").is_file());
+    assert!(output_dir
+        .join("unit-0-trace-1-stage-1.witness-tree")
+        .is_file());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn single_guest_pc_trace_segment_keeps_legacy_summary() {
+    let dir = temp_dir("prove-witness-single-guest-pc-trace-segment");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_main_trace_unit(&dir);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    write_bytes(
+        &guest_image,
+        sample_guest_image_with_words(&[riscv_addi(1, 0, 7), 0x0000_0073]),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--guest-pc-trace",
+            "16",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("unit_index=0\n"), "{stdout}");
+    assert!(!stdout.contains("trace_instance_index="), "{stdout}");
 }
 
 #[test]

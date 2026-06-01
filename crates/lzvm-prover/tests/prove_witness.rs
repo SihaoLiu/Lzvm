@@ -99,6 +99,7 @@ use lzvm_prover::{
     build_witness_commitment_segment_for_schedule, build_witness_opening_segment,
     build_witness_opening_segment_batch, derive_prove_execution_plan, derive_prove_schedule,
     run_prove_witness_commitments, run_prove_witness_commitments_with_auxiliary_inputs,
+    run_prove_witness_commitments_with_guest_pc_trace_segments,
     run_prove_witness_commitments_with_trace, run_prove_witness_commitments_with_trace_backend,
     run_prove_witness_commitments_with_trace_bytes, GpuRunOptions, ProveExecutionInputArtifacts,
     ProvePartitionPlan, ProvePassRequest, ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues,
@@ -142,6 +143,49 @@ fn sample_guest_image() -> Vec<u8> {
     bytes[32..40].copy_from_slice(&64_u64.to_le_bytes());
     bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
     bytes
+}
+
+fn sample_guest_image_with_words(words: &[u32]) -> Vec<u8> {
+    const ENTRY: u64 = 0x8000_0000;
+    const ELF_HEADER_BYTES: usize = 64;
+    const PROGRAM_HEADER_BYTES: usize = 56;
+    const CODE_OFFSET: usize = ELF_HEADER_BYTES + PROGRAM_HEADER_BYTES;
+
+    let mut bytes = vec![0_u8; CODE_OFFSET];
+    bytes[0..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes[6] = 1;
+    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    bytes[18..20].copy_from_slice(&243_u16.to_le_bytes());
+    bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[24..32].copy_from_slice(&ENTRY.to_le_bytes());
+    bytes[32..40].copy_from_slice(&(ELF_HEADER_BYTES as u64).to_le_bytes());
+    bytes[52..54].copy_from_slice(&(ELF_HEADER_BYTES as u16).to_le_bytes());
+    bytes[54..56].copy_from_slice(&(PROGRAM_HEADER_BYTES as u16).to_le_bytes());
+    bytes[56..58].copy_from_slice(&1_u16.to_le_bytes());
+
+    let code_bytes = (words.len() * 4) as u64;
+    let program_header = &mut bytes[ELF_HEADER_BYTES..CODE_OFFSET];
+    program_header[0..4].copy_from_slice(&1_u32.to_le_bytes());
+    program_header[4..8].copy_from_slice(&5_u32.to_le_bytes());
+    program_header[8..16].copy_from_slice(&(CODE_OFFSET as u64).to_le_bytes());
+    program_header[16..24].copy_from_slice(&ENTRY.to_le_bytes());
+    program_header[24..32].copy_from_slice(&ENTRY.to_le_bytes());
+    program_header[32..40].copy_from_slice(&code_bytes.to_le_bytes());
+    program_header[40..48].copy_from_slice(&code_bytes.to_le_bytes());
+    program_header[48..56].copy_from_slice(&4_u64.to_le_bytes());
+
+    for word in words {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    bytes
+}
+
+fn riscv_addi(rd: u32, rs1: u32, immediate: i32) -> u32 {
+    assert!((-2048..=2047).contains(&immediate));
+    let immediate = (immediate as u32) & 0x0fff;
+    (immediate << 20) | (rs1 << 15) | (rd << 7) | 0x13
 }
 
 fn sample_witness_library() -> Vec<u8> {
@@ -719,6 +763,75 @@ fn sample_unit() -> KeyUnitCatalogEntry {
     }
 }
 
+fn sample_zisk_main_unit() -> KeyUnitCatalogEntry {
+    let mut unit = sample_unit();
+    let setup = &mut unit.metadata.setup;
+    setup.n_stages = 0;
+    setup.stark.n_bits = 1;
+    setup.stark.n_bits_ext = 2;
+    setup.stark.n_queries = 1;
+    setup.stark.pow_bits = 0;
+    setup.stark.steps = vec![FriStep { n_bits: 2 }, FriStep { n_bits: 1 }];
+    setup.section_widths.clear();
+    setup.section_widths.insert("cm1".to_owned(), 40);
+    setup.commitment_columns = zisk_main_commitment_columns();
+    setup.unit_value_map = vec![
+        stage_value("main_last_segment", 1),
+        stage_value("main_segment", 1),
+        stage_value("segment_initial_pc", 1),
+    ];
+    unit.pcs_plan = derive_pcs_setup_plan(setup).expect("PCS setup plan should derive");
+    unit
+}
+
+fn zisk_main_commitment_columns() -> Vec<CommitmentColumn> {
+    vec![
+        commitment_column("a", 0, 2),
+        commitment_column("b", 2, 2),
+        commitment_column("c", 4, 2),
+        commitment_column("flag", 6, 1),
+        commitment_column("pc", 7, 1),
+        commitment_column("op", 8, 1),
+        commitment_column("store_pc", 9, 1),
+        commitment_column("set_pc", 10, 1),
+        commitment_column("a_src_reg", 11, 1),
+        commitment_column("b_src_reg", 12, 1),
+        commitment_column("store_reg", 13, 1),
+        commitment_column("b_src_imm", 14, 1),
+        commitment_column("b_src_ind", 15, 1),
+        commitment_column("b_offset_imm0", 16, 1),
+        commitment_column("store_ind", 17, 1),
+        commitment_column("store_offset", 18, 1),
+        commitment_column("air.addr1", 19, 1),
+        commitment_column("air.addr2", 20, 1),
+        commitment_column("store_mem", 21, 1),
+        commitment_column("ind_width", 22, 1),
+        commitment_column("air.a_imm1", 23, 1),
+        commitment_column("air.b_imm1", 24, 1),
+        commitment_column("is_external_op", 25, 1),
+        commitment_column("a_src_imm", 26, 1),
+        commitment_column("jmp_offset1", 27, 1),
+        commitment_column("jmp_offset2", 28, 1),
+        commitment_column("a_reg_prev_mem_step", 29, 1),
+        commitment_column("b_reg_prev_mem_step", 30, 1),
+        commitment_column("store_reg_prev_mem_step", 31, 1),
+        commitment_column("store_reg_prev_value", 32, 2),
+    ]
+}
+
+fn commitment_column(name: &str, stage_position: u32, dimension: u32) -> CommitmentColumn {
+    CommitmentColumn {
+        name: name.to_owned(),
+        stage: 1,
+        dimension,
+        pols_map_id: 0,
+        stage_id: 0,
+        stage_position,
+        intermediate: false,
+        lengths: Vec::new(),
+    }
+}
+
 fn sample_catalog(unit: KeyUnitCatalogEntry) -> KeyDirectoryCatalog {
     sample_catalog_units(vec![unit])
 }
@@ -812,6 +925,28 @@ fn source_lookup_balance_hint(name: &str) -> Hint {
                         id: 0,
                         row_offset_index: 0,
                     },
+                    positions: Vec::new(),
+                }],
+            },
+        ],
+    }
+}
+
+fn global_source_lookup_balance_hint(name: &str, value: HintOperand) -> Hint {
+    Hint {
+        name: name.to_owned(),
+        fields: vec![
+            HintField {
+                name: "bus_id".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::Number(7),
+                    positions: Vec::new(),
+                }],
+            },
+            HintField {
+                name: "values".to_owned(),
+                values: vec![HintValue {
+                    operand: value,
                     positions: Vec::new(),
                 }],
             },
@@ -1068,6 +1203,138 @@ fn witness_backend_receives_guest_image_context_from_execution_plan() {
 }
 
 #[test]
+fn runs_segmented_guest_pc_trace_commitments_for_zisk_main_unit() {
+    const ENTRY: u64 = 0x8000_0000;
+
+    let dir = temp_dir("segmented-guest-pc-commitments");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    )
+    .expect("guest image should be written");
+
+    let catalog = sample_catalog(sample_zisk_main_unit());
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let outputs = run_prove_witness_commitments_with_guest_pc_trace_segments(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        16,
+    )
+    .expect("segmented guest PC trace commitments should run");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(outputs.len(), 2);
+
+    let first = outputs[0].commitments();
+    assert_eq!(first.unit_index(), 0);
+    assert_eq!(first.trace_instance_index(), 0);
+    assert_eq!(first.input_byte_count(), 0);
+    assert_eq!(first.trace_row_count(), 2);
+    assert_eq!(first.trace_column_count(), 40);
+    assert_eq!(
+        outputs[0].auxiliary_inputs().unit_values,
+        vec![Felt::ZERO, Felt::ZERO, Felt::from_u64(ENTRY)]
+    );
+
+    let second = outputs[1].commitments();
+    assert_eq!(second.unit_index(), 0);
+    assert_eq!(second.trace_instance_index(), 1);
+    assert_eq!(second.input_byte_count(), 0);
+    assert_eq!(second.trace_row_count(), 2);
+    assert_eq!(second.trace_column_count(), 40);
+    assert_eq!(
+        outputs[1].auxiliary_inputs().unit_values,
+        vec![Felt::ONE, Felt::ONE, Felt::from_u64(ENTRY + 8)]
+    );
+
+    let first_segment =
+        build_witness_commitment_segment_for_schedule(plan.run_plan.schedule.units.len(), first)
+            .expect("first witness segment should build");
+    let second_segment =
+        build_witness_commitment_segment_for_schedule(plan.run_plan.schedule.units.len(), second)
+            .expect("second witness segment should build");
+    assert_ne!(first_segment.id, second_segment.id);
+}
+
+#[test]
+fn segmented_guest_pc_trace_proof_values_feed_global_hints() {
+    let dir = temp_dir("segmented-guest-pc-proof-values-global-hints");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    )
+    .expect("guest image should be written");
+
+    let mut catalog = sample_catalog(sample_zisk_main_unit());
+    catalog.layout.global_info.num_proof_values = vec![1];
+    catalog.layout.global_info.proof_values_map = vec![NamedStageValue {
+        name: "enable_rom_data".to_owned(),
+        stage: 1,
+        id: None,
+        lengths: vec![1],
+    }];
+    catalog.global_hints = HintProgram {
+        hints: vec![
+            global_source_lookup_balance_hint(SOURCE_LOOKUP_PROVES_HINT, HintOperand::Number(1)),
+            global_source_lookup_balance_hint(
+                SOURCE_LOOKUP_ASSUMES_HINT,
+                HintOperand::ProofValue { id: 0 },
+            ),
+        ],
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let outputs = run_prove_witness_commitments_with_guest_pc_trace_segments(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        16,
+    )
+    .expect("segmented backend proof values should feed global hints");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(outputs.len(), 2);
+    assert_eq!(outputs[0].auxiliary_inputs().proof_values, vec![Felt::ONE]);
+    assert_eq!(outputs[1].auxiliary_inputs().proof_values, vec![Felt::ONE]);
+}
+
+#[test]
 fn uses_backend_unit_values_for_output_auxiliary_inputs() {
     let dir = temp_dir("backend-unit-values");
     let _ = fs::remove_dir_all(&dir);
@@ -1162,6 +1429,65 @@ fn uses_backend_proof_values_for_output_auxiliary_inputs() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(output.auxiliary_inputs().proof_values, vec![Felt::ONE]);
+}
+
+#[test]
+fn uses_backend_proof_values_for_global_hints() {
+    let dir = temp_dir("backend-proof-values-global-hints");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut catalog = sample_catalog(sample_unit());
+    catalog.layout.global_info.num_proof_values = vec![1];
+    catalog.layout.global_info.proof_values_map = vec![NamedStageValue {
+        name: "enable_rom_data".to_owned(),
+        stage: 1,
+        id: None,
+        lengths: vec![1],
+    }];
+    catalog.global_hints = HintProgram {
+        hints: vec![
+            global_source_lookup_balance_hint(SOURCE_LOOKUP_PROVES_HINT, HintOperand::Number(31)),
+            global_source_lookup_balance_hint(
+                SOURCE_LOOKUP_ASSUMES_HINT,
+                HintOperand::ProofValue { id: 0 },
+            ),
+        ],
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let backend = ProofValueBackend {
+        values: vec![WitnessTraceProofValue::new(
+            "enable_rom_data",
+            vec![Felt::from_u64(31)],
+        )],
+    };
+
+    let output = run_prove_witness_commitments_with_trace_backend(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        &backend,
+    )
+    .expect("backend proof values should feed global hints");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        output.auxiliary_inputs().proof_values,
+        vec![Felt::from_u64(31)]
+    );
 }
 
 #[test]

@@ -18,6 +18,9 @@ use crate::fri_polynomial::{
     build_fri_domain_points, FriPolynomialError, FriPolynomialZerofierTable,
 };
 use crate::global_constraints::GlobalConstraintInputs;
+use crate::guest_pc_trace_backend::{
+    run_guest_pc_trace_segments_with_context, GuestPcTraceBackend,
+};
 use crate::hint_eval::{
     regular_hint_input_requirements, resolve_global_hint_program,
     resolve_regular_hint_program_for_row, HintEvalError,
@@ -692,13 +695,88 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
         accumulate_witness_global_hints(
             plan,
             &shared_inputs.publics,
-            auxiliary_inputs.as_ref(),
+            output.auxiliary_inputs(),
             &mut source_lookup_balance,
         )?;
         source_lookup_balance.validate_all_units()?;
         output
     };
     Ok(output)
+}
+
+pub fn run_prove_witness_commitments_with_guest_pc_trace_segments(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+    instruction_limit: u64,
+) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
+    let mut source_lookup_balance = SourceLookupBalance::default();
+    validate_witness_unit_index(plan, unit_index)?;
+    let shared_inputs = load_witness_shared_inputs(plan)?;
+    let auxiliary_inputs = Arc::new(auxiliary_inputs);
+    let defer_cross_unit_source_lookup = should_defer_cross_unit_source_lookup(plan, unit_index);
+    let outputs = if defer_cross_unit_source_lookup {
+        run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
+            plan,
+            unit_index,
+            &shared_inputs,
+            Arc::clone(&auxiliary_inputs),
+            instruction_limit,
+            None,
+        )?
+    } else {
+        let outputs = run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
+            plan,
+            unit_index,
+            &shared_inputs,
+            Arc::clone(&auxiliary_inputs),
+            instruction_limit,
+            Some(&mut source_lookup_balance),
+        )?;
+        let global_auxiliary_inputs =
+            global_auxiliary_inputs_from_outputs(auxiliary_inputs.as_ref(), &outputs)?;
+        accumulate_witness_global_hints(
+            plan,
+            &shared_inputs.publics,
+            &global_auxiliary_inputs,
+            &mut source_lookup_balance,
+        )?;
+        source_lookup_balance.validate_all_units()?;
+        outputs
+    };
+    Ok(outputs)
+}
+
+fn global_auxiliary_inputs_from_outputs(
+    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    outputs: &[ProveWitnessTraceCommitments],
+) -> Result<ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError> {
+    let mut merged = auxiliary_inputs.clone();
+    if !merged.proof_values.is_empty() {
+        return Ok(merged);
+    }
+
+    let mut proof_values = None;
+    for output in outputs {
+        let candidate = output.auxiliary_inputs().proof_values.as_slice();
+        if candidate.is_empty() {
+            continue;
+        }
+        if let Some(existing) = proof_values {
+            if existing != candidate {
+                return Err(ProveWitnessCommitmentError::BackendProofValue {
+                    unit_index: output.commitments().unit_index(),
+                    message: "backend proof values conflict across witness outputs".to_owned(),
+                });
+            }
+        } else {
+            proof_values = Some(candidate);
+        }
+    }
+    if let Some(proof_values) = proof_values {
+        merged.proof_values = proof_values.to_vec();
+    }
+    Ok(merged)
 }
 
 pub fn run_prove_witness_commitments_with_trace_bytes(
@@ -807,6 +885,71 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
         },
         regular_hint_mode,
     )
+}
+
+fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    shared_inputs: &WitnessSharedInputs,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    instruction_limit: u64,
+    source_lookup_balance: Option<&mut SourceLookupBalance>,
+) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
+    let unit_count = plan.run_plan.schedule.units.len();
+    let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
+        ProveWitnessCommitmentError::UnitIndexOutOfRange {
+            unit_index,
+            unit_count,
+        },
+    )?;
+    let layout = derive_witness_trace_layout(unit)?;
+    let backend = GuestPcTraceBackend::new(instruction_limit);
+    let trace_outputs = run_guest_pc_trace_segments_with_context(
+        &backend,
+        WitnessComputeContext {
+            guest_image: Some(&plan.inputs.guest_image),
+            guest_image_info: Some(&plan.guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(&shared_inputs.input[..]),
+    )?;
+    let mut outputs = Vec::with_capacity(trace_outputs.len());
+    let mut source_lookup_balance = source_lookup_balance;
+    for segment_output in trace_outputs {
+        let trace_instance_index = segment_output.trace_instance_index();
+        let trace_output = segment_output.into_output();
+        let merged_inputs = merge_backend_unit_values(
+            unit_index,
+            unit,
+            Arc::clone(&auxiliary_inputs),
+            trace_output.unit_values(),
+        )?;
+        let merged_inputs = merge_backend_proof_values(
+            unit_index,
+            &plan.global_info,
+            merged_inputs,
+            trace_output.proof_values(),
+        )?;
+        let regular_hint_mode = match source_lookup_balance {
+            Some(ref mut balance) => WitnessRegularHintMode::Balanced(balance),
+            None => WitnessRegularHintMode::AssignmentsOnly,
+        };
+        let mut output = run_prove_witness_commitments_from_trace_inner(
+            plan,
+            unit_index,
+            shared_inputs,
+            merged_inputs,
+            WitnessTraceCommitmentInput {
+                unit,
+                layout: layout.clone(),
+                trace: trace_output.into_trace(),
+            },
+            regular_hint_mode,
+        )?;
+        output.commitments.identity.trace_instance_index = trace_instance_index;
+        outputs.push(output);
+    }
+    Ok(outputs)
 }
 
 fn merge_backend_unit_values(
@@ -1126,10 +1269,13 @@ pub fn run_prove_witness_commitments_for_all_units(
         })?;
         outputs.push(output);
     }
+    let global_auxiliary_inputs =
+        global_auxiliary_inputs_from_outputs(auxiliary_inputs.as_ref(), &outputs)
+            .map_err(|error| error.to_string())?;
     accumulate_witness_global_hints(
         plan,
         &shared_inputs.publics,
-        auxiliary_inputs.as_ref(),
+        &global_auxiliary_inputs,
         &mut source_lookup_balance,
     )
     .map_err(|error| error.to_string())?;
@@ -1168,10 +1314,13 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
         })?;
         outputs.push(output);
     }
+    let global_auxiliary_inputs =
+        global_auxiliary_inputs_from_outputs(auxiliary_inputs.as_ref(), &outputs)
+            .map_err(|error| error.to_string())?;
     accumulate_witness_global_hints(
         plan,
         &shared_inputs.publics,
-        auxiliary_inputs.as_ref(),
+        &global_auxiliary_inputs,
         &mut source_lookup_balance,
     )
     .map_err(|error| error.to_string())?;
