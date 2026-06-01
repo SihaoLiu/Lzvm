@@ -15,7 +15,10 @@ use lzvm_artifacts::witness_segment::{
 };
 use lzvm_field::{Felt, FieldError};
 
-use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
+use crate::pcs_query_plan::{
+    load_pcs_query_plan_from_segments, unsupported_pcs_query_trace_instance,
+    LoadPcsQueryPlanSegmentError,
+};
 use crate::witness_commitment::{
     load_witness_commitment_segments, open_witness_stage_commitment,
     verify_witness_stage_opening_root, LoadWitnessCommitmentSegmentsError, WitnessStageOpening,
@@ -28,6 +31,10 @@ use crate::ProveUnitSchedule;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveWitnessOpeningSegmentError {
     QueryPlan(PcsQueryPlanSegmentError),
+    UnsupportedTraceInstance {
+        unit_index: u32,
+        trace_instance_index: u32,
+    },
     MissingQueryUnit {
         unit_index: usize,
     },
@@ -58,6 +65,13 @@ impl fmt::Display for ProveWitnessOpeningSegmentError {
             Self::QueryPlan(error) => {
                 write!(f, "prove witness opening query plan parse failed: {error}")
             }
+            Self::UnsupportedTraceInstance {
+                unit_index,
+                trace_instance_index,
+            } => write!(
+                f,
+                "prove witness opening query plan trace instance {trace_instance_index} for unit {unit_index} is unsupported"
+            ),
             Self::MissingQueryUnit { unit_index } => {
                 write!(f, "prove witness opening is missing query unit {unit_index}")
             }
@@ -97,7 +111,8 @@ impl std::error::Error for ProveWitnessOpeningSegmentError {
             Self::QueryPlan(error) => Some(error),
             Self::Opening(error) => Some(error),
             Self::Segment(error) => Some(error),
-            Self::MissingQueryUnit { .. }
+            Self::UnsupportedTraceInstance { .. }
+            | Self::MissingQueryUnit { .. }
             | Self::MissingOutputUnit { .. }
             | Self::DuplicateOutputUnit { .. }
             | Self::UnitIndexOverflow { .. }
@@ -463,7 +478,14 @@ pub fn build_witness_opening_segment_batch(
 fn parse_query_plan_segment(
     query_segment: &ProofSegment,
 ) -> Result<PcsQueryPlanSegment, ProveWitnessOpeningSegmentError> {
-    Ok(parse_pcs_query_plan_segment(&query_segment.data)?)
+    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
+    if let Some(unsupported) = unsupported_pcs_query_trace_instance(&query_plan.units) {
+        return Err(ProveWitnessOpeningSegmentError::UnsupportedTraceInstance {
+            unit_index: unsupported.unit_index,
+            trace_instance_index: unsupported.trace_instance_index,
+        });
+    }
+    Ok(query_plan)
 }
 
 fn build_witness_opening_segment_from_query_plan(

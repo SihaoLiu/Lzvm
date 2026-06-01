@@ -163,6 +163,7 @@ fn valid_witness_opening_segments(query_row: u64) -> (ProveUnitSchedule, Vec<Pro
         data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
             units: vec![PcsQueryPlanUnit {
                 unit_index: 0,
+                trace_instance_index: 0,
                 queries: vec![query_row],
             }],
         })

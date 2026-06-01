@@ -222,6 +222,7 @@ fn transcript_segments(query_unit_index: u32) -> Vec<ProofSegment> {
             data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
                 units: vec![PcsQueryPlanUnit {
                     unit_index: query_unit_index,
+                    trace_instance_index: 0,
                     queries: vec![3, 5],
                 }],
             })

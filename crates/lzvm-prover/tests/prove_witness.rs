@@ -3328,6 +3328,7 @@ fn builds_pcs_fri_opening_segments_from_polynomial_values() {
     let query_plan = PcsQueryPlanSegment {
         units: vec![PcsQueryPlanUnit {
             unit_index: 0,
+            trace_instance_index: 0,
             queries: vec![1, unit.extended_domain_size - 1],
         }],
     };
@@ -3527,6 +3528,7 @@ fn builds_pcs_fri_opening_segments_from_execution_material() {
     let query_plan = PcsQueryPlanSegment {
         units: vec![PcsQueryPlanUnit {
             unit_index: 0,
+            trace_instance_index: 0,
             queries: vec![1, unit.extended_domain_size - 1],
         }],
     };

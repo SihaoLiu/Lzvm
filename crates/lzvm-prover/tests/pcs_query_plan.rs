@@ -54,6 +54,7 @@ use lzvm_prover::{
 fn loads_pcs_query_plan_from_segments() {
     let segment = pcs_query_plan_proof_segment(vec![PcsQueryPlanUnit {
         unit_index: 0,
+        trace_instance_index: 0,
         queries: vec![1, 3],
     }]);
 
@@ -64,8 +65,29 @@ fn loads_pcs_query_plan_from_segments() {
         PcsQueryPlanSegment {
             units: vec![PcsQueryPlanUnit {
                 unit_index: 0,
+                trace_instance_index: 0,
                 queries: vec![1, 3]
             }]
+        }
+    );
+}
+
+#[test]
+fn rejects_nonzero_trace_instance_pcs_query_plan_units() {
+    let segment = pcs_query_plan_proof_segment(vec![PcsQueryPlanUnit {
+        unit_index: 0,
+        trace_instance_index: 1,
+        queries: vec![1, 3],
+    }]);
+
+    let error = load_pcs_query_plan_from_segments(&[segment])
+        .expect_err("nonzero trace instance query units should be rejected");
+
+    assert_eq!(
+        error,
+        LoadPcsQueryPlanSegmentError::UnsupportedTraceInstance {
+            unit_index: 0,
+            trace_instance_index: 1
         }
     );
 }
@@ -107,6 +129,7 @@ fn rejects_invalid_pcs_query_plan_segment() {
 fn rejects_duplicate_pcs_query_plan_segments() {
     let segment = pcs_query_plan_proof_segment(vec![PcsQueryPlanUnit {
         unit_index: 0,
+        trace_instance_index: 0,
         queries: vec![1, 3],
     }]);
 
@@ -732,6 +755,7 @@ fn rejects_transcript_pcs_query_plan_mismatches() {
     query.data = encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
         units: vec![PcsQueryPlanUnit {
             unit_index: 0,
+            trace_instance_index: 0,
             queries: vec![0, 0],
         }],
     })

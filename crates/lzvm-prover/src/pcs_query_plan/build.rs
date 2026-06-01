@@ -69,6 +69,7 @@ pub fn build_pcs_query_plan_segment_with_bindings(
     for (unit_index_u32, unit) in query_units {
         units.push(PcsQueryPlanUnit {
             unit_index: unit_index_u32,
+            trace_instance_index: 0,
             queries: derive_unit_queries(
                 &seed,
                 unit_index_u32,
@@ -209,6 +210,7 @@ pub fn build_pcs_query_plan_segment_from_challenge(
             as usize;
         units.push(PcsQueryPlanUnit {
             unit_index: unit_index_u32,
+            trace_instance_index: 0,
             queries: derive_fri_queries(
                 arity,
                 challenge,

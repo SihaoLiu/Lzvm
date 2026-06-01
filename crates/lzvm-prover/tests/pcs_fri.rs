@@ -28,7 +28,10 @@ use lzvm_prover::pcs_transcript::{derive_pcs_transcript_challenges, PcsTranscrip
 use lzvm_prover::pcs_transcript_segments::{
     PcsTranscriptProofSegmentsError, PcsTranscriptUnitChallenges,
 };
-use lzvm_prover::{ProveSchedule, ProveUnitSchedule};
+use lzvm_prover::{
+    build_pcs_fri_opening_segment, ProvePcsFriOpeningSegmentError, ProvePcsFriOpeningValues,
+    ProveSchedule, ProveUnitSchedule,
+};
 
 #[test]
 fn verifies_binary_fri_fold_values() {
@@ -478,6 +481,49 @@ fn validates_pcs_fri_opening_segments() {
 }
 
 #[test]
+fn rejects_trace_instance_pcs_fri_opening_queries() {
+    let unit = sample_validation_unit();
+    let schedule = sample_prove_schedule(unit);
+    let query_rows = [1_u64, 6_u64];
+    let query_segment = ProofSegment {
+        id: PCS_QUERY_PLAN_SEGMENT_ID,
+        data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+            units: vec![PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 1,
+                queries: query_rows.to_vec(),
+            }],
+        })
+        .expect("query plan should encode"),
+    };
+    let polynomial = (0_u64..8)
+        .map(|index| Ext3::from_u64s([index + 1, index + 11, index + 21]))
+        .collect::<Vec<_>>();
+    let mut challenges = vec![Ext3::ZERO; 9];
+    challenges[7] = Ext3::from_u64s([31, 32, 33]);
+    challenges[8] = Ext3::from_u64s([41, 42, 43]);
+
+    let error = build_pcs_fri_opening_segment(
+        &schedule,
+        &query_segment,
+        &[ProvePcsFriOpeningValues {
+            unit_index: 0,
+            challenges,
+            polynomial,
+        }],
+    )
+    .expect_err("trace instance queries should be unsupported");
+
+    assert!(matches!(
+        error,
+        ProvePcsFriOpeningSegmentError::UnsupportedTraceInstance {
+            unit_index: 0,
+            trace_instance_index: 1
+        }
+    ));
+}
+
+#[test]
 fn validates_optional_pcs_fri_opening_when_segment_is_absent() {
     let unit = sample_validation_unit();
     let schedule = sample_prove_schedule(unit);
@@ -845,6 +891,7 @@ fn valid_pcs_fri_opening_segments() -> (ProveUnitSchedule, Vec<ProofSegment>) {
         data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
             units: vec![PcsQueryPlanUnit {
                 unit_index: 0,
+                trace_instance_index: 0,
                 queries: query_rows.to_vec(),
             }],
         })

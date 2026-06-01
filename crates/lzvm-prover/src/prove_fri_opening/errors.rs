@@ -21,6 +21,10 @@ pub enum ProvePcsFriOpeningSegmentError {
         segment_id: u32,
     },
     QueryPlan(PcsQueryPlanSegmentError),
+    UnsupportedTraceInstance {
+        unit_index: u32,
+        trace_instance_index: u32,
+    },
     MissingQueryUnit {
         unit_index: usize,
     },
@@ -136,6 +140,13 @@ impl fmt::Display for ProvePcsFriOpeningSegmentError {
             Self::QueryPlan(error) => {
                 write!(f, "prove PCS FRI opening query plan parse failed: {error}")
             }
+            Self::UnsupportedTraceInstance {
+                unit_index,
+                trace_instance_index,
+            } => write!(
+                f,
+                "prove PCS FRI opening query plan trace instance {trace_instance_index} for unit {unit_index} is unsupported"
+            ),
             Self::MissingQueryUnit { unit_index } => {
                 write!(f, "prove PCS FRI opening is missing query unit {unit_index}")
             }
@@ -291,6 +302,7 @@ impl std::error::Error for ProvePcsFriOpeningSegmentError {
             Self::Build { source, .. } => Some(source),
             Self::Segment(error) => Some(error),
             Self::InvalidQuerySegmentId { .. }
+            | Self::UnsupportedTraceInstance { .. }
             | Self::MissingQueryUnit { .. }
             | Self::DuplicateUnitIndex { .. }
             | Self::UnitIndexOverflow { .. }

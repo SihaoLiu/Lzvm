@@ -18,13 +18,20 @@ use crate::constant_tree_opening::{
     constant_tree_merkle_level_count, verify_constant_tree_opening_root, ConstantTreeOpening,
     ConstantTreeOpeningError,
 };
-use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
+use crate::pcs_query_plan::{
+    load_pcs_query_plan_from_segments, unsupported_pcs_query_trace_instance,
+    LoadPcsQueryPlanSegmentError,
+};
 use crate::ProveSchedule;
 use crate::ProveUnitSchedule;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveConstantOpeningSegmentError {
     QueryPlan(PcsQueryPlanSegmentError),
+    UnsupportedTraceInstance {
+        unit_index: u32,
+        trace_instance_index: u32,
+    },
     UnitIndexOutOfRange {
         unit_index: usize,
         unit_count: usize,
@@ -83,6 +90,13 @@ impl fmt::Display for ProveConstantOpeningSegmentError {
             Self::QueryPlan(error) => {
                 write!(f, "prove constant opening query plan parse failed: {error}")
             }
+            Self::UnsupportedTraceInstance {
+                unit_index,
+                trace_instance_index,
+            } => write!(
+                f,
+                "prove constant opening query plan trace instance {trace_instance_index} for unit {unit_index} is unsupported"
+            ),
             Self::UnitIndexOutOfRange {
                 unit_index,
                 unit_count,
@@ -113,7 +127,9 @@ impl std::error::Error for ProveConstantOpeningSegmentError {
             Self::ConstantTree { source, .. } => Some(source),
             Self::Opening(error) => Some(error),
             Self::Segment(error) => Some(error),
-            Self::UnitIndexOutOfRange { .. } | Self::UnitIndexOverflow { .. } => None,
+            Self::UnsupportedTraceInstance { .. }
+            | Self::UnitIndexOutOfRange { .. }
+            | Self::UnitIndexOverflow { .. } => None,
         }
     }
 }
@@ -373,6 +389,12 @@ pub fn build_constant_opening_segment(
     query_segment: &ProofSegment,
 ) -> Result<ProofSegment, ProveConstantOpeningSegmentError> {
     let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
+    if let Some(unsupported) = unsupported_pcs_query_trace_instance(&query_plan.units) {
+        return Err(ProveConstantOpeningSegmentError::UnsupportedTraceInstance {
+            unit_index: unsupported.unit_index,
+            trace_instance_index: unsupported.trace_instance_index,
+        });
+    }
     let mut units = Vec::with_capacity(query_plan.units.len());
     for query_unit in &query_plan.units {
         let unit_index = usize::try_from(query_unit.unit_index).map_err(|_| {

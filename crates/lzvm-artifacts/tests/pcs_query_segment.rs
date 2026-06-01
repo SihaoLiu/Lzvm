@@ -8,10 +8,12 @@ fn sample_segment() -> PcsQueryPlanSegment {
         units: vec![
             PcsQueryPlanUnit {
                 unit_index: 0,
+                trace_instance_index: 0,
                 queries: vec![3, 11, 19],
             },
             PcsQueryPlanUnit {
                 unit_index: 2,
+                trace_instance_index: 0,
                 queries: vec![7, 23],
             },
         ],
@@ -35,20 +37,53 @@ fn encodes_and_parses_pcs_query_plan_segments() {
     let encoded =
         encode_pcs_query_plan_segment(&sample_segment()).expect("query segment should encode");
     let parsed = parse_pcs_query_plan_segment(&encoded).expect("query segment should parse");
+    let expected = v1_sample_segment_bytes();
 
     assert_eq!(&encoded[0..4], b"pqs0");
+    assert_eq!(
+        u32::from_le_bytes(encoded[4..8].try_into().expect("version bytes")),
+        1
+    );
+    assert_eq!(encoded, expected);
     assert_eq!(parsed, sample_segment());
+}
+
+#[test]
+fn encodes_and_parses_trace_instance_pcs_query_plan_segments() {
+    let segment = PcsQueryPlanSegment {
+        units: vec![
+            PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 0,
+                queries: vec![3, 11],
+            },
+            PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 1,
+                queries: vec![7, 23],
+            },
+        ],
+    };
+
+    let encoded = encode_pcs_query_plan_segment(&segment).expect("query segment should encode");
+    let parsed = parse_pcs_query_plan_segment(&encoded).expect("query segment should parse");
+
+    assert_eq!(
+        u32::from_le_bytes(encoded[4..8].try_into().expect("version bytes")),
+        2
+    );
+    assert_eq!(parsed, segment);
 }
 
 #[test]
 fn rejects_unsupported_pcs_query_plan_segment_versions() {
     let mut encoded =
         encode_pcs_query_plan_segment(&sample_segment()).expect("query segment should encode");
-    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+    encoded[4..8].copy_from_slice(&3_u32.to_le_bytes());
 
     assert!(matches!(
         parse_pcs_query_plan_segment(&encoded),
-        Err(PcsQueryPlanSegmentError::UnsupportedVersion { version: 2 })
+        Err(PcsQueryPlanSegmentError::UnsupportedVersion { version: 3 })
     ));
 }
 
@@ -67,6 +102,7 @@ fn rejects_pcs_query_plan_units_without_queries() {
     let segment = PcsQueryPlanSegment {
         units: vec![PcsQueryPlanUnit {
             unit_index: 0,
+            trace_instance_index: 0,
             queries: Vec::new(),
         }],
     };
@@ -89,6 +125,39 @@ fn rejects_duplicate_pcs_query_plan_units() {
 }
 
 #[test]
+fn rejects_duplicate_trace_instance_pcs_query_plan_units() {
+    let segment = PcsQueryPlanSegment {
+        units: vec![
+            PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 1,
+                queries: vec![3],
+            },
+            PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 1,
+                queries: vec![7],
+            },
+        ],
+    };
+
+    assert!(matches!(
+        encode_pcs_query_plan_segment(&segment),
+        Err(PcsQueryPlanSegmentError::DuplicateUnitIdentity {
+            unit_index: 0,
+            trace_instance_index: 1
+        })
+    ));
+    assert!(matches!(
+        parse_pcs_query_plan_segment(&duplicate_trace_instance_segment_bytes()),
+        Err(PcsQueryPlanSegmentError::DuplicateUnitIdentity {
+            unit_index: 0,
+            trace_instance_index: 1
+        })
+    ));
+}
+
+#[test]
 fn rejects_truncated_pcs_query_plan_segments() {
     let result = parse_pcs_query_plan_segment(b"pqs0\x01\0");
 
@@ -99,6 +168,39 @@ fn rejects_truncated_pcs_query_plan_segments() {
             available: 6
         })
     ));
+}
+
+fn v1_sample_segment_bytes() -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(b"pqs0");
+    out.extend_from_slice(&1_u32.to_le_bytes());
+    out.extend_from_slice(&2_u32.to_le_bytes());
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(&3_u64.to_le_bytes());
+    out.extend_from_slice(&11_u64.to_le_bytes());
+    out.extend_from_slice(&19_u64.to_le_bytes());
+    out.extend_from_slice(&2_u32.to_le_bytes());
+    out.extend_from_slice(&2_u32.to_le_bytes());
+    out.extend_from_slice(&7_u64.to_le_bytes());
+    out.extend_from_slice(&23_u64.to_le_bytes());
+    out
+}
+
+fn duplicate_trace_instance_segment_bytes() -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(b"pqs0");
+    out.extend_from_slice(&2_u32.to_le_bytes());
+    out.extend_from_slice(&2_u32.to_le_bytes());
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(&1_u32.to_le_bytes());
+    out.extend_from_slice(&1_u32.to_le_bytes());
+    out.extend_from_slice(&3_u64.to_le_bytes());
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(&1_u32.to_le_bytes());
+    out.extend_from_slice(&1_u32.to_le_bytes());
+    out.extend_from_slice(&7_u64.to_le_bytes());
+    out
 }
 
 #[test]

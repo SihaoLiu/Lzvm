@@ -748,6 +748,7 @@ fn verifier_query_output_segments_fixture(
     }];
     let query_unit = PcsQueryPlanUnit {
         unit_index: 0,
+        trace_instance_index: 0,
         queries: vec![9, 17],
     };
     let constants = ConstantOpeningUnitSegment {

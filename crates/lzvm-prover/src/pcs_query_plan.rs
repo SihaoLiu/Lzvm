@@ -59,6 +59,10 @@ use crate::ProveSchedule;
 pub enum LoadPcsQueryPlanSegmentError {
     MissingSegment,
     DuplicateSegment,
+    UnsupportedTraceInstance {
+        unit_index: u32,
+        trace_instance_index: u32,
+    },
     Segment(PcsQueryPlanSegmentError),
 }
 
@@ -92,11 +96,24 @@ pub enum ValidatePcsQueryPlanSegmentsError {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct UnsupportedPcsQueryTraceInstance {
+    pub unit_index: u32,
+    pub trace_instance_index: u32,
+}
+
 impl fmt::Display for LoadPcsQueryPlanSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing PCS query plan segment"),
             Self::DuplicateSegment => write!(f, "duplicate PCS query plan segment"),
+            Self::UnsupportedTraceInstance {
+                unit_index,
+                trace_instance_index,
+            } => write!(
+                f,
+                "unsupported PCS query plan trace instance {trace_instance_index} for unit {unit_index}"
+            ),
             Self::Segment(error) => write!(f, "invalid PCS query plan segment: {error}"),
         }
     }
@@ -150,7 +167,9 @@ impl std::error::Error for LoadPcsQueryPlanSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Segment(error) => Some(error),
-            Self::MissingSegment | Self::DuplicateSegment => None,
+            Self::MissingSegment
+            | Self::DuplicateSegment
+            | Self::UnsupportedTraceInstance { .. } => None,
         }
     }
 }
@@ -193,7 +212,27 @@ pub fn load_pcs_query_plan_from_segments(
     if matching_segments.next().is_some() {
         return Err(LoadPcsQueryPlanSegmentError::DuplicateSegment);
     }
-    parse_pcs_query_plan_segment(&segment.data).map_err(LoadPcsQueryPlanSegmentError::Segment)
+    let query_plan = parse_pcs_query_plan_segment(&segment.data)
+        .map_err(LoadPcsQueryPlanSegmentError::Segment)?;
+    if let Some(unsupported) = unsupported_pcs_query_trace_instance(&query_plan.units) {
+        return Err(LoadPcsQueryPlanSegmentError::UnsupportedTraceInstance {
+            unit_index: unsupported.unit_index,
+            trace_instance_index: unsupported.trace_instance_index,
+        });
+    }
+    Ok(query_plan)
+}
+
+pub(crate) fn unsupported_pcs_query_trace_instance(
+    units: &[PcsQueryPlanUnit],
+) -> Option<UnsupportedPcsQueryTraceInstance> {
+    units
+        .iter()
+        .find(|unit| unit.trace_instance_index != 0)
+        .map(|unit| UnsupportedPcsQueryTraceInstance {
+            unit_index: unit.unit_index,
+            trace_instance_index: unit.trace_instance_index,
+        })
 }
 
 pub fn uses_transcript_pcs_query_plan_inputs(segments: &[ProofSegment]) -> bool {

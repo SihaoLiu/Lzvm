@@ -28,6 +28,7 @@ use crate::pcs_fri::{
     build_pcs_fri_opening_unit, build_pcs_fri_transcript_commitments, PcsFriOpeningBuildRequest,
     PcsFriTranscriptCommitmentRequest,
 };
+use crate::pcs_query_plan::unsupported_pcs_query_trace_instance;
 use crate::pcs_transcript::{derive_pcs_transcript_prefix_challenges, PcsTranscriptPrefixInputs};
 use crate::prove_fri_polynomial::{
     build_pcs_fri_polynomial_values, build_pcs_fri_polynomial_values_with_slices,
@@ -203,6 +204,12 @@ fn build_pcs_fri_opening_segment_from_value_refs<'a>(
         });
     }
     let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
+    if let Some(unsupported) = unsupported_pcs_query_trace_instance(&query_plan.units) {
+        return Err(ProvePcsFriOpeningSegmentError::UnsupportedTraceInstance {
+            unit_index: unsupported.unit_index,
+            trace_instance_index: unsupported.trace_instance_index,
+        });
+    }
     let mut seen_units = BTreeSet::new();
     let mut units = Vec::with_capacity(value_count);
     for input in values {
