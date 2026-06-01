@@ -102,6 +102,7 @@ enum GuestPcTraceBackendError {
         rows: usize,
         row_width: usize,
         required_rows: usize,
+        required_trace_instances: usize,
     },
     OutputOverflow {
         produced_len: usize,
@@ -168,9 +169,10 @@ impl fmt::Display for GuestPcTraceBackendError {
                 rows,
                 row_width,
                 required_rows,
+                required_trace_instances,
             } => write!(
                 f,
-                "guest PC trace backend exceeded trace layout capacity: rows {rows}, row width {row_width}, required rows at least {required_rows}"
+                "guest PC trace backend exceeded trace layout capacity: rows {rows}, row width {row_width}, required rows at least {required_rows}, required same-capacity trace instances at least {required_trace_instances}"
             ),
             Self::OutputOverflow {
                 produced_len,
@@ -363,13 +365,28 @@ fn layout_capacity_error(
         } if *instruction_limit == run_instruction_limit
             && run_instruction_limit == capacity.instruction_limit =>
         {
+            let required_rows = capacity.row_count.saturating_add(1);
             Some(GuestPcTraceBackendError::TraceCapacityExceeded {
                 rows: capacity.row_count,
                 row_width: capacity.row_width,
-                required_rows: capacity.row_count.saturating_add(1),
+                required_rows,
+                required_trace_instances: required_trace_instances(
+                    required_rows,
+                    capacity.row_count,
+                ),
             })
         }
         _ => None,
+    }
+}
+
+fn required_trace_instances(required_rows: usize, rows_per_instance: usize) -> usize {
+    if required_rows == 0 {
+        0
+    } else if rows_per_instance == 0 {
+        usize::MAX
+    } else {
+        required_rows.div_ceil(rows_per_instance)
     }
 }
 

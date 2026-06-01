@@ -724,7 +724,7 @@ fn guest_pc_trace_backend_reports_layout_capacity_before_larger_instruction_limi
     match result.expect_err("layout capacity should reject") {
         WitnessTraceRunError::Call(WitnessCallError::Backend { message }) => assert_eq!(
             message,
-            "guest PC trace backend exceeded trace layout capacity: rows 2, row width 2, required rows at least 3"
+            "guest PC trace backend exceeded trace layout capacity: rows 2, row width 2, required rows at least 3, required same-capacity trace instances at least 2"
         ),
         other => panic!("unexpected layout capacity result: {other:?}"),
     }
