@@ -20,7 +20,9 @@ use lzvm_prover::witness_runner::{
     WitnessTraceRequest, WitnessTraceRunError,
 };
 use lzvm_prover::witness_trace::WitnessTraceError;
-use lzvm_prover::zisk_fcalls::{ZISK_INPUT_ADDRESS, ZISK_INPUT_READY_FCALL_ID};
+use lzvm_prover::zisk_fcalls::{
+    ZISK_INPUT_ADDRESS, ZISK_INPUT_READY_FCALL_ID, ZISK_MSB_POS_256_FCALL_ID,
+};
 use lzvm_prover::ProveUnitSchedule;
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -340,6 +342,43 @@ fn sample_unit_with_zisk_main_address_columns(base_domain_size: u64) -> ProveUni
             commitment_column("a_src_imm", 1, 26, 1),
             commitment_column("jmp_offset1", 1, 27, 1),
             commitment_column("jmp_offset2", 1, 28, 1),
+        ],
+    )
+}
+
+fn sample_unit_with_zisk_main_memory_source_columns(base_domain_size: u64) -> ProveUnitSchedule {
+    sample_unit_with_trace_columns(
+        base_domain_size,
+        vec![31],
+        vec![
+            commitment_column("a", 1, 0, 2),
+            commitment_column("b", 1, 2, 2),
+            commitment_column("c", 1, 4, 2),
+            commitment_column("flag", 1, 6, 1),
+            commitment_column("pc", 1, 7, 1),
+            commitment_column("op", 1, 8, 1),
+            commitment_column("store_pc", 1, 9, 1),
+            commitment_column("set_pc", 1, 10, 1),
+            commitment_column("a_src_reg", 1, 11, 1),
+            commitment_column("b_src_reg", 1, 12, 1),
+            commitment_column("store_reg", 1, 13, 1),
+            commitment_column("b_src_imm", 1, 14, 1),
+            commitment_column("b_src_ind", 1, 15, 1),
+            commitment_column("b_offset_imm0", 1, 16, 1),
+            commitment_column("store_ind", 1, 17, 1),
+            commitment_column("store_offset", 1, 18, 1),
+            commitment_column("air.addr1", 1, 19, 1),
+            commitment_column("air.addr2", 1, 20, 1),
+            commitment_column("store_mem", 1, 21, 1),
+            commitment_column("ind_width", 1, 22, 1),
+            commitment_column("air.a_imm1", 1, 23, 1),
+            commitment_column("air.b_imm1", 1, 24, 1),
+            commitment_column("is_external_op", 1, 25, 1),
+            commitment_column("a_src_imm", 1, 26, 1),
+            commitment_column("jmp_offset1", 1, 27, 1),
+            commitment_column("jmp_offset2", 1, 28, 1),
+            commitment_column("a_src_mem", 1, 29, 1),
+            commitment_column("b_src_mem", 1, 30, 1),
         ],
     )
 }
@@ -685,6 +724,72 @@ fn guest_pc_trace_backend_uses_framed_input_for_zisk_free_calls() {
     assert_eq!(
         trace.value(6, 1),
         Some(Felt::from_canonical(ENTRY + 36).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_zisk_main_fcall_result_source() {
+    let dir = temp_dir("guest-zisk-main-fcall-result-source");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(5, ZISK_INPUT_ADDRESS as u32),
+        addi(6, 5, 79),
+        csrs(0x08f0, 6),
+        csrwi(0x08c0, ZISK_INPUT_READY_FCALL_ID as u8),
+        addi(10, 0, 2),
+        csrs(0x08f0, 10),
+        addi(11, 5, 16),
+        csrs(0x08f2, 11),
+        addi(12, 5, 48),
+        csrs(0x08f2, 12),
+        csrwi(0x08c0, ZISK_MSB_POS_256_FCALL_ID as u8),
+        csrrs(13, 0x0ffe, 0),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_memory_source_columns(13);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let mut payload = Vec::with_capacity(64);
+    for word in [0_u64, 0, 0, 1 << 9, 0, 0, 0, 0] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(framed_stdin_chunk(&payload)),
+    )
+    .expect("guest trace should write Zisk Main free-call result source");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 13);
+    assert_eq!(trace.column_count(), 31);
+    assert_eq!(
+        trace.value(11, 2),
+        Some(Felt::from_canonical(3).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(11, 4),
+        Some(Felt::from_canonical(3).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(11, 13),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(11, 18),
+        Some(Felt::from_canonical(13).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(11, 30),
+        Some(Felt::from_canonical(1).expect("canonical"))
     );
 }
 

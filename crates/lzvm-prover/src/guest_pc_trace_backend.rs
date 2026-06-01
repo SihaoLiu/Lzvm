@@ -23,7 +23,7 @@ use crate::zisk_main::{
 };
 use lzvm_field::{Felt, FieldError};
 
-use crate::zisk_fcalls::{ZiskInputFcallError, ZiskInputFcallHandler};
+use crate::zisk_fcalls::{ZiskInputFcallError, ZiskInputFcallHandler, ZISK_INPUT_ADDRESS};
 
 mod precompile_memory_trace;
 
@@ -702,6 +702,8 @@ struct ZiskMainTraceColumns {
     b_imm1: Option<TraceColumnTarget>,
     a_src_reg: Option<TraceColumnTarget>,
     b_src_reg: Option<TraceColumnTarget>,
+    a_src_mem: Option<TraceColumnTarget>,
+    b_src_mem: Option<TraceColumnTarget>,
     b_src_ind: Option<TraceColumnTarget>,
     b_offset_imm0: Option<TraceColumnTarget>,
     addr1: Option<TraceColumnTarget>,
@@ -726,13 +728,21 @@ struct ZiskMainTraceColumns {
 }
 
 impl ZiskMainTraceColumns {
-    fn has_required_memory_columns(&self) -> bool {
+    fn has_required_indirect_memory_columns(&self) -> bool {
         self.b_src_ind.is_some()
             && self.b_offset_imm0.is_some()
             && self.ind_width.is_some()
             && self.store_ind.is_some()
             && self.store_offset.is_some()
             && self.store_mem.is_some()
+    }
+
+    fn has_required_a_memory_source_columns(&self) -> bool {
+        self.a_src_mem.is_some() && self.a_offset_imm0.is_some()
+    }
+
+    fn has_required_b_memory_source_columns(&self) -> bool {
+        self.b_src_mem.is_some() && self.b_offset_imm0.is_some()
     }
 }
 
@@ -1239,6 +1249,18 @@ fn write_zisk_main_report_columns(
     write_optional_column(
         builder,
         row,
+        &columns.a_src_mem,
+        u64::from(matches!(instruction.a, ZiskMainSource::Memory(_))),
+    )?;
+    write_optional_column(
+        builder,
+        row,
+        &columns.b_src_mem,
+        u64::from(matches!(instruction.b, ZiskMainSource::Memory(_))),
+    )?;
+    write_optional_column(
+        builder,
+        row,
         &columns.b_src_ind,
         u64::from(matches!(instruction.b, ZiskMainSource::Indirect(_))),
     )?;
@@ -1364,6 +1386,8 @@ fn write_zisk_main_terminal_row(
     write_column(builder, row, &columns.pc, halt_pc)?;
     write_optional_column(builder, row, &columns.a_src_imm, 1)?;
     write_optional_column(builder, row, &columns.b_src_imm, 1)?;
+    write_optional_column(builder, row, &columns.a_src_mem, 0)?;
+    write_optional_column(builder, row, &columns.b_src_mem, 0)?;
     write_column(
         builder,
         row,
@@ -1377,14 +1401,30 @@ fn validate_zisk_main_memory_columns(
     instruction: &ZiskMainInstruction,
     columns: &ZiskMainTraceColumns,
 ) -> Result<(), GuestPcTraceBackendError> {
-    let uses_memory_row = matches!(
-        instruction.b,
-        ZiskMainSource::Indirect(_) | ZiskMainSource::Memory(_)
-    ) || matches!(
-        instruction.store,
-        ZiskMainStore::Indirect(_) | ZiskMainStore::Memory(_)
-    );
-    if uses_memory_row && !columns.has_required_memory_columns() {
+    if matches!(instruction.a, ZiskMainSource::Memory(_))
+        && !columns.has_required_a_memory_source_columns()
+    {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "Zisk Main memory source rows require a_src_mem and a_offset_imm0 columns at row {row}"
+            ),
+        });
+    }
+    if matches!(instruction.b, ZiskMainSource::Memory(_))
+        && !columns.has_required_b_memory_source_columns()
+    {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "Zisk Main memory source rows require b_src_mem and b_offset_imm0 columns at row {row}"
+            ),
+        });
+    }
+    let uses_indirect_memory_row = matches!(instruction.b, ZiskMainSource::Indirect(_))
+        || matches!(
+            instruction.store,
+            ZiskMainStore::Indirect(_) | ZiskMainStore::Memory(_)
+        );
+    if uses_indirect_memory_row && !columns.has_required_indirect_memory_columns() {
         return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: format!(
                 "Zisk Main memory rows require b_src_ind, b_offset_imm0, ind_width, store_ind, store_offset, and store_mem columns at row {row}"
@@ -1422,10 +1462,46 @@ fn zisk_main_source_value(
             )?;
             Ok((access.value, Some(access)))
         }
-        ZiskMainSource::Memory(_) => {
-            Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row })
+        ZiskMainSource::Memory(address) => zisk_main_memory_source_value(row, address, report),
+    }
+}
+
+fn zisk_main_memory_source_value(
+    row: usize,
+    address: u64,
+    report: &GuestMachineReport,
+) -> Result<(u64, Option<ExpectedMemoryAccess>), GuestPcTraceBackendError> {
+    if address == ZISK_INPUT_ADDRESS {
+        if let RiscvInstruction::ZiskFcallResult { rd } = report.instruction {
+            let value = zisk_main_fcall_result_value(row, rd, report)?;
+            return Ok((value, None));
         }
     }
+    let access = matching_memory_access(row, report, GuestMemoryAccessKind::Read, address, 8)?;
+    Ok((access.value, Some(access)))
+}
+
+fn zisk_main_fcall_result_value(
+    row: usize,
+    rd: u8,
+    report: &GuestMachineReport,
+) -> Result<u64, GuestPcTraceBackendError> {
+    let [write] = report.register_writes.as_slice() else {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!(
+                "free-call result row reported {} register writes",
+                report.register_writes.len()
+            ),
+        });
+    };
+    if write.index != rd {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!("expected free-call result in x{rd}, found x{}", write.index),
+        });
+    }
+    Ok(write.value)
 }
 
 fn matching_memory_access(
@@ -1670,7 +1746,7 @@ fn zisk_main_store_offset(
 }
 
 fn zisk_main_source_offset(
-    row: usize,
+    _row: usize,
     source: ZiskMainSource,
 ) -> Result<i64, GuestPcTraceBackendError> {
     match source {
@@ -1678,19 +1754,14 @@ fn zisk_main_source_offset(
         ZiskMainSource::Immediate(value) => Ok((value & 0xffff_ffff) as i64),
         ZiskMainSource::Register(index) => Ok(i64::from(index)),
         ZiskMainSource::Indirect(offset) => Ok(offset),
-        ZiskMainSource::Memory(_) => {
-            Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row })
-        }
+        ZiskMainSource::Memory(address) => Ok((address & 0xffff_ffff) as i64),
     }
 }
 
 fn zisk_main_source_high_limb(source: ZiskMainSource) -> u64 {
     match source {
-        ZiskMainSource::Immediate(value) => value >> 32,
-        ZiskMainSource::LastC
-        | ZiskMainSource::Register(_)
-        | ZiskMainSource::Indirect(_)
-        | ZiskMainSource::Memory(_) => 0,
+        ZiskMainSource::Immediate(value) | ZiskMainSource::Memory(value) => value >> 32,
+        ZiskMainSource::LastC | ZiskMainSource::Register(_) | ZiskMainSource::Indirect(_) => 0,
     }
 }
 
@@ -2283,6 +2354,8 @@ fn zisk_main_trace_columns(
         b_imm1: trace_column_target_aliases(layout, &["b_imm1", "air.b_imm1"])?,
         a_src_reg: trace_column_target(layout, "a_src_reg")?,
         b_src_reg: trace_column_target(layout, "b_src_reg")?,
+        a_src_mem: trace_column_target(layout, "a_src_mem")?,
+        b_src_mem: trace_column_target(layout, "b_src_mem")?,
         b_src_ind: trace_column_target(layout, "b_src_ind")?,
         b_offset_imm0: trace_column_target(layout, "b_offset_imm0")?,
         addr1: trace_column_target_aliases(layout, &["addr1", "air.addr1"])?,

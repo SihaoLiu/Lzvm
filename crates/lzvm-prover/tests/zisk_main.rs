@@ -4,6 +4,7 @@ use lzvm_prover::guest_instruction::{
     RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::{GuestMachineReport, ZISK_ARCHITECTURE_ID};
+use lzvm_prover::zisk_fcalls::ZISK_INPUT_ADDRESS;
 use lzvm_prover::zisk_main::{
     lower_guest_report, ZiskMainLowerError, ZiskMainOp, ZiskMainSource, ZiskMainStore,
 };
@@ -789,6 +790,48 @@ fn uses_zisk_sign_extension_op_codes() {
     assert_eq!(ZiskMainOp::SignExtendB.code(), 0x27);
     assert_eq!(ZiskMainOp::SignExtendH.code(), 0x28);
     assert_eq!(ZiskMainOp::SignExtendW.code(), 0x29);
+}
+
+#[test]
+fn lowers_zisk_fcall_param_as_copy_with_word_count() {
+    let instruction = lower_guest_report(&report(
+        4,
+        RiscvInstruction::ZiskFcallParam { port: 2, rs1: 12 },
+    ))
+    .expect("fcall param should lower");
+
+    assert_eq!(instruction.a, ZiskMainSource::Immediate(4));
+    assert_eq!(instruction.b, ZiskMainSource::Register(12));
+    assert_eq!(instruction.op, ZiskMainOp::CopyB);
+    assert_eq!(instruction.store, ZiskMainStore::None);
+    assert!(!instruction.is_external_op);
+}
+
+#[test]
+fn lowers_zisk_fcall_invoke_as_copy_with_function_id() {
+    let instruction = lower_guest_report(&report(
+        4,
+        RiscvInstruction::ZiskFcallInvoke { function_id: 22 },
+    ))
+    .expect("fcall invoke should lower");
+
+    assert_eq!(instruction.a, ZiskMainSource::Immediate(22));
+    assert_eq!(instruction.b, ZiskMainSource::Immediate(0));
+    assert_eq!(instruction.op, ZiskMainOp::CopyB);
+    assert_eq!(instruction.store, ZiskMainStore::None);
+    assert!(!instruction.is_external_op);
+}
+
+#[test]
+fn lowers_zisk_fcall_result_as_free_input_read() {
+    let instruction = lower_guest_report(&report(4, RiscvInstruction::ZiskFcallResult { rd: 10 }))
+        .expect("fcall result should lower");
+
+    assert_eq!(instruction.a, ZiskMainSource::Immediate(0));
+    assert_eq!(instruction.b, ZiskMainSource::Memory(ZISK_INPUT_ADDRESS));
+    assert_eq!(instruction.op, ZiskMainOp::CopyB);
+    assert_eq!(instruction.store, ZiskMainStore::Register(10));
+    assert!(!instruction.is_external_op);
 }
 
 #[test]

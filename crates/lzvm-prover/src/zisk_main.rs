@@ -5,6 +5,7 @@ use crate::guest_instruction::{
     RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind, RiscvStoreKind,
 };
 use crate::guest_machine::{fixed_csr_value, GuestMachineReport};
+use crate::zisk_fcalls::ZISK_INPUT_ADDRESS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZiskMainSource {
@@ -332,6 +333,17 @@ pub fn lower_guest_report(
             rs1,
             rd,
         )),
+        RiscvInstruction::ZiskFcallParam { port, rs1 } => {
+            lower_fcall_param(report.address, instruction_size, port, rs1)
+        }
+        RiscvInstruction::ZiskFcallInvoke { function_id } => Ok(lower_fcall_invoke(
+            report.address,
+            instruction_size,
+            function_id,
+        )),
+        RiscvInstruction::ZiskFcallResult { rd } => {
+            Ok(lower_fcall_result(report.address, instruction_size, rd))
+        }
         _ => Err(ZiskMainLowerError::UnsupportedInstruction {
             instruction: report.instruction,
         }),
@@ -618,6 +630,54 @@ fn lower_precompile(
     );
     instruction.is_precompiled = true;
     instruction
+}
+
+fn lower_fcall_param(
+    pc: u64,
+    instruction_size: i64,
+    port: u8,
+    rs1: u8,
+) -> Result<ZiskMainInstruction, ZiskMainLowerError> {
+    let Some(words) = fcall_param_words(port) else {
+        return Err(ZiskMainLowerError::UnsupportedInstruction {
+            instruction: RiscvInstruction::ZiskFcallParam { port, rs1 },
+        });
+    };
+    Ok(base_instruction(
+        pc,
+        ZiskMainSource::Immediate(words),
+        register_source(rs1),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::None,
+        instruction_size,
+    ))
+}
+
+fn lower_fcall_invoke(pc: u64, instruction_size: i64, function_id: u16) -> ZiskMainInstruction {
+    base_instruction(
+        pc,
+        ZiskMainSource::Immediate(u64::from(function_id)),
+        ZiskMainSource::Immediate(0),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::None,
+        instruction_size,
+    )
+}
+
+fn lower_fcall_result(pc: u64, instruction_size: i64, rd: u8) -> ZiskMainInstruction {
+    base_instruction(
+        pc,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Memory(ZISK_INPUT_ADDRESS),
+        ZiskMainOp::CopyB,
+        register_store(rd),
+        instruction_size,
+    )
+}
+
+fn fcall_param_words(port: u8) -> Option<u64> {
+    const WORDS: [u64; 16] = [1, 2, 4, 8, 12, 16, 20, 24, 28, 32, 48, 64, 80, 96, 128, 256];
+    WORDS.get(usize::from(port)).copied()
 }
 
 fn lower_csr_read(
