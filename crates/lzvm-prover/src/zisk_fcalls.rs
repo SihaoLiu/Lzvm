@@ -1,6 +1,7 @@
 use std::fmt;
 
 use lzvm_artifacts::framed_stdin::{parse_framed_stdin_chunks, FramedStdinError};
+use num_bigint::BigUint;
 
 use crate::guest_machine::{
     GuestFcallError, GuestFcallHandler, GuestFcallParam, GuestFcallRequest, GuestFcallResponse,
@@ -8,11 +9,14 @@ use crate::guest_machine::{
 };
 use crate::guest_memory::GuestMemoryError;
 use crate::secp256k1_host::{
-    biguint_to_limbs, limbs_to_biguint, mod_inv, secp256k1_double_scalar_mul, secp256k1_order,
-    Secp256k1Error, SecpPoint,
+    biguint_to_limbs, limbs_to_biguint, mod_inv, secp256k1_double_scalar_mul,
+    secp256k1_field_modulus, secp256k1_order, Secp256k1Error, SecpPoint,
 };
 
 pub const ZISK_INPUT_ADDRESS: u64 = 0x4000_0000;
+pub const ZISK_SECP256K1_FP_INV_FCALL_ID: u16 = 1;
+pub const ZISK_SECP256K1_FN_INV_FCALL_ID: u16 = 2;
+pub const ZISK_SECP256K1_FP_SQRT_FCALL_ID: u16 = 3;
 pub const ZISK_MSB_POS_256_FCALL_ID: u16 = 4;
 pub const ZISK_SECP256K1_ECDSA_VERIFY_FCALL_ID: u16 = 20;
 pub const ZISK_INPUT_READY_FCALL_ID: u16 = 22;
@@ -156,6 +160,75 @@ impl ZiskInputFcallHandler {
         })
     }
 
+    fn handle_secp256k1_fp_inv(
+        &mut self,
+        request: GuestFcallRequest,
+        memory: &GuestMachineMemory,
+    ) -> Result<GuestFcallResponse, ZiskInputFcallError> {
+        let value = read_fcall_memory_param::<4>(&request, memory, 0, 2)?;
+        if request.params.len() != 1 {
+            return Err(ZiskInputFcallError::MissingFunctionParams {
+                function_id: request.function_id,
+                expected: 1,
+                found: request.params.len(),
+            });
+        }
+        Ok(GuestFcallResponse {
+            results: secp256k1_mod_inv(&value, secp256k1_field_modulus())?.to_vec(),
+        })
+    }
+
+    fn handle_secp256k1_fn_inv(
+        &mut self,
+        request: GuestFcallRequest,
+        memory: &GuestMachineMemory,
+    ) -> Result<GuestFcallResponse, ZiskInputFcallError> {
+        let value = read_fcall_memory_param::<4>(&request, memory, 0, 2)?;
+        if request.params.len() != 1 {
+            return Err(ZiskInputFcallError::MissingFunctionParams {
+                function_id: request.function_id,
+                expected: 1,
+                found: request.params.len(),
+            });
+        }
+        Ok(GuestFcallResponse {
+            results: secp256k1_mod_inv(&value, secp256k1_order())?.to_vec(),
+        })
+    }
+
+    fn handle_secp256k1_fp_sqrt(
+        &mut self,
+        request: GuestFcallRequest,
+        memory: &GuestMachineMemory,
+    ) -> Result<GuestFcallResponse, ZiskInputFcallError> {
+        let value = read_fcall_memory_param::<4>(&request, memory, 0, 2)?;
+        let Some(parity) = request.params.get(1) else {
+            return Err(ZiskInputFcallError::MissingFunctionParams {
+                function_id: request.function_id,
+                expected: 2,
+                found: request.params.len(),
+            });
+        };
+        if parity.port != 0 {
+            return Err(ZiskInputFcallError::UnexpectedFunctionParamPort {
+                function_id: request.function_id,
+                param_index: 1,
+                expected_port: 0,
+                port: parity.port,
+            });
+        }
+        if request.params.len() != 2 {
+            return Err(ZiskInputFcallError::MissingFunctionParams {
+                function_id: request.function_id,
+                expected: 2,
+                found: request.params.len(),
+            });
+        }
+        Ok(GuestFcallResponse {
+            results: secp256k1_fp_sqrt(&value, parity.value),
+        })
+    }
+
     fn handle_msb_pos_256(
         &mut self,
         request: GuestFcallRequest,
@@ -244,6 +317,15 @@ impl GuestFcallHandler for ZiskInputFcallHandler {
         memory: &mut GuestMachineMemory,
     ) -> Result<GuestFcallResponse, GuestFcallError> {
         match request.function_id {
+            ZISK_SECP256K1_FP_INV_FCALL_ID => self
+                .handle_secp256k1_fp_inv(request, memory)
+                .map_err(GuestFcallError::from),
+            ZISK_SECP256K1_FN_INV_FCALL_ID => self
+                .handle_secp256k1_fn_inv(request, memory)
+                .map_err(GuestFcallError::from),
+            ZISK_SECP256K1_FP_SQRT_FCALL_ID => self
+                .handle_secp256k1_fp_sqrt(request, memory)
+                .map_err(GuestFcallError::from),
             ZISK_MSB_POS_256_FCALL_ID => self
                 .handle_msb_pos_256(request, memory)
                 .map_err(GuestFcallError::from),
@@ -415,6 +497,36 @@ fn secp256k1_ecdsa_verify(
     )
     .map_err(ZiskInputFcallError::from)?;
     Ok(point.to_limbs())
+}
+
+fn secp256k1_mod_inv(value: &[u64; 4], modulus: &BigUint) -> Result<[u64; 4], ZiskInputFcallError> {
+    mod_inv(&limbs_to_biguint(value), modulus)
+        .map(|inverse| biguint_to_limbs::<4>(&inverse))
+        .ok_or(ZiskInputFcallError::NonInvertibleScalar)
+}
+
+fn secp256k1_fp_sqrt(value: &[u64; 4], parity: u64) -> Vec<u64> {
+    let modulus = secp256k1_field_modulus();
+    let exponent = (modulus + BigUint::from(1_u8)) >> 2;
+    let value = limbs_to_biguint(value);
+    let mut sqrt = value.modpow(&exponent, modulus);
+    let square = (&sqrt * &sqrt) % modulus;
+    let mut results = Vec::with_capacity(5);
+    if square != value {
+        let non_residue = BigUint::from(3_u8);
+        let adjusted = (&value * non_residue) % modulus;
+        let sqrt = adjusted.modpow(&exponent, modulus);
+        results.push(0);
+        results.extend_from_slice(&biguint_to_limbs::<4>(&sqrt));
+        return results;
+    }
+    let sqrt_limbs = biguint_to_limbs::<4>(&sqrt);
+    if (sqrt_limbs[0] & 1) != parity {
+        sqrt = (modulus - sqrt) % modulus;
+    }
+    results.push(1);
+    results.extend_from_slice(&biguint_to_limbs::<4>(&sqrt));
+    results
 }
 
 fn msb_pos_256(values: &[u64], count: usize) -> Result<(usize, usize), ZiskInputFcallError> {

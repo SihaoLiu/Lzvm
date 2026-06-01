@@ -11,6 +11,8 @@ use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryImage};
 use lzvm_prover::zisk_fcalls::{
     ZiskInputFcallHandler, ZISK_INPUT_ADDRESS, ZISK_INPUT_READY_FCALL_ID,
     ZISK_MSB_POS_256_FCALL_ID, ZISK_SECP256K1_ECDSA_VERIFY_FCALL_ID,
+    ZISK_SECP256K1_FN_INV_FCALL_ID, ZISK_SECP256K1_FP_INV_FCALL_ID,
+    ZISK_SECP256K1_FP_SQRT_FCALL_ID,
 };
 
 const ENTRY: u64 = 0x8000_0000;
@@ -1047,6 +1049,159 @@ fn zisk_fcall_secp256k1_ecdsa_verify_returns_double_scalar_mul_point() {
 }
 
 #[test]
+fn zisk_fcall_secp256k1_fp_inv_returns_field_inverse() {
+    let registers = run_single_input_fcall(
+        ZISK_SECP256K1_FP_INV_FCALL_ID,
+        2,
+        &[
+            0xf9ee4256a589409f,
+            0xa21a3985f17502d0,
+            0xb3eb393d00dc480c,
+            0x142def02c537eced,
+        ],
+        &[],
+        4,
+    );
+
+    assert_eq!(
+        registers,
+        vec![
+            0xc198809f72408ac9,
+            0xa8726302e84e0c65,
+            0xde970a9a3b70d025,
+            0xf70d37bc0fece9b8,
+        ]
+    );
+}
+
+#[test]
+fn zisk_fcall_secp256k1_fn_inv_returns_scalar_inverse() {
+    let registers = run_single_input_fcall(
+        ZISK_SECP256K1_FN_INV_FCALL_ID,
+        2,
+        &[
+            0xf9ee4256a589409f,
+            0xa21a3985f17502d0,
+            0xb3eb393d00dc480c,
+            0x142def02c537eced,
+        ],
+        &[],
+        4,
+    );
+
+    assert_eq!(
+        registers,
+        vec![
+            0x32fe23e91aa741a1,
+            0x204b2da7afd93e75,
+            0x39b0bef6b00ec8b0,
+            0x7a0f1a7146326666,
+        ]
+    );
+}
+
+#[test]
+fn zisk_fcall_secp256k1_fp_sqrt_returns_parity_adjusted_root() {
+    let x = [
+        0x643764b2faa1592a,
+        0x4ac3ab52286f702a,
+        0x6591d88c833ffd4f,
+        0xc6fb7a1e514eac26,
+    ];
+    let even = run_single_input_fcall(ZISK_SECP256K1_FP_SQRT_FCALL_ID, 2, &x, &[0], 5);
+    let odd = run_single_input_fcall(ZISK_SECP256K1_FP_SQRT_FCALL_ID, 2, &x, &[1], 5);
+
+    assert_eq!(
+        even,
+        vec![
+            1,
+            0xa3d2fb0160f29df6,
+            0x3ebce4d565b52649,
+            0x4cdec0bf5c968639,
+            0x123e42087c415355,
+        ]
+    );
+    assert_eq!(
+        odd,
+        vec![
+            1,
+            0x5c2d04fd9f0d5e39,
+            0xc1431b2a9a4ad9b6,
+            0xb3213f40a36979c6,
+            0xedc1bdf783beacaa,
+        ]
+    );
+}
+
+#[test]
+fn zisk_fcall_secp256k1_fp_sqrt_returns_nqr_root_for_non_residue() {
+    let registers = run_single_input_fcall(
+        ZISK_SECP256K1_FP_SQRT_FCALL_ID,
+        2,
+        &[
+            0x643764b2faa1592c,
+            0x4ac3ab52286f702a,
+            0x6591d88c833ffd4f,
+            0xc6fb7a1e514eac26,
+        ],
+        &[0],
+        5,
+    );
+
+    assert_eq!(
+        registers,
+        vec![
+            0,
+            0xdab2978e63122590,
+            0x5dc785c971480237,
+            0x87a60df9f92b07b9,
+            0x855b365e9f83d30d,
+        ]
+    );
+}
+
+#[test]
+fn zisk_fcall_secp256k1_fp_sqrt_ignores_parity_for_non_residue() {
+    let input = [
+        0x643764b2faa1592c,
+        0x4ac3ab52286f702a,
+        0x6591d88c833ffd4f,
+        0xc6fb7a1e514eac26,
+    ];
+    let even = run_single_input_fcall(ZISK_SECP256K1_FP_SQRT_FCALL_ID, 2, &input, &[0], 5);
+    let odd = run_single_input_fcall(ZISK_SECP256K1_FP_SQRT_FCALL_ID, 2, &input, &[1], 5);
+
+    assert_eq!(even, odd);
+}
+
+#[test]
+fn zisk_fcall_secp256k1_fp_sqrt_matches_venus_for_non_canonical_input() {
+    let registers = run_single_input_fcall(
+        ZISK_SECP256K1_FP_SQRT_FCALL_ID,
+        2,
+        &[
+            0xfffffffefffffc30,
+            0xffffffffffffffff,
+            0xffffffffffffffff,
+            0xffffffffffffffff,
+        ],
+        &[1],
+        5,
+    );
+
+    assert_eq!(
+        registers,
+        vec![
+            0,
+            0x7d8d27ae1cd5f852,
+            0xc61f6d15da14ecd4,
+            0x233770c2a797962c,
+            0xa2d2ba93507f1df,
+        ]
+    );
+}
+
+#[test]
 fn zisk_fcall_msb_pos_256_returns_highest_limb_and_bit() {
     let data_offset = 256;
     let data_address = ENTRY + data_offset as u64;
@@ -1089,6 +1244,40 @@ fn zisk_fcall_msb_pos_256_returns_highest_limb_and_bit() {
         (x_address, y_address, z_address),
         (data_address, data_address + 32, data_address + 64)
     );
+}
+
+fn run_single_input_fcall<const N: usize>(
+    function_id: u16,
+    input_port: u16,
+    input: &[u64; N],
+    scalar_params: &[u64],
+    result_count: usize,
+) -> Vec<u64> {
+    let data_offset = 256;
+    let mut data = Vec::new();
+    push_u64_array(&mut data, input);
+    let mut words = vec![auipc(10, 0), addi(10, 10, data_offset as i16)];
+    words.push(csrs(0x08f0 + input_port, 10));
+    for value in scalar_params {
+        words.push(addi(11, 0, *value as i16));
+        words.push(csrs(0x08f0, 11));
+    }
+    let fcall_csr = 0x08c0_u16 + function_id / 32;
+    words.push(csrwi(fcall_csr, (function_id & 0x1f) as u8));
+    for register in 5..(5 + result_count as u8) {
+        words.push(csrr(register, 0x0ffe));
+    }
+    words.push(0x0000_0073);
+    let mut memory = guest_machine_memory_with_words_and_data(&words, data_offset, &data);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    let mut handler = ZiskInputFcallHandler::new(&[]).expect("empty input should load");
+
+    run_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler, 64)
+        .expect("guest should halt");
+
+    (5..(5 + result_count))
+        .map(|register| state.register(register).expect("register should exist"))
+        .collect()
 }
 
 #[test]

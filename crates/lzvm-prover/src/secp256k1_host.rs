@@ -192,7 +192,7 @@ fn field_square(value: &BigUint, modulus: &BigUint) -> BigUint {
     field_mul(value, value, modulus)
 }
 
-fn secp256k1_field_modulus() -> &'static BigUint {
+pub(crate) fn secp256k1_field_modulus() -> &'static BigUint {
     static MODULUS: OnceLock<BigUint> = OnceLock::new();
     MODULUS.get_or_init(|| {
         BigUint::parse_bytes(
