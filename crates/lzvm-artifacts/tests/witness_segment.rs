@@ -1,6 +1,10 @@
+use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 use lzvm_artifacts::witness_segment::{
-    encode_witness_commitment_segment, parse_witness_commitment_segment, WitnessCommitmentSegment,
-    WitnessCommitmentSegmentError, WitnessCommitmentStageSegment,
+    encode_witness_commitment_segment, parse_witness_commitment_segment,
+    witness_commitment_segment_id, witness_commitment_segment_identity, WitnessCommitmentSegment,
+    WitnessCommitmentSegmentError, WitnessCommitmentSegmentIdError,
+    WitnessCommitmentSegmentIdentity, WitnessCommitmentStageSegment,
+    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
@@ -40,6 +44,93 @@ fn push_u32(out: &mut Vec<u8>, value: u32) {
 
 fn push_u64(out: &mut Vec<u8>, value: u64) {
     out.extend_from_slice(&value.to_le_bytes());
+}
+
+#[test]
+fn witness_commitment_segment_ids() {
+    let unit_count = 66;
+    let base_identity = WitnessCommitmentSegmentIdentity {
+        unit_index: 3,
+        trace_instance_index: 0,
+    };
+    let base_id = witness_commitment_segment_id(unit_count, base_identity)
+        .expect("instance zero id should encode");
+    assert_eq!(base_id, WITNESS_COMMITMENT_SEGMENT_BASE_ID + 3);
+    assert_eq!(
+        witness_commitment_segment_identity(unit_count, base_id)
+            .expect("instance zero id should decode"),
+        Some(base_identity)
+    );
+
+    let later_identity = WitnessCommitmentSegmentIdentity {
+        unit_index: 3,
+        trace_instance_index: 2,
+    };
+    let later_id = witness_commitment_segment_id(unit_count, later_identity)
+        .expect("nonzero instance id should encode");
+    assert_eq!(
+        later_id,
+        WITNESS_COMMITMENT_SEGMENT_BASE_ID + 2 * unit_count + 3
+    );
+    assert_eq!(
+        witness_commitment_segment_identity(unit_count, later_id)
+            .expect("nonzero instance id should decode"),
+        Some(later_identity)
+    );
+
+    assert_eq!(
+        witness_commitment_segment_identity(unit_count, WITNESS_COMMITMENT_SEGMENT_BASE_ID - 1)
+            .expect("foreign id should decode"),
+        None
+    );
+    assert_eq!(
+        witness_commitment_segment_identity(unit_count, PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+            .expect("non-witness id should decode"),
+        None
+    );
+    assert_eq!(
+        witness_commitment_segment_id(
+            66,
+            WitnessCommitmentSegmentIdentity {
+                unit_index: 0,
+                trace_instance_index: 150,
+            },
+        ),
+        Err(WitnessCommitmentSegmentIdError::SegmentIdOverflow)
+    );
+    assert_eq!(
+        witness_commitment_segment_id(
+            0,
+            WitnessCommitmentSegmentIdentity {
+                unit_index: 0,
+                trace_instance_index: 0,
+            },
+        ),
+        Err(WitnessCommitmentSegmentIdError::EmptyUnitSet)
+    );
+    assert_eq!(
+        witness_commitment_segment_id(
+            unit_count,
+            WitnessCommitmentSegmentIdentity {
+                unit_index: unit_count,
+                trace_instance_index: 0,
+            },
+        ),
+        Err(WitnessCommitmentSegmentIdError::UnitIndexOutOfRange {
+            unit_index: unit_count,
+            unit_count,
+        })
+    );
+    assert_eq!(
+        witness_commitment_segment_id(
+            u32::MAX,
+            WitnessCommitmentSegmentIdentity {
+                unit_index: 0,
+                trace_instance_index: u32::MAX,
+            },
+        ),
+        Err(WitnessCommitmentSegmentIdError::SegmentIdOverflow)
+    );
 }
 
 #[test]

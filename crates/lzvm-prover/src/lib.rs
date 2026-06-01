@@ -108,10 +108,10 @@ pub use prove_witness::{
     build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_from_transcript_segments,
     build_pcs_query_plan_segment_with_bindings, build_witness_commitment_segment,
-    build_witness_opening_segment, build_witness_opening_segment_batch,
-    ProveConstantOpeningSegmentError, ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues,
-    ProvePcsMaterialSegmentError, ProvePcsQueryPlanSegmentError, ProveWitnessOpeningSegmentError,
-    ProveWitnessSegmentError,
+    build_witness_commitment_segment_for_schedule, build_witness_opening_segment,
+    build_witness_opening_segment_batch, ProveConstantOpeningSegmentError,
+    ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues, ProvePcsMaterialSegmentError,
+    ProvePcsQueryPlanSegmentError, ProveWitnessOpeningSegmentError, ProveWitnessSegmentError,
 };
 pub use witness_execution::{
     run_prove_witness_commitments, run_prove_witness_commitments_for_all_units,

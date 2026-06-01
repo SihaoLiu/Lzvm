@@ -47,7 +47,7 @@ use crate::{
     build_pcs_fri_transcript_values_from_trace_segments, build_pcs_material_manifest_segment,
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge, build_pcs_query_plan_segment_with_bindings,
-    build_witness_commitment_segment, build_witness_opening_segment,
+    build_witness_commitment_segment_for_schedule, build_witness_opening_segment,
     build_witness_opening_segment_batch, ProveExecutionUnitArtifacts, ProvePcsEvaluationValues,
     ProvePcsFriTranscriptTraceSegmentValues, ProveSchedule, ProveWitnessAuxiliaryInputs,
     ProveWitnessCommitments, ProveWitnessTraceCommitments,
@@ -80,7 +80,7 @@ pub(crate) fn build_witness_proof_core_artifact_with_bindings(
     let mut witness_segments = Vec::with_capacity(witness_outputs.len());
     for output in witness_outputs {
         witness_segments.push(
-            build_witness_commitment_segment(output)
+            build_witness_commitment_segment_for_schedule(schedule.units.len(), output)
                 .map_err(|error| format!("build witness segment failed: {error}"))?,
         );
     }
@@ -226,8 +226,9 @@ pub fn build_witness_proof_artifact_for_unit(
     let material_segment = build_pcs_material_manifest_segment(request.schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
     let commitments = request.output.commitments();
-    let witness_segment = build_witness_commitment_segment(commitments)
-        .map_err(|error| format!("build witness segment failed: {error}"))?;
+    let witness_segment =
+        build_witness_commitment_segment_for_schedule(request.schedule.units.len(), commitments)
+            .map_err(|error| format!("build witness segment failed: {error}"))?;
     let transcript_values = if request.output.auxiliary_inputs().evaluations.is_empty() {
         if request.execution_unit.fri_expression_id.is_some() {
             return Err(format!(
@@ -964,7 +965,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     let mut witness_segments = Vec::with_capacity(witness_outputs.len());
     for output in witness_outputs {
         witness_segments.push(
-            build_witness_commitment_segment(output)
+            build_witness_commitment_segment_for_schedule(request.schedule.units.len(), output)
                 .map_err(|error| format!("build witness segment failed: {error}"))?,
         );
     }

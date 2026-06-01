@@ -2,7 +2,8 @@ use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
-    encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
+    encode_witness_commitment_segment, witness_commitment_segment_id, WitnessCommitmentSegment,
+    WitnessCommitmentSegmentIdentity, WitnessCommitmentStageSegment,
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 #[cfg(not(feature = "cuda"))]
@@ -231,6 +232,33 @@ fn rejects_unexpected_witness_commitment_segments() {
 
     let error = load_witness_commitment_segments(&units, &[expected_segment, unexpected_segment])
         .expect_err("unexpected segment should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        "unexpected witness commitment segment for unit 1"
+    );
+}
+
+#[test]
+fn rejects_later_trace_instance_witness_commitment_segments() {
+    let units = vec![sample_unit(2, vec![1])];
+    let expected_segment = witness_commitment_proof_segment(0, &units[0]);
+    let later_id = witness_commitment_segment_id(
+        units.len() as u32,
+        WitnessCommitmentSegmentIdentity {
+            unit_index: 0,
+            trace_instance_index: 1,
+        },
+    )
+    .expect("later trace instance id should encode");
+    let later_payload = sample_witness_commitment_segment(0, &units[0]);
+    let later_segment = ProofSegment {
+        id: later_id,
+        data: encode_witness_commitment_segment(&later_payload).expect("segment should encode"),
+    };
+
+    let error = load_witness_commitment_segments(&units, &[expected_segment, later_segment])
+        .expect_err("later trace instance should be rejected until verifier artifacts bind it");
 
     assert_eq!(
         error.to_string(),

@@ -95,10 +95,10 @@ use lzvm_prover::{
     build_pcs_query_nonce_segment, build_pcs_query_nonce_segment_from_transcript_segments,
     build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_from_transcript_segments, build_witness_commitment_segment,
-    build_witness_opening_segment, build_witness_opening_segment_batch,
-    derive_prove_execution_plan, derive_prove_schedule, run_prove_witness_commitments,
-    run_prove_witness_commitments_with_auxiliary_inputs, run_prove_witness_commitments_with_trace,
-    run_prove_witness_commitments_with_trace_backend,
+    build_witness_commitment_segment_for_schedule, build_witness_opening_segment,
+    build_witness_opening_segment_batch, derive_prove_execution_plan, derive_prove_schedule,
+    run_prove_witness_commitments, run_prove_witness_commitments_with_auxiliary_inputs,
+    run_prove_witness_commitments_with_trace, run_prove_witness_commitments_with_trace_backend,
     run_prove_witness_commitments_with_trace_bytes, GpuRunOptions, ProveExecutionInputArtifacts,
     ProvePartitionPlan, ProvePassRequest, ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues,
     ProvePcsFriOpeningValues, ProvePcsFriTranscriptTraceValues, ProvePcsQueryPlanSegmentError,
@@ -3125,11 +3125,16 @@ fn builds_witness_commitment_proof_segments() {
     let output = run_prove_witness_commitments(&plan, 0).expect("witness commitments should run");
 
     let segment = build_witness_commitment_segment(&output).expect("witness segment should build");
+    let scheduled_segment =
+        build_witness_commitment_segment_for_schedule(plan.run_plan.schedule.units.len(), &output)
+            .expect("scheduled witness segment should build");
     let parsed =
         parse_witness_commitment_segment(&segment.data).expect("witness segment should parse");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(segment.id, WITNESS_COMMITMENT_SEGMENT_BASE_ID);
+    assert_eq!(scheduled_segment.id, segment.id);
+    assert_eq!(scheduled_segment.data, segment.data);
     assert_eq!(parsed.unit_index, 0);
     assert_eq!(parsed.input_byte_count, 1);
     assert_eq!(parsed.trace_rows, 16);

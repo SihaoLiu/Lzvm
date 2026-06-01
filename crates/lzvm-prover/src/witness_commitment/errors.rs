@@ -1,6 +1,8 @@
 use std::fmt;
 
-use lzvm_artifacts::witness_segment::WitnessCommitmentSegmentError;
+use lzvm_artifacts::witness_segment::{
+    WitnessCommitmentSegmentError, WitnessCommitmentSegmentIdError,
+};
 use lzvm_field::{DomainError, FieldError};
 
 #[cfg(feature = "cuda")]
@@ -11,6 +13,7 @@ use crate::witness_layout::WitnessTraceLayoutError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveWitnessSegmentError {
     LengthOverflow,
+    SegmentId(WitnessCommitmentSegmentIdError),
     Segment(WitnessCommitmentSegmentError),
 }
 
@@ -18,6 +21,7 @@ impl fmt::Display for ProveWitnessSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::LengthOverflow => write!(f, "prove witness segment length overflow"),
+            Self::SegmentId(error) => write!(f, "prove witness segment id failed: {error}"),
             Self::Segment(error) => write!(f, "prove witness segment encode failed: {error}"),
         }
     }
@@ -26,6 +30,7 @@ impl fmt::Display for ProveWitnessSegmentError {
 impl std::error::Error for ProveWitnessSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::SegmentId(error) => Some(error),
             Self::Segment(error) => Some(error),
             Self::LengthOverflow => None,
         }
@@ -35,6 +40,12 @@ impl std::error::Error for ProveWitnessSegmentError {
 impl From<WitnessCommitmentSegmentError> for ProveWitnessSegmentError {
     fn from(error: WitnessCommitmentSegmentError) -> Self {
         Self::Segment(error)
+    }
+}
+
+impl From<WitnessCommitmentSegmentIdError> for ProveWitnessSegmentError {
+    fn from(error: WitnessCommitmentSegmentIdError) -> Self {
+        Self::SegmentId(error)
     }
 }
 

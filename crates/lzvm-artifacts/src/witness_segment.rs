@@ -1,5 +1,6 @@
 use std::fmt;
 
+use crate::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 use lzvm_field::{Felt, FieldError};
 
 pub const WITNESS_COMMITMENT_SEGMENT_BASE_ID: u32 = 100;
@@ -27,6 +28,86 @@ pub struct WitnessCommitmentStageSegment {
     pub root: [u64; ROOT_WORDS],
     pub tree_byte_count: u64,
     pub tree_digest: [u8; HASH_BYTES],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WitnessCommitmentSegmentIdentity {
+    pub unit_index: u32,
+    pub trace_instance_index: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WitnessCommitmentSegmentIdError {
+    EmptyUnitSet,
+    UnitIndexOutOfRange { unit_index: u32, unit_count: u32 },
+    SegmentIdOverflow,
+}
+
+impl fmt::Display for WitnessCommitmentSegmentIdError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyUnitSet => write!(f, "witness commitment segment unit set is empty"),
+            Self::UnitIndexOutOfRange {
+                unit_index,
+                unit_count,
+            } => write!(
+                f,
+                "witness commitment segment unit index {unit_index} is outside unit count {unit_count}"
+            ),
+            Self::SegmentIdOverflow => write!(f, "witness commitment segment id overflow"),
+        }
+    }
+}
+
+impl std::error::Error for WitnessCommitmentSegmentIdError {}
+
+pub fn witness_commitment_segment_id(
+    unit_count: u32,
+    identity: WitnessCommitmentSegmentIdentity,
+) -> Result<u32, WitnessCommitmentSegmentIdError> {
+    if unit_count == 0 {
+        return Err(WitnessCommitmentSegmentIdError::EmptyUnitSet);
+    }
+    if identity.unit_index >= unit_count {
+        return Err(WitnessCommitmentSegmentIdError::UnitIndexOutOfRange {
+            unit_index: identity.unit_index,
+            unit_count,
+        });
+    }
+    let offset = identity
+        .trace_instance_index
+        .checked_mul(unit_count)
+        .and_then(|offset| offset.checked_add(identity.unit_index))
+        .ok_or(WitnessCommitmentSegmentIdError::SegmentIdOverflow)?;
+    let segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
+        .checked_add(offset)
+        .ok_or(WitnessCommitmentSegmentIdError::SegmentIdOverflow)?;
+    if segment_id >= PCS_MATERIAL_MANIFEST_SEGMENT_ID {
+        return Err(WitnessCommitmentSegmentIdError::SegmentIdOverflow);
+    }
+    Ok(segment_id)
+}
+
+pub fn witness_commitment_segment_identity(
+    unit_count: u32,
+    segment_id: u32,
+) -> Result<Option<WitnessCommitmentSegmentIdentity>, WitnessCommitmentSegmentIdError> {
+    if segment_id < WITNESS_COMMITMENT_SEGMENT_BASE_ID {
+        return Ok(None);
+    }
+    if segment_id >= PCS_MATERIAL_MANIFEST_SEGMENT_ID {
+        return Ok(None);
+    }
+    if unit_count == 0 {
+        return Err(WitnessCommitmentSegmentIdError::EmptyUnitSet);
+    }
+    let offset = segment_id
+        .checked_sub(WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+        .ok_or(WitnessCommitmentSegmentIdError::SegmentIdOverflow)?;
+    Ok(Some(WitnessCommitmentSegmentIdentity {
+        unit_index: offset % unit_count,
+        trace_instance_index: offset / unit_count,
+    }))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
