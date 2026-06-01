@@ -16,7 +16,7 @@ use lzvm_field::{Ext3, Felt};
 use lzvm_prover::group_values::load_group_values_from_segments;
 use lzvm_prover::proof_values::{flatten_pcs_proof_values, load_pcs_proof_values_from_segments};
 use lzvm_prover::unit_values::{load_unit_values_for_identity_from_segments, ProveUnitValues};
-use lzvm_prover::ProveSchedule;
+use lzvm_prover::{ProveSchedule, ProveWitnessTraceCommitments};
 
 pub(super) fn read_evaluation_values_segment_input(path: &Path) -> Result<ProofSegment, String> {
     let bytes = fs::read(path).map_err(|error| {
@@ -128,6 +128,7 @@ pub(super) fn read_group_values_segment_input(
 
 pub(super) fn load_batch_unit_values_inputs(
     schedule: &ProveSchedule,
+    outputs: &[ProveWitnessTraceCommitments],
     unit_values_segment_input: Option<&Path>,
     shared_unit_values: &[Felt],
 ) -> Result<Vec<ProveUnitValues>, String> {
@@ -173,17 +174,25 @@ pub(super) fn load_batch_unit_values_inputs(
         return Ok(values);
     }
 
-    Ok(schedule
-        .units
+    if shared_unit_values.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    outputs
         .iter()
-        .enumerate()
-        .map(|(unit_index, unit)| ProveUnitValues {
-            unit_index,
-            trace_instance_index: 0,
-            unit_value_map: unit.unit_value_map.clone(),
-            packed_values: shared_unit_values.to_vec(),
+        .map(|output| {
+            let unit_index = output.commitments().unit_index();
+            let unit = schedule.units.get(unit_index).ok_or_else(|| {
+                format!("unit values segment unit index out of range: {unit_index}")
+            })?;
+            Ok(ProveUnitValues {
+                unit_index,
+                trace_instance_index: output.commitments().trace_instance_index(),
+                unit_value_map: unit.unit_value_map.clone(),
+                packed_values: shared_unit_values.to_vec(),
+            })
         })
-        .collect())
+        .collect()
 }
 
 pub(super) fn read_packed_unit_values_segment_for_unit(

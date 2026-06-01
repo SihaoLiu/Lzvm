@@ -5905,7 +5905,7 @@ fn runs_prove_witness_commitments_from_segmented_guest_pc_trace() {
 }
 
 #[test]
-fn segmented_guest_pc_trace_rejects_proof_output() {
+fn builds_segmented_guest_pc_trace_proof_output() {
     let dir = temp_dir("prove-witness-segmented-guest-pc-trace-proof");
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory_with_main_trace_unit(&dir);
@@ -5947,13 +5947,49 @@ fn segmented_guest_pc_trace_rejects_proof_output() {
         &mut stdout,
         &mut stderr,
     );
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let proof_path = output_dir.join("proof.bin");
+    let proof_bytes = fs::read(&proof_path).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    assert_eq!(code, 1);
-    assert!(stdout.is_empty());
-    assert!(String::from_utf8(stderr)
-        .expect("stderr should be utf-8")
-        .contains("segmented guest PC trace proof output is unsupported"));
+    assert!(
+        stdout_text.contains("trace_instance_index=0\n"),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("trace_instance_index=1\n"),
+        "{stdout_text}"
+    );
+    assert_eq!(proof.setup_hash, setup_hash);
+    assert_has_no_contribution_segment(&proof);
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    assert!(String::from_utf8(verify_stdout)
+        .expect("verify stdout should be utf-8")
+        .contains("status=ok\n"));
 }
 
 #[test]

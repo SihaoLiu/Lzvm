@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_artifacts::challenge_values_segment::{
     parse_challenge_values_segment, CHALLENGE_VALUES_SEGMENT_ID,
@@ -77,6 +77,36 @@ impl ProveUnitValuesSliceExt for [ProveUnitValues] {
                     && values.trace_instance_index == trace_instance_index
             })
             .map(|values| values.packed_values.as_slice())
+    }
+}
+
+trait ProvePcsEvaluationValuesSliceExt {
+    fn values_for_identity(&self, unit_index: usize, trace_instance_index: u32) -> Option<&[Ext3]>;
+}
+
+impl ProvePcsEvaluationValuesSliceExt for [ProvePcsEvaluationValues] {
+    fn values_for_identity(&self, unit_index: usize, trace_instance_index: u32) -> Option<&[Ext3]> {
+        self.iter()
+            .find(|values| {
+                values.unit_index == unit_index
+                    && values.trace_instance_index == trace_instance_index
+            })
+            .map(|values| values.values.as_slice())
+    }
+}
+
+fn transcript_evaluation_values_for_identity(
+    values: &[ProvePcsEvaluationValues],
+    unit_index: usize,
+    trace_instance_index: u32,
+    explicit_segment: bool,
+) -> Result<Option<&[Ext3]>, String> {
+    match values.values_for_identity(unit_index, trace_instance_index) {
+        Some(values) => Ok(Some(values)),
+        None if explicit_segment => Err(format!(
+            "missing explicit evaluation values for unit {unit_index} trace instance {trace_instance_index}"
+        )),
+        None => Ok(None),
     }
 }
 
@@ -606,7 +636,6 @@ pub fn build_witness_proof_artifact_for_all_units(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    reject_multiple_trace_instances_per_unit(request.outputs)?;
     validate_proof_bindings(
         public_values,
         request.program_image_cache,
@@ -722,24 +751,6 @@ pub fn build_witness_proof_artifact_for_all_units(
             .map_err(|error| format!("verify proof output failed: {error}"))?;
     }
     Ok(Some(proof))
-}
-
-fn reject_multiple_trace_instances_per_unit(
-    outputs: &[ProveWitnessTraceCommitments],
-) -> Result<(), String> {
-    let mut trace_instances = BTreeMap::new();
-    for output in outputs {
-        let unit_index = output.commitments().unit_index();
-        let trace_instance_index = output.commitments().trace_instance_index();
-        if let Some(existing) = trace_instances.insert(unit_index, trace_instance_index) {
-            if existing != trace_instance_index {
-                return Err(format!(
-                    "all-units proof output has multiple trace instances for unit {unit_index}"
-                ));
-            }
-        }
-    }
-    Ok(())
 }
 
 fn build_program_image_cache_proof_segment(
@@ -915,6 +926,7 @@ fn build_witness_contribution_segment(
         return Ok(None);
     }
 
+    let mut seen_entry_identities = BTreeSet::new();
     let mut entries = Vec::with_capacity(sources.len());
     for source in sources {
         let output = source.output;
@@ -944,6 +956,12 @@ fn build_witness_contribution_segment(
         let group_id = unit.group_id.unwrap_or(0);
         let group_id = u32::try_from(group_id)
             .map_err(|_| format!("witness contribution group id does not fit u32: {group_id}"))?;
+        if !seen_entry_identities.insert((worker_index, group_id)) {
+            let trace_instance_index = output.commitments().trace_instance_index();
+            return Err(format!(
+                "witness contribution has multiple outputs for unit {unit_index} trace instance {trace_instance_index}; contribution entries cannot distinguish trace instances"
+            ));
+        }
         let entry = derive_worker_contribution_entry(
             &catalog.layout.global_info,
             worker_index,
@@ -1062,14 +1080,14 @@ fn build_witness_transcript_proof_artifact_for_all_units(
             } else {
                 proof_inputs.group_values
             };
-            let evaluations = transcript_evaluation_values
-                .iter()
-                .find(|values| {
-                    values.unit_index == unit_index
-                        && values.trace_instance_index == commitments.trace_instance_index()
-                })
-                .map(|values| values.values.as_slice())
-                .unwrap_or_else(|| output_auxiliary_inputs.evaluations.as_slice());
+            let trace_instance_index = commitments.trace_instance_index();
+            let evaluations = transcript_evaluation_values_for_identity(
+                transcript_evaluation_values,
+                unit_index,
+                trace_instance_index,
+                request.evaluation_values_segment.is_some(),
+            )?
+            .unwrap_or(output_auxiliary_inputs.evaluations.as_slice());
             let execution_unit = request
                 .execution_units
                 .get(unit_index)
@@ -1083,7 +1101,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
                 unit_count,
                 WitnessCommitmentSegmentIdentity {
                     unit_index: unit_index_u32,
-                    trace_instance_index: commitments.trace_instance_index(),
+                    trace_instance_index,
                 },
             )
             .map_err(|error| format!("witness segment id failed: {error}"))?;
@@ -1093,7 +1111,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
                 .ok_or_else(|| format!("missing witness segment for unit {unit_index}"))?;
             Ok(ProvePcsFriTranscriptTraceSegmentValueRef {
                 unit_index,
-                trace_instance_index: commitments.trace_instance_index(),
+                trace_instance_index,
                 execution_unit,
                 trace: output.trace(),
                 publics: output.publics(),
@@ -1359,6 +1377,7 @@ fn collect_proof_unit_values(
     explicit_values: &[ProveUnitValues],
 ) -> Result<Vec<ProveUnitValues>, String> {
     if !explicit_values.is_empty() {
+        validate_explicit_unit_values_trace_coverage(outputs, explicit_values)?;
         return Ok(explicit_values.to_vec());
     }
 
@@ -1380,6 +1399,44 @@ fn collect_proof_unit_values(
         }
     }
     Ok(values)
+}
+
+fn validate_explicit_unit_values_trace_coverage(
+    outputs: &[ProveWitnessTraceCommitments],
+    explicit_values: &[ProveUnitValues],
+) -> Result<(), String> {
+    let mut output_traces = BTreeMap::<usize, BTreeSet<u32>>::new();
+    for output in outputs {
+        output_traces
+            .entry(output.commitments().unit_index())
+            .or_default()
+            .insert(output.commitments().trace_instance_index());
+    }
+
+    let mut explicit_traces = BTreeMap::<usize, BTreeSet<u32>>::new();
+    for values in explicit_values {
+        explicit_traces
+            .entry(values.unit_index)
+            .or_default()
+            .insert(values.trace_instance_index);
+    }
+
+    for (unit_index, traces) in output_traces {
+        if traces.len() <= 1 {
+            continue;
+        }
+        let Some(explicit) = explicit_traces.get(&unit_index) else {
+            continue;
+        };
+        for trace_instance_index in traces {
+            if !explicit.contains(&trace_instance_index) {
+                return Err(format!(
+                    "missing explicit unit values for unit {unit_index} trace instance {trace_instance_index}"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1414,6 +1471,51 @@ mod tests {
 
         assert_eq!(selected, &[Felt::from_u64(29)]);
         assert!(values.packed_values_for_identity(0, 1).is_none());
+    }
+
+    #[test]
+    fn selects_evaluation_values_by_trace_identity() {
+        let values = [
+            ProvePcsEvaluationValues {
+                unit_index: 0,
+                trace_instance_index: 0,
+                values: vec![Ext3::from_u64s([11, 13, 17])],
+            },
+            ProvePcsEvaluationValues {
+                unit_index: 0,
+                trace_instance_index: 2,
+                values: vec![Ext3::from_u64s([29, 31, 37])],
+            },
+        ];
+
+        let selected = values
+            .values_for_identity(0, 2)
+            .expect("trace identity values should be selected");
+
+        assert_eq!(selected, &[Ext3::from_u64s([29, 31, 37])]);
+        assert!(values.values_for_identity(0, 1).is_none());
+    }
+
+    #[test]
+    fn rejects_missing_explicit_evaluation_values_by_trace_identity() {
+        let values = [ProvePcsEvaluationValues {
+            unit_index: 0,
+            trace_instance_index: 0,
+            values: vec![Ext3::from_u64s([11, 13, 17])],
+        }];
+
+        let error = transcript_evaluation_values_for_identity(&values, 0, 2, true)
+            .expect_err("missing explicit trace identity should reject");
+
+        assert_eq!(
+            error,
+            "missing explicit evaluation values for unit 0 trace instance 2"
+        );
+        assert!(
+            transcript_evaluation_values_for_identity(&values, 0, 2, false)
+                .expect("implicit missing values should allow fallback")
+                .is_none()
+        );
     }
 
     #[test]

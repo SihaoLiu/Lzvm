@@ -81,6 +81,7 @@ use lzvm_prover::pcs_transcript::{
     derive_pcs_final_query_challenge_from_segments, derive_pcs_transcript_challenges,
     PcsTranscriptInputs, PcsTranscriptSegmentInputs,
 };
+use lzvm_prover::unit_values::ProveUnitValues;
 use lzvm_prover::witness_commitment::commit_witness_trace_stages;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::{
@@ -2446,8 +2447,8 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
 }
 
 #[test]
-fn rejects_all_units_proof_output_with_multiple_trace_instances_for_unit() {
-    let dir = temp_dir("proof-artifact-all-units-duplicate-trace-unit");
+fn builds_all_units_proof_output_with_multiple_trace_instances_for_unit() {
+    let dir = temp_dir("proof-artifact-all-units-trace-instances");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("fixture directory should be created");
     let guest_image = dir.join("guest.elf");
@@ -2493,7 +2494,7 @@ fn rejects_all_units_proof_output_with_multiple_trace_instances_for_unit() {
     )
     .expect("segmented guest PC trace commitments should run");
 
-    let error = lzvm_prover::build_witness_proof_artifact_for_all_units(
+    let proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
@@ -2511,12 +2512,181 @@ fn rejects_all_units_proof_output_with_multiple_trace_instances_for_unit() {
             include_contribution_segment: false,
         },
     )
-    .expect_err("multiple trace instances for one unit should be rejected");
+    .expect("proof artifact should build")
+    .expect("proof artifact should exist");
+    let proof = parse_proof_artifact(&encode_proof_artifact(&proof).expect("proof should encode"))
+        .expect("proof should parse");
+    let unit_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID)
+        .expect("unit values segment should exist");
+    let unit_values =
+        parse_unit_values_segment(&unit_values_segment.data).expect("unit values should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(proof.setup_hash, setup_hash);
+    assert_eq!(unit_values.units.len(), 2);
+    assert_eq!(unit_values.units[0].unit_index, 0);
+    assert_eq!(unit_values.units[0].trace_instance_index, 0);
+    assert_eq!(unit_values.units[1].unit_index, 0);
+    assert_eq!(unit_values.units[1].trace_instance_index, 1);
+}
+
+#[test]
+fn rejects_all_units_contribution_proof_with_multiple_trace_instances_for_unit() {
+    let dir = temp_dir("contribution-proof-all-units-trace-instances");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    )
+    .expect("guest image should be written");
+
+    let mut unit = sample_zisk_main_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
+        .expect("constant tree should be written");
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: Vec::new(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let outputs = run_prove_witness_commitments_with_guest_pc_trace_segments(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        16,
+    )
+    .expect("segmented guest PC trace commitments should run");
+
+    let error = lzvm_prover::build_witness_contribution_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &outputs,
+            auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+            unit_values: &[],
+            evaluation_values_segment: None,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        },
+    )
+    .expect_err("contribution entries should reject duplicate trace identities");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(
         error,
-        "all-units proof output has multiple trace instances for unit 0"
+        "witness contribution has multiple outputs for unit 0 trace instance 1; contribution entries cannot distinguish trace instances"
+    );
+}
+
+#[test]
+fn rejects_partial_explicit_unit_values_for_multiple_trace_instances() {
+    let dir = temp_dir("proof-artifact-partial-unit-values-trace-instances");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    )
+    .expect("guest image should be written");
+
+    let mut unit = sample_zisk_main_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
+        .expect("constant tree should be written");
+    let catalog = sample_catalog(unit);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: Vec::new(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let outputs = run_prove_witness_commitments_with_guest_pc_trace_segments(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        16,
+    )
+    .expect("segmented guest PC trace commitments should run");
+    let explicit_unit_values = vec![ProveUnitValues {
+        unit_index: 0,
+        trace_instance_index: 0,
+        unit_value_map: plan.run_plan.schedule.units[0].unit_value_map.clone(),
+        packed_values: outputs[0].auxiliary_inputs().unit_values.clone(),
+    }];
+
+    let error = lzvm_prover::build_witness_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &outputs,
+            auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+            unit_values: &explicit_unit_values,
+            evaluation_values_segment: None,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        },
+    )
+    .expect_err("partial explicit unit values should reject");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        error,
+        "missing explicit unit values for unit 0 trace instance 1"
     );
 }
 

@@ -384,13 +384,6 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 }
             };
             if outputs.len() > 1 {
-                if plan.inputs.public_inputs.is_some() {
-                    let _ = writeln!(
-                        stderr,
-                        "prove witness failed: segmented guest PC trace proof output is unsupported"
-                    );
-                    return 1;
-                }
                 if let Err(message) = finish_all_units_witness_run(
                     FinishAllUnitsWitnessRunRequest {
                         catalog: &catalog,
@@ -1004,6 +997,7 @@ fn finish_all_units_witness_run(
     } = request;
     let unit_values = load_batch_unit_values_inputs(
         &plan.run_plan.schedule,
+        outputs,
         parsed.unit_values_segment.as_deref(),
         &auxiliary_inputs.unit_values,
     )?;
