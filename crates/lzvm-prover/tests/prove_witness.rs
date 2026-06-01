@@ -2713,6 +2713,75 @@ fn runs_all_units_with_cross_unit_source_lookup_balance() {
 }
 
 #[test]
+fn single_unit_witness_allows_cross_unit_source_lookup_balance_to_remain_open() {
+    let dir = temp_dir("single-unit-cross-unit-source-lookup");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [13_u8]).expect("input data should be written");
+
+    let mut first_unit = sample_unit();
+    first_unit.paths.constant_tree = dir.join("unit-a.consttree");
+    declare_source_lookup_commitment_column(&mut first_unit);
+    first_unit.regular_hints = HintProgram {
+        hints: vec![source_lookup_balance_hint(SOURCE_LOOKUP_PROVES_HINT)],
+    };
+
+    let mut second_unit = sample_unit();
+    second_unit.paths.unit_id = Some(1);
+    second_unit.paths.unit_name = Some("unit-b".to_owned());
+    second_unit.paths.prefix = "unit-b".into();
+    second_unit.paths.metadata_prefix = Some("unit-b".into());
+    second_unit.paths.program_prefix = Some("unit-b".into());
+    second_unit.paths.verification_key_prefix = "unit-b".into();
+    second_unit.paths.constant_tree = dir.join("unit-b.consttree");
+    declare_source_lookup_commitment_column(&mut second_unit);
+    second_unit.regular_hints = HintProgram {
+        hints: vec![source_lookup_balance_hint(SOURCE_LOOKUP_ASSUMES_HINT)],
+    };
+
+    let first_tree_bytes = expected_constant_tree_byte_count(&first_unit.metadata.setup)
+        .expect("tree size should derive");
+    let second_tree_bytes = expected_constant_tree_byte_count(&second_unit.metadata.setup)
+        .expect("tree size should derive");
+    fs::write(
+        &first_unit.paths.constant_tree,
+        vec![0_u8; first_tree_bytes],
+    )
+    .expect("first constant tree should be written");
+    fs::write(
+        &second_unit.paths.constant_tree,
+        vec![0_u8; second_tree_bytes],
+    )
+    .expect("second constant tree should be written");
+
+    let catalog = sample_catalog_units(vec![first_unit, second_unit]);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let output = run_prove_witness_commitments_with_trace_bytes(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        &sample_trace_bytes(17),
+    )
+    .expect("single-unit witness should not require other units' lookup entries");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(output.commitments().unit_index(), 0);
+}
+
+#[test]
 fn precomputed_trace_bytes_preserve_output_overflow_error() {
     let dir = temp_dir("precomputed-trace-bytes-overflow");
     let _ = fs::remove_dir_all(&dir);

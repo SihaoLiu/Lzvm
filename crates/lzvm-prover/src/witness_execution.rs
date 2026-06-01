@@ -3,7 +3,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use lzvm_artifacts::fixed::FixedColumns;
-use lzvm_artifacts::hint_program::{source_unimplemented_hint_name, HintProgram};
+use lzvm_artifacts::hint_program::{
+    source_unimplemented_hint_name, HintProgram, SOURCE_ASSIGNMENT_CHECK_HINT,
+};
+use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::trace_bundle::TraceBundleSource;
@@ -137,10 +140,21 @@ struct WitnessSharedInputs {
     publics: Vec<Felt>,
 }
 
+enum WitnessRegularHintMode<'a> {
+    Balanced(&'a mut SourceLookupBalance),
+    AssignmentsOnly,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct WitnessProofInputs<'a> {
     publics: &'a [Felt],
     auxiliary_inputs: &'a ProveWitnessAuxiliaryInputs,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct WitnessRegularHintProgramInputs<'a> {
+    program: &'a HintProgram,
+    proof_inputs: WitnessProofInputs<'a>,
 }
 
 struct WitnessTraceCommitmentInput<'a> {
@@ -611,21 +625,34 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
     validate_witness_unit_index(plan, unit_index)?;
     let shared_inputs = load_witness_shared_inputs(plan)?;
     let auxiliary_inputs = Arc::new(auxiliary_inputs);
-    let output = run_prove_witness_commitments_with_trace_backend_inner(
-        plan,
-        unit_index,
-        &shared_inputs,
-        Arc::clone(&auxiliary_inputs),
-        backend,
-        Some(&mut source_lookup_balance),
-    )?;
-    accumulate_witness_global_hints(
-        plan,
-        &shared_inputs.publics,
-        auxiliary_inputs.as_ref(),
-        &mut source_lookup_balance,
-    )?;
-    source_lookup_balance.validate_all_units()?;
+    let defer_cross_unit_source_lookup = should_defer_cross_unit_source_lookup(plan, unit_index);
+    let output = if defer_cross_unit_source_lookup {
+        run_prove_witness_commitments_with_trace_backend_inner(
+            plan,
+            unit_index,
+            &shared_inputs,
+            Arc::clone(&auxiliary_inputs),
+            backend,
+            WitnessRegularHintMode::AssignmentsOnly,
+        )?
+    } else {
+        let output = run_prove_witness_commitments_with_trace_backend_inner(
+            plan,
+            unit_index,
+            &shared_inputs,
+            Arc::clone(&auxiliary_inputs),
+            backend,
+            WitnessRegularHintMode::Balanced(&mut source_lookup_balance),
+        )?;
+        accumulate_witness_global_hints(
+            plan,
+            &shared_inputs.publics,
+            auxiliary_inputs.as_ref(),
+            &mut source_lookup_balance,
+        )?;
+        source_lookup_balance.validate_all_units()?;
+        output
+    };
     Ok(output)
 }
 
@@ -639,22 +666,50 @@ pub fn run_prove_witness_commitments_with_trace_bytes(
     validate_witness_unit_index(plan, unit_index)?;
     let shared_inputs = load_witness_shared_inputs(plan)?;
     let auxiliary_inputs = Arc::new(auxiliary_inputs);
-    let output = run_prove_witness_commitments_with_trace_bytes_inner(
-        plan,
-        unit_index,
-        &shared_inputs,
-        Arc::clone(&auxiliary_inputs),
-        trace_bytes,
-        Some(&mut source_lookup_balance),
-    )?;
-    accumulate_witness_global_hints(
-        plan,
-        &shared_inputs.publics,
-        auxiliary_inputs.as_ref(),
-        &mut source_lookup_balance,
-    )?;
-    source_lookup_balance.validate_all_units()?;
+    let defer_cross_unit_source_lookup = should_defer_cross_unit_source_lookup(plan, unit_index);
+    let output = if defer_cross_unit_source_lookup {
+        run_prove_witness_commitments_with_trace_bytes_inner(
+            plan,
+            unit_index,
+            &shared_inputs,
+            Arc::clone(&auxiliary_inputs),
+            trace_bytes,
+            WitnessRegularHintMode::AssignmentsOnly,
+        )?
+    } else {
+        let output = run_prove_witness_commitments_with_trace_bytes_inner(
+            plan,
+            unit_index,
+            &shared_inputs,
+            Arc::clone(&auxiliary_inputs),
+            trace_bytes,
+            WitnessRegularHintMode::Balanced(&mut source_lookup_balance),
+        )?;
+        accumulate_witness_global_hints(
+            plan,
+            &shared_inputs.publics,
+            auxiliary_inputs.as_ref(),
+            &mut source_lookup_balance,
+        )?;
+        source_lookup_balance.validate_all_units()?;
+        output
+    };
     Ok(output)
+}
+
+fn should_defer_cross_unit_source_lookup(plan: &ProveExecutionPlan, unit_index: usize) -> bool {
+    let Some(unit) = plan.run_plan.schedule.units.get(unit_index) else {
+        return false;
+    };
+    unit.kind == KeyUnitKind::Basic
+        && plan
+            .run_plan
+            .schedule
+            .units
+            .iter()
+            .filter(|unit| unit.kind == KeyUnitKind::Basic)
+            .count()
+            > 1
 }
 
 fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?Sized>(
@@ -663,7 +718,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
     shared_inputs: &WitnessSharedInputs,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     backend: &B,
-    source_lookup_balance: Option<&mut SourceLookupBalance>,
+    regular_hint_mode: WitnessRegularHintMode<'_>,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
     let unit_count = plan.run_plan.schedule.units.len();
     let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
@@ -699,7 +754,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             layout,
             trace,
         },
-        source_lookup_balance,
+        regular_hint_mode,
     )
 }
 
@@ -790,7 +845,7 @@ fn run_prove_witness_commitments_with_trace_bytes_inner(
     shared_inputs: &WitnessSharedInputs,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     trace_bytes: &[u8],
-    source_lookup_balance: Option<&mut SourceLookupBalance>,
+    regular_hint_mode: WitnessRegularHintMode<'_>,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
     let unit_count = plan.run_plan.schedule.units.len();
     let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
@@ -822,7 +877,7 @@ fn run_prove_witness_commitments_with_trace_bytes_inner(
             layout,
             trace,
         },
-        source_lookup_balance,
+        regular_hint_mode,
     )
 }
 
@@ -832,7 +887,7 @@ fn run_prove_witness_commitments_from_trace_inner(
     shared_inputs: &WitnessSharedInputs,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     input: WitnessTraceCommitmentInput<'_>,
-    source_lookup_balance: Option<&mut SourceLookupBalance>,
+    regular_hint_mode: WitnessRegularHintMode<'_>,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
     let WitnessTraceCommitmentInput {
         unit,
@@ -860,25 +915,26 @@ fn run_prove_witness_commitments_from_trace_inner(
         &mut fixed_columns,
         proof_inputs,
     )?;
-    if let Some(source_lookup_balance) = source_lookup_balance {
-        accumulate_witness_regular_hints(
+    match regular_hint_mode {
+        WitnessRegularHintMode::Balanced(source_lookup_balance) => {
+            accumulate_witness_regular_hints(
+                execution_unit,
+                unit_index,
+                &layout,
+                &trace,
+                &mut fixed_columns,
+                proof_inputs,
+                source_lookup_balance,
+            )?
+        }
+        WitnessRegularHintMode::AssignmentsOnly => validate_witness_regular_source_assignments(
             execution_unit,
             unit_index,
             &layout,
             &trace,
             &mut fixed_columns,
             proof_inputs,
-            source_lookup_balance,
-        )?;
-    } else {
-        validate_witness_regular_hints(
-            execution_unit,
-            unit_index,
-            &layout,
-            &trace,
-            &shared_inputs.publics,
-            auxiliary_inputs.as_ref(),
-        )?;
+        )?,
     }
     let trace_rows = trace.row_count();
     let trace_columns = trace.column_count();
@@ -920,7 +976,7 @@ pub fn run_prove_witness_commitments_for_all_units(
             &shared_inputs,
             Arc::clone(&auxiliary_inputs),
             backend,
-            Some(&mut source_lookup_balance),
+            WitnessRegularHintMode::Balanced(&mut source_lookup_balance),
         )
         .map_err(|error| {
             format!("run witness commitments failed for unit {unit_index}: {error}")
@@ -962,7 +1018,7 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
             &shared_inputs,
             Arc::clone(&auxiliary_inputs),
             trace_bytes,
-            Some(&mut source_lookup_balance),
+            WitnessRegularHintMode::Balanced(&mut source_lookup_balance),
         )
         .map_err(|error| {
             format!("run witness commitments failed for unit {unit_index}: {error}")
@@ -1187,6 +1243,7 @@ fn is_regular_constraint_input_buffer(buffer: &str) -> bool {
     )
 }
 
+#[cfg(test)]
 fn validate_witness_regular_hints(
     plan_unit: &ProveExecutionUnitArtifacts,
     unit_index: usize,
@@ -1231,7 +1288,83 @@ where
     }
     reject_unsupported_regular_hints(&plan_unit.regular_hints, unit_index)?;
 
-    let requirements = regular_hint_input_requirements(&plan_unit.regular_hints);
+    accumulate_witness_regular_hint_program(
+        plan_unit,
+        unit_index,
+        layout,
+        trace,
+        fixed_columns_cache,
+        WitnessRegularHintProgramInputs {
+            program: &plan_unit.regular_hints,
+            proof_inputs,
+        },
+        source_lookup_balance,
+    )
+}
+
+fn validate_witness_regular_source_assignments<L>(
+    plan_unit: &ProveExecutionUnitArtifacts,
+    unit_index: usize,
+    layout: &WitnessTraceLayout,
+    trace: &WitnessTraceBuffer,
+    fixed_columns_cache: &mut WitnessFixedColumnsCache<L>,
+    proof_inputs: WitnessProofInputs<'_>,
+) -> Result<(), ProveWitnessCommitmentError>
+where
+    L: FnMut(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult,
+{
+    if plan_unit.regular_hints.hints.is_empty() {
+        return Ok(());
+    }
+    reject_unsupported_regular_hints(&plan_unit.regular_hints, unit_index)?;
+    let assignment_program = HintProgram {
+        hints: plan_unit
+            .regular_hints
+            .hints
+            .iter()
+            .filter(|hint| hint.name == SOURCE_ASSIGNMENT_CHECK_HINT)
+            .cloned()
+            .collect(),
+    };
+    if assignment_program.hints.is_empty() {
+        return Ok(());
+    }
+    let mut source_lookup_balance = SourceLookupBalance::default();
+    accumulate_witness_regular_hint_program(
+        plan_unit,
+        unit_index,
+        layout,
+        trace,
+        fixed_columns_cache,
+        WitnessRegularHintProgramInputs {
+            program: &assignment_program,
+            proof_inputs,
+        },
+        &mut source_lookup_balance,
+    )?;
+    source_lookup_balance.validate(unit_index)?;
+    Ok(())
+}
+
+fn accumulate_witness_regular_hint_program<L>(
+    plan_unit: &ProveExecutionUnitArtifacts,
+    unit_index: usize,
+    layout: &WitnessTraceLayout,
+    trace: &WitnessTraceBuffer,
+    fixed_columns_cache: &mut WitnessFixedColumnsCache<L>,
+    inputs: WitnessRegularHintProgramInputs<'_>,
+    source_lookup_balance: &mut SourceLookupBalance,
+) -> Result<(), ProveWitnessCommitmentError>
+where
+    L: FnMut(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult,
+{
+    let program = inputs.program;
+    let proof_inputs = inputs.proof_inputs;
+    if program.hints.is_empty() {
+        return Ok(());
+    }
+
+    let requirements = regular_hint_input_requirements(program);
 
     let fixed_material = if requirements.fixed_columns {
         Some(fixed_columns_cache.get_or_load(unit_index, plan_unit, layout)?)
@@ -1276,7 +1409,7 @@ where
     for row in 0..layout.row_count() {
         let resolved = resolve_regular_hint_program_for_row(
             &plan_unit.setup,
-            &plan_unit.regular_hints,
+            program,
             row,
             RegularConstraintInputs {
                 domain_size: layout.row_count(),
