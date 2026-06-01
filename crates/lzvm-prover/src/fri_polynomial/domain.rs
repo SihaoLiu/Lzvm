@@ -96,12 +96,61 @@ fn build_every_row_zerofier(
     base_size: u64,
     domain_points: &[Felt],
 ) -> Result<Vec<Felt>, FriPolynomialError> {
-    let mut denominators: Vec<_> = domain_points
-        .iter()
-        .map(|x| x.pow(base_size) - Felt::ONE)
-        .collect();
+    let mut denominators = build_every_row_denominators(base_size, domain_points);
     batch_inverse_zerofier_values(0, &mut denominators)?;
     Ok(denominators)
+}
+
+fn build_every_row_denominators(base_size: u64, domain_points: &[Felt]) -> Vec<Felt> {
+    if domain_points.is_empty() {
+        return Vec::new();
+    }
+
+    if let Some(period) = every_row_denominator_period(base_size, domain_points) {
+        let cycle: Vec<_> = domain_points[..period]
+            .iter()
+            .map(|x| every_row_denominator(*x, base_size))
+            .collect();
+        return (0..domain_points.len())
+            .map(|row| cycle[row % period])
+            .collect();
+    }
+
+    domain_points
+        .iter()
+        .map(|x| every_row_denominator(*x, base_size))
+        .collect()
+}
+
+fn every_row_denominator_period(base_size: u64, domain_points: &[Felt]) -> Option<usize> {
+    if let Ok(base_len) = usize::try_from(base_size) {
+        if base_len != 0
+            && base_len.is_power_of_two()
+            && domain_points.len() >= base_len
+            && domain_points.len().is_multiple_of(base_len)
+            && domain_points.len().is_power_of_two()
+        {
+            let bits = domain_points.len().trailing_zeros() as usize;
+            let root = Felt::root_of_unity(bits)?;
+            let mut point = SHIFT;
+            for domain_point in domain_points {
+                if *domain_point != point {
+                    return None;
+                }
+                point = point * root;
+            }
+            return Some(domain_points.len() / base_len);
+        }
+    }
+
+    None
+}
+
+fn every_row_denominator(x: Felt, base_size: u64) -> Felt {
+    #[cfg(test)]
+    EVERY_ROW_ZEROFIER_POW_COUNT.with(|count| count.set(count.get() + 1));
+
+    x.pow(base_size) - Felt::ONE
 }
 
 fn batch_inverse_zerofier_values(
@@ -225,6 +274,7 @@ fn scalar_ext(value: Felt) -> Ext3 {
 #[cfg(test)]
 thread_local! {
     static EVERY_ROW_ZEROFIER_INVERSE_COUNT: Cell<usize> = const { Cell::new(0) };
+    static EVERY_ROW_ZEROFIER_POW_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -249,6 +299,59 @@ mod tests {
 
         assert_eq!(values, expected);
         assert_eq!(EVERY_ROW_ZEROFIER_INVERSE_COUNT.with(Cell::get), 1);
+    }
+
+    #[test]
+    fn every_row_zerofier_reuses_periodic_denominators() {
+        let domain_points = build_fri_domain_points(3).expect("domain points should build");
+        let expected: Vec<_> = domain_points
+            .iter()
+            .map(|x| {
+                (x.pow(4) - Felt::ONE)
+                    .inverse()
+                    .expect("coset denominator should be nonzero")
+            })
+            .collect();
+
+        EVERY_ROW_ZEROFIER_POW_COUNT.with(|count| count.set(0));
+        let values =
+            build_every_row_zerofier(4, &domain_points).expect("every row zerofier should build");
+
+        assert_eq!(values, expected);
+        assert_eq!(EVERY_ROW_ZEROFIER_POW_COUNT.with(Cell::get), 2);
+    }
+
+    #[test]
+    fn every_row_zerofier_keeps_nonstandard_domain_values() {
+        let mut domain_points = build_fri_domain_points(3).expect("domain points should build");
+        domain_points[5] = domain_points[5] * Felt::from_u64(3);
+        let expected: Vec<_> = domain_points
+            .iter()
+            .map(|x| every_row_denominator(*x, 4))
+            .collect();
+
+        EVERY_ROW_ZEROFIER_POW_COUNT.with(|count| count.set(0));
+        let values = build_every_row_denominators(4, &domain_points);
+
+        assert_eq!(values, expected);
+        assert_eq!(EVERY_ROW_ZEROFIER_POW_COUNT.with(Cell::get), 8);
+    }
+
+    #[test]
+    fn every_row_zerofier_reports_nonstandard_zero_row() {
+        let mut domain_points = build_fri_domain_points(3).expect("domain points should build");
+        domain_points[5] = Felt::ONE;
+
+        let err = build_every_row_zerofier(4, &domain_points)
+            .expect_err("nonstandard zero denominator should fail");
+
+        assert_eq!(
+            err,
+            FriPolynomialError::ZeroZerofierDenominator {
+                boundary_index: 0,
+                row: 5,
+            }
+        );
     }
 
     #[test]
