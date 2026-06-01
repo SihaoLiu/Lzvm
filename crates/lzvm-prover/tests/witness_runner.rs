@@ -721,11 +721,11 @@ fn guest_pc_trace_backend_reports_layout_capacity_before_larger_instruction_limi
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    match result {
-        Err(WitnessTraceRunError::Call(WitnessCallError::OutputOverflow {
-            produced_len: 48,
-            output_len: 32,
-        })) => {}
+    match result.expect_err("layout capacity should reject") {
+        WitnessTraceRunError::Call(WitnessCallError::Backend { message }) => assert_eq!(
+            message,
+            "guest PC trace backend exceeded trace layout capacity: rows 2, row width 2, required rows at least 3"
+        ),
         other => panic!("unexpected layout capacity result: {other:?}"),
     }
 }

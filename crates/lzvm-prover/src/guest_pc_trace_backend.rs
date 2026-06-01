@@ -98,6 +98,11 @@ enum GuestPcTraceBackendError {
         column: String,
         value: u64,
     },
+    TraceCapacityExceeded {
+        rows: usize,
+        row_width: usize,
+        required_rows: usize,
+    },
     OutputOverflow {
         produced_len: usize,
         output_len: usize,
@@ -159,6 +164,14 @@ impl fmt::Display for GuestPcTraceBackendError {
                 f,
                 "guest PC trace backend value is non-canonical at row {row} column {column}: {value}"
             ),
+            Self::TraceCapacityExceeded {
+                rows,
+                row_width,
+                required_rows,
+            } => write!(
+                f,
+                "guest PC trace backend exceeded trace layout capacity: rows {rows}, row width {row_width}, required rows at least {required_rows}"
+            ),
             Self::OutputOverflow {
                 produced_len,
                 output_len,
@@ -189,6 +202,7 @@ impl std::error::Error for GuestPcTraceBackendError {
             | Self::TooManyRegisterWrites { .. }
             | Self::TooManyMemoryAccesses { .. }
             | Self::NonCanonicalTraceValue { .. }
+            | Self::TraceCapacityExceeded { .. }
             | Self::OutputOverflow { .. } => None,
         }
     }
@@ -246,12 +260,9 @@ fn compute_guest_pc_trace(
     let trace = match trace {
         Ok(trace) => trace,
         Err(error) => {
-            if let Some(error) = layout_capacity_error(
-                layout_capacity,
-                run_instruction_limit,
-                buffers.output().len(),
-                &error,
-            ) {
+            if let Some(error) =
+                layout_capacity_error(layout_capacity, run_instruction_limit, &error)
+            {
                 return Err(error);
             }
             return Err(GuestPcTraceBackendError::GuestRun(error));
@@ -343,7 +354,6 @@ fn layout_trace_capacity(
 fn layout_capacity_error(
     capacity: Option<LayoutTraceCapacity>,
     run_instruction_limit: u64,
-    output_len: usize,
     error: &GuestMachineRunError,
 ) -> Option<GuestPcTraceBackendError> {
     let capacity = capacity?;
@@ -353,12 +363,10 @@ fn layout_capacity_error(
         } if *instruction_limit == run_instruction_limit
             && run_instruction_limit == capacity.instruction_limit =>
         {
-            Some(GuestPcTraceBackendError::OutputOverflow {
-                produced_len: layout_trace_byte_len(
-                    capacity.row_count.saturating_add(1),
-                    capacity.row_width,
-                ),
-                output_len,
+            Some(GuestPcTraceBackendError::TraceCapacityExceeded {
+                rows: capacity.row_count,
+                row_width: capacity.row_width,
+                required_rows: capacity.row_count.saturating_add(1),
             })
         }
         _ => None,
