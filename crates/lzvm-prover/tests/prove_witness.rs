@@ -85,7 +85,7 @@ use lzvm_prover::witness_commitment::commit_witness_trace_stages;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::{
     load_witness_library, TraceBytesBackend, WitnessBackend, WitnessCallError,
-    WitnessComputeContext, WitnessTraceBuffers, WitnessTraceOutput,
+    WitnessComputeContext, WitnessTraceBuffers, WitnessTraceOutput, WitnessTraceUnitValue,
 };
 use lzvm_prover::witness_runner::{run_witness_trace, WitnessTraceRunError};
 use lzvm_prover::{
@@ -919,7 +919,26 @@ impl WitnessBackend for ContextRecordingBackend {
         let trace_bytes = sample_trace_bytes(buffers.input().first().copied().unwrap_or(0).into());
         let produced_len = trace_bytes.len();
         buffers.output_mut()[..produced_len].copy_from_slice(&trace_bytes);
-        Ok(WitnessTraceOutput { produced_len })
+        Ok(WitnessTraceOutput::new(produced_len))
+    }
+}
+
+struct UnitValueBackend {
+    values: Vec<WitnessTraceUnitValue>,
+}
+
+impl WitnessBackend for UnitValueBackend {
+    fn compute(
+        &self,
+        buffers: &mut WitnessTraceBuffers,
+    ) -> Result<WitnessTraceOutput, WitnessCallError> {
+        let trace_bytes = sample_trace_bytes(17);
+        let produced_len = trace_bytes.len();
+        buffers.output_mut()[..produced_len].copy_from_slice(&trace_bytes);
+        Ok(WitnessTraceOutput::with_unit_values(
+            produced_len,
+            self.values.clone(),
+        ))
     }
 }
 
@@ -1024,6 +1043,56 @@ fn witness_backend_receives_guest_image_context_from_execution_plan() {
             trace_columns: 5,
             input: vec![7],
         }
+    );
+}
+
+#[test]
+fn uses_backend_unit_values_for_output_auxiliary_inputs() {
+    let dir = temp_dir("backend-unit-values");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.metadata.setup.unit_value_map = vec![stage_value("segment_initial_pc", 1)];
+    let catalog = sample_catalog(unit);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let auxiliary_inputs = ProveWitnessAuxiliaryInputs {
+        unit_values: vec![Felt::ZERO],
+        proof_values: vec![Felt::from_u64(31)],
+        ..ProveWitnessAuxiliaryInputs::default()
+    };
+    let backend = UnitValueBackend {
+        values: vec![WitnessTraceUnitValue::new(
+            "segment_initial_pc",
+            vec![Felt::from_u64(123)],
+        )],
+    };
+
+    let output =
+        run_prove_witness_commitments_with_trace_backend(&plan, 0, auxiliary_inputs, &backend)
+            .expect("backend unit values should be used");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        output.auxiliary_inputs().unit_values,
+        vec![Felt::from_u64(123)]
+    );
+    assert_eq!(
+        output.auxiliary_inputs().proof_values,
+        vec![Felt::from_u64(31)]
     );
 }
 

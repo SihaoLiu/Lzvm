@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use libloading::Library;
 use lzvm_artifacts::guest_image::GuestImageInfo;
+use lzvm_field::Felt;
 
 use crate::witness_layout::WitnessTraceLayout;
 
@@ -72,9 +73,49 @@ impl<'a> WitnessTraceBuffers<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WitnessTraceUnitValue {
+    name: String,
+    values: Vec<Felt>,
+}
+
+impl WitnessTraceUnitValue {
+    pub fn new(name: impl Into<String>, values: Vec<Felt>) -> Self {
+        Self {
+            name: name.into(),
+            values,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn values(&self) -> &[Felt] {
+        &self.values
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WitnessTraceOutput {
     pub produced_len: usize,
+    pub unit_values: Vec<WitnessTraceUnitValue>,
+}
+
+impl WitnessTraceOutput {
+    pub fn new(produced_len: usize) -> Self {
+        Self {
+            produced_len,
+            unit_values: Vec::new(),
+        }
+    }
+
+    pub fn with_unit_values(produced_len: usize, unit_values: Vec<WitnessTraceUnitValue>) -> Self {
+        Self {
+            produced_len,
+            unit_values,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,7 +195,7 @@ impl WitnessBackend for TraceBytesBackend<'_> {
             });
         }
         buffers.output_mut()[..produced_len].copy_from_slice(&self.trace_bytes);
-        Ok(WitnessTraceOutput { produced_len })
+        Ok(WitnessTraceOutput::new(produced_len))
     }
 }
 
@@ -187,9 +228,7 @@ impl LoadedWitnessLibrary {
                 output_len: buffers.output.len(),
             });
         }
-        Ok(WitnessTraceOutput {
-            produced_len: result.produced_len,
-        })
+        Ok(WitnessTraceOutput::new(result.produced_len))
     }
 
     /// # Safety

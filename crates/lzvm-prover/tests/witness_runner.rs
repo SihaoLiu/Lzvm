@@ -14,7 +14,8 @@ use lzvm_prover::witness_loader::{
     WitnessTraceBuffers, WitnessTraceOutput,
 };
 use lzvm_prover::witness_runner::{
-    run_witness_trace, run_witness_trace_with_context, WitnessTraceRequest, WitnessTraceRunError,
+    run_witness_trace, run_witness_trace_output_with_context, run_witness_trace_with_context,
+    WitnessTraceRequest, WitnessTraceRunError,
 };
 use lzvm_prover::witness_trace::WitnessTraceError;
 use lzvm_prover::zisk_fcalls::{ZISK_INPUT_ADDRESS, ZISK_INPUT_READY_FCALL_ID};
@@ -323,6 +324,45 @@ fn sample_unit_with_zisk_main_address_columns(base_domain_size: u64) -> ProveUni
     )
 }
 
+fn sample_unit_with_zisk_main_register_step_columns(base_domain_size: u64) -> ProveUnitSchedule {
+    sample_unit_with_trace_columns(
+        base_domain_size,
+        vec![40],
+        vec![
+            commitment_column("a", 1, 0, 2),
+            commitment_column("b", 1, 2, 2),
+            commitment_column("c", 1, 4, 2),
+            commitment_column("flag", 1, 6, 1),
+            commitment_column("pc", 1, 7, 1),
+            commitment_column("op", 1, 8, 1),
+            commitment_column("store_pc", 1, 9, 1),
+            commitment_column("set_pc", 1, 10, 1),
+            commitment_column("a_src_reg", 1, 11, 1),
+            commitment_column("b_src_reg", 1, 12, 1),
+            commitment_column("store_reg", 1, 13, 1),
+            commitment_column("b_src_imm", 1, 14, 1),
+            commitment_column("b_src_ind", 1, 15, 1),
+            commitment_column("b_offset_imm0", 1, 16, 1),
+            commitment_column("store_ind", 1, 17, 1),
+            commitment_column("store_offset", 1, 18, 1),
+            commitment_column("air.addr1", 1, 19, 1),
+            commitment_column("air.addr2", 1, 20, 1),
+            commitment_column("store_mem", 1, 21, 1),
+            commitment_column("ind_width", 1, 22, 1),
+            commitment_column("air.a_imm1", 1, 23, 1),
+            commitment_column("air.b_imm1", 1, 24, 1),
+            commitment_column("is_external_op", 1, 25, 1),
+            commitment_column("a_src_imm", 1, 26, 1),
+            commitment_column("jmp_offset1", 1, 27, 1),
+            commitment_column("jmp_offset2", 1, 28, 1),
+            commitment_column("a_reg_prev_mem_step", 1, 29, 1),
+            commitment_column("b_reg_prev_mem_step", 1, 30, 1),
+            commitment_column("store_reg_prev_mem_step", 1, 31, 1),
+            commitment_column("store_reg_prev_value", 1, 32, 2),
+        ],
+    )
+}
+
 fn sample_unit_with_zisk_rom_columns(base_domain_size: u64) -> ProveUnitSchedule {
     sample_unit_with_trace_columns(
         base_domain_size,
@@ -412,7 +452,7 @@ impl WitnessBackend for NativeBackend {
         let output = buffers.output_mut();
         output[0..8].copy_from_slice(&(u64::from(first) + 1).to_le_bytes());
         output[8..16].copy_from_slice(&(u64::from(second) + 1).to_le_bytes());
-        Ok(WitnessTraceOutput { produced_len: 16 })
+        Ok(WitnessTraceOutput::new(16))
     }
 }
 
@@ -424,7 +464,7 @@ impl WitnessBackend for ShortBackend {
         buffers: &mut WitnessTraceBuffers,
     ) -> Result<WitnessTraceOutput, WitnessCallError> {
         buffers.output_mut()[..8].copy_from_slice(&13_u64.to_le_bytes());
-        Ok(WitnessTraceOutput { produced_len: 8 })
+        Ok(WitnessTraceOutput::new(8))
     }
 }
 
@@ -435,7 +475,7 @@ impl WitnessBackend for OverflowBackend {
         &self,
         _buffers: &mut WitnessTraceBuffers,
     ) -> Result<WitnessTraceOutput, WitnessCallError> {
-        Ok(WitnessTraceOutput { produced_len: 24 })
+        Ok(WitnessTraceOutput::new(24))
     }
 }
 
@@ -1302,6 +1342,82 @@ fn guest_pc_trace_backend_pads_zisk_main_rows_with_terminal_copy() {
         trace.value(2, 26),
         Some(Felt::from_canonical(1).expect("canonical"))
     );
+}
+
+#[test]
+fn guest_pc_trace_backend_reports_zisk_main_unit_values_and_register_steps() {
+    let dir = temp_dir("guest-zisk-main-unit-values");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_register_step_columns(4);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let output = run_witness_trace_output_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace output should include Zisk Main unit values");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let trace = output.trace();
+    assert_eq!(trace.value(1, 29), Some(Felt::from_u64(3)));
+    assert_eq!(trace.value(1, 30), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 31), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 32), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 33), Some(Felt::ZERO));
+
+    assert_eq!(unit_value(&output, "main_last_segment"), &[Felt::ONE]);
+    assert_eq!(unit_value(&output, "main_segment"), &[Felt::ZERO]);
+    assert_eq!(
+        unit_value(&output, "segment_initial_pc"),
+        &[Felt::from_canonical(ENTRY).expect("canonical")]
+    );
+    assert_eq!(
+        unit_value(&output, "segment_previous_c"),
+        &[Felt::ZERO, Felt::ZERO]
+    );
+    assert_eq!(
+        unit_value(&output, "segment_next_pc"),
+        &[Felt::from_canonical(ENTRY + 8).expect("canonical")]
+    );
+    assert_eq!(
+        unit_value(&output, "segment_last_c"),
+        &[Felt::ZERO, Felt::ZERO]
+    );
+
+    let last_reg_value = unit_value(&output, "last_reg_value");
+    assert_eq!(last_reg_value[0..2], [Felt::from_u64(7), Felt::ZERO]);
+    assert_eq!(last_reg_value[2..4], [Felt::from_u64(10), Felt::ZERO]);
+    assert!(last_reg_value[4..].iter().all(|value| *value == Felt::ZERO));
+
+    let last_reg_mem_step = unit_value(&output, "last_reg_mem_step");
+    assert_eq!(last_reg_mem_step[0], Felt::from_u64(5));
+    assert_eq!(last_reg_mem_step[1], Felt::from_u64(7));
+    assert!(last_reg_mem_step[2..]
+        .iter()
+        .all(|value| *value == Felt::ZERO));
+}
+
+fn unit_value<'a>(
+    output: &'a lzvm_prover::witness_runner::WitnessTraceRunOutput,
+    name: &str,
+) -> &'a [Felt] {
+    output
+        .unit_values()
+        .iter()
+        .find(|value| value.name() == name)
+        .unwrap_or_else(|| panic!("missing unit value {name}"))
+        .values()
 }
 
 #[test]

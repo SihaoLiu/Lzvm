@@ -43,6 +43,9 @@ impl SourceLookupBalance {
             if !source_lookup_hint_name(&hint.name) {
                 continue;
             }
+            if source_lookup_line_only_hint(hint) {
+                continue;
+            }
             let key = source_lookup_key(unit_index, row, hint)?;
             let weight = source_lookup_weight(unit_index, row, hint)?;
             let entry = self.entries.entry(key).or_insert(Felt::ZERO);
@@ -92,6 +95,10 @@ impl SourceLookupBalance {
         }
         Ok(())
     }
+}
+
+fn source_lookup_line_only_hint(hint: &ResolvedHint) -> bool {
+    hint.fields.len() == 1 && hint.fields[0].name == "line"
 }
 
 impl fmt::Display for SourceLookupHintError {

@@ -3,6 +3,7 @@ use std::fmt;
 
 use crate::witness_loader::{
     WitnessBackend, WitnessCallError, WitnessComputeContext, WitnessTraceBuffers,
+    WitnessTraceUnitValue,
 };
 use crate::witness_trace::{parse_witness_trace, WitnessTraceBuffer, WitnessTraceError};
 
@@ -11,6 +12,26 @@ pub struct WitnessTraceRequest<'a> {
     pub input: Cow<'a, [u8]>,
     pub rows: usize,
     pub columns: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WitnessTraceRunOutput {
+    trace: WitnessTraceBuffer,
+    unit_values: Vec<WitnessTraceUnitValue>,
+}
+
+impl WitnessTraceRunOutput {
+    pub fn trace(&self) -> &WitnessTraceBuffer {
+        &self.trace
+    }
+
+    pub fn unit_values(&self) -> &[WitnessTraceUnitValue] {
+        &self.unit_values
+    }
+
+    pub fn into_trace(self) -> WitnessTraceBuffer {
+        self.trace
+    }
 }
 
 impl WitnessTraceRequest<'static> {
@@ -95,6 +116,15 @@ pub fn run_witness_trace_with_context(
     context: WitnessComputeContext<'_>,
     request: WitnessTraceRequest<'_>,
 ) -> Result<WitnessTraceBuffer, WitnessTraceRunError> {
+    run_witness_trace_output_with_context(backend, context, request)
+        .map(WitnessTraceRunOutput::into_trace)
+}
+
+pub fn run_witness_trace_output_with_context(
+    backend: &(impl WitnessBackend + ?Sized),
+    context: WitnessComputeContext<'_>,
+    request: WitnessTraceRequest<'_>,
+) -> Result<WitnessTraceRunOutput, WitnessTraceRunError> {
     let output_len = trace_output_byte_len(request.rows, request.columns)?;
     let mut buffers = WitnessTraceBuffers::new(request.input, output_len)?;
     let output = backend.compute_with_context(context, &mut buffers)?;
@@ -111,11 +141,15 @@ pub fn run_witness_trace_with_context(
             output_len,
         });
     }
-    Ok(parse_witness_trace(
+    let trace = parse_witness_trace(
         &buffers.output()[..output.produced_len],
         request.rows,
         request.columns,
-    )?)
+    )?;
+    Ok(WitnessTraceRunOutput {
+        trace,
+        unit_values: output.unit_values,
+    })
 }
 
 pub(crate) fn trace_output_byte_len(

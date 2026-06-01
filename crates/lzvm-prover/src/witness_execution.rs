@@ -5,6 +5,7 @@ use std::sync::Arc;
 use lzvm_artifacts::fixed::FixedColumns;
 use lzvm_artifacts::hint_program::{source_unimplemented_hint_name, HintProgram};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
+use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::trace_bundle::TraceBundleSource;
 use lzvm_field::{Ext3, Felt, FieldError};
 
@@ -30,10 +31,11 @@ use crate::witness_layout::{
     derive_witness_trace_layout, WitnessTraceLayout, WitnessTraceLayoutError,
 };
 use crate::witness_loader::{
-    load_witness_library, WitnessBackend, WitnessCallError, WitnessComputeContext, WitnessLoadError,
+    load_witness_library, WitnessBackend, WitnessCallError, WitnessComputeContext,
+    WitnessLoadError, WitnessTraceUnitValue,
 };
 use crate::witness_runner::{
-    run_witness_trace_with_context, trace_output_byte_len, WitnessTraceRunError,
+    run_witness_trace_output_with_context, trace_output_byte_len, WitnessTraceRunError,
 };
 use crate::witness_trace::{parse_witness_trace, WitnessTraceBuffer};
 use crate::{ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassRequest, ProveUnitSchedule};
@@ -224,6 +226,10 @@ pub enum ProveWitnessCommitmentError {
     WitnessLoad(WitnessLoadError),
     Layout(WitnessTraceLayoutError),
     WitnessRun(WitnessTraceRunError),
+    BackendUnitValue {
+        unit_index: usize,
+        message: String,
+    },
     FixedColumns {
         unit_index: usize,
         path: PathBuf,
@@ -344,6 +350,13 @@ impl fmt::Display for ProveWitnessCommitmentError {
             }
             Self::Layout(error) => write!(f, "prove witness commitment layout failed: {error}"),
             Self::WitnessRun(error) => write!(f, "prove witness commitment run failed: {error}"),
+            Self::BackendUnitValue {
+                unit_index,
+                message,
+            } => write!(
+                f,
+                "prove witness commitment backend unit values failed for unit {unit_index}: {message}"
+            ),
             Self::FixedColumns {
                 unit_index,
                 path,
@@ -491,6 +504,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             | Self::MissingWitnessLibrary
             | Self::PublicInputsSetupHashMismatch
             | Self::PublicInputNonCanonical { .. }
+            | Self::BackendUnitValue { .. }
             | Self::FixedRowCountTooLarge { .. }
             | Self::FixedRowCountMismatch { .. }
             | Self::FixedColumnCountMismatch { .. }
@@ -659,7 +673,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
         },
     )?;
     let layout = derive_witness_trace_layout(unit)?;
-    let trace = run_witness_trace_with_context(
+    let trace_output = run_witness_trace_output_with_context(
         backend,
         WitnessComputeContext {
             guest_image: Some(&plan.inputs.guest_image),
@@ -668,6 +682,13 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
         },
         layout.request(&shared_inputs.input[..]),
     )?;
+    let auxiliary_inputs = merge_backend_unit_values(
+        unit_index,
+        unit,
+        auxiliary_inputs,
+        trace_output.unit_values(),
+    )?;
+    let trace = trace_output.into_trace();
     run_prove_witness_commitments_from_trace_inner(
         plan,
         unit_index,
@@ -680,6 +701,87 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
         },
         source_lookup_balance,
     )
+}
+
+fn merge_backend_unit_values(
+    unit_index: usize,
+    unit: &ProveUnitSchedule,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    backend_unit_values: &[WitnessTraceUnitValue],
+) -> Result<Arc<ProveWitnessAuxiliaryInputs>, ProveWitnessCommitmentError> {
+    if backend_unit_values.is_empty() || unit.unit_value_map.is_empty() {
+        return Ok(auxiliary_inputs);
+    }
+
+    let packed_values =
+        pack_backend_unit_values(unit_index, &unit.unit_value_map, backend_unit_values)?;
+    let mut merged = auxiliary_inputs.as_ref().clone();
+    merged.unit_values = packed_values;
+    Ok(Arc::new(merged))
+}
+
+fn pack_backend_unit_values(
+    unit_index: usize,
+    unit_value_map: &[StageValue],
+    backend_unit_values: &[WitnessTraceUnitValue],
+) -> Result<Vec<Felt>, ProveWitnessCommitmentError> {
+    let mut packed_values = Vec::new();
+    for entry in unit_value_map {
+        let mut matches = backend_unit_values
+            .iter()
+            .filter(|value| value.name() == entry.name);
+        let Some(value) = matches.next() else {
+            return Err(ProveWitnessCommitmentError::BackendUnitValue {
+                unit_index,
+                message: format!("missing {}", entry.name),
+            });
+        };
+        if matches.next().is_some() {
+            return Err(ProveWitnessCommitmentError::BackendUnitValue {
+                unit_index,
+                message: format!("duplicate {}", entry.name),
+            });
+        }
+        let expected = stage_value_packed_field_count(entry).map_err(|message| {
+            ProveWitnessCommitmentError::BackendUnitValue {
+                unit_index,
+                message,
+            }
+        })?;
+        if value.values().len() != expected {
+            return Err(ProveWitnessCommitmentError::BackendUnitValue {
+                unit_index,
+                message: format!(
+                    "{} value count mismatch: expected {}, found {}",
+                    entry.name,
+                    expected,
+                    value.values().len()
+                ),
+            });
+        }
+        packed_values.extend_from_slice(value.values());
+    }
+    Ok(packed_values)
+}
+
+fn stage_value_packed_field_count(value: &StageValue) -> Result<usize, String> {
+    let dimension = value
+        .lengths
+        .iter()
+        .try_fold(1_usize, |dimension, length| {
+            let length =
+                usize::try_from(*length).map_err(|_| "unit value length overflow".to_owned())?;
+            if length == 0 {
+                return Err("unit value length must be nonzero".to_owned());
+            }
+            dimension
+                .checked_mul(length)
+                .ok_or_else(|| "unit value length overflow".to_owned())
+        })?;
+    let width = if value.stage == 1 { 1 } else { 3 };
+    dimension
+        .checked_mul(width)
+        .ok_or_else(|| "unit value length overflow".to_owned())
 }
 
 fn run_prove_witness_commitments_with_trace_bytes_inner(
@@ -1443,6 +1545,36 @@ mod tests {
 
         reject_unsupported_regular_hints(&program, 3)
             .expect("source lookup hints should reach semantic validation");
+    }
+
+    #[test]
+    fn ignores_line_only_source_lookup_regular_hints() {
+        let program = HintProgram {
+            hints: vec![Hint {
+                name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+                fields: vec![HintField {
+                    name: "line".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::String("lookup_proves(7, [value])".to_owned()),
+                        positions: Vec::new(),
+                    }],
+                }],
+            }],
+        };
+        let plan_unit = source_lookup_plan_unit(program);
+        let schedule = source_lookup_schedule();
+        let layout = derive_witness_trace_layout(&schedule).expect("layout should derive");
+        let trace = source_lookup_trace(&[7, 1, 8, 2]);
+
+        validate_witness_regular_hints(
+            &plan_unit,
+            0,
+            &layout,
+            &trace,
+            &[],
+            &ProveWitnessAuxiliaryInputs::default(),
+        )
+        .expect("line-only lookup hints should be ignored by balance validation");
     }
 
     #[test]

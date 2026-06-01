@@ -9,7 +9,7 @@ use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{WitnessTraceBuildError, WitnessTraceLayout};
 use crate::witness_loader::{
     WitnessBackend, WitnessCallError, WitnessComputeContext, WitnessTraceBuffers,
-    WitnessTraceOutput,
+    WitnessTraceOutput, WitnessTraceUnitValue,
 };
 use crate::zisk_main::{
     lower_guest_report, ZiskMainInstruction, ZiskMainLowerError, ZiskMainOp, ZiskMainSource,
@@ -23,6 +23,13 @@ mod precompile_memory_trace;
 
 const ZISK_RAM_ADDRESS: u64 = 0xa000_0000;
 const ZISK_RAM_SIZE: u64 = 0x2000_0000;
+const ZISK_MAIN_REGISTER_START: usize = 1;
+const ZISK_MAIN_REGISTER_COUNT: usize = 31;
+const ZISK_MAIN_RESERVED_MEM_STEPS: u64 = 1;
+const ZISK_MAIN_MEM_STEPS_PER_ROW: u64 = 4;
+const ZISK_MAIN_A_MEM_STEP_OFFSET: u64 = 0;
+const ZISK_MAIN_B_MEM_STEP_OFFSET: u64 = 1;
+const ZISK_MAIN_STORE_MEM_STEP_OFFSET: u64 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestPcTraceBackend {
@@ -271,25 +278,25 @@ fn compute_guest_pc_trace(
         }
     };
     if let Some(layout) = context.trace_layout {
-        if let Some(produced_len) = write_layout_zisk_main_trace(
+        if let Some(output) = write_layout_zisk_main_trace(
             layout,
             &trace.reports,
             guest_machine_halt_pc(&trace.run.halt),
             buffers.output_mut(),
         )? {
-            return Ok(WitnessTraceOutput { produced_len });
+            return Ok(output);
         }
         if let Some(produced_len) = precompile_memory_trace::write_layout_precompile_memory_trace(
             layout,
             &trace.reports,
             buffers.output_mut(),
         )? {
-            return Ok(WitnessTraceOutput { produced_len });
+            return Ok(WitnessTraceOutput::new(produced_len));
         }
         if let Some(produced_len) =
             write_layout_pc_trace(layout, &trace.reports, buffers.output_mut())?
         {
-            return Ok(WitnessTraceOutput { produced_len });
+            return Ok(WitnessTraceOutput::new(produced_len));
         }
     }
     let produced_len =
@@ -314,7 +321,7 @@ fn compute_guest_pc_trace(
         output[offset..offset + 8].copy_from_slice(&report.address.to_le_bytes());
         output[offset + 8..offset + 16].copy_from_slice(&report.next_pc.to_le_bytes());
     }
-    Ok(WitnessTraceOutput { produced_len })
+    Ok(WitnessTraceOutput::new(produced_len))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -475,6 +482,10 @@ struct ZiskMainTraceColumns {
     m32: Option<TraceColumnTarget>,
     is_external_op: Option<TraceColumnTarget>,
     is_precompiled: Option<TraceColumnTarget>,
+    a_reg_prev_mem_step: Option<TraceColumnTarget>,
+    b_reg_prev_mem_step: Option<TraceColumnTarget>,
+    store_reg_prev_mem_step: Option<TraceColumnTarget>,
+    store_reg_prev_value: Option<TraceColumnTarget>,
 }
 
 impl ZiskMainTraceColumns {
@@ -499,6 +510,7 @@ struct ExpectedMemoryAccess {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ZiskMainTraceState {
     registers: [u64; 32],
+    register_mem_steps: [u64; 32],
     last_c: u64,
     next_pc: u64,
 }
@@ -507,6 +519,7 @@ impl ZiskMainTraceState {
     fn new() -> Self {
         Self {
             registers: [0; 32],
+            register_mem_steps: [0; 32],
             last_c: 0,
             next_pc: 0,
         }
@@ -519,6 +532,21 @@ struct ZiskMainReportTraceValues {
     b: u64,
     c: u64,
     flag: bool,
+    register_accesses: ZiskMainRegisterAccessValues,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ZiskMainRegisterAccessValues {
+    a_prev_mem_step: Option<u64>,
+    b_prev_mem_step: Option<u64>,
+    store_prev_mem_step: Option<u64>,
+    store_prev_value: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ZiskMainRegisterAccessUpdate {
+    values: ZiskMainRegisterAccessValues,
+    next_mem_steps: [u64; 32],
 }
 
 fn validate_and_apply_zisk_main_report(
@@ -544,15 +572,93 @@ fn validate_and_apply_zisk_main_report(
     validate_zisk_main_precompile_memory_accesses(row, report, b)?;
     let (c, flag) = zisk_main_instruction_result(row, &instruction, a, b, report)?;
     validate_zisk_main_next_pc(row, &instruction, report, c, flag)?;
+    let register_accesses = zisk_main_register_access_values(row, &instruction, state)?;
     validate_zisk_main_memory_accesses(row, &instruction, report, a, c, a_access, b_access)?;
     apply_zisk_main_store(row, &instruction, c, report, state)?;
+    state.register_mem_steps = register_accesses.next_mem_steps;
     Ok(ZiskMainReportTraceValues {
         instruction,
         a,
         b,
         c,
         flag,
+        register_accesses: register_accesses.values,
     })
+}
+
+fn zisk_main_register_access_values(
+    row: usize,
+    instruction: &ZiskMainInstruction,
+    state: &ZiskMainTraceState,
+) -> Result<ZiskMainRegisterAccessUpdate, GuestPcTraceBackendError> {
+    let mut next_mem_steps = state.register_mem_steps;
+    let mut values = ZiskMainRegisterAccessValues {
+        a_prev_mem_step: None,
+        b_prev_mem_step: None,
+        store_prev_mem_step: None,
+        store_prev_value: None,
+    };
+
+    if let Some(index) = zisk_main_source_register_index(row, instruction.a)? {
+        values.a_prev_mem_step = Some(next_mem_steps[index]);
+        next_mem_steps[index] = zisk_main_row_mem_step(row, ZISK_MAIN_A_MEM_STEP_OFFSET)?;
+    }
+    if let Some(index) = zisk_main_source_register_index(row, instruction.b)? {
+        values.b_prev_mem_step = Some(next_mem_steps[index]);
+        next_mem_steps[index] = zisk_main_row_mem_step(row, ZISK_MAIN_B_MEM_STEP_OFFSET)?;
+    }
+    if let Some(index) = zisk_main_store_register_index(row, instruction.store)? {
+        values.store_prev_mem_step = Some(next_mem_steps[index]);
+        values.store_prev_value = Some(state.registers[index]);
+        next_mem_steps[index] = zisk_main_row_mem_step(row, ZISK_MAIN_STORE_MEM_STEP_OFFSET)?;
+    }
+
+    Ok(ZiskMainRegisterAccessUpdate {
+        values,
+        next_mem_steps,
+    })
+}
+
+fn zisk_main_source_register_index(
+    row: usize,
+    source: ZiskMainSource,
+) -> Result<Option<usize>, GuestPcTraceBackendError> {
+    match source {
+        ZiskMainSource::Register(index) => zisk_main_register_index(index)
+            .map(Some)
+            .map_err(|()| GuestPcTraceBackendError::UnsupportedZiskMainSource { row }),
+        _ => Ok(None),
+    }
+}
+
+fn zisk_main_store_register_index(
+    row: usize,
+    store: ZiskMainStore,
+) -> Result<Option<usize>, GuestPcTraceBackendError> {
+    match store {
+        ZiskMainStore::Register(index) => zisk_main_register_index(index)
+            .map(Some)
+            .map_err(|()| GuestPcTraceBackendError::UnsupportedZiskMainStore { row }),
+        _ => Ok(None),
+    }
+}
+
+fn zisk_main_register_index(index: u8) -> Result<usize, ()> {
+    let index = usize::from(index);
+    if (ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
+        .contains(&index)
+    {
+        Ok(index)
+    } else {
+        Err(())
+    }
+}
+
+fn zisk_main_row_mem_step(row: usize, offset: u64) -> Result<u64, GuestPcTraceBackendError> {
+    let row = u64::try_from(row).map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
+        message: "Zisk Main row index is too large".to_owned(),
+    })?;
+    Ok(ZISK_MAIN_RESERVED_MEM_STEPS + ZISK_MAIN_MEM_STEPS_PER_ROW * row + offset)
 }
 
 fn write_layout_zisk_main_trace(
@@ -560,7 +666,7 @@ fn write_layout_zisk_main_trace(
     reports: &[GuestMachineReport],
     halt_pc: u64,
     output: &mut [u8],
-) -> Result<Option<usize>, GuestPcTraceBackendError> {
+) -> Result<Option<WitnessTraceOutput>, GuestPcTraceBackendError> {
     let Some(columns) = zisk_main_trace_columns(layout)? else {
         return Ok(None);
     };
@@ -604,7 +710,48 @@ fn write_layout_zisk_main_trace(
         let offset = index * 8;
         output[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    Ok(Some(produced_len))
+    Ok(Some(WitnessTraceOutput::with_unit_values(
+        produced_len,
+        zisk_main_unit_values(layout.row_count(), reports, halt_pc, &state),
+    )))
+}
+
+fn zisk_main_unit_values(
+    row_count: usize,
+    reports: &[GuestMachineReport],
+    halt_pc: u64,
+    state: &ZiskMainTraceState,
+) -> Vec<WitnessTraceUnitValue> {
+    let segment_initial_pc = reports
+        .first()
+        .map(|report| report.address)
+        .unwrap_or(halt_pc);
+    let segment_last_c = if reports.len() < row_count {
+        0
+    } else {
+        state.last_c
+    };
+
+    let mut last_reg_value = Vec::with_capacity(ZISK_MAIN_REGISTER_COUNT * 2);
+    let mut last_reg_mem_step = Vec::with_capacity(ZISK_MAIN_REGISTER_COUNT);
+    for index in ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT {
+        last_reg_value.extend(felt_limbs_u64(state.registers[index]));
+        last_reg_mem_step.push(Felt::from_u64(state.register_mem_steps[index]));
+    }
+
+    vec![
+        WitnessTraceUnitValue::new("main_last_segment", vec![Felt::ONE]),
+        WitnessTraceUnitValue::new("main_segment", vec![Felt::ZERO]),
+        WitnessTraceUnitValue::new(
+            "segment_initial_pc",
+            vec![Felt::from_u64(segment_initial_pc)],
+        ),
+        WitnessTraceUnitValue::new("segment_previous_c", vec![Felt::ZERO, Felt::ZERO]),
+        WitnessTraceUnitValue::new("segment_next_pc", vec![Felt::from_u64(halt_pc)]),
+        WitnessTraceUnitValue::new("segment_last_c", felt_limbs_u64(segment_last_c).to_vec()),
+        WitnessTraceUnitValue::new("last_reg_value", last_reg_value),
+        WitnessTraceUnitValue::new("last_reg_mem_step", last_reg_mem_step),
+    ]
 }
 
 fn write_zisk_main_report_columns(
@@ -735,6 +882,30 @@ fn write_zisk_main_report_columns(
         row,
         &columns.is_precompiled,
         u64::from(instruction.is_precompiled),
+    )?;
+    write_optional_column(
+        builder,
+        row,
+        &columns.a_reg_prev_mem_step,
+        values.register_accesses.a_prev_mem_step.unwrap_or(0),
+    )?;
+    write_optional_column(
+        builder,
+        row,
+        &columns.b_reg_prev_mem_step,
+        values.register_accesses.b_prev_mem_step.unwrap_or(0),
+    )?;
+    write_optional_column(
+        builder,
+        row,
+        &columns.store_reg_prev_mem_step,
+        values.register_accesses.store_prev_mem_step.unwrap_or(0),
+    )?;
+    write_optional_wide_column(
+        builder,
+        row,
+        &columns.store_reg_prev_value,
+        values.register_accesses.store_prev_value.unwrap_or(0),
     )
 }
 
@@ -1604,6 +1775,25 @@ fn write_wide_column(
         .map_err(GuestPcTraceBackendError::TraceBuild)
 }
 
+fn write_optional_wide_column(
+    builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
+    row: usize,
+    column: &Option<TraceColumnTarget>,
+    value: u64,
+) -> Result<(), GuestPcTraceBackendError> {
+    if let Some(column) = column {
+        write_wide_column(builder, row, column, value)?;
+    }
+    Ok(())
+}
+
+fn felt_limbs_u64(value: u64) -> [Felt; 2] {
+    [
+        Felt::from_u64(value & 0xffff_ffff),
+        Felt::from_u64(value >> 32),
+    ]
+}
+
 fn write_optional_signed_column(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
@@ -1685,6 +1875,10 @@ fn zisk_main_trace_columns(
         m32: trace_column_target(layout, "m32")?,
         is_external_op: trace_column_target(layout, "is_external_op")?,
         is_precompiled: trace_column_target(layout, "is_precompiled")?,
+        a_reg_prev_mem_step: trace_column_target(layout, "a_reg_prev_mem_step")?,
+        b_reg_prev_mem_step: trace_column_target(layout, "b_reg_prev_mem_step")?,
+        store_reg_prev_mem_step: trace_column_target(layout, "store_reg_prev_mem_step")?,
+        store_reg_prev_value: vector_trace_column_target(layout, "store_reg_prev_value", 2)?,
     }))
 }
 
