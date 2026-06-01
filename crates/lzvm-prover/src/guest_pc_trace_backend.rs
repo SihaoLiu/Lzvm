@@ -448,6 +448,8 @@ struct ZiskMainTraceColumns {
     b_src_reg: Option<TraceColumnTarget>,
     b_src_ind: Option<TraceColumnTarget>,
     b_offset_imm0: Option<TraceColumnTarget>,
+    addr1: Option<TraceColumnTarget>,
+    addr2: Option<TraceColumnTarget>,
     store_reg: Option<TraceColumnTarget>,
     store_mem: Option<TraceColumnTarget>,
     store_ind: Option<TraceColumnTarget>,
@@ -635,6 +637,12 @@ fn write_zisk_main_report_columns(
         &columns.b_offset_imm0,
         zisk_main_source_offset(row, instruction.b)?,
     )?;
+    write_optional_signed_column(
+        builder,
+        row,
+        &columns.addr1,
+        zisk_main_b_address(row, instruction.b, values.a)?,
+    )?;
     write_optional_column(
         builder,
         row,
@@ -658,6 +666,12 @@ fn write_zisk_main_report_columns(
         row,
         &columns.store_offset,
         zisk_main_store_offset(row, &instruction.store)?,
+    )?;
+    write_optional_signed_column(
+        builder,
+        row,
+        &columns.addr2,
+        zisk_main_store_address(row, &instruction.store, values.a)?,
     )?;
     write_optional_column(
         builder,
@@ -995,6 +1009,36 @@ fn zisk_main_source_offset(
             Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row })
         }
     }
+}
+
+fn zisk_main_b_address(
+    row: usize,
+    source: ZiskMainSource,
+    a: u64,
+) -> Result<i64, GuestPcTraceBackendError> {
+    let offset = zisk_main_source_offset(row, source)?;
+    if matches!(source, ZiskMainSource::Indirect(_)) {
+        return zisk_main_indirect_address(offset, a)
+            .ok_or(GuestPcTraceBackendError::UnsupportedZiskMainSource { row });
+    }
+    Ok(offset)
+}
+
+fn zisk_main_store_address(
+    row: usize,
+    store: &ZiskMainStore,
+    a: u64,
+) -> Result<i64, GuestPcTraceBackendError> {
+    let offset = zisk_main_store_offset(row, store)?;
+    if matches!(store, ZiskMainStore::Indirect(_)) {
+        return zisk_main_indirect_address(offset, a)
+            .ok_or(GuestPcTraceBackendError::UnsupportedZiskMainStore { row });
+    }
+    Ok(offset)
+}
+
+fn zisk_main_indirect_address(offset: i64, base: u64) -> Option<i64> {
+    offset.checked_add((base & 0xffff_ffff) as i64)
 }
 
 fn low_bytes_value(value: u64, byte_len: usize) -> u64 {
@@ -1535,6 +1579,8 @@ fn zisk_main_trace_columns(
         b_src_reg: trace_column_target(layout, "b_src_reg")?,
         b_src_ind: trace_column_target(layout, "b_src_ind")?,
         b_offset_imm0: trace_column_target(layout, "b_offset_imm0")?,
+        addr1: trace_column_target_aliases(layout, &["addr1", "air.addr1"])?,
+        addr2: trace_column_target_aliases(layout, &["addr2", "air.addr2"])?,
         store_reg: trace_column_target(layout, "store_reg")?,
         store_mem: trace_column_target(layout, "store_mem")?,
         store_ind: trace_column_target(layout, "store_ind")?,
@@ -1719,6 +1765,38 @@ fn trace_column_target(
         return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: format!(
                 "column {name} must have dimension 1, found {}",
+                column.dimension()
+            ),
+        });
+    }
+    Ok(Some(TraceColumnTarget {
+        stage_index: column.stage_index(),
+        trace_column: column.trace_column(),
+        name: column.name().to_owned(),
+    }))
+}
+
+fn trace_column_target_aliases(
+    layout: &WitnessTraceLayout,
+    names: &[&str],
+) -> Result<Option<TraceColumnTarget>, GuestPcTraceBackendError> {
+    let mut matches = layout
+        .columns()
+        .iter()
+        .filter(|column| names.iter().any(|name| column.name() == *name));
+    let Some(column) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!("column {} is ambiguous", names.join("/")),
+        });
+    }
+    if column.dimension() != 1 {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "column {} must have dimension 1, found {}",
+                names.join("/"),
                 column.dimension()
             ),
         });
