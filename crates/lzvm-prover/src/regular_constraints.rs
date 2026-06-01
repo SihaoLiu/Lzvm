@@ -230,15 +230,15 @@ fn evaluate_entry(
 ) -> Result<RegularConstraintResult, RegularConstraintEvalError> {
     let ops = entry_ops(constraint_index, entry, program)?;
     let args = entry_args(constraint_index, entry, program)?;
-    let active_rows = active_rows(entry, inputs.domain_size)?;
-    if active_rows.is_empty() {
+    let mut active_rows = active_rows(entry, inputs.domain_size)?;
+    let Some(first_row) = active_rows.next() else {
         return Ok(RegularConstraintResult {
             constraint_index,
             stage: entry.stage,
             intermediate: entry.intermediate,
             invalid_rows: Vec::new(),
         });
-    }
+    };
 
     let mut tmp1 = vec![Felt::ZERO; to_usize(entry.temp1_count)?];
     let mut tmp3 = vec![
@@ -260,8 +260,34 @@ fn evaluate_entry(
     };
     let mut invalid_rows = Vec::new();
 
+    let value = evaluate_row(first_row, &mut context, &mut tmp1, &mut tmp3)?;
+    if value != Ext3::ZERO {
+        invalid_rows.push(RegularConstraintViolation {
+            row: first_row,
+            value,
+        });
+    }
+
+    if active_rows.is_empty() {
+        return Ok(RegularConstraintResult {
+            constraint_index,
+            stage: entry.stage,
+            intermediate: entry.intermediate,
+            invalid_rows,
+        });
+    }
+
+    let prepared_operations = prepared_operations(&mut context)?;
     for row in active_rows {
-        let value = evaluate_row(row, &mut context, &mut tmp1, &mut tmp3)?;
+        let value = evaluate_prepared_row(
+            row,
+            entry,
+            &prepared_operations,
+            program,
+            inputs,
+            &mut tmp1,
+            &mut tmp3,
+        )?;
         if value != Ext3::ZERO {
             invalid_rows.push(RegularConstraintViolation { row, value });
         }
@@ -364,6 +390,15 @@ struct DecodedOperation {
     destination_offset: usize,
     src0: SourceRef,
     src1: SourceRef,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreparedOperation<'input> {
+    shape: OperationShape,
+    kind: u16,
+    destination_offset: usize,
+    src0: DecodedSource<'input>,
+    src1: DecodedSource<'input>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -494,12 +529,47 @@ fn decoded_operation(
     Ok(operation)
 }
 
+fn prepared_operations<'input>(
+    context: &mut RowEvaluationContext<'_, 'input>,
+) -> Result<Vec<PreparedOperation<'input>>, RegularConstraintEvalError> {
+    let mut operations = Vec::with_capacity(context.ops.len());
+    for operation_index in 0..context.ops.len() {
+        let operation = decoded_operation(context, operation_index)?;
+        operations.push(PreparedOperation {
+            shape: operation.shape,
+            kind: operation.kind,
+            destination_offset: operation.destination_offset,
+            src0: prepared_source(context, operation_index, 0, operation.src0)?,
+            src1: prepared_source(context, operation_index, 1, operation.src1)?,
+        });
+    }
+    Ok(operations)
+}
+
+fn prepared_source<'input>(
+    context: &mut RowEvaluationContext<'_, 'input>,
+    operation_index: usize,
+    source_index: usize,
+    source: SourceRef,
+) -> Result<DecodedSource<'input>, RegularConstraintEvalError> {
+    if let Some(source) = context.sources[operation_index][source_index] {
+        return Ok(source);
+    }
+
+    let source = decode_source(source, context.inputs, context.layout)?;
+    context.sources[operation_index][source_index] = Some(source);
+    Ok(source)
+}
+
 fn cached_source<'input>(
     context: &mut RowEvaluationContext<'_, 'input>,
     operation_index: usize,
     source_index: usize,
     source: SourceRef,
 ) -> Result<DecodedSource<'input>, RegularConstraintEvalError> {
+    #[cfg(test)]
+    CACHED_SOURCE_COUNT.with(|count| count.set(count.get() + 1));
+
     if let Some(source) = context.sources[operation_index][source_index] {
         return Ok(source);
     }
@@ -616,6 +686,50 @@ fn read_ext_source(
 ) -> Result<Ext3, RegularConstraintEvalError> {
     let source = cached_source(context, operation_index, source_index, source)?;
     read_ext(source, row, tmp1, tmp3, context.program, context.inputs)
+}
+
+fn evaluate_prepared_row(
+    row: usize,
+    entry: &ConstraintEntry,
+    operations: &[PreparedOperation<'_>],
+    program: &ConstraintProgram,
+    inputs: RegularConstraintInputs<'_>,
+    tmp1: &mut [Felt],
+    tmp3: &mut [Felt],
+) -> Result<Ext3, RegularConstraintEvalError> {
+    tmp1.fill(Felt::ZERO);
+    tmp3.fill(Felt::ZERO);
+
+    for operation in operations {
+        match operation.shape {
+            OperationShape::BaseBase => {
+                let value = apply_base_op(
+                    operation.kind,
+                    read_base(operation.src0, row, tmp1, tmp3, program, inputs)?,
+                    read_base(operation.src1, row, tmp1, tmp3, program, inputs)?,
+                )?;
+                write_base(tmp1, operation.destination_offset, value)?;
+            }
+            OperationShape::ExtBase => {
+                let value = apply_ext_op(
+                    operation.kind,
+                    read_ext(operation.src0, row, tmp1, tmp3, program, inputs)?,
+                    scalar_ext(read_base(operation.src1, row, tmp1, tmp3, program, inputs)?),
+                )?;
+                write_ext(tmp3, operation.destination_offset, value)?;
+            }
+            OperationShape::ExtExt => {
+                let value = apply_ext_op(
+                    operation.kind,
+                    read_ext(operation.src0, row, tmp1, tmp3, program, inputs)?,
+                    read_ext(operation.src1, row, tmp1, tmp3, program, inputs)?,
+                )?;
+                write_ext(tmp3, operation.destination_offset, value)?;
+            }
+        }
+    }
+
+    read_destination(entry, tmp1, tmp3)
 }
 
 fn read_base(
@@ -797,6 +911,7 @@ impl BufferLayout {
 #[cfg(test)]
 thread_local! {
     static BUFFER_RESOLVE_COUNT: Cell<usize> = const { Cell::new(0) };
+    static CACHED_SOURCE_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 fn find_stage_columns(
@@ -1148,6 +1263,7 @@ mod tests {
         let fixed = vec![Felt::from_u64(3); 8];
 
         BUFFER_RESOLVE_COUNT.with(|count| count.set(0));
+        CACHED_SOURCE_COUNT.with(|count| count.set(0));
         let results = evaluate_regular_constraints(
             &program,
             RegularConstraintInputs {
@@ -1167,6 +1283,10 @@ mod tests {
         assert!(
             BUFFER_RESOLVE_COUNT.with(Cell::get) <= 2,
             "buffer layout should be resolved once per operation source"
+        );
+        assert!(
+            CACHED_SOURCE_COUNT.with(Cell::get) <= 2,
+            "decoded sources should be read without checking the cache on every row"
         );
     }
 
