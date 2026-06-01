@@ -1,10 +1,12 @@
+use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::guest_instruction::{
-    RiscvDmaKind, RiscvInstruction, RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind,
+    RiscvAmoKind, RiscvAmoWidth, RiscvDmaKind, RiscvInstruction, RiscvOpImmKind, RiscvOpKind,
+    RiscvPrecompileKind,
 };
 use crate::guest_machine::{
-    decode_current_guest_instruction, run_guest_machine_trace_slice_with_fcalls,
+    advance_guest_machine_with_fcalls, decode_current_guest_instruction,
     run_guest_machine_trace_with_fcalls, GuestDmaProofValueFlags, GuestMachineHalt,
     GuestMachineMemory, GuestMachineReport, GuestMachineRunError, GuestMachineState,
     GuestMachineTraceSliceStatus, GuestMemoryAccess, GuestMemoryAccessKind, GuestRegisterWrite,
@@ -39,6 +41,7 @@ const ZISK_MAIN_A_MEM_STEP_OFFSET: u64 = 0;
 const ZISK_MAIN_B_MEM_STEP_OFFSET: u64 = 1;
 const ZISK_MAIN_STORE_MEM_STEP_OFFSET: u64 = 2;
 const ZISK_MAIN_SPECIAL_MEM_STEP_OFFSET: u64 = 3;
+const ZISK_AMO_TEMP_REGISTER: u8 = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestPcTraceBackend {
@@ -137,6 +140,13 @@ struct GuestPcTraceSegmentBytes {
     trace_instance_index: u32,
     output: WitnessTraceOutput,
     bytes: Vec<u8>,
+}
+
+struct GuestPcTraceSegmentSlice {
+    executed_instructions: u64,
+    trace_rows: usize,
+    status: GuestMachineTraceSliceStatus,
+    reports: Vec<GuestMachineReport>,
 }
 
 pub fn is_guest_pc_trace_layout_supported(layout: &WitnessTraceLayout) -> bool {
@@ -454,6 +464,148 @@ fn load_guest_pc_trace_machine(
     Ok((memory, state, fcall_handler))
 }
 
+fn run_guest_pc_trace_segment_slice(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut ZiskInputFcallHandler,
+    instruction_limit: u64,
+    row_limit: usize,
+) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
+    let mut reports = Vec::new();
+    let mut executed_instructions = 0_u64;
+    let mut trace_rows = 0_usize;
+    loop {
+        let pc = state.pc();
+        let current = decode_current_guest_instruction(memory, pc)
+            .map_err(GuestMachineRunError::from)
+            .map_err(GuestPcTraceBackendError::GuestRun)?;
+        if current == RiscvInstruction::Ecall {
+            return Ok(GuestPcTraceSegmentSlice {
+                executed_instructions,
+                trace_rows,
+                status: GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall {
+                    address: pc,
+                }),
+                reports,
+            });
+        }
+        if executed_instructions == instruction_limit {
+            return Ok(GuestPcTraceSegmentSlice {
+                executed_instructions,
+                trace_rows,
+                status: GuestMachineTraceSliceStatus::Paused { pc },
+                reports,
+            });
+        }
+        let max_rows = zisk_main_instruction_max_rows(current);
+        if max_rows > row_limit {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main layout cannot fit the next guest instruction".to_owned(),
+            });
+        }
+        let required_rows = trace_rows.checked_add(max_rows).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main row count overflow".to_owned(),
+            }
+        })?;
+        if trace_rows != 0 && required_rows > row_limit {
+            return Ok(GuestPcTraceSegmentSlice {
+                executed_instructions,
+                trace_rows,
+                status: GuestMachineTraceSliceStatus::Paused { pc },
+                reports,
+            });
+        }
+        let report = advance_guest_machine_with_fcalls(memory, state, handler)
+            .map_err(GuestMachineRunError::from)
+            .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let report_rows = zisk_main_report_row_count(reports.len(), &report)?;
+        let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main row count overflow".to_owned(),
+            }
+        })?;
+        if next_trace_rows > row_limit {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main report rows exceed layout rows".to_owned(),
+            });
+        }
+        trace_rows = next_trace_rows;
+        reports.push(report);
+        executed_instructions += 1;
+        if trace_rows == row_limit {
+            let pc = state.pc();
+            let current = decode_current_guest_instruction(memory, pc)
+                .map_err(GuestMachineRunError::from)
+                .map_err(GuestPcTraceBackendError::GuestRun)?;
+            let status = if current == RiscvInstruction::Ecall {
+                GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall { address: pc })
+            } else {
+                GuestMachineTraceSliceStatus::Paused { pc }
+            };
+            return Ok(GuestPcTraceSegmentSlice {
+                executed_instructions,
+                trace_rows,
+                status,
+                reports,
+            });
+        }
+    }
+}
+
+fn zisk_main_instruction_max_rows(instruction: RiscvInstruction) -> usize {
+    match instruction {
+        RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Add,
+            rd,
+            rs1,
+            rs2,
+            ..
+        } => amo_add_row_count(rd, rs1, rs2),
+        RiscvInstruction::StoreConditional { rd, .. } if rd != 0 => 2,
+        _ => 1,
+    }
+}
+
+fn zisk_main_report_row_count(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<usize, GuestPcTraceBackendError> {
+    match report.instruction {
+        RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Add,
+            rd,
+            rs1,
+            rs2,
+            ..
+        } => Ok(amo_add_row_count(rd, rs1, rs2)),
+        RiscvInstruction::StoreConditional { rd, .. } => {
+            if !report
+                .memory_accesses
+                .iter()
+                .any(|access| access.kind == GuestMemoryAccessKind::Write)
+            {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row,
+                    message:
+                        "StoreConditional without a memory write is not supported by Zisk Main lowering"
+                            .to_owned(),
+                });
+            }
+            Ok(if rd == 0 { 1 } else { 2 })
+        }
+        _ => Ok(1),
+    }
+}
+
+fn amo_add_row_count(rd: u8, rs1: u8, rs2: u8) -> usize {
+    if rd != 0 && (rd == rs1 || rd == rs2) {
+        4
+    } else {
+        3
+    }
+}
+
 fn compute_guest_pc_trace_segments(
     instruction_limit: u64,
     context: WitnessComputeContext<'_>,
@@ -472,10 +624,6 @@ fn compute_guest_pc_trace_segments(
             message: "Zisk Main layout has zero rows".to_owned(),
         });
     }
-    let row_count_u64 =
-        u64::try_from(row_count).map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
-            message: "Zisk Main layout row count is too large".to_owned(),
-        })?;
 
     let (mut memory, mut state, mut fcall_handler) = load_guest_pc_trace_machine(context, input)?;
     let mut trace_state = ZiskMainTraceState::new();
@@ -484,13 +632,13 @@ fn compute_guest_pc_trace_segments(
     let mut outputs = Vec::new();
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
-        let slice = run_guest_machine_trace_slice_with_fcalls(
+        let slice = run_guest_pc_trace_segment_slice(
             &mut memory,
             &mut state,
             &mut fcall_handler,
-            row_count_u64.min(remaining_limit),
-        )
-        .map_err(GuestPcTraceBackendError::GuestRun)?;
+            remaining_limit,
+            row_count,
+        )?;
         executed_instructions = executed_instructions
             .checked_add(slice.executed_instructions)
             .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -507,9 +655,9 @@ fn compute_guest_pc_trace_segments(
                 (false, pc, Some(instruction))
             }
         };
-        let needs_terminal_segment = halted && slice.reports.len() == row_count;
+        let needs_terminal_segment = halted && slice.trace_rows == row_count;
         let is_last_segment = halted && !needs_terminal_segment;
-        if !is_last_segment && slice.reports.len() < row_count {
+        if !is_last_segment && slice.trace_rows < row_count {
             return Err(GuestPcTraceBackendError::GuestRun(
                 GuestMachineRunError::InstructionLimitExceeded {
                     instruction_limit,
@@ -771,6 +919,7 @@ struct ExpectedMemoryAccess {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ZiskMainTraceState {
     registers: [u64; 32],
+    internal_memory: BTreeMap<u64, u64>,
     register_mem_steps: [u64; 32],
     pending_dma: Option<ZiskMainPendingDma>,
     last_c: u64,
@@ -787,6 +936,7 @@ impl ZiskMainTraceState {
     fn new() -> Self {
         Self {
             registers: [0; 32],
+            internal_memory: BTreeMap::new(),
             register_mem_steps: [0; 32],
             pending_dma: None,
             last_c: 0,
@@ -818,6 +968,41 @@ struct ZiskMainReportTraceValues {
 }
 
 #[derive(Debug, Clone, Copy)]
+struct ZiskMainReportEffects<'a> {
+    register_writes: &'a [GuestRegisterWrite],
+    memory_accesses: &'a [GuestMemoryAccess],
+    precompile_memory_accesses: &'a [GuestMemoryAccess],
+    precompile_result: Option<u64>,
+}
+
+impl<'a> ZiskMainReportEffects<'a> {
+    fn empty() -> Self {
+        Self {
+            register_writes: &[],
+            memory_accesses: &[],
+            precompile_memory_accesses: &[],
+            precompile_result: None,
+        }
+    }
+
+    fn from_report(report: &'a GuestMachineReport) -> Self {
+        Self {
+            register_writes: &report.register_writes,
+            memory_accesses: &report.memory_accesses,
+            precompile_memory_accesses: &report.precompile_memory_accesses,
+            precompile_result: report.precompile_result,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ZiskMainLoweredReportRow<'a> {
+    instruction: ZiskMainInstruction,
+    effects: ZiskMainReportEffects<'a>,
+    expected_next_pc: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
 struct ZiskMainReportWindow<'a> {
     current: &'a GuestMachineReport,
     next_instruction: Option<RiscvInstruction>,
@@ -845,59 +1030,414 @@ fn validate_and_apply_zisk_main_report(
     columns: Option<&ZiskMainTraceColumns>,
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
-) -> Result<ZiskMainReportTraceValues, GuestPcTraceBackendError> {
+) -> Result<Vec<ZiskMainReportTraceValues>, GuestPcTraceBackendError> {
     let consumed_pending_dma = state.pending_dma.is_some();
-    let instruction = lower_stateful_zisk_main_report(row, report, next_instruction, state)?;
-    if let Some(columns) = columns {
-        validate_zisk_main_memory_columns(row, &instruction, columns)?;
+    let lowered = lower_stateful_zisk_main_report_rows(row, report, next_instruction, state)?;
+    let exclusive_end = row.checked_add(lowered.len()).ok_or_else(|| {
+        GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk Main row index overflow".to_owned(),
+        }
+    })?;
+    if exclusive_end > row_count {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk Main report rows exceed layout rows".to_owned(),
+        });
     }
-    let (a, a_access) = zisk_main_source_value(row, instruction.a, state, report, None, 0)?;
-    let (b, b_access) = zisk_main_source_value(
-        row,
-        instruction.b,
-        state,
-        report,
-        Some(a),
-        instruction.ind_width,
-    )?;
-    validate_zisk_main_precompile_memory_accesses(row, report, b)?;
-    let (c, flag) = zisk_main_instruction_result(row, &instruction, a, b, report)?;
-    validate_zisk_main_next_pc(row, &instruction, report, c, flag)?;
-    let register_accesses =
-        zisk_main_register_access_values(row, &instruction, state, row_count, segment)?;
-    validate_zisk_main_memory_accesses(row, &instruction, report, a, c, a_access, b_access)?;
-    apply_zisk_main_store(row, &instruction, c, report, state)?;
-    state.register_mem_steps = register_accesses.next_mem_steps;
+    let mut values = Vec::with_capacity(lowered.len());
+    for (offset, lowered_row) in lowered.into_iter().enumerate() {
+        let output_row = row.checked_add(offset).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main row index overflow".to_owned(),
+            }
+        })?;
+        let instruction = lowered_row.instruction;
+        if let Some(columns) = columns {
+            validate_zisk_main_memory_columns(output_row, &instruction, columns)?;
+        }
+        let (a, a_access) = zisk_main_source_value(
+            output_row,
+            instruction.a,
+            state,
+            report,
+            lowered_row.effects,
+            None,
+            0,
+        )?;
+        let (b, b_access) = zisk_main_source_value(
+            output_row,
+            instruction.b,
+            state,
+            report,
+            lowered_row.effects,
+            Some(a),
+            instruction.ind_width,
+        )?;
+        validate_zisk_main_precompile_memory_accesses(output_row, report, lowered_row.effects, b)?;
+        let (c, flag) =
+            zisk_main_instruction_result(output_row, &instruction, a, b, lowered_row.effects)?;
+        validate_zisk_main_next_pc(
+            output_row,
+            &instruction,
+            lowered_row.expected_next_pc,
+            c,
+            flag,
+        )?;
+        let register_accesses =
+            zisk_main_register_access_values(output_row, &instruction, state, row_count, segment)?;
+        validate_zisk_main_memory_accesses(
+            output_row,
+            &instruction,
+            lowered_row.effects,
+            a,
+            c,
+            a_access,
+            b_access,
+        )?;
+        apply_zisk_main_store(
+            output_row,
+            &instruction,
+            c,
+            lowered_row.effects,
+            lowered_row.expected_next_pc,
+            state,
+        )?;
+        state.register_mem_steps = register_accesses.next_mem_steps;
+        values.push(ZiskMainReportTraceValues {
+            instruction,
+            a,
+            b,
+            c,
+            flag,
+            register_accesses: register_accesses.values,
+        });
+    }
     state.pending_dma = if consumed_pending_dma {
         None
     } else {
         zisk_main_pending_dma(report)
     };
-    Ok(ZiskMainReportTraceValues {
-        instruction,
-        a,
-        b,
-        c,
-        flag,
-        register_accesses: register_accesses.values,
-    })
+    Ok(values)
 }
 
-fn lower_stateful_zisk_main_report(
+fn lower_stateful_zisk_main_report_rows<'a>(
     row: usize,
-    report: &GuestMachineReport,
+    report: &'a GuestMachineReport,
     next_instruction: Option<RiscvInstruction>,
     state: &ZiskMainTraceState,
-) -> Result<ZiskMainInstruction, GuestPcTraceBackendError> {
+) -> Result<Vec<ZiskMainLoweredReportRow<'a>>, GuestPcTraceBackendError> {
     if let Some(pending) = state.pending_dma {
-        return lower_pending_dma_report(row, report, pending);
+        return Ok(vec![ZiskMainLoweredReportRow {
+            instruction: lower_pending_dma_report(row, report, pending)?,
+            effects: ZiskMainReportEffects::from_report(report),
+            expected_next_pc: report.next_pc,
+        }]);
+    }
+    if let RiscvInstruction::StoreConditional {
+        width,
+        rd,
+        rs1,
+        rs2,
+        ..
+    } = report.instruction
+    {
+        return lower_store_conditional_report_rows(row, report, width, rd, rs1, rs2);
+    }
+    if let RiscvInstruction::Amo {
+        kind,
+        width,
+        rd,
+        rs1,
+        rs2,
+        ..
+    } = report.instruction
+    {
+        return lower_amo_report_rows(row, report, kind, width, rd, rs1, rs2);
     }
     let instruction = lower_guest_report(report)
         .map_err(|source| GuestPcTraceBackendError::ZiskMainLower { row, source })?;
-    if let RiscvInstruction::ZiskDmaPrepare { kind, .. } = report.instruction {
-        return lower_dma_prepare_report(row, instruction, kind, next_instruction);
+    let instruction = if let RiscvInstruction::ZiskDmaPrepare { kind, .. } = report.instruction {
+        lower_dma_prepare_report(row, instruction, kind, next_instruction)?
+    } else {
+        instruction
+    };
+    Ok(vec![ZiskMainLoweredReportRow {
+        instruction,
+        effects: ZiskMainReportEffects::from_report(report),
+        expected_next_pc: report.next_pc,
+    }])
+}
+
+fn lower_amo_report_rows(
+    row: usize,
+    report: &GuestMachineReport,
+    kind: RiscvAmoKind,
+    width: RiscvAmoWidth,
+    rd: u8,
+    rs1: u8,
+    rs2: u8,
+) -> Result<Vec<ZiskMainLoweredReportRow<'_>>, GuestPcTraceBackendError> {
+    if kind != RiscvAmoKind::Add {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!("unsupported AMO operation {kind:?}"),
+        });
     }
-    Ok(instruction)
+    let [read_access, write_access] = report.memory_accesses.as_slice() else {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!(
+                "AMO row reported {} memory accesses",
+                report.memory_accesses.len()
+            ),
+        });
+    };
+    if read_access.kind != GuestMemoryAccessKind::Read
+        || write_access.kind != GuestMemoryAccessKind::Write
+    {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: "AMO row must report one memory read followed by one memory write".to_owned(),
+        });
+    }
+
+    let (load_op, ind_width) = amo_load_op_width(width);
+    let compute_op = amo_add_op(width);
+    let _ = zisk_main_report_instruction_size(row, report)?;
+    let load_pc = report.address;
+    let compute_pc = report.address.checked_add(1).ok_or_else(|| {
+        GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "AMO compute pc overflow".to_owned(),
+        }
+    })?;
+    let store_pc = report.address.checked_add(2).ok_or_else(|| {
+        GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "AMO store pc overflow".to_owned(),
+        }
+    })?;
+    let aliases_result = rd != 0 && (rd == rs1 || rd == rs2);
+    let register_pc = report.address.checked_add(3).ok_or_else(|| {
+        GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "AMO register pc overflow".to_owned(),
+        }
+    })?;
+    let store_jump = if aliases_result {
+        1
+    } else {
+        zisk_main_pc_delta(row, store_pc, report.next_pc)?
+    };
+
+    let mut load_row = zisk_main_base_instruction(
+        load_pc,
+        zisk_main_register_source(rs1),
+        ZiskMainSource::Indirect(0),
+        load_op,
+        if aliases_result {
+            ZiskMainStore::Memory(zisk_internal_register_address(ZISK_AMO_TEMP_REGISTER)?)
+        } else {
+            zisk_main_register_store(rd)
+        },
+        1,
+    );
+    load_row.ind_width = ind_width;
+    let compute_row = zisk_main_base_instruction(
+        compute_pc,
+        ZiskMainSource::LastC,
+        zisk_main_register_source(rs2),
+        compute_op,
+        ZiskMainStore::None,
+        1,
+    );
+    let mut store_row = zisk_main_base_instruction(
+        store_pc,
+        zisk_main_register_source(rs1),
+        ZiskMainSource::LastC,
+        ZiskMainOp::CopyB,
+        ZiskMainStore::Indirect(0),
+        store_jump,
+    );
+    store_row.ind_width = ind_width;
+
+    let mut load_effects = ZiskMainReportEffects::empty();
+    load_effects.memory_accesses = &report.memory_accesses[..1];
+    let compute_effects = ZiskMainReportEffects::empty();
+    let mut store_effects = ZiskMainReportEffects::empty();
+    store_effects.memory_accesses = &report.memory_accesses[1..2];
+
+    if aliases_result {
+        let register_jump = zisk_main_pc_delta(row, register_pc, report.next_pc)?;
+        let register_row = zisk_main_base_instruction(
+            register_pc,
+            ZiskMainSource::Immediate(0),
+            ZiskMainSource::Memory(zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER)),
+            ZiskMainOp::CopyB,
+            zisk_main_register_store(rd),
+            register_jump,
+        );
+        let mut register_effects = ZiskMainReportEffects::empty();
+        register_effects.register_writes = &report.register_writes;
+        return Ok(vec![
+            ZiskMainLoweredReportRow {
+                instruction: load_row,
+                effects: load_effects,
+                expected_next_pc: compute_pc,
+            },
+            ZiskMainLoweredReportRow {
+                instruction: compute_row,
+                effects: compute_effects,
+                expected_next_pc: store_pc,
+            },
+            ZiskMainLoweredReportRow {
+                instruction: store_row,
+                effects: store_effects,
+                expected_next_pc: register_pc,
+            },
+            ZiskMainLoweredReportRow {
+                instruction: register_row,
+                effects: register_effects,
+                expected_next_pc: report.next_pc,
+            },
+        ]);
+    }
+
+    load_effects.register_writes = &report.register_writes;
+
+    Ok(vec![
+        ZiskMainLoweredReportRow {
+            instruction: load_row,
+            effects: load_effects,
+            expected_next_pc: compute_pc,
+        },
+        ZiskMainLoweredReportRow {
+            instruction: compute_row,
+            effects: compute_effects,
+            expected_next_pc: store_pc,
+        },
+        ZiskMainLoweredReportRow {
+            instruction: store_row,
+            effects: store_effects,
+            expected_next_pc: report.next_pc,
+        },
+    ])
+}
+
+fn amo_add_op(width: RiscvAmoWidth) -> ZiskMainOp {
+    match width {
+        RiscvAmoWidth::Word => ZiskMainOp::AddW,
+        RiscvAmoWidth::Doubleword => ZiskMainOp::Add,
+    }
+}
+
+fn amo_load_op_width(width: RiscvAmoWidth) -> (ZiskMainOp, u64) {
+    match width {
+        RiscvAmoWidth::Word => (ZiskMainOp::SignExtendW, 4),
+        RiscvAmoWidth::Doubleword => (ZiskMainOp::CopyB, 8),
+    }
+}
+
+fn zisk_internal_register_address(index: u8) -> Result<i64, GuestPcTraceBackendError> {
+    i64::try_from(zisk_internal_register_address_u64(index)).map_err(|_| {
+        GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk internal register address is out of range".to_owned(),
+        }
+    })
+}
+
+fn zisk_internal_register_address_u64(index: u8) -> u64 {
+    ZISK_RAM_ADDRESS + u64::from(index) * 8
+}
+
+fn zisk_internal_memory_address(address: u64) -> bool {
+    address == ZISK_EXTRA_PARAMS_ADDRESS
+        || address == zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER)
+}
+
+fn lower_store_conditional_report_rows(
+    row: usize,
+    report: &GuestMachineReport,
+    width: RiscvAmoWidth,
+    rd: u8,
+    rs1: u8,
+    rs2: u8,
+) -> Result<Vec<ZiskMainLoweredReportRow<'_>>, GuestPcTraceBackendError> {
+    if !report
+        .memory_accesses
+        .iter()
+        .any(|access| access.kind == GuestMemoryAccessKind::Write)
+    {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message:
+                "StoreConditional without a memory write is not supported by Zisk Main lowering"
+                    .to_owned(),
+        });
+    }
+    let instruction_size = zisk_main_report_instruction_size(row, report)?;
+    let ind_width = store_conditional_width_bytes(width);
+    let mut store_row = zisk_main_base_instruction(
+        report.address,
+        zisk_main_register_source(rs1),
+        zisk_main_register_source(rs2),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::Indirect(0),
+        instruction_size,
+    );
+    store_row.ind_width = ind_width;
+
+    let mut memory_effects = ZiskMainReportEffects::empty();
+    memory_effects.memory_accesses = &report.memory_accesses;
+    if rd == 0 {
+        return Ok(vec![ZiskMainLoweredReportRow {
+            instruction: store_row,
+            effects: memory_effects,
+            expected_next_pc: report.next_pc,
+        }]);
+    }
+
+    let register_pc = report.address.checked_add(1).ok_or_else(|| {
+        GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "StoreConditional internal pc overflow".to_owned(),
+        }
+    })?;
+    store_row.jmp_offset1 = 1;
+    store_row.jmp_offset2 = 1;
+    let register_jump = zisk_main_pc_delta(row, register_pc, report.next_pc)?;
+    let register_row = zisk_main_base_instruction(
+        register_pc,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Immediate(0),
+        ZiskMainOp::CopyB,
+        zisk_main_register_store(rd),
+        register_jump,
+    );
+    let mut register_effects = ZiskMainReportEffects::empty();
+    register_effects.register_writes = &report.register_writes;
+    Ok(vec![
+        ZiskMainLoweredReportRow {
+            instruction: store_row,
+            effects: memory_effects,
+            expected_next_pc: register_pc,
+        },
+        ZiskMainLoweredReportRow {
+            instruction: register_row,
+            effects: register_effects,
+            expected_next_pc: report.next_pc,
+        },
+    ])
+}
+
+fn store_conditional_width_bytes(width: RiscvAmoWidth) -> u64 {
+    match width {
+        RiscvAmoWidth::Word => 4,
+        RiscvAmoWidth::Doubleword => 8,
+    }
+}
+
+fn zisk_main_pc_delta(row: usize, from: u64, to: u64) -> Result<i64, GuestPcTraceBackendError> {
+    let delta = i128::from(to) - i128::from(from);
+    i64::try_from(delta).map_err(|_| GuestPcTraceBackendError::ZiskMainEffectMismatch {
+        row,
+        message: format!("Zisk Main pc delta from {from} to {to} is out of range"),
+    })
 }
 
 fn lower_dma_prepare_report(
@@ -1304,18 +1844,19 @@ fn write_layout_zisk_main_trace_segment(
         .trace_builder()
         .map_err(GuestPcTraceBackendError::TraceBuild)?;
     let mut state = initial_state.clone();
-    for (row, report) in reports.iter().enumerate() {
+    let mut output_row = 0_usize;
+    for (report_index, report) in reports.iter().enumerate() {
         let next_instruction = reports
-            .get(row + 1)
+            .get(report_index + 1)
             .map(|next| next.instruction)
             .or_else(|| {
-                (row + 1 == reports.len())
+                (report_index + 1 == reports.len())
                     .then_some(lookahead_instruction)
                     .flatten()
             });
-        write_zisk_main_report_columns(
+        let written_rows = write_zisk_main_report_columns(
             &mut builder,
-            row,
+            output_row,
             ZiskMainReportWindow {
                 current: report,
                 next_instruction,
@@ -1325,15 +1866,20 @@ fn write_layout_zisk_main_trace_segment(
             layout.row_count(),
             segment,
         )?;
+        output_row = output_row.checked_add(written_rows).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main row index overflow".to_owned(),
+            }
+        })?;
     }
-    if reports.len() < layout.row_count() {
+    if output_row < layout.row_count() {
         if !segment.is_last_segment {
             return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "non-final Zisk Main segment does not fill layout rows".to_owned(),
             });
         }
-        validate_zisk_main_halt_pc(reports, &state, terminal_pc)?;
-        for row in reports.len()..layout.row_count() {
+        validate_zisk_main_halt_pc(output_row, &state, terminal_pc)?;
+        for row in output_row..layout.row_count() {
             write_zisk_main_terminal_row(&mut builder, row, &columns, terminal_pc)?;
         }
     }
@@ -1361,7 +1907,14 @@ fn write_layout_zisk_main_trace_segment(
     Ok(Some(ZiskMainTraceSegmentWrite {
         output: WitnessTraceOutput::with_unit_values(
             produced_len,
-            zisk_main_unit_values(layout.row_count(), reports, terminal_pc, &state, segment),
+            zisk_main_unit_values(
+                layout.row_count(),
+                output_row,
+                reports,
+                terminal_pc,
+                &state,
+                segment,
+            ),
         ),
         final_state: state,
         continuation_state,
@@ -1386,6 +1939,7 @@ fn zisk_main_continuation_state(
 
 fn zisk_main_unit_values(
     row_count: usize,
+    written_rows: usize,
     reports: &[GuestMachineReport],
     terminal_pc: u64,
     state: &ZiskMainTraceState,
@@ -1395,7 +1949,7 @@ fn zisk_main_unit_values(
         .first()
         .map(|report| report.address)
         .unwrap_or(terminal_pc);
-    let segment_last_c = if segment.is_last_segment && reports.len() < row_count {
+    let segment_last_c = if segment.is_last_segment && written_rows < row_count {
         0
     } else {
         state.last_c
@@ -1474,7 +2028,7 @@ fn write_zisk_main_report_columns(
     state: &mut ZiskMainTraceState,
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
-) -> Result<(), GuestPcTraceBackendError> {
+) -> Result<usize, GuestPcTraceBackendError> {
     let values = validate_and_apply_zisk_main_report(
         row,
         reports.current,
@@ -1484,6 +2038,24 @@ fn write_zisk_main_report_columns(
         row_count,
         segment,
     )?;
+    let produced_rows = values.len();
+    for (offset, values) in values.into_iter().enumerate() {
+        let row = row.checked_add(offset).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main row index overflow".to_owned(),
+            }
+        })?;
+        write_zisk_main_row_columns(builder, row, values, columns)?;
+    }
+    Ok(produced_rows)
+}
+
+fn write_zisk_main_row_columns(
+    builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
+    row: usize,
+    values: ZiskMainReportTraceValues,
+    columns: &ZiskMainTraceColumns,
+) -> Result<(), GuestPcTraceBackendError> {
     let instruction = values.instruction;
 
     write_wide_column(builder, row, &columns.a, values.a)?;
@@ -1644,13 +2216,13 @@ fn write_zisk_main_report_columns(
 }
 
 fn validate_zisk_main_halt_pc(
-    reports: &[GuestMachineReport],
+    written_rows: usize,
     state: &ZiskMainTraceState,
     halt_pc: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
-    if !reports.is_empty() && state.next_pc != halt_pc {
+    if written_rows != 0 && state.next_pc != halt_pc {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: reports.len() - 1,
+            row: written_rows - 1,
             message: format!(
                 "last next pc {} does not match halt pc {}",
                 state.next_pc, halt_pc
@@ -1732,6 +2304,7 @@ fn zisk_main_source_value(
     source: ZiskMainSource,
     state: &ZiskMainTraceState,
     report: &GuestMachineReport,
+    effects: ZiskMainReportEffects<'_>,
     base: Option<u64>,
     ind_width: u64,
 ) -> Result<(u64, Option<ExpectedMemoryAccess>), GuestPcTraceBackendError> {
@@ -1748,43 +2321,56 @@ fn zisk_main_source_value(
             let address = base.wrapping_add_signed(offset);
             let access = matching_memory_access(
                 row,
-                report,
+                effects,
                 GuestMemoryAccessKind::Read,
                 address,
                 byte_len,
             )?;
             Ok((access.value, Some(access)))
         }
-        ZiskMainSource::Memory(address) => zisk_main_memory_source_value(row, address, report),
+        ZiskMainSource::Memory(address) => {
+            zisk_main_memory_source_value(row, address, state, report, effects)
+        }
     }
 }
 
 fn zisk_main_memory_source_value(
     row: usize,
     address: u64,
+    state: &ZiskMainTraceState,
     report: &GuestMachineReport,
+    effects: ZiskMainReportEffects<'_>,
 ) -> Result<(u64, Option<ExpectedMemoryAccess>), GuestPcTraceBackendError> {
     if address == ZISK_INPUT_ADDRESS {
         if let RiscvInstruction::ZiskFcallResult { rd } = report.instruction {
-            let value = zisk_main_fcall_result_value(row, rd, report)?;
+            let value = zisk_main_fcall_result_value(row, rd, effects)?;
             return Ok((value, None));
         }
     }
-    let access = matching_memory_access(row, report, GuestMemoryAccessKind::Read, address, 8)?;
+    if zisk_internal_memory_address(address) && effects.memory_accesses.is_empty() {
+        let Some(value) = state.internal_memory.get(&address).copied() else {
+            return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                row,
+                message: format!("missing internal memory value at {address}"),
+            });
+        };
+        return Ok((value, None));
+    }
+    let access = matching_memory_access(row, effects, GuestMemoryAccessKind::Read, address, 8)?;
     Ok((access.value, Some(access)))
 }
 
 fn zisk_main_fcall_result_value(
     row: usize,
     rd: u8,
-    report: &GuestMachineReport,
+    effects: ZiskMainReportEffects<'_>,
 ) -> Result<u64, GuestPcTraceBackendError> {
-    let [write] = report.register_writes.as_slice() else {
+    let [write] = effects.register_writes else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
             message: format!(
                 "free-call result row reported {} register writes",
-                report.register_writes.len()
+                effects.register_writes.len()
             ),
         });
     };
@@ -1799,12 +2385,12 @@ fn zisk_main_fcall_result_value(
 
 fn matching_memory_access(
     row: usize,
-    report: &GuestMachineReport,
+    effects: ZiskMainReportEffects<'_>,
     kind: GuestMemoryAccessKind,
     address: u64,
     byte_len: usize,
 ) -> Result<ExpectedMemoryAccess, GuestPcTraceBackendError> {
-    let matching: Vec<_> = report
+    let matching: Vec<_> = effects
         .memory_accesses
         .iter()
         .filter(|access| {
@@ -1832,7 +2418,7 @@ fn matching_memory_access(
 fn validate_zisk_main_memory_accesses(
     row: usize,
     instruction: &ZiskMainInstruction,
-    report: &GuestMachineReport,
+    effects: ZiskMainReportEffects<'_>,
     a: u64,
     c: u64,
     a_access: Option<ExpectedMemoryAccess>,
@@ -1852,17 +2438,17 @@ fn validate_zisk_main_memory_accesses(
             value: low_bytes_value(store_value, byte_len),
         });
     }
-    if report.memory_accesses.len() != expected.len() {
+    if effects.memory_accesses.len() != expected.len() {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
             message: format!(
                 "expected {} memory accesses, found {}",
                 expected.len(),
-                report.memory_accesses.len()
+                effects.memory_accesses.len()
             ),
         });
     }
-    for (found, expected) in report.memory_accesses.iter().zip(expected.iter()) {
+    for (found, expected) in effects.memory_accesses.iter().zip(expected.iter()) {
         if found.kind != expected.kind
             || found.address != expected.address
             || found.byte_len != expected.byte_len
@@ -1890,24 +2476,25 @@ fn validate_zisk_main_memory_accesses(
 fn validate_zisk_main_precompile_memory_accesses(
     row: usize,
     report: &GuestMachineReport,
+    effects: ZiskMainReportEffects<'_>,
     operand_address: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
     let RiscvInstruction::ZiskPrecompile { kind, .. } = report.instruction else {
-        if report.precompile_memory_accesses.is_empty() {
+        if effects.precompile_memory_accesses.is_empty() {
             return Ok(());
         }
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
             message: format!(
                 "non-precompile row reported {} precompile memory accesses",
-                report.precompile_memory_accesses.len()
+                effects.precompile_memory_accesses.len()
             ),
         });
     };
 
     let mut cursor = PrecompileMemoryAccessCursor {
         row,
-        accesses: &report.precompile_memory_accesses,
+        accesses: effects.precompile_memory_accesses,
         offset: 0,
     };
     match kind {
@@ -2035,11 +2622,13 @@ fn zisk_main_store_offset(
         ZiskMainStore::Register(index) => Ok(i64::from(*index)),
         ZiskMainStore::Indirect(offset) => Ok(*offset),
         ZiskMainStore::Memory(address) => {
-            if *address == ZISK_EXTRA_PARAMS_ADDRESS as i64 {
-                Ok(*address)
-            } else {
-                Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row })
+            let Ok(address_u64) = u64::try_from(*address) else {
+                return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row });
+            };
+            if !zisk_internal_memory_address(address_u64) {
+                return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row });
             }
+            Ok(*address)
         }
     }
 }
@@ -2188,18 +2777,18 @@ fn zisk_main_instruction_result(
     instruction: &ZiskMainInstruction,
     a: u64,
     b: u64,
-    report: &GuestMachineReport,
+    effects: ZiskMainReportEffects<'_>,
 ) -> Result<(u64, bool), GuestPcTraceBackendError> {
     match instruction.op {
         ZiskMainOp::DmaMemCpy
         | ZiskMainOp::DmaInputCpy
         | ZiskMainOp::DmaXMemCpy
-        | ZiskMainOp::DmaXMemSet => zisk_main_dma_result(row, instruction, report, Some(a)),
+        | ZiskMainOp::DmaXMemSet => zisk_main_dma_result(row, instruction, effects, Some(a)),
         ZiskMainOp::DmaMemCmp | ZiskMainOp::DmaXMemCmp => {
-            zisk_main_dma_result(row, instruction, report, None)
+            zisk_main_dma_result(row, instruction, effects, None)
         }
         ZiskMainOp::Add256 if instruction.is_precompiled => {
-            zisk_main_add256_result(row, instruction, report)
+            zisk_main_add256_result(row, instruction, effects)
         }
         ZiskMainOp::Keccak
         | ZiskMainOp::Arith256
@@ -2217,17 +2806,17 @@ fn zisk_main_instruction_result(
 fn zisk_main_dma_result(
     row: usize,
     instruction: &ZiskMainInstruction,
-    report: &GuestMachineReport,
+    effects: ZiskMainReportEffects<'_>,
     expected_value: Option<u64>,
 ) -> Result<(u64, bool), GuestPcTraceBackendError> {
     match instruction.store {
         ZiskMainStore::Register(index) => {
-            let [write] = report.register_writes.as_slice() else {
+            let [write] = effects.register_writes else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: format!(
                         "DMA row reported {} register writes",
-                        report.register_writes.len()
+                        effects.register_writes.len()
                     ),
                 });
             };
@@ -2251,7 +2840,7 @@ fn zisk_main_dma_result(
             Ok((write.value, false))
         }
         ZiskMainStore::None => {
-            if !report.register_writes.is_empty() {
+            if !effects.register_writes.is_empty() {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: "DMA row with no store reported register writes".to_owned(),
@@ -2271,9 +2860,9 @@ fn zisk_main_dma_result(
 fn zisk_main_add256_result(
     row: usize,
     instruction: &ZiskMainInstruction,
-    report: &GuestMachineReport,
+    effects: ZiskMainReportEffects<'_>,
 ) -> Result<(u64, bool), GuestPcTraceBackendError> {
-    let Some(result) = report.precompile_result else {
+    let Some(result) = effects.precompile_result else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
             message: "Add256 row missing precompile result".to_owned(),
@@ -2282,12 +2871,12 @@ fn zisk_main_add256_result(
     match instruction.store {
         ZiskMainStore::None => Ok((result, false)),
         ZiskMainStore::Register(index) => {
-            let [write] = report.register_writes.as_slice() else {
+            let [write] = effects.register_writes else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: format!(
                         "Add256 row reported {} register writes",
-                        report.register_writes.len()
+                        effects.register_writes.len()
                     ),
                 });
             };
@@ -2384,7 +2973,7 @@ fn signed_remainder_word_result(dividend: i32, divisor: i32) -> (u64, bool) {
 fn validate_zisk_main_next_pc(
     row: usize,
     instruction: &ZiskMainInstruction,
-    report: &GuestMachineReport,
+    expected_report_next_pc: u64,
     c: u64,
     flag: bool,
 ) -> Result<(), GuestPcTraceBackendError> {
@@ -2395,12 +2984,12 @@ fn validate_zisk_main_next_pc(
     } else {
         instruction.pc.wrapping_add_signed(instruction.jmp_offset2)
     };
-    if report.next_pc != expected_next_pc {
+    if expected_report_next_pc != expected_next_pc {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
             message: format!(
                 "expected next pc {expected_next_pc}, found {}",
-                report.next_pc
+                expected_report_next_pc
             ),
         });
     }
@@ -2411,13 +3000,14 @@ fn apply_zisk_main_store(
     row: usize,
     instruction: &ZiskMainInstruction,
     c: u64,
-    report: &GuestMachineReport,
+    effects: ZiskMainReportEffects<'_>,
+    expected_next_pc: u64,
     state: &mut ZiskMainTraceState,
 ) -> Result<(), GuestPcTraceBackendError> {
     let store_value = zisk_main_store_value(instruction, c);
     match instruction.store {
         ZiskMainStore::None => {
-            if !report.register_writes.is_empty() {
+            if !effects.register_writes.is_empty() {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: "store none row reported register writes".to_owned(),
@@ -2425,12 +3015,12 @@ fn apply_zisk_main_store(
             }
         }
         ZiskMainStore::Register(index) => {
-            let [write] = report.register_writes.as_slice() else {
+            let [write] = effects.register_writes else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: format!(
                         "store register row reported {} register writes",
-                        report.register_writes.len()
+                        effects.register_writes.len()
                     ),
                 });
             };
@@ -2446,7 +3036,7 @@ fn apply_zisk_main_store(
             state.registers[usize::from(index)] = store_value;
         }
         ZiskMainStore::Indirect(_) => {
-            if !report.register_writes.is_empty() {
+            if !effects.register_writes.is_empty() {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: "store indirect row reported register writes".to_owned(),
@@ -2454,19 +3044,23 @@ fn apply_zisk_main_store(
             }
         }
         ZiskMainStore::Memory(address) => {
-            if address != ZISK_EXTRA_PARAMS_ADDRESS as i64 {
+            let Ok(address) = u64::try_from(address) else {
+                return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row });
+            };
+            if !zisk_internal_memory_address(address) {
                 return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row });
             }
-            if !report.register_writes.is_empty() {
+            if !effects.register_writes.is_empty() {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: "store memory row reported register writes".to_owned(),
                 });
             }
+            state.internal_memory.insert(address, store_value);
         }
     }
     state.last_c = c;
-    state.next_pc = report.next_pc;
+    state.next_pc = expected_next_pc;
     Ok(())
 }
 

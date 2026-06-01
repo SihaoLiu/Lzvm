@@ -187,6 +187,42 @@ fn sd(rs1: u8, rs2: u8, offset: i16) -> u32 {
     store(3, rs1, rs2, offset)
 }
 
+fn encode_amo(
+    funct5: u8,
+    acquire: bool,
+    release: bool,
+    rs2: u8,
+    rs1: u8,
+    funct3: u8,
+    rd: u8,
+) -> u32 {
+    assert!(funct5 < 32);
+    assert!(rs2 < 32);
+    assert!(rs1 < 32);
+    assert!(funct3 < 8);
+    assert!(rd < 32);
+    (u32::from(funct5) << 27)
+        | (u32::from(acquire) << 26)
+        | (u32::from(release) << 25)
+        | (u32::from(rs2) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(funct3) << 12)
+        | (u32::from(rd) << 7)
+        | 0x2f
+}
+
+fn lr_d(rd: u8, rs1: u8) -> u32 {
+    encode_amo(0x02, false, false, 0, rs1, 3, rd)
+}
+
+fn sc_d(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_amo(0x03, false, false, rs2, rs1, 3, rd)
+}
+
+fn amoadd_d(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_amo(0x00, false, false, rs2, rs1, 3, rd)
+}
+
 fn auipc(rd: u8, immediate: u32) -> u32 {
     assert!(rd < 32);
     assert_eq!(immediate & 0x0fff, 0);
@@ -866,6 +902,377 @@ fn guest_pc_trace_backend_writes_zisk_main_dma_memcpy_pair() {
     );
     assert_eq!(
         trace.value(6, 25),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_expands_successful_store_conditional() {
+    let dir = temp_dir("guest-zisk-main-store-conditional");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(10, 0xa000_0000),
+        slli(10, 10, 32),
+        srli(10, 10, 32),
+        addi(7, 0, 9),
+        lr_d(14, 10),
+        sc_d(12, 10, 7),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_address_columns(7);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should write successful store-conditional rows");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 7);
+    assert_eq!(trace.column_count(), 29);
+    assert_eq!(
+        trace.value(5, 2),
+        Some(Felt::from_canonical(9).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 4),
+        Some(Felt::from_canonical(9).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 7),
+        Some(Felt::from_canonical(ENTRY + 20).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 8),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 17),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 18),
+        Some(Felt::from_canonical(0).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 22),
+        Some(Felt::from_canonical(8).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 27),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 28),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 2),
+        Some(Felt::from_canonical(0).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 4),
+        Some(Felt::from_canonical(0).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 7),
+        Some(Felt::from_canonical(ENTRY + 21).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 8),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 13),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 18),
+        Some(Felt::from_canonical(12).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 27),
+        Some(Felt::from_canonical(3).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 28),
+        Some(Felt::from_canonical(3).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_segments_account_for_store_conditional_rows() {
+    let dir = temp_dir("guest-zisk-main-store-conditional-segments");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(10, 0xa000_0000),
+        slli(10, 10, 32),
+        srli(10, 10, 32),
+        addi(7, 0, 9),
+        lr_d(14, 10),
+        sc_d(12, 10, 7),
+        addi(13, 0, 5),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_address_columns(7);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let segments = run_guest_pc_trace_segments_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should split after store-conditional rows");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(segments.len(), 2);
+    let first = segments[0].output().trace();
+    assert_eq!(
+        first.value(6, 7),
+        Some(Felt::from_canonical(ENTRY + 21).expect("canonical"))
+    );
+    assert_eq!(
+        first.value(6, 13),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        first.value(6, 18),
+        Some(Felt::from_canonical(12).expect("canonical"))
+    );
+    assert_eq!(
+        unit_value(segments[0].output(), "segment_next_pc"),
+        &[Felt::from_canonical(ENTRY + 24).expect("canonical")]
+    );
+    assert_eq!(
+        unit_value(segments[1].output(), "segment_initial_pc"),
+        &[Felt::from_canonical(ENTRY + 24).expect("canonical")]
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_expands_doubleword_amo_add() {
+    let dir = temp_dir("guest-zisk-main-amo-add");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(10, 0xa000_0000),
+        slli(10, 10, 32),
+        srli(10, 10, 32),
+        addi(7, 0, 5),
+        sd(10, 7, 0),
+        addi(8, 0, 3),
+        amoadd_d(12, 10, 8),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_address_columns(9);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should write doubleword AMO add rows");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 9);
+    assert_eq!(trace.column_count(), 29);
+    assert_eq!(
+        trace.value(6, 2),
+        Some(Felt::from_canonical(5).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 4),
+        Some(Felt::from_canonical(5).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 7),
+        Some(Felt::from_canonical(ENTRY + 24).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 13),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 18),
+        Some(Felt::from_canonical(12).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 22),
+        Some(Felt::from_canonical(8).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 27),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(7, 0),
+        Some(Felt::from_canonical(5).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(7, 2),
+        Some(Felt::from_canonical(3).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(7, 4),
+        Some(Felt::from_canonical(8).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(7, 7),
+        Some(Felt::from_canonical(ENTRY + 25).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(7, 8),
+        Some(Felt::from_canonical(0x0a).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(7, 27),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 2),
+        Some(Felt::from_canonical(8).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 4),
+        Some(Felt::from_canonical(8).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 7),
+        Some(Felt::from_canonical(ENTRY + 26).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 17),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 22),
+        Some(Felt::from_canonical(8).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 27),
+        Some(Felt::from_canonical(2).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 28),
+        Some(Felt::from_canonical(2).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_expands_aliased_doubleword_amo_add() {
+    let dir = temp_dir("guest-zisk-main-aliased-amo-add");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(10, 0xa000_0000),
+        slli(10, 10, 32),
+        srli(10, 10, 32),
+        addi(7, 0, 5),
+        sd(10, 7, 0),
+        addi(8, 0, 3),
+        amoadd_d(10, 10, 8),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_memory_source_columns(10);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should write aliased doubleword AMO add rows");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 10);
+    assert_eq!(trace.column_count(), 31);
+    assert_eq!(
+        trace.value(6, 2),
+        Some(Felt::from_canonical(5).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 4),
+        Some(Felt::from_canonical(5).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 7),
+        Some(Felt::from_canonical(ENTRY + 24).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 18),
+        Some(Felt::from_canonical(0xa000_0100).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 21),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(7, 0),
+        Some(Felt::from_canonical(5).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(7, 4),
+        Some(Felt::from_canonical(8).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 2),
+        Some(Felt::from_canonical(8).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(8, 17),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(9, 2),
+        Some(Felt::from_canonical(5).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(9, 4),
+        Some(Felt::from_canonical(5).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(9, 13),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(9, 18),
+        Some(Felt::from_canonical(10).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(9, 30),
         Some(Felt::from_canonical(1).expect("canonical"))
     );
 }
@@ -2400,6 +2807,87 @@ fn guest_pc_trace_backend_writes_precompile_memory_access_layout() {
     assert_eq!(trace.value(16, 4), Some(Felt::ZERO));
     assert_eq!(trace.value(16, 5), Some(Felt::ZERO));
     assert_eq!(trace.value(16, 6), Some(Felt::ZERO));
+}
+
+#[test]
+fn precompile_memory_trace_uses_expanded_main_step_after_store_conditional() {
+    let dir = temp_dir("guest-precompile-memory-expanded-main-step");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let data_address = 64_u64;
+    let params_address = data_address;
+    let a_address = data_address + 32;
+    let b_address = a_address + 32;
+    let out_address = b_address + 32;
+    let scratch_address = out_address + 32;
+    let code_words = [
+        addi(10, 0, scratch_address as i16),
+        addi(7, 0, 9),
+        lr_d(14, 10),
+        sc_d(12, 10, 7),
+        addi(1, 0, params_address as i16),
+        csrrs(2, 0x0811, 1),
+        0x0000_0073,
+    ];
+    let mut code = Vec::with_capacity(code_words.len() * 4);
+    for word in code_words {
+        code.extend_from_slice(&word.to_le_bytes());
+    }
+    let data_offset = 176_u64 + code.len() as u64;
+    let mut data = Vec::new();
+    data.extend_from_slice(&a_address.to_le_bytes());
+    data.extend_from_slice(&b_address.to_le_bytes());
+    data.extend_from_slice(&1_u64.to_le_bytes());
+    data.extend_from_slice(&out_address.to_le_bytes());
+    for _ in 0..4 {
+        data.extend_from_slice(&u64::MAX.to_le_bytes());
+    }
+    data.extend_from_slice(&1_u64.to_le_bytes());
+    data.extend_from_slice(&[0; 24]);
+    data.extend_from_slice(&[0; 32]);
+    data.extend_from_slice(&0_u64.to_le_bytes());
+    let headers = [
+        program_header_at(176, ENTRY, code.len() as u64),
+        program_header_at(data_offset, data_address, data.len() as u64),
+    ];
+    let mut guest_image_bytes = sample_guest_image_with_program_headers(&headers);
+    guest_image_bytes.resize(176, 0);
+    guest_image_bytes.extend_from_slice(&code);
+    guest_image_bytes.resize(data_offset as usize, 0);
+    guest_image_bytes.extend_from_slice(&data);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_trace_columns(
+        17,
+        vec![7],
+        vec![
+            commitment_column("precompile_mem_main_step", 1, 0, 1),
+            commitment_column("precompile_mem_is_write", 1, 1, 1),
+            commitment_column("precompile_mem_address", 1, 2, 1),
+            commitment_column("precompile_mem_value", 1, 3, 2),
+            commitment_column("precompile_mem_byte_len", 1, 5, 1),
+            commitment_column("precompile_mem_selector", 1, 6, 1),
+        ],
+    );
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should account for expanded Main rows before precompile memory accesses");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_precompile_mem_row(&trace, 0, 6, false, params_address, a_address);
+    assert_precompile_mem_row(&trace, 3, 6, false, params_address + 24, out_address);
+    assert_precompile_mem_row(&trace, 12, 6, true, out_address, 1);
+    assert_precompile_mem_row(&trace, 15, 6, true, out_address + 24, 0);
 }
 
 fn assert_precompile_mem_row(

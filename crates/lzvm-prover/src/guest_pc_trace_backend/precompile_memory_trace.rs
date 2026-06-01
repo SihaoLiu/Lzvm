@@ -44,27 +44,35 @@ pub(super) fn write_layout_precompile_memory_trace(
         previous_c: 0,
     };
     let mut output_row = 0_usize;
-    for (main_step, report) in reports.iter().enumerate() {
-        let next_instruction = reports.get(main_step + 1).map(|next| next.instruction);
-        validate_and_apply_zisk_main_report(
+    let mut main_step = 0_usize;
+    for (report_index, report) in reports.iter().enumerate() {
+        let next_instruction = reports.get(report_index + 1).map(|next| next.instruction);
+        let report_main_step = main_step;
+        let written_rows = validate_and_apply_zisk_main_report(
             main_step,
             report,
             next_instruction,
             &mut state,
             None,
-            reports.len(),
+            usize::MAX,
             segment,
-        )?;
+        )?
+        .len();
         for access in &report.precompile_memory_accesses {
             write_precompile_memory_access(
                 &mut builder,
                 output_row,
                 &columns,
-                main_step as u64,
+                report_main_step as u64,
                 access,
             )?;
             output_row += 1;
         }
+        main_step = main_step.checked_add(written_rows).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main row index overflow".to_owned(),
+            }
+        })?;
     }
 
     let trace = builder.build();

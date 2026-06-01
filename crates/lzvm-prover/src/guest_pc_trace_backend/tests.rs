@@ -6,8 +6,13 @@ fn rejects_add256_precompile_memory_access_address_mismatch() {
     let mut report = add256_report();
     report.precompile_memory_accesses[4].address += 8;
 
-    let error = validate_zisk_main_precompile_memory_accesses(3, &report, 64)
-        .expect_err("mismatched Add256 precompile memory access should fail");
+    let error = validate_zisk_main_precompile_memory_accesses(
+        3,
+        &report,
+        ZiskMainReportEffects::from_report(&report),
+        64,
+    )
+    .expect_err("mismatched Add256 precompile memory access should fail");
 
     assert!(error.to_string().contains("precompile memory access 4"));
 }
