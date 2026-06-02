@@ -229,6 +229,7 @@ impl WitnessTraceLayout {
 #[cfg(test)]
 thread_local! {
     static COLUMN_LOOKUP_COUNT: Cell<usize> = const { Cell::new(0) };
+    static GENERIC_VALUE_COPY_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -239,6 +240,16 @@ pub(crate) fn reset_column_lookup_count() {
 #[cfg(test)]
 pub(crate) fn column_lookup_count() -> usize {
     COLUMN_LOOKUP_COUNT.with(Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_generic_value_copy_count() {
+    GENERIC_VALUE_COPY_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn generic_value_copy_count() -> usize {
+    GENERIC_VALUE_COPY_COUNT.with(Cell::get)
 }
 
 impl WitnessTraceBuilder<'_> {
@@ -316,7 +327,18 @@ impl WitnessTraceBuilder<'_> {
         let end = start
             .checked_add(column.dimension)
             .ok_or(WitnessTraceBuildError::TraceValueCountOverflow)?;
-        self.values[start..end].copy_from_slice(values);
+        match values {
+            [value] => self.values[start] = *value,
+            [first, second] => {
+                self.values[start] = *first;
+                self.values[start + 1] = *second;
+            }
+            _ => {
+                #[cfg(test)]
+                GENERIC_VALUE_COPY_COUNT.with(|count| count.set(count.get() + 1));
+                self.values[start..end].copy_from_slice(values);
+            }
+        }
         Ok(())
     }
 
@@ -652,5 +674,58 @@ mod tests {
         assert_eq!(stage.column_count(), 3);
         assert_eq!(stage.values(), expected.as_slice());
         assert_eq!(crate::witness_trace::trace_value_lookup_count(), 0);
+    }
+
+    #[test]
+    fn small_writes_store_values_without_generic_copy() {
+        let layout = WitnessTraceLayout {
+            rows: 2,
+            columns: 5,
+            stages: vec![
+                WitnessTraceStageLayout {
+                    stage_index: 1,
+                    start_column: 0,
+                    width: 3,
+                },
+                WitnessTraceStageLayout {
+                    stage_index: 2,
+                    start_column: 3,
+                    width: 2,
+                },
+            ],
+            commitment_columns: vec![
+                WitnessTraceColumnLayout {
+                    name: "scalar".to_owned(),
+                    stage_index: 1,
+                    stage_position: 1,
+                    trace_column: 1,
+                    dimension: 1,
+                },
+                WitnessTraceColumnLayout {
+                    name: "wide".to_owned(),
+                    stage_index: 2,
+                    stage_position: 0,
+                    trace_column: 3,
+                    dimension: 2,
+                },
+            ],
+        };
+        let scalar = layout.resolved_column(&layout.commitment_columns[0]);
+        let wide = layout.resolved_column(&layout.commitment_columns[1]);
+        let mut builder = layout.trace_builder().expect("builder should allocate");
+
+        reset_generic_value_copy_count();
+        builder
+            .write_resolved_column_values(0, &scalar, &[Felt::from_u64(7)])
+            .expect("scalar value should write");
+        builder
+            .write_resolved_column_values(1, &wide, &[Felt::from_u64(11), Felt::from_u64(13)])
+            .expect("wide value should write");
+
+        let trace = builder.build();
+        assert_eq!(trace.value(0, 1), Some(Felt::from_u64(7)));
+        assert_eq!(trace.value(1, 3), Some(Felt::from_u64(11)));
+        assert_eq!(trace.value(1, 4), Some(Felt::from_u64(13)));
+        assert_eq!(generic_value_copy_count(), 0);
     }
 }
