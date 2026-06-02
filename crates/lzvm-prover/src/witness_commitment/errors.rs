@@ -129,6 +129,7 @@ impl From<lzvm_accel::AccelError> for WitnessStageLeafError {
 pub enum WitnessStageCommitmentError {
     Field(FieldError),
     InvalidLeafByteLength { expected: usize, found: usize },
+    InvalidLeafDigestCount { expected: usize, found: usize },
     UnsupportedArity { arity: usize },
     EmptyStage,
     LengthOverflow,
@@ -154,6 +155,10 @@ impl fmt::Display for WitnessStageCommitmentError {
             Self::InvalidLeafByteLength { expected, found } => write!(
                 f,
                 "invalid witness stage leaf byte length: expected {expected}, found {found}"
+            ),
+            Self::InvalidLeafDigestCount { expected, found } => write!(
+                f,
+                "invalid witness stage leaf digest count: expected {expected}, found {found}"
             ),
             Self::UnsupportedArity { arity } => {
                 write!(f, "unsupported witness stage commitment arity: {arity}")
@@ -197,6 +202,7 @@ impl std::error::Error for WitnessStageCommitmentError {
         match self {
             Self::Field(error) => Some(error),
             Self::InvalidLeafByteLength { .. }
+            | Self::InvalidLeafDigestCount { .. }
             | Self::UnsupportedArity { .. }
             | Self::EmptyStage
             | Self::LengthOverflow => None,

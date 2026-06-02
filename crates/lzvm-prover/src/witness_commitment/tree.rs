@@ -28,6 +28,7 @@ pub fn commit_witness_stage_leaves(
     )
 }
 
+#[cfg_attr(feature = "cuda", allow(dead_code))]
 pub(crate) fn commit_witness_stage_leaves_owned(
     leaves: WitnessStageLeaves,
     arity: usize,
@@ -45,6 +46,35 @@ pub(crate) fn commit_witness_stage_leaves_owned(
         arity,
         expected_leaf_bytes,
         out,
+    )
+}
+
+#[cfg(any(feature = "cuda", test))]
+pub(crate) fn commit_witness_stage_leaves_owned_with_leaf_hashes(
+    leaves: WitnessStageLeaves,
+    arity: usize,
+    leaf_hashes: Vec<[Felt; HASH_WORDS]>,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    validate_witness_stage_leaves(&leaves, arity)?;
+    let expected_leaf_hashes = leaves.extended_row_count();
+    if leaf_hashes.len() != expected_leaf_hashes {
+        return Err(WitnessStageCommitmentError::InvalidLeafDigestCount {
+            expected: expected_leaf_hashes,
+            found: leaf_hashes.len(),
+        });
+    }
+    let stage_index = leaves.stage_index();
+    let extended_row_count = leaves.extended_row_count();
+    let column_count = leaves.column_count();
+    let out = leaves.into_bytes();
+
+    commit_validated_witness_stage_bytes_with_leaf_hashes(
+        stage_index,
+        extended_row_count,
+        column_count,
+        arity,
+        out,
+        leaf_hashes,
     )
 }
 
@@ -77,14 +107,32 @@ fn commit_validated_witness_stage_bytes(
     column_count: usize,
     arity: usize,
     leaf_byte_count: usize,
-    mut out: Vec<u8>,
+    out: Vec<u8>,
 ) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
-    let mut level = linear_hashes_from_row_major_bytes(
+    let level = linear_hashes_from_row_major_bytes(
         &out[..leaf_byte_count],
         extended_row_count,
         column_count,
         arity,
     )?;
+    commit_validated_witness_stage_bytes_with_leaf_hashes(
+        stage_index,
+        extended_row_count,
+        column_count,
+        arity,
+        out,
+        level,
+    )
+}
+
+fn commit_validated_witness_stage_bytes_with_leaf_hashes(
+    stage_index: usize,
+    extended_row_count: usize,
+    column_count: usize,
+    arity: usize,
+    mut out: Vec<u8>,
+    mut level: Vec<[Felt; HASH_WORDS]>,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
     let tree_byte_count =
         expected_witness_stage_commitment_tree_byte_count(extended_row_count, column_count, arity)?;
     out.reserve_exact(tree_byte_count.saturating_sub(out.len()));
@@ -417,8 +465,9 @@ fn append_digest(out: &mut Vec<u8>, digest: [Felt; HASH_WORDS]) {
 mod tests {
     use super::{
         commit_witness_stage_leaves, commit_witness_stage_leaves_owned,
-        open_witness_stage_commitment, verify_witness_stage_opening_root,
-        WitnessStageCommitmentError, WitnessStageLeaves, WORD_BYTES,
+        commit_witness_stage_leaves_owned_with_leaf_hashes, open_witness_stage_commitment,
+        verify_witness_stage_opening_root, WitnessStageCommitmentError, WitnessStageLeaves,
+        WORD_BYTES,
     };
     use lzvm_field::{Felt, FieldError, MODULUS};
 
@@ -507,5 +556,26 @@ mod tests {
             .expect("stage row should open");
         assert!(verify_witness_stage_opening_root(owned.root(), 4, &opening)
             .expect("opening root check should run"));
+    }
+
+    #[test]
+    fn prehashed_witness_stage_commitment_rejects_leaf_digest_count_mismatch() {
+        let row_count = 5;
+        let column_count = 6;
+        let mut bytes = Vec::new();
+        for row in 0..row_count {
+            for column in 0..column_count {
+                let value = Felt::from_u64((row * 100 + column + 1) as u64);
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        let leaves = WitnessStageLeaves::new(7, row_count, row_count, column_count, bytes);
+        let leaf_hashes = vec![[Felt::ZERO; 4]; row_count - 1];
+
+        assert!(matches!(
+            commit_witness_stage_leaves_owned_with_leaf_hashes(leaves, 4, leaf_hashes),
+            Err(WitnessStageCommitmentError::InvalidLeafDigestCount { expected, found })
+                if expected == row_count && found == row_count - 1
+        ));
     }
 }

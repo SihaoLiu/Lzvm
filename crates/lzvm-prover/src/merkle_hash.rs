@@ -106,6 +106,82 @@ pub(crate) fn linear_hashes_from_row_major_bytes(
     }
 }
 
+#[cfg(feature = "cuda")]
+pub(crate) fn linear_hashes_from_validated_wide_row_major_device_buffer(
+    row_values: &CudaDeviceBuffer,
+    row_count: usize,
+    column_count: usize,
+    arity: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    validate_arity(arity)?;
+    let expected = row_major_byte_count(row_count, column_count)?;
+    if row_values.len() != expected {
+        return Err(MerkleHashError::LengthOverflow);
+    }
+    if row_count == 0 {
+        return Ok(Vec::new());
+    }
+    if column_count <= HASH_WORDS {
+        return Err(MerkleHashError::LengthOverflow);
+    }
+
+    match arity {
+        2 => cuda_linear_hashes_with_row_major_device_rounds(
+            row_count,
+            column_count,
+            HASH_WORDS,
+            8,
+            cuda_poseidon2_width8_linear_round_row_major_device,
+            row_values,
+        ),
+        4 => cuda_linear_hashes_with_row_major_device_rounds(
+            row_count,
+            column_count,
+            12,
+            16,
+            cuda_poseidon2_width16_linear_round_row_major_device,
+            row_values,
+        ),
+        _ => Err(MerkleHashError::UnsupportedArity { arity }),
+    }
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn padded_hashes_from_validated_row_major_bytes(
+    bytes: &[u8],
+    row_count: usize,
+    column_count: usize,
+    arity: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    validate_arity(arity)?;
+    let expected = row_major_byte_count(row_count, column_count)?;
+    if bytes.len() != expected || column_count > HASH_WORDS {
+        return Err(MerkleHashError::LengthOverflow);
+    }
+
+    let mut out = Vec::with_capacity(row_count);
+    for row in 0..row_count {
+        let mut digest = [Felt::ZERO; HASH_WORDS];
+        for (column, slot) in digest.iter_mut().enumerate().take(column_count) {
+            let word_index = row
+                .checked_mul(column_count)
+                .and_then(|offset| offset.checked_add(column))
+                .ok_or(MerkleHashError::LengthOverflow)?;
+            let byte_index = word_index
+                .checked_mul(8)
+                .ok_or(MerkleHashError::LengthOverflow)?;
+            let word = u64::from_le_bytes(
+                bytes[byte_index..byte_index + 8]
+                    .try_into()
+                    .expect("row-major byte length checked"),
+            );
+            *slot = Felt::from_u64(word);
+        }
+        out.push(digest);
+    }
+    Ok(out)
+}
+
 pub(crate) fn parent_hash(
     children: &[[Felt; HASH_WORDS]],
     arity: usize,
