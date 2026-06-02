@@ -307,7 +307,10 @@ impl WitnessTraceBuilder<'_> {
                 rows: self.layout.rows,
             });
         }
-        self.write_resolved_scalar_value_for_valid_row(row, column, value)
+        self.validate_resolved_column(column, 1)?;
+        let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
+        self.values[start] = value;
+        Ok(())
     }
 
     pub(crate) fn write_resolved_pair_values(
@@ -322,7 +325,11 @@ impl WitnessTraceBuilder<'_> {
                 rows: self.layout.rows,
             });
         }
-        self.write_resolved_pair_values_for_valid_row(row, column, values)
+        self.validate_resolved_column(column, 2)?;
+        let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
+        self.values[start] = values[0];
+        self.values[start + 1] = values[1];
+        Ok(())
     }
 
     fn write_resolved_column_values_for_valid_row(
@@ -350,31 +357,6 @@ impl WitnessTraceBuilder<'_> {
                 self.values[start..end].copy_from_slice(values);
             }
         }
-        Ok(())
-    }
-
-    fn write_resolved_scalar_value_for_valid_row(
-        &mut self,
-        row: usize,
-        column: &ResolvedTraceColumn<'_>,
-        value: Felt,
-    ) -> Result<(), WitnessTraceBuildError> {
-        self.validate_resolved_column(column, 1)?;
-        let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
-        self.values[start] = value;
-        Ok(())
-    }
-
-    fn write_resolved_pair_values_for_valid_row(
-        &mut self,
-        row: usize,
-        column: &ResolvedTraceColumn<'_>,
-        values: [Felt; 2],
-    ) -> Result<(), WitnessTraceBuildError> {
-        self.validate_resolved_column(column, 2)?;
-        let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
-        self.values[start] = values[0];
-        self.values[start + 1] = values[1];
         Ok(())
     }
 
