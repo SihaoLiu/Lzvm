@@ -439,6 +439,10 @@ enum PreparedBaseOperation<'input> {
     MatrixTmp1Sub(PreparedMatrixTmp1Operation<'input>),
     MatrixTmp1Mul(PreparedMatrixTmp1Operation<'input>),
     MatrixTmp1RSub(PreparedMatrixTmp1Operation<'input>),
+    MatrixMatrixAdd(PreparedMatrixMatrixOperation<'input>),
+    MatrixMatrixSub(PreparedMatrixMatrixOperation<'input>),
+    MatrixMatrixMul(PreparedMatrixMatrixOperation<'input>),
+    MatrixMatrixRSub(PreparedMatrixMatrixOperation<'input>),
     Tmp1Tmp1Add(PreparedTmp1Tmp1Operation),
     Tmp1Tmp1Sub(PreparedTmp1Tmp1Operation),
     Tmp1Tmp1Mul(PreparedTmp1Tmp1Operation),
@@ -467,6 +471,13 @@ struct PreparedMatrixTmp1Operation<'input> {
     destination_offset: usize,
     matrix: PreparedBaseMatrix<'input>,
     tmp1_offset: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreparedMatrixMatrixOperation<'input> {
+    destination_offset: usize,
+    left_matrix: PreparedBaseMatrix<'input>,
+    right_matrix: PreparedBaseMatrix<'input>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -751,6 +762,34 @@ fn prepared_base_operation<'input>(
                 destination_offset,
                 matrix,
                 tmp1_offset,
+            })
+        }
+        (0, PreparedBaseSource::Matrix(left_matrix), PreparedBaseSource::Matrix(right_matrix)) => {
+            PreparedBaseOperation::MatrixMatrixAdd(PreparedMatrixMatrixOperation {
+                destination_offset,
+                left_matrix,
+                right_matrix,
+            })
+        }
+        (1, PreparedBaseSource::Matrix(left_matrix), PreparedBaseSource::Matrix(right_matrix)) => {
+            PreparedBaseOperation::MatrixMatrixSub(PreparedMatrixMatrixOperation {
+                destination_offset,
+                left_matrix,
+                right_matrix,
+            })
+        }
+        (2, PreparedBaseSource::Matrix(left_matrix), PreparedBaseSource::Matrix(right_matrix)) => {
+            PreparedBaseOperation::MatrixMatrixMul(PreparedMatrixMatrixOperation {
+                destination_offset,
+                left_matrix,
+                right_matrix,
+            })
+        }
+        (3, PreparedBaseSource::Matrix(left_matrix), PreparedBaseSource::Matrix(right_matrix)) => {
+            PreparedBaseOperation::MatrixMatrixRSub(PreparedMatrixMatrixOperation {
+                destination_offset,
+                left_matrix,
+                right_matrix,
             })
         }
         (0, PreparedBaseSource::Tmp1(left_offset), PreparedBaseSource::Tmp1(right_offset)) => {
@@ -1220,6 +1259,22 @@ fn evaluate_prepared_base_row(
                 let (left, right) = read_matrix_tmp1_operands(operation, row, domain_size, tmp1);
                 tmp1[operation.destination_offset] = right - left;
             }
+            PreparedBaseOperation::MatrixMatrixAdd(operation) => {
+                let (left, right) = read_matrix_matrix_operands(operation, row, domain_size);
+                tmp1[operation.destination_offset] = left + right;
+            }
+            PreparedBaseOperation::MatrixMatrixSub(operation) => {
+                let (left, right) = read_matrix_matrix_operands(operation, row, domain_size);
+                tmp1[operation.destination_offset] = left - right;
+            }
+            PreparedBaseOperation::MatrixMatrixMul(operation) => {
+                let (left, right) = read_matrix_matrix_operands(operation, row, domain_size);
+                tmp1[operation.destination_offset] = left * right;
+            }
+            PreparedBaseOperation::MatrixMatrixRSub(operation) => {
+                let (left, right) = read_matrix_matrix_operands(operation, row, domain_size);
+                tmp1[operation.destination_offset] = right - left;
+            }
             PreparedBaseOperation::Tmp1Tmp1Add(operation) => {
                 let (left, right) = read_tmp1_tmp1_operands(operation, tmp1);
                 tmp1[operation.destination_offset] = left + right;
@@ -1287,6 +1342,18 @@ fn read_matrix_tmp1_operands(
     (
         read_prepared_matrix(operation.matrix, row, domain_size),
         tmp1[operation.tmp1_offset],
+    )
+}
+
+#[inline(always)]
+fn read_matrix_matrix_operands(
+    operation: &PreparedMatrixMatrixOperation<'_>,
+    row: usize,
+    domain_size: usize,
+) -> (Felt, Felt) {
+    (
+        read_prepared_matrix(operation.left_matrix, row, domain_size),
+        read_prepared_matrix(operation.right_matrix, row, domain_size),
     )
 }
 
@@ -2110,6 +2177,114 @@ mod tests {
     }
 
     #[test]
+    fn base_only_matrix_pairs_specialize_for_prepared_rows() {
+        for (kind, left, right) in [(0, 0, 0), (1, 3, 3), (2, 0, 5), (3, 7, 7)] {
+            let program = ConstraintProgram {
+                entries: vec![ConstraintEntry {
+                    stage: 1,
+                    destination_dimension: 1,
+                    destination_id: 0,
+                    first_row: 0,
+                    last_row: 8,
+                    temp1_count: 1,
+                    temp3_count: 0,
+                    ops_count: 1,
+                    ops_offset: 0,
+                    args_count: 8,
+                    args_offset: 0,
+                    intermediate: false,
+                    source_line: "base-only matrix pair".to_owned(),
+                }],
+                ops: vec![0],
+                args: vec![kind, 0, 1, 0, 0, 1, 1, 0],
+                numbers: Vec::new(),
+            };
+            let row_values: Vec<_> = (0..8)
+                .flat_map(|_| [Felt::from_u64(left), Felt::from_u64(right)])
+                .collect();
+            let stage_columns = [RegularStageColumns {
+                stage_index: 1,
+                column_count: 2,
+                values: &row_values,
+            }];
+
+            BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
+            BASE_ONLY_KIND_DISPATCH_COUNT.with(|count| count.set(0));
+            let results = evaluate_regular_constraints(
+                &program,
+                RegularConstraintInputs {
+                    domain_size: 8,
+                    stage_count: 1,
+                    stage_columns: &stage_columns,
+                    opening_point_offsets: &[0],
+                    ..RegularConstraintInputs::default()
+                },
+            )
+            .expect("regular constraint should evaluate");
+
+            assert_eq!(results[0].invalid_rows, Vec::new(), "kind {kind}");
+            assert_eq!(
+                BASE_ONLY_PREPARED_ROW_COUNT.with(Cell::get),
+                7,
+                "kind {kind}"
+            );
+            assert_eq!(
+                BASE_ONLY_KIND_DISPATCH_COUNT.with(Cell::get),
+                0,
+                "kind {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn base_only_matrix_pairs_preserve_independent_row_offsets() {
+        let program = ConstraintProgram {
+            entries: vec![ConstraintEntry {
+                stage: 1,
+                destination_dimension: 1,
+                destination_id: 0,
+                first_row: 0,
+                last_row: 4,
+                temp1_count: 1,
+                temp3_count: 0,
+                ops_count: 1,
+                ops_offset: 0,
+                args_count: 8,
+                args_offset: 0,
+                intermediate: false,
+                source_line: "base-only matrix offset pair".to_owned(),
+            }],
+            ops: vec![0],
+            args: vec![1, 0, 1, 0, 1, 1, 1, 0],
+            numbers: Vec::new(),
+        };
+        let row_values = [10, 11, 11, 12, 12, 13, 13, 10].map(Felt::from_u64);
+        let stage_columns = [RegularStageColumns {
+            stage_index: 1,
+            column_count: 2,
+            values: &row_values,
+        }];
+
+        BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
+        BASE_ONLY_KIND_DISPATCH_COUNT.with(|count| count.set(0));
+        let results = evaluate_regular_constraints(
+            &program,
+            RegularConstraintInputs {
+                domain_size: 4,
+                stage_count: 1,
+                stage_columns: &stage_columns,
+                opening_point_offsets: &[0, 1],
+                ..RegularConstraintInputs::default()
+            },
+        )
+        .expect("regular constraint should evaluate");
+
+        assert_eq!(results[0].invalid_rows, Vec::new());
+        assert_eq!(BASE_ONLY_PREPARED_ROW_COUNT.with(Cell::get), 3);
+        assert_eq!(BASE_ONLY_KIND_DISPATCH_COUNT.with(Cell::get), 0);
+    }
+
+    #[test]
     fn base_only_direct_common_source_pairs_preserve_row_semantics() {
         let entry = ConstraintEntry {
             stage: 1,
@@ -2225,6 +2400,42 @@ mod tests {
                     PreparedBaseSource::Tmp1(0),
                 ),
                 "matrix_tmp1_rsub",
+            ),
+            (
+                prepared_base_operation(
+                    0,
+                    0,
+                    PreparedBaseSource::Matrix(matrix),
+                    PreparedBaseSource::Matrix(matrix),
+                ),
+                "matrix_matrix_add",
+            ),
+            (
+                prepared_base_operation(
+                    1,
+                    0,
+                    PreparedBaseSource::Matrix(matrix),
+                    PreparedBaseSource::Matrix(matrix),
+                ),
+                "matrix_matrix_sub",
+            ),
+            (
+                prepared_base_operation(
+                    2,
+                    0,
+                    PreparedBaseSource::Matrix(matrix),
+                    PreparedBaseSource::Matrix(matrix),
+                ),
+                "matrix_matrix_mul",
+            ),
+            (
+                prepared_base_operation(
+                    3,
+                    0,
+                    PreparedBaseSource::Matrix(matrix),
+                    PreparedBaseSource::Matrix(matrix),
+                ),
+                "matrix_matrix_rsub",
             ),
             (
                 prepared_base_operation(
@@ -2351,6 +2562,10 @@ mod tests {
                 PreparedBaseOperation::MatrixTmp1Sub(_) => "matrix_tmp1_sub",
                 PreparedBaseOperation::MatrixTmp1Mul(_) => "matrix_tmp1_mul",
                 PreparedBaseOperation::MatrixTmp1RSub(_) => "matrix_tmp1_rsub",
+                PreparedBaseOperation::MatrixMatrixAdd(_) => "matrix_matrix_add",
+                PreparedBaseOperation::MatrixMatrixSub(_) => "matrix_matrix_sub",
+                PreparedBaseOperation::MatrixMatrixMul(_) => "matrix_matrix_mul",
+                PreparedBaseOperation::MatrixMatrixRSub(_) => "matrix_matrix_rsub",
                 PreparedBaseOperation::Tmp1Tmp1Add(_) => "tmp1_tmp1_add",
                 PreparedBaseOperation::Tmp1Tmp1Sub(_) => "tmp1_tmp1_sub",
                 PreparedBaseOperation::Tmp1Tmp1Mul(_) => "tmp1_tmp1_mul",
