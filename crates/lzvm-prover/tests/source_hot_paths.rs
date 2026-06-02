@@ -75,6 +75,14 @@ fn cuda_witness_leaf_extension_serializes_device_words_without_extended_felt_vec
         !cuda_body.contains(".collect::<Result<Vec<_>, _>>()"),
         "CUDA witness leaf extension should serialize validated words directly"
     );
+    assert!(
+        cuda_body.contains("Felt::as_u64_slice"),
+        "CUDA witness leaf extension should upload Felt words without staging a byte vector"
+    );
+    assert!(
+        !cuda_body.contains("row_major_felt_bytes(values"),
+        "CUDA witness leaf extension should avoid per-call Felt-to-byte staging"
+    );
 }
 
 #[test]
@@ -113,6 +121,14 @@ fn cuda_fri_fixed_extension_uses_device_output_without_extended_word_vector() {
     assert!(
         !cuda_body.contains("collect::<Result<Vec<_>, _>>()"),
         "CUDA FRI fixed extension should avoid a separate extended word vector"
+    );
+    assert!(
+        cuda_body.contains("Felt::as_u64_slice"),
+        "CUDA FRI fixed extension should upload Felt words without staging a byte vector"
+    );
+    assert!(
+        !cuda_body.contains("row_major_felt_bytes(values"),
+        "CUDA FRI fixed extension should avoid per-call Felt-to-byte staging"
     );
 }
 

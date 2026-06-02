@@ -441,13 +441,10 @@ fn extend_row_major_columns(
             ProvePcsFriPolynomialError::FixedExtensionGpuSetup { unit_index, source }
         })?;
 
-        let source_bytes = row_major_felt_bytes(values, unit_index)?;
-        let mut source_buffer = CudaDeviceBuffer::new(source_bytes.len()).map_err(|source| {
-            ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source }
-        })?;
-        source_buffer.copy_from(&source_bytes).map_err(|source| {
-            ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source }
-        })?;
+        let source_buffer =
+            CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values)).map_err(|source| {
+                ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source }
+            })?;
         let mut output_buffer = CudaDeviceBuffer::new(out_byte_count).map_err(|source| {
             ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source }
         })?;
@@ -494,23 +491,6 @@ fn extend_row_major_columns(
         }
         Ok(out)
     }
-}
-
-#[cfg(feature = "cuda")]
-fn row_major_felt_bytes(
-    values: &[Felt],
-    unit_index: usize,
-) -> Result<Vec<u8>, ProvePcsFriPolynomialError> {
-    let mut bytes = Vec::with_capacity(
-        values
-            .len()
-            .checked_mul(8)
-            .ok_or(ProvePcsFriPolynomialError::LengthOverflow { unit_index })?,
-    );
-    for value in values {
-        bytes.extend_from_slice(&value.to_u64().to_le_bytes());
-    }
-    Ok(bytes)
 }
 
 #[cfg(feature = "cuda")]

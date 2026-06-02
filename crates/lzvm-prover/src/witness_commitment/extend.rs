@@ -89,11 +89,7 @@ fn extend_witness_stage_row_major_bytes(
     .map_err(WitnessStageLeafError::from)?;
     prepare_gpu_setup(target_bits).map_err(WitnessStageLeafError::from)?;
 
-    let source_bytes = row_major_felt_bytes(values)?;
-    let mut source_buffer =
-        CudaDeviceBuffer::new(source_bytes.len()).map_err(WitnessStageLeafError::from)?;
-    source_buffer
-        .copy_from(&source_bytes)
+    let source_buffer = CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values))
         .map_err(WitnessStageLeafError::from)?;
     let mut output_buffer =
         CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from)?;
@@ -130,11 +126,7 @@ fn extend_witness_stage_row_major_bytes_with_leaf_hashes(
     .map_err(WitnessStageLeafError::from)?;
     prepare_gpu_setup(target_bits).map_err(WitnessStageLeafError::from)?;
 
-    let source_bytes = row_major_felt_bytes(values)?;
-    let mut source_buffer =
-        CudaDeviceBuffer::new(source_bytes.len()).map_err(WitnessStageLeafError::from)?;
-    source_buffer
-        .copy_from(&source_bytes)
+    let source_buffer = CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values))
         .map_err(WitnessStageLeafError::from)?;
     let mut output_buffer =
         CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from)?;
@@ -178,20 +170,6 @@ fn extended_row_count_from_bytes(
         .ok_or(WitnessStageLeafError::LengthOverflow)?
         .checked_div(column_count)
         .ok_or(WitnessStageLeafError::LengthOverflow)
-}
-
-#[cfg(feature = "cuda")]
-fn row_major_felt_bytes(values: &[Felt]) -> Result<Vec<u8>, WitnessStageLeafError> {
-    let mut bytes = Vec::with_capacity(
-        values
-            .len()
-            .checked_mul(WORD_BYTES)
-            .ok_or(WitnessStageLeafError::LengthOverflow)?,
-    );
-    for value in values {
-        bytes.extend_from_slice(&value.to_u64().to_le_bytes());
-    }
-    Ok(bytes)
 }
 
 #[cfg(feature = "cuda")]
