@@ -37,6 +37,12 @@ extern "C" int lzvm_cuda_copy_d2h_state_prefix_words(
     std::size_t state_count,
     std::size_t state_width_words,
     std::size_t prefix_words);
+extern "C" int lzvm_cuda_expand_state_prefix_words(
+    void* dst,
+    const void* src,
+    std::size_t state_count,
+    std::size_t state_width_words,
+    std::size_t prefix_words);
 extern "C" int lzvm_cuda_memset_zero_bytes(void* dst, std::size_t bytes);
 extern "C" int lzvm_cuda_check_launch(void);
 extern "C" int lzvm_cuda_synchronize(void);

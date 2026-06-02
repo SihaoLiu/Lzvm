@@ -292,9 +292,7 @@ fn parent_levels_from_digest_level_on_cuda(
         _ => unreachable!("arity is validated"),
     };
 
-    let input_words = digest_level_as_state_words(level, width)?;
-    let current = CudaDeviceBuffer::from_u64_words(&input_words)
-        .map_err(|_| MerkleHashError::LengthOverflow)?;
+    let current = state_buffer_from_digest_level(level, width)?;
     parent_levels_from_device_buffer(current, level.len(), arity, width, operation)
 }
 
@@ -428,6 +426,26 @@ fn digest_level_as_state_words(
         }
     }
     Ok(words)
+}
+
+#[cfg(feature = "cuda")]
+fn state_buffer_from_digest_level(
+    level: &[[Felt; HASH_WORDS]],
+    width: usize,
+) -> Result<CudaDeviceBuffer, MerkleHashError> {
+    let mut words = Vec::with_capacity(
+        level
+            .len()
+            .checked_mul(HASH_WORDS)
+            .ok_or(MerkleHashError::LengthOverflow)?,
+    );
+    for digest in level {
+        for value in digest {
+            words.push(value.to_u64());
+        }
+    }
+    CudaDeviceBuffer::from_state_prefix_u64_words(&words, level.len(), width, HASH_WORDS)
+        .map_err(|_| MerkleHashError::LengthOverflow)
 }
 
 fn validate_arity(arity: usize) -> Result<(), MerkleHashError> {
@@ -1149,6 +1167,31 @@ mod tests {
                 .map(|level| level.padding_count)
                 .collect::<Vec<_>>(),
             vec![0, 2]
+        );
+    }
+
+    #[test]
+    fn cuda_arity2_parent_levels_match_cpu_reference_with_padding() {
+        let level = vec![
+            digest([1, 2, 3, 4]),
+            digest([5, 6, 7, 8]),
+            digest([9, 10, 11, 12]),
+            digest([13, 14, 15, 16]),
+            digest([17, 18, 19, 20]),
+        ];
+
+        let actual =
+            parent_levels_from_digest_level(&level, 2).expect("cuda parent levels should hash");
+        let expected = parent_levels_from_digest_level_on_cpu(&level, 2)
+            .expect("cpu parent levels should hash");
+
+        assert_eq!(actual, expected);
+        assert_eq!(
+            actual
+                .iter()
+                .map(|level| level.padding_count)
+                .collect::<Vec<_>>(),
+            vec![1, 1, 0]
         );
     }
 

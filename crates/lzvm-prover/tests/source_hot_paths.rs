@@ -300,6 +300,50 @@ fn cli_prove_witness_parses_trace_bundle_without_unit_trace_copies() {
 }
 
 #[test]
+fn cuda_parent_levels_upload_digest_prefixes_without_host_state_expansion() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/merkle_hash.rs");
+    let source = std::fs::read_to_string(&source_path).expect("Merkle hash source should read");
+
+    let body = function_body(
+        &source,
+        "fn parent_levels_from_digest_level_on_cuda",
+        "fn parent_levels_from_device_buffer",
+    );
+
+    assert!(
+        body.contains("state_buffer_from_digest_level(level, width)"),
+        "CUDA parent levels should upload compact digest prefixes before expanding padded states"
+    );
+    assert!(
+        !body.contains("digest_level_as_state_words(level, width)"),
+        "CUDA parent levels should avoid host-side padded state expansion"
+    );
+}
+
+#[test]
+fn cuda_state_prefix_expansion_avoids_temporary_prefix_device_buffer() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("../lzvm-accel/src/lib.rs");
+    let source = std::fs::read_to_string(&source_path).expect("accel source should read");
+
+    let body = function_body(
+        &source,
+        "pub fn from_state_prefix_u64_words",
+        "pub fn to_u64_words",
+    );
+
+    assert!(
+        body.contains("words.as_ptr().cast()"),
+        "state prefix expansion should copy compact host prefixes directly into padded device states"
+    );
+    assert!(
+        !body.contains("Self::from_u64_words(words)"),
+        "state prefix expansion should avoid an intermediate compact device buffer"
+    );
+}
+
+#[test]
 fn fri_opening_from_transcript_values_borrows_large_vectors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/prove_fri_opening.rs");

@@ -306,6 +306,38 @@ fn cuda_device_buffer_copies_state_prefix_words() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_device_buffer_expands_state_prefix_words() {
+    let input = vec![1, 2, 3, 4, 5, 6, 7, 8];
+
+    let buffer = CudaDeviceBuffer::from_state_prefix_u64_words(&input, 2, 8, 4)
+        .expect("state prefixes should expand into padded states");
+
+    assert_eq!(
+        buffer
+            .to_u64_words()
+            .expect("expanded state words should copy back"),
+        vec![1, 2, 3, 4, 0, 0, 0, 0, 5, 6, 7, 8, 0, 0, 0, 0]
+    );
+
+    let zero_prefix = CudaDeviceBuffer::from_state_prefix_u64_words(&[], 2, 8, 0)
+        .expect("zero-width prefixes should expand into zeroed states");
+    assert_eq!(
+        zero_prefix
+            .to_u64_words()
+            .expect("zero-prefix states should copy back"),
+        vec![0; 16]
+    );
+
+    let empty = CudaDeviceBuffer::from_state_prefix_u64_words(&[], 0, 8, 4)
+        .expect("empty state prefix input should allocate an empty buffer");
+    assert_eq!(
+        empty.to_u64_words().expect("empty states should copy back"),
+        Vec::<u64>::new()
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_device_buffer_state_prefix_checks_shapes() {
     let input = vec![
         1, 2, 3, 4, 101, 102, 103, 104, 5, 6, 7, 8, 201, 202, 203, 204,
@@ -335,6 +367,22 @@ fn cuda_device_buffer_state_prefix_checks_shapes() {
         .to_state_prefix_u64_words(1, 8, 4)
         .expect_err("buffer byte length should match state shape");
     assert!(length_error.to_string().contains("length mismatch"));
+
+    let expand_prefix_error = CudaDeviceBuffer::from_state_prefix_u64_words(&input, 2, 4, 5)
+        .expect_err("prefix wider than state should be rejected");
+    assert!(expand_prefix_error
+        .to_string()
+        .contains("invalid field domain"));
+
+    let expand_length_error = CudaDeviceBuffer::from_state_prefix_u64_words(&input, 1, 8, 4)
+        .expect_err("prefix input length should match state shape");
+    assert!(expand_length_error.to_string().contains("length mismatch"));
+
+    assert_eq!(
+        CudaDeviceBuffer::from_state_prefix_u64_words(&[], 1, 0, 0)
+            .expect_err("zero-width states should be rejected"),
+        AccelError::InvalidDomain { bits: 0, len: 0 }
+    );
 }
 
 #[test]

@@ -53,6 +53,13 @@ unsafe extern "C" {
         state_width_words: usize,
         prefix_words: usize,
     ) -> i32;
+    fn lzvm_cuda_expand_state_prefix_words(
+        dst: *mut c_void,
+        src: *const c_void,
+        state_count: usize,
+        state_width_words: usize,
+        prefix_words: usize,
+    ) -> i32;
     fn lzvm_cuda_memset_zero_bytes(dst: *mut c_void, bytes: usize) -> i32;
     fn lzvm_cuda_setup_init(roots: *const u64, root_count: usize, max_bits_ext: usize) -> i32;
     fn lzvm_cuda_goldilocks_add(lhs: *const u64, rhs: *const u64, out: *mut u64, len: usize)
@@ -448,6 +455,69 @@ impl CudaDeviceBuffer {
     pub fn from_u64_words(words: &[u64]) -> Result<Self, AccelError> {
         let mut buffer = Self::new(u64_word_byte_len(words.len())?)?;
         buffer.copy_from_u64_words(words)?;
+        Ok(buffer)
+    }
+
+    pub fn from_state_prefix_u64_words(
+        words: &[u64],
+        state_count: usize,
+        state_width_words: usize,
+        prefix_words: usize,
+    ) -> Result<Self, AccelError> {
+        if state_count > 0 && state_width_words == 0 {
+            return Err(AccelError::InvalidDomain {
+                bits: state_width_words,
+                len: prefix_words,
+            });
+        }
+        if prefix_words > state_width_words {
+            return Err(AccelError::InvalidDomain {
+                bits: state_width_words,
+                len: prefix_words,
+            });
+        }
+        let expected_words =
+            state_count
+                .checked_mul(prefix_words)
+                .ok_or(AccelError::InvalidDomain {
+                    bits: prefix_words,
+                    len: state_count,
+                })?;
+        let expected_input_len = u64_word_byte_len(expected_words)?;
+        let input_len = u64_word_byte_len(words.len())?;
+        if input_len != expected_input_len {
+            return Err(AccelError::LengthMismatch {
+                lhs: input_len,
+                rhs: expected_input_len,
+            });
+        }
+        let output_words =
+            state_count
+                .checked_mul(state_width_words)
+                .ok_or(AccelError::InvalidDomain {
+                    bits: state_width_words,
+                    len: state_count,
+                })?;
+        let buffer = Self::new(u64_word_byte_len(output_words)?)?;
+        if state_count == 0 {
+            return Ok(buffer);
+        }
+        #[cfg(target_endian = "little")]
+        let src = words.as_ptr().cast();
+        #[cfg(not(target_endian = "little"))]
+        let src_bytes = u64_words_to_bytes(words);
+        #[cfg(not(target_endian = "little"))]
+        let src = src_bytes.as_ptr().cast();
+        let code = unsafe {
+            lzvm_cuda_expand_state_prefix_words(
+                buffer.ptr,
+                src,
+                state_count,
+                state_width_words,
+                prefix_words,
+            )
+        };
+        cuda_status(code)?;
         Ok(buffer)
     }
 
