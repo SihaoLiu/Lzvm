@@ -72,6 +72,7 @@ fn zisk_main_trace_build_uses_resolved_column_targets() {
     let report = addi_report();
 
     crate::witness_layout::reset_column_lookup_count();
+    crate::witness_layout::reset_resolved_column_validation_count();
     let written = build_layout_zisk_main_trace_segment(
         &layout,
         std::slice::from_ref(&report),
@@ -89,6 +90,7 @@ fn zisk_main_trace_build_uses_resolved_column_targets() {
 
     assert_eq!(written.trace.row_count(), layout.row_count());
     assert_eq!(crate::witness_layout::column_lookup_count(), 0);
+    assert_eq!(crate::witness_layout::resolved_column_validation_count(), 0);
 }
 
 fn add256_report() -> GuestMachineReport {

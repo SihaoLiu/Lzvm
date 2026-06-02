@@ -438,7 +438,7 @@ fn guest_pc_trace_writes_use_direct_trace_builder_helpers() {
 
     let scalar_body = function_body(&source, "fn write_column", "fn write_optional_column");
     assert!(
-        scalar_body.contains("write_resolved_scalar_value"),
+        scalar_body.contains("write_trusted_resolved_scalar_value"),
         "guest PC scalar trace writes should avoid slice-based builder dispatch"
     );
     assert!(
@@ -452,7 +452,7 @@ fn guest_pc_trace_writes_use_direct_trace_builder_helpers() {
         "fn write_optional_wide_column",
     );
     assert!(
-        pair_body.contains("write_resolved_pair_values"),
+        pair_body.contains("write_trusted_resolved_pair_values"),
         "guest PC pair trace writes should avoid slice-based builder dispatch"
     );
     assert!(

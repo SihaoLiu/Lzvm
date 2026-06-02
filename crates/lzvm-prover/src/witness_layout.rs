@@ -233,6 +233,7 @@ thread_local! {
     static COLUMN_LOOKUP_COUNT: Cell<usize> = const { Cell::new(0) };
     static GENERIC_VALUE_COPY_COUNT: Cell<usize> = const { Cell::new(0) };
     static STAGE_TRACE_COUNT: Cell<usize> = const { Cell::new(0) };
+    static RESOLVED_COLUMN_VALIDATION_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -263,6 +264,16 @@ pub(crate) fn reset_stage_trace_count() {
 #[cfg(test)]
 pub(crate) fn stage_trace_count() -> usize {
     STAGE_TRACE_COUNT.with(Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_resolved_column_validation_count() {
+    RESOLVED_COLUMN_VALIDATION_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn resolved_column_validation_count() -> usize {
+    RESOLVED_COLUMN_VALIDATION_COUNT.with(Cell::get)
 }
 
 impl WitnessTraceBuilder<'_> {
@@ -308,6 +319,7 @@ impl WitnessTraceBuilder<'_> {
         self.write_resolved_column_values_for_valid_row(row, column, values)
     }
 
+    #[cfg(test)]
     pub(crate) fn write_resolved_scalar_value(
         &mut self,
         row: usize,
@@ -326,6 +338,7 @@ impl WitnessTraceBuilder<'_> {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn write_resolved_pair_values(
         &mut self,
         row: usize,
@@ -339,6 +352,45 @@ impl WitnessTraceBuilder<'_> {
             });
         }
         self.validate_resolved_column(column, 2)?;
+        let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
+        self.values[start] = values[0];
+        self.values[start + 1] = values[1];
+        Ok(())
+    }
+
+    pub(crate) fn write_trusted_resolved_scalar_value(
+        &mut self,
+        row: usize,
+        column: &ResolvedTraceColumn<'_>,
+        value: Felt,
+    ) -> Result<(), WitnessTraceBuildError> {
+        if row >= self.layout.rows {
+            return Err(WitnessTraceBuildError::RowOutOfRange {
+                row,
+                rows: self.layout.rows,
+            });
+        }
+        debug_assert!(std::ptr::eq(column.layout, self.layout));
+        debug_assert_eq!(column.dimension, 1);
+        let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
+        self.values[start] = value;
+        Ok(())
+    }
+
+    pub(crate) fn write_trusted_resolved_pair_values(
+        &mut self,
+        row: usize,
+        column: &ResolvedTraceColumn<'_>,
+        values: [Felt; 2],
+    ) -> Result<(), WitnessTraceBuildError> {
+        if row >= self.layout.rows {
+            return Err(WitnessTraceBuildError::RowOutOfRange {
+                row,
+                rows: self.layout.rows,
+            });
+        }
+        debug_assert!(std::ptr::eq(column.layout, self.layout));
+        debug_assert_eq!(column.dimension, 2);
         let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
         self.values[start] = values[0];
         self.values[start + 1] = values[1];
@@ -378,6 +430,8 @@ impl WitnessTraceBuilder<'_> {
         column: &ResolvedTraceColumn<'_>,
         found: usize,
     ) -> Result<(), WitnessTraceBuildError> {
+        #[cfg(test)]
+        RESOLVED_COLUMN_VALIDATION_COUNT.with(|count| count.set(count.get() + 1));
         if !std::ptr::eq(column.layout, self.layout) {
             return Err(WitnessTraceBuildError::UnknownColumn {
                 stage_index: column.stage_index,
