@@ -6,6 +6,8 @@ use lzvm_prover::{
     ProveWitnessTraceCommitments,
 };
 
+use super::timing::TimingRecorder;
+
 pub(super) struct GuestPcTraceWitnessRun {
     pub(super) outputs: Vec<ProveWitnessTraceCommitments>,
     pub(super) timing: Option<ProveWitnessGuestPcTraceTiming>,
@@ -49,4 +51,21 @@ pub(super) fn run_guest_pc_trace_witness(
         )?
     };
     Ok(GuestPcTraceWitnessRun { outputs, timing })
+}
+
+pub(super) fn record_guest_pc_trace_timing(
+    timings: &mut TimingRecorder,
+    timing: ProveWitnessGuestPcTraceTiming,
+) {
+    timings.record("guest_trace_stream", timing.guest_trace_stream_duration());
+    timings.record(
+        "guest_segment_commit",
+        timing.guest_segment_commit_duration(),
+    );
+    timings.record(
+        "guest_regular_constraints",
+        timing.guest_regular_constraint_duration(),
+    );
+    timings.record("guest_regular_hints", timing.guest_regular_hint_duration());
+    timings.record("guest_stage_commit", timing.guest_stage_commit_duration());
 }

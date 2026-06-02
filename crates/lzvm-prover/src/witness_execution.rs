@@ -182,6 +182,9 @@ pub struct ProveWitnessGuestPcTraceTiming {
     segment_count: usize,
     guest_trace_stream_duration: Duration,
     guest_segment_commit_duration: Duration,
+    guest_regular_constraint_duration: Duration,
+    guest_regular_hint_duration: Duration,
+    guest_stage_commit_duration: Duration,
 }
 
 impl ProveWitnessGuestPcTraceTiming {
@@ -189,11 +192,15 @@ impl ProveWitnessGuestPcTraceTiming {
         segment_count: usize,
         guest_trace_stream_duration: Duration,
         guest_segment_commit_duration: Duration,
+        trace_timing: ProveWitnessTraceTimingAccumulator,
     ) -> Self {
         Self {
             segment_count,
             guest_trace_stream_duration,
             guest_segment_commit_duration,
+            guest_regular_constraint_duration: trace_timing.regular_constraint_duration,
+            guest_regular_hint_duration: trace_timing.regular_hint_duration,
+            guest_stage_commit_duration: trace_timing.stage_commit_duration,
         }
     }
 
@@ -207,6 +214,33 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_segment_commit_duration(&self) -> Duration {
         self.guest_segment_commit_duration
+    }
+
+    pub fn guest_regular_constraint_duration(&self) -> Duration {
+        self.guest_regular_constraint_duration
+    }
+
+    pub fn guest_regular_hint_duration(&self) -> Duration {
+        self.guest_regular_hint_duration
+    }
+
+    pub fn guest_stage_commit_duration(&self) -> Duration {
+        self.guest_stage_commit_duration
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct ProveWitnessTraceTimingAccumulator {
+    regular_constraint_duration: Duration,
+    regular_hint_duration: Duration,
+    stage_commit_duration: Duration,
+}
+
+impl ProveWitnessTraceTimingAccumulator {
+    fn accumulate(&mut self, other: Self) {
+        self.regular_constraint_duration += other.regular_constraint_duration;
+        self.regular_hint_duration += other.regular_hint_duration;
+        self.stage_commit_duration += other.stage_commit_duration;
     }
 }
 
@@ -1062,6 +1096,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             trace,
         },
         regular_hint_mode,
+        None,
     )
 }
 
@@ -1123,6 +1158,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
                 trace: trace_output.into_trace(),
             },
             regular_hint_mode,
+            None,
         )?;
         output.commitments.identity.trace_instance_index = trace_instance_index;
         outputs.push(output);
@@ -1171,6 +1207,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         let mut source_lookup_balance = source_lookup_balance;
         let collect_timing = timing_observer.is_some();
         let mut guest_segment_commit_duration = Duration::ZERO;
+        let mut trace_timing = ProveWitnessTraceTimingAccumulator::default();
         let mut segment_count = 0_usize;
         let guest_trace_stream_started = collect_timing.then(Instant::now);
         let proof_values = for_each_guest_pc_trace_segment_collecting_proof_values_with_context(
@@ -1191,6 +1228,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                     Some(ref mut balance) => WitnessRegularHintMode::Balanced(balance),
                     None => WitnessRegularHintMode::AssignmentsOnly,
                 };
+                let mut segment_trace_timing =
+                    collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
                 let mut output = run_prove_witness_commitments_from_trace_inner(
                     plan,
                     unit_index,
@@ -1202,7 +1241,11 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                         trace: trace_output.into_trace(),
                     },
                     regular_hint_mode,
+                    segment_trace_timing.as_mut(),
                 )?;
+                if let Some(segment_trace_timing) = segment_trace_timing {
+                    trace_timing.accumulate(segment_trace_timing);
+                }
                 output.commitments.identity.trace_instance_index = trace_instance_index;
                 outputs.push(output.without_trace());
                 if let Some(started) = guest_segment_commit_started {
@@ -1227,6 +1270,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                     segment_count,
                     guest_trace_stream_duration,
                     guest_segment_commit_duration,
+                    trace_timing,
                 ));
             }
         }
@@ -1255,6 +1299,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
     let mut source_lookup_balance = source_lookup_balance;
     let collect_timing = timing_observer.is_some();
     let mut guest_segment_commit_duration = Duration::ZERO;
+    let mut trace_timing = ProveWitnessTraceTimingAccumulator::default();
     let mut segment_count = 0_usize;
     let guest_trace_stream_started = collect_timing.then(Instant::now);
     for_each_guest_pc_trace_segment_with_context(
@@ -1276,6 +1321,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 Some(ref mut balance) => WitnessRegularHintMode::Balanced(balance),
                 None => WitnessRegularHintMode::AssignmentsOnly,
             };
+            let mut segment_trace_timing =
+                collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
             let mut output = run_prove_witness_commitments_from_trace_inner(
                 plan,
                 unit_index,
@@ -1287,7 +1334,11 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                     trace: trace_output.into_trace(),
                 },
                 regular_hint_mode,
+                segment_trace_timing.as_mut(),
             )?;
+            if let Some(segment_trace_timing) = segment_trace_timing {
+                trace_timing.accumulate(segment_trace_timing);
+            }
             output.commitments.identity.trace_instance_index = trace_instance_index;
             outputs.push(output.without_trace());
             if let Some(started) = guest_segment_commit_started {
@@ -1310,6 +1361,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 segment_count,
                 guest_trace_stream_duration,
                 guest_segment_commit_duration,
+                trace_timing,
             ));
         }
     }
@@ -1528,6 +1580,7 @@ fn run_prove_witness_commitments_with_trace_bytes_inner(
             trace,
         },
         regular_hint_mode,
+        None,
     )
 }
 
@@ -1538,6 +1591,7 @@ fn run_prove_witness_commitments_from_trace_inner(
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     input: WitnessTraceCommitmentInput<'_>,
     regular_hint_mode: WitnessRegularHintMode<'_>,
+    mut timing: Option<&mut ProveWitnessTraceTimingAccumulator>,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
     let WitnessTraceCommitmentInput {
         unit,
@@ -1565,47 +1619,68 @@ fn run_prove_witness_commitments_from_trace_inner(
             fixed_columns: &mut fixed_columns,
             stage_traces: &mut stage_trace_cache,
         };
-        validate_witness_regular_constraints(
-            execution_unit,
-            unit_index,
-            &mut regular_inputs,
-            proof_inputs,
-            plan.run_plan.gpu.witness_thread_pools,
-        )?;
-        match regular_hint_mode {
-            WitnessRegularHintMode::Balanced(source_lookup_balance) => {
-                accumulate_witness_regular_hints(
+        record_optional_duration(
+            timing
+                .as_deref_mut()
+                .map(|timing| &mut timing.regular_constraint_duration),
+            || {
+                validate_witness_regular_constraints(
                     execution_unit,
                     unit_index,
                     &mut regular_inputs,
                     proof_inputs,
-                    source_lookup_balance,
-                )?
-            }
-            WitnessRegularHintMode::AssignmentsOnly => validate_witness_regular_source_assignments(
-                execution_unit,
-                unit_index,
-                &mut regular_inputs,
-                proof_inputs,
-            )?,
-        }
+                    plan.run_plan.gpu.witness_thread_pools,
+                )
+            },
+        )?;
+        record_optional_duration(
+            timing
+                .as_deref_mut()
+                .map(|timing| &mut timing.regular_hint_duration),
+            || match regular_hint_mode {
+                WitnessRegularHintMode::Balanced(source_lookup_balance) => {
+                    accumulate_witness_regular_hints(
+                        execution_unit,
+                        unit_index,
+                        &mut regular_inputs,
+                        proof_inputs,
+                        source_lookup_balance,
+                    )
+                }
+                WitnessRegularHintMode::AssignmentsOnly => {
+                    validate_witness_regular_source_assignments(
+                        execution_unit,
+                        unit_index,
+                        &mut regular_inputs,
+                        proof_inputs,
+                    )
+                }
+            },
+        )?;
     }
     let trace_rows = trace.row_count();
     let trace_columns = trace.column_count();
-    let stage_commitments = if stage_trace_cache.is_extracted() {
-        let stage_traces = stage_trace_cache.get_or_extract(&layout, &trace)?;
-        commit_witness_stage_values_with_workers(
-            stage_traces,
-            unit,
-            plan.run_plan.gpu.witness_thread_pools,
-        )?
-    } else {
-        commit_witness_trace_stages_with_workers(
-            &trace,
-            unit,
-            plan.run_plan.gpu.witness_thread_pools,
-        )?
-    };
+    let stage_commitments = record_optional_duration(
+        timing
+            .as_mut()
+            .map(|timing| &mut timing.stage_commit_duration),
+        || {
+            if stage_trace_cache.is_extracted() {
+                let stage_traces = stage_trace_cache.get_or_extract(&layout, &trace)?;
+                Ok(commit_witness_stage_values_with_workers(
+                    stage_traces,
+                    unit,
+                    plan.run_plan.gpu.witness_thread_pools,
+                )?)
+            } else {
+                Ok(commit_witness_trace_stages_with_workers(
+                    &trace,
+                    unit,
+                    plan.run_plan.gpu.witness_thread_pools,
+                )?)
+            }
+        },
+    )?;
 
     let commitments = ProveWitnessCommitments {
         identity: ProveTraceIdentity::new(unit_index, 0),
@@ -1621,6 +1696,20 @@ fn run_prove_witness_commitments_from_trace_inner(
         publics: shared_inputs.publics.clone(),
         auxiliary_inputs,
     })
+}
+
+fn record_optional_duration<T>(
+    duration: Option<&mut Duration>,
+    run: impl FnOnce() -> Result<T, ProveWitnessCommitmentError>,
+) -> Result<T, ProveWitnessCommitmentError> {
+    if let Some(duration) = duration {
+        let started = Instant::now();
+        let result = run()?;
+        *duration += started.elapsed();
+        Ok(result)
+    } else {
+        run()
+    }
 }
 
 pub fn run_prove_witness_commitments_for_all_units(
@@ -2393,6 +2482,7 @@ mod tests {
                 trace,
             },
             WitnessRegularHintMode::AssignmentsOnly,
+            None,
         )
         .expect("trace commitments should prove");
 

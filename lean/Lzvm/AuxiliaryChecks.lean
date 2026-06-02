@@ -26,6 +26,9 @@ structure GuestPcTraceTimingSummary where
   segmentCount : Nat
   guestTraceStreamMilliseconds : Nat
   guestSegmentCommitMilliseconds : Nat
+  guestRegularConstraintsMilliseconds : Nat
+  guestRegularHintsMilliseconds : Nat
+  guestStageCommitMilliseconds : Nat
 deriving DecidableEq, Repr
 
 def SourceLookupAuxiliaryEvidence

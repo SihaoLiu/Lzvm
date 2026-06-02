@@ -57,7 +57,7 @@ mod usage;
 mod value_inputs;
 
 use args::{parse_witness_args, parsed_inputs, ParsedWitnessArgs};
-use guest_pc_trace::run_guest_pc_trace_witness;
+use guest_pc_trace::{record_guest_pc_trace_timing, run_guest_pc_trace_witness};
 use output_file::{write_output_file, write_proof_output};
 use timing::{write_timing_summary, TimingRecorder};
 use usage::write_usage;
@@ -414,11 +414,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             };
             let mut outputs = guest_pc_trace_run.outputs;
             if let Some(timing) = guest_pc_trace_run.timing {
-                timings.record("guest_trace_stream", timing.guest_trace_stream_duration());
-                timings.record(
-                    "guest_segment_commit",
-                    timing.guest_segment_commit_duration(),
-                );
+                record_guest_pc_trace_timing(&mut timings, timing);
             }
             if outputs.len() > 1 {
                 timings.mark("witness");
