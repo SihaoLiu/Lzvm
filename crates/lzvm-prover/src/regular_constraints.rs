@@ -434,30 +434,22 @@ struct PreparedBaseProgram<'input> {
 #[derive(Debug, Clone)]
 enum PreparedBaseOperation<'input> {
     Generic(PreparedGenericBaseOperation<'input>),
-    MatrixTmp1 {
-        kind: u16,
-        destination_offset: usize,
-        matrix: PreparedBaseMatrix<'input>,
-        tmp1_offset: usize,
-    },
-    Tmp1Tmp1 {
-        kind: u16,
-        destination_offset: usize,
-        left_offset: usize,
-        right_offset: usize,
-    },
-    MatrixConstant {
-        kind: u16,
-        destination_offset: usize,
-        matrix: PreparedBaseMatrix<'input>,
-        constant: Felt,
-    },
-    Tmp1Constant {
-        kind: u16,
-        destination_offset: usize,
-        tmp1_offset: usize,
-        constant: Felt,
-    },
+    MatrixTmp1Add(PreparedMatrixTmp1Operation<'input>),
+    MatrixTmp1Sub(PreparedMatrixTmp1Operation<'input>),
+    MatrixTmp1Mul(PreparedMatrixTmp1Operation<'input>),
+    MatrixTmp1RSub(PreparedMatrixTmp1Operation<'input>),
+    Tmp1Tmp1Add(PreparedTmp1Tmp1Operation),
+    Tmp1Tmp1Sub(PreparedTmp1Tmp1Operation),
+    Tmp1Tmp1Mul(PreparedTmp1Tmp1Operation),
+    Tmp1Tmp1RSub(PreparedTmp1Tmp1Operation),
+    MatrixConstantAdd(PreparedMatrixConstantOperation<'input>),
+    MatrixConstantSub(PreparedMatrixConstantOperation<'input>),
+    MatrixConstantMul(PreparedMatrixConstantOperation<'input>),
+    MatrixConstantRSub(PreparedMatrixConstantOperation<'input>),
+    Tmp1ConstantAdd(PreparedTmp1ConstantOperation),
+    Tmp1ConstantSub(PreparedTmp1ConstantOperation),
+    Tmp1ConstantMul(PreparedTmp1ConstantOperation),
+    Tmp1ConstantRSub(PreparedTmp1ConstantOperation),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -466,6 +458,34 @@ struct PreparedGenericBaseOperation<'input> {
     destination_offset: usize,
     src0: PreparedBaseSource<'input>,
     src1: PreparedBaseSource<'input>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreparedMatrixTmp1Operation<'input> {
+    destination_offset: usize,
+    matrix: PreparedBaseMatrix<'input>,
+    tmp1_offset: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreparedTmp1Tmp1Operation {
+    destination_offset: usize,
+    left_offset: usize,
+    right_offset: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreparedMatrixConstantOperation<'input> {
+    destination_offset: usize,
+    matrix: PreparedBaseMatrix<'input>,
+    constant: Felt,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreparedTmp1ConstantOperation {
+    destination_offset: usize,
+    tmp1_offset: usize,
+    constant: Felt,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -689,40 +709,120 @@ fn prepared_base_operation<'input>(
     src0: PreparedBaseSource<'input>,
     src1: PreparedBaseSource<'input>,
 ) -> PreparedBaseOperation<'input> {
-    match (src0, src1) {
-        (PreparedBaseSource::Matrix(matrix), PreparedBaseSource::Tmp1(tmp1_offset)) => {
-            PreparedBaseOperation::MatrixTmp1 {
-                kind,
+    match (kind, src0, src1) {
+        (0, PreparedBaseSource::Matrix(matrix), PreparedBaseSource::Tmp1(tmp1_offset)) => {
+            PreparedBaseOperation::MatrixTmp1Add(PreparedMatrixTmp1Operation {
                 destination_offset,
                 matrix,
                 tmp1_offset,
-            }
+            })
         }
-        (PreparedBaseSource::Tmp1(left_offset), PreparedBaseSource::Tmp1(right_offset)) => {
-            PreparedBaseOperation::Tmp1Tmp1 {
-                kind,
+        (1, PreparedBaseSource::Matrix(matrix), PreparedBaseSource::Tmp1(tmp1_offset)) => {
+            PreparedBaseOperation::MatrixTmp1Sub(PreparedMatrixTmp1Operation {
+                destination_offset,
+                matrix,
+                tmp1_offset,
+            })
+        }
+        (2, PreparedBaseSource::Matrix(matrix), PreparedBaseSource::Tmp1(tmp1_offset)) => {
+            PreparedBaseOperation::MatrixTmp1Mul(PreparedMatrixTmp1Operation {
+                destination_offset,
+                matrix,
+                tmp1_offset,
+            })
+        }
+        (3, PreparedBaseSource::Matrix(matrix), PreparedBaseSource::Tmp1(tmp1_offset)) => {
+            PreparedBaseOperation::MatrixTmp1RSub(PreparedMatrixTmp1Operation {
+                destination_offset,
+                matrix,
+                tmp1_offset,
+            })
+        }
+        (0, PreparedBaseSource::Tmp1(left_offset), PreparedBaseSource::Tmp1(right_offset)) => {
+            PreparedBaseOperation::Tmp1Tmp1Add(PreparedTmp1Tmp1Operation {
                 destination_offset,
                 left_offset,
                 right_offset,
-            }
+            })
         }
-        (PreparedBaseSource::Matrix(matrix), PreparedBaseSource::Constant(constant)) => {
-            PreparedBaseOperation::MatrixConstant {
-                kind,
+        (1, PreparedBaseSource::Tmp1(left_offset), PreparedBaseSource::Tmp1(right_offset)) => {
+            PreparedBaseOperation::Tmp1Tmp1Sub(PreparedTmp1Tmp1Operation {
+                destination_offset,
+                left_offset,
+                right_offset,
+            })
+        }
+        (2, PreparedBaseSource::Tmp1(left_offset), PreparedBaseSource::Tmp1(right_offset)) => {
+            PreparedBaseOperation::Tmp1Tmp1Mul(PreparedTmp1Tmp1Operation {
+                destination_offset,
+                left_offset,
+                right_offset,
+            })
+        }
+        (3, PreparedBaseSource::Tmp1(left_offset), PreparedBaseSource::Tmp1(right_offset)) => {
+            PreparedBaseOperation::Tmp1Tmp1RSub(PreparedTmp1Tmp1Operation {
+                destination_offset,
+                left_offset,
+                right_offset,
+            })
+        }
+        (0, PreparedBaseSource::Matrix(matrix), PreparedBaseSource::Constant(constant)) => {
+            PreparedBaseOperation::MatrixConstantAdd(PreparedMatrixConstantOperation {
                 destination_offset,
                 matrix,
                 constant,
-            }
+            })
         }
-        (PreparedBaseSource::Tmp1(tmp1_offset), PreparedBaseSource::Constant(constant)) => {
-            PreparedBaseOperation::Tmp1Constant {
-                kind,
+        (1, PreparedBaseSource::Matrix(matrix), PreparedBaseSource::Constant(constant)) => {
+            PreparedBaseOperation::MatrixConstantSub(PreparedMatrixConstantOperation {
+                destination_offset,
+                matrix,
+                constant,
+            })
+        }
+        (2, PreparedBaseSource::Matrix(matrix), PreparedBaseSource::Constant(constant)) => {
+            PreparedBaseOperation::MatrixConstantMul(PreparedMatrixConstantOperation {
+                destination_offset,
+                matrix,
+                constant,
+            })
+        }
+        (3, PreparedBaseSource::Matrix(matrix), PreparedBaseSource::Constant(constant)) => {
+            PreparedBaseOperation::MatrixConstantRSub(PreparedMatrixConstantOperation {
+                destination_offset,
+                matrix,
+                constant,
+            })
+        }
+        (0, PreparedBaseSource::Tmp1(tmp1_offset), PreparedBaseSource::Constant(constant)) => {
+            PreparedBaseOperation::Tmp1ConstantAdd(PreparedTmp1ConstantOperation {
                 destination_offset,
                 tmp1_offset,
                 constant,
-            }
+            })
         }
-        (src0, src1) => PreparedBaseOperation::Generic(PreparedGenericBaseOperation {
+        (1, PreparedBaseSource::Tmp1(tmp1_offset), PreparedBaseSource::Constant(constant)) => {
+            PreparedBaseOperation::Tmp1ConstantSub(PreparedTmp1ConstantOperation {
+                destination_offset,
+                tmp1_offset,
+                constant,
+            })
+        }
+        (2, PreparedBaseSource::Tmp1(tmp1_offset), PreparedBaseSource::Constant(constant)) => {
+            PreparedBaseOperation::Tmp1ConstantMul(PreparedTmp1ConstantOperation {
+                destination_offset,
+                tmp1_offset,
+                constant,
+            })
+        }
+        (3, PreparedBaseSource::Tmp1(tmp1_offset), PreparedBaseSource::Constant(constant)) => {
+            PreparedBaseOperation::Tmp1ConstantRSub(PreparedTmp1ConstantOperation {
+                destination_offset,
+                tmp1_offset,
+                constant,
+            })
+        }
+        (kind, src0, src1) => PreparedBaseOperation::Generic(PreparedGenericBaseOperation {
             kind,
             destination_offset,
             src0,
@@ -1079,43 +1179,69 @@ fn evaluate_prepared_base_row(
                 tmp1[operation.destination_offset] =
                     apply_prepared_base_op(operation.kind, left, right);
             }
-            PreparedBaseOperation::MatrixTmp1 {
-                kind,
-                destination_offset,
-                matrix,
-                tmp1_offset,
-            } => {
-                let left = read_prepared_matrix(*matrix, row, domain_size);
-                let right = tmp1[*tmp1_offset];
-                tmp1[*destination_offset] = apply_prepared_base_op(*kind, left, right);
+            PreparedBaseOperation::MatrixTmp1Add(operation) => {
+                let (left, right) = read_matrix_tmp1_operands(operation, row, domain_size, tmp1);
+                tmp1[operation.destination_offset] = left + right;
             }
-            PreparedBaseOperation::Tmp1Tmp1 {
-                kind,
-                destination_offset,
-                left_offset,
-                right_offset,
-            } => {
-                let left = tmp1[*left_offset];
-                let right = tmp1[*right_offset];
-                tmp1[*destination_offset] = apply_prepared_base_op(*kind, left, right);
+            PreparedBaseOperation::MatrixTmp1Sub(operation) => {
+                let (left, right) = read_matrix_tmp1_operands(operation, row, domain_size, tmp1);
+                tmp1[operation.destination_offset] = left - right;
             }
-            PreparedBaseOperation::MatrixConstant {
-                kind,
-                destination_offset,
-                matrix,
-                constant,
-            } => {
-                let left = read_prepared_matrix(*matrix, row, domain_size);
-                tmp1[*destination_offset] = apply_prepared_base_op(*kind, left, *constant);
+            PreparedBaseOperation::MatrixTmp1Mul(operation) => {
+                let (left, right) = read_matrix_tmp1_operands(operation, row, domain_size, tmp1);
+                tmp1[operation.destination_offset] = left * right;
             }
-            PreparedBaseOperation::Tmp1Constant {
-                kind,
-                destination_offset,
-                tmp1_offset,
-                constant,
-            } => {
-                let left = tmp1[*tmp1_offset];
-                tmp1[*destination_offset] = apply_prepared_base_op(*kind, left, *constant);
+            PreparedBaseOperation::MatrixTmp1RSub(operation) => {
+                let (left, right) = read_matrix_tmp1_operands(operation, row, domain_size, tmp1);
+                tmp1[operation.destination_offset] = right - left;
+            }
+            PreparedBaseOperation::Tmp1Tmp1Add(operation) => {
+                let (left, right) = read_tmp1_tmp1_operands(operation, tmp1);
+                tmp1[operation.destination_offset] = left + right;
+            }
+            PreparedBaseOperation::Tmp1Tmp1Sub(operation) => {
+                let (left, right) = read_tmp1_tmp1_operands(operation, tmp1);
+                tmp1[operation.destination_offset] = left - right;
+            }
+            PreparedBaseOperation::Tmp1Tmp1Mul(operation) => {
+                let (left, right) = read_tmp1_tmp1_operands(operation, tmp1);
+                tmp1[operation.destination_offset] = left * right;
+            }
+            PreparedBaseOperation::Tmp1Tmp1RSub(operation) => {
+                let (left, right) = read_tmp1_tmp1_operands(operation, tmp1);
+                tmp1[operation.destination_offset] = right - left;
+            }
+            PreparedBaseOperation::MatrixConstantAdd(operation) => {
+                let left = read_prepared_matrix(operation.matrix, row, domain_size);
+                tmp1[operation.destination_offset] = left + operation.constant;
+            }
+            PreparedBaseOperation::MatrixConstantSub(operation) => {
+                let left = read_prepared_matrix(operation.matrix, row, domain_size);
+                tmp1[operation.destination_offset] = left - operation.constant;
+            }
+            PreparedBaseOperation::MatrixConstantMul(operation) => {
+                let left = read_prepared_matrix(operation.matrix, row, domain_size);
+                tmp1[operation.destination_offset] = left * operation.constant;
+            }
+            PreparedBaseOperation::MatrixConstantRSub(operation) => {
+                let left = read_prepared_matrix(operation.matrix, row, domain_size);
+                tmp1[operation.destination_offset] = operation.constant - left;
+            }
+            PreparedBaseOperation::Tmp1ConstantAdd(operation) => {
+                let left = tmp1[operation.tmp1_offset];
+                tmp1[operation.destination_offset] = left + operation.constant;
+            }
+            PreparedBaseOperation::Tmp1ConstantSub(operation) => {
+                let left = tmp1[operation.tmp1_offset];
+                tmp1[operation.destination_offset] = left - operation.constant;
+            }
+            PreparedBaseOperation::Tmp1ConstantMul(operation) => {
+                let left = tmp1[operation.tmp1_offset];
+                tmp1[operation.destination_offset] = left * operation.constant;
+            }
+            PreparedBaseOperation::Tmp1ConstantRSub(operation) => {
+                let left = tmp1[operation.tmp1_offset];
+                tmp1[operation.destination_offset] = operation.constant - left;
             }
         }
     }
@@ -1124,7 +1250,28 @@ fn evaluate_prepared_base_row(
 }
 
 #[inline(always)]
+fn read_matrix_tmp1_operands(
+    operation: &PreparedMatrixTmp1Operation<'_>,
+    row: usize,
+    domain_size: usize,
+    tmp1: &[Felt],
+) -> (Felt, Felt) {
+    (
+        read_prepared_matrix(operation.matrix, row, domain_size),
+        tmp1[operation.tmp1_offset],
+    )
+}
+
+#[inline(always)]
+fn read_tmp1_tmp1_operands(operation: &PreparedTmp1Tmp1Operation, tmp1: &[Felt]) -> (Felt, Felt) {
+    (tmp1[operation.left_offset], tmp1[operation.right_offset])
+}
+
+#[inline(always)]
 fn apply_prepared_base_op(kind: u16, left: Felt, right: Felt) -> Felt {
+    #[cfg(test)]
+    BASE_ONLY_KIND_DISPATCH_COUNT.with(|count| count.set(count.get() + 1));
+
     match kind {
         0 => left + right,
         1 => left - right,
@@ -1360,6 +1507,7 @@ thread_local! {
     static CACHED_SOURCE_COUNT: Cell<usize> = const { Cell::new(0) };
     static BASE_ONLY_PREPARED_ROW_COUNT: Cell<usize> = const { Cell::new(0) };
     static BASE_ONLY_TMP1_CLEAR_COUNT: Cell<usize> = const { Cell::new(0) };
+    static BASE_ONLY_KIND_DISPATCH_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 fn find_stage_columns(
@@ -1855,16 +2003,197 @@ mod tests {
         assert!(matches!(
             base_program.operations.as_slice(),
             [
-                PreparedBaseOperation::MatrixConstant { .. },
-                PreparedBaseOperation::MatrixTmp1 { .. },
-                PreparedBaseOperation::Tmp1Constant { .. },
-                PreparedBaseOperation::Tmp1Tmp1 { .. },
+                PreparedBaseOperation::MatrixConstantSub(_),
+                PreparedBaseOperation::MatrixTmp1RSub(_),
+                PreparedBaseOperation::Tmp1ConstantRSub(_),
+                PreparedBaseOperation::Tmp1Tmp1Sub(_),
             ]
         ));
 
+        BASE_ONLY_KIND_DISPATCH_COUNT.with(|count| count.set(0));
         let results = evaluate_regular_constraints(&program, inputs)
             .expect("regular constraint should evaluate");
         assert_eq!(results[0].invalid_rows, Vec::new());
+        assert_eq!(BASE_ONLY_KIND_DISPATCH_COUNT.with(Cell::get), 0);
+    }
+
+    #[test]
+    fn base_only_direct_common_source_pairs_specialize_supported_kinds() {
+        let matrix = PreparedBaseMatrix {
+            values: &[],
+            column_count: 1,
+            column: 0,
+            row_offset: 0,
+        };
+        let cases = [
+            (
+                prepared_base_operation(
+                    0,
+                    0,
+                    PreparedBaseSource::Matrix(matrix),
+                    PreparedBaseSource::Tmp1(0),
+                ),
+                "matrix_tmp1_add",
+            ),
+            (
+                prepared_base_operation(
+                    1,
+                    0,
+                    PreparedBaseSource::Matrix(matrix),
+                    PreparedBaseSource::Tmp1(0),
+                ),
+                "matrix_tmp1_sub",
+            ),
+            (
+                prepared_base_operation(
+                    2,
+                    0,
+                    PreparedBaseSource::Matrix(matrix),
+                    PreparedBaseSource::Tmp1(0),
+                ),
+                "matrix_tmp1_mul",
+            ),
+            (
+                prepared_base_operation(
+                    3,
+                    0,
+                    PreparedBaseSource::Matrix(matrix),
+                    PreparedBaseSource::Tmp1(0),
+                ),
+                "matrix_tmp1_rsub",
+            ),
+            (
+                prepared_base_operation(
+                    0,
+                    0,
+                    PreparedBaseSource::Tmp1(0),
+                    PreparedBaseSource::Tmp1(1),
+                ),
+                "tmp1_tmp1_add",
+            ),
+            (
+                prepared_base_operation(
+                    1,
+                    0,
+                    PreparedBaseSource::Tmp1(0),
+                    PreparedBaseSource::Tmp1(1),
+                ),
+                "tmp1_tmp1_sub",
+            ),
+            (
+                prepared_base_operation(
+                    2,
+                    0,
+                    PreparedBaseSource::Tmp1(0),
+                    PreparedBaseSource::Tmp1(1),
+                ),
+                "tmp1_tmp1_mul",
+            ),
+            (
+                prepared_base_operation(
+                    3,
+                    0,
+                    PreparedBaseSource::Tmp1(0),
+                    PreparedBaseSource::Tmp1(1),
+                ),
+                "tmp1_tmp1_rsub",
+            ),
+            (
+                prepared_base_operation(
+                    0,
+                    0,
+                    PreparedBaseSource::Matrix(matrix),
+                    PreparedBaseSource::Constant(Felt::ONE),
+                ),
+                "matrix_constant_add",
+            ),
+            (
+                prepared_base_operation(
+                    1,
+                    0,
+                    PreparedBaseSource::Matrix(matrix),
+                    PreparedBaseSource::Constant(Felt::ONE),
+                ),
+                "matrix_constant_sub",
+            ),
+            (
+                prepared_base_operation(
+                    2,
+                    0,
+                    PreparedBaseSource::Matrix(matrix),
+                    PreparedBaseSource::Constant(Felt::ONE),
+                ),
+                "matrix_constant_mul",
+            ),
+            (
+                prepared_base_operation(
+                    3,
+                    0,
+                    PreparedBaseSource::Matrix(matrix),
+                    PreparedBaseSource::Constant(Felt::ONE),
+                ),
+                "matrix_constant_rsub",
+            ),
+            (
+                prepared_base_operation(
+                    0,
+                    0,
+                    PreparedBaseSource::Tmp1(0),
+                    PreparedBaseSource::Constant(Felt::ONE),
+                ),
+                "tmp1_constant_add",
+            ),
+            (
+                prepared_base_operation(
+                    1,
+                    0,
+                    PreparedBaseSource::Tmp1(0),
+                    PreparedBaseSource::Constant(Felt::ONE),
+                ),
+                "tmp1_constant_sub",
+            ),
+            (
+                prepared_base_operation(
+                    2,
+                    0,
+                    PreparedBaseSource::Tmp1(0),
+                    PreparedBaseSource::Constant(Felt::ONE),
+                ),
+                "tmp1_constant_mul",
+            ),
+            (
+                prepared_base_operation(
+                    3,
+                    0,
+                    PreparedBaseSource::Tmp1(0),
+                    PreparedBaseSource::Constant(Felt::ONE),
+                ),
+                "tmp1_constant_rsub",
+            ),
+        ];
+
+        for (operation, expected) in cases {
+            let actual = match operation {
+                PreparedBaseOperation::MatrixTmp1Add(_) => "matrix_tmp1_add",
+                PreparedBaseOperation::MatrixTmp1Sub(_) => "matrix_tmp1_sub",
+                PreparedBaseOperation::MatrixTmp1Mul(_) => "matrix_tmp1_mul",
+                PreparedBaseOperation::MatrixTmp1RSub(_) => "matrix_tmp1_rsub",
+                PreparedBaseOperation::Tmp1Tmp1Add(_) => "tmp1_tmp1_add",
+                PreparedBaseOperation::Tmp1Tmp1Sub(_) => "tmp1_tmp1_sub",
+                PreparedBaseOperation::Tmp1Tmp1Mul(_) => "tmp1_tmp1_mul",
+                PreparedBaseOperation::Tmp1Tmp1RSub(_) => "tmp1_tmp1_rsub",
+                PreparedBaseOperation::MatrixConstantAdd(_) => "matrix_constant_add",
+                PreparedBaseOperation::MatrixConstantSub(_) => "matrix_constant_sub",
+                PreparedBaseOperation::MatrixConstantMul(_) => "matrix_constant_mul",
+                PreparedBaseOperation::MatrixConstantRSub(_) => "matrix_constant_rsub",
+                PreparedBaseOperation::Tmp1ConstantAdd(_) => "tmp1_constant_add",
+                PreparedBaseOperation::Tmp1ConstantSub(_) => "tmp1_constant_sub",
+                PreparedBaseOperation::Tmp1ConstantMul(_) => "tmp1_constant_mul",
+                PreparedBaseOperation::Tmp1ConstantRSub(_) => "tmp1_constant_rsub",
+                PreparedBaseOperation::Generic(_) => "generic",
+            };
+            assert_eq!(actual, expected);
+        }
     }
 
     #[test]
