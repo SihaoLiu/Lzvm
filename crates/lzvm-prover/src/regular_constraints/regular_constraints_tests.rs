@@ -693,9 +693,297 @@ fn base_only_direct_common_source_pairs_specialize_supported_kinds() {
             PreparedBaseOperation::Tmp1ConstantMul(_) => "tmp1_constant_mul",
             PreparedBaseOperation::Tmp1ConstantRSub(_) => "tmp1_constant_rsub",
             PreparedBaseOperation::ConstantAssign(_) => "constant_assign",
+            PreparedBaseOperation::MatrixTmp1RepeatedAdd(_) => "matrix_tmp1_repeated_add",
             PreparedBaseOperation::Generic(_) => "generic",
         };
         assert_eq!(actual, expected);
+    }
+}
+
+#[test]
+fn base_only_repeated_matrix_tmp1_adds_are_coalesced() {
+    let entry = ConstraintEntry {
+        stage: 1,
+        destination_dimension: 1,
+        destination_id: 0,
+        first_row: 0,
+        last_row: 8,
+        temp1_count: 1,
+        temp3_count: 0,
+        ops_count: 7,
+        ops_offset: 0,
+        args_count: 56,
+        args_offset: 0,
+        intermediate: false,
+        source_line: "base-only repeated matrix add".to_owned(),
+    };
+    let program = ConstraintProgram {
+        entries: vec![entry.clone()],
+        ops: vec![0; 7],
+        args: vec![
+            0, 0, 0, 0, 0, 8, 0, 0, //
+            0, 0, 0, 0, 0, 5, 0, 0, //
+            0, 0, 0, 0, 0, 5, 0, 0, //
+            0, 0, 0, 0, 0, 5, 0, 0, //
+            0, 0, 0, 0, 0, 5, 0, 0, //
+            0, 0, 0, 0, 0, 5, 0, 0, //
+            1, 0, 5, 0, 0, 8, 1, 0,
+        ],
+        numbers: vec![Felt::ZERO.to_u64(), Felt::from_u64(42).to_u64()],
+    };
+    let fixed = vec![Felt::from_u64(7); 8];
+    let inputs = RegularConstraintInputs {
+        domain_size: 8,
+        stage_count: 1,
+        fixed_columns: RegularColumnMatrix {
+            column_count: 1,
+            values: &fixed,
+        },
+        opening_point_offsets: &[0],
+        ..RegularConstraintInputs::default()
+    };
+    let ops = entry_ops(0, &entry, &program).expect("operation span should read");
+    let args = entry_args(0, &entry, &program).expect("argument span should read");
+    let mut context = RowEvaluationContext {
+        constraint_index: 0,
+        entry: &entry,
+        ops,
+        args,
+        operations: vec![None; ops.len()],
+        sources: vec![[None, None]; ops.len()],
+        program: &program,
+        inputs,
+        layout: BufferLayout::new(inputs),
+    };
+    let prepared = prepared_operations(&mut context).expect("operations should prepare");
+    let base_program = prepared_base_operations(&entry, &prepared, &program, inputs)
+        .expect("base program should prepare")
+        .expect("all operations are base operations");
+
+    assert_eq!(base_program.operations.len(), 3);
+    match base_program.operations.as_slice() {
+        [PreparedBaseOperation::MatrixConstantAdd(_), PreparedBaseOperation::MatrixTmp1RepeatedAdd(operation), PreparedBaseOperation::Tmp1ConstantSub(_)] =>
+        {
+            assert_eq!(operation.count, Felt::from_u64(5))
+        }
+        operations => panic!("unexpected coalesced operations: {operations:?}"),
+    }
+    let results =
+        evaluate_regular_constraints(&program, inputs).expect("regular constraint should evaluate");
+    assert_eq!(results[0].invalid_rows, Vec::new());
+}
+
+#[test]
+fn repeated_matrix_tmp1_add_coalescing_respects_boundaries() {
+    let values = [Felt::ONE; 8];
+    let matrix = PreparedBaseMatrix {
+        values: &values,
+        column_count: 2,
+        column: 0,
+        row_offset: None,
+    };
+    let other_column = PreparedBaseMatrix {
+        column: 1,
+        ..matrix
+    };
+    let other_offset = PreparedBaseMatrix {
+        row_offset: std::num::NonZeroUsize::new(1),
+        ..matrix
+    };
+    let add = |destination_offset, tmp1_offset, matrix| {
+        PreparedBaseOperation::MatrixTmp1Add(PreparedMatrixTmp1Operation {
+            destination_offset,
+            matrix,
+            tmp1_offset,
+        })
+    };
+
+    let cases = [
+        vec![add(1, 0, matrix), add(1, 0, matrix)],
+        vec![add(0, 0, matrix), add(1, 1, matrix)],
+        vec![add(0, 0, matrix), add(0, 0, other_column)],
+        vec![add(0, 0, matrix), add(0, 0, other_offset)],
+        vec![
+            add(0, 0, matrix),
+            PreparedBaseOperation::ConstantAssign(PreparedConstantAssignOperation {
+                destination_offset: 0,
+                value: Felt::ZERO,
+            }),
+            add(0, 0, matrix),
+        ],
+    ];
+
+    for operations in cases {
+        let coalesced = coalesce_repeated_matrix_tmp1_adds(operations);
+        assert!(
+            coalesced.iter().all(|operation| !matches!(
+                operation,
+                PreparedBaseOperation::MatrixTmp1RepeatedAdd(_)
+            )),
+            "boundary case should not coalesce: {coalesced:?}"
+        );
+    }
+}
+
+#[test]
+fn regular_constraint_worker_buckets_balance_entry_costs() {
+    let entries = vec![
+        test_entry_with_cost(0, 1),
+        test_entry_with_cost(0, 1),
+        test_entry_with_cost(0, 1),
+        test_entry_with_cost(0, 1),
+        test_entry_with_cost(0, 10_000),
+        test_entry_with_cost(0, 10_000),
+    ];
+
+    let buckets = plan_constraint_entry_worker_buckets(&entries, 2);
+    let heavy_owner_0 = buckets
+        .iter()
+        .position(|bucket| bucket.contains(&4))
+        .expect("first heavy entry should be assigned");
+    let heavy_owner_1 = buckets
+        .iter()
+        .position(|bucket| bucket.contains(&5))
+        .expect("second heavy entry should be assigned");
+
+    assert_ne!(heavy_owner_0, heavy_owner_1);
+}
+
+#[test]
+fn worker_regular_constraints_preserve_results_for_non_contiguous_buckets() {
+    let mut program = worker_bucket_test_program([
+        test_entry_with_cost(0, 10),
+        test_entry_with_cost(10, 9),
+        test_entry_with_cost(19, 1),
+        test_entry_with_cost(20, 1),
+    ]);
+    for (index, entry) in program.entries.iter_mut().enumerate() {
+        entry.ops_count = 1;
+        entry.args_count = 8;
+        entry.ops_offset = 0;
+        entry.args_offset = 0;
+        entry.source_line = format!("worker bucket result {index}");
+    }
+    let fixed = vec![Felt::ZERO; 21];
+    let inputs = RegularConstraintInputs {
+        domain_size: 21,
+        stage_count: 1,
+        fixed_columns: RegularColumnMatrix {
+            column_count: 1,
+            values: &fixed,
+        },
+        opening_point_offsets: &[0],
+        ..RegularConstraintInputs::default()
+    };
+
+    let sequential = evaluate_regular_constraints(&program, inputs)
+        .expect("sequential regular constraints should evaluate");
+    let worker = evaluate_regular_constraints_with_workers(&program, inputs, 2)
+        .expect("worker regular constraints should evaluate");
+
+    assert_eq!(worker, sequential);
+}
+
+#[test]
+fn worker_regular_constraints_report_lowest_index_error_across_buckets() {
+    let mut program = worker_bucket_test_program([
+        test_entry_with_rows(0, 100),
+        test_entry_with_rows(0, 99),
+        test_entry_with_rows(100, 10),
+        test_entry_with_rows(0, 1),
+    ]);
+    program.entries[1].ops_offset = 99;
+    program.entries[3].ops_offset = 99;
+
+    let error = evaluate_regular_constraints_with_workers(
+        &program,
+        RegularConstraintInputs {
+            domain_size: 110,
+            stage_count: 1,
+            fixed_columns: RegularColumnMatrix {
+                column_count: 1,
+                values: &vec![Felt::ZERO; 110],
+            },
+            opening_point_offsets: &[0],
+            ..RegularConstraintInputs::default()
+        },
+        2,
+    )
+    .expect_err("lowest indexed worker error should be reported");
+
+    assert_eq!(
+        error,
+        RegularConstraintEvalError::OperationSpanOutOfBounds {
+            constraint_index: 1,
+        }
+    );
+}
+
+#[test]
+fn worker_bucket_stops_after_first_entry_error() {
+    let mut program = worker_bucket_test_program([
+        test_entry_with_rows(0, 10),
+        test_entry_with_rows(0, 10),
+        test_entry_with_rows(0, 100),
+    ]);
+    program.entries[0].ops_offset = 99;
+    program.entries[1].source_line = "__lzvm_test_panic_if_evaluated__".to_owned();
+
+    let error = evaluate_regular_constraints_with_workers(
+        &program,
+        RegularConstraintInputs {
+            domain_size: 100,
+            stage_count: 1,
+            fixed_columns: RegularColumnMatrix {
+                column_count: 1,
+                values: &vec![Felt::ZERO; 100],
+            },
+            opening_point_offsets: &[0],
+            ..RegularConstraintInputs::default()
+        },
+        2,
+    )
+    .expect_err("worker bucket should stop at the first recoverable error");
+
+    assert_eq!(
+        error,
+        RegularConstraintEvalError::OperationSpanOutOfBounds {
+            constraint_index: 0,
+        }
+    );
+}
+
+fn worker_bucket_test_program<const N: usize>(entries: [ConstraintEntry; N]) -> ConstraintProgram {
+    ConstraintProgram {
+        entries: entries.into_iter().collect(),
+        ops: vec![0],
+        args: vec![0, 0, 0, 0, 0, 8, 0, 0],
+        numbers: vec![0],
+    }
+}
+
+fn test_entry_with_rows(first_row: u32, row_count: u32) -> ConstraintEntry {
+    ConstraintEntry {
+        last_row: first_row + row_count,
+        ..test_entry_with_cost(first_row, 1)
+    }
+}
+
+fn test_entry_with_cost(first_row: u32, ops_count: u32) -> ConstraintEntry {
+    ConstraintEntry {
+        stage: 1,
+        destination_dimension: 1,
+        destination_id: 0,
+        first_row,
+        last_row: first_row + 1,
+        temp1_count: 1,
+        temp3_count: 0,
+        ops_count,
+        ops_offset: 0,
+        args_count: ops_count * 8,
+        args_offset: 0,
+        intermediate: false,
+        source_line: "worker bucket cost".to_owned(),
     }
 }
 

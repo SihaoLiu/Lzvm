@@ -200,33 +200,84 @@ fn evaluate_constraint_entries(
             .collect();
     }
 
-    let chunk_size = entry_count.div_ceil(worker_count);
-    let mut out = Vec::with_capacity(entry_count);
+    let buckets = plan_constraint_entry_worker_buckets(&program.entries, worker_count);
+    let mut out = vec![None; entry_count];
+    let mut errors = Vec::new();
     thread::scope(|scope| {
         let mut handles = Vec::new();
-        for (chunk_index, chunk) in program.entries.chunks(chunk_size).enumerate() {
-            let start_index = chunk_index
-                .checked_mul(chunk_size)
-                .ok_or(RegularConstraintEvalError::LengthOverflow)?;
+        for bucket in buckets {
+            if bucket.is_empty() {
+                continue;
+            }
             handles.push(scope.spawn(move || {
-                chunk
-                    .iter()
-                    .enumerate()
-                    .map(|(offset, entry)| {
-                        evaluate_entry(start_index + offset, entry, program, inputs)
-                    })
-                    .collect::<Result<Vec<_>, _>>()
+                let mut results = Vec::with_capacity(bucket.len());
+                for index in bucket {
+                    let result = evaluate_entry(index, &program.entries[index], program, inputs);
+                    let failed = result.is_err();
+                    results.push((index, result));
+                    if failed {
+                        break;
+                    }
+                }
+                results
             }));
         }
         for handle in handles {
-            let chunk = handle
+            let results = handle
                 .join()
-                .map_err(|_| RegularConstraintEvalError::WorkerPanic)??;
-            out.extend(chunk);
+                .map_err(|_| RegularConstraintEvalError::WorkerPanic)?;
+            for (index, result) in results {
+                match result {
+                    Ok(result) => out[index] = Some(result),
+                    Err(error) => errors.push((index, error)),
+                }
+            }
         }
         Ok::<(), RegularConstraintEvalError>(())
     })?;
-    Ok(out)
+    if let Some((_, error)) = errors.into_iter().min_by_key(|(index, _)| *index) {
+        return Err(error);
+    }
+    out.into_iter()
+        .map(|result| result.ok_or(RegularConstraintEvalError::WorkerPanic))
+        .collect()
+}
+
+fn plan_constraint_entry_worker_buckets(
+    entries: &[ConstraintEntry],
+    worker_count: usize,
+) -> Vec<Vec<usize>> {
+    let worker_count = worker_count.max(1).min(entries.len().max(1));
+    let mut buckets = vec![Vec::new(); worker_count];
+    let mut loads = vec![0u128; worker_count];
+    let mut costs = entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| (index, constraint_entry_work_cost(entry)))
+        .collect::<Vec<_>>();
+    costs.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+
+    for (entry_index, cost) in costs {
+        let worker_index = loads
+            .iter()
+            .enumerate()
+            .min_by_key(|(index, load)| (**load, *index))
+            .map(|(index, _)| index)
+            .expect("at least one worker bucket is present");
+        buckets[worker_index].push(entry_index);
+        loads[worker_index] = loads[worker_index].saturating_add(cost);
+    }
+
+    for bucket in &mut buckets {
+        bucket.sort_unstable();
+    }
+    buckets
+}
+
+fn constraint_entry_work_cost(entry: &ConstraintEntry) -> u128 {
+    let rows = u128::from(entry.last_row.saturating_sub(entry.first_row)).max(1);
+    let ops = u128::from(entry.ops_count).max(1);
+    rows.saturating_mul(ops)
 }
 
 fn validate_inputs(inputs: RegularConstraintInputs<'_>) -> Result<(), RegularConstraintEvalError> {
@@ -282,6 +333,11 @@ fn evaluate_entry(
     program: &ConstraintProgram,
     inputs: RegularConstraintInputs<'_>,
 ) -> Result<RegularConstraintResult, RegularConstraintEvalError> {
+    #[cfg(test)]
+    if entry.source_line == "__lzvm_test_panic_if_evaluated__" {
+        panic!("test entry should not be evaluated");
+    }
+
     let ops = entry_ops(constraint_index, entry, program)?;
     let args = entry_args(constraint_index, entry, program)?;
     let mut active_rows = active_rows(entry, inputs.domain_size)?;
@@ -490,6 +546,7 @@ struct PreparedBaseProgram<'input> {
 enum PreparedBaseOperation<'input> {
     Generic(PreparedGenericBaseOperation<'input>),
     MatrixTmp1Add(PreparedMatrixTmp1Operation<'input>),
+    MatrixTmp1RepeatedAdd(PreparedMatrixTmp1RepeatedOperation<'input>),
     MatrixTmp1Sub(PreparedMatrixTmp1Operation<'input>),
     MatrixTmp1Mul(PreparedMatrixTmp1Operation<'input>),
     MatrixTmp1RSub(PreparedMatrixTmp1Operation<'input>),
@@ -525,6 +582,14 @@ struct PreparedMatrixTmp1Operation<'input> {
     destination_offset: usize,
     matrix: PreparedBaseMatrix<'input>,
     tmp1_offset: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreparedMatrixTmp1RepeatedOperation<'input> {
+    destination_offset: usize,
+    matrix: PreparedBaseMatrix<'input>,
+    tmp1_offset: usize,
+    count: Felt,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -769,10 +834,65 @@ fn prepared_base_operations<'input>(
     }
     clear_tmp1 |= !written_tmp1[destination_index];
     Ok(Some(PreparedBaseProgram {
-        operations: base_operations,
+        operations: coalesce_repeated_matrix_tmp1_adds(base_operations),
         clear_tmp1,
         clear_tmp3,
     }))
+}
+
+fn coalesce_repeated_matrix_tmp1_adds<'input>(
+    operations: Vec<PreparedBaseOperation<'input>>,
+) -> Vec<PreparedBaseOperation<'input>> {
+    let mut out = Vec::with_capacity(operations.len());
+    let mut iter = operations.into_iter().peekable();
+    while let Some(operation) = iter.next() {
+        let PreparedBaseOperation::MatrixTmp1Add(first) = operation else {
+            out.push(operation);
+            continue;
+        };
+
+        if first.destination_offset != first.tmp1_offset {
+            out.push(PreparedBaseOperation::MatrixTmp1Add(first));
+            continue;
+        }
+
+        let mut count = 1usize;
+        while let Some(PreparedBaseOperation::MatrixTmp1Add(next)) = iter.peek() {
+            if next.destination_offset != next.tmp1_offset
+                || next.destination_offset != first.destination_offset
+                || next.tmp1_offset != first.tmp1_offset
+                || !same_prepared_matrix(first.matrix, &next.matrix)
+            {
+                break;
+            }
+            count += 1;
+            iter.next();
+        }
+
+        if count == 1 {
+            out.push(PreparedBaseOperation::MatrixTmp1Add(first));
+        } else {
+            out.push(PreparedBaseOperation::MatrixTmp1RepeatedAdd(
+                PreparedMatrixTmp1RepeatedOperation {
+                    destination_offset: first.destination_offset,
+                    matrix: first.matrix,
+                    tmp1_offset: first.tmp1_offset,
+                    count: Felt::from_u64(
+                        u64::try_from(count).expect("operation count fits in u64"),
+                    ),
+                },
+            ));
+        }
+    }
+    out
+}
+
+fn same_prepared_matrix(left: PreparedBaseMatrix<'_>, right: &PreparedBaseMatrix<'_>) -> bool {
+    std::ptr::eq(left.values.as_ptr(), right.values.as_ptr())
+        && left.values.len() == right.values.len()
+        && left.column_count == right.column_count
+        && left.column == right.column
+        && left.row_offset == right.row_offset
 }
 
 fn reads_unwritten_tmp1(source: PreparedBaseSource<'_>, written_tmp1: &[bool]) -> bool {
@@ -1300,6 +1420,11 @@ fn evaluate_prepared_base_row(
             PreparedBaseOperation::MatrixTmp1Add(operation) => {
                 let (left, right) = read_matrix_tmp1_operands(operation, row, domain_size, tmp1);
                 tmp1[operation.destination_offset] = left + right;
+            }
+            PreparedBaseOperation::MatrixTmp1RepeatedAdd(operation) => {
+                let left = read_prepared_matrix(operation.matrix, row, domain_size);
+                let right = tmp1[operation.tmp1_offset];
+                tmp1[operation.destination_offset] = right + left * operation.count;
             }
             PreparedBaseOperation::MatrixTmp1Sub(operation) => {
                 let (left, right) = read_matrix_tmp1_operands(operation, row, domain_size, tmp1);
