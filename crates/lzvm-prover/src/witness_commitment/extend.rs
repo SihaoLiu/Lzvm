@@ -14,10 +14,7 @@ use lzvm_field::Felt;
 #[cfg(feature = "cuda")]
 use crate::gpu_setup::prepare_gpu_setup;
 #[cfg(feature = "cuda")]
-use crate::merkle_hash::{
-    linear_hashes_from_validated_wide_row_major_device_buffer,
-    padded_hashes_from_validated_row_major_bytes,
-};
+use crate::merkle_hash::linear_hashes_from_validated_wide_row_major_device_buffer;
 use crate::witness_layout::WitnessTraceStageValues;
 
 #[cfg(feature = "cuda")]
@@ -217,19 +214,19 @@ fn extend_witness_stage_row_major_bytes_with_leaf_hashes(
     let bytes = output_buffer
         .to_vec()
         .map_err(WitnessStageLeafError::from)?;
-    validate_row_major_word_bytes(&bytes)?;
     let extended_rows = extended_row_count_from_bytes(bytes.len(), column_count)?;
     let leaf_hashes = if column_count <= HASH_WORDS {
-        padded_hashes_from_validated_row_major_bytes(&bytes, extended_rows, column_count, arity)
+        validate_row_major_word_bytes_and_padded_hashes(&bytes, extended_rows, column_count, arity)?
     } else {
+        validate_row_major_word_bytes(&bytes)?;
         linear_hashes_from_validated_wide_row_major_device_buffer(
             &output_buffer,
             extended_rows,
             column_count,
             arity,
         )
-    }
-    .map_err(WitnessStageCommitmentError::from)?;
+        .map_err(WitnessStageCommitmentError::from)?
+    };
     Ok((bytes, leaf_hashes))
 }
 
@@ -275,23 +272,30 @@ fn extend_witness_stage_row_major_bytes_with_leaf_hashes_timed(
     let bytes = record_duration(&mut timing.download_duration, || {
         output_buffer.to_vec().map_err(WitnessStageLeafError::from)
     })?;
-    record_duration(&mut timing.validate_duration, || {
-        validate_row_major_word_bytes(&bytes)
-    })?;
     let extended_rows = extended_row_count_from_bytes(bytes.len(), column_count)?;
-    let leaf_hashes = record_duration(&mut timing.leaf_hash_duration, || {
-        if column_count <= HASH_WORDS {
-            padded_hashes_from_validated_row_major_bytes(&bytes, extended_rows, column_count, arity)
-        } else {
+    let leaf_hashes = if column_count <= HASH_WORDS {
+        record_duration(&mut timing.validate_duration, || {
+            validate_row_major_word_bytes_and_padded_hashes(
+                &bytes,
+                extended_rows,
+                column_count,
+                arity,
+            )
+        })?
+    } else {
+        record_duration(&mut timing.validate_duration, || {
+            validate_row_major_word_bytes(&bytes)
+        })?;
+        record_duration(&mut timing.leaf_hash_duration, || {
             linear_hashes_from_validated_wide_row_major_device_buffer(
                 &output_buffer,
                 extended_rows,
                 column_count,
                 arity,
             )
-        }
-        .map_err(WitnessStageCommitmentError::from)
-    })?;
+            .map_err(WitnessStageCommitmentError::from)
+        })?
+    };
     Ok((bytes, leaf_hashes))
 }
 
@@ -333,6 +337,106 @@ fn validate_row_major_word_bytes(bytes: &[u8]) -> Result<(), WitnessStageLeafErr
         Felt::from_canonical(word)?;
     }
     Ok(())
+}
+
+#[cfg(feature = "cuda")]
+fn validate_row_major_word_bytes_and_padded_hashes(
+    bytes: &[u8],
+    row_count: usize,
+    column_count: usize,
+    arity: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, WitnessTraceCommitmentError> {
+    if column_count > HASH_WORDS {
+        return Err(WitnessStageLeafError::LengthOverflow.into());
+    }
+    let expected = row_count
+        .checked_mul(column_count)
+        .and_then(|words| words.checked_mul(WORD_BYTES))
+        .ok_or(WitnessStageLeafError::LengthOverflow)?;
+    if bytes.len() != expected {
+        return Err(WitnessStageLeafError::LengthOverflow.into());
+    }
+
+    let mut out = Vec::with_capacity(row_count);
+    for row in 0..row_count {
+        let mut digest = [Felt::ZERO; HASH_WORDS];
+        for (column, slot) in digest.iter_mut().enumerate().take(column_count) {
+            let word_index = row
+                .checked_mul(column_count)
+                .and_then(|offset| offset.checked_add(column))
+                .ok_or(WitnessStageLeafError::LengthOverflow)?;
+            let byte_index = word_index
+                .checked_mul(WORD_BYTES)
+                .ok_or(WitnessStageLeafError::LengthOverflow)?;
+            let word = u64::from_le_bytes(
+                bytes[byte_index..byte_index + WORD_BYTES]
+                    .try_into()
+                    .expect("row-major byte length checked"),
+            );
+            *slot = Felt::from_canonical(word).map_err(WitnessStageLeafError::from)?;
+        }
+        out.push(digest);
+    }
+    validate_leaf_hash_arity(arity)?;
+    Ok(out)
+}
+
+#[cfg(feature = "cuda")]
+fn validate_leaf_hash_arity(arity: usize) -> Result<(), WitnessStageCommitmentError> {
+    match arity {
+        2 | 4 => Ok(()),
+        _ => Err(WitnessStageCommitmentError::UnsupportedArity { arity }),
+    }
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod tests {
+    use super::validate_row_major_word_bytes_and_padded_hashes;
+    use lzvm_field::{Felt, MODULUS};
+
+    fn encode_words(words: &[u64]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(words.len() * 8);
+        for word in words {
+            out.extend_from_slice(&word.to_le_bytes());
+        }
+        out
+    }
+
+    #[test]
+    fn narrow_leaf_validation_builds_padded_digests() {
+        let bytes = encode_words(&[1, 2, 3, 4, 5, 6]);
+
+        let digests = validate_row_major_word_bytes_and_padded_hashes(&bytes, 2, 3, 2)
+            .expect("narrow digests should validate");
+
+        assert_eq!(
+            digests,
+            vec![
+                [
+                    Felt::from_u64(1),
+                    Felt::from_u64(2),
+                    Felt::from_u64(3),
+                    Felt::ZERO
+                ],
+                [
+                    Felt::from_u64(4),
+                    Felt::from_u64(5),
+                    Felt::from_u64(6),
+                    Felt::ZERO
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn narrow_leaf_validation_rejects_noncanonical_words() {
+        let bytes = encode_words(&[1, MODULUS]);
+
+        let error = validate_row_major_word_bytes_and_padded_hashes(&bytes, 1, 2, 2)
+            .expect_err("non-canonical words should be rejected");
+
+        assert!(error.to_string().contains("non-canonical field element"));
+    }
 }
 
 #[cfg(not(feature = "cuda"))]

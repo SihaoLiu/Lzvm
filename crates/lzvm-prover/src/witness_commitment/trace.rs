@@ -373,6 +373,7 @@ mod tests {
     use super::{
         commit_extended_witness_stage, commit_witness_stage_values_with_workers,
         commit_witness_trace_stages_with_workers, extend_witness_stage_leaves,
+        WitnessStageCommitParams,
     };
     use crate::witness_commitment::commit_witness_stage_leaves;
     use crate::witness_layout::derive_witness_trace_layout;

@@ -17,6 +17,11 @@ structure AuxiliaryValidation (system : VerifierModel) where
   exactSourceLookupBalance : PublicInput -> Proof -> Prop
   dynamicSourceLookupConstrained : PublicInput -> Proof -> Prop
 
+structure WitnessLeafDigestValidation (system : VerifierModel) where
+  canonicalExtendedLeafBytes : PublicInput -> Proof -> Prop
+  narrowPaddedDigestsBindRows : PublicInput -> Proof -> Prop
+  wideLinearDigestsBindRows : PublicInput -> Proof -> Prop
+
 structure TimingObservation where
   label : Nat
   milliseconds : Nat
@@ -56,6 +61,23 @@ def SourceLookupCheckedAcceptance
   system.accepts publicInput proof
     /\ SourceLookupAuxiliaryEvidence system auxiliary publicInput proof
 
+def WitnessLeafDigestEvidence
+    (system : VerifierModel)
+    (validation : WitnessLeafDigestValidation system)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.canonicalExtendedLeafBytes publicInput proof
+    /\ validation.narrowPaddedDigestsBindRows publicInput proof
+    /\ validation.wideLinearDigestsBindRows publicInput proof
+
+def WitnessLeafDigestCheckedAcceptance
+    (system : VerifierModel)
+    (validation : WitnessLeafDigestValidation system)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ WitnessLeafDigestEvidence system validation publicInput proof
+
 theorem source_lookup_auxiliary_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -68,6 +90,19 @@ theorem source_lookup_auxiliary_acceptance_sound
   exact
     And.intro acceptedWithLookupChecks.right
       (abstract_verifier_sound assumptions publicInput proof acceptedWithLookupChecks.left)
+
+theorem witness_leaf_digest_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : WitnessLeafDigestValidation system) :
+    forall publicInput proof,
+      WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
+        WitnessLeafDigestEvidence system validation publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithLeafDigestChecks
+  exact
+    And.intro acceptedWithLeafDigestChecks.right
+      (abstract_verifier_sound assumptions publicInput proof acceptedWithLeafDigestChecks.left)
 
 def TimingObservedAcceptance
     (system : VerifierModel)
