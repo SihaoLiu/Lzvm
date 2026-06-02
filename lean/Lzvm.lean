@@ -4,7 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
-import Lzvm.Soundness
+import Lzvm.AuxiliaryChecks
 
 /-!
 Top-level module for the Lzvm formal soundness model.

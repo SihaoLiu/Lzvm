@@ -8,6 +8,8 @@ use lzvm_field::Felt;
 
 use crate::hint_eval::{ResolvedHint, ResolvedHintField, ResolvedHintPayload};
 
+const PIOP_SURNAME_DYNAMIC: u64 = 2;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct SourceLookupBalance {
     entries: BTreeMap<SourceLookupKey, Felt>,
@@ -48,16 +50,24 @@ impl SourceLookupBalance {
             }
             let key = source_lookup_key(unit_index, row, hint)?;
             let weight = source_lookup_weight(unit_index, row, hint)?;
+            let supported = matches!(
+                hint.name.as_str(),
+                SOURCE_LOOKUP_PROVES_HINT | SOURCE_LOOKUP_ASSUMES_HINT
+            );
+            if !supported {
+                return source_lookup_error(
+                    unit_index,
+                    format!("unsupported lookup hint {} at row {row}", hint.name),
+                );
+            }
+            if source_lookup_dynamic_surname(hint) {
+                continue;
+            }
             let entry = self.entries.entry(key).or_insert(Felt::ZERO);
             match hint.name.as_str() {
                 SOURCE_LOOKUP_PROVES_HINT => *entry = *entry + weight,
                 SOURCE_LOOKUP_ASSUMES_HINT => *entry = *entry - weight,
-                _ => {
-                    return source_lookup_error(
-                        unit_index,
-                        format!("unsupported lookup hint {} at row {row}", hint.name),
-                    )
-                }
+                _ => unreachable!(),
             }
         }
         Ok(())
@@ -99,6 +109,19 @@ impl SourceLookupBalance {
 
 fn source_lookup_line_only_hint(hint: &ResolvedHint) -> bool {
     hint.fields.len() == 1 && hint.fields[0].name == "line"
+}
+
+fn source_lookup_dynamic_surname(hint: &ResolvedHint) -> bool {
+    let Some(field) = source_lookup_field(hint, "surname") else {
+        return false;
+    };
+    if field.values.len() != 1 {
+        return false;
+    }
+    matches!(
+        field.values[0].payload,
+        ResolvedHintPayload::Scalar(value) if value.to_u64() == PIOP_SURNAME_DYNAMIC
+    )
 }
 
 impl fmt::Display for SourceLookupHintError {
@@ -489,4 +512,129 @@ fn source_lookup_error<T>(
         unit_index,
         message: message.into(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hint_eval::ResolvedHintValue;
+
+    #[test]
+    fn dynamic_surname_hints_do_not_require_exact_tuple_balance() {
+        let mut balance = SourceLookupBalance::default();
+        let hint = lookup_hint(
+            SOURCE_LOOKUP_PROVES_HINT,
+            &[48, 0, 0, 11, 13, 11, 13],
+            "multiplicity",
+            1,
+            Some(2),
+        );
+
+        balance.absorb(0, 0, &[hint]).expect("hint should absorb");
+        balance
+            .validate_all_units()
+            .expect("dynamic hints are checked by sum-bus constraints");
+    }
+
+    #[test]
+    fn non_dynamic_unbalanced_hints_still_reject() {
+        let mut balance = SourceLookupBalance::default();
+        let hint = lookup_hint(
+            SOURCE_LOOKUP_PROVES_HINT,
+            &[48, 0, 0],
+            "multiplicity",
+            1,
+            None,
+        );
+
+        balance.absorb(0, 0, &[hint]).expect("hint should absorb");
+        let error = balance
+            .validate_all_units()
+            .expect_err("non-dynamic hints should require exact balance");
+
+        assert!(error.to_string().contains("unbalanced lookup bus 5000"));
+    }
+
+    #[test]
+    fn dynamic_surname_hints_still_require_values() {
+        let mut balance = SourceLookupBalance::default();
+        let hint = ResolvedHint {
+            name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+            fields: vec![
+                field("bus_id", &[5000]),
+                field("multiplicity", &[1]),
+                field("surname", &[PIOP_SURNAME_DYNAMIC]),
+            ],
+        };
+
+        let error = balance
+            .absorb(0, 0, &[hint])
+            .expect_err("dynamic hints should still require values");
+
+        assert!(error.to_string().contains("missing values field"));
+    }
+
+    #[test]
+    fn dynamic_surname_hints_still_reject_unsupported_lookup_names() {
+        let mut balance = SourceLookupBalance::default();
+        let hint = lookup_hint(
+            "source.lookup.unknown",
+            &[48, 0, 0, 11, 13, 11, 13],
+            "multiplicity",
+            1,
+            Some(PIOP_SURNAME_DYNAMIC),
+        );
+
+        let error = balance
+            .absorb(0, 0, &[hint])
+            .expect_err("unsupported dynamic hints should reject");
+
+        assert!(error
+            .to_string()
+            .contains("unsupported lookup hint source.lookup.unknown"));
+    }
+
+    fn lookup_hint(
+        name: &str,
+        values: &[u64],
+        weight_name: &str,
+        weight: u64,
+        surname: Option<u64>,
+    ) -> ResolvedHint {
+        let mut fields = vec![
+            field("bus_id", &[5000]),
+            ResolvedHintField {
+                name: "values".to_owned(),
+                values: values
+                    .iter()
+                    .map(|value| scalar_value(*value))
+                    .collect::<Vec<_>>(),
+            },
+            field(weight_name, &[weight]),
+        ];
+        if let Some(surname) = surname {
+            fields.push(field("surname", &[surname]));
+        }
+        ResolvedHint {
+            name: name.to_owned(),
+            fields,
+        }
+    }
+
+    fn field(name: &str, values: &[u64]) -> ResolvedHintField {
+        ResolvedHintField {
+            name: name.to_owned(),
+            values: values
+                .iter()
+                .map(|value| scalar_value(*value))
+                .collect::<Vec<_>>(),
+        }
+    }
+
+    fn scalar_value(value: u64) -> ResolvedHintValue {
+        ResolvedHintValue {
+            payload: ResolvedHintPayload::Scalar(Felt::from_u64(value)),
+            positions: Vec::new(),
+        }
+    }
 }
