@@ -333,6 +333,11 @@ impl WitnessTraceBuilder<'_> {
                 self.values[start] = *first;
                 self.values[start + 1] = *second;
             }
+            [first, second, third] => {
+                self.values[start] = *first;
+                self.values[start + 1] = *second;
+                self.values[start + 2] = *third;
+            }
             _ => {
                 #[cfg(test)]
                 GENERIC_VALUE_COPY_COUNT.with(|count| count.set(count.get() + 1));
@@ -680,7 +685,7 @@ mod tests {
     fn small_writes_store_values_without_generic_copy() {
         let layout = WitnessTraceLayout {
             rows: 2,
-            columns: 5,
+            columns: 8,
             stages: vec![
                 WitnessTraceStageLayout {
                     stage_index: 1,
@@ -690,7 +695,7 @@ mod tests {
                 WitnessTraceStageLayout {
                     stage_index: 2,
                     start_column: 3,
-                    width: 2,
+                    width: 5,
                 },
             ],
             commitment_columns: vec![
@@ -708,10 +713,18 @@ mod tests {
                     trace_column: 3,
                     dimension: 2,
                 },
+                WitnessTraceColumnLayout {
+                    name: "extension".to_owned(),
+                    stage_index: 2,
+                    stage_position: 2,
+                    trace_column: 5,
+                    dimension: 3,
+                },
             ],
         };
         let scalar = layout.resolved_column(&layout.commitment_columns[0]);
         let wide = layout.resolved_column(&layout.commitment_columns[1]);
+        let extension = layout.resolved_column(&layout.commitment_columns[2]);
         let mut builder = layout.trace_builder().expect("builder should allocate");
 
         reset_generic_value_copy_count();
@@ -721,9 +734,19 @@ mod tests {
         builder
             .write_resolved_column_values(1, &wide, &[Felt::from_u64(11), Felt::from_u64(13)])
             .expect("wide value should write");
+        builder
+            .write_resolved_column_values(
+                0,
+                &extension,
+                &[Felt::from_u64(17), Felt::from_u64(19), Felt::from_u64(23)],
+            )
+            .expect("extension value should write");
 
         let trace = builder.build();
         assert_eq!(trace.value(0, 1), Some(Felt::from_u64(7)));
+        assert_eq!(trace.value(0, 5), Some(Felt::from_u64(17)));
+        assert_eq!(trace.value(0, 6), Some(Felt::from_u64(19)));
+        assert_eq!(trace.value(0, 7), Some(Felt::from_u64(23)));
         assert_eq!(trace.value(1, 3), Some(Felt::from_u64(11)));
         assert_eq!(trace.value(1, 4), Some(Felt::from_u64(13)));
         assert_eq!(generic_value_copy_count(), 0);
