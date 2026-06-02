@@ -1261,6 +1261,13 @@ struct ZiskMainReportWindow<'a> {
     next_instruction: Option<RiscvInstruction>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ZiskMainReportValidationContext<'a> {
+    columns: Option<&'a ZiskMainTraceColumns<'a>>,
+    row_count: usize,
+    segment: ZiskMainTraceSegmentInfo,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ZiskMainRegisterAccessValues {
     a_prev_mem_step: Option<u64>,
@@ -1280,10 +1287,9 @@ fn validate_and_apply_zisk_main_report(
     report: &GuestMachineReport,
     next_instruction: Option<RiscvInstruction>,
     state: &mut ZiskMainTraceState,
-    columns: Option<&ZiskMainTraceColumns<'_>>,
-    row_count: usize,
-    segment: ZiskMainTraceSegmentInfo,
-) -> Result<Vec<ZiskMainReportTraceValues>, GuestPcTraceBackendError> {
+    context: ZiskMainReportValidationContext<'_>,
+    mut visit: impl FnMut(usize, ZiskMainReportTraceValues) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<usize, GuestPcTraceBackendError> {
     let consumed_pending_dma = state.pending_dma.is_some();
     let lowered = lower_stateful_zisk_main_report_rows(row, report, next_instruction, state)?;
     let exclusive_end = row.checked_add(lowered.len()).ok_or_else(|| {
@@ -1291,12 +1297,12 @@ fn validate_and_apply_zisk_main_report(
             message: "Zisk Main row index overflow".to_owned(),
         }
     })?;
-    if exclusive_end > row_count {
+    if exclusive_end > context.row_count {
         return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: "Zisk Main report rows exceed layout rows".to_owned(),
         });
     }
-    let mut values = Vec::with_capacity(lowered.len());
+    let produced_rows = lowered.len();
     for (offset, lowered_row) in lowered.into_iter().enumerate() {
         let output_row = row.checked_add(offset).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -1304,7 +1310,7 @@ fn validate_and_apply_zisk_main_report(
             }
         })?;
         let instruction = lowered_row.instruction;
-        if let Some(columns) = columns {
+        if let Some(columns) = context.columns {
             validate_zisk_main_memory_columns(output_row, &instruction, columns)?;
         }
         let (a, a_access) = zisk_main_source_value(
@@ -1335,8 +1341,13 @@ fn validate_and_apply_zisk_main_report(
             c,
             flag,
         )?;
-        let register_accesses =
-            zisk_main_register_access_values(output_row, &instruction, state, row_count, segment)?;
+        let register_accesses = zisk_main_register_access_values(
+            output_row,
+            &instruction,
+            state,
+            context.row_count,
+            context.segment,
+        )?;
         validate_zisk_main_memory_accesses(
             output_row,
             &instruction,
@@ -1355,21 +1366,24 @@ fn validate_and_apply_zisk_main_report(
             state,
         )?;
         state.register_mem_steps = register_accesses.next_mem_steps;
-        values.push(ZiskMainReportTraceValues {
-            instruction,
-            a,
-            b,
-            c,
-            flag,
-            register_accesses: register_accesses.values,
-        });
+        visit(
+            output_row,
+            ZiskMainReportTraceValues {
+                instruction,
+                a,
+                b,
+                c,
+                flag,
+                register_accesses: register_accesses.values,
+            },
+        )?;
     }
     state.pending_dma = if consumed_pending_dma {
         None
     } else {
         zisk_main_pending_dma(report)
     };
-    Ok(values)
+    Ok(produced_rows)
 }
 
 fn lower_stateful_zisk_main_report_rows<'a>(
@@ -2318,25 +2332,18 @@ fn write_zisk_main_report_columns(
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
 ) -> Result<usize, GuestPcTraceBackendError> {
-    let values = validate_and_apply_zisk_main_report(
+    validate_and_apply_zisk_main_report(
         row,
         reports.current,
         reports.next_instruction,
         state,
-        Some(columns),
-        row_count,
-        segment,
-    )?;
-    let produced_rows = values.len();
-    for (offset, values) in values.into_iter().enumerate() {
-        let row = row.checked_add(offset).ok_or_else(|| {
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "Zisk Main row index overflow".to_owned(),
-            }
-        })?;
-        write_zisk_main_row_columns(builder, row, values, columns)?;
-    }
-    Ok(produced_rows)
+        ZiskMainReportValidationContext {
+            columns: Some(columns),
+            row_count,
+            segment,
+        },
+        |output_row, values| write_zisk_main_row_columns(builder, output_row, values, columns),
+    )
 }
 
 fn write_zisk_main_row_columns(

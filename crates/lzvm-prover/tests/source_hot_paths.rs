@@ -478,6 +478,40 @@ fn guest_pc_trace_writes_use_direct_trace_builder_helpers() {
 }
 
 #[test]
+fn zisk_main_report_writes_stream_trace_values_without_row_value_vector() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let write_body = function_body(
+        &source,
+        "fn write_zisk_main_report_columns",
+        "fn write_zisk_main_row_columns",
+    );
+    assert!(
+        !write_body.contains("let values = validate_and_apply_zisk_main_report("),
+        "Zisk Main report writes should stream rows instead of collecting trace values first"
+    );
+
+    let validate_body = function_body(
+        &source,
+        "fn validate_and_apply_zisk_main_report",
+        "fn lower_stateful_zisk_main_report_rows",
+    );
+    for allocation in [
+        "Result<Vec<ZiskMainReportTraceValues>",
+        "let mut values = Vec::with_capacity",
+        "values.push(",
+        "Ok(values)",
+    ] {
+        assert!(
+            !validate_body.contains(allocation),
+            "Zisk Main report validation should not allocate a trace-value vector with {allocation}"
+        );
+    }
+}
+
+#[test]
 fn raw_fixed_material_uses_raw_row_major_bytes() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/fixed_material.rs");
