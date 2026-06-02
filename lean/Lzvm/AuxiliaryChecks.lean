@@ -22,6 +22,12 @@ structure TimingObservation where
   milliseconds : Nat
 deriving DecidableEq, Repr
 
+structure GuestPcTraceTimingSummary where
+  segmentCount : Nat
+  guestTraceStreamMilliseconds : Nat
+  guestSegmentCommitMilliseconds : Nat
+deriving DecidableEq, Repr
+
 def SourceLookupAuxiliaryEvidence
     (system : VerifierModel)
     (auxiliary : AuxiliaryValidation system)
@@ -67,5 +73,22 @@ theorem timing_observation_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithTimings
   exact abstract_verifier_sound assumptions publicInput proof acceptedWithTimings
+
+def GuestPcTraceTimingObservedAcceptance
+    (system : VerifierModel)
+    (_summary : Option GuestPcTraceTimingSummary)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+
+theorem guest_pc_trace_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option GuestPcTraceTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithGuestPcTraceTimings
+  exact abstract_verifier_sound assumptions publicInput proof acceptedWithGuestPcTraceTimings
 
 end Lzvm

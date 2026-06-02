@@ -30,8 +30,6 @@ use lzvm_prover::{
     derive_prove_execution_plan_with_program_image_cache,
     run_prove_witness_commitments_for_all_units,
     run_prove_witness_commitments_for_all_units_with_trace_bundle,
-    run_prove_witness_commitments_with_guest_pc_trace_segment_commitments,
-    run_prove_witness_commitments_with_guest_pc_trace_segments,
     run_prove_witness_commitments_with_trace_backend,
     run_prove_witness_commitments_with_trace_bytes, ProveExecutionInputArtifacts,
     ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassKind, ProvePassRequest,
@@ -52,12 +50,14 @@ use crate::prove_plan::{
 use crate::trace_input_shape::validate_trace_input_shapes;
 
 mod args;
+mod guest_pc_trace;
 mod output_file;
 mod timing;
 mod usage;
 mod value_inputs;
 
 use args::{parse_witness_args, parsed_inputs, ParsedWitnessArgs};
+use guest_pc_trace::run_guest_pc_trace_witness;
 use output_file::{write_output_file, write_proof_output};
 use timing::{write_timing_summary, TimingRecorder};
 use usage::write_usage;
@@ -398,27 +398,28 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                     .units
                     .get(single_unit_index)
                     .is_some_and(|unit| unit.fri_expression_id.is_none());
-            let mut outputs = match if trace_can_be_dropped {
-                run_prove_witness_commitments_with_guest_pc_trace_segment_commitments(
-                    &plan,
-                    single_unit_index,
-                    auxiliary_inputs,
-                    instruction_limit,
-                )
-            } else {
-                run_prove_witness_commitments_with_guest_pc_trace_segments(
-                    &plan,
-                    single_unit_index,
-                    auxiliary_inputs,
-                    instruction_limit,
-                )
-            } {
-                Ok(outputs) => outputs,
+            let guest_pc_trace_run = match run_guest_pc_trace_witness(
+                &plan,
+                single_unit_index,
+                auxiliary_inputs,
+                instruction_limit,
+                trace_can_be_dropped,
+                parsed.timings,
+            ) {
+                Ok(run) => run,
                 Err(error) => {
                     let _ = writeln!(stderr, "prove witness failed: {error}");
                     return 1;
                 }
             };
+            let mut outputs = guest_pc_trace_run.outputs;
+            if let Some(timing) = guest_pc_trace_run.timing {
+                timings.record("guest_trace_stream", timing.guest_trace_stream_duration());
+                timings.record(
+                    "guest_segment_commit",
+                    timing.guest_segment_commit_duration(),
+                );
+            }
             if outputs.len() > 1 {
                 timings.mark("witness");
                 if let Err(message) = finish_all_units_witness_run(

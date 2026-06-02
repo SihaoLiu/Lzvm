@@ -119,10 +119,12 @@ pub use witness_execution::{
     run_prove_witness_commitments_for_all_units_with_trace_bundle,
     run_prove_witness_commitments_with_auxiliary_inputs,
     run_prove_witness_commitments_with_guest_pc_trace_segment_commitments,
+    run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_with_timings,
     run_prove_witness_commitments_with_guest_pc_trace_segments,
     run_prove_witness_commitments_with_trace, run_prove_witness_commitments_with_trace_backend,
     run_prove_witness_commitments_with_trace_bytes, ProveWitnessAuxiliaryInputs,
-    ProveWitnessCommitmentError, ProveWitnessCommitments, ProveWitnessTraceCommitments,
+    ProveWitnessCommitmentError, ProveWitnessCommitments, ProveWitnessGuestPcTraceTiming,
+    ProveWitnessTraceCommitments,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

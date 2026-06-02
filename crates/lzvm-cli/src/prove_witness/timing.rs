@@ -37,6 +37,13 @@ impl TimingRecorder {
         self.last_mark = now;
     }
 
+    pub(super) fn record(&mut self, name: &'static str, duration: Duration) {
+        if !self.enabled {
+            return;
+        }
+        self.entries.push(TimingEntry { name, duration });
+    }
+
     fn total(&self) -> Duration {
         self.last_mark.duration_since(self.started)
     }

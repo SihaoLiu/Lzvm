@@ -5939,6 +5939,54 @@ fn runs_prove_witness_commitments_from_segmented_guest_pc_trace() {
     assert!(stdout.contains("trace_instance_index=1\n"), "{stdout}");
     assert_eq!(stdout.matches("trace_rows=2\n").count(), 2, "{stdout}");
     assert_eq!(stdout.matches("trace_columns=41\n").count(), 2, "{stdout}");
+    assert!(!stdout.contains("timing_"), "{stdout}");
+}
+
+#[test]
+fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
+    let dir = temp_dir("prove-witness-segmented-guest-pc-trace-timings");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_main_trace_unit(&dir);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    write_bytes(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--timings",
+            "--guest-pc-trace",
+            "16",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("timing_guest_trace_stream_ms="), "{stdout}");
+    assert!(
+        stdout.contains("timing_guest_segment_commit_ms="),
+        "{stdout}"
+    );
+    assert!(stdout.contains("timing_witness_ms="), "{stdout}");
+    assert!(stdout.contains("timing_total_ms="), "{stdout}");
 }
 
 #[test]

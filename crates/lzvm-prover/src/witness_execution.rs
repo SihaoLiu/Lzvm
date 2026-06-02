@@ -1,6 +1,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use lzvm_artifacts::fixed::FixedColumns;
 use lzvm_artifacts::global_info::{GlobalInfo, NamedStageValue};
@@ -174,6 +175,39 @@ pub struct ProveWitnessAuxiliaryInputs {
     pub group_values: Vec<Ext3>,
     pub challenges: Vec<Ext3>,
     pub evaluations: Vec<Ext3>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProveWitnessGuestPcTraceTiming {
+    segment_count: usize,
+    guest_trace_stream_duration: Duration,
+    guest_segment_commit_duration: Duration,
+}
+
+impl ProveWitnessGuestPcTraceTiming {
+    fn new(
+        segment_count: usize,
+        guest_trace_stream_duration: Duration,
+        guest_segment_commit_duration: Duration,
+    ) -> Self {
+        Self {
+            segment_count,
+            guest_trace_stream_duration,
+            guest_segment_commit_duration,
+        }
+    }
+
+    pub fn segment_count(&self) -> usize {
+        self.segment_count
+    }
+
+    pub fn guest_trace_stream_duration(&self) -> Duration {
+        self.guest_trace_stream_duration
+    }
+
+    pub fn guest_segment_commit_duration(&self) -> Duration {
+        self.guest_segment_commit_duration
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -820,6 +854,38 @@ pub fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments(
     auxiliary_inputs: ProveWitnessAuxiliaryInputs,
     instruction_limit: u64,
 ) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
+    run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optional_timings(
+        plan,
+        unit_index,
+        auxiliary_inputs,
+        instruction_limit,
+        None,
+    )
+}
+
+pub fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_with_timings(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+    instruction_limit: u64,
+    timing_observer: &mut dyn FnMut(ProveWitnessGuestPcTraceTiming),
+) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
+    run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optional_timings(
+        plan,
+        unit_index,
+        auxiliary_inputs,
+        instruction_limit,
+        Some(timing_observer),
+    )
+}
+
+fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optional_timings(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+    instruction_limit: u64,
+    timing_observer: Option<&mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
+) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
     let mut source_lookup_balance = SourceLookupBalance::default();
     validate_witness_unit_index(plan, unit_index)?;
     let shared_inputs = load_witness_shared_inputs(plan)?;
@@ -833,6 +899,7 @@ pub fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments(
             Arc::clone(&auxiliary_inputs),
             instruction_limit,
             None,
+            timing_observer,
         )?
     } else {
         let outputs = run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
@@ -842,6 +909,7 @@ pub fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments(
             Arc::clone(&auxiliary_inputs),
             instruction_limit,
             Some(&mut source_lookup_balance),
+            timing_observer,
         )?;
         let global_auxiliary_inputs =
             global_auxiliary_inputs_from_outputs(auxiliary_inputs.as_ref(), &outputs)?;
@@ -1069,6 +1137,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     instruction_limit: u64,
     source_lookup_balance: Option<&mut SourceLookupBalance>,
+    mut timing_observer: Option<&mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
 ) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
     let unit_count = plan.run_plan.schedule.units.len();
     let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
@@ -1100,11 +1169,16 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
     {
         let mut outputs = Vec::new();
         let mut source_lookup_balance = source_lookup_balance;
+        let collect_timing = timing_observer.is_some();
+        let mut guest_segment_commit_duration = Duration::ZERO;
+        let mut segment_count = 0_usize;
+        let guest_trace_stream_started = collect_timing.then(Instant::now);
         let proof_values = for_each_guest_pc_trace_segment_collecting_proof_values_with_context(
             &backend,
             context,
             layout.request(&shared_inputs.input[..]),
             |segment_output| {
+                let guest_segment_commit_started = collect_timing.then(Instant::now);
                 let trace_instance_index = segment_output.trace_instance_index();
                 let trace_output = segment_output.into_output();
                 let merged_inputs = merge_backend_unit_values(
@@ -1131,6 +1205,10 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 )?;
                 output.commitments.identity.trace_instance_index = trace_instance_index;
                 outputs.push(output.without_trace());
+                if let Some(started) = guest_segment_commit_started {
+                    guest_segment_commit_duration += started.elapsed();
+                    segment_count += 1;
+                }
                 Ok(())
             },
         )
@@ -1140,6 +1218,18 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             }
             GuestPcTraceSegmentStreamError::Emit(error) => error,
         })?;
+        if let Some(started) = guest_trace_stream_started {
+            let guest_trace_stream_duration = started
+                .elapsed()
+                .saturating_sub(guest_segment_commit_duration);
+            if let Some(observer) = timing_observer.as_deref_mut() {
+                observer(ProveWitnessGuestPcTraceTiming::new(
+                    segment_count,
+                    guest_trace_stream_duration,
+                    guest_segment_commit_duration,
+                ));
+            }
+        }
         for output in &mut outputs {
             output.auxiliary_inputs = merge_backend_proof_values(
                 unit_index,
@@ -1163,12 +1253,17 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
     )?;
     let mut outputs = Vec::new();
     let mut source_lookup_balance = source_lookup_balance;
+    let collect_timing = timing_observer.is_some();
+    let mut guest_segment_commit_duration = Duration::ZERO;
+    let mut segment_count = 0_usize;
+    let guest_trace_stream_started = collect_timing.then(Instant::now);
     for_each_guest_pc_trace_segment_with_context(
         &backend,
         context,
         layout.request(&shared_inputs.input[..]),
         &proof_values,
         |segment_output| {
+            let guest_segment_commit_started = collect_timing.then(Instant::now);
             let trace_instance_index = segment_output.trace_instance_index();
             let trace_output = segment_output.into_output();
             let merged_inputs = merge_backend_unit_values(
@@ -1195,6 +1290,10 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             )?;
             output.commitments.identity.trace_instance_index = trace_instance_index;
             outputs.push(output.without_trace());
+            if let Some(started) = guest_segment_commit_started {
+                guest_segment_commit_duration += started.elapsed();
+                segment_count += 1;
+            }
             Ok(())
         },
     )
@@ -1202,6 +1301,18 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         GuestPcTraceSegmentStreamError::Trace(error) => ProveWitnessCommitmentError::from(error),
         GuestPcTraceSegmentStreamError::Emit(error) => error,
     })?;
+    if let Some(started) = guest_trace_stream_started {
+        let guest_trace_stream_duration = started
+            .elapsed()
+            .saturating_sub(guest_segment_commit_duration);
+        if let Some(observer) = timing_observer {
+            observer(ProveWitnessGuestPcTraceTiming::new(
+                segment_count,
+                guest_trace_stream_duration,
+                guest_segment_commit_duration,
+            ));
+        }
+    }
     Ok(outputs)
 }
 
