@@ -451,6 +451,7 @@ enum PreparedBaseOperation<'input> {
     Tmp1ConstantSub(PreparedTmp1ConstantOperation),
     Tmp1ConstantMul(PreparedTmp1ConstantOperation),
     Tmp1ConstantRSub(PreparedTmp1ConstantOperation),
+    ConstantAssign(PreparedConstantAssignOperation),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -487,6 +488,12 @@ struct PreparedTmp1ConstantOperation {
     destination_offset: usize,
     tmp1_offset: usize,
     constant: Felt,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreparedConstantAssignOperation {
+    destination_offset: usize,
+    value: Felt,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -828,6 +835,12 @@ fn prepared_base_operation<'input>(
                 destination_offset,
                 tmp1_offset,
                 constant,
+            })
+        }
+        (kind, PreparedBaseSource::Constant(left), PreparedBaseSource::Constant(right)) => {
+            PreparedBaseOperation::ConstantAssign(PreparedConstantAssignOperation {
+                destination_offset,
+                value: precompute_constant_base_op(kind, left, right),
             })
         }
         (kind, src0, src1) => PreparedBaseOperation::Generic(PreparedGenericBaseOperation {
@@ -1255,6 +1268,9 @@ fn evaluate_prepared_base_row(
                 let left = tmp1[operation.tmp1_offset];
                 tmp1[operation.destination_offset] = operation.constant - left;
             }
+            PreparedBaseOperation::ConstantAssign(operation) => {
+                tmp1[operation.destination_offset] = operation.value;
+            }
         }
     }
 
@@ -1284,6 +1300,11 @@ fn apply_prepared_base_op(kind: u16, left: Felt, right: Felt) -> Felt {
     #[cfg(test)]
     BASE_ONLY_KIND_DISPATCH_COUNT.with(|count| count.set(count.get() + 1));
 
+    precompute_constant_base_op(kind, left, right)
+}
+
+#[inline(always)]
+fn precompute_constant_base_op(kind: u16, left: Felt, right: Felt) -> Felt {
     match kind {
         0 => left + right,
         1 => left - right,
@@ -2039,6 +2060,56 @@ mod tests {
     }
 
     #[test]
+    fn base_only_constant_pairs_precompute_for_prepared_rows() {
+        for (kind, left, right) in [(0, 0, 0), (1, 3, 3), (2, 0, 5), (3, 7, 7)] {
+            let program = ConstraintProgram {
+                entries: vec![ConstraintEntry {
+                    stage: 1,
+                    destination_dimension: 1,
+                    destination_id: 0,
+                    first_row: 0,
+                    last_row: 8,
+                    temp1_count: 1,
+                    temp3_count: 0,
+                    ops_count: 1,
+                    ops_offset: 0,
+                    args_count: 8,
+                    args_offset: 0,
+                    intermediate: false,
+                    source_line: "base-only constant pair".to_owned(),
+                }],
+                ops: vec![0],
+                args: vec![kind, 0, 8, 0, 0, 8, 1, 0],
+                numbers: vec![left, right],
+            };
+
+            BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
+            BASE_ONLY_KIND_DISPATCH_COUNT.with(|count| count.set(0));
+            let results = evaluate_regular_constraints(
+                &program,
+                RegularConstraintInputs {
+                    domain_size: 8,
+                    stage_count: 1,
+                    ..RegularConstraintInputs::default()
+                },
+            )
+            .expect("regular constraint should evaluate");
+
+            assert_eq!(results[0].invalid_rows, Vec::new(), "kind {kind}");
+            assert_eq!(
+                BASE_ONLY_PREPARED_ROW_COUNT.with(Cell::get),
+                7,
+                "kind {kind}"
+            );
+            assert_eq!(
+                BASE_ONLY_KIND_DISPATCH_COUNT.with(Cell::get),
+                0,
+                "kind {kind}"
+            );
+        }
+    }
+
+    #[test]
     fn base_only_direct_common_source_pairs_preserve_row_semantics() {
         let entry = ConstraintEntry {
             stage: 1,
@@ -2263,6 +2334,15 @@ mod tests {
                 ),
                 "tmp1_constant_rsub",
             ),
+            (
+                prepared_base_operation(
+                    2,
+                    0,
+                    PreparedBaseSource::Constant(Felt::from_u64(3)),
+                    PreparedBaseSource::Constant(Felt::from_u64(4)),
+                ),
+                "constant_assign",
+            ),
         ];
 
         for (operation, expected) in cases {
@@ -2283,6 +2363,7 @@ mod tests {
                 PreparedBaseOperation::Tmp1ConstantSub(_) => "tmp1_constant_sub",
                 PreparedBaseOperation::Tmp1ConstantMul(_) => "tmp1_constant_mul",
                 PreparedBaseOperation::Tmp1ConstantRSub(_) => "tmp1_constant_rsub",
+                PreparedBaseOperation::ConstantAssign(_) => "constant_assign",
                 PreparedBaseOperation::Generic(_) => "generic",
             };
             assert_eq!(actual, expected);
