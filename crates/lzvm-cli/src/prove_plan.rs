@@ -55,7 +55,10 @@ pub(crate) struct ParsedRunArgs {
     pub positionals: Vec<PathBuf>,
     pub request: ProveRunRequest,
     pub program_image_cache: Option<PathBuf>,
+    pub witness_thread_pools_used: bool,
 }
+
+pub(crate) const GUEST_PC_TRACE_WITNESS_THREAD_POOLS: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PassSelection {
@@ -292,6 +295,7 @@ pub(crate) fn parse_run_args(
         positionals,
         request: ProveRunRequest { pass, options, gpu },
         program_image_cache,
+        witness_thread_pools_used,
     })
 }
 

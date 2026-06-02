@@ -2,7 +2,10 @@ use std::path::PathBuf;
 
 use lzvm_prover::ProveExecutionInputArtifacts;
 
-use crate::prove_plan::{parse_run_args, required_option_value, ParseError, ParsedRunArgs};
+use crate::prove_plan::{
+    parse_run_args, required_option_value, ParseError, ParsedRunArgs,
+    GUEST_PC_TRACE_WITNESS_THREAD_POOLS,
+};
 
 pub(super) struct ParsedWitnessArgs {
     pub(super) run_args: ParsedRunArgs,
@@ -264,7 +267,10 @@ pub(super) fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, Par
         || guest_pc_trace_instruction_limit.is_some();
     let min_positionals = if trace_mode { 3 } else { 4 };
     let max_positionals = if trace_mode { 4 } else { 5 };
-    let run_args = parse_run_args(&filtered, min_positionals, max_positionals)?;
+    let mut run_args = parse_run_args(&filtered, min_positionals, max_positionals)?;
+    if guest_pc_trace_instruction_limit.is_some() && !run_args.witness_thread_pools_used {
+        run_args.request.gpu.witness_thread_pools = GUEST_PC_TRACE_WITNESS_THREAD_POOLS;
+    }
     if trace_bytes.is_some() && (all_units || run_args.request.options.aggregate) {
         return Err(ParseError::Invalid(
             "--trace-bytes requires a single-unit witness run".to_owned(),

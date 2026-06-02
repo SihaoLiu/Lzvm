@@ -25,7 +25,7 @@ use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
     format_hash, parse_run_args, prepare_requested_gpu_setup, read_prove_setup_catalog,
     required_option_value, set_default_input_data, validate_all_unit_stored_witness_limit,
-    write_run_plan_summary, ParseError, ParsedRunArgs,
+    write_run_plan_summary, ParseError, ParsedRunArgs, GUEST_PC_TRACE_WITNESS_THREAD_POOLS,
 };
 use crate::trace_input_shape::validate_trace_input_shapes;
 
@@ -393,7 +393,10 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
         || guest_pc_trace_instruction_limit.is_some();
     let min_positionals = if trace_mode { 3 } else { 4 };
     let max_positionals = if trace_mode { 4 } else { 5 };
-    let run_args = parse_run_args(&filtered, min_positionals, max_positionals)?;
+    let mut run_args = parse_run_args(&filtered, min_positionals, max_positionals)?;
+    if guest_pc_trace_instruction_limit.is_some() && !run_args.witness_thread_pools_used {
+        run_args.request.gpu.witness_thread_pools = GUEST_PC_TRACE_WITNESS_THREAD_POOLS;
+    }
     if trace_bytes.is_some() && run_args.request.options.aggregate {
         return Err(ParseError::Invalid(
             "--trace-bytes requires a single-unit witness run".to_owned(),
@@ -676,6 +679,36 @@ mod tests {
         assert_eq!(result.guest_pc_trace_instruction_limit, Some(64));
         assert_eq!(inputs.witness_library, None);
         assert_eq!(inputs.guest_image, PathBuf::from("guest.elf"));
+    }
+
+    #[test]
+    fn guest_pc_trace_uses_parallel_witness_threads_for_input_args() {
+        let result = parse_inputs_args(&[
+            "--guest-pc-trace",
+            "64",
+            "setup-dir",
+            "out-dir",
+            "guest.elf",
+        ])
+        .expect("input args should parse");
+
+        assert_eq!(result.run_args.request.gpu.witness_thread_pools, 32);
+    }
+
+    #[test]
+    fn guest_pc_trace_preserves_explicit_witness_threads_for_input_args() {
+        let result = parse_inputs_args(&[
+            "--guest-pc-trace",
+            "64",
+            "--witness-thread-pools",
+            "6",
+            "setup-dir",
+            "out-dir",
+            "guest.elf",
+        ])
+        .expect("input args should parse");
+
+        assert_eq!(result.run_args.request.gpu.witness_thread_pools, 6);
     }
 
     #[test]

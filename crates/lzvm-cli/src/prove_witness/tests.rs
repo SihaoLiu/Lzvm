@@ -56,6 +56,36 @@ fn parses_guest_pc_trace_option_for_witness_args() {
 }
 
 #[test]
+fn guest_pc_trace_uses_parallel_witness_threads_by_default() {
+    let result = parse_witness_args(&[
+        "--guest-pc-trace",
+        "64",
+        "setup-dir",
+        "out-dir",
+        "guest.elf",
+    ])
+    .expect("witness args should parse");
+
+    assert_eq!(result.run_args.request.gpu.witness_thread_pools, 32);
+}
+
+#[test]
+fn guest_pc_trace_preserves_explicit_witness_thread_pools() {
+    let result = parse_witness_args(&[
+        "--guest-pc-trace",
+        "64",
+        "--witness-thread-pools",
+        "6",
+        "setup-dir",
+        "out-dir",
+        "guest.elf",
+    ])
+    .expect("witness args should parse");
+
+    assert_eq!(result.run_args.request.gpu.witness_thread_pools, 6);
+}
+
+#[test]
 fn parses_unit_index_option_for_single_unit_witness_args() {
     let result = parse_witness_args(&[
         "--unit-index",
