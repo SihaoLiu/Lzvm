@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::fmt;
 
 use lzvm_field::{Felt, FieldError};
@@ -32,6 +34,9 @@ impl WitnessTraceBuffer {
     }
 
     pub fn value(&self, row: usize, column: usize) -> Option<Felt> {
+        #[cfg(test)]
+        TRACE_VALUE_LOOKUP_COUNT.with(|count| count.set(count.get() + 1));
+
         if row >= self.rows || column >= self.columns {
             return None;
         }
@@ -41,6 +46,21 @@ impl WitnessTraceBuffer {
     pub fn values(&self) -> &[Felt] {
         &self.values
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    static TRACE_VALUE_LOOKUP_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_trace_value_lookup_count() {
+    TRACE_VALUE_LOOKUP_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn trace_value_lookup_count() -> usize {
+    TRACE_VALUE_LOOKUP_COUNT.with(Cell::get)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

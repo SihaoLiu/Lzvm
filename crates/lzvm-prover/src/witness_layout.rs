@@ -209,11 +209,13 @@ impl WitnessTraceLayout {
             .rows
             .checked_mul(stage.width)
             .ok_or(WitnessTraceLayoutError::StageValueCountOverflow)?;
+        let stage_end = stage
+            .start_column
+            .checked_add(stage.width)
+            .ok_or(WitnessTraceLayoutError::StageValueCountOverflow)?;
         let mut values = Vec::with_capacity(value_count);
-        for row in 0..self.rows {
-            for column in stage.start_column..stage.start_column + stage.width {
-                values.push(trace.value(row, column).expect("trace shape checked"));
-            }
+        for row_values in trace.values().chunks_exact(self.columns) {
+            values.extend_from_slice(&row_values[stage.start_column..stage_end]);
         }
         Ok(WitnessTraceStageValues {
             stage_index,
@@ -610,5 +612,45 @@ fn overlapping_trace_column(
         Some(left.trace_column.max(right.trace_column))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stage_trace_copies_contiguous_rows_without_value_lookup() {
+        let layout = WitnessTraceLayout {
+            rows: 3,
+            columns: 5,
+            stages: vec![
+                WitnessTraceStageLayout {
+                    stage_index: 1,
+                    start_column: 0,
+                    width: 2,
+                },
+                WitnessTraceStageLayout {
+                    stage_index: 2,
+                    start_column: 2,
+                    width: 3,
+                },
+            ],
+            commitment_columns: Vec::new(),
+        };
+        let values = (0_u64..15).map(Felt::from_u64).collect::<Vec<_>>();
+        let trace = WitnessTraceBuffer::from_values(3, 5, values).expect("trace shape is valid");
+
+        crate::witness_trace::reset_trace_value_lookup_count();
+        let stage = layout
+            .stage_trace(&trace, 2)
+            .expect("stage should be present");
+
+        let expected = [2_u64, 3, 4, 7, 8, 9, 12, 13, 14].map(Felt::from_u64);
+        assert_eq!(stage.stage_index(), 2);
+        assert_eq!(stage.row_count(), 3);
+        assert_eq!(stage.column_count(), 3);
+        assert_eq!(stage.values(), expected.as_slice());
+        assert_eq!(crate::witness_trace::trace_value_lookup_count(), 0);
     }
 }
