@@ -1,6 +1,7 @@
 #[cfg(test)]
 use std::cell::Cell;
 use std::fmt;
+use std::num::NonZeroUsize;
 
 use lzvm_artifacts::constraint_program::{ConstraintEntry, ConstraintProgram};
 use lzvm_field::{Ext3, Felt, FieldError};
@@ -512,7 +513,7 @@ struct PreparedBaseMatrix<'input> {
     values: &'input [Felt],
     column_count: usize,
     column: usize,
-    row_offset: usize,
+    row_offset: Option<NonZeroUsize>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -907,7 +908,7 @@ fn prepared_base_source<'input>(
                 values: matrix.values,
                 column_count: matrix.column_count,
                 column: source.offset,
-                row_offset: source.row_offset,
+                row_offset: NonZeroUsize::new(source.row_offset),
             })
         }
         DecodedSourceKind::DomainOrZerofier if source.offset == 0 => {
@@ -1405,12 +1406,17 @@ fn read_prepared_base(
 
 #[inline(always)]
 fn read_prepared_matrix(matrix: PreparedBaseMatrix<'_>, row: usize, domain_size: usize) -> Felt {
-    let row = source_row_with_offset_prepared(row, matrix.row_offset, domain_size);
+    let row = matrix.row_offset.map_or(row, |row_offset| {
+        source_row_with_offset_prepared(row, row_offset.get(), domain_size)
+    });
     matrix.values[row * matrix.column_count + matrix.column]
 }
 
 #[inline(always)]
 fn source_row_with_offset_prepared(row: usize, row_offset: usize, domain_size: usize) -> usize {
+    #[cfg(test)]
+    PREPARED_SOURCE_ROW_OFFSET_COUNT.with(|count| count.set(count.get() + 1));
+
     if row < domain_size && row_offset < domain_size {
         if row_offset == 0 {
             return row;
@@ -1609,6 +1615,7 @@ thread_local! {
     static BASE_ONLY_TMP1_CLEAR_COUNT: Cell<usize> = const { Cell::new(0) };
     static BASE_ONLY_TMP3_CLEAR_COUNT: Cell<usize> = const { Cell::new(0) };
     static BASE_ONLY_KIND_DISPATCH_COUNT: Cell<usize> = const { Cell::new(0) };
+    static PREPARED_SOURCE_ROW_OFFSET_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 fn find_stage_columns(
@@ -2285,6 +2292,54 @@ mod tests {
     }
 
     #[test]
+    fn base_only_matrix_zero_offsets_skip_prepared_row_offset() {
+        let program = ConstraintProgram {
+            entries: vec![ConstraintEntry {
+                stage: 1,
+                destination_dimension: 1,
+                destination_id: 0,
+                first_row: 0,
+                last_row: 8,
+                temp1_count: 1,
+                temp3_count: 0,
+                ops_count: 1,
+                ops_offset: 0,
+                args_count: 8,
+                args_offset: 0,
+                intermediate: false,
+                source_line: "base-only matrix zero offset".to_owned(),
+            }],
+            ops: vec![0],
+            args: vec![1, 0, 1, 0, 0, 8, 0, 0],
+            numbers: vec![3],
+        };
+        let row_values = vec![Felt::from_u64(3); 8];
+        let stage_columns = [RegularStageColumns {
+            stage_index: 1,
+            column_count: 1,
+            values: &row_values,
+        }];
+
+        BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
+        PREPARED_SOURCE_ROW_OFFSET_COUNT.with(|count| count.set(0));
+        let results = evaluate_regular_constraints(
+            &program,
+            RegularConstraintInputs {
+                domain_size: 8,
+                stage_count: 1,
+                stage_columns: &stage_columns,
+                opening_point_offsets: &[0],
+                ..RegularConstraintInputs::default()
+            },
+        )
+        .expect("regular constraint should evaluate");
+
+        assert_eq!(results[0].invalid_rows, Vec::new());
+        assert_eq!(BASE_ONLY_PREPARED_ROW_COUNT.with(Cell::get), 7);
+        assert_eq!(PREPARED_SOURCE_ROW_OFFSET_COUNT.with(Cell::get), 0);
+    }
+
+    #[test]
     fn base_only_direct_common_source_pairs_preserve_row_semantics() {
         let entry = ConstraintEntry {
             stage: 1,
@@ -2362,7 +2417,7 @@ mod tests {
             values: &[],
             column_count: 1,
             column: 0,
-            row_offset: 0,
+            row_offset: None,
         };
         let cases = [
             (
