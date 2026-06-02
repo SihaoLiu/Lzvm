@@ -65,6 +65,32 @@ fn builds_zisk_main_segment_trace_without_serialized_roundtrip() {
     assert_eq!(parsed, written.trace);
 }
 
+#[test]
+fn zisk_main_trace_build_uses_resolved_column_targets() {
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let report = addi_report();
+
+    crate::witness_layout::reset_column_lookup_count();
+    let written = build_layout_zisk_main_trace_segment(
+        &layout,
+        std::slice::from_ref(&report),
+        report.next_pc,
+        &ZiskMainTraceState::new(),
+        None,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: true,
+            previous_c: 0,
+        },
+    )
+    .expect("segment trace should build")
+    .expect("Zisk Main layout should be supported");
+
+    assert_eq!(written.trace.row_count(), layout.row_count());
+    assert_eq!(crate::witness_layout::column_lookup_count(), 0);
+}
+
 fn add256_report() -> GuestMachineReport {
     let params_address = 64;
     let a_address = 96;

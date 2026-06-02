@@ -1,13 +1,13 @@
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct PrecompileMemoryTraceColumns {
-    main_step: TraceColumnTarget,
-    is_write: TraceColumnTarget,
-    address: TraceColumnTarget,
-    value: TraceColumnTarget,
-    byte_len: Option<TraceColumnTarget>,
-    selector: TraceColumnTarget,
+pub(super) struct PrecompileMemoryTraceColumns<'a> {
+    main_step: TraceColumnTarget<'a>,
+    is_write: TraceColumnTarget<'a>,
+    address: TraceColumnTarget<'a>,
+    value: TraceColumnTarget<'a>,
+    byte_len: Option<TraceColumnTarget<'a>>,
+    selector: TraceColumnTarget<'a>,
 }
 
 pub(super) fn write_layout_precompile_memory_trace(
@@ -101,7 +101,7 @@ pub(super) fn write_layout_precompile_memory_trace(
 fn write_precompile_memory_access(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
-    columns: &PrecompileMemoryTraceColumns,
+    columns: &PrecompileMemoryTraceColumns<'_>,
     main_step: u64,
     access: &GuestMemoryAccess,
 ) -> Result<(), GuestPcTraceBackendError> {
@@ -118,9 +118,9 @@ fn write_precompile_memory_access(
     write_column(builder, row, &columns.selector, 1)
 }
 
-pub(super) fn precompile_memory_trace_columns(
-    layout: &WitnessTraceLayout,
-) -> Result<Option<PrecompileMemoryTraceColumns>, GuestPcTraceBackendError> {
+pub(super) fn precompile_memory_trace_columns<'a>(
+    layout: &'a WitnessTraceLayout,
+) -> Result<Option<PrecompileMemoryTraceColumns<'a>>, GuestPcTraceBackendError> {
     let main_step = trace_column_target(layout, "precompile_mem_main_step")?;
     let is_write = trace_column_target(layout, "precompile_mem_is_write")?;
     let address = trace_column_target(layout, "precompile_mem_address")?;

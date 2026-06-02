@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+#[cfg(test)]
+use std::cell::Cell;
 use std::fmt;
 
 use lzvm_artifacts::setup_info::CommitmentColumn;
@@ -23,6 +25,27 @@ pub struct WitnessTraceColumnLayout {
     trace_column: usize,
     dimension: usize,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ResolvedTraceColumn<'a> {
+    layout: &'a WitnessTraceLayout,
+    stage_index: usize,
+    trace_column: usize,
+    dimension: usize,
+    name: &'a str,
+}
+
+impl PartialEq for ResolvedTraceColumn<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.layout, other.layout)
+            && self.stage_index == other.stage_index
+            && self.trace_column == other.trace_column
+            && self.dimension == other.dimension
+            && self.name == other.name
+    }
+}
+
+impl Eq for ResolvedTraceColumn<'_> {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WitnessTraceLayout {
@@ -86,6 +109,16 @@ impl WitnessTraceColumnLayout {
     }
 }
 
+impl ResolvedTraceColumn<'_> {
+    pub(crate) fn name(&self) -> &str {
+        self.name
+    }
+
+    pub(crate) fn trace_column(&self) -> usize {
+        self.trace_column
+    }
+}
+
 impl WitnessTraceLayout {
     pub fn row_count(&self) -> usize {
         self.rows
@@ -108,9 +141,31 @@ impl WitnessTraceLayout {
     }
 
     pub fn column(&self, stage_index: usize, name: &str) -> Option<&WitnessTraceColumnLayout> {
+        #[cfg(test)]
+        COLUMN_LOOKUP_COUNT.with(|count| count.set(count.get() + 1));
+
         self.commitment_columns
             .iter()
             .find(|column| column.stage_index == stage_index && column.name == name)
+    }
+
+    pub(crate) fn resolved_column<'a>(
+        &'a self,
+        column: &'a WitnessTraceColumnLayout,
+    ) -> ResolvedTraceColumn<'a> {
+        assert!(
+            self.commitment_columns
+                .iter()
+                .any(|candidate| std::ptr::eq(candidate, column)),
+            "resolved witness trace column does not belong to layout"
+        );
+        ResolvedTraceColumn {
+            layout: self,
+            stage_index: column.stage_index,
+            trace_column: column.trace_column,
+            dimension: column.dimension,
+            name: &column.name,
+        }
     }
 
     pub fn trace_builder(&self) -> Result<WitnessTraceBuilder<'_>, WitnessTraceBuildError> {
@@ -169,6 +224,21 @@ impl WitnessTraceLayout {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static COLUMN_LOOKUP_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_column_lookup_count() {
+    COLUMN_LOOKUP_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn column_lookup_count() -> usize {
+    COLUMN_LOOKUP_COUNT.with(Cell::get)
+}
+
 impl WitnessTraceBuilder<'_> {
     pub fn write_column_values(
         &mut self,
@@ -189,14 +259,52 @@ impl WitnessTraceBuilder<'_> {
                 name: name.to_owned(),
             }
         })?;
+        self.write_resolved_column_values_for_valid_row(
+            row,
+            &self.layout.resolved_column(column),
+            values,
+        )
+    }
+
+    pub(crate) fn write_resolved_column_values(
+        &mut self,
+        row: usize,
+        column: &ResolvedTraceColumn<'_>,
+        values: &[Felt],
+    ) -> Result<(), WitnessTraceBuildError> {
+        if row >= self.layout.rows {
+            return Err(WitnessTraceBuildError::RowOutOfRange {
+                row,
+                rows: self.layout.rows,
+            });
+        }
+        self.write_resolved_column_values_for_valid_row(row, column, values)
+    }
+
+    fn write_resolved_column_values_for_valid_row(
+        &mut self,
+        row: usize,
+        column: &ResolvedTraceColumn<'_>,
+        values: &[Felt],
+    ) -> Result<(), WitnessTraceBuildError> {
+        if !std::ptr::eq(column.layout, self.layout) {
+            return Err(WitnessTraceBuildError::UnknownColumn {
+                stage_index: column.stage_index,
+                name: column.name.to_owned(),
+            });
+        }
         if values.len() != column.dimension {
             return Err(WitnessTraceBuildError::ColumnValueCountMismatch {
-                stage_index,
-                name: name.to_owned(),
+                stage_index: column.stage_index,
+                name: column.name.to_owned(),
                 expected: column.dimension,
                 found: values.len(),
             });
         }
+        debug_assert!(column
+            .trace_column
+            .checked_add(column.dimension)
+            .is_some_and(|end| end <= self.layout.columns));
         let row_start = row
             .checked_mul(self.layout.columns)
             .ok_or(WitnessTraceBuildError::TraceValueCountOverflow)?;

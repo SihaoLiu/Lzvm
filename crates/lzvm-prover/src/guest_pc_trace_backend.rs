@@ -13,7 +13,7 @@ use crate::guest_machine::{
     GuestRegisterWrite,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
-use crate::witness_layout::{WitnessTraceBuildError, WitnessTraceLayout};
+use crate::witness_layout::{ResolvedTraceColumn, WitnessTraceBuildError, WitnessTraceLayout};
 use crate::witness_loader::{
     WitnessBackend, WitnessCallError, WitnessComputeContext, WitnessTraceBuffers,
     WitnessTraceOutput, WitnessTraceProofValue, WitnessTraceUnitValue,
@@ -1053,79 +1053,91 @@ fn guest_machine_halt_pc(halt: &GuestMachineHalt) -> u64 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct TraceColumnTarget {
-    stage_index: usize,
-    trace_column: usize,
-    name: String,
+struct TraceColumnTarget<'a> {
+    column: ResolvedTraceColumn<'a>,
+}
+
+impl<'a> TraceColumnTarget<'a> {
+    fn name(&self) -> &str {
+        self.column.name()
+    }
+
+    fn trace_column(&self) -> usize {
+        self.column.trace_column()
+    }
+
+    fn resolved(&self) -> &ResolvedTraceColumn<'a> {
+        &self.column
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PcTraceColumns {
-    pc: TraceColumnTarget,
-    next_pc: TraceColumnTarget,
+struct PcTraceColumns<'a> {
+    pc: TraceColumnTarget<'a>,
+    next_pc: TraceColumnTarget<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct RegisterWriteColumns {
-    index: TraceColumnTarget,
-    value: TraceColumnTarget,
+struct RegisterWriteColumns<'a> {
+    index: TraceColumnTarget<'a>,
+    value: TraceColumnTarget<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct MemoryAccessColumns {
-    address: TraceColumnTarget,
-    value: TraceColumnTarget,
-    byte_len: TraceColumnTarget,
+struct MemoryAccessColumns<'a> {
+    address: TraceColumnTarget<'a>,
+    value: TraceColumnTarget<'a>,
+    byte_len: TraceColumnTarget<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct GuestTraceColumns {
-    pc: Option<PcTraceColumns>,
-    register_write: Option<RegisterWriteColumns>,
-    memory_read: Option<MemoryAccessColumns>,
-    memory_write: Option<MemoryAccessColumns>,
+struct GuestTraceColumns<'a> {
+    pc: Option<PcTraceColumns<'a>>,
+    register_write: Option<RegisterWriteColumns<'a>>,
+    memory_read: Option<MemoryAccessColumns<'a>>,
+    memory_write: Option<MemoryAccessColumns<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ZiskMainTraceColumns {
-    a: TraceColumnTarget,
-    b: TraceColumnTarget,
-    c: TraceColumnTarget,
-    flag: TraceColumnTarget,
-    pc: TraceColumnTarget,
-    a_src_imm: Option<TraceColumnTarget>,
-    a_offset_imm0: Option<TraceColumnTarget>,
-    a_imm1: Option<TraceColumnTarget>,
-    b_src_imm: Option<TraceColumnTarget>,
-    b_imm1: Option<TraceColumnTarget>,
-    a_src_reg: Option<TraceColumnTarget>,
-    b_src_reg: Option<TraceColumnTarget>,
-    a_src_mem: Option<TraceColumnTarget>,
-    b_src_mem: Option<TraceColumnTarget>,
-    b_src_ind: Option<TraceColumnTarget>,
-    b_offset_imm0: Option<TraceColumnTarget>,
-    addr1: Option<TraceColumnTarget>,
-    addr2: Option<TraceColumnTarget>,
-    store_reg: Option<TraceColumnTarget>,
-    store_mem: Option<TraceColumnTarget>,
-    store_ind: Option<TraceColumnTarget>,
-    store_offset: Option<TraceColumnTarget>,
-    store_pc: Option<TraceColumnTarget>,
-    set_pc: Option<TraceColumnTarget>,
-    op: TraceColumnTarget,
-    jmp_offset1: Option<TraceColumnTarget>,
-    jmp_offset2: Option<TraceColumnTarget>,
-    ind_width: Option<TraceColumnTarget>,
-    m32: Option<TraceColumnTarget>,
-    is_external_op: Option<TraceColumnTarget>,
-    is_precompiled: Option<TraceColumnTarget>,
-    a_reg_prev_mem_step: Option<TraceColumnTarget>,
-    b_reg_prev_mem_step: Option<TraceColumnTarget>,
-    store_reg_prev_mem_step: Option<TraceColumnTarget>,
-    store_reg_prev_value: Option<TraceColumnTarget>,
+struct ZiskMainTraceColumns<'a> {
+    a: TraceColumnTarget<'a>,
+    b: TraceColumnTarget<'a>,
+    c: TraceColumnTarget<'a>,
+    flag: TraceColumnTarget<'a>,
+    pc: TraceColumnTarget<'a>,
+    a_src_imm: Option<TraceColumnTarget<'a>>,
+    a_offset_imm0: Option<TraceColumnTarget<'a>>,
+    a_imm1: Option<TraceColumnTarget<'a>>,
+    b_src_imm: Option<TraceColumnTarget<'a>>,
+    b_imm1: Option<TraceColumnTarget<'a>>,
+    a_src_reg: Option<TraceColumnTarget<'a>>,
+    b_src_reg: Option<TraceColumnTarget<'a>>,
+    a_src_mem: Option<TraceColumnTarget<'a>>,
+    b_src_mem: Option<TraceColumnTarget<'a>>,
+    b_src_ind: Option<TraceColumnTarget<'a>>,
+    b_offset_imm0: Option<TraceColumnTarget<'a>>,
+    addr1: Option<TraceColumnTarget<'a>>,
+    addr2: Option<TraceColumnTarget<'a>>,
+    store_reg: Option<TraceColumnTarget<'a>>,
+    store_mem: Option<TraceColumnTarget<'a>>,
+    store_ind: Option<TraceColumnTarget<'a>>,
+    store_offset: Option<TraceColumnTarget<'a>>,
+    store_pc: Option<TraceColumnTarget<'a>>,
+    set_pc: Option<TraceColumnTarget<'a>>,
+    op: TraceColumnTarget<'a>,
+    jmp_offset1: Option<TraceColumnTarget<'a>>,
+    jmp_offset2: Option<TraceColumnTarget<'a>>,
+    ind_width: Option<TraceColumnTarget<'a>>,
+    m32: Option<TraceColumnTarget<'a>>,
+    is_external_op: Option<TraceColumnTarget<'a>>,
+    is_precompiled: Option<TraceColumnTarget<'a>>,
+    a_reg_prev_mem_step: Option<TraceColumnTarget<'a>>,
+    b_reg_prev_mem_step: Option<TraceColumnTarget<'a>>,
+    store_reg_prev_mem_step: Option<TraceColumnTarget<'a>>,
+    store_reg_prev_value: Option<TraceColumnTarget<'a>>,
 }
 
-impl ZiskMainTraceColumns {
+impl ZiskMainTraceColumns<'_> {
     fn has_required_indirect_memory_columns(&self) -> bool {
         self.b_src_ind.is_some()
             && self.b_offset_imm0.is_some()
@@ -1268,7 +1280,7 @@ fn validate_and_apply_zisk_main_report(
     report: &GuestMachineReport,
     next_instruction: Option<RiscvInstruction>,
     state: &mut ZiskMainTraceState,
-    columns: Option<&ZiskMainTraceColumns>,
+    columns: Option<&ZiskMainTraceColumns<'_>>,
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
 ) -> Result<Vec<ZiskMainReportTraceValues>, GuestPcTraceBackendError> {
@@ -2301,7 +2313,7 @@ fn write_zisk_main_report_columns(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
     reports: ZiskMainReportWindow<'_>,
-    columns: &ZiskMainTraceColumns,
+    columns: &ZiskMainTraceColumns<'_>,
     state: &mut ZiskMainTraceState,
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
@@ -2331,7 +2343,7 @@ fn write_zisk_main_row_columns(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
     values: ZiskMainReportTraceValues,
-    columns: &ZiskMainTraceColumns,
+    columns: &ZiskMainTraceColumns<'_>,
 ) -> Result<(), GuestPcTraceBackendError> {
     let instruction = values.instruction;
 
@@ -2512,7 +2524,7 @@ fn validate_zisk_main_halt_pc(
 fn write_zisk_main_terminal_row(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
-    columns: &ZiskMainTraceColumns,
+    columns: &ZiskMainTraceColumns<'_>,
     halt_pc: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
     write_wide_column(builder, row, &columns.a, 0)?;
@@ -2535,7 +2547,7 @@ fn write_zisk_main_terminal_row(
 fn validate_zisk_main_memory_columns(
     row: usize,
     instruction: &ZiskMainInstruction,
-    columns: &ZiskMainTraceColumns,
+    columns: &ZiskMainTraceColumns<'_>,
 ) -> Result<(), GuestPcTraceBackendError> {
     if matches!(instruction.a, ZiskMainSource::Memory(_))
         && !columns.has_required_a_memory_source_columns()
@@ -3397,7 +3409,7 @@ fn write_report_columns(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
     report: &GuestMachineReport,
-    columns: &GuestTraceColumns,
+    columns: &GuestTraceColumns<'_>,
 ) -> Result<(), GuestPcTraceBackendError> {
     if let Some(pc_columns) = &columns.pc {
         write_column(builder, row, &pc_columns.pc, report.address)?;
@@ -3436,7 +3448,7 @@ fn write_register_columns(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
     register_writes: &[GuestRegisterWrite],
-    columns: &RegisterWriteColumns,
+    columns: &RegisterWriteColumns<'_>,
 ) -> Result<(), GuestPcTraceBackendError> {
     match register_writes {
         [] => Ok(()),
@@ -3456,7 +3468,7 @@ fn write_memory_columns(
     row: usize,
     memory_accesses: &[GuestMemoryAccess],
     kind: GuestMemoryAccessKind,
-    columns: &MemoryAccessColumns,
+    columns: &MemoryAccessColumns<'_>,
 ) -> Result<(), GuestPcTraceBackendError> {
     let mut matching = memory_accesses.iter().filter(|access| access.kind == kind);
     let Some(access) = matching.next() else {
@@ -3480,19 +3492,19 @@ fn write_memory_columns(
 fn write_column(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
-    column: &TraceColumnTarget,
+    column: &TraceColumnTarget<'_>,
     value: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
-    let value = canonical_trace_value(row, &column.name, value)?;
+    let value = canonical_trace_value(row, column.name(), value)?;
     builder
-        .write_column_values(row, column.stage_index, &column.name, &[value])
+        .write_resolved_column_values(row, column.resolved(), &[value])
         .map_err(GuestPcTraceBackendError::TraceBuild)
 }
 
 fn write_optional_column(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
-    column: &Option<TraceColumnTarget>,
+    column: &Option<TraceColumnTarget<'_>>,
     value: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
     if let Some(column) = column {
@@ -3504,22 +3516,22 @@ fn write_optional_column(
 fn write_wide_column(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
-    column: &TraceColumnTarget,
+    column: &TraceColumnTarget<'_>,
     value: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
     let values = [
-        canonical_trace_value(row, &column.name, value & 0xffff_ffff)?,
-        canonical_trace_value(row, &column.name, value >> 32)?,
+        canonical_trace_value(row, column.name(), value & 0xffff_ffff)?,
+        canonical_trace_value(row, column.name(), value >> 32)?,
     ];
     builder
-        .write_column_values(row, column.stage_index, &column.name, &values)
+        .write_resolved_column_values(row, column.resolved(), &values)
         .map_err(GuestPcTraceBackendError::TraceBuild)
 }
 
 fn write_optional_wide_column(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
-    column: &Option<TraceColumnTarget>,
+    column: &Option<TraceColumnTarget<'_>>,
     value: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
     if let Some(column) = column {
@@ -3538,21 +3550,21 @@ fn felt_limbs_u64(value: u64) -> [Felt; 2] {
 fn write_optional_signed_column(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
-    column: &Option<TraceColumnTarget>,
+    column: &Option<TraceColumnTarget<'_>>,
     value: i64,
 ) -> Result<(), GuestPcTraceBackendError> {
     let Some(column) = column else {
         return Ok(());
     };
-    let value = signed_trace_value(row, &column.name, value)?;
+    let value = signed_trace_value(row, column.name(), value)?;
     builder
-        .write_column_values(row, column.stage_index, &column.name, &[value])
+        .write_resolved_column_values(row, column.resolved(), &[value])
         .map_err(GuestPcTraceBackendError::TraceBuild)
 }
 
-fn guest_trace_columns(
-    layout: &WitnessTraceLayout,
-) -> Result<Option<GuestTraceColumns>, GuestPcTraceBackendError> {
+fn guest_trace_columns<'a>(
+    layout: &'a WitnessTraceLayout,
+) -> Result<Option<GuestTraceColumns<'a>>, GuestPcTraceBackendError> {
     let columns = GuestTraceColumns {
         pc: pc_trace_columns(layout)?,
         register_write: register_write_columns(layout)?,
@@ -3580,9 +3592,9 @@ fn guest_trace_columns(
     }
 }
 
-fn zisk_main_trace_columns(
-    layout: &WitnessTraceLayout,
-) -> Result<Option<ZiskMainTraceColumns>, GuestPcTraceBackendError> {
+fn zisk_main_trace_columns<'a>(
+    layout: &'a WitnessTraceLayout,
+) -> Result<Option<ZiskMainTraceColumns<'a>>, GuestPcTraceBackendError> {
     if !is_zisk_main_trace_layout(layout) {
         return Ok(None);
     }
@@ -3646,9 +3658,9 @@ fn has_trace_column(layout: &WitnessTraceLayout, name: &str) -> bool {
     layout.columns().iter().any(|column| column.name() == name)
 }
 
-fn pc_trace_columns(
-    layout: &WitnessTraceLayout,
-) -> Result<Option<PcTraceColumns>, GuestPcTraceBackendError> {
+fn pc_trace_columns<'a>(
+    layout: &'a WitnessTraceLayout,
+) -> Result<Option<PcTraceColumns<'a>>, GuestPcTraceBackendError> {
     let pc = trace_column_target(layout, "pc")?;
     let next_pc = trace_column_target(layout, "next_pc")?;
     match (pc, next_pc) {
@@ -3660,11 +3672,11 @@ fn pc_trace_columns(
             message: "missing pc column".to_owned(),
         }),
         (Some(pc), Some(next_pc)) => {
-            if pc.trace_column == next_pc.trace_column {
+            if pc.trace_column() == next_pc.trace_column() {
                 return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
                     message: format!(
                         "pc and next_pc columns share trace column {}",
-                        pc.trace_column
+                        pc.trace_column()
                     ),
                 });
             }
@@ -3673,9 +3685,9 @@ fn pc_trace_columns(
     }
 }
 
-fn register_write_columns(
-    layout: &WitnessTraceLayout,
-) -> Result<Option<RegisterWriteColumns>, GuestPcTraceBackendError> {
+fn register_write_columns<'a>(
+    layout: &'a WitnessTraceLayout,
+) -> Result<Option<RegisterWriteColumns<'a>>, GuestPcTraceBackendError> {
     let index = trace_column_target(layout, "reg_write_index")?;
     let value = trace_column_target(layout, "reg_write_value")?;
     match (index, value) {
@@ -3690,12 +3702,12 @@ fn register_write_columns(
     }
 }
 
-fn memory_access_columns(
-    layout: &WitnessTraceLayout,
+fn memory_access_columns<'a>(
+    layout: &'a WitnessTraceLayout,
     address_name: &str,
     value_name: &str,
     byte_len_name: &str,
-) -> Result<Option<MemoryAccessColumns>, GuestPcTraceBackendError> {
+) -> Result<Option<MemoryAccessColumns<'a>>, GuestPcTraceBackendError> {
     let address = trace_column_target(layout, address_name)?;
     let value = trace_column_target(layout, value_name)?;
     let byte_len = trace_column_target(layout, byte_len_name)?;
@@ -3718,10 +3730,10 @@ fn memory_access_columns(
     }))
 }
 
-fn required_trace_column_target(
-    layout: &WitnessTraceLayout,
+fn required_trace_column_target<'a>(
+    layout: &'a WitnessTraceLayout,
     name: &str,
-) -> Result<TraceColumnTarget, GuestPcTraceBackendError> {
+) -> Result<TraceColumnTarget<'a>, GuestPcTraceBackendError> {
     trace_column_target(layout, name)?.ok_or_else(|| {
         GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: format!("missing {name} column"),
@@ -3729,11 +3741,11 @@ fn required_trace_column_target(
     })
 }
 
-fn required_vector_trace_column_target(
-    layout: &WitnessTraceLayout,
+fn required_vector_trace_column_target<'a>(
+    layout: &'a WitnessTraceLayout,
     name: &str,
     dimension: usize,
-) -> Result<TraceColumnTarget, GuestPcTraceBackendError> {
+) -> Result<TraceColumnTarget<'a>, GuestPcTraceBackendError> {
     vector_trace_column_target(layout, name, dimension)?.ok_or_else(|| {
         GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: format!("missing {name} column"),
@@ -3741,11 +3753,11 @@ fn required_vector_trace_column_target(
     })
 }
 
-fn vector_trace_column_target(
-    layout: &WitnessTraceLayout,
+fn vector_trace_column_target<'a>(
+    layout: &'a WitnessTraceLayout,
     name: &str,
     dimension: usize,
-) -> Result<Option<TraceColumnTarget>, GuestPcTraceBackendError> {
+) -> Result<Option<TraceColumnTarget<'a>>, GuestPcTraceBackendError> {
     let mut matches = layout
         .columns()
         .iter()
@@ -3767,16 +3779,14 @@ fn vector_trace_column_target(
         });
     }
     Ok(Some(TraceColumnTarget {
-        stage_index: column.stage_index(),
-        trace_column: column.trace_column(),
-        name: column.name().to_owned(),
+        column: layout.resolved_column(column),
     }))
 }
 
-fn trace_column_target(
-    layout: &WitnessTraceLayout,
+fn trace_column_target<'a>(
+    layout: &'a WitnessTraceLayout,
     name: &str,
-) -> Result<Option<TraceColumnTarget>, GuestPcTraceBackendError> {
+) -> Result<Option<TraceColumnTarget<'a>>, GuestPcTraceBackendError> {
     let mut matches = layout
         .columns()
         .iter()
@@ -3798,16 +3808,14 @@ fn trace_column_target(
         });
     }
     Ok(Some(TraceColumnTarget {
-        stage_index: column.stage_index(),
-        trace_column: column.trace_column(),
-        name: column.name().to_owned(),
+        column: layout.resolved_column(column),
     }))
 }
 
-fn trace_column_target_aliases(
-    layout: &WitnessTraceLayout,
+fn trace_column_target_aliases<'a>(
+    layout: &'a WitnessTraceLayout,
     names: &[&str],
-) -> Result<Option<TraceColumnTarget>, GuestPcTraceBackendError> {
+) -> Result<Option<TraceColumnTarget<'a>>, GuestPcTraceBackendError> {
     let mut matches = layout
         .columns()
         .iter()
@@ -3830,9 +3838,7 @@ fn trace_column_target_aliases(
         });
     }
     Ok(Some(TraceColumnTarget {
-        stage_index: column.stage_index(),
-        trace_column: column.trace_column(),
-        name: column.name().to_owned(),
+        column: layout.resolved_column(column),
     }))
 }
 
