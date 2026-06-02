@@ -7,7 +7,7 @@ use std::process::Command;
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment, CHALLENGE_VALUES_SEGMENT_ID,
 };
-use lzvm_artifacts::constant_tree::expected_constant_tree_byte_count;
+use lzvm_artifacts::constant_tree::{expected_constant_tree_byte_count, read_constant_tree_file};
 use lzvm_artifacts::constraint_program::{
     ConstraintEntry, ConstraintProgram, GlobalConstraintProgram,
 };
@@ -20,7 +20,8 @@ use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
 use lzvm_artifacts::fixed::{
-    expected_raw_fixed_column_byte_count, write_raw_fixed_columns_file, FixedColumn, FixedColumns,
+    encode_raw_fixed_columns, expected_raw_fixed_column_byte_count, write_raw_fixed_columns_file,
+    FixedColumn, FixedColumns,
 };
 use lzvm_artifacts::global_info::{
     AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue, PublicValue,
@@ -93,7 +94,7 @@ use lzvm_prover::witness_loader::{
 };
 use lzvm_prover::witness_runner::{run_witness_trace, WitnessTraceRunError};
 use lzvm_prover::{
-    build_pcs_evaluation_segment, build_pcs_fri_opening_segment,
+    build_constant_opening_segment, build_pcs_evaluation_segment, build_pcs_fri_opening_segment,
     build_pcs_fri_opening_segment_from_trace, build_pcs_fri_polynomial_values,
     build_pcs_fri_transcript_values_from_trace, build_pcs_material_manifest_segment,
     build_pcs_query_nonce_segment, build_pcs_query_nonce_segment_from_transcript_segments,
@@ -627,7 +628,44 @@ fn declare_sample_public_value_metadata(catalog: &mut KeyDirectoryCatalog) {
 }
 
 fn write_sample_fixed_columns(path: &Path, setup: &UnitSetupInfo, unit_name: &str) {
-    let fixed_columns = FixedColumns {
+    let fixed_columns = sample_fixed_columns(unit_name);
+    write_raw_fixed_columns_file(path, &fixed_columns, setup)
+        .expect("fixed columns should be written");
+}
+
+fn write_fixed_bytes_for_unit(unit: &mut KeyUnitCatalogEntry, bytes: Vec<u8>) {
+    fs::write(&unit.paths.fixed_columns, &bytes).expect("fixed columns should be written");
+    unit.actual_fixed_bytes = u64::try_from(bytes.len()).expect("fixed byte count should fit");
+    if let Some(material) = unit.pcs_material.as_mut() {
+        material.fixed_column_digest = Sha256::digest(&bytes).into();
+        material.fixed_byte_count = unit.actual_fixed_bytes;
+    }
+}
+
+fn write_constant_tree_bytes_for_unit(unit: &mut KeyUnitCatalogEntry, bytes: Vec<u8>) {
+    fs::write(&unit.paths.constant_tree, &bytes).expect("constant tree should be written");
+    let byte_count = u64::try_from(bytes.len()).expect("tree byte count should fit");
+    let root = read_constant_tree_file(&unit.paths.constant_tree, &unit.metadata.setup)
+        .expect("constant tree should load")
+        .root()
+        .expect("constant tree root should parse");
+    let VerificationKeyRoot::FieldElements(root_words) = &root;
+    let material_root = root_words
+        .clone()
+        .try_into()
+        .expect("constant tree root should contain four words");
+    unit.verification_key = root.clone();
+    unit.constant_tree_root = Some(root);
+    unit.constant_tree_bytes = Some(byte_count);
+    if let Some(material) = unit.pcs_material.as_mut() {
+        material.constant_tree_digest = Sha256::digest(&bytes).into();
+        material.constant_tree_root = material_root;
+        material.constant_tree_byte_count = byte_count;
+    }
+}
+
+fn sample_fixed_columns(unit_name: &str) -> FixedColumns {
+    FixedColumns {
         group_name: "group-a".to_owned(),
         unit_name: unit_name.to_owned(),
         row_count: 16,
@@ -643,15 +681,15 @@ fn write_sample_fixed_columns(path: &Path, setup: &UnitSetupInfo, unit_name: &st
                 values: vec![0; 16],
             },
         ],
-    };
-    write_raw_fixed_columns_file(path, &fixed_columns, setup)
-        .expect("fixed columns should be written");
+    }
 }
 
-fn sample_pcs_material() -> PcsSetupMaterial {
+fn sample_pcs_material(setup: &UnitSetupInfo, unit_name: &str) -> PcsSetupMaterial {
+    let fixed = encode_raw_fixed_columns(&sample_fixed_columns(unit_name), setup)
+        .expect("fixed columns should encode");
     PcsSetupMaterial {
         plan_digest: [7; 32],
-        fixed_column_digest: [8; 32],
+        fixed_column_digest: Sha256::digest(fixed).into(),
         constant_tree_digest: [9; 32],
         constant_tree_root: [1, 2, 3, 4],
         fixed_byte_count: 64,
@@ -755,6 +793,7 @@ fn sample_transcript_query_fixture() -> TranscriptQueryFixture {
 fn sample_unit() -> KeyUnitCatalogEntry {
     let setup = sample_setup();
     let pcs_plan = derive_pcs_setup_plan(&setup).expect("PCS setup plan should derive");
+    let pcs_material = sample_pcs_material(&setup, "unit-a");
 
     KeyUnitCatalogEntry {
         paths: KeyUnitPaths {
@@ -788,7 +827,7 @@ fn sample_unit() -> KeyUnitCatalogEntry {
         constant_tree_root: Some(VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4])),
         pcs_material_present: true,
         pcs_material_bytes: Some(184),
-        pcs_material: Some(sample_pcs_material()),
+        pcs_material: Some(pcs_material),
     }
 }
 
@@ -1128,6 +1167,82 @@ impl WitnessBackend for ProofValueBackend {
 }
 
 #[test]
+fn rejects_constant_opening_tree_digest_mismatch() {
+    let dir = temp_dir("constant-opening-tree-digest-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
+    unit.constant_tree_bytes =
+        Some(u64::try_from(constant_tree_bytes).expect("tree byte count should fit"));
+    let material = unit
+        .pcs_material
+        .as_mut()
+        .expect("PCS material should be present");
+    material.constant_tree_digest = [1; 32];
+    material.constant_tree_byte_count =
+        u64::try_from(constant_tree_bytes).expect("tree byte count should fit");
+    let catalog = sample_catalog(unit);
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let query_segment = ProofSegment {
+        id: PCS_QUERY_PLAN_SEGMENT_ID,
+        data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+            units: vec![PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 0,
+                queries: vec![0],
+            }],
+        })
+        .expect("query plan should encode"),
+    };
+
+    let error = build_constant_opening_segment(&catalog, &schedule, &query_segment)
+        .expect_err("constant tree digest mismatch should reject opening build");
+
+    assert!(error.to_string().contains("digest mismatch"));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_constant_opening_tree_root_mismatch_after_digest_match() {
+    let dir = temp_dir("constant-opening-tree-root-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
+    let material = unit
+        .pcs_material
+        .as_mut()
+        .expect("PCS material should be present");
+    material.constant_tree_root = [1, 2, 3, 4];
+    let catalog = sample_catalog(unit);
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let query_segment = ProofSegment {
+        id: PCS_QUERY_PLAN_SEGMENT_ID,
+        data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+            units: vec![PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 0,
+                queries: vec![0],
+            }],
+        })
+        .expect("query plan should encode"),
+    };
+
+    let error = build_constant_opening_segment(&catalog, &schedule, &query_segment)
+        .expect_err("constant tree root mismatch should reject opening build");
+
+    assert!(error.to_string().contains("root mismatch"));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn runs_witness_and_commits_stages_from_execution_plan() {
     let dir = temp_dir("commitments");
     let _ = fs::remove_dir_all(&dir);
@@ -1325,8 +1440,7 @@ fn runs_segmented_guest_pc_trace_commitments_without_retaining_traces() {
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.num_proof_values = vec![1];
     catalog.layout.global_info.proof_values_map = vec![NamedStageValue {
@@ -1411,8 +1525,7 @@ fn compact_segmented_guest_pc_trace_rejects_single_unit_transcript_without_trace
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let catalog = sample_catalog(unit);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = PublicValues {
@@ -1602,8 +1715,7 @@ fn compact_segmented_guest_pc_trace_preruns_for_regular_proof_values() {
     unit.paths.fixed_columns = dir.join("unit.const");
     let fixed_bytes = expected_raw_fixed_column_byte_count(&unit.metadata.setup)
         .expect("fixed-column size should derive");
-    fs::write(&unit.paths.fixed_columns, vec![0_u8; fixed_bytes])
-        .expect("fixed columns should be written");
+    write_fixed_bytes_for_unit(&mut unit, vec![0_u8; fixed_bytes]);
     unit.regular_constraints = zisk_main_proof_value_one_constraint();
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.num_proof_values = vec![1];
@@ -1989,8 +2101,7 @@ fn builds_witness_proof_artifact_in_prover() {
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.lattice_size = Some(32);
     let plan = derive_prove_execution_plan(
@@ -2042,8 +2153,7 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.lattice_size = Some(32);
     let plan = derive_prove_execution_plan(
@@ -2128,8 +2238,7 @@ fn rejects_mismatched_eth_block_public_values_in_prover_unit_request() {
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.lattice_size = Some(32);
     let plan = derive_prove_execution_plan(
@@ -2197,8 +2306,7 @@ fn public_proof_artifact_builder_fixture(name: &str) -> PublicProofArtifactBuild
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.lattice_size = Some(32);
     let plan = derive_prove_execution_plan(
@@ -2311,8 +2419,7 @@ fn rejects_unbound_program_image_cache_public_values_in_prover_unit_request() {
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.lattice_size = Some(32);
     let plan = derive_prove_execution_plan(
@@ -2382,8 +2489,7 @@ fn rejects_unit_witness_challenge_mismatch_without_output_verification() {
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.lattice_size = Some(32);
     declare_sample_public_value_metadata(&mut catalog);
@@ -2468,8 +2574,7 @@ fn rejects_witness_contribution_segment_without_challenge_values() {
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.lattice_size = Some(32);
     declare_sample_public_value_metadata(&mut catalog);
@@ -2584,16 +2689,8 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
         .expect("tree size should derive");
     let second_tree_bytes = expected_constant_tree_byte_count(&second_unit.metadata.setup)
         .expect("tree size should derive");
-    fs::write(
-        &first_unit.paths.constant_tree,
-        vec![0_u8; first_tree_bytes],
-    )
-    .expect("first constant tree should be written");
-    fs::write(
-        &second_unit.paths.constant_tree,
-        vec![0_u8; second_tree_bytes],
-    )
-    .expect("second constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut first_unit, vec![0_u8; first_tree_bytes]);
+    write_constant_tree_bytes_for_unit(&mut second_unit, vec![0_u8; second_tree_bytes]);
     let mut catalog = sample_catalog_units(vec![first_unit, second_unit]);
     catalog.layout.global_info.lattice_size = Some(32);
     catalog.layout.global_info.airs = vec![vec![
@@ -2768,8 +2865,7 @@ fn builds_all_units_proof_output_with_multiple_trace_instances_for_unit() {
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let catalog = sample_catalog(unit);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = PublicValues {
@@ -2855,8 +2951,7 @@ fn rejects_all_units_contribution_proof_with_multiple_trace_instances_for_unit()
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.lattice_size = Some(32);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
@@ -2931,8 +3026,7 @@ fn rejects_partial_explicit_unit_values_for_multiple_trace_instances() {
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let catalog = sample_catalog(unit);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = PublicValues {
@@ -3012,8 +3106,7 @@ fn builds_unit_proof_artifact_unit_values_for_trace_identity() {
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let catalog = sample_catalog(unit);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = PublicValues {
@@ -3096,16 +3189,8 @@ fn builds_all_units_contribution_proof_artifact_from_output_proof_values() {
         .expect("tree size should derive");
     let second_tree_bytes = expected_constant_tree_byte_count(&second_unit.metadata.setup)
         .expect("tree size should derive");
-    fs::write(
-        &first_unit.paths.constant_tree,
-        vec![0_u8; first_tree_bytes],
-    )
-    .expect("first constant tree should be written");
-    fs::write(
-        &second_unit.paths.constant_tree,
-        vec![0_u8; second_tree_bytes],
-    )
-    .expect("second constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut first_unit, vec![0_u8; first_tree_bytes]);
+    write_constant_tree_bytes_for_unit(&mut second_unit, vec![0_u8; second_tree_bytes]);
     let mut catalog = sample_catalog_units(vec![first_unit, second_unit]);
     catalog.layout.global_info.lattice_size = Some(32);
     catalog.layout.global_info.num_proof_values = vec![1];
@@ -3378,8 +3463,7 @@ fn rejects_full_witness_challenge_mismatch_without_output_verification() {
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
-    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
-        .expect("constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.lattice_size = Some(32);
     declare_sample_public_value_metadata(&mut catalog);
@@ -3476,11 +3560,7 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
     );
     let first_tree_bytes = expected_constant_tree_byte_count(&first_unit.metadata.setup)
         .expect("tree size should derive");
-    fs::write(
-        &first_unit.paths.constant_tree,
-        vec![0_u8; first_tree_bytes],
-    )
-    .expect("first constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut first_unit, vec![0_u8; first_tree_bytes]);
 
     let mut second_unit = sample_unit();
     second_unit.paths.unit_id = Some(1);
@@ -3503,11 +3583,7 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
     );
     let second_tree_bytes = expected_constant_tree_byte_count(&second_unit.metadata.setup)
         .expect("tree size should derive");
-    fs::write(
-        &second_unit.paths.constant_tree,
-        vec![0_u8; second_tree_bytes],
-    )
-    .expect("second constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut second_unit, vec![0_u8; second_tree_bytes]);
 
     let mut catalog = sample_catalog_units(vec![first_unit, second_unit]);
     declare_sample_public_value_metadata(&mut catalog);
@@ -3679,16 +3755,8 @@ fn runs_witness_commitments_for_all_units_in_prover() {
         .expect("tree size should derive");
     let second_tree_bytes = expected_constant_tree_byte_count(&second_unit.metadata.setup)
         .expect("tree size should derive");
-    fs::write(
-        &first_unit.paths.constant_tree,
-        vec![0_u8; first_tree_bytes],
-    )
-    .expect("first constant tree should be written");
-    fs::write(
-        &second_unit.paths.constant_tree,
-        vec![0_u8; second_tree_bytes],
-    )
-    .expect("second constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut first_unit, vec![0_u8; first_tree_bytes]);
+    write_constant_tree_bytes_for_unit(&mut second_unit, vec![0_u8; second_tree_bytes]);
     let catalog = sample_catalog_units(vec![first_unit, second_unit]);
     let plan = derive_prove_execution_plan(
         &catalog,
@@ -3788,16 +3856,8 @@ fn runs_all_units_with_cross_unit_source_lookup_balance() {
         .expect("tree size should derive");
     let second_tree_bytes = expected_constant_tree_byte_count(&second_unit.metadata.setup)
         .expect("tree size should derive");
-    fs::write(
-        &first_unit.paths.constant_tree,
-        vec![0_u8; first_tree_bytes],
-    )
-    .expect("first constant tree should be written");
-    fs::write(
-        &second_unit.paths.constant_tree,
-        vec![0_u8; second_tree_bytes],
-    )
-    .expect("second constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut first_unit, vec![0_u8; first_tree_bytes]);
+    write_constant_tree_bytes_for_unit(&mut second_unit, vec![0_u8; second_tree_bytes]);
 
     let catalog = sample_catalog_units(vec![first_unit, second_unit]);
     let plan = derive_prove_execution_plan(
@@ -3871,16 +3931,8 @@ fn single_unit_witness_allows_cross_unit_source_lookup_balance_to_remain_open() 
         .expect("tree size should derive");
     let second_tree_bytes = expected_constant_tree_byte_count(&second_unit.metadata.setup)
         .expect("tree size should derive");
-    fs::write(
-        &first_unit.paths.constant_tree,
-        vec![0_u8; first_tree_bytes],
-    )
-    .expect("first constant tree should be written");
-    fs::write(
-        &second_unit.paths.constant_tree,
-        vec![0_u8; second_tree_bytes],
-    )
-    .expect("second constant tree should be written");
+    write_constant_tree_bytes_for_unit(&mut first_unit, vec![0_u8; first_tree_bytes]);
+    write_constant_tree_bytes_for_unit(&mut second_unit, vec![0_u8; second_tree_bytes]);
 
     let catalog = sample_catalog_units(vec![first_unit, second_unit]);
     let plan = derive_prove_execution_plan(
@@ -3964,8 +4016,7 @@ fn preserves_trace_inputs_and_commitments_for_pcs_openings() {
 
     let mut unit = sample_unit();
     unit.paths.fixed_columns = dir.join("unit.const");
-    fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
-        .expect("fixed columns should be written");
+    write_fixed_bytes_for_unit(&mut unit, vec![0_u8; 16 * 2 * 8]);
     unit.regular_constraints = public_row_zero_stage_constraint();
     let mut catalog = sample_catalog(unit);
     declare_sample_public_value_metadata(&mut catalog);
@@ -4102,8 +4153,7 @@ fn rejects_witness_traces_that_violate_regular_constraints() {
 
     let mut unit = sample_unit();
     unit.paths.fixed_columns = dir.join("unit.const");
-    fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
-        .expect("fixed columns should be written");
+    write_fixed_bytes_for_unit(&mut unit, vec![0_u8; 16 * 2 * 8]);
     unit.regular_constraints = row_zero_stage_constraint(9);
     let catalog = sample_catalog(unit);
     let plan = derive_prove_execution_plan(
@@ -4138,8 +4188,7 @@ fn uses_public_inputs_when_checking_regular_constraints() {
 
     let mut unit = sample_unit();
     unit.paths.fixed_columns = dir.join("unit.const");
-    fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
-        .expect("fixed columns should be written");
+    write_fixed_bytes_for_unit(&mut unit, vec![0_u8; 16 * 2 * 8]);
     unit.regular_constraints = public_row_zero_stage_constraint();
     let mut catalog = sample_catalog(unit);
     declare_sample_public_value_metadata(&mut catalog);
@@ -4180,8 +4229,7 @@ fn uses_domain_helpers_when_checking_regular_constraints() {
 
     let mut unit = sample_unit();
     unit.paths.fixed_columns = dir.join("unit.const");
-    fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
-        .expect("fixed columns should be written");
+    write_fixed_bytes_for_unit(&mut unit, vec![0_u8; 16 * 2 * 8]);
     unit.regular_constraints = domain_helper_row_zero_stage_constraint();
     let catalog = sample_catalog(unit);
     let plan = derive_prove_execution_plan(
@@ -4216,8 +4264,7 @@ fn uses_proof_values_when_checking_regular_constraints() {
 
     let mut unit = sample_unit();
     unit.paths.fixed_columns = dir.join("unit.const");
-    fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
-        .expect("fixed columns should be written");
+    write_fixed_bytes_for_unit(&mut unit, vec![0_u8; 16 * 2 * 8]);
     unit.regular_constraints = proof_value_row_zero_stage_constraint();
     let catalog = sample_catalog(unit);
     let plan = derive_prove_execution_plan(
@@ -4336,8 +4383,7 @@ fn reports_missing_challenges_for_regular_constraints() {
 
     let mut unit = sample_unit();
     unit.paths.fixed_columns = dir.join("unit.const");
-    fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
-        .expect("fixed columns should be written");
+    write_fixed_bytes_for_unit(&mut unit, vec![0_u8; 16 * 2 * 8]);
     unit.regular_constraints = challenge_row_zero_stage_constraint();
     let catalog = sample_catalog(unit);
     let plan = derive_prove_execution_plan(
@@ -4415,8 +4461,7 @@ fn builds_witness_commitment_proof_segments() {
         assert_eq!(stage.arity, commitment.arity() as u32);
         assert_eq!(stage.root, commitment.root().map(|value| value.to_u64()));
         assert_eq!(stage.tree_byte_count, commitment.tree_bytes().len() as u64);
-        let expected_digest: [u8; 32] = Sha256::digest(commitment.tree_bytes()).into();
-        assert_eq!(stage.tree_digest, expected_digest);
+        assert_eq!(stage.tree_digest, [0; 32]);
     }
 }
 

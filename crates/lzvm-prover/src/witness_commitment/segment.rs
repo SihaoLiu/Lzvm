@@ -3,7 +3,6 @@ use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, witness_commitment_segment_id, WitnessCommitmentSegment,
     WitnessCommitmentSegmentIdentity, WitnessCommitmentStageSegment,
 };
-use sha2::{Digest, Sha256};
 
 use crate::witness_execution::ProveWitnessCommitments;
 
@@ -53,7 +52,7 @@ pub fn build_witness_commitment_segment_for_schedule(
             arity,
             root: commitment.root().map(|value| value.to_u64()),
             tree_byte_count,
-            tree_digest: Sha256::digest(commitment.tree_bytes()).into(),
+            tree_digest: [0; 32],
         });
     }
 

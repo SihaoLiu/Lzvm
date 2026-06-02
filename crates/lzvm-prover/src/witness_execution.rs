@@ -13,7 +13,9 @@ use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::trace_bundle::TraceBundleSource;
 use lzvm_field::{Ext3, Felt, FieldError};
 
-use crate::fixed_material::FixedColumnsMaterialError;
+use crate::fixed_material::{
+    load_execution_unit_fixed_columns_material, FixedColumnsMaterialError,
+};
 use crate::fri_polynomial::{
     build_fri_domain_points, FriPolynomialError, FriPolynomialZerofierTable,
 };
@@ -29,7 +31,7 @@ use crate::hint_eval::{
     resolve_regular_hint_program_for_row, HintEvalError,
 };
 use crate::regular_constraints::{
-    evaluate_regular_constraints, RegularColumnMatrix, RegularConstraintEvalError,
+    evaluate_regular_constraints_with_workers, RegularColumnMatrix, RegularConstraintEvalError,
     RegularConstraintInputs, RegularStageColumns,
 };
 use crate::source_assignment_hints::validate_source_assignment_hints;
@@ -1406,6 +1408,7 @@ fn run_prove_witness_commitments_from_trace_inner(
         &trace,
         &mut fixed_columns,
         proof_inputs,
+        plan.run_plan.gpu.witness_thread_pools,
     )?;
     match regular_hint_mode {
         WitnessRegularHintMode::Balanced(source_lookup_balance) => {
@@ -1638,6 +1641,7 @@ fn validate_witness_regular_constraints<L>(
     trace: &WitnessTraceBuffer,
     fixed_columns: &mut WitnessFixedColumnsCache<L>,
     proof_inputs: WitnessProofInputs<'_>,
+    worker_count: usize,
 ) -> Result<(), ProveWitnessCommitmentError>
 where
     L: FnMut(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult,
@@ -1680,7 +1684,7 @@ where
         |source| ProveWitnessCommitmentError::RegularConstraintDomainHelper { unit_index, source },
     )?;
 
-    let results = evaluate_regular_constraints(
+    let results = evaluate_regular_constraints_with_workers(
         &plan_unit.regular_constraints,
         RegularConstraintInputs {
             domain_size: layout.row_count(),
@@ -1704,6 +1708,7 @@ where
             challenges: &proof_inputs.auxiliary_inputs.challenges,
             evaluations: &proof_inputs.auxiliary_inputs.evaluations,
         },
+        worker_count,
     )
     .map_err(|error| map_regular_constraint_eval_error(unit_index, error))?;
 
@@ -1975,17 +1980,19 @@ fn load_witness_fixed_columns_material(
     unit_index: usize,
     plan_unit: &ProveExecutionUnitArtifacts,
 ) -> Result<crate::FixedColumnsMaterial, ProveWitnessCommitmentError> {
-    crate::load_fixed_columns_material(
-        &plan_unit.fixed_columns,
-        &plan_unit.setup,
-        plan_unit.group_name.clone(),
-        plan_unit.unit_name.clone(),
-    )
-    .map_err(|source| ProveWitnessCommitmentError::FixedColumns {
-        unit_index,
-        path: plan_unit.fixed_columns.clone(),
-        source: Box::new(source),
+    load_plan_fixed_columns_material(plan_unit).map_err(|source| {
+        ProveWitnessCommitmentError::FixedColumns {
+            unit_index,
+            path: plan_unit.fixed_columns.clone(),
+            source: Box::new(source),
+        }
     })
+}
+
+fn load_plan_fixed_columns_material(
+    plan_unit: &ProveExecutionUnitArtifacts,
+) -> Result<crate::FixedColumnsMaterial, FixedColumnsMaterialError> {
+    load_execution_unit_fixed_columns_material(plan_unit)
 }
 
 fn validate_fixed_columns_shape(
@@ -2046,7 +2053,7 @@ mod tests {
     use crate::witness_layout::derive_witness_trace_layout;
     use crate::witness_trace::parse_witness_trace;
     use lzvm_artifacts::constraint_program::{ConstraintEntry, ConstraintProgram};
-    use lzvm_artifacts::fixed::FixedColumn;
+    use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn};
     use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
     use lzvm_artifacts::guest_image::{ElfClass, ElfEndian, GuestImageInfo};
     use lzvm_artifacts::hint_program::{
@@ -2060,7 +2067,10 @@ mod tests {
         CommitmentColumn, ConstantColumn, FriStep, StarkStruct, UnitSetupInfo,
     };
     use lzvm_artifacts::trace_bundle::{TraceBundle, TraceBundleUnit};
+    use sha2::{Digest, Sha256};
     use std::cell::Cell;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn rejects_trace_bundles_with_unexpected_units() {
@@ -2141,6 +2151,7 @@ mod tests {
             &trace,
             &mut cache,
             proof_inputs,
+            1,
         )
         .expect("constraint check should validate");
 
@@ -2157,6 +2168,46 @@ mod tests {
         .expect("regular hints should accumulate");
 
         assert_eq!(loads.get(), 1);
+    }
+
+    #[test]
+    fn load_witness_fixed_columns_rejects_pcs_digest_mismatch() {
+        let dir = temp_dir("witness-fixed-digest-mismatch");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("fixture directory should be created");
+        let path = dir.join("unit.const");
+        let fixed_columns = FixedColumns {
+            group_name: "group".to_owned(),
+            unit_name: "unit".to_owned(),
+            row_count: 2,
+            columns: vec![FixedColumn {
+                name: "constant".to_owned(),
+                dimensions: vec![1],
+                values: vec![3, 5],
+            }],
+        };
+        let mut plan_unit = fixed_lookup_plan_unit();
+        plan_unit.fixed_columns = path.clone();
+        write_raw_fixed_columns_file(&path, &fixed_columns, &plan_unit.setup)
+            .expect("fixed columns should write");
+        let expected_digest: [u8; 32] =
+            Sha256::digest(fs::read(&path).expect("fixed file should read")).into();
+        plan_unit.pcs_material_fixed_column_digest = Some(expected_digest);
+        let mut mutated = fs::read(&path).expect("fixed file should read");
+        mutated[0] ^= 1;
+        fs::write(&path, mutated).expect("fixed file should mutate");
+
+        let error = load_witness_fixed_columns_material(0, &plan_unit)
+            .expect_err("fixed digest mismatch should reject witness material");
+
+        let ProveWitnessCommitmentError::FixedColumns { source, .. } = error else {
+            panic!("expected fixed columns error");
+        };
+        assert!(matches!(
+            *source,
+            FixedColumnsMaterialError::DigestMismatch { .. }
+        ));
+        fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     }
 
     #[test]
@@ -2699,6 +2750,7 @@ mod tests {
     fn source_lookup_plan_unit(program: HintProgram) -> ProveExecutionUnitArtifacts {
         ProveExecutionUnitArtifacts {
             fixed_columns: PathBuf::from("fixed.bin"),
+            pcs_material_fixed_column_digest: None,
             expression_program: lzvm_artifacts::expression_program::ExpressionProgram {
                 max_tmp1: 0,
                 max_tmp3: 0,
@@ -2872,6 +2924,14 @@ mod tests {
             .flat_map(|value| value.to_le_bytes())
             .collect::<Vec<_>>();
         parse_witness_trace(&bytes, 2, 2).expect("trace should parse")
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("lzvm-witness-execution-{name}-{stamp}"))
     }
 
     fn empty_fixed_columns_material(row_count: u64) -> crate::FixedColumnsMaterial {

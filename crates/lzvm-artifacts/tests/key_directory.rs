@@ -15,11 +15,12 @@ use lzvm_artifacts::hint_program::{
 };
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
-    read_key_directory_layout, validate_key_directory_layout, KeyDirectoryError, KeyUnitKind,
-    KeyUnitPaths,
+    read_key_directory_catalog_trusting_pcs_material_digests, read_key_directory_layout,
+    validate_key_directory_layout, KeyDirectoryError, KeyUnitKind, KeyUnitPaths,
 };
 use lzvm_artifacts::pcs_material::{
-    build_pcs_setup_material, encode_pcs_setup_material, PcsSetupMaterialError,
+    build_pcs_setup_material, encode_pcs_setup_material, read_pcs_setup_material_file,
+    PcsSetupMaterialError,
 };
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan, PcsPlanError};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
@@ -965,6 +966,139 @@ fn reads_key_directory_catalog_pcs_setup_materials_when_present() {
         .units
         .iter()
         .all(|unit| unit.pcs_material_bytes == Some(material_bytes)));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn loads_key_directory_catalog_when_trusting_pcs_material_digests() {
+    let dir = temp_dir("catalog-trusted-pcs-material-fixed-digest");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    write_catalog_constant_trees(&layout);
+    write_catalog_pcs_setup_materials(&layout);
+    fs::write(&layout.units[0].fixed_columns, [9_u8; 32]).expect("fixed columns should change");
+
+    let error = read_key_directory_catalog(&dir).expect_err("full catalog should reject mismatch");
+    let trusted = read_key_directory_catalog_trusting_pcs_material_digests(&dir)
+        .expect("trusted catalog should load");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::PcsMaterialMismatch {
+            kind: KeyUnitKind::Basic,
+            ..
+        }
+    ));
+    assert!(trusted.units[0].pcs_material_present);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_trusted_pcs_material_constant_tree_byte_count_mismatch() {
+    let dir = temp_dir("catalog-trusted-pcs-material-tree-byte-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    write_catalog_constant_trees(&layout);
+    write_catalog_pcs_setup_materials(&layout);
+    let material_path = layout.units[0]
+        .pcs_setup_material()
+        .expect("PCS material path should derive");
+    let mut material =
+        read_pcs_setup_material_file(&material_path).expect("PCS material should parse");
+    material.constant_tree_byte_count += 1;
+    write_bytes(
+        &material_path,
+        encode_pcs_setup_material(&material).expect("material should encode"),
+    );
+
+    let error = read_key_directory_catalog_trusting_pcs_material_digests(&dir)
+        .expect_err("trusted catalog should reject tree byte mismatch");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::PcsMaterialMismatch {
+            kind: KeyUnitKind::Basic,
+            ..
+        }
+    ));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_trusted_pcs_material_leaf_byte_count_mismatch() {
+    let dir = temp_dir("catalog-trusted-pcs-material-leaf-byte-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    write_catalog_constant_trees(&layout);
+    write_catalog_pcs_setup_materials(&layout);
+    let material_path = layout.units[0]
+        .pcs_setup_material()
+        .expect("PCS material path should derive");
+    let mut material =
+        read_pcs_setup_material_file(&material_path).expect("PCS material should parse");
+    material.leaf_byte_count += 1;
+    write_bytes(
+        &material_path,
+        encode_pcs_setup_material(&material).expect("material should encode"),
+    );
+
+    let error = read_key_directory_catalog_trusting_pcs_material_digests(&dir)
+        .expect_err("trusted catalog should reject leaf byte mismatch");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::PcsMaterialMismatch {
+            kind: KeyUnitKind::Basic,
+            ..
+        }
+    ));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_trusted_pcs_material_node_byte_count_mismatch() {
+    let dir = temp_dir("catalog-trusted-pcs-material-node-byte-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    write_catalog_constant_trees(&layout);
+    write_catalog_pcs_setup_materials(&layout);
+    let material_path = layout.units[0]
+        .pcs_setup_material()
+        .expect("PCS material path should derive");
+    let mut material =
+        read_pcs_setup_material_file(&material_path).expect("PCS material should parse");
+    material.node_byte_count += 1;
+    write_bytes(
+        &material_path,
+        encode_pcs_setup_material(&material).expect("material should encode"),
+    );
+
+    let error = read_key_directory_catalog_trusting_pcs_material_digests(&dir)
+        .expect_err("trusted catalog should reject node byte mismatch");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::PcsMaterialMismatch {
+            kind: KeyUnitKind::Basic,
+            ..
+        }
+    ));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 

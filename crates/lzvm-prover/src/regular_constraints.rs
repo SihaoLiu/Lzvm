@@ -1,5 +1,6 @@
 use std::fmt;
 use std::num::NonZeroUsize;
+use std::thread;
 
 use lzvm_artifacts::constraint_program::{ConstraintEntry, ConstraintProgram};
 use lzvm_field::{Ext3, Felt};
@@ -97,6 +98,7 @@ pub enum RegularConstraintEvalError {
         width: usize,
         len: usize,
     },
+    WorkerPanic,
 }
 
 impl fmt::Display for RegularConstraintEvalError {
@@ -156,6 +158,7 @@ impl fmt::Display for RegularConstraintEvalError {
                 f,
                 "regular constraint {buffer} offset {offset} with width {width} is outside length {len}"
             ),
+            Self::WorkerPanic => write!(f, "regular constraint worker panicked"),
         }
     }
 }
@@ -166,16 +169,64 @@ pub fn evaluate_regular_constraints(
     program: &ConstraintProgram,
     inputs: RegularConstraintInputs<'_>,
 ) -> Result<Vec<RegularConstraintResult>, RegularConstraintEvalError> {
+    evaluate_regular_constraints_with_workers(program, inputs, 1)
+}
+
+pub fn evaluate_regular_constraints_with_workers(
+    program: &ConstraintProgram,
+    inputs: RegularConstraintInputs<'_>,
+    worker_count: usize,
+) -> Result<Vec<RegularConstraintResult>, RegularConstraintEvalError> {
     if inputs.domain_size == 0 {
         return Err(RegularConstraintEvalError::EmptyDomain);
     }
     validate_inputs(inputs)?;
-    program
-        .entries
-        .iter()
-        .enumerate()
-        .map(|(index, entry)| evaluate_entry(index, entry, program, inputs))
-        .collect()
+    evaluate_constraint_entries(program, inputs, worker_count)
+}
+
+fn evaluate_constraint_entries(
+    program: &ConstraintProgram,
+    inputs: RegularConstraintInputs<'_>,
+    worker_count: usize,
+) -> Result<Vec<RegularConstraintResult>, RegularConstraintEvalError> {
+    let entry_count = program.entries.len();
+    let worker_count = worker_count.max(1).min(entry_count);
+    if worker_count <= 1 {
+        return program
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| evaluate_entry(index, entry, program, inputs))
+            .collect();
+    }
+
+    let chunk_size = entry_count.div_ceil(worker_count);
+    let mut out = Vec::with_capacity(entry_count);
+    thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for (chunk_index, chunk) in program.entries.chunks(chunk_size).enumerate() {
+            let start_index = chunk_index
+                .checked_mul(chunk_size)
+                .ok_or(RegularConstraintEvalError::LengthOverflow)?;
+            handles.push(scope.spawn(move || {
+                chunk
+                    .iter()
+                    .enumerate()
+                    .map(|(offset, entry)| {
+                        evaluate_entry(start_index + offset, entry, program, inputs)
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            }));
+        }
+        for handle in handles {
+            let chunk = handle
+                .join()
+                .map_err(|_| RegularConstraintEvalError::WorkerPanic)??;
+            out.extend(chunk);
+        }
+        Ok::<(), RegularConstraintEvalError>(())
+    })?;
+    Ok(out)
 }
 
 fn validate_inputs(inputs: RegularConstraintInputs<'_>) -> Result<(), RegularConstraintEvalError> {

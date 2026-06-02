@@ -13,7 +13,9 @@ use lzvm_field::coset_extend_evaluations;
 use lzvm_field::FieldError;
 use lzvm_field::{DomainError, Ext3, Felt};
 
-use crate::fixed_material::{load_fixed_columns_material, FixedColumnsMaterialError};
+use crate::fixed_material::{
+    load_execution_unit_fixed_columns_material, FixedColumnsMaterialError,
+};
 use crate::fri_polynomial::{
     build_fri_domain_points, build_fri_polynomial, derive_opening_xis, FriPolynomialColumnMatrix,
     FriPolynomialError, FriPolynomialInputs, FriPolynomialStageColumns, FriPolynomialZerofierTable,
@@ -338,16 +340,12 @@ fn read_extended_fixed_columns(
     unit: &ProveUnitSchedule,
     plan_unit: &ProveExecutionUnitArtifacts,
 ) -> Result<Vec<Felt>, ProvePcsFriPolynomialError> {
-    let material = load_fixed_columns_material(
-        &plan_unit.fixed_columns,
-        &plan_unit.setup,
-        plan_unit.group_name.clone(),
-        plan_unit.unit_name.clone(),
-    )
-    .map_err(|source| ProvePcsFriPolynomialError::FixedColumns {
-        unit_index,
-        path: plan_unit.fixed_columns.clone(),
-        source: Box::new(source),
+    let material = load_plan_fixed_columns_material(plan_unit).map_err(|source| {
+        ProvePcsFriPolynomialError::FixedColumns {
+            unit_index,
+            path: plan_unit.fixed_columns.clone(),
+            source: Box::new(source),
+        }
     })?;
     let source_rows = usize::try_from(unit.base_domain_size)
         .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
@@ -367,6 +365,12 @@ fn read_extended_fixed_columns(
             .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?,
         unit_index,
     )
+}
+
+fn load_plan_fixed_columns_material(
+    plan_unit: &ProveExecutionUnitArtifacts,
+) -> Result<crate::FixedColumnsMaterial, FixedColumnsMaterialError> {
+    load_execution_unit_fixed_columns_material(plan_unit)
 }
 
 fn validate_fixed_columns_shape(
@@ -531,6 +535,134 @@ fn fri_error(unit_index: usize, source: FriPolynomialError) -> ProvePcsFriPolyno
     ProvePcsFriPolynomialError::FriPolynomial {
         unit_index,
         source: Box::new(source),
+    }
+}
+
+#[cfg(test)]
+mod fixed_digest_tests {
+    use super::load_plan_fixed_columns_material;
+    use crate::{FixedColumnsMaterialError, ProveExecutionUnitArtifacts};
+    use lzvm_artifacts::constraint_program::ConstraintProgram;
+    use lzvm_artifacts::expression_program::ExpressionProgram;
+    use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn, FixedColumns};
+    use lzvm_artifacts::hint_program::HintProgram;
+    use lzvm_artifacts::setup_info::{
+        ConstantColumn, EvaluationMapEntry, FriStep, StarkStruct, UnitSetupInfo,
+    };
+    use sha2::{Digest, Sha256};
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn fri_fixed_columns_reject_pcs_digest_mismatch() {
+        let dir = temp_dir("fri-fixed-digest-mismatch");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("fixture directory should be created");
+        let path = dir.join("unit.const");
+        let setup = sample_setup();
+        let fixed_columns = FixedColumns {
+            group_name: "group".to_owned(),
+            unit_name: "unit".to_owned(),
+            row_count: 2,
+            columns: vec![FixedColumn {
+                name: "constant".to_owned(),
+                dimensions: vec![1],
+                values: vec![3, 5],
+            }],
+        };
+        write_raw_fixed_columns_file(&path, &fixed_columns, &setup)
+            .expect("fixed columns should write");
+        let expected_digest: [u8; 32] =
+            Sha256::digest(fs::read(&path).expect("fixed file should read")).into();
+        let mut mutated = fs::read(&path).expect("fixed file should read");
+        mutated[0] ^= 1;
+        fs::write(&path, mutated).expect("fixed file should mutate");
+
+        let error = load_plan_fixed_columns_material(&ProveExecutionUnitArtifacts {
+            fixed_columns: path,
+            pcs_material_fixed_column_digest: Some(expected_digest),
+            expression_program: ExpressionProgram {
+                max_tmp1: 0,
+                max_tmp3: 0,
+                max_args: 0,
+                max_ops: 0,
+                entries: Vec::new(),
+                ops: Vec::new(),
+                args: Vec::new(),
+                numbers: Vec::new(),
+            },
+            fri_expression_id: None,
+            regular_constraints: ConstraintProgram {
+                entries: Vec::new(),
+                ops: Vec::new(),
+                args: Vec::new(),
+                numbers: Vec::new(),
+            },
+            regular_hints: HintProgram { hints: Vec::new() },
+            setup,
+            fixed_column_count: 1,
+            stage_count: 0,
+            opening_point_offsets: Vec::new(),
+            group_name: "group".to_owned(),
+            unit_name: "unit".to_owned(),
+        })
+        .expect_err("fixed digest mismatch should reject FRI material");
+
+        assert!(matches!(
+            error,
+            FixedColumnsMaterialError::DigestMismatch { .. }
+        ));
+        fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    }
+
+    fn sample_setup() -> UnitSetupInfo {
+        UnitSetupInfo {
+            n_stages: 0,
+            n_constants: 1,
+            constant_columns: vec![ConstantColumn {
+                name: "constant".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 0,
+                stage_id: 0,
+                lengths: Vec::new(),
+            }],
+            n_publics: None,
+            n_constraints: None,
+            q_degree: 0,
+            opening_points: Vec::new(),
+            section_widths: BTreeMap::new(),
+            challenge_count: 0,
+            eval_count: 0,
+            evaluation_map: vec![EvaluationMapEntry::default()],
+            boundaries: Vec::new(),
+            commitment_columns: Vec::new(),
+            unit_value_map: Vec::new(),
+            group_value_map: Vec::new(),
+            stark: StarkStruct {
+                n_bits: 1,
+                n_bits_ext: 1,
+                n_queries: 0,
+                steps: vec![FriStep { n_bits: 1 }],
+                hash_commits: false,
+                last_level_verification: 0,
+                pow_bits: 0,
+                merkle_tree_arity: 2,
+                verification_hash_type: None,
+                transcript_arity: None,
+                merkle_tree_custom: None,
+            },
+        }
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("lzvm-fri-polynomial-{name}-{stamp}"))
     }
 }
 

@@ -1,5 +1,3 @@
-#![cfg(feature = "cuda")]
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,7 +6,10 @@ use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn, FixedColu
 use lzvm_artifacts::setup_info::{
     ConstantColumn, EvaluationMapEntry, FriStep, StarkStruct, UnitSetupInfo,
 };
-use lzvm_prover::load_fixed_columns_material;
+use lzvm_prover::{
+    load_fixed_columns_material, load_fixed_columns_material_with_digest, FixedColumnsMaterialError,
+};
+use sha2::{Digest, Sha256};
 
 #[test]
 fn loads_raw_fixed_columns_material_and_stages_device_bytes() {
@@ -43,16 +44,50 @@ fn loads_raw_fixed_columns_material_and_stages_device_bytes() {
         fs::read(&path).expect("fixed file should read")
     );
 
-    let device_buffer = material
-        .device_buffer
-        .expect("device buffer should be staged");
-    assert_eq!(device_buffer.len(), material.raw_bytes.len());
-    assert_eq!(
-        device_buffer
-            .to_vec()
-            .expect("device bytes should round-trip"),
-        material.raw_bytes
-    );
+    #[cfg(feature = "cuda")]
+    {
+        let device_buffer = material
+            .device_buffer
+            .expect("device buffer should be staged");
+        assert_eq!(device_buffer.len(), material.raw_bytes.len());
+        assert_eq!(
+            device_buffer
+                .to_vec()
+                .expect("device bytes should round-trip"),
+            material.raw_bytes
+        );
+    }
+}
+
+#[test]
+fn rejects_fixed_columns_material_digest_mismatch() {
+    let dir = temp_dir("fixed-material-digest-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+
+    let setup = sample_setup();
+    let columns = sample_columns();
+    let path = dir.join("unit.const");
+    write_raw_fixed_columns_file(&path, &columns, &setup).expect("fixed columns should write");
+    let expected_digest: [u8; 32] =
+        Sha256::digest(fs::read(&path).expect("fixed file should read")).into();
+    let mut mutated = fs::read(&path).expect("fixed file should read");
+    mutated[0] ^= 1;
+    fs::write(&path, mutated).expect("fixed columns should be mutated");
+
+    let error = load_fixed_columns_material_with_digest(
+        &path,
+        &setup,
+        "group-a",
+        "unit-a",
+        expected_digest,
+    )
+    .expect_err("fixed digest mismatch should reject material");
+
+    assert!(matches!(
+        error,
+        FixedColumnsMaterialError::DigestMismatch { .. }
+    ));
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {

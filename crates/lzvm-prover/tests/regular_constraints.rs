@@ -1,8 +1,8 @@
 use lzvm_artifacts::constraint_program::{ConstraintEntry, ConstraintProgram};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::regular_constraints::{
-    evaluate_regular_constraints, RegularColumnMatrix, RegularConstraintEvalError,
-    RegularConstraintInputs, RegularStageColumns,
+    evaluate_regular_constraints, evaluate_regular_constraints_with_workers, RegularColumnMatrix,
+    RegularConstraintEvalError, RegularConstraintInputs, RegularStageColumns,
 };
 
 #[test]
@@ -411,6 +411,68 @@ fn reports_first_executed_source_error_before_later_source_decode_error() {
             len: 1,
         }
     );
+}
+
+#[test]
+fn worker_regular_constraints_match_sequential_results() {
+    let program = ConstraintProgram {
+        entries: vec![
+            ConstraintEntry {
+                stage: 1,
+                destination_dimension: 1,
+                destination_id: 0,
+                first_row: 0,
+                last_row: 4,
+                temp1_count: 1,
+                temp3_count: 0,
+                ops_count: 1,
+                ops_offset: 0,
+                args_count: 8,
+                args_offset: 0,
+                intermediate: false,
+                source_line: "first worker residual".to_owned(),
+            },
+            ConstraintEntry {
+                stage: 1,
+                destination_dimension: 1,
+                destination_id: 0,
+                first_row: 0,
+                last_row: 4,
+                temp1_count: 1,
+                temp3_count: 0,
+                ops_count: 1,
+                ops_offset: 1,
+                args_count: 8,
+                args_offset: 8,
+                intermediate: false,
+                source_line: "second worker residual".to_owned(),
+            },
+        ],
+        ops: vec![0, 0],
+        args: vec![
+            1, 0, 0, 0, 0, 8, 0, 0, //
+            1, 0, 0, 0, 0, 8, 1, 0,
+        ],
+        numbers: vec![10, 20],
+    };
+    let fixed = [felt(10), felt(11), felt(20), felt(21)];
+    let inputs = RegularConstraintInputs {
+        domain_size: 4,
+        stage_count: 1,
+        fixed_columns: RegularColumnMatrix {
+            column_count: 1,
+            values: &fixed,
+        },
+        opening_point_offsets: &[0],
+        ..RegularConstraintInputs::default()
+    };
+
+    let sequential = evaluate_regular_constraints(&program, inputs)
+        .expect("sequential regular constraints should evaluate");
+    let worker = evaluate_regular_constraints_with_workers(&program, inputs, 2)
+        .expect("worker regular constraints should evaluate");
+
+    assert_eq!(worker, sequential);
 }
 
 fn felt(value: u64) -> Felt {

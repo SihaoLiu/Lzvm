@@ -23,7 +23,7 @@ use crate::eth_block_prove_input::{
 };
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
-    format_hash, parse_run_args, prepare_requested_gpu_setup, read_checked_setup_catalog,
+    format_hash, parse_run_args, prepare_requested_gpu_setup, read_prove_setup_catalog,
     required_option_value, set_default_input_data, validate_all_unit_stored_witness_limit,
     write_run_plan_summary, ParseError, ParsedRunArgs,
 };
@@ -39,7 +39,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let catalog = match read_checked_setup_catalog(&parsed.run_args.positionals[0]) {
+    let catalog = match read_prove_setup_catalog(&parsed.run_args.positionals[0]) {
         Ok(catalog) => catalog,
         Err(message) => {
             let _ = writeln!(stderr, "prove inputs failed: {message}");

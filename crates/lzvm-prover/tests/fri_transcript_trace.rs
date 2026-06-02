@@ -70,6 +70,7 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
 
     let execution_unit = ProveExecutionUnitArtifacts {
         fixed_columns: fixed_path,
+        pcs_material_fixed_column_digest: None,
         expression_program: key_unit.expression_program.clone(),
         fri_expression_id: key_unit.metadata.verifier.quotient.expression_id,
         regular_constraints: key_unit.regular_constraints.clone(),
@@ -660,6 +661,7 @@ fn sample_catalog_units(units: Vec<KeyUnitCatalogEntry>) -> KeyDirectoryCatalog 
 fn sample_execution_unit(unit: &KeyUnitCatalogEntry) -> ProveExecutionUnitArtifacts {
     ProveExecutionUnitArtifacts {
         fixed_columns: unit.paths.fixed_columns.clone(),
+        pcs_material_fixed_column_digest: None,
         expression_program: unit.expression_program.clone(),
         fri_expression_id: unit.metadata.verifier.quotient.expression_id,
         regular_constraints: unit.regular_constraints.clone(),

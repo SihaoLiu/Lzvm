@@ -52,6 +52,14 @@ pub enum ConstantTreeError {
         word_index: usize,
         source: FieldError,
     },
+    RootMismatch {
+        expected: VerificationKeyRoot,
+        found: VerificationKeyRoot,
+    },
+    DigestMismatch {
+        expected: [u8; 32],
+        found: [u8; 32],
+    },
     Io {
         message: String,
     },
@@ -76,6 +84,18 @@ impl fmt::Display for ConstantTreeError {
                 f,
                 "constant-tree root word {word_index} is non-canonical: {source}"
             ),
+            Self::RootMismatch { expected, found } => {
+                write!(
+                    f,
+                    "constant-tree root mismatch: expected {expected:?}, found {found:?}"
+                )
+            }
+            Self::DigestMismatch { expected, found } => {
+                write!(
+                    f,
+                    "constant-tree digest mismatch: expected {expected:?}, found {found:?}"
+                )
+            }
             Self::Io { message } => write!(f, "constant-tree io error: {message}"),
         }
     }
@@ -89,6 +109,8 @@ impl std::error::Error for ConstantTreeError {
             | Self::DomainTooLarge { .. }
             | Self::LengthOverflow
             | Self::InvalidByteLength { .. }
+            | Self::RootMismatch { .. }
+            | Self::DigestMismatch { .. }
             | Self::Io { .. } => None,
         }
     }
@@ -110,9 +132,31 @@ pub fn read_constant_tree_file(
     path: impl AsRef<Path>,
     setup: &UnitSetupInfo,
 ) -> Result<ConstantTree, ConstantTreeError> {
+    read_constant_tree_file_inner(path, setup, None)
+}
+
+pub fn read_constant_tree_file_with_digest(
+    path: impl AsRef<Path>,
+    setup: &UnitSetupInfo,
+    expected_digest: [u8; 32],
+) -> Result<ConstantTree, ConstantTreeError> {
+    read_constant_tree_file_inner(path, setup, Some(expected_digest))
+}
+
+fn read_constant_tree_file_inner(
+    path: impl AsRef<Path>,
+    setup: &UnitSetupInfo,
+    expected_digest: Option<[u8; 32]>,
+) -> Result<ConstantTree, ConstantTreeError> {
     let bytes = std::fs::read(path).map_err(|error| ConstantTreeError::Io {
         message: error.to_string(),
     })?;
+    if let Some(expected) = expected_digest {
+        let found: [u8; 32] = Sha256::digest(&bytes).into();
+        if found != expected {
+            return Err(ConstantTreeError::DigestMismatch { expected, found });
+        }
+    }
     parse_constant_tree_bytes(bytes, setup)
 }
 
@@ -143,15 +187,7 @@ pub fn summarize_constant_tree_file(
     })?;
     let digest = sha256_reader(&mut file)?;
     let root = read_constant_tree_root_from_file(&mut file)?;
-    let extended_row_count = extended_row_count(setup)?;
-    let constant_count = u64::from(setup.n_constants);
-    let leaf_byte_count = checked_usize(checked_mul(
-        checked_mul(extended_row_count, constant_count)?,
-        WORD_BYTES,
-    )?)?;
-    let node_byte_count = expected
-        .checked_sub(leaf_byte_count)
-        .ok_or(ConstantTreeError::LengthOverflow)?;
+    let (leaf_byte_count, node_byte_count) = expected_constant_tree_leaf_node_byte_counts(setup)?;
 
     Ok(ConstantTreeFileSummary {
         root,
@@ -176,13 +212,7 @@ pub fn parse_constant_tree_bytes(
 
     let extended_row_count = extended_row_count(setup)?;
     let constant_count = u64::from(setup.n_constants);
-    let leaf_byte_count = checked_usize(checked_mul(
-        checked_mul(extended_row_count, constant_count)?,
-        WORD_BYTES,
-    )?)?;
-    let node_byte_count = expected
-        .checked_sub(leaf_byte_count)
-        .ok_or(ConstantTreeError::LengthOverflow)?;
+    let (leaf_byte_count, node_byte_count) = expected_constant_tree_leaf_node_byte_counts(setup)?;
 
     Ok(ConstantTree {
         hash_kind: hash_kind(setup),
@@ -252,6 +282,22 @@ pub fn expected_constant_tree_byte_count(
         expected_constant_tree_word_count(setup)?,
         WORD_BYTES,
     )?)
+}
+
+pub fn expected_constant_tree_leaf_node_byte_counts(
+    setup: &UnitSetupInfo,
+) -> Result<(usize, usize), ConstantTreeError> {
+    let extended_row_count = extended_row_count(setup)?;
+    let constant_count = u64::from(setup.n_constants);
+    let leaf_byte_count = checked_usize(checked_mul(
+        checked_mul(extended_row_count, constant_count)?,
+        WORD_BYTES,
+    )?)?;
+    let total_byte_count = expected_constant_tree_byte_count(setup)?;
+    let node_byte_count = total_byte_count
+        .checked_sub(leaf_byte_count)
+        .ok_or(ConstantTreeError::LengthOverflow)?;
+    Ok((leaf_byte_count, node_byte_count))
 }
 
 pub fn expected_constant_tree_word_count(setup: &UnitSetupInfo) -> Result<u64, ConstantTreeError> {

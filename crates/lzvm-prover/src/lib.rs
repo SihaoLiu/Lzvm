@@ -79,7 +79,8 @@ pub mod zisk_fcalls;
 pub mod zisk_main;
 
 pub use fixed_material::{
-    load_fixed_columns_material, FixedColumnsMaterial, FixedColumnsMaterialError,
+    load_fixed_columns_material, load_fixed_columns_material_with_digest, FixedColumnsMaterial,
+    FixedColumnsMaterialError,
 };
 pub use gpu_setup::{gpu_setup_available, prepare_gpu_setup, GpuSetupError};
 pub use proof_artifact::{
@@ -517,6 +518,7 @@ pub struct ProveExecutionPlan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveExecutionUnitArtifacts {
     pub fixed_columns: PathBuf,
+    pub pcs_material_fixed_column_digest: Option<[u8; 32]>,
     pub expression_program: ExpressionProgram,
     pub fri_expression_id: Option<u32>,
     pub regular_constraints: ConstraintProgram,
@@ -1175,6 +1177,10 @@ fn derive_prove_execution_units(
         })?;
         units.push(ProveExecutionUnitArtifacts {
             fixed_columns: unit.paths.fixed_columns.clone(),
+            pcs_material_fixed_column_digest: unit
+                .pcs_material
+                .as_ref()
+                .map(|material| material.fixed_column_digest),
             expression_program: unit.expression_program.clone(),
             fri_expression_id: unit.metadata.verifier.quotient.expression_id,
             regular_constraints: unit.regular_constraints.clone(),

@@ -162,6 +162,140 @@ fn validates_seeded_pcs_query_plan_segments() {
 }
 
 #[test]
+fn seeded_query_plan_ignores_unverified_witness_tree_digest() {
+    let mut schedule = sample_schedule();
+    schedule.total_query_count = 16;
+    schedule.max_extended_domain_bits = 8;
+    schedule.units[0].extended_domain_bits = 8;
+    schedule.units[0].extended_domain_size = 256;
+    schedule.units[0].query_count = 16;
+
+    let public_hash = [7; 32];
+    let material = material_segment();
+    let mut first_witness = witness_commitment(0);
+    let mut second_witness = first_witness.clone();
+    first_witness.stages[0].tree_digest = [0; 32];
+    second_witness.stages[0].tree_digest = [1; 32];
+    let first_segment = ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        data: encode_witness_commitment_segment(&first_witness)
+            .expect("witness segment should encode"),
+    };
+    let second_segment = ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        data: encode_witness_commitment_segment(&second_witness)
+            .expect("witness segment should encode"),
+    };
+
+    let first_query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&first_segment),
+    )
+    .expect("query plan should build");
+    let second_query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&second_segment),
+    )
+    .expect("query plan should build");
+
+    assert_eq!(first_query.data, second_query.data);
+}
+
+#[test]
+fn seeded_query_plan_ignores_unverified_witness_metadata_counts() {
+    let mut schedule = sample_schedule();
+    schedule.total_query_count = 16;
+    schedule.max_extended_domain_bits = 8;
+    schedule.units[0].extended_domain_bits = 8;
+    schedule.units[0].extended_domain_size = 256;
+    schedule.units[0].query_count = 16;
+
+    let public_hash = [7; 32];
+    let material = material_segment();
+    let mut first_witness = witness_commitment(0);
+    let mut second_witness = first_witness.clone();
+    first_witness.input_byte_count = 0;
+    first_witness.stages[0].tree_byte_count = 64;
+    second_witness.input_byte_count = 99;
+    second_witness.stages[0].tree_byte_count = 128;
+    let first_segment = ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        data: encode_witness_commitment_segment(&first_witness)
+            .expect("witness segment should encode"),
+    };
+    let second_segment = ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        data: encode_witness_commitment_segment(&second_witness)
+            .expect("witness segment should encode"),
+    };
+
+    let first_query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&first_segment),
+    )
+    .expect("query plan should build");
+    let second_query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&second_segment),
+    )
+    .expect("query plan should build");
+
+    assert_eq!(first_query.data, second_query.data);
+}
+
+#[test]
+fn seeded_query_plan_binds_witness_stage_roots() {
+    let mut schedule = sample_schedule();
+    schedule.total_query_count = 16;
+    schedule.max_extended_domain_bits = 8;
+    schedule.units[0].extended_domain_bits = 8;
+    schedule.units[0].extended_domain_size = 256;
+    schedule.units[0].query_count = 16;
+
+    let public_hash = [7; 32];
+    let material = material_segment();
+    let mut first_witness = witness_commitment(0);
+    let mut second_witness = first_witness.clone();
+    first_witness.stages[0].root = [5, 6, 7, 8];
+    second_witness.stages[0].root = [9, 10, 11, 12];
+    let first_segment = ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        data: encode_witness_commitment_segment(&first_witness)
+            .expect("witness segment should encode"),
+    };
+    let second_segment = ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        data: encode_witness_commitment_segment(&second_witness)
+            .expect("witness segment should encode"),
+    };
+
+    let first_query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&first_segment),
+    )
+    .expect("query plan should build");
+    let second_query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&second_segment),
+    )
+    .expect("query plan should build");
+
+    assert_ne!(first_query.data, second_query.data);
+}
+
+#[test]
 fn builds_seeded_pcs_query_plan_for_trace_instance_witness_segment() {
     let schedule = sample_schedule();
     let public_hash = [7; 32];
@@ -248,7 +382,7 @@ fn rejects_seeded_pcs_query_plan_mismatches() {
 
 #[test]
 fn rejects_seeded_pcs_query_plan_mismatches_with_program_image_cache_segment() {
-    let schedule = sample_schedule();
+    let schedule = query_sensitive_schedule();
     let public_hash = [7; 32];
     let material = material_segment();
     let witness = witness_segment(0);
@@ -274,7 +408,7 @@ fn rejects_seeded_pcs_query_plan_mismatches_with_program_image_cache_segment() {
 
 #[test]
 fn rejects_seeded_pcs_query_plan_mismatches_with_challenge_values_segment() {
-    let schedule = sample_schedule();
+    let schedule = query_sensitive_schedule();
     let public_hash = [7; 32];
     let material = material_segment();
     let witness = witness_segment(0);
@@ -1354,6 +1488,16 @@ fn sample_schedule() -> ProveSchedule {
         max_extended_domain_bits: 2,
         units: vec![sample_unit()],
     }
+}
+
+fn query_sensitive_schedule() -> ProveSchedule {
+    let mut schedule = sample_schedule();
+    schedule.total_query_count = 16;
+    schedule.max_extended_domain_bits = 8;
+    schedule.units[0].extended_domain_bits = 8;
+    schedule.units[0].extended_domain_size = 256;
+    schedule.units[0].query_count = 16;
+    schedule
 }
 
 fn sample_unit() -> ProveUnitSchedule {

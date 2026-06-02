@@ -56,8 +56,10 @@ pub fn build_pcs_query_plan_segment_with_bindings(
     hasher.update(schedule.setup_hash);
     hasher.update(public_values_hash);
     hash_proof_segment(&mut hasher, material_segment)?;
+    let unit_count = u32::try_from(schedule.units.len())
+        .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?;
     for segment in &witness_segments {
-        hash_proof_segment(&mut hasher, segment)?;
+        hash_witness_commitment_segment_for_query_seed(&mut hasher, unit_count, segment)?;
     }
     for segment in binding_segments {
         hash_proof_segment(&mut hasher, segment)?;
@@ -338,5 +340,45 @@ fn hash_proof_segment(
         .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?;
     hasher.update(byte_count.to_le_bytes());
     hasher.update(Sha256::digest(&segment.data));
+    Ok(())
+}
+
+fn hash_witness_commitment_segment_for_query_seed(
+    hasher: &mut Sha256,
+    unit_count: u32,
+    segment: &ProofSegment,
+) -> Result<(), ProvePcsQueryPlanSegmentError> {
+    let identity = witness_commitment_segment_identity(unit_count, segment.id)
+        .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?
+        .ok_or(ProvePcsQueryPlanSegmentError::LengthOverflow)?;
+    let unit_index = usize::try_from(identity.unit_index)
+        .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?;
+    let witness = parse_witness_commitment_segment(&segment.data).map_err(|source| {
+        ProvePcsQueryPlanSegmentError::InvalidWitnessSegment { unit_index, source }
+    })?;
+    if witness.unit_index != identity.unit_index {
+        return Err(ProvePcsQueryPlanSegmentError::WitnessUnitMismatch {
+            segment_unit_index: identity.unit_index,
+            payload_unit_index: witness.unit_index,
+        });
+    }
+
+    hasher.update(b"lzvm-witness-commitment-query-seed-v1");
+    hasher.update(segment.id.to_le_bytes());
+    hasher.update(identity.unit_index.to_le_bytes());
+    hasher.update(identity.trace_instance_index.to_le_bytes());
+    hasher.update(witness.unit_index.to_le_bytes());
+    hasher.update(witness.trace_rows.to_le_bytes());
+    hasher.update(witness.trace_columns.to_le_bytes());
+    let stage_count = u64::try_from(witness.stages.len())
+        .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?;
+    hasher.update(stage_count.to_le_bytes());
+    for stage in &witness.stages {
+        hasher.update(stage.stage_index.to_le_bytes());
+        hasher.update(stage.arity.to_le_bytes());
+        for word in stage.root {
+            hasher.update(word.to_le_bytes());
+        }
+    }
     Ok(())
 }

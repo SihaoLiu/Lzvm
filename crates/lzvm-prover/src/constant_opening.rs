@@ -5,12 +5,15 @@ use lzvm_artifacts::constant_opening_segment::{
     ConstantOpeningQuerySegment, ConstantOpeningSegment, ConstantOpeningSegmentError,
     ConstantOpeningUnitSegment, CONSTANT_OPENING_SEGMENT_ID,
 };
-use lzvm_artifacts::constant_tree::{read_constant_tree_file, ConstantTreeError};
+use lzvm_artifacts::constant_tree::{
+    read_constant_tree_file, read_constant_tree_file_with_digest, ConstantTree, ConstantTreeError,
+};
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
 use lzvm_artifacts::pcs_query_segment::{
     parse_pcs_query_plan_segment, PcsQueryPlanSegmentError, PcsQueryPlanUnit,
 };
 use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_field::{Felt, FieldError};
 
 use crate::constant_tree_opening::open_constant_tree_row;
@@ -408,11 +411,10 @@ pub fn build_constant_opening_segment(
                 unit_count: catalog.units.len(),
             },
         )?;
-        let tree = read_constant_tree_file(
-            &catalog_unit.paths.constant_tree,
-            &catalog_unit.metadata.setup,
-        )
-        .map_err(|source| ProveConstantOpeningSegmentError::ConstantTree { unit_index, source })?;
+        let tree =
+            read_schedule_constant_tree_file(schedule_unit, catalog_unit).map_err(|source| {
+                ProveConstantOpeningSegmentError::ConstantTree { unit_index, source }
+            })?;
         let arity = usize::try_from(schedule_unit.merkle_tree_arity).map_err(|_| {
             ProveConstantOpeningSegmentError::UnitIndexOutOfRange {
                 unit_index,
@@ -453,6 +455,32 @@ pub fn build_constant_opening_segment(
         id: CONSTANT_OPENING_SEGMENT_ID,
         data: encode_constant_opening_segment(&segment)?,
     })
+}
+
+fn read_schedule_constant_tree_file(
+    schedule_unit: &ProveUnitSchedule,
+    catalog_unit: &lzvm_artifacts::key_directory::KeyUnitCatalogEntry,
+) -> Result<ConstantTree, ConstantTreeError> {
+    let tree = if let Some(expected_digest) = schedule_unit.pcs_material_constant_tree_digest {
+        read_constant_tree_file_with_digest(
+            &catalog_unit.paths.constant_tree,
+            &catalog_unit.metadata.setup,
+            expected_digest,
+        )
+    } else {
+        read_constant_tree_file(
+            &catalog_unit.paths.constant_tree,
+            &catalog_unit.metadata.setup,
+        )
+    }?;
+    if let Some(expected_words) = schedule_unit.pcs_material_constant_tree_root {
+        let expected = VerificationKeyRoot::FieldElements(expected_words.to_vec());
+        let found = tree.root()?;
+        if found != expected {
+            return Err(ConstantTreeError::RootMismatch { expected, found });
+        }
+    }
+    Ok(tree)
 }
 
 fn field_digest_from_words(

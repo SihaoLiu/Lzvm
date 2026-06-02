@@ -1,5 +1,6 @@
 use crate::constant_tree::{
-    summarize_constant_tree_file, ConstantTreeError, ConstantTreeFileSummary,
+    expected_constant_tree_leaf_node_byte_counts, summarize_constant_tree_file, ConstantTreeError,
+    ConstantTreeFileSummary,
 };
 use crate::constraint_program::{
     read_global_constraint_program_file, read_regular_constraint_program_file, ConstraintProgram,
@@ -579,8 +580,28 @@ pub fn read_key_directory_catalog(
     read_key_directory_catalog_from_layout(&layout)
 }
 
+pub fn read_key_directory_catalog_trusting_pcs_material_digests(
+    root: impl AsRef<Path>,
+) -> Result<KeyDirectoryCatalog, KeyDirectoryError> {
+    let layout = read_key_directory_layout(root)?;
+    read_key_directory_catalog_from_layout_with_material_digest_check(
+        &layout,
+        PcsMaterialDigestCheck::TrustStored,
+    )
+}
+
 pub fn read_key_directory_catalog_from_layout(
     layout: &KeyDirectoryLayout,
+) -> Result<KeyDirectoryCatalog, KeyDirectoryError> {
+    read_key_directory_catalog_from_layout_with_material_digest_check(
+        layout,
+        PcsMaterialDigestCheck::Recompute,
+    )
+}
+
+fn read_key_directory_catalog_from_layout_with_material_digest_check(
+    layout: &KeyDirectoryLayout,
+    digest_check: PcsMaterialDigestCheck,
 ) -> Result<KeyDirectoryCatalog, KeyDirectoryError> {
     validate_key_directory_layout(layout)?;
     let global_constraints =
@@ -603,7 +624,7 @@ pub fn read_key_directory_catalog_from_layout(
     }
     let mut units = Vec::with_capacity(layout.units.len());
     for unit in &layout.units {
-        units.push(read_key_unit_catalog_entry(unit)?);
+        units.push(read_key_unit_catalog_entry(unit, digest_check)?);
     }
 
     Ok(KeyDirectoryCatalog {
@@ -614,6 +635,12 @@ pub fn read_key_directory_catalog_from_layout(
         source_program_archive,
         units,
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PcsMaterialDigestCheck {
+    Recompute,
+    TrustStored,
 }
 
 impl GlobalKeyPaths {
@@ -755,6 +782,7 @@ fn validate_source_fixed_file_manifest_archive(
 
 fn read_key_unit_catalog_entry(
     paths: &KeyUnitPaths,
+    digest_check: PcsMaterialDigestCheck,
 ) -> Result<KeyUnitCatalogEntry, KeyDirectoryError> {
     let metadata_paths = UnitMetadataPaths::new(
         paths
@@ -826,6 +854,61 @@ fn read_key_unit_catalog_entry(
             expected: expected_fixed_bytes,
             found: actual_fixed_bytes,
         });
+    }
+
+    if digest_check == PcsMaterialDigestCheck::TrustStored {
+        let material_path_present = paths
+            .pcs_setup_material()
+            .map(|path| optional_path_exists(&path, "PCS setup material"))
+            .transpose()?
+            .unwrap_or(false);
+        if material_path_present {
+            let constant_tree_present =
+                optional_path_exists(&paths.constant_tree, "constant tree")?;
+            let constant_tree_bytes = if constant_tree_present {
+                Some(
+                    std::fs::metadata(&paths.constant_tree)
+                        .map_err(|error| KeyDirectoryError::Io {
+                            role: "constant tree metadata",
+                            message: error.to_string(),
+                        })?
+                        .len(),
+                )
+            } else {
+                None
+            };
+            let (pcs_material_present, pcs_material_bytes, pcs_material) =
+                read_pcs_setup_material_companion_trusting_digests(
+                    paths,
+                    &metadata.setup,
+                    &pcs_plan,
+                    &verification_key,
+                    constant_tree_present,
+                    constant_tree_bytes,
+                    actual_fixed_bytes,
+                )?;
+            let constant_tree_root = pcs_material.as_ref().map(|material| {
+                VerificationKeyRoot::FieldElements(material.constant_tree_root.to_vec())
+            });
+            return Ok(KeyUnitCatalogEntry {
+                paths: paths.clone(),
+                metadata,
+                pcs_plan,
+                verification_key,
+                expression_program,
+                regular_constraints,
+                regular_hints,
+                verifier_program,
+                expected_fixed_bytes,
+                actual_fixed_bytes,
+                constant_tree_present,
+                constant_tree_bytes,
+                constant_tree_root,
+                pcs_material_present,
+                pcs_material_bytes,
+                pcs_material,
+            });
+        }
     }
 
     let constant_tree_summary = if optional_path_exists(&paths.constant_tree, "constant tree")? {
@@ -934,6 +1017,61 @@ fn read_pcs_setup_material_companion(
         || found.node_byte_count
             != u64::try_from(constant_tree.node_byte_count)
                 .map_err(|_| KeyDirectoryError::ConstantTree(ConstantTreeError::LengthOverflow))?
+    {
+        return Err(KeyDirectoryError::PcsMaterialMismatch {
+            kind: paths.kind,
+            path,
+        });
+    }
+    let bytes = std::fs::metadata(&path)
+        .map_err(|error| KeyDirectoryError::Io {
+            role: "PCS setup material metadata",
+            message: error.to_string(),
+        })?
+        .len();
+    Ok((true, Some(bytes), Some(found)))
+}
+
+fn read_pcs_setup_material_companion_trusting_digests(
+    paths: &KeyUnitPaths,
+    setup: &crate::setup_info::UnitSetupInfo,
+    plan: &PcsSetupPlan,
+    verification_key: &VerificationKeyRoot,
+    constant_tree_present: bool,
+    constant_tree_bytes: Option<u64>,
+    fixed_byte_count: u64,
+) -> Result<(bool, Option<u64>, Option<PcsSetupMaterial>), KeyDirectoryError> {
+    let path = paths
+        .pcs_setup_material()
+        .ok_or(KeyDirectoryError::MissingDerivedPath {
+            role: "PCS setup material",
+            unit: paths.kind,
+        })?;
+    let found = read_pcs_setup_material_file(&path)?;
+    if !constant_tree_present {
+        return Err(KeyDirectoryError::PcsMaterialMismatch {
+            kind: paths.kind,
+            path,
+        });
+    }
+    let plan_digest: [u8; 32] = Sha256::digest(encode_pcs_setup_plan(plan)?).into();
+    let (expected_leaf_byte_count, expected_node_byte_count) =
+        expected_constant_tree_leaf_node_byte_counts(setup).map_err(KeyDirectoryError::from)?;
+    let expected_leaf_byte_count = u64::try_from(expected_leaf_byte_count)
+        .map_err(|_| KeyDirectoryError::ConstantTree(ConstantTreeError::LengthOverflow))?;
+    let expected_node_byte_count = u64::try_from(expected_node_byte_count)
+        .map_err(|_| KeyDirectoryError::ConstantTree(ConstantTreeError::LengthOverflow))?;
+    let root_matches = match verification_key {
+        VerificationKeyRoot::FieldElements(values) => {
+            values.as_slice() == found.constant_tree_root.as_slice()
+        }
+    };
+    if found.plan_digest != plan_digest
+        || !root_matches
+        || found.fixed_byte_count != fixed_byte_count
+        || Some(found.constant_tree_byte_count) != constant_tree_bytes
+        || found.leaf_byte_count != expected_leaf_byte_count
+        || found.node_byte_count != expected_node_byte_count
     {
         return Err(KeyDirectoryError::PcsMaterialMismatch {
             kind: paths.kind,

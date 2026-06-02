@@ -10,6 +10,9 @@ use lzvm_artifacts::fixed::{
 };
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 use lzvm_field::{Felt, FieldError};
+use sha2::{Digest, Sha256};
+
+use crate::ProveExecutionUnitArtifacts;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FixedColumnsMaterialError {
@@ -30,6 +33,11 @@ pub enum FixedColumnsMaterialError {
         path: PathBuf,
         index: usize,
         value: u64,
+    },
+    DigestMismatch {
+        path: PathBuf,
+        expected: [u8; 32],
+        found: [u8; 32],
     },
     #[cfg(feature = "cuda")]
     Device {
@@ -66,6 +74,15 @@ impl fmt::Display for FixedColumnsMaterialError {
                 "fixed columns material value is non-canonical for {}: index {index}: {value}",
                 path.display()
             ),
+            Self::DigestMismatch {
+                path,
+                expected,
+                found,
+            } => write!(
+                f,
+                "fixed columns material digest mismatch for {}: expected {expected:?}, found {found:?}",
+                path.display()
+            ),
             #[cfg(feature = "cuda")]
             Self::Device { path, source } => write!(
                 f,
@@ -84,7 +101,8 @@ impl std::error::Error for FixedColumnsMaterialError {
             Self::Device { source, .. } => Some(source),
             Self::ValueCountOverflow { .. }
             | Self::ValueCountMismatch { .. }
-            | Self::NonCanonicalValue { .. } => None,
+            | Self::NonCanonicalValue { .. }
+            | Self::DigestMismatch { .. } => None,
         }
     }
 }
@@ -104,6 +122,47 @@ pub fn load_fixed_columns_material(
     group_name: impl Into<String>,
     unit_name: impl Into<String>,
 ) -> Result<FixedColumnsMaterial, FixedColumnsMaterialError> {
+    load_fixed_columns_material_inner(path, setup, group_name, unit_name, None)
+}
+
+pub fn load_fixed_columns_material_with_digest(
+    path: impl AsRef<Path>,
+    setup: &UnitSetupInfo,
+    group_name: impl Into<String>,
+    unit_name: impl Into<String>,
+    expected_digest: [u8; 32],
+) -> Result<FixedColumnsMaterial, FixedColumnsMaterialError> {
+    load_fixed_columns_material_inner(path, setup, group_name, unit_name, Some(expected_digest))
+}
+
+pub fn load_execution_unit_fixed_columns_material(
+    plan_unit: &ProveExecutionUnitArtifacts,
+) -> Result<FixedColumnsMaterial, FixedColumnsMaterialError> {
+    if let Some(expected_digest) = plan_unit.pcs_material_fixed_column_digest {
+        load_fixed_columns_material_with_digest(
+            &plan_unit.fixed_columns,
+            &plan_unit.setup,
+            plan_unit.group_name.clone(),
+            plan_unit.unit_name.clone(),
+            expected_digest,
+        )
+    } else {
+        load_fixed_columns_material(
+            &plan_unit.fixed_columns,
+            &plan_unit.setup,
+            plan_unit.group_name.clone(),
+            plan_unit.unit_name.clone(),
+        )
+    }
+}
+
+fn load_fixed_columns_material_inner(
+    path: impl AsRef<Path>,
+    setup: &UnitSetupInfo,
+    group_name: impl Into<String>,
+    unit_name: impl Into<String>,
+    expected_digest: Option<[u8; 32]>,
+) -> Result<FixedColumnsMaterial, FixedColumnsMaterialError> {
     let path = path.as_ref().to_path_buf();
     let group_name = group_name.into();
     let unit_name = unit_name.into();
@@ -113,6 +172,16 @@ pub fn load_fixed_columns_material(
             message: error.to_string(),
         },
     })?;
+    if let Some(expected) = expected_digest {
+        let found: [u8; 32] = Sha256::digest(&raw_bytes).into();
+        if found != expected {
+            return Err(FixedColumnsMaterialError::DigestMismatch {
+                path,
+                expected,
+                found,
+            });
+        }
+    }
 
     let fixed_columns = match parse_fixed_columns(&raw_bytes) {
         Ok(columns) => columns,

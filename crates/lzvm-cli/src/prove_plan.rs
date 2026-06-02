@@ -1,7 +1,13 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryCatalog};
+use lzvm_artifacts::key_directory::{
+    key_directory_catalog_digest, read_key_directory_catalog,
+    read_key_directory_catalog_trusting_pcs_material_digests, KeyDirectoryCatalog,
+};
+use lzvm_artifacts::setup_manifest::{
+    read_setup_directory_manifest_file, SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
+};
 use lzvm_prover::setup_preflight::validate_setup_directory_manifest_if_present;
 use lzvm_prover::{
     derive_prove_run_plan, GpuRunOptions, ProveExecutionPlan, ProvePartitionPlan, ProvePassKind,
@@ -18,7 +24,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let catalog = match read_checked_setup_catalog(&parsed.setup_dir) {
+    let catalog = match read_prove_setup_catalog(&parsed.setup_dir) {
         Ok(catalog) => catalog,
         Err(message) => {
             let _ = writeln!(stderr, "prove plan failed: {message}");
@@ -63,6 +69,32 @@ pub(crate) fn read_checked_setup_catalog(path: &Path) -> Result<KeyDirectoryCata
     validate_setup_directory_manifest_if_present(path, &catalog)
         .map_err(|error| error.to_string())?;
     Ok(catalog)
+}
+
+pub(crate) fn read_prove_setup_catalog(path: &Path) -> Result<KeyDirectoryCatalog, String> {
+    let catalog = read_key_directory_catalog_trusting_pcs_material_digests(path)
+        .map_err(|error| error.to_string())?;
+    validate_stored_setup_manifest_digest_if_present(path, &catalog)?;
+    Ok(catalog)
+}
+
+fn validate_stored_setup_manifest_digest_if_present(
+    root: &Path,
+    catalog: &KeyDirectoryCatalog,
+) -> Result<(), String> {
+    let path = root.join(SETUP_DIRECTORY_MANIFEST_FILE);
+    if !path
+        .try_exists()
+        .map_err(|error| format!("{}: {error}", path.display()))?
+    {
+        return Ok(());
+    }
+    let found = read_setup_directory_manifest_file(&path).map_err(|error| error.to_string())?;
+    let digest = key_directory_catalog_digest(catalog).map_err(|error| error.to_string())?;
+    if found.catalog_digest != digest {
+        return Err(SetupDirectoryManifestError::Mismatch { path }.to_string());
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
