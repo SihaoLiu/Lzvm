@@ -31,6 +31,12 @@ structure GuestPcTraceTimingSummary where
   guestStageCommitMilliseconds : Nat
   guestStageTraceExtractMilliseconds : Nat
   guestStageLeafExtendWorkMilliseconds : Nat
+  guestStageLeafSetupWorkMilliseconds : Nat
+  guestStageLeafUploadWorkMilliseconds : Nat
+  guestStageLeafKernelWorkMilliseconds : Nat
+  guestStageLeafDownloadWorkMilliseconds : Nat
+  guestStageLeafValidateWorkMilliseconds : Nat
+  guestStageLeafHashWorkMilliseconds : Nat
   guestStageTreeCommitWorkMilliseconds : Nat
 deriving DecidableEq, Repr
 

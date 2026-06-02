@@ -12,21 +12,24 @@ use super::commit_witness_stage_leaves_owned;
 use super::{
     commit_witness_stage_leaves_owned_with_leaf_hashes,
     extend_witness_stage_leaves_with_leaf_hashes,
+    extend_witness_stage_leaves_with_leaf_hashes_and_timing,
 };
 use super::{
     decode_witness_stage_leaf_values, extend_witness_stage_leaves, WitnessStageExtendedValues,
-    WitnessTraceCommitmentError, WitnessTraceCommitments,
+    WitnessStageLeafExtendTiming, WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct WitnessStageCommitTiming {
     leaf_extend_duration: Duration,
+    leaf_extend_timing: WitnessStageLeafExtendTiming,
     tree_commit_duration: Duration,
 }
 
 impl WitnessStageCommitTiming {
     pub(crate) fn accumulate(&mut self, other: Self) {
         self.leaf_extend_duration += other.leaf_extend_duration;
+        self.leaf_extend_timing.accumulate(other.leaf_extend_timing);
         self.tree_commit_duration += other.tree_commit_duration;
     }
 
@@ -36,6 +39,30 @@ impl WitnessStageCommitTiming {
 
     pub(crate) fn tree_commit_duration(&self) -> Duration {
         self.tree_commit_duration
+    }
+
+    pub(crate) fn leaf_setup_duration(&self) -> Duration {
+        self.leaf_extend_timing.setup_duration()
+    }
+
+    pub(crate) fn leaf_upload_duration(&self) -> Duration {
+        self.leaf_extend_timing.upload_duration()
+    }
+
+    pub(crate) fn leaf_kernel_duration(&self) -> Duration {
+        self.leaf_extend_timing.kernel_duration()
+    }
+
+    pub(crate) fn leaf_download_duration(&self) -> Duration {
+        self.leaf_extend_timing.download_duration()
+    }
+
+    pub(crate) fn leaf_validate_duration(&self) -> Duration {
+        self.leaf_extend_timing.validate_duration()
+    }
+
+    pub(crate) fn leaf_hash_duration(&self) -> Duration {
+        self.leaf_extend_timing.leaf_hash_duration()
     }
 }
 
@@ -242,19 +269,26 @@ fn commit_extended_witness_stage(
 ) -> Result<super::WitnessStageCommitment, WitnessTraceCommitmentError> {
     #[cfg(feature = "cuda")]
     {
-        let (leaves, leaf_hashes) = record_optional_duration(
-            timing
-                .as_mut()
-                .map(|timing| &mut timing.leaf_extend_duration),
-            || {
-                extend_witness_stage_leaves_with_leaf_hashes(
+        let (leaves, leaf_hashes) = if let Some(timing) = timing.as_deref_mut() {
+            let leaf_extend_duration = &mut timing.leaf_extend_duration;
+            let leaf_extend_timing = &mut timing.leaf_extend_timing;
+            record_optional_duration(Some(leaf_extend_duration), || {
+                extend_witness_stage_leaves_with_leaf_hashes_and_timing(
                     stage,
                     params.source_bits,
                     params.target_bits,
                     params.arity,
+                    leaf_extend_timing,
                 )
-            },
-        )?;
+            })?
+        } else {
+            extend_witness_stage_leaves_with_leaf_hashes(
+                stage,
+                params.source_bits,
+                params.target_bits,
+                params.arity,
+            )?
+        };
         record_optional_duration(
             timing
                 .as_mut()

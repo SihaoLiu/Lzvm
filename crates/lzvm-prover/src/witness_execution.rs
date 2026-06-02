@@ -188,6 +188,12 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_stage_commit_duration: Duration,
     guest_stage_trace_extract_duration: Duration,
     guest_stage_leaf_extend_work_duration: Duration,
+    guest_stage_leaf_setup_work_duration: Duration,
+    guest_stage_leaf_upload_work_duration: Duration,
+    guest_stage_leaf_kernel_work_duration: Duration,
+    guest_stage_leaf_download_work_duration: Duration,
+    guest_stage_leaf_validate_work_duration: Duration,
+    guest_stage_leaf_hash_work_duration: Duration,
     guest_stage_tree_commit_work_duration: Duration,
 }
 
@@ -207,6 +213,12 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_stage_commit_duration: trace_timing.stage_commit_duration,
             guest_stage_trace_extract_duration: trace_timing.stage_trace_extract_duration,
             guest_stage_leaf_extend_work_duration: trace_timing.stage_leaf_extend_work_duration,
+            guest_stage_leaf_setup_work_duration: trace_timing.stage_leaf_setup_work_duration,
+            guest_stage_leaf_upload_work_duration: trace_timing.stage_leaf_upload_work_duration,
+            guest_stage_leaf_kernel_work_duration: trace_timing.stage_leaf_kernel_work_duration,
+            guest_stage_leaf_download_work_duration: trace_timing.stage_leaf_download_work_duration,
+            guest_stage_leaf_validate_work_duration: trace_timing.stage_leaf_validate_work_duration,
+            guest_stage_leaf_hash_work_duration: trace_timing.stage_leaf_hash_work_duration,
             guest_stage_tree_commit_work_duration: trace_timing.stage_tree_commit_work_duration,
         }
     }
@@ -243,6 +255,30 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_stage_leaf_extend_work_duration
     }
 
+    pub fn guest_stage_leaf_setup_work_duration(&self) -> Duration {
+        self.guest_stage_leaf_setup_work_duration
+    }
+
+    pub fn guest_stage_leaf_upload_work_duration(&self) -> Duration {
+        self.guest_stage_leaf_upload_work_duration
+    }
+
+    pub fn guest_stage_leaf_kernel_work_duration(&self) -> Duration {
+        self.guest_stage_leaf_kernel_work_duration
+    }
+
+    pub fn guest_stage_leaf_download_work_duration(&self) -> Duration {
+        self.guest_stage_leaf_download_work_duration
+    }
+
+    pub fn guest_stage_leaf_validate_work_duration(&self) -> Duration {
+        self.guest_stage_leaf_validate_work_duration
+    }
+
+    pub fn guest_stage_leaf_hash_work_duration(&self) -> Duration {
+        self.guest_stage_leaf_hash_work_duration
+    }
+
     pub fn guest_stage_tree_commit_work_duration(&self) -> Duration {
         self.guest_stage_tree_commit_work_duration
     }
@@ -255,6 +291,12 @@ struct ProveWitnessTraceTimingAccumulator {
     stage_commit_duration: Duration,
     stage_trace_extract_duration: Duration,
     stage_leaf_extend_work_duration: Duration,
+    stage_leaf_setup_work_duration: Duration,
+    stage_leaf_upload_work_duration: Duration,
+    stage_leaf_kernel_work_duration: Duration,
+    stage_leaf_download_work_duration: Duration,
+    stage_leaf_validate_work_duration: Duration,
+    stage_leaf_hash_work_duration: Duration,
     stage_tree_commit_work_duration: Duration,
 }
 
@@ -265,6 +307,12 @@ impl ProveWitnessTraceTimingAccumulator {
         self.stage_commit_duration += other.stage_commit_duration;
         self.stage_trace_extract_duration += other.stage_trace_extract_duration;
         self.stage_leaf_extend_work_duration += other.stage_leaf_extend_work_duration;
+        self.stage_leaf_setup_work_duration += other.stage_leaf_setup_work_duration;
+        self.stage_leaf_upload_work_duration += other.stage_leaf_upload_work_duration;
+        self.stage_leaf_kernel_work_duration += other.stage_leaf_kernel_work_duration;
+        self.stage_leaf_download_work_duration += other.stage_leaf_download_work_duration;
+        self.stage_leaf_validate_work_duration += other.stage_leaf_validate_work_duration;
+        self.stage_leaf_hash_work_duration += other.stage_leaf_hash_work_duration;
         self.stage_tree_commit_work_duration += other.stage_tree_commit_work_duration;
     }
 }
@@ -1699,6 +1747,12 @@ fn run_prove_witness_commitments_from_trace_inner(
                 &mut stage_timing,
             )?;
             timing.stage_leaf_extend_work_duration += stage_timing.leaf_extend_duration();
+            timing.stage_leaf_setup_work_duration += stage_timing.leaf_setup_duration();
+            timing.stage_leaf_upload_work_duration += stage_timing.leaf_upload_duration();
+            timing.stage_leaf_kernel_work_duration += stage_timing.leaf_kernel_duration();
+            timing.stage_leaf_download_work_duration += stage_timing.leaf_download_duration();
+            timing.stage_leaf_validate_work_duration += stage_timing.leaf_validate_duration();
+            timing.stage_leaf_hash_work_duration += stage_timing.leaf_hash_duration();
             timing.stage_tree_commit_work_duration += stage_timing.tree_commit_duration();
             Ok(stage_commitments)
         })?

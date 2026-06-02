@@ -1,3 +1,7 @@
+use std::time::Duration;
+#[cfg(feature = "cuda")]
+use std::time::Instant;
+
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
     cuda_goldilocks_coset_extend_row_major_columns_device,
@@ -19,6 +23,51 @@ use crate::witness_layout::WitnessTraceStageValues;
 #[cfg(feature = "cuda")]
 use super::{WitnessStageCommitmentError, WitnessTraceCommitmentError, HASH_WORDS};
 use super::{WitnessStageLeafError, WitnessStageLeaves, WORD_BYTES};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct WitnessStageLeafExtendTiming {
+    setup_duration: Duration,
+    upload_duration: Duration,
+    kernel_duration: Duration,
+    download_duration: Duration,
+    validate_duration: Duration,
+    leaf_hash_duration: Duration,
+}
+
+impl WitnessStageLeafExtendTiming {
+    pub(crate) fn accumulate(&mut self, other: Self) {
+        self.setup_duration += other.setup_duration;
+        self.upload_duration += other.upload_duration;
+        self.kernel_duration += other.kernel_duration;
+        self.download_duration += other.download_duration;
+        self.validate_duration += other.validate_duration;
+        self.leaf_hash_duration += other.leaf_hash_duration;
+    }
+
+    pub(crate) fn setup_duration(&self) -> Duration {
+        self.setup_duration
+    }
+
+    pub(crate) fn upload_duration(&self) -> Duration {
+        self.upload_duration
+    }
+
+    pub(crate) fn kernel_duration(&self) -> Duration {
+        self.kernel_duration
+    }
+
+    pub(crate) fn download_duration(&self) -> Duration {
+        self.download_duration
+    }
+
+    pub(crate) fn validate_duration(&self) -> Duration {
+        self.validate_duration
+    }
+
+    pub(crate) fn leaf_hash_duration(&self) -> Duration {
+        self.leaf_hash_duration
+    }
+}
 
 pub fn extend_witness_stage_leaves(
     stage: &WitnessTraceStageValues,
@@ -55,6 +104,32 @@ pub(crate) fn extend_witness_stage_leaves_with_leaf_hashes(
         source_bits,
         target_bits,
         arity,
+    )?;
+    let extended_rows = extended_row_count_from_bytes(bytes.len(), columns)?;
+
+    Ok((
+        WitnessStageLeaves::new(stage.stage_index(), rows, extended_rows, columns, bytes),
+        leaf_hashes,
+    ))
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn extend_witness_stage_leaves_with_leaf_hashes_and_timing(
+    stage: &WitnessTraceStageValues,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    timing: &mut WitnessStageLeafExtendTiming,
+) -> Result<(WitnessStageLeaves, Vec<[Felt; HASH_WORDS]>), WitnessTraceCommitmentError> {
+    let columns = stage.column_count();
+    let rows = stage.row_count();
+    let (bytes, leaf_hashes) = extend_witness_stage_row_major_bytes_with_leaf_hashes_timed(
+        stage.values(),
+        columns,
+        source_bits,
+        target_bits,
+        arity,
+        timing,
     )?;
     let extended_rows = extended_row_count_from_bytes(bytes.len(), columns)?;
 
@@ -156,6 +231,82 @@ fn extend_witness_stage_row_major_bytes_with_leaf_hashes(
     }
     .map_err(WitnessStageCommitmentError::from)?;
     Ok((bytes, leaf_hashes))
+}
+
+#[cfg(feature = "cuda")]
+fn extend_witness_stage_row_major_bytes_with_leaf_hashes_timed(
+    values: &[Felt],
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    timing: &mut WitnessStageLeafExtendTiming,
+) -> Result<(Vec<u8>, Vec<[Felt; HASH_WORDS]>), WitnessTraceCommitmentError> {
+    let out_byte_count = record_duration(&mut timing.setup_duration, || {
+        let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+            values.len(),
+            column_count,
+            source_bits,
+            target_bits,
+        )
+        .map_err(WitnessStageLeafError::from)?;
+        prepare_gpu_setup(target_bits).map_err(WitnessStageLeafError::from)?;
+        Ok::<_, WitnessStageLeafError>(out_byte_count)
+    })?;
+
+    let source_buffer = record_duration(&mut timing.upload_duration, || {
+        CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values))
+            .map_err(WitnessStageLeafError::from)
+    })?;
+    let mut output_buffer = record_duration(&mut timing.setup_duration, || {
+        CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from)
+    })?;
+
+    record_duration(&mut timing.kernel_duration, || {
+        cuda_goldilocks_coset_extend_row_major_columns_device(
+            &source_buffer,
+            &mut output_buffer,
+            column_count,
+            source_bits,
+            target_bits,
+        )
+        .map_err(WitnessStageLeafError::from)
+    })?;
+    let bytes = record_duration(&mut timing.download_duration, || {
+        output_buffer.to_vec().map_err(WitnessStageLeafError::from)
+    })?;
+    record_duration(&mut timing.validate_duration, || {
+        validate_row_major_word_bytes(&bytes)
+    })?;
+    let extended_rows = extended_row_count_from_bytes(bytes.len(), column_count)?;
+    let leaf_hashes = record_duration(&mut timing.leaf_hash_duration, || {
+        if column_count <= HASH_WORDS {
+            padded_hashes_from_validated_row_major_bytes(&bytes, extended_rows, column_count, arity)
+        } else {
+            linear_hashes_from_validated_wide_row_major_device_buffer(
+                &output_buffer,
+                extended_rows,
+                column_count,
+                arity,
+            )
+        }
+        .map_err(WitnessStageCommitmentError::from)
+    })?;
+    Ok((bytes, leaf_hashes))
+}
+
+#[cfg(feature = "cuda")]
+fn record_duration<T, E>(
+    duration: &mut Duration,
+    run: impl FnOnce() -> Result<T, E>,
+) -> Result<T, WitnessTraceCommitmentError>
+where
+    WitnessTraceCommitmentError: From<E>,
+{
+    let started = Instant::now();
+    let result = run().map_err(WitnessTraceCommitmentError::from)?;
+    *duration += started.elapsed();
+    Ok(result)
 }
 
 fn extended_row_count_from_bytes(

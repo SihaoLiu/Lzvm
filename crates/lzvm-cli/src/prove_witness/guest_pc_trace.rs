@@ -77,6 +77,30 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_stage_leaf_extend_work_duration(),
     );
     timings.record(
+        "guest_stage_leaf_setup_work",
+        timing.guest_stage_leaf_setup_work_duration(),
+    );
+    timings.record(
+        "guest_stage_leaf_upload_work",
+        timing.guest_stage_leaf_upload_work_duration(),
+    );
+    timings.record(
+        "guest_stage_leaf_kernel_work",
+        timing.guest_stage_leaf_kernel_work_duration(),
+    );
+    timings.record(
+        "guest_stage_leaf_download_work",
+        timing.guest_stage_leaf_download_work_duration(),
+    );
+    timings.record(
+        "guest_stage_leaf_validate_work",
+        timing.guest_stage_leaf_validate_work_duration(),
+    );
+    timings.record(
+        "guest_stage_leaf_hash_work",
+        timing.guest_stage_leaf_hash_work_duration(),
+    );
+    timings.record(
         "guest_stage_tree_commit_work",
         timing.guest_stage_tree_commit_work_duration(),
     );

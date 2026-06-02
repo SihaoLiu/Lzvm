@@ -6003,6 +6003,30 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
         "{stdout}"
     );
     assert!(
+        stdout.contains("timing_guest_stage_leaf_setup_work_ms="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_stage_leaf_upload_work_ms="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_stage_leaf_kernel_work_ms="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_stage_leaf_download_work_ms="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_stage_leaf_validate_work_ms="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_stage_leaf_hash_work_ms="),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains("timing_guest_stage_tree_commit_work_ms="),
         "{stdout}"
     );
