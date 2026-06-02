@@ -22,6 +22,14 @@ structure WitnessLeafDigestValidation (system : VerifierModel) where
   narrowPaddedDigestsBindRows : PublicInput -> Proof -> Prop
   wideLinearDigestsBindRows : PublicInput -> Proof -> Prop
 
+structure GpuCanonicalLeafValidation (system : VerifierModel) where
+  leafValidation : WitnessLeafDigestValidation system
+  gpuCanonicalFlagClear : PublicInput -> Proof -> Prop
+  flagClearImpliesCanonicalExtendedLeafBytes :
+    forall publicInput proof,
+      gpuCanonicalFlagClear publicInput proof ->
+        leafValidation.canonicalExtendedLeafBytes publicInput proof
+
 structure TimingObservation where
   label : Nat
   milliseconds : Nat
@@ -137,6 +145,14 @@ def WitnessLeafDigestCheckedAcceptance
   system.accepts publicInput proof
     /\ WitnessLeafDigestEvidence system validation publicInput proof
 
+def GpuCanonicalLeafCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GpuCanonicalLeafValidation system)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.gpuCanonicalFlagClear publicInput proof
+
 theorem source_lookup_auxiliary_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -162,6 +178,23 @@ theorem witness_leaf_digest_acceptance_sound
   exact
     And.intro acceptedWithLeafDigestChecks.right
       (abstract_verifier_sound assumptions publicInput proof acceptedWithLeafDigestChecks.left)
+
+theorem gpu_canonical_leaf_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuCanonicalLeafValidation system) :
+    forall publicInput proof,
+      GpuCanonicalLeafCheckedAcceptance system validation publicInput proof ->
+        validation.leafValidation.canonicalExtendedLeafBytes publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithCanonicalFlag
+  exact
+    And.intro
+      (validation.flagClearImpliesCanonicalExtendedLeafBytes
+        publicInput
+        proof
+        acceptedWithCanonicalFlag.right)
+      (abstract_verifier_sound assumptions publicInput proof acceptedWithCanonicalFlag.left)
 
 def TimingObservedAcceptance
     (system : VerifierModel)

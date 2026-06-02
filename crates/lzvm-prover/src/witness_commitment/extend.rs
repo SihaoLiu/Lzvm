@@ -5,7 +5,8 @@ use std::time::Instant;
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
     cuda_goldilocks_coset_extend_row_major_columns_device,
-    cuda_goldilocks_coset_extend_row_major_columns_output_bytes, CudaDeviceBuffer,
+    cuda_goldilocks_coset_extend_row_major_columns_output_bytes,
+    cuda_goldilocks_validate_canonical_words_device, CudaDeviceBuffer,
 };
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::coset_extend_evaluations;
@@ -174,10 +175,10 @@ fn extend_witness_stage_row_major_bytes(
         target_bits,
     )
     .map_err(WitnessStageLeafError::from)?;
+    validate_row_major_device_words(&output_buffer, out_byte_count)?;
     let bytes = output_buffer
         .to_vec()
         .map_err(WitnessStageLeafError::from)?;
-    validate_row_major_word_bytes(&bytes)?;
     Ok(bytes)
 }
 
@@ -211,14 +212,16 @@ fn extend_witness_stage_row_major_bytes_with_leaf_hashes(
         target_bits,
     )
     .map_err(WitnessStageLeafError::from)?;
+    let extended_rows = extended_row_count_from_bytes(out_byte_count, column_count)?;
+    if column_count > HASH_WORDS {
+        validate_row_major_device_words(&output_buffer, out_byte_count)?;
+    }
     let bytes = output_buffer
         .to_vec()
         .map_err(WitnessStageLeafError::from)?;
-    let extended_rows = extended_row_count_from_bytes(bytes.len(), column_count)?;
     let leaf_hashes = if column_count <= HASH_WORDS {
         validate_row_major_word_bytes_and_padded_hashes(&bytes, extended_rows, column_count, arity)?
     } else {
-        validate_row_major_word_bytes(&bytes)?;
         linear_hashes_from_validated_wide_row_major_device_buffer(
             &output_buffer,
             extended_rows,
@@ -269,10 +272,15 @@ fn extend_witness_stage_row_major_bytes_with_leaf_hashes_timed(
         )
         .map_err(WitnessStageLeafError::from)
     })?;
+    let extended_rows = extended_row_count_from_bytes(out_byte_count, column_count)?;
+    if column_count > HASH_WORDS {
+        record_duration(&mut timing.validate_duration, || {
+            validate_row_major_device_words(&output_buffer, out_byte_count)
+        })?;
+    }
     let bytes = record_duration(&mut timing.download_duration, || {
         output_buffer.to_vec().map_err(WitnessStageLeafError::from)
     })?;
-    let extended_rows = extended_row_count_from_bytes(bytes.len(), column_count)?;
     let leaf_hashes = if column_count <= HASH_WORDS {
         record_duration(&mut timing.validate_duration, || {
             validate_row_major_word_bytes_and_padded_hashes(
@@ -283,9 +291,6 @@ fn extend_witness_stage_row_major_bytes_with_leaf_hashes_timed(
             )
         })?
     } else {
-        record_duration(&mut timing.validate_duration, || {
-            validate_row_major_word_bytes(&bytes)
-        })?;
         record_duration(&mut timing.leaf_hash_duration, || {
             linear_hashes_from_validated_wide_row_major_device_buffer(
                 &output_buffer,
@@ -328,15 +333,21 @@ fn extended_row_count_from_bytes(
 }
 
 #[cfg(feature = "cuda")]
-fn validate_row_major_word_bytes(bytes: &[u8]) -> Result<(), WitnessStageLeafError> {
-    if !bytes.len().is_multiple_of(WORD_BYTES) {
+fn validate_row_major_device_words(
+    buffer: &CudaDeviceBuffer,
+    byte_count: usize,
+) -> Result<(), WitnessStageLeafError> {
+    if !byte_count.is_multiple_of(WORD_BYTES) || buffer.len() != byte_count {
         return Err(WitnessStageLeafError::LengthOverflow);
     }
-    for chunk in bytes.chunks_exact(WORD_BYTES) {
-        let word = u64::from_le_bytes(chunk.try_into().expect("chunk length checked"));
-        Felt::from_canonical(word)?;
+    let word_count = byte_count / WORD_BYTES;
+    if cuda_goldilocks_validate_canonical_words_device(buffer, word_count)
+        .map_err(WitnessStageLeafError::from)?
+    {
+        Ok(())
+    } else {
+        Err(WitnessStageLeafError::NonCanonicalDeviceWord)
     }
-    Ok(())
 }
 
 #[cfg(feature = "cuda")]
@@ -391,7 +402,9 @@ fn validate_leaf_hash_arity(arity: usize) -> Result<(), WitnessStageCommitmentEr
 
 #[cfg(all(test, feature = "cuda"))]
 mod tests {
-    use super::validate_row_major_word_bytes_and_padded_hashes;
+    use super::{validate_row_major_device_words, validate_row_major_word_bytes_and_padded_hashes};
+    use crate::witness_commitment::WitnessStageLeafError;
+    use lzvm_accel::CudaDeviceBuffer;
     use lzvm_field::{Felt, MODULUS};
 
     fn encode_words(words: &[u64]) -> Vec<u8> {
@@ -436,6 +449,16 @@ mod tests {
             .expect_err("non-canonical words should be rejected");
 
         assert!(error.to_string().contains("non-canonical field element"));
+    }
+
+    #[test]
+    fn device_word_validation_rejects_noncanonical_words() {
+        let buffer = CudaDeviceBuffer::from_u64_words(&[1, MODULUS]).expect("buffer should upload");
+
+        let error = validate_row_major_device_words(&buffer, 2 * super::WORD_BYTES)
+            .expect_err("non-canonical device words should be rejected");
+
+        assert_eq!(error, WitnessStageLeafError::NonCanonicalDeviceWord);
     }
 }
 

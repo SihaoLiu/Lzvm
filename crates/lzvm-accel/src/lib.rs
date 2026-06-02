@@ -7,9 +7,13 @@ use std::ptr;
 #[cfg(feature = "cuda")]
 mod cuda_allocator;
 #[cfg(feature = "cuda")]
+mod cuda_canonical;
+#[cfg(feature = "cuda")]
 mod cuda_regular_constraints;
 #[cfg(feature = "cuda")]
 mod cuda_setup;
+#[cfg(feature = "cuda")]
+pub use cuda_canonical::cuda_goldilocks_validate_canonical_words_device;
 #[cfg(feature = "cuda")]
 pub use cuda_regular_constraints::{
     cuda_regular_constraints_base, CudaRegularConstraintEntry, CudaRegularConstraintInputs,

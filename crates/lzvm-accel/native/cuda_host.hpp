@@ -56,6 +56,10 @@ extern "C" int lzvm_cuda_expand_state_prefix_words(
 extern "C" int lzvm_cuda_memset_zero_bytes(void* dst, std::size_t bytes);
 extern "C" int lzvm_cuda_check_launch(void);
 extern "C" int lzvm_cuda_synchronize(void);
+extern "C" int lzvm_cuda_goldilocks_validate_canonical_words_device(
+    const std::uint64_t* values,
+    std::size_t word_count,
+    std::uint32_t* found);
 extern "C" int lzvm_cuda_regular_constraints_base(
     const LzvmCudaRegularConstraintEntry* entries,
     std::size_t entry_count,

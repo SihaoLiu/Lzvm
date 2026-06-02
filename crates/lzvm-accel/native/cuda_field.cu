@@ -317,6 +317,16 @@ __global__ void bit_reverse_kernel(uint64_t* values, size_t len, size_t bits) {
     }
 }
 
+__global__ void validate_canonical_words_kernel(
+    const uint64_t* values,
+    size_t word_count,
+    unsigned int* found) {
+    const size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < word_count && values[index] >= kModulus) {
+        atomicExch(found, 1U);
+    }
+}
+
 __global__ void ntt_stage_kernel(
     uint64_t* values,
     size_t len,
@@ -971,6 +981,34 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_device(
         device_columns.data(), out, target_len, column_count);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
     return lzvm_cuda_synchronize();
+}
+
+extern "C" int lzvm_cuda_goldilocks_validate_canonical_words_device(
+    const uint64_t* values,
+    size_t word_count,
+    unsigned int* found) {
+    if (found == nullptr) {
+        return -1;
+    }
+    *found = 0;
+    if (word_count == 0) {
+        return 0;
+    }
+    if (values == nullptr) {
+        return -1;
+    }
+
+    DeviceBuffer<unsigned int> device_found;
+    LZVM_CUDA_RETURN_ON_ERROR(device_found.reset(1));
+    const unsigned int initial_found = 0;
+    LZVM_CUDA_RETURN_ON_ERROR(
+        device_found.copy_from_bytes(&initial_found, sizeof(unsigned int)));
+    const size_t blocks = (word_count + kThreads - 1) / kThreads;
+    validate_canonical_words_kernel<<<blocks, kThreads>>>(values, word_count, device_found.data());
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    LZVM_CUDA_RETURN_ON_ERROR(device_found.copy_to_bytes(found, sizeof(unsigned int)));
+    return 0;
 }
 
 extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns(

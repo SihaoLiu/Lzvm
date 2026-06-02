@@ -68,6 +68,8 @@ pub enum WitnessStageLeafError {
     GpuSetup(GpuSetupError),
     #[cfg(feature = "cuda")]
     Accel(lzvm_accel::AccelError),
+    #[cfg(feature = "cuda")]
+    NonCanonicalDeviceWord,
     LengthOverflow,
 }
 
@@ -80,6 +82,10 @@ impl fmt::Display for WitnessStageLeafError {
             Self::GpuSetup(error) => write!(f, "witness stage leaf GPU setup error: {error}"),
             #[cfg(feature = "cuda")]
             Self::Accel(error) => write!(f, "witness stage leaf cuda error: {error}"),
+            #[cfg(feature = "cuda")]
+            Self::NonCanonicalDeviceWord => {
+                write!(f, "witness stage leaf device canonicality check failed")
+            }
             Self::LengthOverflow => write!(f, "witness stage leaf length overflow"),
         }
     }
@@ -94,6 +100,8 @@ impl std::error::Error for WitnessStageLeafError {
             Self::GpuSetup(error) => Some(error),
             #[cfg(feature = "cuda")]
             Self::Accel(error) => Some(error),
+            #[cfg(feature = "cuda")]
+            Self::NonCanonicalDeviceWord => None,
             Self::LengthOverflow => None,
         }
     }
