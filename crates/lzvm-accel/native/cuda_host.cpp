@@ -2,6 +2,9 @@
 
 #include <cuda_runtime.h>
 
+#include <cstdint>
+#include <limits>
+
 extern "C" int lzvm_cuda_alloc_bytes(void** out, std::size_t bytes) {
     if (out == nullptr) {
         return -1;
@@ -37,6 +40,36 @@ extern "C" int lzvm_cuda_copy_d2h_bytes(void* dst, const void* src, std::size_t 
         return -1;
     }
     return static_cast<int>(cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToHost));
+}
+
+extern "C" int lzvm_cuda_copy_d2h_state_prefix_words(
+    void* dst,
+    const void* src,
+    std::size_t state_count,
+    std::size_t state_width_words,
+    std::size_t prefix_words) {
+    if (state_count == 0 || prefix_words == 0) {
+        return 0;
+    }
+    if (dst == nullptr || src == nullptr) {
+        return -1;
+    }
+    if (state_width_words == 0 || prefix_words > state_width_words) {
+        return -2;
+    }
+
+    constexpr std::size_t word_bytes = sizeof(std::uint64_t);
+    if (state_width_words > std::numeric_limits<std::size_t>::max() / word_bytes ||
+        prefix_words > std::numeric_limits<std::size_t>::max() / word_bytes) {
+        return -2;
+    }
+
+    const std::size_t dst_pitch = prefix_words * word_bytes;
+    const std::size_t src_pitch = state_width_words * word_bytes;
+    const std::size_t width_bytes = prefix_words * word_bytes;
+    return static_cast<int>(
+        cudaMemcpy2D(dst, dst_pitch, src, src_pitch, width_bytes, state_count,
+                     cudaMemcpyDeviceToHost));
 }
 
 extern "C" int lzvm_cuda_memset_zero_bytes(void* dst, std::size_t bytes) {

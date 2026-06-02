@@ -220,6 +220,54 @@ fn cuda_device_buffer_round_trips_u64_words() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_device_buffer_copies_state_prefix_words() {
+    let input = vec![
+        1, 2, 3, 4, 101, 102, 103, 104, 5, 6, 7, 8, 201, 202, 203, 204,
+    ];
+    let buffer = CudaDeviceBuffer::from_u64_words(&input).expect("word buffer should allocate");
+
+    let output = buffer
+        .to_state_prefix_u64_words(2, 8, 4)
+        .expect("state prefixes should copy back to host");
+
+    assert_eq!(output, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_device_buffer_state_prefix_checks_shapes() {
+    let input = vec![
+        1, 2, 3, 4, 101, 102, 103, 104, 5, 6, 7, 8, 201, 202, 203, 204,
+    ];
+    let buffer = CudaDeviceBuffer::from_u64_words(&input).expect("word buffer should allocate");
+    let empty = CudaDeviceBuffer::new(0).expect("empty device buffer should allocate");
+
+    assert_eq!(
+        empty
+            .to_state_prefix_u64_words(0, 8, 4)
+            .expect("empty state prefix copy should return no words"),
+        Vec::<u64>::new()
+    );
+    assert_eq!(
+        buffer
+            .to_state_prefix_u64_words(2, 8, 0)
+            .expect("zero-width prefix copy should return no words"),
+        Vec::<u64>::new()
+    );
+
+    let prefix_error = buffer
+        .to_state_prefix_u64_words(2, 4, 5)
+        .expect_err("prefix wider than state should be rejected");
+    assert!(prefix_error.to_string().contains("invalid field domain"));
+
+    let length_error = buffer
+        .to_state_prefix_u64_words(1, 8, 4)
+        .expect_err("buffer byte length should match state shape");
+    assert!(length_error.to_string().contains("length mismatch"));
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_computes_forward_ntt() {
     let input = vec![3, 5, 7, 11, 13, 17, 19, 23];
     let mut expected = input

@@ -38,6 +38,13 @@ unsafe extern "C" {
     fn lzvm_cuda_free_bytes(ptr: *mut c_void);
     fn lzvm_cuda_copy_h2d_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
     fn lzvm_cuda_copy_d2h_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
+    fn lzvm_cuda_copy_d2h_state_prefix_words(
+        dst: *mut c_void,
+        src: *const c_void,
+        state_count: usize,
+        state_width_words: usize,
+        prefix_words: usize,
+    ) -> i32;
     fn lzvm_cuda_memset_zero_bytes(dst: *mut c_void, bytes: usize) -> i32;
     fn lzvm_cuda_setup_init(roots: *const u64, root_count: usize, max_bits_ext: usize) -> i32;
     fn lzvm_cuda_goldilocks_add(lhs: *const u64, rhs: *const u64, out: *mut u64, len: usize)
@@ -432,6 +439,55 @@ impl CudaDeviceBuffer {
     pub fn to_u64_words(&self) -> Result<Vec<u64>, AccelError> {
         let bytes = self.to_vec()?;
         bytes_to_u64_words(&bytes)
+    }
+
+    pub fn to_state_prefix_u64_words(
+        &self,
+        state_count: usize,
+        state_width_words: usize,
+        prefix_words: usize,
+    ) -> Result<Vec<u64>, AccelError> {
+        if prefix_words > state_width_words {
+            return Err(AccelError::InvalidDomain {
+                bits: state_width_words,
+                len: prefix_words,
+            });
+        }
+        let expected_len = state_count
+            .checked_mul(state_width_words)
+            .and_then(|word_count| word_count.checked_mul(8))
+            .ok_or(AccelError::InvalidDomain {
+                bits: state_width_words,
+                len: state_count,
+            })?;
+        if self.len != expected_len {
+            return Err(AccelError::LengthMismatch {
+                lhs: expected_len,
+                rhs: self.len,
+            });
+        }
+        let output_words =
+            state_count
+                .checked_mul(prefix_words)
+                .ok_or(AccelError::InvalidDomain {
+                    bits: prefix_words,
+                    len: state_count,
+                })?;
+        let mut output = vec![0_u64; output_words];
+        if output.is_empty() {
+            return Ok(output);
+        }
+        let code = unsafe {
+            lzvm_cuda_copy_d2h_state_prefix_words(
+                output.as_mut_ptr().cast(),
+                self.ptr as *const c_void,
+                state_count,
+                state_width_words,
+                prefix_words,
+            )
+        };
+        cuda_status(code)?;
+        Ok(output)
     }
 
     pub fn copy_from(&mut self, input: &[u8]) -> Result<(), AccelError> {

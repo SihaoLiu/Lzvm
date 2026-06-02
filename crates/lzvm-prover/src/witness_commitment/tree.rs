@@ -337,8 +337,11 @@ fn append_digest(out: &mut Vec<u8>, digest: [Felt; HASH_WORDS]) {
 #[cfg(test)]
 mod tests {
     use super::{
-        commit_witness_stage_leaves, WitnessStageCommitmentError, WitnessStageLeaves, WORD_BYTES,
+        commit_witness_stage_leaves, open_witness_stage_commitment,
+        verify_witness_stage_opening_root, WitnessStageCommitmentError, WitnessStageLeaves,
+        WORD_BYTES,
     };
+    use lzvm_field::Felt;
 
     #[test]
     fn rejects_malformed_witness_stage_leaf_byte_lengths() {
@@ -350,5 +353,33 @@ mod tests {
             Err(WitnessStageCommitmentError::InvalidLeafByteLength { expected, found })
                 if expected == 2 * 3 * WORD_BYTES && found == expected - 1
         ));
+    }
+
+    #[test]
+    fn witness_stage_opening_verifies_root_with_padded_parent_level() {
+        let row_count = 5;
+        let column_count = 6;
+        let mut bytes = Vec::new();
+        let mut rows = Vec::new();
+        for row in 0..row_count {
+            let mut values = Vec::new();
+            for column in 0..column_count {
+                let value = Felt::from_u64((row * 100 + column + 1) as u64);
+                bytes.extend_from_slice(&value.to_le_bytes());
+                values.push(value);
+            }
+            rows.push(values);
+        }
+        let leaves = WitnessStageLeaves::new(7, row_count, row_count, column_count, bytes);
+        let commitment =
+            commit_witness_stage_leaves(&leaves, 4).expect("stage commitment should build");
+
+        let opening = open_witness_stage_commitment(&commitment, 4, row_count as u64, column_count)
+            .expect("stage row should open");
+        let verifies = verify_witness_stage_opening_root(commitment.root(), 4, &opening)
+            .expect("opening root check should run");
+
+        assert_eq!(opening.values(), rows[4].as_slice());
+        assert!(verifies);
     }
 }

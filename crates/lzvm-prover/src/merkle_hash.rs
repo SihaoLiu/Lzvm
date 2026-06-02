@@ -243,9 +243,9 @@ fn parent_levels_from_device_buffer(
         .map_err(|_| MerkleHashError::LengthOverflow)?;
         operation(&current, &mut next).map_err(|_| MerkleHashError::LengthOverflow)?;
         let parent_words = next
-            .to_u64_words()
+            .to_state_prefix_u64_words(parent_count, width, HASH_WORDS)
             .map_err(|_| MerkleHashError::LengthOverflow)?;
-        let parents = digests_from_hashed_states(&parent_words, width)?;
+        let parents = digests_from_hashed_states(&parent_words, HASH_WORDS)?;
         levels.push(MerkleParentLevel {
             padding_count,
             parents,
