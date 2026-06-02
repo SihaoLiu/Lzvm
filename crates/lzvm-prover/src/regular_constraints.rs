@@ -429,6 +429,7 @@ struct PreparedOperation<'input> {
 struct PreparedBaseProgram<'input> {
     operations: Vec<PreparedBaseOperation<'input>>,
     clear_tmp1: bool,
+    clear_tmp3: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -675,6 +676,7 @@ fn prepared_base_operations<'input>(
     let mut base_operations = Vec::with_capacity(operations.len());
     let mut written_tmp1 = vec![false; tmp1_len];
     let mut clear_tmp1 = false;
+    let mut clear_tmp3 = false;
     for operation in operations {
         if operation.shape != OperationShape::BaseBase {
             return Ok(None);
@@ -684,6 +686,7 @@ fn prepared_base_operations<'input>(
         let src1 = prepared_base_source(operation.src1, program, inputs, tmp1_len, tmp3_len)?;
         clear_tmp1 |=
             reads_unwritten_tmp1(src0, &written_tmp1) || reads_unwritten_tmp1(src1, &written_tmp1);
+        clear_tmp3 |= reads_tmp3(src0) || reads_tmp3(src1);
         written_tmp1[operation.destination_offset] = true;
         base_operations.push(prepared_base_operation(
             operation.kind,
@@ -696,11 +699,16 @@ fn prepared_base_operations<'input>(
     Ok(Some(PreparedBaseProgram {
         operations: base_operations,
         clear_tmp1,
+        clear_tmp3,
     }))
 }
 
 fn reads_unwritten_tmp1(source: PreparedBaseSource<'_>, written_tmp1: &[bool]) -> bool {
     matches!(source, PreparedBaseSource::Tmp1(offset) if !written_tmp1[offset])
+}
+
+fn reads_tmp3(source: PreparedBaseSource<'_>) -> bool {
+    matches!(source, PreparedBaseSource::Tmp3(_))
 }
 
 fn prepared_base_operation<'input>(
@@ -1169,7 +1177,11 @@ fn evaluate_prepared_base_row(
         BASE_ONLY_TMP1_CLEAR_COUNT.with(|count| count.set(count.get() + 1));
         tmp1.fill(Felt::ZERO);
     }
-    tmp3.fill(Felt::ZERO);
+    if program.clear_tmp3 {
+        #[cfg(test)]
+        BASE_ONLY_TMP3_CLEAR_COUNT.with(|count| count.set(count.get() + 1));
+        tmp3.fill(Felt::ZERO);
+    }
 
     for operation in &program.operations {
         match operation {
@@ -1507,6 +1519,7 @@ thread_local! {
     static CACHED_SOURCE_COUNT: Cell<usize> = const { Cell::new(0) };
     static BASE_ONLY_PREPARED_ROW_COUNT: Cell<usize> = const { Cell::new(0) };
     static BASE_ONLY_TMP1_CLEAR_COUNT: Cell<usize> = const { Cell::new(0) };
+    static BASE_ONLY_TMP3_CLEAR_COUNT: Cell<usize> = const { Cell::new(0) };
     static BASE_ONLY_KIND_DISPATCH_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
@@ -1925,6 +1938,7 @@ mod tests {
 
         BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
         BASE_ONLY_TMP1_CLEAR_COUNT.with(|count| count.set(0));
+        BASE_ONLY_TMP3_CLEAR_COUNT.with(|count| count.set(0));
         let results = evaluate_regular_constraints(
             &program,
             RegularConstraintInputs {
@@ -1943,6 +1957,85 @@ mod tests {
         assert_eq!(results[0].invalid_rows, Vec::new());
         assert_eq!(BASE_ONLY_PREPARED_ROW_COUNT.with(Cell::get), 7);
         assert_eq!(BASE_ONLY_TMP1_CLEAR_COUNT.with(Cell::get), 0);
+        assert_eq!(BASE_ONLY_TMP3_CLEAR_COUNT.with(Cell::get), 0);
+    }
+
+    #[test]
+    fn base_only_regular_constraints_clear_tmp3_for_tmp3_reads() {
+        let program = ConstraintProgram {
+            entries: vec![ConstraintEntry {
+                stage: 1,
+                destination_dimension: 1,
+                destination_id: 0,
+                first_row: 0,
+                last_row: 8,
+                temp1_count: 1,
+                temp3_count: 1,
+                ops_count: 1,
+                ops_offset: 0,
+                args_count: 8,
+                args_offset: 0,
+                intermediate: false,
+                source_line: "base-only tmp3 clear".to_owned(),
+            }],
+            ops: vec![0],
+            args: vec![0, 0, 6, 0, 0, 8, 0, 0],
+            numbers: vec![0],
+        };
+
+        BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
+        BASE_ONLY_TMP3_CLEAR_COUNT.with(|count| count.set(0));
+        let results = evaluate_regular_constraints(
+            &program,
+            RegularConstraintInputs {
+                domain_size: 8,
+                stage_count: 1,
+                opening_point_offsets: &[0],
+                ..RegularConstraintInputs::default()
+            },
+        )
+        .expect("regular constraint should evaluate");
+
+        assert_eq!(results[0].invalid_rows, Vec::new());
+        assert_eq!(BASE_ONLY_PREPARED_ROW_COUNT.with(Cell::get), 7);
+        assert_eq!(BASE_ONLY_TMP3_CLEAR_COUNT.with(Cell::get), 7);
+    }
+
+    #[test]
+    fn prepared_base_tmp3_reads_discard_stale_scratch_values() {
+        let entry = ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 1,
+            temp1_count: 1,
+            temp3_count: 1,
+            ops_count: 0,
+            ops_offset: 0,
+            args_count: 0,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "base-only tmp3 stale scratch".to_owned(),
+        };
+        let program = PreparedBaseProgram {
+            operations: vec![PreparedBaseOperation::Generic(
+                PreparedGenericBaseOperation {
+                    kind: 0,
+                    destination_offset: 0,
+                    src0: PreparedBaseSource::Tmp3(0),
+                    src1: PreparedBaseSource::Constant(Felt::ZERO),
+                },
+            )],
+            clear_tmp1: false,
+            clear_tmp3: true,
+        };
+        let mut tmp1 = [Felt::ZERO];
+        let mut tmp3 = [Felt::from_u64(9), Felt::from_u64(10), Felt::from_u64(11)];
+
+        let value = evaluate_prepared_base_row(0, &entry, &program, 1, &mut tmp1, &mut tmp3);
+
+        assert_eq!(value, Felt::ZERO);
     }
 
     #[test]
