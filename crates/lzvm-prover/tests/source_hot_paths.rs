@@ -370,6 +370,44 @@ fn secp256k1_double_scalar_mul_uses_projective_accumulator() {
 }
 
 #[test]
+fn guest_machine_reports_inline_common_effect_storage() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+
+    let body = function_body(
+        &source,
+        "struct GuestInstructionEffects",
+        "pub struct GuestMachineRunReport",
+    );
+
+    assert!(
+        source.contains("pub type GuestRegisterWriteList = SmallVec<[GuestRegisterWrite; 1]>;"),
+        "guest register writes should keep one inline slot"
+    );
+    assert!(
+        source.contains("pub type GuestMemoryAccessList = SmallVec<[GuestMemoryAccess; 2]>;"),
+        "guest memory accesses should keep two inline slots"
+    );
+    assert!(
+        body.contains("register_writes: GuestRegisterWriteList"),
+        "guest machine reports should inline common small effect lists"
+    );
+    assert!(
+        body.contains("memory_accesses: GuestMemoryAccessList"),
+        "guest machine reports should inline common memory effect lists"
+    );
+    assert!(
+        !body.contains("\n    register_writes: Vec<GuestRegisterWrite>"),
+        "guest register writes should avoid one allocation per writing instruction"
+    );
+    assert!(
+        !body.contains("\n    memory_accesses: Vec<GuestMemoryAccess>"),
+        "guest memory accesses should avoid one allocation per memory instruction"
+    );
+}
+
+#[test]
 fn fri_opening_from_transcript_values_borrows_large_vectors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/prove_fri_opening.rs");

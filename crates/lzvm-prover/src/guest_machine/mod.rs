@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 use std::fmt;
 
+use smallvec::SmallVec;
+
 use crate::guest_instruction::{
     decode_guest_instruction, fetch_guest_instruction, GuestInstructionError, RiscvAmoKind,
     RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvDmaKind, RiscvEncodedInstruction,
@@ -306,10 +308,13 @@ pub struct GuestMemoryAccess {
     pub value: u64,
 }
 
+pub type GuestRegisterWriteList = SmallVec<[GuestRegisterWrite; 1]>;
+pub type GuestMemoryAccessList = SmallVec<[GuestMemoryAccess; 2]>;
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct GuestInstructionEffects {
-    register_writes: Vec<GuestRegisterWrite>,
-    memory_accesses: Vec<GuestMemoryAccess>,
+    register_writes: GuestRegisterWriteList,
+    memory_accesses: GuestMemoryAccessList,
     precompile_memory_accesses: Vec<GuestMemoryAccess>,
     precompile_result: Option<u64>,
 }
@@ -369,8 +374,8 @@ pub struct GuestMachineReport {
     pub instruction_byte_len: usize,
     pub instruction: RiscvInstruction,
     pub next_pc: u64,
-    pub register_writes: Vec<GuestRegisterWrite>,
-    pub memory_accesses: Vec<GuestMemoryAccess>,
+    pub register_writes: GuestRegisterWriteList,
+    pub memory_accesses: GuestMemoryAccessList,
     pub precompile_memory_accesses: Vec<GuestMemoryAccess>,
     pub precompile_result: Option<u64>,
 }

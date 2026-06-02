@@ -211,8 +211,8 @@ fn add256_report() -> GuestMachineReport {
             rd: 2,
         },
         next_pc: 0x8000_0004,
-        register_writes: vec![GuestRegisterWrite { index: 2, value: 1 }],
-        memory_accesses: Vec::new(),
+        register_writes: vec![GuestRegisterWrite { index: 2, value: 1 }].into(),
+        memory_accesses: Vec::new().into(),
         precompile_memory_accesses,
         precompile_result: Some(1),
     }
@@ -229,8 +229,8 @@ fn addi_report() -> GuestMachineReport {
             immediate: 7,
         },
         next_pc: 0x8000_0004,
-        register_writes: vec![GuestRegisterWrite { index: 1, value: 7 }],
-        memory_accesses: Vec::new(),
+        register_writes: vec![GuestRegisterWrite { index: 1, value: 7 }].into(),
+        memory_accesses: Vec::new().into(),
         precompile_memory_accesses: Vec::new(),
         precompile_result: None,
     }
