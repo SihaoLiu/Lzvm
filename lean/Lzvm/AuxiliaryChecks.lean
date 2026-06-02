@@ -17,6 +17,11 @@ structure AuxiliaryValidation (system : VerifierModel) where
   exactSourceLookupBalance : PublicInput -> Proof -> Prop
   dynamicSourceLookupConstrained : PublicInput -> Proof -> Prop
 
+structure TimingObservation where
+  label : Nat
+  milliseconds : Nat
+deriving DecidableEq, Repr
+
 def SourceLookupAuxiliaryEvidence
     (system : VerifierModel)
     (auxiliary : AuxiliaryValidation system)
@@ -45,5 +50,22 @@ theorem source_lookup_auxiliary_acceptance_sound
   exact
     And.intro acceptedWithLookupChecks.right
       (abstract_verifier_sound assumptions publicInput proof acceptedWithLookupChecks.left)
+
+def TimingObservedAcceptance
+    (system : VerifierModel)
+    (_observations : List TimingObservation)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+
+theorem timing_observation_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (observations : List TimingObservation) :
+    forall publicInput proof,
+      TimingObservedAcceptance system observations publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithTimings
+  exact abstract_verifier_sound assumptions publicInput proof acceptedWithTimings
 
 end Lzvm

@@ -27,6 +27,7 @@ pub(super) struct ParsedWitnessArgs {
     pub(super) eth_block_input: Option<PathBuf>,
     pub(super) eth_public_input: Option<PathBuf>,
     pub(super) eth_public_input_allow_trailing: bool,
+    pub(super) timings: bool,
 }
 
 pub(super) fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
@@ -48,6 +49,7 @@ pub(super) fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, Par
     let mut eth_block_input = None;
     let mut eth_public_input = None;
     let mut eth_public_input_allow_trailing = false;
+    let mut timings = false;
     let mut filtered = Vec::with_capacity(args.len());
     let mut index = 0;
     while index < args.len() {
@@ -205,6 +207,12 @@ pub(super) fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, Par
                 }
                 eth_public_input_allow_trailing = true;
             }
+            "--timings" => {
+                if timings {
+                    return Err(ParseError::Invalid("duplicate --timings option".to_owned()));
+                }
+                timings = true;
+            }
             "--program-image-cache" => {
                 index += 1;
                 let value = required_option_value(args.get(index), "--program-image-cache")?;
@@ -313,6 +321,7 @@ pub(super) fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, Par
         eth_block_input,
         eth_public_input,
         eth_public_input_allow_trailing,
+        timings,
     })
 }
 

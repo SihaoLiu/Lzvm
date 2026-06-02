@@ -52,9 +52,15 @@ use crate::prove_plan::{
 use crate::trace_input_shape::validate_trace_input_shapes;
 
 mod args;
+mod output_file;
+mod timing;
+mod usage;
 mod value_inputs;
 
 use args::{parse_witness_args, parsed_inputs, ParsedWitnessArgs};
+use output_file::{write_output_file, write_proof_output};
+use timing::{write_timing_summary, TimingRecorder};
+use usage::write_usage;
 use value_inputs::{
     load_batch_unit_values_inputs, read_challenge_values_proof_segment_input,
     read_challenge_values_segment_input, read_evaluation_values_segment_input,
@@ -71,6 +77,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    let mut timings = TimingRecorder::new(parsed.timings);
 
     let catalog = match read_prove_setup_catalog(&parsed.run_args.positionals[0]) {
         Ok(catalog) => catalog,
@@ -79,6 +86,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    timings.mark("catalog");
 
     if let Err(message) = validate_guest_pc_trace_eth_input_binding(&parsed) {
         let _ = writeln!(stderr, "prove witness failed: {message}");
@@ -92,6 +100,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    timings.mark("eth_input");
     if let Some(summary) = &prepared_eth_block_input.summary {
         set_default_input_data(&mut parsed.run_args.request, &summary.path);
     }
@@ -107,6 +116,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
     let generated_public_inputs = prepared_public_inputs.generated;
+    timings.mark("public_inputs");
     let plan = match derive_prove_execution_plan_with_program_image_cache(
         &catalog,
         parsed.run_args.request.clone(),
@@ -119,6 +129,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    timings.mark("plan");
     if let Err(error) = prepare_requested_gpu_setup(&plan) {
         let _ = writeln!(stderr, "prove witness failed: {error}");
         return 1;
@@ -132,6 +143,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     }
+    timings.mark("gpu_setup");
     let single_unit_index = match selected_single_unit_index(&plan, &parsed) {
         Ok(unit_index) => unit_index,
         Err(message) => {
@@ -191,6 +203,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    timings.mark("auxiliary_inputs");
     let trace_bundle_bytes = match &parsed.trace_bundle {
         Some(path) => match read_trace_bundle_file_bytes(path) {
             Ok(bytes) => Some(bytes),
@@ -233,6 +246,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         },
         None => None,
     };
+    timings.mark("trace_inputs");
     if let Some(bundle) = &trace_bundle {
         if parsed.all_units || plan.run_plan.options.aggregate {
             let outputs = match run_prove_witness_commitments_for_all_units_with_trace_bundle(
@@ -246,6 +260,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                     return 1;
                 }
             };
+            timings.mark("witness");
             if let Err(message) = finish_all_units_witness_run(
                 FinishAllUnitsWitnessRunRequest {
                     catalog: &catalog,
@@ -267,6 +282,8 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 let _ = writeln!(stderr, "prove witness failed: {message}");
                 return 1;
             }
+            timings.mark("finish");
+            write_timing_summary(stdout, &timings);
             return 0;
         }
     }
@@ -290,6 +307,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                     return 1;
                 }
             };
+            timings.mark("witness");
             if let Err(message) = finish_all_units_witness_run(
                 FinishAllUnitsWitnessRunRequest {
                     catalog: &catalog,
@@ -311,6 +329,8 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 let _ = writeln!(stderr, "prove witness failed: {message}");
                 return 1;
             }
+            timings.mark("finish");
+            write_timing_summary(stdout, &timings);
             return 0;
         }
         match run_prove_witness_commitments_with_trace_backend(
@@ -400,6 +420,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 }
             };
             if outputs.len() > 1 {
+                timings.mark("witness");
                 if let Err(message) = finish_all_units_witness_run(
                     FinishAllUnitsWitnessRunRequest {
                         catalog: &catalog,
@@ -421,6 +442,8 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                     let _ = writeln!(stderr, "prove witness failed: {message}");
                     return 1;
                 }
+                timings.mark("finish");
+                write_timing_summary(stdout, &timings);
                 return 0;
             }
             match outputs.pop() {
@@ -485,6 +508,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         );
         return 1;
     };
+    timings.mark("witness");
     let commitments = output.commitments();
     let output_unit_index = commitments.unit_index();
     let execution_unit = match plan.units.get(output_unit_index) {
@@ -525,6 +549,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    timings.mark("proof");
     if plan.run_plan.options.save_outputs {
         let segment = match build_witness_commitment_segment_for_schedule(
             plan.run_plan.schedule.units.len(),
@@ -550,6 +575,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     }
+    timings.mark("output_write");
 
     write_run_plan_summary(stdout, &plan.run_plan);
     write_source_companion_summary(stdout, &catalog);
@@ -581,6 +607,8 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         write_eth_block_input_summary(stdout, summary);
     }
     write_witness_output_summary(stdout, commitments);
+    timings.mark("summary");
+    write_timing_summary(stdout, &timings);
     0
 }
 
@@ -1261,29 +1289,6 @@ fn build_proof_bytes(
             .map_err(|error| format!("encode witness proof artifact failed: {error}")),
         None => Ok(None),
     }
-}
-
-fn write_proof_output(output_dir: &Path, proof_bytes: &[u8]) -> Result<(), String> {
-    fs::create_dir_all(output_dir).map_err(|error| {
-        format!(
-            "create output directory failed: {}: {error}",
-            output_dir.display()
-        )
-    })?;
-    write_output_file(&output_dir.join("proof.bin"), proof_bytes)
-}
-
-fn write_output_file(path: &Path, value: &[u8]) -> Result<(), String> {
-    fs::write(path, value)
-        .map_err(|error| format!("write output file failed: {}: {error}", path.display()))
-}
-
-fn write_usage(stderr: &mut dyn Write) -> i32 {
-    let _ = writeln!(
-        stderr,
-        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --guest-pc-trace <instruction-limit> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --eth-public-input-allow-trailing\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>\n  --guest-pc-trace <instruction-limit>\n  --unit-index <index>"
-    );
-    2
 }
 
 #[cfg(test)]

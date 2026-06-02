@@ -1,3 +1,4 @@
+use super::timing::{write_timing_entries, TimingEntry};
 use super::*;
 use lzvm_artifacts::eth_block_input::parse_eth_block_input;
 use lzvm_artifacts::eth_public_input::parse_eth_public_block_prefix;
@@ -53,6 +54,64 @@ fn parses_guest_pc_trace_option_for_witness_args() {
     assert_eq!(result.guest_pc_trace_instruction_limit, Some(64));
     assert_eq!(inputs.witness_library, None);
     assert_eq!(inputs.guest_image, std::path::PathBuf::from("guest.elf"));
+}
+
+#[test]
+fn parses_timings_option_for_witness_args() {
+    let result = parse_witness_args(&[
+        "--timings",
+        "--guest-pc-trace",
+        "64",
+        "setup-dir",
+        "out-dir",
+        "guest.elf",
+    ])
+    .expect("witness args should parse");
+
+    assert!(result.timings);
+}
+
+#[test]
+fn rejects_duplicate_timings_option() {
+    let result = parse_witness_args(&[
+        "--timings",
+        "--timings",
+        "--guest-pc-trace",
+        "64",
+        "setup-dir",
+        "out-dir",
+        "guest.elf",
+    ]);
+
+    assert!(matches!(
+        result,
+        Err(ParseError::Invalid(message)) if message == "duplicate --timings option"
+    ));
+}
+
+#[test]
+fn writes_timing_summary_lines() {
+    let mut stdout = Vec::new();
+    write_timing_entries(
+        &mut stdout,
+        &[
+            TimingEntry {
+                name: "witness",
+                duration: std::time::Duration::from_millis(23),
+            },
+            TimingEntry {
+                name: "proof",
+                duration: std::time::Duration::from_millis(7),
+            },
+        ],
+        std::time::Duration::from_millis(31),
+    );
+
+    let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+    assert_eq!(
+        stdout,
+        "timing_witness_ms=23\ntiming_proof_ms=7\ntiming_total_ms=31\n"
+    );
 }
 
 #[test]
