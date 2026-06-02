@@ -1,4 +1,6 @@
-use super::{cuda_status, AccelError};
+use std::ptr;
+
+use super::{cuda_status, u64_word_byte_len, AccelError, CudaDeviceBuffer};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +28,7 @@ pub struct CudaRegularConstraintInputs<'a> {
     pub stage_count: usize,
     pub fixed_column_count: usize,
     pub fixed_values: &'a [u64],
+    pub fixed_values_device: Option<&'a CudaDeviceBuffer>,
     pub stages: &'a [CudaRegularStage<'a>],
     pub opening_point_offsets: &'a [i64],
     pub numbers: &'a [u64],
@@ -67,6 +70,7 @@ unsafe extern "C" {
         number_count: usize,
         fixed_values: *const u64,
         fixed_value_count: usize,
+        fixed_values_device: *const u64,
         fixed_column_count: usize,
         stages: *const CudaRegularStageRaw,
         stage_input_count: usize,
@@ -96,6 +100,18 @@ pub fn cuda_regular_constraints_base(
             value_count: stage.values.len(),
         })
         .collect::<Vec<_>>();
+    let fixed_values_device = if let Some(buffer) = inputs.fixed_values_device {
+        let expected_len = u64_word_byte_len(inputs.fixed_values.len())?;
+        if buffer.len() != expected_len {
+            return Err(AccelError::LengthMismatch {
+                lhs: buffer.len(),
+                rhs: expected_len,
+            });
+        }
+        buffer.as_raw_ptr().cast::<u64>() as *const u64
+    } else {
+        ptr::null()
+    };
     let mut raw_results = vec![
         CudaRegularConstraintOutputRaw {
             row: u64::MAX,
@@ -117,6 +133,7 @@ pub fn cuda_regular_constraints_base(
             inputs.numbers.len(),
             inputs.fixed_values.as_ptr(),
             inputs.fixed_values.len(),
+            fixed_values_device,
             inputs.fixed_column_count,
             stages.as_ptr(),
             stages.len(),

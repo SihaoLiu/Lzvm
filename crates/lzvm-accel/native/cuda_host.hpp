@@ -51,6 +51,7 @@ extern "C" int lzvm_cuda_regular_constraints_base(
     std::size_t number_count,
     const std::uint64_t* fixed_values,
     std::size_t fixed_value_count,
+    const std::uint64_t* fixed_values_device,
     std::size_t fixed_column_count,
     const LzvmCudaRegularStage* stages,
     std::size_t stage_input_count,

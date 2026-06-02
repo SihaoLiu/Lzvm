@@ -340,6 +340,7 @@ int validate_regular_base_inputs(
     size_t number_count,
     const uint64_t* fixed_values,
     size_t fixed_value_count,
+    const uint64_t* fixed_values_device,
     size_t fixed_column_count,
     const LzvmCudaRegularStage* stages,
     size_t stage_input_count,
@@ -357,7 +358,7 @@ int validate_regular_base_inputs(
         (ops_count > 0 && ops == nullptr) ||
         (args_count > 0 && args == nullptr) ||
         (number_count > 0 && numbers == nullptr) ||
-        (fixed_value_count > 0 && fixed_values == nullptr) ||
+        (fixed_value_count > 0 && fixed_values == nullptr && fixed_values_device == nullptr) ||
         (stage_input_count > 0 && stages == nullptr) ||
         (opening_point_offset_count > 0 && opening_point_offsets == nullptr) ||
         (unit_value_count > 0 && unit_values == nullptr)) {
@@ -415,6 +416,7 @@ extern "C" int lzvm_cuda_regular_constraints_base(
     size_t number_count,
     const uint64_t* fixed_values,
     size_t fixed_value_count,
+    const uint64_t* fixed_values_device,
     size_t fixed_column_count,
     const LzvmCudaRegularStage* stages,
     size_t stage_input_count,
@@ -427,7 +429,7 @@ extern "C" int lzvm_cuda_regular_constraints_base(
     LzvmCudaRegularConstraintOutput* out) {
     LZVM_CUDA_RETURN_ON_ERROR(validate_regular_base_inputs(
         entries, entry_count, ops, ops_count, args, args_count, numbers, number_count,
-        fixed_values, fixed_value_count, fixed_column_count, stages, stage_input_count,
+        fixed_values, fixed_value_count, fixed_values_device, fixed_column_count, stages, stage_input_count,
         stage_count, opening_point_offsets, opening_point_offset_count, unit_values,
         unit_value_count, domain_size, out));
     if (entry_count == 0) {
@@ -448,8 +450,12 @@ extern "C" int lzvm_cuda_regular_constraints_base(
     LZVM_CUDA_RETURN_ON_ERROR(copy_device_array(device_ops, ops, ops_count));
     LZVM_CUDA_RETURN_ON_ERROR(copy_device_array(device_args, args, args_count));
     LZVM_CUDA_RETURN_ON_ERROR(copy_device_array(device_numbers, numbers, number_count));
-    LZVM_CUDA_RETURN_ON_ERROR(
-        copy_device_array(device_fixed_values, fixed_values, fixed_value_count));
+    const uint64_t* regular_fixed_values = fixed_values_device;
+    if (regular_fixed_values == nullptr) {
+        LZVM_CUDA_RETURN_ON_ERROR(
+            copy_device_array(device_fixed_values, fixed_values, fixed_value_count));
+        regular_fixed_values = device_fixed_values.data();
+    }
     LZVM_CUDA_RETURN_ON_ERROR(copy_device_array(
         device_opening_point_offsets, opening_point_offsets, opening_point_offset_count));
     LZVM_CUDA_RETURN_ON_ERROR(copy_device_array(device_unit_values, unit_values, unit_value_count));
@@ -489,7 +495,7 @@ extern "C" int lzvm_cuda_regular_constraints_base(
             device_args.data(),
             device_numbers.data(),
             number_count,
-            device_fixed_values.data(),
+            regular_fixed_values,
             fixed_value_count,
             fixed_column_count,
             device_stages.data(),
@@ -511,7 +517,7 @@ extern "C" int lzvm_cuda_regular_constraints_base(
         device_args.data(),
         device_numbers.data(),
         number_count,
-        device_fixed_values.data(),
+        regular_fixed_values,
         fixed_value_count,
         fixed_column_count,
         device_stages.data(),

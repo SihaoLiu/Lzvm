@@ -48,9 +48,10 @@ fn loads_raw_fixed_columns_material_and_stages_device_bytes() {
 
     #[cfg(feature = "cuda")]
     {
+        assert!(material.device_buffer_is_row_major);
         let device_buffer = material
-            .device_buffer
-            .expect("device buffer should be staged");
+            .row_major_device_buffer()
+            .expect("row-major device buffer should be available");
         assert_eq!(device_buffer.len(), material.raw_bytes.len());
         assert_eq!(
             device_buffer
@@ -105,6 +106,11 @@ fn raw_fixed_columns_preserve_setup_column_order_when_not_physical_order() {
             lzvm_field::Felt::from_u64(14),
         ]
     );
+    #[cfg(feature = "cuda")]
+    {
+        assert!(!material.device_buffer_is_row_major);
+        assert!(material.row_major_device_buffer().is_none());
+    }
 }
 
 #[test]
@@ -155,6 +161,11 @@ fn sectioned_fixed_columns_preserve_file_column_order() {
             lzvm_field::Felt::from_u64(14),
         ]
     );
+    #[cfg(feature = "cuda")]
+    {
+        assert!(!material.device_buffer_is_row_major);
+        assert!(material.row_major_device_buffer().is_none());
+    }
 }
 
 #[test]

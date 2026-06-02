@@ -386,6 +386,7 @@ const POSEIDON2_WIDTH_16_ROUND_CONSTANTS: [u64; 150] = [
     0x400d_2bf5_6aa2_a577,
 ];
 
+#[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Felt(u64);
 
@@ -493,6 +494,10 @@ impl Felt {
 
     pub fn to_u64(self) -> u64 {
         self.0
+    }
+
+    pub fn as_u64_slice(values: &[Self]) -> &[u64] {
+        unsafe { std::slice::from_raw_parts(values.as_ptr().cast(), values.len()) }
     }
 
     pub fn to_le_bytes(self) -> [u8; 8] {
@@ -1196,5 +1201,16 @@ mod tests {
 
         assert_eq!(felt_pow_calls(), 0);
         assert_eq!(value * inverse, Felt::ONE);
+    }
+
+    #[test]
+    fn felt_slice_borrows_canonical_words() {
+        let values = [
+            Felt::from_u64(3),
+            Felt::from_u64(MODULUS),
+            Felt::from_u64(MODULUS + 8),
+        ];
+
+        assert_eq!(Felt::as_u64_slice(&values), &[3, 0, 8]);
     }
 }

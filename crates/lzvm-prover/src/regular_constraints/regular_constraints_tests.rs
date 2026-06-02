@@ -1118,7 +1118,7 @@ fn cuda_base_regular_constraints_match_cpu_results() {
     };
 
     let cpu = evaluate_regular_constraints(&program, inputs).expect("cpu evaluation should work");
-    let gpu = try_evaluate_regular_constraints_cuda_base(&program, inputs)
+    let gpu = try_evaluate_regular_constraints_cuda_base(&program, inputs, None)
         .expect("cuda evaluation should not fail")
         .expect("program should be supported");
 
@@ -1155,22 +1155,26 @@ fn witness_regular_constraints_keep_first_invalid_row() {
         values: &stage,
     }];
 
-    let results = evaluate_regular_constraints_first_violations_with_acceleration(
-        &program,
-        RegularConstraintInputs {
-            domain_size: 4,
-            stage_count: 1,
-            fixed_columns: RegularColumnMatrix {
-                column_count: 1,
-                values: &fixed,
-            },
-            stage_columns: &stage_columns,
-            opening_point_offsets: &[0],
-            ..RegularConstraintInputs::default()
+    let inputs = RegularConstraintInputs {
+        domain_size: 4,
+        stage_count: 1,
+        fixed_columns: RegularColumnMatrix {
+            column_count: 1,
+            values: &fixed,
         },
-        1,
+        stage_columns: &stage_columns,
+        opening_point_offsets: &[0],
+        ..RegularConstraintInputs::default()
+    };
+    #[cfg(feature = "cuda")]
+    let results = evaluate_regular_constraints_first_violations_with_cuda_fixed_values(
+        &program, inputs, 1, None,
     )
     .expect("witness regular constraints should evaluate");
+    #[cfg(not(feature = "cuda"))]
+    let results =
+        evaluate_regular_constraints_first_violations_with_acceleration(&program, inputs, 1)
+            .expect("witness regular constraints should evaluate");
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].invalid_rows.len(), 1);
@@ -1198,6 +1202,7 @@ fn cuda_base_regular_constraints_validate_inputs_before_native_call() {
             },
             ..RegularConstraintInputs::default()
         },
+        None,
     )
     .expect_err("invalid inputs should fail before cuda execution");
 
@@ -1243,6 +1248,7 @@ fn cuda_base_regular_constraints_declines_extension_operations() {
             opening_point_offsets: &[0],
             ..RegularConstraintInputs::default()
         },
+        None,
     )
     .expect("unsupported programs should not be cuda errors");
 

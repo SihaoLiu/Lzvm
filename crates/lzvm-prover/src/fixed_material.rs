@@ -114,6 +114,17 @@ pub struct FixedColumnsMaterial {
     pub raw_bytes: Vec<u8>,
     #[cfg(feature = "cuda")]
     pub device_buffer: Option<CudaDeviceBuffer>,
+    #[cfg(feature = "cuda")]
+    pub device_buffer_is_row_major: bool,
+}
+
+#[cfg(feature = "cuda")]
+impl FixedColumnsMaterial {
+    pub fn row_major_device_buffer(&self) -> Option<&CudaDeviceBuffer> {
+        self.device_buffer
+            .as_ref()
+            .filter(|_| self.device_buffer_is_row_major)
+    }
 }
 
 pub fn load_fixed_columns_material(
@@ -183,39 +194,41 @@ fn load_fixed_columns_material_inner(
         }
     }
 
-    let (fixed_columns, row_major_values) = match parse_fixed_columns(&raw_bytes) {
-        Ok(columns) => {
-            let row_major_values = fixed_columns_to_row_major_values(&path, &columns)?;
-            (columns, row_major_values)
-        }
-        Err(sectioned_error) => {
-            if expected_raw_fixed_column_byte_count(setup).ok() == Some(raw_bytes.len()) {
-                let raw_layout =
-                    raw_fixed_column_layout(setup, group_name.clone(), unit_name.clone()).map_err(
-                        |source| FixedColumnsMaterialError::Read {
+    let (fixed_columns, row_major_values, raw_bytes_are_row_major) =
+        match parse_fixed_columns(&raw_bytes) {
+            Ok(columns) => {
+                let row_major_values = fixed_columns_to_row_major_values(&path, &columns)?;
+                (columns, row_major_values, false)
+            }
+            Err(sectioned_error) => {
+                if expected_raw_fixed_column_byte_count(setup).ok() == Some(raw_bytes.len()) {
+                    let raw_layout =
+                        raw_fixed_column_layout(setup, group_name.clone(), unit_name.clone())
+                            .map_err(|source| FixedColumnsMaterialError::Read {
+                                path: path.clone(),
+                                source,
+                            })?;
+                    let columns = parse_raw_fixed_columns(&raw_bytes, setup, group_name, unit_name)
+                        .map_err(|source| FixedColumnsMaterialError::Read {
                             path: path.clone(),
                             source,
-                        },
-                    )?;
-                let columns = parse_raw_fixed_columns(&raw_bytes, setup, group_name, unit_name)
-                    .map_err(|source| FixedColumnsMaterialError::Read {
-                        path: path.clone(),
-                        source,
-                    })?;
-                let row_major_values = if raw_layout_columns_match_physical_order(&raw_layout) {
-                    raw_fixed_bytes_to_row_major_values(&path, &raw_bytes)?
+                        })?;
+                    let raw_bytes_are_row_major =
+                        raw_layout_columns_match_physical_order(&raw_layout);
+                    let row_major_values = if raw_bytes_are_row_major {
+                        raw_fixed_bytes_to_row_major_values(&path, &raw_bytes)?
+                    } else {
+                        fixed_columns_to_row_major_values(&path, &columns)?
+                    };
+                    (columns, row_major_values, raw_bytes_are_row_major)
                 } else {
-                    fixed_columns_to_row_major_values(&path, &columns)?
-                };
-                (columns, row_major_values)
-            } else {
-                return Err(FixedColumnsMaterialError::Read {
-                    path: path.clone(),
-                    source: sectioned_error,
-                });
+                    return Err(FixedColumnsMaterialError::Read {
+                        path: path.clone(),
+                        source: sectioned_error,
+                    });
+                }
             }
-        }
-    };
+        };
 
     #[cfg(feature = "cuda")]
     let device_buffer = {
@@ -234,12 +247,17 @@ fn load_fixed_columns_material_inner(
         Some(buffer)
     };
 
+    #[cfg(not(feature = "cuda"))]
+    let _ = raw_bytes_are_row_major;
+
     Ok(FixedColumnsMaterial {
         fixed_columns,
         row_major_values,
         raw_bytes,
         #[cfg(feature = "cuda")]
         device_buffer,
+        #[cfg(feature = "cuda")]
+        device_buffer_is_row_major: raw_bytes_are_row_major,
     })
 }
 

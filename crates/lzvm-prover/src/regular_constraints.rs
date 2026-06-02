@@ -247,16 +247,36 @@ fn evaluate_constraint_entries(
         .collect()
 }
 
+#[cfg(not(feature = "cuda"))]
 pub(crate) fn evaluate_regular_constraints_first_violations_with_acceleration(
     program: &ConstraintProgram,
     inputs: RegularConstraintInputs<'_>,
     worker_count: usize,
 ) -> Result<Vec<RegularConstraintResult>, RegularConstraintEvalError> {
-    #[cfg(feature = "cuda")]
-    if let Some(results) = try_evaluate_regular_constraints_cuda_base(program, inputs)? {
+    evaluate_regular_constraints_first_violations_cpu(program, inputs, worker_count)
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn evaluate_regular_constraints_first_violations_with_cuda_fixed_values(
+    program: &ConstraintProgram,
+    inputs: RegularConstraintInputs<'_>,
+    worker_count: usize,
+    fixed_values_device_buffer: Option<&lzvm_accel::CudaDeviceBuffer>,
+) -> Result<Vec<RegularConstraintResult>, RegularConstraintEvalError> {
+    if let Some(results) =
+        try_evaluate_regular_constraints_cuda_base(program, inputs, fixed_values_device_buffer)?
+    {
         return Ok(results);
     }
 
+    evaluate_regular_constraints_first_violations_cpu(program, inputs, worker_count)
+}
+
+fn evaluate_regular_constraints_first_violations_cpu(
+    program: &ConstraintProgram,
+    inputs: RegularConstraintInputs<'_>,
+    worker_count: usize,
+) -> Result<Vec<RegularConstraintResult>, RegularConstraintEvalError> {
     let mut results = evaluate_regular_constraints_with_workers(program, inputs, worker_count)?;
     for result in &mut results {
         result.invalid_rows.truncate(1);

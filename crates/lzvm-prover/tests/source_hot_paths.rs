@@ -486,6 +486,79 @@ fn raw_fixed_material_uses_raw_row_major_bytes() {
     );
 }
 
+#[test]
+fn cuda_regular_constraints_borrow_felt_words_without_value_vectors() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/regular_constraints/cuda.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("regular constraints CUDA source should read");
+
+    let body = function_body(
+        &source,
+        "pub(crate) fn try_evaluate_regular_constraints_cuda_base",
+        "fn cuda_base_source_supported",
+    );
+
+    assert!(
+        body.contains("Felt::as_u64_slice"),
+        "CUDA regular constraints should borrow Felt words for CUDA inputs"
+    );
+    assert!(
+        !body.contains(".map(|value| value.to_u64())"),
+        "CUDA regular constraints should avoid per-call Felt-to-u64 value vectors"
+    );
+    assert!(
+        body.contains("fixed_values_device_buffer"),
+        "CUDA regular constraints should accept a proven row-major fixed device buffer"
+    );
+}
+
+#[test]
+fn regular_constraint_fixed_device_buffer_stays_out_of_cpu_inputs() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/regular_constraints.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("regular constraints source should read");
+
+    let input_body = function_body(
+        &source,
+        "pub struct RegularConstraintInputs",
+        "#[derive(Debug, Clone, PartialEq, Eq)]",
+    );
+
+    assert!(
+        !source.contains("RegularFixedValuesDeviceBuffer"),
+        "regular constraint inputs should not use a Send/Sync wrapper for CUDA fixed values"
+    );
+    assert!(
+        !input_body.contains("CudaDeviceBuffer"),
+        "regular constraint inputs should not carry CUDA device buffers into CPU workers"
+    );
+}
+
+#[test]
+fn witness_regular_constraints_pass_only_row_major_fixed_device_buffer() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_execution.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("witness execution source should read");
+
+    let body = function_body(
+        &source,
+        "fn validate_witness_regular_constraints",
+        "fn map_regular_constraint_eval_error",
+    );
+
+    assert!(
+        body.contains("material.row_major_device_buffer()"),
+        "witness regular constraints should use the fixed material row-major device-buffer guard"
+    );
+    assert!(
+        body.contains("evaluate_regular_constraints_first_violations_with_cuda_fixed_values"),
+        "witness regular constraints should pass the guarded buffer only to the CUDA acceleration path"
+    );
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)

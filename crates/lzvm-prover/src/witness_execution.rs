@@ -30,9 +30,12 @@ use crate::hint_eval::{
     regular_hint_input_requirements, resolve_global_hint_program,
     resolve_regular_hint_program_for_row, HintEvalError,
 };
+#[cfg(not(feature = "cuda"))]
+use crate::regular_constraints::evaluate_regular_constraints_first_violations_with_acceleration;
+#[cfg(feature = "cuda")]
+use crate::regular_constraints::evaluate_regular_constraints_first_violations_with_cuda_fixed_values;
 use crate::regular_constraints::{
-    evaluate_regular_constraints_first_violations_with_acceleration, RegularColumnMatrix,
-    RegularConstraintEvalError, RegularConstraintInputs, RegularStageColumns,
+    RegularColumnMatrix, RegularConstraintEvalError, RegularConstraintInputs, RegularStageColumns,
 };
 use crate::source_assignment_hints::validate_source_assignment_hints;
 use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
@@ -1735,31 +1738,43 @@ where
     .map_err(
         |source| ProveWitnessCommitmentError::RegularConstraintDomainHelper { unit_index, source },
     )?;
+    #[cfg(feature = "cuda")]
+    let fixed_columns_device_buffer = material.row_major_device_buffer();
 
+    let regular_constraint_inputs = RegularConstraintInputs {
+        domain_size: inputs.layout.row_count(),
+        stage_count: plan_unit.stage_count,
+        fixed_columns: RegularColumnMatrix {
+            column_count: plan_unit.fixed_column_count,
+            values: &material.row_major_values,
+        },
+        stage_columns: &stage_columns,
+        custom_fixed_columns: &[],
+        opening_point_offsets: &plan_unit.opening_point_offsets,
+        domain_points: &domain_points,
+        zerofier_values: RegularColumnMatrix {
+            column_count: zerofiers.column_count,
+            values: &zerofiers.values,
+        },
+        publics: proof_inputs.publics,
+        unit_values: &proof_inputs.auxiliary_inputs.unit_values,
+        proof_values: &proof_inputs.auxiliary_inputs.proof_values,
+        group_values: &proof_inputs.auxiliary_inputs.group_values,
+        challenges: &proof_inputs.auxiliary_inputs.challenges,
+        evaluations: &proof_inputs.auxiliary_inputs.evaluations,
+    };
+    #[cfg(feature = "cuda")]
+    let results = evaluate_regular_constraints_first_violations_with_cuda_fixed_values(
+        &plan_unit.regular_constraints,
+        regular_constraint_inputs,
+        worker_count,
+        fixed_columns_device_buffer,
+    )
+    .map_err(|error| map_regular_constraint_eval_error(unit_index, error))?;
+    #[cfg(not(feature = "cuda"))]
     let results = evaluate_regular_constraints_first_violations_with_acceleration(
         &plan_unit.regular_constraints,
-        RegularConstraintInputs {
-            domain_size: inputs.layout.row_count(),
-            stage_count: plan_unit.stage_count,
-            fixed_columns: RegularColumnMatrix {
-                column_count: plan_unit.fixed_column_count,
-                values: &material.row_major_values,
-            },
-            stage_columns: &stage_columns,
-            custom_fixed_columns: &[],
-            opening_point_offsets: &plan_unit.opening_point_offsets,
-            domain_points: &domain_points,
-            zerofier_values: RegularColumnMatrix {
-                column_count: zerofiers.column_count,
-                values: &zerofiers.values,
-            },
-            publics: proof_inputs.publics,
-            unit_values: &proof_inputs.auxiliary_inputs.unit_values,
-            proof_values: &proof_inputs.auxiliary_inputs.proof_values,
-            group_values: &proof_inputs.auxiliary_inputs.group_values,
-            challenges: &proof_inputs.auxiliary_inputs.challenges,
-            evaluations: &proof_inputs.auxiliary_inputs.evaluations,
-        },
+        regular_constraint_inputs,
         worker_count,
     )
     .map_err(|error| map_regular_constraint_eval_error(unit_index, error))?;
@@ -3054,6 +3069,8 @@ mod tests {
             raw_bytes: Vec::new(),
             #[cfg(feature = "cuda")]
             device_buffer: None,
+            #[cfg(feature = "cuda")]
+            device_buffer_is_row_major: false,
         }
     }
 
@@ -3076,6 +3093,8 @@ mod tests {
             raw_bytes: Vec::new(),
             #[cfg(feature = "cuda")]
             device_buffer: None,
+            #[cfg(feature = "cuda")]
+            device_buffer_is_row_major: false,
         }
     }
 }

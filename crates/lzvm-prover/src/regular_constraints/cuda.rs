@@ -12,6 +12,7 @@ use super::{
 pub(crate) fn try_evaluate_regular_constraints_cuda_base(
     program: &ConstraintProgram,
     inputs: RegularConstraintInputs<'_>,
+    fixed_values_device_buffer: Option<&lzvm_accel::CudaDeviceBuffer>,
 ) -> Result<Option<Vec<RegularConstraintResult>>, RegularConstraintEvalError> {
     validate_inputs(inputs)?;
     if inputs.domain_size == 0 || !inputs.custom_fixed_columns.is_empty() {
@@ -63,38 +64,17 @@ pub(crate) fn try_evaluate_regular_constraints_cuda_base(
         });
     }
 
-    let fixed_values = inputs
-        .fixed_columns
-        .values
-        .iter()
-        .map(|value| value.to_u64())
-        .collect::<Vec<_>>();
-    let stage_values = inputs
-        .stage_columns
-        .iter()
-        .map(|stage| {
-            stage
-                .values
-                .iter()
-                .map(|value| value.to_u64())
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
+    let fixed_values = Felt::as_u64_slice(inputs.fixed_columns.values);
     let stages = inputs
         .stage_columns
         .iter()
-        .zip(stage_values.iter())
-        .map(|(stage, values)| lzvm_accel::CudaRegularStage {
+        .map(|stage| lzvm_accel::CudaRegularStage {
             stage_index: u32::from(stage.stage_index),
             column_count: stage.column_count,
-            values,
+            values: Felt::as_u64_slice(stage.values),
         })
         .collect::<Vec<_>>();
-    let unit_values = inputs
-        .unit_values
-        .iter()
-        .map(|value| value.to_u64())
-        .collect::<Vec<_>>();
+    let unit_values = Felt::as_u64_slice(inputs.unit_values);
 
     let cuda_results = match lzvm_accel::cuda_regular_constraints_base(
         &cuda_entries,
@@ -104,11 +84,12 @@ pub(crate) fn try_evaluate_regular_constraints_cuda_base(
             domain_size: inputs.domain_size,
             stage_count: usize::from(inputs.stage_count),
             fixed_column_count: inputs.fixed_columns.column_count,
-            fixed_values: &fixed_values,
+            fixed_values,
+            fixed_values_device: fixed_values_device_buffer,
             stages: &stages,
             opening_point_offsets: inputs.opening_point_offsets,
             numbers: &program.numbers,
-            unit_values: &unit_values,
+            unit_values,
         },
     ) {
         Ok(results) => results,
