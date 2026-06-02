@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use lzvm_accel::{AccelError, CudaDeviceBuffer};
 use lzvm_artifacts::fixed::{
     expected_raw_fixed_column_byte_count, parse_fixed_columns, parse_raw_fixed_columns,
-    FixedColumnError, FixedColumns,
+    raw_fixed_column_layout, FixedColumnError, FixedColumns, RawFixedColumnLayout,
 };
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 use lzvm_field::{Felt, FieldError};
@@ -183,16 +183,31 @@ fn load_fixed_columns_material_inner(
         }
     }
 
-    let fixed_columns = match parse_fixed_columns(&raw_bytes) {
-        Ok(columns) => columns,
+    let (fixed_columns, row_major_values) = match parse_fixed_columns(&raw_bytes) {
+        Ok(columns) => {
+            let row_major_values = fixed_columns_to_row_major_values(&path, &columns)?;
+            (columns, row_major_values)
+        }
         Err(sectioned_error) => {
             if expected_raw_fixed_column_byte_count(setup).ok() == Some(raw_bytes.len()) {
-                parse_raw_fixed_columns(&raw_bytes, setup, group_name, unit_name).map_err(
-                    |source| FixedColumnsMaterialError::Read {
+                let raw_layout =
+                    raw_fixed_column_layout(setup, group_name.clone(), unit_name.clone()).map_err(
+                        |source| FixedColumnsMaterialError::Read {
+                            path: path.clone(),
+                            source,
+                        },
+                    )?;
+                let columns = parse_raw_fixed_columns(&raw_bytes, setup, group_name, unit_name)
+                    .map_err(|source| FixedColumnsMaterialError::Read {
                         path: path.clone(),
                         source,
-                    },
-                )?
+                    })?;
+                let row_major_values = if raw_layout_columns_match_physical_order(&raw_layout) {
+                    raw_fixed_bytes_to_row_major_values(&path, &raw_bytes)?
+                } else {
+                    fixed_columns_to_row_major_values(&path, &columns)?
+                };
+                (columns, row_major_values)
             } else {
                 return Err(FixedColumnsMaterialError::Read {
                     path: path.clone(),
@@ -201,8 +216,6 @@ fn load_fixed_columns_material_inner(
             }
         }
     };
-
-    let row_major_values = fixed_columns_to_row_major_values(&path, &fixed_columns)?;
 
     #[cfg(feature = "cuda")]
     let device_buffer = {
@@ -272,6 +285,36 @@ fn fixed_columns_to_row_major_values(
                 }
             })?;
         }
+    }
+    Ok(values)
+}
+
+fn raw_layout_columns_match_physical_order(layout: &RawFixedColumnLayout) -> bool {
+    let Ok(column_count) = usize::try_from(layout.column_count) else {
+        return false;
+    };
+    layout.columns.len() == column_count
+        && layout
+            .columns
+            .iter()
+            .enumerate()
+            .all(|(position, column)| usize::try_from(column.index).ok() == Some(position))
+}
+
+fn raw_fixed_bytes_to_row_major_values(
+    path: &Path,
+    raw_bytes: &[u8],
+) -> Result<Vec<Felt>, FixedColumnsMaterialError> {
+    if !raw_bytes.len().is_multiple_of(8) {
+        return Err(FixedColumnsMaterialError::ValueCountOverflow {
+            path: path.to_path_buf(),
+        });
+    }
+    let mut values = Vec::with_capacity(raw_bytes.len() / 8);
+    for chunk in raw_bytes.chunks_exact(8) {
+        let value = u64::from_le_bytes(chunk.try_into().expect("chunk length checked"));
+        debug_assert!(Felt::from_canonical(value).is_ok());
+        values.push(Felt::from_u64(value));
     }
     Ok(values)
 }

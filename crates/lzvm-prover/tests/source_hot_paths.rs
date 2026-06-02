@@ -461,6 +461,31 @@ fn guest_pc_trace_writes_use_direct_trace_builder_helpers() {
     );
 }
 
+#[test]
+fn raw_fixed_material_uses_raw_row_major_bytes() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/fixed_material.rs");
+    let source = std::fs::read_to_string(&source_path).expect("fixed material source should read");
+
+    let load_body = function_body(
+        &source,
+        "fn load_fixed_columns_material_inner",
+        "fn fixed_columns_to_row_major_values",
+    );
+    assert!(
+        load_body.contains("raw_fixed_bytes_to_row_major_values(&path, &raw_bytes)?"),
+        "raw fixed-column material should reuse row-major raw bytes for Felt material"
+    );
+    assert!(
+        load_body.contains("raw_layout_columns_match_physical_order(&raw_layout)"),
+        "raw fixed-column material should guard raw-byte reuse by column order"
+    );
+    assert!(
+        source.contains("fn raw_fixed_bytes_to_row_major_values"),
+        "fixed material should provide a raw-byte row-major conversion path"
+    );
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)

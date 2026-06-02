@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn, FixedColumns};
+use lzvm_artifacts::fixed::{
+    encode_fixed_columns, write_raw_fixed_columns_file, FixedColumn, FixedColumnError, FixedColumns,
+};
 use lzvm_artifacts::setup_info::{
     ConstantColumn, EvaluationMapEntry, FriStep, StarkStruct, UnitSetupInfo,
 };
@@ -57,6 +59,125 @@ fn loads_raw_fixed_columns_material_and_stages_device_bytes() {
             material.raw_bytes
         );
     }
+}
+
+#[test]
+fn raw_fixed_columns_preserve_setup_column_order_when_not_physical_order() {
+    let dir = temp_dir("fixed-material-unsorted");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+
+    let setup = sample_setup_with_reversed_columns();
+    let columns = FixedColumns {
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        row_count: 4,
+        columns: vec![
+            FixedColumn {
+                name: "const_1".to_owned(),
+                dimensions: vec![1],
+                values: vec![21, 22, 23, 24],
+            },
+            FixedColumn {
+                name: "const_0".to_owned(),
+                dimensions: vec![1],
+                values: vec![11, 12, 13, 14],
+            },
+        ],
+    };
+    let path = dir.join("unit.const");
+    write_raw_fixed_columns_file(&path, &columns, &setup).expect("fixed columns should write");
+
+    let material = load_fixed_columns_material(&path, &setup, "group-a", "unit-a")
+        .expect("fixed columns material should load");
+
+    assert_eq!(material.fixed_columns, columns);
+    assert_eq!(
+        material.row_major_values,
+        vec![
+            lzvm_field::Felt::from_u64(21),
+            lzvm_field::Felt::from_u64(11),
+            lzvm_field::Felt::from_u64(22),
+            lzvm_field::Felt::from_u64(12),
+            lzvm_field::Felt::from_u64(23),
+            lzvm_field::Felt::from_u64(13),
+            lzvm_field::Felt::from_u64(24),
+            lzvm_field::Felt::from_u64(14),
+        ]
+    );
+}
+
+#[test]
+fn sectioned_fixed_columns_preserve_file_column_order() {
+    let dir = temp_dir("fixed-material-sectioned");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+
+    let setup = sample_setup();
+    let columns = FixedColumns {
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        row_count: 4,
+        columns: vec![
+            FixedColumn {
+                name: "const_1".to_owned(),
+                dimensions: vec![1],
+                values: vec![21, 22, 23, 24],
+            },
+            FixedColumn {
+                name: "const_0".to_owned(),
+                dimensions: vec![1],
+                values: vec![11, 12, 13, 14],
+            },
+        ],
+    };
+    let path = dir.join("unit.const");
+    fs::write(
+        &path,
+        encode_fixed_columns(&columns).expect("sectioned fixed columns should encode"),
+    )
+    .expect("sectioned fixed columns should write");
+
+    let material = load_fixed_columns_material(&path, &setup, "group-a", "unit-a")
+        .expect("fixed columns material should load");
+
+    assert_eq!(material.fixed_columns, columns);
+    assert_eq!(
+        material.row_major_values,
+        vec![
+            lzvm_field::Felt::from_u64(21),
+            lzvm_field::Felt::from_u64(11),
+            lzvm_field::Felt::from_u64(22),
+            lzvm_field::Felt::from_u64(12),
+            lzvm_field::Felt::from_u64(23),
+            lzvm_field::Felt::from_u64(13),
+            lzvm_field::Felt::from_u64(24),
+            lzvm_field::Felt::from_u64(14),
+        ]
+    );
+}
+
+#[test]
+fn raw_fixed_columns_reject_non_canonical_word_before_fast_path() {
+    let dir = temp_dir("fixed-material-non-canonical");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+
+    let setup = sample_setup();
+    let columns = sample_columns();
+    let path = dir.join("unit.const");
+    write_raw_fixed_columns_file(&path, &columns, &setup).expect("fixed columns should write");
+    let mut bytes = fs::read(&path).expect("fixed file should read");
+    bytes[..8].copy_from_slice(&lzvm_field::MODULUS.to_le_bytes());
+    fs::write(&path, bytes).expect("fixed columns should be mutated");
+
+    let error = load_fixed_columns_material(&path, &setup, "group-a", "unit-a")
+        .expect_err("non-canonical raw word should reject material");
+
+    let FixedColumnsMaterialError::Read { source, .. } = error else {
+        panic!("expected fixed-column read error");
+    };
+    assert!(matches!(source, FixedColumnError::ValueNonCanonical { .. }));
 }
 
 #[test]
@@ -145,6 +266,30 @@ fn sample_setup() -> UnitSetupInfo {
             transcript_arity: None,
             merkle_tree_custom: None,
         },
+    }
+}
+
+fn sample_setup_with_reversed_columns() -> UnitSetupInfo {
+    UnitSetupInfo {
+        constant_columns: vec![
+            ConstantColumn {
+                name: "const_1".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 1,
+                stage_id: 1,
+                lengths: Vec::new(),
+            },
+            ConstantColumn {
+                name: "const_0".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 0,
+                stage_id: 0,
+                lengths: Vec::new(),
+            },
+        ],
+        ..sample_setup()
     }
 }
 
