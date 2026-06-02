@@ -27,8 +27,18 @@ struct LzvmCudaRegularConstraintOutput {
     std::uint32_t found;
 };
 
+struct LzvmCudaAllocatorStats {
+    std::size_t cuda_malloc_calls;
+    std::size_t cuda_free_calls;
+    std::size_t cuda_device_synchronize_calls;
+    std::size_t cached_blocks;
+    std::size_t cached_bytes;
+};
+
 extern "C" int lzvm_cuda_alloc_bytes(void** out, std::size_t bytes);
 extern "C" void lzvm_cuda_free_bytes(void* ptr);
+extern "C" int lzvm_cuda_allocator_clear_cache(void);
+extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out);
 extern "C" int lzvm_cuda_copy_h2d_bytes(void* dst, const void* src, std::size_t bytes);
 extern "C" int lzvm_cuda_copy_d2h_bytes(void* dst, const void* src, std::size_t bytes);
 extern "C" int lzvm_cuda_copy_d2h_state_prefix_words(

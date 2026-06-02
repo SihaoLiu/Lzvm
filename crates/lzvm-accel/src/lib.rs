@@ -5,6 +5,8 @@ use std::fmt;
 use std::ptr;
 
 #[cfg(feature = "cuda")]
+mod cuda_allocator;
+#[cfg(feature = "cuda")]
 mod cuda_regular_constraints;
 #[cfg(feature = "cuda")]
 mod cuda_setup;
@@ -44,8 +46,6 @@ impl std::error::Error for AccelError {}
 
 #[cfg(feature = "cuda")]
 unsafe extern "C" {
-    fn lzvm_cuda_alloc_bytes(out: *mut *mut c_void, bytes: usize) -> i32;
-    fn lzvm_cuda_free_bytes(ptr: *mut c_void);
     fn lzvm_cuda_copy_h2d_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
     fn lzvm_cuda_copy_d2h_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
     fn lzvm_cuda_copy_d2h_state_prefix_words(
@@ -399,9 +399,7 @@ pub struct CudaDeviceBuffer {
 #[cfg(feature = "cuda")]
 impl CudaDeviceBuffer {
     pub fn new(len: usize) -> Result<Self, AccelError> {
-        let mut ptr = ptr::null_mut();
-        let code = unsafe { lzvm_cuda_alloc_bytes(&mut ptr, len) };
-        cuda_status(code)?;
+        let ptr = cuda_allocator::alloc_bytes(len)?;
         Ok(Self { ptr, len })
     }
 
@@ -643,9 +641,7 @@ impl CudaDeviceBuffer {
 impl Drop for CudaDeviceBuffer {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
-            unsafe {
-                lzvm_cuda_free_bytes(self.ptr);
-            }
+            cuda_allocator::free_bytes(self.ptr);
             self.ptr = ptr::null_mut();
         }
     }

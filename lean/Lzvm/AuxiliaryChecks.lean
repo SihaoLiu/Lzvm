@@ -77,6 +77,33 @@ def GpuSetupCheckedAcceptance
   system.accepts publicInput proof
     /\ validation.constantsSoundFor request.device request.requiredBits
 
+structure GpuAllocationSource where
+  device : Nat
+  byteCount : Nat
+  fromCache : Bool
+deriving DecidableEq, Repr
+
+def GpuAllocationSameRequest
+    (cached fresh : GpuAllocationSource) : Prop :=
+  cached.device = fresh.device /\ cached.byteCount = fresh.byteCount
+
+structure GpuAllocationCacheValidation where
+  writtenContentsBound : GpuAllocationSource -> PublicInput -> Proof -> Prop
+  cachedReusePreservesWrittenContents :
+    forall cached fresh publicInput proof,
+      GpuAllocationSameRequest cached fresh ->
+        writtenContentsBound fresh publicInput proof ->
+          writtenContentsBound cached publicInput proof
+
+def GpuAllocationCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GpuAllocationCacheValidation)
+    (allocation : GpuAllocationSource)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.writtenContentsBound allocation publicInput proof
+
 def SourceLookupAuxiliaryEvidence
     (system : VerifierModel)
     (auxiliary : AuxiliaryValidation system)
@@ -219,5 +246,36 @@ theorem gpu_setup_checked_acceptance_sound
   exact
     And.intro acceptedWithSetup.right
       (abstract_verifier_sound assumptions publicInput proof acceptedWithSetup.left)
+
+theorem gpu_allocation_cache_reuse_preserves_written_contents
+    (validation : GpuAllocationCacheValidation)
+    (cached fresh : GpuAllocationSource) :
+    GpuAllocationSameRequest cached fresh ->
+      (forall publicInput proof,
+        validation.writtenContentsBound fresh publicInput proof ->
+          validation.writtenContentsBound cached publicInput proof) := by
+  intro sameRequest publicInput proof freshBound
+  exact
+    validation.cachedReusePreservesWrittenContents
+      cached
+      fresh
+      publicInput
+      proof
+      sameRequest
+      freshBound
+
+theorem gpu_allocation_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuAllocationCacheValidation)
+    (allocation : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuAllocationCheckedAcceptance system validation allocation publicInput proof ->
+        validation.writtenContentsBound allocation publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithAllocation
+  exact
+    And.intro acceptedWithAllocation.right
+      (abstract_verifier_sound assumptions publicInput proof acceptedWithAllocation.left)
 
 end Lzvm
