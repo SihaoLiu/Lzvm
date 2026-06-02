@@ -344,6 +344,32 @@ fn cuda_state_prefix_expansion_avoids_temporary_prefix_device_buffer() {
 }
 
 #[test]
+fn secp256k1_double_scalar_mul_uses_projective_accumulator() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/secp256k1_host.rs");
+    let source = std::fs::read_to_string(&source_path).expect("secp256k1 source should read");
+
+    let body = function_body(
+        &source,
+        "pub(crate) fn secp256k1_double_scalar_mul",
+        "pub(crate) fn limbs_to_biguint",
+    );
+
+    assert!(
+        body.contains("SecpProjectivePoint"),
+        "double-scalar multiplication should use a projective accumulator"
+    );
+    assert!(
+        !body.contains("secp256k1_point_add"),
+        "double-scalar multiplication should avoid affine additions in the bit loop"
+    );
+    assert!(
+        !body.contains("secp256k1_point_double"),
+        "double-scalar multiplication should avoid affine doublings in the bit loop"
+    );
+}
+
+#[test]
 fn fri_opening_from_transcript_values_borrows_large_vectors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/prove_fri_opening.rs");
