@@ -2686,27 +2686,30 @@ fn matching_memory_access(
     address: u64,
     byte_len: usize,
 ) -> Result<ExpectedMemoryAccess, GuestPcTraceBackendError> {
-    let matching: Vec<_> = effects
-        .memory_accesses
-        .iter()
-        .filter(|access| {
-            access.kind == kind && access.address == address && access.byte_len == byte_len
-        })
-        .collect();
-    match matching.as_slice() {
-        [access] => Ok(ExpectedMemoryAccess {
+    let mut matching = None;
+    for access in effects.memory_accesses {
+        if access.kind == kind && access.address == address && access.byte_len == byte_len {
+            if matching.is_some() {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row,
+                    message: format!(
+                        "multiple {kind:?} accesses at {address} with byte length {byte_len}"
+                    ),
+                });
+            }
+            matching = Some(access);
+        }
+    }
+    match matching {
+        Some(access) => Ok(ExpectedMemoryAccess {
             kind,
             address,
             byte_len,
             value: access.value,
         }),
-        [] => Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+        None => Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
             message: format!("missing {kind:?} access at {address} with byte length {byte_len}"),
-        }),
-        _ => Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row,
-            message: format!("multiple {kind:?} accesses at {address} with byte length {byte_len}"),
         }),
     }
 }
@@ -2720,31 +2723,36 @@ fn validate_zisk_main_memory_accesses(
     a_access: Option<ExpectedMemoryAccess>,
     b_access: Option<ExpectedMemoryAccess>,
 ) -> Result<(), GuestPcTraceBackendError> {
-    let mut expected = Vec::new();
-    expected.extend(a_access);
-    expected.extend(b_access);
     let store_value = zisk_main_store_value(instruction, c);
-    if let ZiskMainStore::Indirect(offset) = instruction.store {
+    let store_access = if let ZiskMainStore::Indirect(offset) = instruction.store {
         let byte_len = usize::try_from(instruction.ind_width)
             .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainStore { row })?;
-        expected.push(ExpectedMemoryAccess {
+        Some(ExpectedMemoryAccess {
             kind: GuestMemoryAccessKind::Write,
             address: a.wrapping_add_signed(offset),
             byte_len,
             value: low_bytes_value(store_value, byte_len),
-        });
-    }
-    if effects.memory_accesses.len() != expected.len() {
+        })
+    } else {
+        None
+    };
+    let expected = [a_access, b_access, store_access];
+    let expected_len = expected.iter().filter(|access| access.is_some()).count();
+    if effects.memory_accesses.len() != expected_len {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
             message: format!(
                 "expected {} memory accesses, found {}",
-                expected.len(),
+                expected_len,
                 effects.memory_accesses.len()
             ),
         });
     }
-    for (found, expected) in effects.memory_accesses.iter().zip(expected.iter()) {
+    for (found, expected) in effects
+        .memory_accesses
+        .iter()
+        .zip(expected.iter().flatten())
+    {
         if found.kind != expected.kind
             || found.address != expected.address
             || found.byte_len != expected.byte_len

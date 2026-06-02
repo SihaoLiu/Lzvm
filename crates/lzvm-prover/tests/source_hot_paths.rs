@@ -512,6 +512,46 @@ fn zisk_main_report_writes_stream_trace_values_without_row_value_vector() {
 }
 
 #[test]
+fn zisk_main_memory_access_validation_avoids_temporary_vectors() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let matching_body = function_body(
+        &source,
+        "fn matching_memory_access",
+        "fn validate_zisk_main_memory_accesses",
+    );
+    assert!(
+        !matching_body.contains("collect"),
+        "Zisk Main memory access matching should scan without collecting matches"
+    );
+    assert!(
+        !matching_body.contains("Vec<"),
+        "Zisk Main memory access matching should avoid temporary vectors"
+    );
+
+    let validate_body = function_body(
+        &source,
+        "fn validate_zisk_main_memory_accesses",
+        "fn validate_zisk_main_precompile_memory_accesses",
+    );
+    for allocation in [
+        "Vec::",
+        "Vec<",
+        "collect",
+        "vec![",
+        "expected.push",
+        "expected.extend",
+    ] {
+        assert!(
+            !validate_body.contains(allocation),
+            "Zisk Main memory access validation should avoid temporary vectors with {allocation}"
+        );
+    }
+}
+
+#[test]
 fn raw_fixed_material_uses_raw_row_major_bytes() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/fixed_material.rs");

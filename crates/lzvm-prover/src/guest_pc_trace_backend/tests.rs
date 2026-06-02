@@ -93,6 +93,90 @@ fn zisk_main_trace_build_uses_resolved_column_targets() {
     assert_eq!(crate::witness_layout::resolved_column_validation_count(), 0);
 }
 
+#[test]
+fn matching_memory_access_rejects_duplicate_matches() {
+    let accesses = [
+        memory_read(64, 11),
+        memory_write(96, 22),
+        memory_read(64, 33),
+    ];
+    let effects = ZiskMainReportEffects {
+        register_writes: &[],
+        memory_accesses: &accesses,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+
+    let error = matching_memory_access(7, effects, GuestMemoryAccessKind::Read, 64, 8)
+        .expect_err("duplicate matching memory accesses should fail");
+
+    assert!(error.to_string().contains("multiple Read accesses at 64"));
+}
+
+#[test]
+fn zisk_main_memory_access_validation_preserves_source_then_store_order() {
+    let mut instruction = zisk_main_base_instruction(
+        0x8000_0000,
+        ZiskMainSource::Memory(64),
+        ZiskMainSource::Memory(72),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::Indirect(0),
+        4,
+    );
+    instruction.ind_width = 8;
+    let a_access = ExpectedMemoryAccess {
+        kind: GuestMemoryAccessKind::Read,
+        address: 64,
+        byte_len: 8,
+        value: 96,
+    };
+    let b_access = ExpectedMemoryAccess {
+        kind: GuestMemoryAccessKind::Read,
+        address: 72,
+        byte_len: 8,
+        value: 13,
+    };
+    let store_access = memory_write(96, 13);
+    let ordered_accesses = [memory_read(64, 96), memory_read(72, 13), store_access];
+    let effects = ZiskMainReportEffects {
+        register_writes: &[],
+        memory_accesses: &ordered_accesses,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+
+    validate_zisk_main_memory_accesses(
+        9,
+        &instruction,
+        effects,
+        96,
+        13,
+        Some(a_access),
+        Some(b_access),
+    )
+    .expect("ordered source and store accesses should validate");
+
+    let reordered_accesses = [memory_read(72, 13), memory_read(64, 96), store_access];
+    let effects = ZiskMainReportEffects {
+        register_writes: &[],
+        memory_accesses: &reordered_accesses,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let error = validate_zisk_main_memory_accesses(
+        9,
+        &instruction,
+        effects,
+        96,
+        13,
+        Some(a_access),
+        Some(b_access),
+    )
+    .expect_err("reordered source accesses should fail");
+
+    assert!(error.to_string().contains("expected Read at 64"));
+}
+
 fn add256_report() -> GuestMachineReport {
     let params_address = 64;
     let a_address = 96;
