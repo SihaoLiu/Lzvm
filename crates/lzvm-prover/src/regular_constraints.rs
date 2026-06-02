@@ -431,8 +431,37 @@ struct PreparedBaseProgram<'input> {
     clear_tmp1: bool,
 }
 
+#[derive(Debug, Clone)]
+enum PreparedBaseOperation<'input> {
+    Generic(PreparedGenericBaseOperation<'input>),
+    MatrixTmp1 {
+        kind: u16,
+        destination_offset: usize,
+        matrix: PreparedBaseMatrix<'input>,
+        tmp1_offset: usize,
+    },
+    Tmp1Tmp1 {
+        kind: u16,
+        destination_offset: usize,
+        left_offset: usize,
+        right_offset: usize,
+    },
+    MatrixConstant {
+        kind: u16,
+        destination_offset: usize,
+        matrix: PreparedBaseMatrix<'input>,
+        constant: Felt,
+    },
+    Tmp1Constant {
+        kind: u16,
+        destination_offset: usize,
+        tmp1_offset: usize,
+        constant: Felt,
+    },
+}
+
 #[derive(Debug, Clone, Copy)]
-struct PreparedBaseOperation<'input> {
+struct PreparedGenericBaseOperation<'input> {
     kind: u16,
     destination_offset: usize,
     src0: PreparedBaseSource<'input>,
@@ -440,13 +469,16 @@ struct PreparedBaseOperation<'input> {
 }
 
 #[derive(Debug, Clone, Copy)]
+struct PreparedBaseMatrix<'input> {
+    values: &'input [Felt],
+    column_count: usize,
+    column: usize,
+    row_offset: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
 enum PreparedBaseSource<'input> {
-    Matrix {
-        values: &'input [Felt],
-        column_count: usize,
-        column: usize,
-        row_offset: usize,
-    },
+    Matrix(PreparedBaseMatrix<'input>),
     DomainPoint(&'input [Felt]),
     Zerofier {
         values: &'input [Felt],
@@ -633,12 +665,12 @@ fn prepared_base_operations<'input>(
         clear_tmp1 |=
             reads_unwritten_tmp1(src0, &written_tmp1) || reads_unwritten_tmp1(src1, &written_tmp1);
         written_tmp1[operation.destination_offset] = true;
-        base_operations.push(PreparedBaseOperation {
-            kind: operation.kind,
-            destination_offset: operation.destination_offset,
+        base_operations.push(prepared_base_operation(
+            operation.kind,
+            operation.destination_offset,
             src0,
             src1,
-        });
+        ));
     }
     clear_tmp1 |= !written_tmp1[destination_index];
     Ok(Some(PreparedBaseProgram {
@@ -649,6 +681,54 @@ fn prepared_base_operations<'input>(
 
 fn reads_unwritten_tmp1(source: PreparedBaseSource<'_>, written_tmp1: &[bool]) -> bool {
     matches!(source, PreparedBaseSource::Tmp1(offset) if !written_tmp1[offset])
+}
+
+fn prepared_base_operation<'input>(
+    kind: u16,
+    destination_offset: usize,
+    src0: PreparedBaseSource<'input>,
+    src1: PreparedBaseSource<'input>,
+) -> PreparedBaseOperation<'input> {
+    match (src0, src1) {
+        (PreparedBaseSource::Matrix(matrix), PreparedBaseSource::Tmp1(tmp1_offset)) => {
+            PreparedBaseOperation::MatrixTmp1 {
+                kind,
+                destination_offset,
+                matrix,
+                tmp1_offset,
+            }
+        }
+        (PreparedBaseSource::Tmp1(left_offset), PreparedBaseSource::Tmp1(right_offset)) => {
+            PreparedBaseOperation::Tmp1Tmp1 {
+                kind,
+                destination_offset,
+                left_offset,
+                right_offset,
+            }
+        }
+        (PreparedBaseSource::Matrix(matrix), PreparedBaseSource::Constant(constant)) => {
+            PreparedBaseOperation::MatrixConstant {
+                kind,
+                destination_offset,
+                matrix,
+                constant,
+            }
+        }
+        (PreparedBaseSource::Tmp1(tmp1_offset), PreparedBaseSource::Constant(constant)) => {
+            PreparedBaseOperation::Tmp1Constant {
+                kind,
+                destination_offset,
+                tmp1_offset,
+                constant,
+            }
+        }
+        (src0, src1) => PreparedBaseOperation::Generic(PreparedGenericBaseOperation {
+            kind,
+            destination_offset,
+            src0,
+            src1,
+        }),
+    }
 }
 
 fn prepared_base_source<'input>(
@@ -663,12 +743,12 @@ fn prepared_base_source<'input>(
         | DecodedSourceKind::Stage(matrix)
         | DecodedSourceKind::CustomFixed(matrix) => {
             validate_matrix_source(matrix, source.offset, 1, inputs.domain_size)?;
-            PreparedBaseSource::Matrix {
+            PreparedBaseSource::Matrix(PreparedBaseMatrix {
                 values: matrix.values,
                 column_count: matrix.column_count,
                 column: source.offset,
                 row_offset: source.row_offset,
-            }
+            })
         }
         DecodedSourceKind::DomainOrZerofier if source.offset == 0 => {
             if inputs.domain_points.len() < inputs.domain_size {
@@ -992,9 +1072,52 @@ fn evaluate_prepared_base_row(
     tmp3.fill(Felt::ZERO);
 
     for operation in &program.operations {
-        let left = read_prepared_base(operation.src0, row, domain_size, tmp1, tmp3);
-        let right = read_prepared_base(operation.src1, row, domain_size, tmp1, tmp3);
-        tmp1[operation.destination_offset] = apply_prepared_base_op(operation.kind, left, right);
+        match operation {
+            PreparedBaseOperation::Generic(operation) => {
+                let left = read_prepared_base(operation.src0, row, domain_size, tmp1, tmp3);
+                let right = read_prepared_base(operation.src1, row, domain_size, tmp1, tmp3);
+                tmp1[operation.destination_offset] =
+                    apply_prepared_base_op(operation.kind, left, right);
+            }
+            PreparedBaseOperation::MatrixTmp1 {
+                kind,
+                destination_offset,
+                matrix,
+                tmp1_offset,
+            } => {
+                let left = read_prepared_matrix(*matrix, row, domain_size);
+                let right = tmp1[*tmp1_offset];
+                tmp1[*destination_offset] = apply_prepared_base_op(*kind, left, right);
+            }
+            PreparedBaseOperation::Tmp1Tmp1 {
+                kind,
+                destination_offset,
+                left_offset,
+                right_offset,
+            } => {
+                let left = tmp1[*left_offset];
+                let right = tmp1[*right_offset];
+                tmp1[*destination_offset] = apply_prepared_base_op(*kind, left, right);
+            }
+            PreparedBaseOperation::MatrixConstant {
+                kind,
+                destination_offset,
+                matrix,
+                constant,
+            } => {
+                let left = read_prepared_matrix(*matrix, row, domain_size);
+                tmp1[*destination_offset] = apply_prepared_base_op(*kind, left, *constant);
+            }
+            PreparedBaseOperation::Tmp1Constant {
+                kind,
+                destination_offset,
+                tmp1_offset,
+                constant,
+            } => {
+                let left = tmp1[*tmp1_offset];
+                tmp1[*destination_offset] = apply_prepared_base_op(*kind, left, *constant);
+            }
+        }
     }
 
     tmp1[to_usize(entry.destination_id).expect("destination index was prepared")]
@@ -1020,15 +1143,7 @@ fn read_prepared_base(
     tmp3: &[Felt],
 ) -> Felt {
     match source {
-        PreparedBaseSource::Matrix {
-            values,
-            column_count,
-            column,
-            row_offset,
-        } => {
-            let row = source_row_with_offset_prepared(row, row_offset, domain_size);
-            values[row * column_count + column]
-        }
+        PreparedBaseSource::Matrix(matrix) => read_prepared_matrix(matrix, row, domain_size),
         PreparedBaseSource::DomainPoint(values) => values[row],
         PreparedBaseSource::Zerofier {
             values,
@@ -1039,6 +1154,12 @@ fn read_prepared_base(
         PreparedBaseSource::Tmp3(offset) => tmp3[offset],
         PreparedBaseSource::Constant(value) => value,
     }
+}
+
+#[inline(always)]
+fn read_prepared_matrix(matrix: PreparedBaseMatrix<'_>, row: usize, domain_size: usize) -> Felt {
+    let row = source_row_with_offset_prepared(row, matrix.row_offset, domain_size);
+    matrix.values[row * matrix.column_count + matrix.column]
 }
 
 #[inline(always)]
@@ -1674,6 +1795,76 @@ mod tests {
         assert_eq!(results[0].invalid_rows, Vec::new());
         assert_eq!(BASE_ONLY_PREPARED_ROW_COUNT.with(Cell::get), 7);
         assert_eq!(BASE_ONLY_TMP1_CLEAR_COUNT.with(Cell::get), 0);
+    }
+
+    #[test]
+    fn base_only_direct_common_source_pairs_preserve_row_semantics() {
+        let entry = ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 2,
+            first_row: 0,
+            last_row: 4,
+            temp1_count: 3,
+            temp3_count: 0,
+            ops_count: 4,
+            ops_offset: 0,
+            args_count: 32,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "base-only direct sources".to_owned(),
+        };
+        let program = ConstraintProgram {
+            entries: vec![entry.clone()],
+            ops: vec![0, 0, 0, 0],
+            args: vec![
+                1, 0, 0, 0, 1, 8, 0, 0, 3, 1, 0, 0, 1, 5, 0, 0, 3, 2, 5, 1, 0, 8, 0, 0, 1, 2, 5, 2,
+                0, 5, 2, 0,
+            ],
+            numbers: vec![5],
+        };
+        let fixed = [11, 12, 13, 14].map(Felt::from_u64);
+        let inputs = RegularConstraintInputs {
+            domain_size: 4,
+            stage_count: 1,
+            fixed_columns: RegularColumnMatrix {
+                column_count: 1,
+                values: &fixed,
+            },
+            opening_point_offsets: &[0, 1],
+            ..RegularConstraintInputs::default()
+        };
+        let ops = entry_ops(0, &entry, &program).expect("operation span should read");
+        let args = entry_args(0, &entry, &program).expect("argument span should read");
+        let mut context = RowEvaluationContext {
+            constraint_index: 0,
+            entry: &entry,
+            ops,
+            args,
+            operations: vec![None; ops.len()],
+            sources: vec![[None, None]; ops.len()],
+            program: &program,
+            inputs,
+            layout: BufferLayout::new(inputs),
+        };
+        let prepared = prepared_operations(&mut context).expect("operations should prepare");
+        let base_program = prepared_base_operations(&entry, &prepared, &program, inputs)
+            .expect("base program should prepare")
+            .expect("all operations are base operations");
+
+        assert!(matches!(
+            base_program.operations.as_slice(),
+            [
+                PreparedBaseOperation::MatrixConstant { .. },
+                PreparedBaseOperation::MatrixTmp1 { .. },
+                PreparedBaseOperation::Tmp1Constant { .. },
+                PreparedBaseOperation::Tmp1Tmp1 { .. },
+            ]
+        ));
+
+        let results = evaluate_regular_constraints(&program, inputs)
+            .expect("regular constraint should evaluate");
+        assert_eq!(results[0].invalid_rows, Vec::new());
     }
 
     #[test]
