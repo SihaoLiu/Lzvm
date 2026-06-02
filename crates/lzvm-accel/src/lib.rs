@@ -322,7 +322,7 @@ fn cuda_status(code: i32) -> Result<(), AccelError> {
     }
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(all(feature = "cuda", not(target_endian = "little")))]
 fn u64_words_to_bytes(words: &[u64]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(words.len().saturating_mul(8));
     for word in words {
@@ -331,7 +331,7 @@ fn u64_words_to_bytes(words: &[u64]) -> Vec<u8> {
     bytes
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(all(feature = "cuda", not(target_endian = "little")))]
 fn bytes_to_u64_words(bytes: &[u8]) -> Result<Vec<u64>, AccelError> {
     if !bytes.len().is_multiple_of(8) {
         return Err(AccelError::LengthMismatch {
@@ -348,6 +348,14 @@ fn bytes_to_u64_words(bytes: &[u8]) -> Result<Vec<u64>, AccelError> {
             u64::from_le_bytes(word)
         })
         .collect::<Vec<_>>())
+}
+
+#[cfg(feature = "cuda")]
+fn u64_word_byte_len(word_count: usize) -> Result<usize, AccelError> {
+    word_count.checked_mul(8).ok_or(AccelError::InvalidDomain {
+        bits: 64,
+        len: word_count,
+    })
 }
 
 #[cfg(feature = "cuda")]
@@ -438,15 +446,63 @@ impl CudaDeviceBuffer {
     }
 
     pub fn from_u64_words(words: &[u64]) -> Result<Self, AccelError> {
-        let mut buffer = Self::new(words.len().saturating_mul(8))?;
-        let bytes = u64_words_to_bytes(words);
-        buffer.copy_from(&bytes)?;
+        let mut buffer = Self::new(u64_word_byte_len(words.len())?)?;
+        buffer.copy_from_u64_words(words)?;
         Ok(buffer)
     }
 
     pub fn to_u64_words(&self) -> Result<Vec<u64>, AccelError> {
-        let bytes = self.to_vec()?;
-        bytes_to_u64_words(&bytes)
+        if !self.len.is_multiple_of(8) {
+            return Err(AccelError::LengthMismatch {
+                lhs: self.len,
+                rhs: self.len / 8 * 8,
+            });
+        }
+        #[cfg(target_endian = "little")]
+        {
+            let mut output = vec![0_u64; self.len / 8];
+            if output.is_empty() {
+                return Ok(output);
+            }
+            let code = unsafe {
+                lzvm_cuda_copy_d2h_bytes(
+                    output.as_mut_ptr().cast(),
+                    self.ptr as *const c_void,
+                    self.len,
+                )
+            };
+            cuda_status(code)?;
+            Ok(output)
+        }
+        #[cfg(not(target_endian = "little"))]
+        {
+            let bytes = self.to_vec()?;
+            bytes_to_u64_words(&bytes)
+        }
+    }
+
+    pub fn copy_from_u64_words(&mut self, words: &[u64]) -> Result<(), AccelError> {
+        let expected_len = u64_word_byte_len(words.len())?;
+        if expected_len != self.len {
+            return Err(AccelError::LengthMismatch {
+                lhs: self.len,
+                rhs: expected_len,
+            });
+        }
+        if self.len == 0 {
+            return Ok(());
+        }
+        #[cfg(target_endian = "little")]
+        {
+            let code =
+                unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, words.as_ptr().cast(), self.len) };
+            cuda_status(code)
+        }
+        #[cfg(not(target_endian = "little"))]
+        {
+            let bytes = u64_words_to_bytes(words);
+            self.copy_from(&bytes)
+        }
     }
 
     pub fn to_state_prefix_u64_words(

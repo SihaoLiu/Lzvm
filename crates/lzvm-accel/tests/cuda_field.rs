@@ -14,7 +14,7 @@ use lzvm_accel::{
     cuda_poseidon2_width8, cuda_poseidon2_width8_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_device,
     cuda_poseidon2_width8_merkle_parent_device, cuda_poseidon2_width8_merkle_root_device,
-    cuda_setup_init, CudaDeviceBuffer,
+    cuda_setup_init, AccelError, CudaDeviceBuffer,
 };
 #[cfg(feature = "cuda")]
 use lzvm_crypto::keccak256;
@@ -216,6 +216,77 @@ fn cuda_device_buffer_round_trips_u64_words() {
         .expect("device words should copy back to host");
 
     assert_eq!(output, input);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_device_buffer_copies_u64_words_directly() {
+    let input = vec![
+        0,
+        1,
+        MODULUS - 1,
+        0x0102_0304_0506_0708,
+        0x8877_6655_4433_2211,
+        MODULUS / 2,
+    ];
+    let expected_bytes = input
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect::<Vec<_>>();
+    let mut buffer = CudaDeviceBuffer::new(input.len() * 8).expect("device buffer should allocate");
+
+    buffer
+        .copy_from_u64_words(&input)
+        .expect("device words should copy from host");
+
+    assert_eq!(
+        buffer.to_vec().expect("device bytes should copy to host"),
+        expected_bytes
+    );
+    assert_eq!(
+        buffer
+            .to_u64_words()
+            .expect("device words should copy back to host"),
+        input
+    );
+
+    let mut byte_buffer =
+        CudaDeviceBuffer::new(expected_bytes.len()).expect("device byte buffer should allocate");
+    byte_buffer
+        .copy_from(&expected_bytes)
+        .expect("device bytes should copy from host");
+    assert_eq!(
+        byte_buffer
+            .to_u64_words()
+            .expect("device bytes should copy back as words"),
+        input
+    );
+    assert_eq!(
+        buffer
+            .copy_from_u64_words(&input[..input.len() - 1])
+            .expect_err("short word input should fail"),
+        AccelError::LengthMismatch {
+            lhs: input.len() * 8,
+            rhs: (input.len() - 1) * 8,
+        }
+    );
+
+    let mut empty = CudaDeviceBuffer::new(0).expect("empty device buffer should allocate");
+    empty
+        .copy_from_u64_words(&[])
+        .expect("empty word input should copy");
+    assert_eq!(
+        empty
+            .to_u64_words()
+            .expect("empty word buffer should copy back"),
+        Vec::<u64>::new()
+    );
+
+    let odd = CudaDeviceBuffer::new(7).expect("odd device buffer should allocate");
+    assert_eq!(
+        odd.to_u64_words().expect_err("odd byte count should fail"),
+        AccelError::LengthMismatch { lhs: 7, rhs: 0 }
+    );
 }
 
 #[test]
