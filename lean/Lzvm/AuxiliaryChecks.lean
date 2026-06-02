@@ -45,6 +45,38 @@ structure GuestPcTraceTimingSummary where
   guestStageTreeCommitWorkMilliseconds : Nat
 deriving DecidableEq, Repr
 
+structure GpuSetupCacheState where
+  device : Nat
+  initializedBits : Nat
+deriving DecidableEq, Repr
+
+structure GpuSetupRequest where
+  device : Nat
+  requiredBits : Nat
+deriving DecidableEq, Repr
+
+def GpuSetupCacheCovers
+    (state : GpuSetupCacheState)
+    (request : GpuSetupRequest) : Prop :=
+  request.device = state.device /\ request.requiredBits <= state.initializedBits
+
+structure GpuSetupCacheValidation where
+  constantsSoundFor : Nat -> Nat -> Prop
+  coveredConstantsSound :
+    forall device initializedBits requiredBits,
+      requiredBits <= initializedBits ->
+        constantsSoundFor device initializedBits ->
+          constantsSoundFor device requiredBits
+
+def GpuSetupCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GpuSetupCacheValidation)
+    (request : GpuSetupRequest)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.constantsSoundFor request.device request.requiredBits
+
 def SourceLookupAuxiliaryEvidence
     (system : VerifierModel)
     (auxiliary : AuxiliaryValidation system)
@@ -137,5 +169,55 @@ theorem guest_pc_trace_timing_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithGuestPcTraceTimings
   exact abstract_verifier_sound assumptions publicInput proof acceptedWithGuestPcTraceTimings
+
+theorem gpu_setup_cache_reuse_sound
+    (validation : GpuSetupCacheValidation)
+    (state : GpuSetupCacheState)
+    (request : GpuSetupRequest) :
+    GpuSetupCacheCovers state request ->
+      validation.constantsSoundFor state.device state.initializedBits ->
+        validation.constantsSoundFor request.device request.requiredBits := by
+  intro covers initializedSound
+  cases covers with
+  | intro sameDevice bitCover =>
+    rw [sameDevice]
+    exact
+      validation.coveredConstantsSound
+        state.device
+        state.initializedBits
+        request.requiredBits
+        bitCover
+        initializedSound
+
+theorem gpu_setup_cache_reuse_request_device_sound
+    (validation : GpuSetupCacheValidation)
+    (state : GpuSetupCacheState)
+    (request : GpuSetupRequest) :
+    request.device = state.device ->
+      request.requiredBits <= state.initializedBits ->
+        validation.constantsSoundFor state.device state.initializedBits ->
+          validation.constantsSoundFor request.device request.requiredBits := by
+  intro sameDevice bitCover initializedSound
+  exact
+    gpu_setup_cache_reuse_sound
+      validation
+      state
+      request
+      (And.intro sameDevice bitCover)
+      initializedSound
+
+theorem gpu_setup_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuSetupCacheValidation)
+    (request : GpuSetupRequest) :
+    forall publicInput proof,
+      GpuSetupCheckedAcceptance system validation request publicInput proof ->
+        validation.constantsSoundFor request.device request.requiredBits
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithSetup
+  exact
+    And.intro acceptedWithSetup.right
+      (abstract_verifier_sound assumptions publicInput proof acceptedWithSetup.left)
 
 end Lzvm

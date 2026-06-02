@@ -688,6 +688,23 @@ int run_poseidon2_width16_linear_round_on_device(
 
 }  // namespace
 
+extern "C" int lzvm_cuda_current_device(int* out) {
+    if (out == nullptr) {
+        return -1;
+    }
+    LZVM_CUDA_RETURN_ON_ERROR(cudaGetDevice(out));
+    return 0;
+}
+
+extern "C" int lzvm_cuda_setup_root_limit(unsigned int* out) {
+    if (out == nullptr) {
+        return -1;
+    }
+    LZVM_CUDA_RETURN_ON_ERROR(
+        cudaMemcpyFromSymbol(out, kNttStageRootLimit, sizeof(*out)));
+    return 0;
+}
+
 extern "C" int lzvm_cuda_setup_init(
     const uint64_t* roots,
     size_t root_count,

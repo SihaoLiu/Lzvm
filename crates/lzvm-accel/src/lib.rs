@@ -3,16 +3,18 @@ use std::ffi::c_void;
 use std::fmt;
 #[cfg(feature = "cuda")]
 use std::ptr;
-#[cfg(feature = "cuda")]
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(feature = "cuda")]
 mod cuda_regular_constraints;
+#[cfg(feature = "cuda")]
+mod cuda_setup;
 #[cfg(feature = "cuda")]
 pub use cuda_regular_constraints::{
     cuda_regular_constraints_base, CudaRegularConstraintEntry, CudaRegularConstraintInputs,
     CudaRegularConstraintResult, CudaRegularStage,
 };
+#[cfg(feature = "cuda")]
+pub use cuda_setup::cuda_setup_init;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccelError {
@@ -61,7 +63,6 @@ unsafe extern "C" {
         prefix_words: usize,
     ) -> i32;
     fn lzvm_cuda_memset_zero_bytes(dst: *mut c_void, bytes: usize) -> i32;
-    fn lzvm_cuda_setup_init(roots: *const u64, root_count: usize, max_bits_ext: usize) -> i32;
     fn lzvm_cuda_goldilocks_add(lhs: *const u64, rhs: *const u64, out: *mut u64, len: usize)
         -> i32;
     fn lzvm_cuda_goldilocks_mul(lhs: *const u64, rhs: *const u64, out: *mut u64, len: usize)
@@ -274,9 +275,6 @@ const ROOTS_OF_UNITY: [u64; 33] = [
 const SHIFT: u64 = 7;
 
 #[cfg(feature = "cuda")]
-static CUDA_SETUP_MAX_BITS: AtomicUsize = AtomicUsize::new(0);
-
-#[cfg(feature = "cuda")]
 fn pow_mod(mut base: u64, mut exponent: u64) -> u64 {
     const MODULUS: u64 = 0xffff_ffff_0000_0001;
 
@@ -292,32 +290,8 @@ fn pow_mod(mut base: u64, mut exponent: u64) -> u64 {
 }
 
 #[cfg(feature = "cuda")]
-pub fn cuda_setup_init(max_bits_ext: usize) -> Result<(), AccelError> {
-    if ROOTS_OF_UNITY.get(max_bits_ext).is_none() {
-        return Err(AccelError::InvalidDomain {
-            bits: max_bits_ext,
-            len: ROOTS_OF_UNITY.len(),
-        });
-    }
-
-    let code = unsafe {
-        lzvm_cuda_setup_init(ROOTS_OF_UNITY.as_ptr(), ROOTS_OF_UNITY.len(), max_bits_ext)
-    };
-    if code == 0 {
-        CUDA_SETUP_MAX_BITS.store(max_bits_ext, Ordering::Relaxed);
-        Ok(())
-    } else {
-        Err(AccelError::Cuda { code })
-    }
-}
-
-#[cfg(feature = "cuda")]
 fn ensure_cuda_setup(max_bits_ext: usize) -> Result<(), AccelError> {
-    if CUDA_SETUP_MAX_BITS.load(Ordering::Relaxed) >= max_bits_ext {
-        Ok(())
-    } else {
-        cuda_setup_init(max_bits_ext)
-    }
+    cuda_setup_init(max_bits_ext)
 }
 
 #[cfg(feature = "cuda")]
