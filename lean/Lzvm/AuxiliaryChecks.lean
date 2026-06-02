@@ -29,6 +29,9 @@ structure GuestPcTraceTimingSummary where
   guestRegularConstraintsMilliseconds : Nat
   guestRegularHintsMilliseconds : Nat
   guestStageCommitMilliseconds : Nat
+  guestStageTraceExtractMilliseconds : Nat
+  guestStageLeafExtendWorkMilliseconds : Nat
+  guestStageTreeCommitWorkMilliseconds : Nat
 deriving DecidableEq, Repr
 
 def SourceLookupAuxiliaryEvidence

@@ -5994,6 +5994,18 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
         "{stdout}"
     );
     assert!(stdout.contains("timing_guest_stage_commit_ms="), "{stdout}");
+    assert!(
+        stdout.contains("timing_guest_stage_trace_extract_ms="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_stage_leaf_extend_work_ms="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_stage_tree_commit_work_ms="),
+        "{stdout}"
+    );
     assert!(stdout.contains("timing_witness_ms="), "{stdout}");
     assert!(stdout.contains("timing_total_ms="), "{stdout}");
 }

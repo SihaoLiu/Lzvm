@@ -1,4 +1,5 @@
 use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::witness_layout::derive_witness_trace_layout;
 use crate::witness_layout::WitnessTraceStageValues;
@@ -17,22 +18,58 @@ use super::{
     WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct WitnessStageCommitTiming {
+    leaf_extend_duration: Duration,
+    tree_commit_duration: Duration,
+}
+
+impl WitnessStageCommitTiming {
+    pub(crate) fn accumulate(&mut self, other: Self) {
+        self.leaf_extend_duration += other.leaf_extend_duration;
+        self.tree_commit_duration += other.tree_commit_duration;
+    }
+
+    pub(crate) fn leaf_extend_duration(&self) -> Duration {
+        self.leaf_extend_duration
+    }
+
+    pub(crate) fn tree_commit_duration(&self) -> Duration {
+        self.tree_commit_duration
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WitnessStageCommitParams {
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+}
+
+impl WitnessStageCommitParams {
+    fn from_unit(unit: &ProveUnitSchedule) -> Result<Self, WitnessTraceCommitmentError> {
+        Ok(Self {
+            source_bits: usize::try_from(unit.base_domain_bits)
+                .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?,
+            target_bits: usize::try_from(unit.extended_domain_bits)
+                .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?,
+            arity: usize::try_from(unit.merkle_tree_arity)
+                .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?,
+        })
+    }
+}
+
 pub fn commit_witness_trace_stages(
     trace: &WitnessTraceBuffer,
     unit: &ProveUnitSchedule,
 ) -> Result<WitnessTraceCommitments, WitnessTraceCommitmentError> {
     let layout = derive_witness_trace_layout(unit)?;
-    let source_bits = usize::try_from(unit.base_domain_bits)
-        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
-    let target_bits = usize::try_from(unit.extended_domain_bits)
-        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
-    let arity = usize::try_from(unit.merkle_tree_arity)
-        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+    let params = WitnessStageCommitParams::from_unit(unit)?;
 
     let mut commitments = Vec::with_capacity(layout.stage_count());
     for stage_info in layout.stages() {
         let stage = layout.stage_trace(trace, stage_info.stage_index)?;
-        let commitment = commit_extended_witness_stage(&stage, source_bits, target_bits, arity)?;
+        let commitment = commit_extended_witness_stage(&stage, params, None)?;
         commitments.push(commitment);
     }
 
@@ -50,12 +87,7 @@ pub fn commit_witness_trace_stages_with_workers(
     }
 
     let layout = derive_witness_trace_layout(unit)?;
-    let source_bits = usize::try_from(unit.base_domain_bits)
-        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
-    let target_bits = usize::try_from(unit.extended_domain_bits)
-        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
-    let arity = usize::try_from(unit.merkle_tree_arity)
-        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+    let params = WitnessStageCommitParams::from_unit(unit)?;
     let stage_indices = layout
         .stages()
         .iter()
@@ -74,8 +106,7 @@ pub fn commit_witness_trace_stages_with_workers(
                 let mut out = Vec::with_capacity(chunk.len());
                 for stage_index in chunk {
                     let stage = layout.stage_trace(trace, stage_index)?;
-                    let commitment =
-                        commit_extended_witness_stage(&stage, source_bits, target_bits, arity)?;
+                    let commitment = commit_extended_witness_stage(&stage, params, None)?;
                     out.push((stage_index, commitment));
                 }
                 Ok::<_, WitnessTraceCommitmentError>(out)
@@ -106,22 +137,12 @@ pub(crate) fn commit_witness_stage_values_with_workers(
     worker_count: usize,
 ) -> Result<WitnessTraceCommitments, WitnessTraceCommitmentError> {
     let worker_count = worker_count.max(1);
-    let source_bits = usize::try_from(unit.base_domain_bits)
-        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
-    let target_bits = usize::try_from(unit.extended_domain_bits)
-        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
-    let arity = usize::try_from(unit.merkle_tree_arity)
-        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+    let params = WitnessStageCommitParams::from_unit(unit)?;
 
     if worker_count == 1 || stages.len() <= 1 {
         let mut commitments = Vec::with_capacity(stages.len());
         for stage in stages {
-            commitments.push(commit_extended_witness_stage(
-                stage,
-                source_bits,
-                target_bits,
-                arity,
-            )?);
+            commitments.push(commit_extended_witness_stage(stage, params, None)?);
         }
         return Ok(WitnessTraceCommitments::new(commitments));
     }
@@ -135,8 +156,7 @@ pub(crate) fn commit_witness_stage_values_with_workers(
             handles.push(scope.spawn(move || {
                 let mut out = Vec::with_capacity(chunk.len());
                 for stage in chunk {
-                    let commitment =
-                        commit_extended_witness_stage(stage, source_bits, target_bits, arity)?;
+                    let commitment = commit_extended_witness_stage(stage, params, None)?;
                     out.push((stage.stage_index(), commitment));
                 }
                 Ok::<_, WitnessTraceCommitmentError>(out)
@@ -161,24 +181,129 @@ pub(crate) fn commit_witness_stage_values_with_workers(
     ))
 }
 
+pub(crate) fn commit_witness_stage_values_with_workers_and_timing(
+    stages: &[WitnessTraceStageValues],
+    unit: &ProveUnitSchedule,
+    worker_count: usize,
+    timing: &mut WitnessStageCommitTiming,
+) -> Result<WitnessTraceCommitments, WitnessTraceCommitmentError> {
+    let worker_count = worker_count.max(1);
+    let params = WitnessStageCommitParams::from_unit(unit)?;
+
+    if worker_count == 1 || stages.len() <= 1 {
+        let mut commitments = Vec::with_capacity(stages.len());
+        for stage in stages {
+            commitments.push(commit_extended_witness_stage(stage, params, Some(timing))?);
+        }
+        return Ok(WitnessTraceCommitments::new(commitments));
+    }
+
+    let worker_count = worker_count.min(stages.len());
+    let chunk_size = stages.len().div_ceil(worker_count);
+    let mut commitments = Vec::with_capacity(stages.len());
+    thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for chunk in stages.chunks(chunk_size) {
+            handles.push(scope.spawn(move || {
+                let mut out = Vec::with_capacity(chunk.len());
+                let mut chunk_timing = WitnessStageCommitTiming::default();
+                for stage in chunk {
+                    let commitment =
+                        commit_extended_witness_stage(stage, params, Some(&mut chunk_timing))?;
+                    out.push((stage.stage_index(), commitment));
+                }
+                Ok::<_, WitnessTraceCommitmentError>((out, chunk_timing))
+            }));
+        }
+
+        for handle in handles {
+            let (chunk, chunk_timing) = handle
+                .join()
+                .map_err(|_| WitnessTraceCommitmentError::WorkerPanic)??;
+            commitments.extend(chunk);
+            timing.accumulate(chunk_timing);
+        }
+        Ok::<(), WitnessTraceCommitmentError>(())
+    })?;
+
+    commitments.sort_by_key(|(stage_index, _)| *stage_index);
+    Ok(WitnessTraceCommitments::new(
+        commitments
+            .into_iter()
+            .map(|(_, commitment)| commitment)
+            .collect(),
+    ))
+}
+
 fn commit_extended_witness_stage(
     stage: &WitnessTraceStageValues,
-    source_bits: usize,
-    target_bits: usize,
-    arity: usize,
+    params: WitnessStageCommitParams,
+    mut timing: Option<&mut WitnessStageCommitTiming>,
 ) -> Result<super::WitnessStageCommitment, WitnessTraceCommitmentError> {
     #[cfg(feature = "cuda")]
     {
-        let (leaves, leaf_hashes) =
-            extend_witness_stage_leaves_with_leaf_hashes(stage, source_bits, target_bits, arity)?;
-        commit_witness_stage_leaves_owned_with_leaf_hashes(leaves, arity, leaf_hashes)
-            .map_err(WitnessTraceCommitmentError::from)
+        let (leaves, leaf_hashes) = record_optional_duration(
+            timing
+                .as_mut()
+                .map(|timing| &mut timing.leaf_extend_duration),
+            || {
+                extend_witness_stage_leaves_with_leaf_hashes(
+                    stage,
+                    params.source_bits,
+                    params.target_bits,
+                    params.arity,
+                )
+            },
+        )?;
+        record_optional_duration(
+            timing
+                .as_mut()
+                .map(|timing| &mut timing.tree_commit_duration),
+            || {
+                commit_witness_stage_leaves_owned_with_leaf_hashes(
+                    leaves,
+                    params.arity,
+                    leaf_hashes,
+                )
+                .map_err(WitnessTraceCommitmentError::from)
+            },
+        )
     }
 
     #[cfg(not(feature = "cuda"))]
     {
-        let leaves = extend_witness_stage_leaves(stage, source_bits, target_bits)?;
-        commit_witness_stage_leaves_owned(leaves, arity).map_err(WitnessTraceCommitmentError::from)
+        let leaves = record_optional_duration(
+            timing
+                .as_mut()
+                .map(|timing| &mut timing.leaf_extend_duration),
+            || {
+                extend_witness_stage_leaves(stage, params.source_bits, params.target_bits)
+                    .map_err(WitnessTraceCommitmentError::from)
+            },
+        )?;
+        record_optional_duration(
+            timing
+                .as_mut()
+                .map(|timing| &mut timing.tree_commit_duration),
+            || {
+                commit_witness_stage_leaves_owned(leaves, params.arity)
+                    .map_err(WitnessTraceCommitmentError::from)
+            },
+        )
+    }
+}
+
+fn record_optional_duration<T>(
+    duration: Option<&mut Duration>,
+    run: impl FnOnce() -> Result<T, WitnessTraceCommitmentError>,
+) -> Result<T, WitnessTraceCommitmentError> {
+    if let Some(duration) = duration {
+        let started = Instant::now();
+        let result = run()?;
+        *duration += started.elapsed();
+        Ok(result)
+    } else {
+        run()
     }
 }
 
@@ -264,15 +389,15 @@ mod tests {
         let stage = layout
             .stage_trace(&trace, 1)
             .expect("stage should be present");
-        let source_bits = usize::try_from(unit.base_domain_bits).expect("source bits fit");
-        let target_bits = usize::try_from(unit.extended_domain_bits).expect("target bits fit");
         let arity = usize::try_from(unit.merkle_tree_arity).expect("arity fits");
+        let params = WitnessStageCommitParams::from_unit(&unit).expect("params should derive");
 
         let separate_leaves =
-            extend_witness_stage_leaves(&stage, source_bits, target_bits).expect("stage extends");
+            extend_witness_stage_leaves(&stage, params.source_bits, params.target_bits)
+                .expect("stage extends");
         let separate = commit_witness_stage_leaves(&separate_leaves, arity)
             .expect("separate commitment should build");
-        let combined = commit_extended_witness_stage(&stage, source_bits, target_bits, arity)
+        let combined = commit_extended_witness_stage(&stage, params, None)
             .expect("combined commitment should build");
 
         assert_eq!(combined.stage_index(), separate.stage_index());

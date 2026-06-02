@@ -68,4 +68,16 @@ pub(super) fn record_guest_pc_trace_timing(
     );
     timings.record("guest_regular_hints", timing.guest_regular_hint_duration());
     timings.record("guest_stage_commit", timing.guest_stage_commit_duration());
+    timings.record(
+        "guest_stage_trace_extract",
+        timing.guest_stage_trace_extract_duration(),
+    );
+    timings.record(
+        "guest_stage_leaf_extend_work",
+        timing.guest_stage_leaf_extend_work_duration(),
+    );
+    timings.record(
+        "guest_stage_tree_commit_work",
+        timing.guest_stage_tree_commit_work_duration(),
+    );
 }

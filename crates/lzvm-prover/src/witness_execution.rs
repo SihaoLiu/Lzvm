@@ -41,7 +41,8 @@ use crate::regular_constraints::{
 use crate::source_assignment_hints::validate_source_assignment_hints;
 use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
 use crate::witness_commitment::{
-    commit_witness_stage_values_with_workers, commit_witness_trace_stages_with_workers,
+    commit_witness_stage_values_with_workers, commit_witness_stage_values_with_workers_and_timing,
+    commit_witness_trace_stages_with_workers, WitnessStageCommitTiming,
     WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
 use crate::witness_layout::{
@@ -185,6 +186,9 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_regular_constraint_duration: Duration,
     guest_regular_hint_duration: Duration,
     guest_stage_commit_duration: Duration,
+    guest_stage_trace_extract_duration: Duration,
+    guest_stage_leaf_extend_work_duration: Duration,
+    guest_stage_tree_commit_work_duration: Duration,
 }
 
 impl ProveWitnessGuestPcTraceTiming {
@@ -201,6 +205,9 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_regular_constraint_duration: trace_timing.regular_constraint_duration,
             guest_regular_hint_duration: trace_timing.regular_hint_duration,
             guest_stage_commit_duration: trace_timing.stage_commit_duration,
+            guest_stage_trace_extract_duration: trace_timing.stage_trace_extract_duration,
+            guest_stage_leaf_extend_work_duration: trace_timing.stage_leaf_extend_work_duration,
+            guest_stage_tree_commit_work_duration: trace_timing.stage_tree_commit_work_duration,
         }
     }
 
@@ -227,6 +234,18 @@ impl ProveWitnessGuestPcTraceTiming {
     pub fn guest_stage_commit_duration(&self) -> Duration {
         self.guest_stage_commit_duration
     }
+
+    pub fn guest_stage_trace_extract_duration(&self) -> Duration {
+        self.guest_stage_trace_extract_duration
+    }
+
+    pub fn guest_stage_leaf_extend_work_duration(&self) -> Duration {
+        self.guest_stage_leaf_extend_work_duration
+    }
+
+    pub fn guest_stage_tree_commit_work_duration(&self) -> Duration {
+        self.guest_stage_tree_commit_work_duration
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -234,6 +253,9 @@ struct ProveWitnessTraceTimingAccumulator {
     regular_constraint_duration: Duration,
     regular_hint_duration: Duration,
     stage_commit_duration: Duration,
+    stage_trace_extract_duration: Duration,
+    stage_leaf_extend_work_duration: Duration,
+    stage_tree_commit_work_duration: Duration,
 }
 
 impl ProveWitnessTraceTimingAccumulator {
@@ -241,6 +263,9 @@ impl ProveWitnessTraceTimingAccumulator {
         self.regular_constraint_duration += other.regular_constraint_duration;
         self.regular_hint_duration += other.regular_hint_duration;
         self.stage_commit_duration += other.stage_commit_duration;
+        self.stage_trace_extract_duration += other.stage_trace_extract_duration;
+        self.stage_leaf_extend_work_duration += other.stage_leaf_extend_work_duration;
+        self.stage_tree_commit_work_duration += other.stage_tree_commit_work_duration;
     }
 }
 
@@ -1660,28 +1685,37 @@ fn run_prove_witness_commitments_from_trace_inner(
     }
     let trace_rows = trace.row_count();
     let trace_columns = trace.column_count();
-    let stage_commitments = record_optional_duration(
-        timing
-            .as_mut()
-            .map(|timing| &mut timing.stage_commit_duration),
-        || {
-            if stage_trace_cache.is_extracted() {
-                let stage_traces = stage_trace_cache.get_or_extract(&layout, &trace)?;
-                Ok(commit_witness_stage_values_with_workers(
-                    stage_traces,
-                    unit,
-                    plan.run_plan.gpu.witness_thread_pools,
-                )?)
-            } else {
-                Ok(commit_witness_trace_stages_with_workers(
-                    &trace,
-                    unit,
-                    plan.run_plan.gpu.witness_thread_pools,
-                )?)
-            }
-        },
-    )?;
-
+    let stage_commitments = if let Some(timing) = timing {
+        record_optional_duration(Some(&mut timing.stage_commit_duration), || {
+            let stage_traces =
+                record_optional_duration(Some(&mut timing.stage_trace_extract_duration), || {
+                    stage_trace_cache.get_or_extract(&layout, &trace)
+                })?;
+            let mut stage_timing = WitnessStageCommitTiming::default();
+            let stage_commitments = commit_witness_stage_values_with_workers_and_timing(
+                stage_traces,
+                unit,
+                plan.run_plan.gpu.witness_thread_pools,
+                &mut stage_timing,
+            )?;
+            timing.stage_leaf_extend_work_duration += stage_timing.leaf_extend_duration();
+            timing.stage_tree_commit_work_duration += stage_timing.tree_commit_duration();
+            Ok(stage_commitments)
+        })?
+    } else if stage_trace_cache.is_extracted() {
+        let stage_traces = stage_trace_cache.get_or_extract(&layout, &trace)?;
+        commit_witness_stage_values_with_workers(
+            stage_traces,
+            unit,
+            plan.run_plan.gpu.witness_thread_pools,
+        )?
+    } else {
+        commit_witness_trace_stages_with_workers(
+            &trace,
+            unit,
+            plan.run_plan.gpu.witness_thread_pools,
+        )?
+    };
     let commitments = ProveWitnessCommitments {
         identity: ProveTraceIdentity::new(unit_index, 0),
         input_byte_count,
