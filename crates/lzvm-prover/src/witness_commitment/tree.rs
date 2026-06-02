@@ -13,6 +13,45 @@ pub fn commit_witness_stage_leaves(
     leaves: &WitnessStageLeaves,
     arity: usize,
 ) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    let expected_leaf_bytes = validate_witness_stage_leaves(leaves, arity)?;
+
+    let mut out = Vec::with_capacity(expected_leaf_bytes);
+    out.extend_from_slice(leaves.bytes());
+
+    commit_validated_witness_stage_bytes(
+        leaves.stage_index(),
+        leaves.extended_row_count(),
+        leaves.column_count(),
+        arity,
+        expected_leaf_bytes,
+        out,
+    )
+}
+
+pub(crate) fn commit_witness_stage_leaves_owned(
+    leaves: WitnessStageLeaves,
+    arity: usize,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    let expected_leaf_bytes = validate_witness_stage_leaves(&leaves, arity)?;
+    let stage_index = leaves.stage_index();
+    let extended_row_count = leaves.extended_row_count();
+    let column_count = leaves.column_count();
+    let out = leaves.into_bytes();
+
+    commit_validated_witness_stage_bytes(
+        stage_index,
+        extended_row_count,
+        column_count,
+        arity,
+        expected_leaf_bytes,
+        out,
+    )
+}
+
+fn validate_witness_stage_leaves(
+    leaves: &WitnessStageLeaves,
+    arity: usize,
+) -> Result<usize, WitnessStageCommitmentError> {
     validate_witness_commitment_arity(arity)?;
     if leaves.extended_row_count() == 0 {
         return Err(WitnessStageCommitmentError::EmptyStage);
@@ -29,15 +68,26 @@ pub fn commit_witness_stage_leaves(
         });
     }
 
-    let mut out = Vec::with_capacity(leaves.bytes().len());
-    out.extend_from_slice(leaves.bytes());
+    Ok(expected_leaf_bytes)
+}
 
+fn commit_validated_witness_stage_bytes(
+    stage_index: usize,
+    extended_row_count: usize,
+    column_count: usize,
+    arity: usize,
+    leaf_byte_count: usize,
+    mut out: Vec<u8>,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
     let mut level = linear_hashes_from_row_major_bytes(
-        leaves.bytes(),
-        leaves.extended_row_count(),
-        leaves.column_count(),
+        &out[..leaf_byte_count],
+        extended_row_count,
+        column_count,
         arity,
     )?;
+    let tree_byte_count =
+        expected_witness_stage_commitment_tree_byte_count(extended_row_count, column_count, arity)?;
+    out.reserve_exact(tree_byte_count.saturating_sub(out.len()));
     for digest in &level {
         append_digest(&mut out, *digest);
     }
@@ -54,7 +104,7 @@ pub fn commit_witness_stage_leaves(
     }
 
     Ok(WitnessStageCommitment::new(
-        leaves.stage_index(),
+        stage_index,
         arity,
         level[0],
         out,
@@ -88,7 +138,7 @@ pub fn open_witness_stage_commitment(
         .checked_mul(WORD_BYTES)
         .ok_or(WitnessStageOpeningError::LengthOverflow)?;
     let expected_tree_bytes =
-        expected_witness_stage_tree_byte_count(rows, column_count, commitment.arity())?;
+        expected_witness_stage_opening_tree_byte_count(rows, column_count, commitment.arity())?;
     if commitment.tree_bytes().len() != expected_tree_bytes {
         return Err(WitnessStageOpeningError::InvalidTreeByteLength {
             expected: expected_tree_bytes,
@@ -108,7 +158,11 @@ pub fn open_witness_stage_commitment(
     let mut level_len = rows;
     let mut level_query = query_row;
     while level_len > 1 {
-        let padded_len = round_up_to_arity(level_len, commitment.arity())?;
+        let padded_len = round_up_to_arity(
+            level_len,
+            commitment.arity(),
+            WitnessStageOpeningError::LengthOverflow,
+        )?;
         let child_slot = level_query % commitment.arity();
         let group_start = (level_query / commitment.arity())
             .checked_mul(commitment.arity())
@@ -244,39 +298,64 @@ fn read_witness_stage_leaf_rows(
     Ok(rows)
 }
 
-fn expected_witness_stage_tree_byte_count(
+fn expected_witness_stage_commitment_tree_byte_count(
+    row_count: usize,
+    column_count: usize,
+    arity: usize,
+) -> Result<usize, WitnessStageCommitmentError> {
+    expected_witness_stage_tree_byte_count(
+        row_count,
+        column_count,
+        arity,
+        WitnessStageCommitmentError::LengthOverflow,
+    )
+}
+
+fn expected_witness_stage_opening_tree_byte_count(
     row_count: usize,
     column_count: usize,
     arity: usize,
 ) -> Result<usize, WitnessStageOpeningError> {
+    expected_witness_stage_tree_byte_count(
+        row_count,
+        column_count,
+        arity,
+        WitnessStageOpeningError::LengthOverflow,
+    )
+}
+
+fn expected_witness_stage_tree_byte_count<E: Clone>(
+    row_count: usize,
+    column_count: usize,
+    arity: usize,
+    length_overflow: E,
+) -> Result<usize, E> {
     let raw_byte_count = row_count
         .checked_mul(column_count)
         .and_then(|words| words.checked_mul(WORD_BYTES))
-        .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+        .ok_or_else(|| length_overflow.clone())?;
     let mut digest_count = row_count;
     let mut level_len = row_count;
     while level_len > 1 {
-        let padded_len = round_up_to_arity(level_len, arity)?;
+        let padded_len = round_up_to_arity(level_len, arity, length_overflow.clone())?;
         digest_count = digest_count
             .checked_add(padded_len - level_len)
             .and_then(|count| count.checked_add(padded_len / arity))
-            .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+            .ok_or_else(|| length_overflow.clone())?;
         level_len = padded_len / arity;
     }
     raw_byte_count
         .checked_add(
             digest_count
                 .checked_mul(HASH_WORDS * WORD_BYTES)
-                .ok_or(WitnessStageOpeningError::LengthOverflow)?,
+                .ok_or_else(|| length_overflow.clone())?,
         )
-        .ok_or(WitnessStageOpeningError::LengthOverflow)
+        .ok_or(length_overflow)
 }
 
-fn round_up_to_arity(value: usize, arity: usize) -> Result<usize, WitnessStageOpeningError> {
+fn round_up_to_arity<E>(value: usize, arity: usize, length_overflow: E) -> Result<usize, E> {
     let extra = (arity - (value % arity)) % arity;
-    value
-        .checked_add(extra)
-        .ok_or(WitnessStageOpeningError::LengthOverflow)
+    value.checked_add(extra).ok_or(length_overflow)
 }
 
 fn read_witness_opening_values(
@@ -337,11 +416,11 @@ fn append_digest(out: &mut Vec<u8>, digest: [Felt; HASH_WORDS]) {
 #[cfg(test)]
 mod tests {
     use super::{
-        commit_witness_stage_leaves, open_witness_stage_commitment,
-        verify_witness_stage_opening_root, WitnessStageCommitmentError, WitnessStageLeaves,
-        WORD_BYTES,
+        commit_witness_stage_leaves, commit_witness_stage_leaves_owned,
+        open_witness_stage_commitment, verify_witness_stage_opening_root,
+        WitnessStageCommitmentError, WitnessStageLeaves, WORD_BYTES,
     };
-    use lzvm_field::Felt;
+    use lzvm_field::{Felt, FieldError, MODULUS};
 
     #[test]
     fn rejects_malformed_witness_stage_leaf_byte_lengths() {
@@ -353,6 +432,24 @@ mod tests {
             Err(WitnessStageCommitmentError::InvalidLeafByteLength { expected, found })
                 if expected == 2 * 3 * WORD_BYTES && found == expected - 1
         ));
+    }
+
+    #[test]
+    fn owned_witness_stage_commitment_rejects_noncanonical_leaf_words_like_borrowed_commitment() {
+        let mut bytes = Vec::new();
+        for value in [1, 2, 3, 4, 5, MODULUS] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let leaves = WitnessStageLeaves::new(1, 2, 2, 3, bytes);
+
+        assert_eq!(
+            commit_witness_stage_leaves(&leaves, 2).expect_err("borrowed commit should fail"),
+            WitnessStageCommitmentError::Field(FieldError::NonCanonical { value: MODULUS })
+        );
+        assert_eq!(
+            commit_witness_stage_leaves_owned(leaves, 2).expect_err("owned commit should fail"),
+            WitnessStageCommitmentError::Field(FieldError::NonCanonical { value: MODULUS })
+        );
     }
 
     #[test]
@@ -381,5 +478,34 @@ mod tests {
 
         assert_eq!(opening.values(), rows[4].as_slice());
         assert!(verifies);
+    }
+
+    #[test]
+    fn owned_witness_stage_commitment_matches_borrowed_commitment() {
+        let row_count = 5;
+        let column_count = 6;
+        let mut bytes = Vec::new();
+        for row in 0..row_count {
+            for column in 0..column_count {
+                let value = Felt::from_u64((row * 100 + column + 1) as u64);
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        let leaves = WitnessStageLeaves::new(7, row_count, row_count, column_count, bytes);
+
+        let borrowed =
+            commit_witness_stage_leaves(&leaves, 4).expect("stage commitment should build");
+        let owned =
+            commit_witness_stage_leaves_owned(leaves, 4).expect("stage commitment should build");
+
+        assert_eq!(owned.stage_index(), borrowed.stage_index());
+        assert_eq!(owned.arity(), borrowed.arity());
+        assert_eq!(owned.root(), borrowed.root());
+        assert_eq!(owned.tree_bytes(), borrowed.tree_bytes());
+
+        let opening = open_witness_stage_commitment(&owned, 4, row_count as u64, column_count)
+            .expect("stage row should open");
+        assert!(verify_witness_stage_opening_root(owned.root(), 4, &opening)
+            .expect("opening root check should run"));
     }
 }

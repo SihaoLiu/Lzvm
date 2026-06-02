@@ -5,8 +5,9 @@ use crate::witness_trace::WitnessTraceBuffer;
 use crate::ProveUnitSchedule;
 
 use super::{
-    commit_witness_stage_leaves, decode_witness_stage_leaf_values, extend_witness_stage_leaves,
-    WitnessStageExtendedValues, WitnessTraceCommitmentError, WitnessTraceCommitments,
+    commit_witness_stage_leaves_owned, decode_witness_stage_leaf_values,
+    extend_witness_stage_leaves, WitnessStageExtendedValues, WitnessTraceCommitmentError,
+    WitnessTraceCommitments,
 };
 
 pub fn commit_witness_trace_stages(
@@ -25,7 +26,7 @@ pub fn commit_witness_trace_stages(
     for stage_info in layout.stages() {
         let stage = layout.stage_trace(trace, stage_info.stage_index)?;
         let leaves = extend_witness_stage_leaves(&stage, source_bits, target_bits)?;
-        let commitment = commit_witness_stage_leaves(&leaves, arity)?;
+        let commitment = commit_witness_stage_leaves_owned(leaves, arity)?;
         commitments.push(commitment);
     }
 
@@ -68,7 +69,7 @@ pub fn commit_witness_trace_stages_with_workers(
                 for stage_index in chunk {
                     let stage = layout.stage_trace(trace, stage_index)?;
                     let leaves = extend_witness_stage_leaves(&stage, source_bits, target_bits)?;
-                    let commitment = commit_witness_stage_leaves(&leaves, arity)?;
+                    let commitment = commit_witness_stage_leaves_owned(leaves, arity)?;
                     out.push((stage_index, commitment));
                 }
                 Ok::<_, WitnessTraceCommitmentError>(out)

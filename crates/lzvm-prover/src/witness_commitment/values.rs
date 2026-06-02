@@ -47,6 +47,10 @@ impl WitnessStageLeaves {
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
+
+    pub(crate) fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
