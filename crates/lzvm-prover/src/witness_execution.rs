@@ -31,8 +31,8 @@ use crate::hint_eval::{
     resolve_regular_hint_program_for_row, HintEvalError,
 };
 use crate::regular_constraints::{
-    evaluate_regular_constraints_with_workers, RegularColumnMatrix, RegularConstraintEvalError,
-    RegularConstraintInputs, RegularStageColumns,
+    evaluate_regular_constraints_first_violations_with_acceleration, RegularColumnMatrix,
+    RegularConstraintEvalError, RegularConstraintInputs, RegularStageColumns,
 };
 use crate::source_assignment_hints::validate_source_assignment_hints;
 use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
@@ -1684,7 +1684,7 @@ where
         |source| ProveWitnessCommitmentError::RegularConstraintDomainHelper { unit_index, source },
     )?;
 
-    let results = evaluate_regular_constraints_with_workers(
+    let results = evaluate_regular_constraints_first_violations_with_acceleration(
         &plan_unit.regular_constraints,
         RegularConstraintInputs {
             domain_size: layout.row_count(),

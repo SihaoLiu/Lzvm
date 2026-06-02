@@ -5,8 +5,12 @@ use std::thread;
 use lzvm_artifacts::constraint_program::{ConstraintEntry, ConstraintProgram};
 use lzvm_field::{Ext3, Felt};
 
+#[cfg(feature = "cuda")]
+mod cuda;
 mod regular_constraints_support;
 
+#[cfg(feature = "cuda")]
+pub(crate) use cuda::try_evaluate_regular_constraints_cuda_base;
 use regular_constraints_support::*;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -241,6 +245,23 @@ fn evaluate_constraint_entries(
     out.into_iter()
         .map(|result| result.ok_or(RegularConstraintEvalError::WorkerPanic))
         .collect()
+}
+
+pub(crate) fn evaluate_regular_constraints_first_violations_with_acceleration(
+    program: &ConstraintProgram,
+    inputs: RegularConstraintInputs<'_>,
+    worker_count: usize,
+) -> Result<Vec<RegularConstraintResult>, RegularConstraintEvalError> {
+    #[cfg(feature = "cuda")]
+    if let Some(results) = try_evaluate_regular_constraints_cuda_base(program, inputs)? {
+        return Ok(results);
+    }
+
+    let mut results = evaluate_regular_constraints_with_workers(program, inputs, worker_count)?;
+    for result in &mut results {
+        result.invalid_rows.truncate(1);
+    }
+    Ok(results)
 }
 
 fn plan_constraint_entry_worker_buckets(

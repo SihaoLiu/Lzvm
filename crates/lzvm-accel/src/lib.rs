@@ -6,6 +6,14 @@ use std::ptr;
 #[cfg(feature = "cuda")]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[cfg(feature = "cuda")]
+mod cuda_regular_constraints;
+#[cfg(feature = "cuda")]
+pub use cuda_regular_constraints::{
+    cuda_regular_constraints_base, CudaRegularConstraintEntry, CudaRegularConstraintInputs,
+    CudaRegularConstraintResult, CudaRegularStage,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccelError {
     LengthMismatch { lhs: usize, rhs: usize },

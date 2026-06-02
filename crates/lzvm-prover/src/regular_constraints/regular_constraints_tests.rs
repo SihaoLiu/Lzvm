@@ -1074,3 +1074,177 @@ fn base_only_regular_constraints_validate_kind_before_prepared_rows() {
     );
     assert_eq!(BASE_ONLY_PREPARED_ROW_COUNT.with(Cell::get), 0);
 }
+
+#[cfg(feature = "cuda")]
+#[test]
+fn cuda_base_regular_constraints_match_cpu_results() {
+    let program = ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 1,
+            first_row: 0,
+            last_row: 4,
+            temp1_count: 2,
+            temp3_count: 0,
+            ops_count: 2,
+            ops_offset: 0,
+            args_count: 16,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "cuda base result parity".to_owned(),
+        }],
+        ops: vec![0, 0],
+        args: vec![0, 0, 0, 0, 0, 8, 0, 0, 1, 1, 5, 0, 0, 1, 0, 0],
+        numbers: vec![5],
+    };
+    let fixed = [3, 3, 3, 3].map(Felt::from_u64);
+    let stage = [8, 9, 8, 8].map(Felt::from_u64);
+    let stage_columns = [RegularStageColumns {
+        stage_index: 1,
+        column_count: 1,
+        values: &stage,
+    }];
+    let inputs = RegularConstraintInputs {
+        domain_size: 4,
+        stage_count: 1,
+        fixed_columns: RegularColumnMatrix {
+            column_count: 1,
+            values: &fixed,
+        },
+        stage_columns: &stage_columns,
+        opening_point_offsets: &[0],
+        ..RegularConstraintInputs::default()
+    };
+
+    let cpu = evaluate_regular_constraints(&program, inputs).expect("cpu evaluation should work");
+    let gpu = try_evaluate_regular_constraints_cuda_base(&program, inputs)
+        .expect("cuda evaluation should not fail")
+        .expect("program should be supported");
+
+    assert_eq!(gpu, cpu);
+}
+
+#[test]
+fn witness_regular_constraints_keep_first_invalid_row() {
+    let program = ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 1,
+            first_row: 0,
+            last_row: 4,
+            temp1_count: 2,
+            temp3_count: 0,
+            ops_count: 2,
+            ops_offset: 0,
+            args_count: 16,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "witness first invalid row".to_owned(),
+        }],
+        ops: vec![0, 0],
+        args: vec![0, 0, 0, 0, 0, 8, 0, 0, 1, 1, 5, 0, 0, 1, 0, 0],
+        numbers: vec![5],
+    };
+    let fixed = [3, 3, 3, 3].map(Felt::from_u64);
+    let stage = [8, 9, 7, 8].map(Felt::from_u64);
+    let stage_columns = [RegularStageColumns {
+        stage_index: 1,
+        column_count: 1,
+        values: &stage,
+    }];
+
+    let results = evaluate_regular_constraints_first_violations_with_acceleration(
+        &program,
+        RegularConstraintInputs {
+            domain_size: 4,
+            stage_count: 1,
+            fixed_columns: RegularColumnMatrix {
+                column_count: 1,
+                values: &fixed,
+            },
+            stage_columns: &stage_columns,
+            opening_point_offsets: &[0],
+            ..RegularConstraintInputs::default()
+        },
+        1,
+    )
+    .expect("witness regular constraints should evaluate");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].invalid_rows.len(), 1);
+    assert_eq!(results[0].invalid_rows[0].row, 1);
+}
+
+#[cfg(feature = "cuda")]
+#[test]
+fn cuda_base_regular_constraints_validate_inputs_before_native_call() {
+    let program = ConstraintProgram {
+        entries: Vec::new(),
+        ops: Vec::new(),
+        args: Vec::new(),
+        numbers: Vec::new(),
+    };
+    let fixed = [Felt::from_u64(3); 3];
+
+    let error = try_evaluate_regular_constraints_cuda_base(
+        &program,
+        RegularConstraintInputs {
+            domain_size: 4,
+            fixed_columns: RegularColumnMatrix {
+                column_count: 1,
+                values: &fixed,
+            },
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect_err("invalid inputs should fail before cuda execution");
+
+    assert_eq!(
+        error,
+        RegularConstraintEvalError::MatrixLengthMismatch {
+            buffer: "fixed column",
+            expected: 4,
+            found: 3,
+        }
+    );
+}
+
+#[cfg(feature = "cuda")]
+#[test]
+fn cuda_base_regular_constraints_declines_extension_operations() {
+    let program = ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 3,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 4,
+            temp1_count: 1,
+            temp3_count: 1,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "cuda base unsupported extension".to_owned(),
+        }],
+        ops: vec![2],
+        args: vec![0, 0, 8, 0, 0, 8, 0, 0],
+        numbers: vec![0],
+    };
+
+    let result = try_evaluate_regular_constraints_cuda_base(
+        &program,
+        RegularConstraintInputs {
+            domain_size: 4,
+            stage_count: 1,
+            opening_point_offsets: &[0],
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect("unsupported programs should not be cuda errors");
+
+    assert!(result.is_none());
+}

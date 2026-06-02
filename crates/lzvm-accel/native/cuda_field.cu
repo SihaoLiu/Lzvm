@@ -1,5 +1,8 @@
 #include <cuda_runtime.h>
 #include <stdint.h>
+#include <algorithm>
+#include <limits>
+#include <vector>
 
 #include "cuda_host.hpp"
 
@@ -27,6 +30,7 @@ constexpr size_t kKeccakStateLanes = 25;
 constexpr size_t kKeccakRateLanes = 17;
 constexpr size_t kKeccakOutputBytes = 32;
 constexpr size_t kMaxRootBits = 32;
+constexpr uint64_t kGoldilocksEpsilon = 0xffffffffULL;
 
 __device__ __constant__ uint64_t kNttStageRoots[kMaxRootBits + 1];
 __device__ __constant__ uint64_t kNttStageRootInverses[kMaxRootBits + 1];
@@ -58,10 +62,29 @@ uint64_t host_pow_mod(uint64_t base, uint64_t exponent) {
     return result;
 }
 
+__device__ uint64_t add_wrapping_modulus(uint64_t lhs, uint64_t rhs) {
+    const uint64_t sum = lhs + rhs;
+    return sum < lhs ? sum + kGoldilocksEpsilon : sum;
+}
+
+__device__ uint64_t reduce_goldilocks_product(unsigned __int128 value) {
+    const uint64_t lo = static_cast<uint64_t>(value);
+    const uint64_t hi = static_cast<uint64_t>(value >> 64);
+    const uint64_t hi_hi = hi >> 32;
+    const uint64_t hi_lo = hi & kGoldilocksEpsilon;
+
+    uint64_t reduced = lo - hi_hi;
+    if (lo < hi_hi) {
+        reduced -= kGoldilocksEpsilon;
+    }
+    reduced = add_wrapping_modulus(reduced, hi_lo * kGoldilocksEpsilon);
+    return reduced >= kModulus ? reduced - kModulus : reduced;
+}
+
 __device__ uint64_t mul_mod(uint64_t lhs, uint64_t rhs) {
     const unsigned __int128 product =
         static_cast<unsigned __int128>(lhs) * static_cast<unsigned __int128>(rhs);
-    return static_cast<uint64_t>(product % kModulus);
+    return reduce_goldilocks_product(product);
 }
 
 __device__ uint64_t pow_mod(uint64_t base, size_t exponent) {
@@ -80,6 +103,7 @@ __device__ uint64_t sub_mod(uint64_t lhs, uint64_t rhs) {
     return lhs >= rhs ? lhs - rhs : kModulus - (rhs - lhs);
 }
 
+#include "cuda_regular_constraints.cuh"
 __device__ uint64_t poseidon2_pow7(uint64_t value) {
     const uint64_t square = mul_mod(value, value);
     const uint64_t fourth = mul_mod(square, square);

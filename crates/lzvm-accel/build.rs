@@ -8,6 +8,7 @@ fn main() {
     println!("cargo:rerun-if-changed=native/cuda_poseidon2_merkle_root.cuh");
     println!("cargo:rerun-if-changed=native/cuda_poseidon2_row_major.cuh");
     println!("cargo:rerun-if-changed=native/cuda_poseidon2_row_major_exports.cuh");
+    println!("cargo:rerun-if-changed=native/cuda_regular_constraints.cuh");
     println!("cargo:rerun-if-changed=native/cuda_host.cpp");
     println!("cargo:rerun-if-changed=native/cuda_host.hpp");
     println!("cargo:rerun-if-env-changed=LZVM_CUDA_ARCH");

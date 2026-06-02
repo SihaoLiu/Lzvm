@@ -1,6 +1,31 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+
+struct LzvmCudaRegularConstraintEntry {
+    std::uint32_t destination_id;
+    std::uint32_t first_row;
+    std::uint32_t last_row;
+    std::uint32_t temp1_count;
+    std::uint32_t ops_count;
+    std::uint32_t ops_offset;
+    std::uint32_t args_count;
+    std::uint32_t args_offset;
+};
+
+struct LzvmCudaRegularStage {
+    std::uint32_t stage_index;
+    std::size_t column_count;
+    const std::uint64_t* values;
+    std::size_t value_count;
+};
+
+struct LzvmCudaRegularConstraintOutput {
+    std::uint64_t row;
+    std::uint64_t value;
+    std::uint32_t found;
+};
 
 extern "C" int lzvm_cuda_alloc_bytes(void** out, std::size_t bytes);
 extern "C" void lzvm_cuda_free_bytes(void* ptr);
@@ -15,6 +40,27 @@ extern "C" int lzvm_cuda_copy_d2h_state_prefix_words(
 extern "C" int lzvm_cuda_memset_zero_bytes(void* dst, std::size_t bytes);
 extern "C" int lzvm_cuda_check_launch(void);
 extern "C" int lzvm_cuda_synchronize(void);
+extern "C" int lzvm_cuda_regular_constraints_base(
+    const LzvmCudaRegularConstraintEntry* entries,
+    std::size_t entry_count,
+    const std::uint8_t* ops,
+    std::size_t ops_count,
+    const std::uint16_t* args,
+    std::size_t args_count,
+    const std::uint64_t* numbers,
+    std::size_t number_count,
+    const std::uint64_t* fixed_values,
+    std::size_t fixed_value_count,
+    std::size_t fixed_column_count,
+    const LzvmCudaRegularStage* stages,
+    std::size_t stage_input_count,
+    std::size_t stage_count,
+    const std::int64_t* opening_point_offsets,
+    std::size_t opening_point_offset_count,
+    const std::uint64_t* unit_values,
+    std::size_t unit_value_count,
+    std::size_t domain_size,
+    LzvmCudaRegularConstraintOutput* out);
 
 template <typename T>
 class DeviceBuffer {
