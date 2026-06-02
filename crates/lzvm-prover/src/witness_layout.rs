@@ -200,6 +200,8 @@ impl WitnessTraceLayout {
                 found_columns: trace.column_count(),
             });
         }
+        #[cfg(test)]
+        STAGE_TRACE_COUNT.with(|count| count.set(count.get() + 1));
         let stage = self
             .stages
             .iter()
@@ -230,6 +232,7 @@ impl WitnessTraceLayout {
 thread_local! {
     static COLUMN_LOOKUP_COUNT: Cell<usize> = const { Cell::new(0) };
     static GENERIC_VALUE_COPY_COUNT: Cell<usize> = const { Cell::new(0) };
+    static STAGE_TRACE_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -250,6 +253,16 @@ pub(crate) fn reset_generic_value_copy_count() {
 #[cfg(test)]
 pub(crate) fn generic_value_copy_count() -> usize {
     GENERIC_VALUE_COPY_COUNT.with(Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_stage_trace_count() {
+    STAGE_TRACE_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn stage_trace_count() -> usize {
+    STAGE_TRACE_COUNT.with(Cell::get)
 }
 
 impl WitnessTraceBuilder<'_> {

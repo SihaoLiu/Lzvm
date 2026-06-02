@@ -1,6 +1,7 @@
 use std::thread;
 
 use crate::witness_layout::derive_witness_trace_layout;
+use crate::witness_layout::WitnessTraceStageValues;
 use crate::witness_trace::WitnessTraceBuffer;
 use crate::ProveUnitSchedule;
 
@@ -99,8 +100,69 @@ pub fn commit_witness_trace_stages_with_workers(
     ))
 }
 
+pub(crate) fn commit_witness_stage_values_with_workers(
+    stages: &[WitnessTraceStageValues],
+    unit: &ProveUnitSchedule,
+    worker_count: usize,
+) -> Result<WitnessTraceCommitments, WitnessTraceCommitmentError> {
+    let worker_count = worker_count.max(1);
+    let source_bits = usize::try_from(unit.base_domain_bits)
+        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+    let target_bits = usize::try_from(unit.extended_domain_bits)
+        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+    let arity = usize::try_from(unit.merkle_tree_arity)
+        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+
+    if worker_count == 1 || stages.len() <= 1 {
+        let mut commitments = Vec::with_capacity(stages.len());
+        for stage in stages {
+            commitments.push(commit_extended_witness_stage(
+                stage,
+                source_bits,
+                target_bits,
+                arity,
+            )?);
+        }
+        return Ok(WitnessTraceCommitments::new(commitments));
+    }
+
+    let worker_count = worker_count.min(stages.len());
+    let chunk_size = stages.len().div_ceil(worker_count);
+    let mut commitments = Vec::with_capacity(stages.len());
+    thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for chunk in stages.chunks(chunk_size) {
+            handles.push(scope.spawn(move || {
+                let mut out = Vec::with_capacity(chunk.len());
+                for stage in chunk {
+                    let commitment =
+                        commit_extended_witness_stage(stage, source_bits, target_bits, arity)?;
+                    out.push((stage.stage_index(), commitment));
+                }
+                Ok::<_, WitnessTraceCommitmentError>(out)
+            }));
+        }
+
+        for handle in handles {
+            let chunk = handle
+                .join()
+                .map_err(|_| WitnessTraceCommitmentError::WorkerPanic)??;
+            commitments.extend(chunk);
+        }
+        Ok::<(), WitnessTraceCommitmentError>(())
+    })?;
+
+    commitments.sort_by_key(|(stage_index, _)| *stage_index);
+    Ok(WitnessTraceCommitments::new(
+        commitments
+            .into_iter()
+            .map(|(_, commitment)| commitment)
+            .collect(),
+    ))
+}
+
 fn commit_extended_witness_stage(
-    stage: &crate::witness_layout::WitnessTraceStageValues,
+    stage: &WitnessTraceStageValues,
     source_bits: usize,
     target_bits: usize,
     arity: usize,
@@ -149,7 +211,10 @@ pub fn extend_witness_trace_stage_values(
 
 #[cfg(all(test, feature = "cuda"))]
 mod tests {
-    use super::{commit_extended_witness_stage, extend_witness_stage_leaves};
+    use super::{
+        commit_extended_witness_stage, commit_witness_stage_values_with_workers,
+        commit_witness_trace_stages_with_workers, extend_witness_stage_leaves,
+    };
     use crate::witness_commitment::commit_witness_stage_leaves;
     use crate::witness_layout::derive_witness_trace_layout;
     use crate::witness_trace::WitnessTraceBuffer;
@@ -160,6 +225,31 @@ mod tests {
     fn cuda_combined_witness_stage_commitment_matches_separate_path() {
         assert_combined_witness_stage_commitment_matches_separate_path(3);
         assert_combined_witness_stage_commitment_matches_separate_path(6);
+    }
+
+    #[test]
+    fn cuda_cached_multi_worker_stage_commitments_match_trace_path() {
+        let unit = sample_unit(4, vec![2, 3]);
+        let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+        let value_count = 4 * 5;
+        let values = (0..value_count)
+            .map(|value| Felt::from_u64(value as u64))
+            .collect::<Vec<_>>();
+        let trace =
+            WitnessTraceBuffer::from_values(4, 5, values).expect("trace shape should be valid");
+        let stages = layout
+            .stages()
+            .iter()
+            .map(|stage| layout.stage_trace(&trace, stage.stage_index))
+            .collect::<Result<Vec<_>, _>>()
+            .expect("stages should extract");
+
+        let cached = commit_witness_stage_values_with_workers(&stages, &unit, 2)
+            .expect("cached commitments should build");
+        let trace_based = commit_witness_trace_stages_with_workers(&trace, &unit, 2)
+            .expect("trace commitments should build");
+
+        assert_eq!(cached, trace_based);
     }
 
     fn assert_combined_witness_stage_commitment_matches_separate_path(width: u32) {

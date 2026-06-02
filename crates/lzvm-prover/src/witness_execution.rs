@@ -37,10 +37,12 @@ use crate::regular_constraints::{
 use crate::source_assignment_hints::validate_source_assignment_hints;
 use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
 use crate::witness_commitment::{
-    commit_witness_trace_stages_with_workers, WitnessTraceCommitmentError, WitnessTraceCommitments,
+    commit_witness_stage_values_with_workers, commit_witness_trace_stages_with_workers,
+    WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
 use crate::witness_layout::{
     derive_witness_trace_layout, WitnessTraceLayout, WitnessTraceLayoutError,
+    WitnessTraceStageValues,
 };
 use crate::witness_loader::{
     load_witness_library, WitnessBackend, WitnessCallError, WitnessComputeContext,
@@ -215,6 +217,16 @@ struct WitnessRegularHintProgramInputs<'a> {
     proof_inputs: WitnessProofInputs<'a>,
 }
 
+struct WitnessRegularTraceInputs<'a, L>
+where
+    L: FnMut(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult,
+{
+    layout: &'a WitnessTraceLayout,
+    trace: &'a WitnessTraceBuffer,
+    fixed_columns: &'a mut WitnessFixedColumnsCache<L>,
+    stage_traces: &'a mut WitnessStageTraceCache,
+}
+
 struct WitnessTraceCommitmentInput<'a> {
     unit: &'a ProveUnitSchedule,
     layout: WitnessTraceLayout,
@@ -272,6 +284,36 @@ where
             .material
             .as_ref()
             .expect("fixed columns material should be cached after load"))
+    }
+}
+
+#[derive(Default)]
+struct WitnessStageTraceCache {
+    stages: Option<Vec<WitnessTraceStageValues>>,
+}
+
+impl WitnessStageTraceCache {
+    fn get_or_extract(
+        &mut self,
+        layout: &WitnessTraceLayout,
+        trace: &WitnessTraceBuffer,
+    ) -> Result<&[WitnessTraceStageValues], ProveWitnessCommitmentError> {
+        if self.stages.is_none() {
+            let stages = layout
+                .stages()
+                .iter()
+                .map(|stage| layout.stage_trace(trace, stage.stage_index))
+                .collect::<Result<Vec<_>, _>>()?;
+            self.stages = Some(stages);
+        }
+        Ok(self
+            .stages
+            .as_deref()
+            .expect("stage traces should be cached after extraction"))
+    }
+
+    fn is_extracted(&self) -> bool {
+        self.stages.is_some()
     }
 }
 
@@ -1397,47 +1439,59 @@ fn run_prove_witness_commitments_from_trace_inner(
                 unit_count: plan.units.len(),
             })?;
     let mut fixed_columns = WitnessFixedColumnsCache::new();
+    let mut stage_trace_cache = WitnessStageTraceCache::default();
     let proof_inputs = WitnessProofInputs {
         publics: &shared_inputs.publics,
         auxiliary_inputs: auxiliary_inputs.as_ref(),
     };
-    validate_witness_regular_constraints(
-        execution_unit,
-        unit_index,
-        &layout,
-        &trace,
-        &mut fixed_columns,
-        proof_inputs,
-        plan.run_plan.gpu.witness_thread_pools,
-    )?;
-    match regular_hint_mode {
-        WitnessRegularHintMode::Balanced(source_lookup_balance) => {
-            accumulate_witness_regular_hints(
-                execution_unit,
-                unit_index,
-                &layout,
-                &trace,
-                &mut fixed_columns,
-                proof_inputs,
-                source_lookup_balance,
-            )?
-        }
-        WitnessRegularHintMode::AssignmentsOnly => validate_witness_regular_source_assignments(
+    {
+        let mut regular_inputs = WitnessRegularTraceInputs {
+            layout: &layout,
+            trace: &trace,
+            fixed_columns: &mut fixed_columns,
+            stage_traces: &mut stage_trace_cache,
+        };
+        validate_witness_regular_constraints(
             execution_unit,
             unit_index,
-            &layout,
-            &trace,
-            &mut fixed_columns,
+            &mut regular_inputs,
             proof_inputs,
-        )?,
+            plan.run_plan.gpu.witness_thread_pools,
+        )?;
+        match regular_hint_mode {
+            WitnessRegularHintMode::Balanced(source_lookup_balance) => {
+                accumulate_witness_regular_hints(
+                    execution_unit,
+                    unit_index,
+                    &mut regular_inputs,
+                    proof_inputs,
+                    source_lookup_balance,
+                )?
+            }
+            WitnessRegularHintMode::AssignmentsOnly => validate_witness_regular_source_assignments(
+                execution_unit,
+                unit_index,
+                &mut regular_inputs,
+                proof_inputs,
+            )?,
+        }
     }
     let trace_rows = trace.row_count();
     let trace_columns = trace.column_count();
-    let stage_commitments = commit_witness_trace_stages_with_workers(
-        &trace,
-        unit,
-        plan.run_plan.gpu.witness_thread_pools,
-    )?;
+    let stage_commitments = if stage_trace_cache.is_extracted() {
+        let stage_traces = stage_trace_cache.get_or_extract(&layout, &trace)?;
+        commit_witness_stage_values_with_workers(
+            stage_traces,
+            unit,
+            plan.run_plan.gpu.witness_thread_pools,
+        )?
+    } else {
+        commit_witness_trace_stages_with_workers(
+            &trace,
+            unit,
+            plan.run_plan.gpu.witness_thread_pools,
+        )?
+    };
 
     let commitments = ProveWitnessCommitments {
         identity: ProveTraceIdentity::new(unit_index, 0),
@@ -1637,9 +1691,7 @@ fn accumulate_witness_global_hints(
 fn validate_witness_regular_constraints<L>(
     plan_unit: &ProveExecutionUnitArtifacts,
     unit_index: usize,
-    layout: &WitnessTraceLayout,
-    trace: &WitnessTraceBuffer,
-    fixed_columns: &mut WitnessFixedColumnsCache<L>,
+    inputs: &mut WitnessRegularTraceInputs<'_, L>,
     proof_inputs: WitnessProofInputs<'_>,
     worker_count: usize,
 ) -> Result<(), ProveWitnessCommitmentError>
@@ -1650,15 +1702,15 @@ where
         return Ok(());
     }
 
-    let material = fixed_columns.get_or_load(unit_index, plan_unit, layout)?;
+    let material = inputs
+        .fixed_columns
+        .get_or_load(unit_index, plan_unit, inputs.layout)?;
 
-    let stage_traces = layout
-        .stages()
-        .iter()
-        .map(|stage| layout.stage_trace(trace, stage.stage_index))
-        .collect::<Result<Vec<_>, _>>()?;
+    let stage_traces = inputs
+        .stage_traces
+        .get_or_extract(inputs.layout, inputs.trace)?;
     let mut stage_columns = Vec::with_capacity(stage_traces.len());
-    for stage in &stage_traces {
+    for stage in stage_traces {
         let stage_index = u16::try_from(stage.stage_index()).map_err(|_| {
             ProveWitnessCommitmentError::StageIndexTooLarge {
                 unit_index,
@@ -1687,7 +1739,7 @@ where
     let results = evaluate_regular_constraints_first_violations_with_acceleration(
         &plan_unit.regular_constraints,
         RegularConstraintInputs {
-            domain_size: layout.row_count(),
+            domain_size: inputs.layout.row_count(),
             stage_count: plan_unit.stage_count,
             fixed_columns: RegularColumnMatrix {
                 column_count: plan_unit.fixed_column_count,
@@ -1757,16 +1809,21 @@ fn validate_witness_regular_hints(
 ) -> Result<(), ProveWitnessCommitmentError> {
     let mut source_lookup_balance = SourceLookupBalance::default();
     let mut fixed_columns = WitnessFixedColumnsCache::new();
+    let mut stage_trace_cache = WitnessStageTraceCache::default();
     let proof_inputs = WitnessProofInputs {
         publics,
         auxiliary_inputs,
     };
+    let mut regular_inputs = WitnessRegularTraceInputs {
+        layout,
+        trace,
+        fixed_columns: &mut fixed_columns,
+        stage_traces: &mut stage_trace_cache,
+    };
     accumulate_witness_regular_hints(
         plan_unit,
         unit_index,
-        layout,
-        trace,
-        &mut fixed_columns,
+        &mut regular_inputs,
         proof_inputs,
         &mut source_lookup_balance,
     )?;
@@ -1777,9 +1834,7 @@ fn validate_witness_regular_hints(
 fn accumulate_witness_regular_hints<L>(
     plan_unit: &ProveExecutionUnitArtifacts,
     unit_index: usize,
-    layout: &WitnessTraceLayout,
-    trace: &WitnessTraceBuffer,
-    fixed_columns_cache: &mut WitnessFixedColumnsCache<L>,
+    inputs: &mut WitnessRegularTraceInputs<'_, L>,
     proof_inputs: WitnessProofInputs<'_>,
     source_lookup_balance: &mut SourceLookupBalance,
 ) -> Result<(), ProveWitnessCommitmentError>
@@ -1794,9 +1849,7 @@ where
     accumulate_witness_regular_hint_program(
         plan_unit,
         unit_index,
-        layout,
-        trace,
-        fixed_columns_cache,
+        inputs,
         WitnessRegularHintProgramInputs {
             program: &plan_unit.regular_hints,
             proof_inputs,
@@ -1808,9 +1861,7 @@ where
 fn validate_witness_regular_source_assignments<L>(
     plan_unit: &ProveExecutionUnitArtifacts,
     unit_index: usize,
-    layout: &WitnessTraceLayout,
-    trace: &WitnessTraceBuffer,
-    fixed_columns_cache: &mut WitnessFixedColumnsCache<L>,
+    inputs: &mut WitnessRegularTraceInputs<'_, L>,
     proof_inputs: WitnessProofInputs<'_>,
 ) -> Result<(), ProveWitnessCommitmentError>
 where
@@ -1836,9 +1887,7 @@ where
     accumulate_witness_regular_hint_program(
         plan_unit,
         unit_index,
-        layout,
-        trace,
-        fixed_columns_cache,
+        inputs,
         WitnessRegularHintProgramInputs {
             program: &assignment_program,
             proof_inputs,
@@ -1852,17 +1901,15 @@ where
 fn accumulate_witness_regular_hint_program<L>(
     plan_unit: &ProveExecutionUnitArtifacts,
     unit_index: usize,
-    layout: &WitnessTraceLayout,
-    trace: &WitnessTraceBuffer,
-    fixed_columns_cache: &mut WitnessFixedColumnsCache<L>,
-    inputs: WitnessRegularHintProgramInputs<'_>,
+    trace_inputs: &mut WitnessRegularTraceInputs<'_, L>,
+    hint_inputs: WitnessRegularHintProgramInputs<'_>,
     source_lookup_balance: &mut SourceLookupBalance,
 ) -> Result<(), ProveWitnessCommitmentError>
 where
     L: FnMut(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult,
 {
-    let program = inputs.program;
-    let proof_inputs = inputs.proof_inputs;
+    let program = hint_inputs.program;
+    let proof_inputs = hint_inputs.proof_inputs;
     if program.hints.is_empty() {
         return Ok(());
     }
@@ -1870,22 +1917,24 @@ where
     let requirements = regular_hint_input_requirements(program);
 
     let fixed_material = if requirements.fixed_columns {
-        Some(fixed_columns_cache.get_or_load(unit_index, plan_unit, layout)?)
+        Some(
+            trace_inputs
+                .fixed_columns
+                .get_or_load(unit_index, plan_unit, trace_inputs.layout)?,
+        )
     } else {
         None
     };
 
-    let stage_traces = if requirements.stage_columns {
-        layout
-            .stages()
-            .iter()
-            .map(|stage| layout.stage_trace(trace, stage.stage_index))
-            .collect::<Result<Vec<_>, _>>()?
+    let stage_traces: &[WitnessTraceStageValues] = if requirements.stage_columns {
+        trace_inputs
+            .stage_traces
+            .get_or_extract(trace_inputs.layout, trace_inputs.trace)?
     } else {
-        Vec::new()
+        &[]
     };
     let mut stage_columns = Vec::with_capacity(stage_traces.len());
-    for stage in &stage_traces {
+    for stage in stage_traces {
         let stage_index = u16::try_from(stage.stage_index()).map_err(|_| {
             ProveWitnessCommitmentError::StageIndexTooLarge {
                 unit_index,
@@ -1909,13 +1958,13 @@ where
                 }
             });
 
-    for row in 0..layout.row_count() {
+    for row in 0..trace_inputs.layout.row_count() {
         let resolved = resolve_regular_hint_program_for_row(
             &plan_unit.setup,
             program,
             row,
             RegularConstraintInputs {
-                domain_size: layout.row_count(),
+                domain_size: trace_inputs.layout.row_count(),
                 stage_count: plan_unit.stage_count,
                 fixed_columns,
                 stage_columns: &stage_columns,
@@ -2050,7 +2099,9 @@ fn witness_input_path(pass: &ProvePassRequest) -> Option<&Path> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::witness_layout::derive_witness_trace_layout;
+    use crate::witness_layout::{
+        derive_witness_trace_layout, reset_stage_trace_count, stage_trace_count,
+    };
     use crate::witness_trace::parse_witness_trace;
     use lzvm_artifacts::constraint_program::{ConstraintEntry, ConstraintProgram};
     use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn};
@@ -2138,36 +2189,93 @@ mod tests {
             loads.set(loads.get() + 1);
             Ok(single_fixed_columns_material(&[3, 5]))
         });
+        let mut stage_trace_cache = WitnessStageTraceCache::default();
         let auxiliary_inputs = ProveWitnessAuxiliaryInputs::default();
         let proof_inputs = WitnessProofInputs {
             publics: &[],
             auxiliary_inputs: &auxiliary_inputs,
         };
+        let mut regular_inputs = WitnessRegularTraceInputs {
+            layout: &layout,
+            trace: &trace,
+            fixed_columns: &mut cache,
+            stage_traces: &mut stage_trace_cache,
+        };
 
-        validate_witness_regular_constraints(
-            &plan_unit,
-            0,
-            &layout,
-            &trace,
-            &mut cache,
-            proof_inputs,
-            1,
-        )
-        .expect("constraint check should validate");
+        validate_witness_regular_constraints(&plan_unit, 0, &mut regular_inputs, proof_inputs, 1)
+            .expect("constraint check should validate");
 
         let mut source_lookup_balance = SourceLookupBalance::default();
         accumulate_witness_regular_hints(
             &plan_unit,
             0,
-            &layout,
-            &trace,
-            &mut cache,
+            &mut regular_inputs,
             proof_inputs,
             &mut source_lookup_balance,
         )
         .expect("regular hints should accumulate");
 
         assert_eq!(loads.get(), 1);
+    }
+
+    #[test]
+    fn materializes_each_stage_once_for_regular_checks_and_commitments() {
+        let dir = temp_dir("stage-trace-materialization");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("fixture directory should be created");
+        let mut plan = source_lookup_global_plan(HintProgram { hints: Vec::new() });
+        let mut plan_unit = source_lookup_plan_unit(HintProgram {
+            hints: vec![source_assignment_hint(
+                HintOperand::Commitment {
+                    id: 0,
+                    row_offset_index: 0,
+                },
+                HintOperand::Commitment {
+                    id: 0,
+                    row_offset_index: 0,
+                },
+            )],
+        });
+        plan_unit.regular_constraints = zero_constraint_program();
+        plan_unit.fixed_columns = dir.join("unit.const");
+        write_raw_fixed_columns_file(
+            &plan_unit.fixed_columns,
+            &empty_fixed_columns_material(2).fixed_columns,
+            &plan_unit.setup,
+        )
+        .expect("empty fixed columns should write");
+        plan.run_plan.gpu.witness_thread_pools = 1;
+        plan.units[0] = plan_unit;
+        let schedule = source_lookup_schedule();
+        let layout = derive_witness_trace_layout(&schedule).expect("layout should derive");
+        let stage_count = layout.stage_count();
+        let trace = source_lookup_trace(&[7, 1, 8, 2]);
+        let shared_inputs = WitnessSharedInputs {
+            input: vec![7],
+            publics: Vec::new(),
+        };
+
+        reset_stage_trace_count();
+        let output = run_prove_witness_commitments_from_trace_inner(
+            &plan,
+            0,
+            &shared_inputs,
+            Arc::new(ProveWitnessAuxiliaryInputs::default()),
+            WitnessTraceCommitmentInput {
+                unit: &plan.run_plan.schedule.units[0],
+                layout,
+                trace,
+            },
+            WitnessRegularHintMode::AssignmentsOnly,
+        )
+        .expect("trace commitments should prove");
+
+        assert_eq!(
+            output.commitments().stage_commitments().stage_count(),
+            stage_count
+        );
+        assert_eq!(stage_trace_count(), stage_count);
+        fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     }
 
     #[test]
