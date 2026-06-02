@@ -279,6 +279,7 @@ impl WitnessTraceBuilder<'_> {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn write_resolved_column_values(
         &mut self,
         row: usize,
@@ -294,39 +295,44 @@ impl WitnessTraceBuilder<'_> {
         self.write_resolved_column_values_for_valid_row(row, column, values)
     }
 
+    pub(crate) fn write_resolved_scalar_value(
+        &mut self,
+        row: usize,
+        column: &ResolvedTraceColumn<'_>,
+        value: Felt,
+    ) -> Result<(), WitnessTraceBuildError> {
+        if row >= self.layout.rows {
+            return Err(WitnessTraceBuildError::RowOutOfRange {
+                row,
+                rows: self.layout.rows,
+            });
+        }
+        self.write_resolved_scalar_value_for_valid_row(row, column, value)
+    }
+
+    pub(crate) fn write_resolved_pair_values(
+        &mut self,
+        row: usize,
+        column: &ResolvedTraceColumn<'_>,
+        values: [Felt; 2],
+    ) -> Result<(), WitnessTraceBuildError> {
+        if row >= self.layout.rows {
+            return Err(WitnessTraceBuildError::RowOutOfRange {
+                row,
+                rows: self.layout.rows,
+            });
+        }
+        self.write_resolved_pair_values_for_valid_row(row, column, values)
+    }
+
     fn write_resolved_column_values_for_valid_row(
         &mut self,
         row: usize,
         column: &ResolvedTraceColumn<'_>,
         values: &[Felt],
     ) -> Result<(), WitnessTraceBuildError> {
-        if !std::ptr::eq(column.layout, self.layout) {
-            return Err(WitnessTraceBuildError::UnknownColumn {
-                stage_index: column.stage_index,
-                name: column.name.to_owned(),
-            });
-        }
-        if values.len() != column.dimension {
-            return Err(WitnessTraceBuildError::ColumnValueCountMismatch {
-                stage_index: column.stage_index,
-                name: column.name.to_owned(),
-                expected: column.dimension,
-                found: values.len(),
-            });
-        }
-        debug_assert!(column
-            .trace_column
-            .checked_add(column.dimension)
-            .is_some_and(|end| end <= self.layout.columns));
-        let row_start = row
-            .checked_mul(self.layout.columns)
-            .ok_or(WitnessTraceBuildError::TraceValueCountOverflow)?;
-        let start = row_start
-            .checked_add(column.trace_column)
-            .ok_or(WitnessTraceBuildError::TraceValueCountOverflow)?;
-        let end = start
-            .checked_add(column.dimension)
-            .ok_or(WitnessTraceBuildError::TraceValueCountOverflow)?;
+        self.validate_resolved_column(column, values.len())?;
+        let (start, end) = self.resolved_column_bounds_for_valid_row(row, column)?;
         match values {
             [value] => self.values[start] = *value,
             [first, second] => {
@@ -345,6 +351,74 @@ impl WitnessTraceBuilder<'_> {
             }
         }
         Ok(())
+    }
+
+    fn write_resolved_scalar_value_for_valid_row(
+        &mut self,
+        row: usize,
+        column: &ResolvedTraceColumn<'_>,
+        value: Felt,
+    ) -> Result<(), WitnessTraceBuildError> {
+        self.validate_resolved_column(column, 1)?;
+        let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
+        self.values[start] = value;
+        Ok(())
+    }
+
+    fn write_resolved_pair_values_for_valid_row(
+        &mut self,
+        row: usize,
+        column: &ResolvedTraceColumn<'_>,
+        values: [Felt; 2],
+    ) -> Result<(), WitnessTraceBuildError> {
+        self.validate_resolved_column(column, 2)?;
+        let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
+        self.values[start] = values[0];
+        self.values[start + 1] = values[1];
+        Ok(())
+    }
+
+    fn validate_resolved_column(
+        &self,
+        column: &ResolvedTraceColumn<'_>,
+        found: usize,
+    ) -> Result<(), WitnessTraceBuildError> {
+        if !std::ptr::eq(column.layout, self.layout) {
+            return Err(WitnessTraceBuildError::UnknownColumn {
+                stage_index: column.stage_index,
+                name: column.name.to_owned(),
+            });
+        }
+        if found != column.dimension {
+            return Err(WitnessTraceBuildError::ColumnValueCountMismatch {
+                stage_index: column.stage_index,
+                name: column.name.to_owned(),
+                expected: column.dimension,
+                found,
+            });
+        }
+        Ok(())
+    }
+
+    fn resolved_column_bounds_for_valid_row(
+        &self,
+        row: usize,
+        column: &ResolvedTraceColumn<'_>,
+    ) -> Result<(usize, usize), WitnessTraceBuildError> {
+        debug_assert!(column
+            .trace_column
+            .checked_add(column.dimension)
+            .is_some_and(|end| end <= self.layout.columns));
+        let row_start = row
+            .checked_mul(self.layout.columns)
+            .ok_or(WitnessTraceBuildError::TraceValueCountOverflow)?;
+        let start = row_start
+            .checked_add(column.trace_column)
+            .ok_or(WitnessTraceBuildError::TraceValueCountOverflow)?;
+        let end = start
+            .checked_add(column.dimension)
+            .ok_or(WitnessTraceBuildError::TraceValueCountOverflow)?;
+        Ok((start, end))
     }
 
     pub fn build(self) -> WitnessTraceBuffer {
@@ -729,10 +803,10 @@ mod tests {
 
         reset_generic_value_copy_count();
         builder
-            .write_resolved_column_values(0, &scalar, &[Felt::from_u64(7)])
+            .write_resolved_scalar_value(0, &scalar, Felt::from_u64(7))
             .expect("scalar value should write");
         builder
-            .write_resolved_column_values(1, &wide, &[Felt::from_u64(11), Felt::from_u64(13)])
+            .write_resolved_pair_values(1, &wide, [Felt::from_u64(11), Felt::from_u64(13)])
             .expect("wide value should write");
         builder
             .write_resolved_column_values(

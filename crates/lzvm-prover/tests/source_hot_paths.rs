@@ -430,6 +430,37 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
     );
 }
 
+#[test]
+fn guest_pc_trace_writes_use_direct_trace_builder_helpers() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let scalar_body = function_body(&source, "fn write_column", "fn write_optional_column");
+    assert!(
+        scalar_body.contains("write_resolved_scalar_value"),
+        "guest PC scalar trace writes should avoid slice-based builder dispatch"
+    );
+    assert!(
+        !scalar_body.contains("write_resolved_column_values(row, column.resolved(), &[value])"),
+        "guest PC scalar trace writes should not construct a one-value slice"
+    );
+
+    let pair_body = function_body(
+        &source,
+        "fn write_wide_column",
+        "fn write_optional_wide_column",
+    );
+    assert!(
+        pair_body.contains("write_resolved_pair_values"),
+        "guest PC pair trace writes should avoid slice-based builder dispatch"
+    );
+    assert!(
+        !pair_body.contains("write_resolved_column_values(row, column.resolved(), &values)"),
+        "guest PC pair trace writes should not route through the slice builder API"
+    );
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)

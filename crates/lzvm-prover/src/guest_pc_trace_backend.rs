@@ -3497,7 +3497,7 @@ fn write_column(
 ) -> Result<(), GuestPcTraceBackendError> {
     let value = canonical_trace_value(row, column.name(), value)?;
     builder
-        .write_resolved_column_values(row, column.resolved(), &[value])
+        .write_resolved_scalar_value(row, column.resolved(), value)
         .map_err(GuestPcTraceBackendError::TraceBuild)
 }
 
@@ -3524,7 +3524,7 @@ fn write_wide_column(
         canonical_trace_value(row, column.name(), value >> 32)?,
     ];
     builder
-        .write_resolved_column_values(row, column.resolved(), &values)
+        .write_resolved_pair_values(row, column.resolved(), values)
         .map_err(GuestPcTraceBackendError::TraceBuild)
 }
 
@@ -3558,7 +3558,7 @@ fn write_optional_signed_column(
     };
     let value = signed_trace_value(row, column.name(), value)?;
     builder
-        .write_resolved_column_values(row, column.resolved(), &[value])
+        .write_resolved_scalar_value(row, column.resolved(), value)
         .map_err(GuestPcTraceBackendError::TraceBuild)
 }
 
