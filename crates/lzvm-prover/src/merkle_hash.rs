@@ -724,9 +724,9 @@ fn cuda_linear_hashes_with_packed_rounds(
     }
 
     let output = current_states
-        .to_u64_words()
+        .to_state_prefix_u64_words(row_count, width, HASH_WORDS)
         .map_err(|_| MerkleHashError::LengthOverflow)?;
-    digests_from_hashed_states(&output, width)
+    digests_from_hashed_states(&output, HASH_WORDS)
 }
 
 #[cfg(feature = "cuda")]
@@ -762,9 +762,9 @@ fn cuda_linear_hashes_with_row_major_device_rounds(
     }
 
     let output = current_states
-        .to_u64_words()
+        .to_state_prefix_u64_words(row_count, width, HASH_WORDS)
         .map_err(|_| MerkleHashError::LengthOverflow)?;
-    digests_from_hashed_states(&output, width)
+    digests_from_hashed_states(&output, HASH_WORDS)
 }
 
 #[cfg(feature = "cuda")]

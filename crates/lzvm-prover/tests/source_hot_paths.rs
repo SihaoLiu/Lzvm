@@ -30,6 +30,28 @@ fn cuda_row_major_hashing_copies_validated_bytes_without_host_word_repacking() {
 }
 
 #[test]
+fn cuda_row_major_hashing_downloads_digest_prefixes() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/merkle_hash.rs");
+    let source = std::fs::read_to_string(&source_path).expect("Merkle hash source should read");
+
+    let body = function_body(
+        &source,
+        "fn cuda_linear_hashes_with_row_major_device_rounds",
+        "fn push_felt_words",
+    );
+
+    assert!(
+        body.contains("to_state_prefix_u64_words(row_count, width, HASH_WORDS)"),
+        "row-major CUDA leaf hashing should download digest prefixes"
+    );
+    assert!(
+        !body.contains("to_u64_words()"),
+        "row-major CUDA leaf hashing should avoid full state downloads"
+    );
+}
+
+#[test]
 fn cuda_witness_leaf_extension_serializes_device_words_without_extended_felt_vector() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_commitment/extend.rs");
