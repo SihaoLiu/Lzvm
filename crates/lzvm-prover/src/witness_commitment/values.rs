@@ -91,6 +91,10 @@ impl WitnessStageCommitment {
     pub fn tree_bytes(&self) -> &[u8] {
         &self.tree_bytes
     }
+
+    pub fn tree_byte_count(&self) -> usize {
+        self.tree_bytes.len()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

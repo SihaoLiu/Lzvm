@@ -45,7 +45,7 @@ pub fn build_witness_commitment_segment_for_schedule(
             .map_err(|_| ProveWitnessSegmentError::LengthOverflow)?;
         let arity = u32::try_from(commitment.arity())
             .map_err(|_| ProveWitnessSegmentError::LengthOverflow)?;
-        let tree_byte_count = u64::try_from(commitment.tree_bytes().len())
+        let tree_byte_count = u64::try_from(commitment.tree_byte_count())
             .map_err(|_| ProveWitnessSegmentError::LengthOverflow)?;
         stages.push(WitnessCommitmentStageSegment {
             stage_index,

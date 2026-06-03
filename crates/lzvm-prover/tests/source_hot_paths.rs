@@ -220,6 +220,22 @@ fn witness_merkle_tree_uses_device_parent_level_pipeline() {
 }
 
 #[test]
+fn witness_commitment_segments_use_logical_tree_byte_count() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_commitment/segment.rs");
+    let source = std::fs::read_to_string(&source_path).expect("witness segment source should read");
+
+    assert!(
+        source.contains("commitment.tree_byte_count()"),
+        "witness commitment segments should not materialize tree bytes to read their length"
+    );
+    assert!(
+        !source.contains("commitment.tree_bytes().len()"),
+        "witness commitment segments should use logical tree byte counts"
+    );
+}
+
+#[test]
 fn all_units_witness_reuses_shared_inputs_and_borrows_trace_bundle_bytes() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");
