@@ -187,17 +187,17 @@ pub fn open_witness_stage_commitment(
         .ok_or(WitnessStageOpeningError::LengthOverflow)?;
     let expected_tree_bytes =
         expected_witness_stage_opening_tree_byte_count(rows, column_count, commitment.arity())?;
-    if commitment.tree_bytes().len() != expected_tree_bytes {
+    if commitment.tree_byte_count() != expected_tree_bytes {
         return Err(WitnessStageOpeningError::InvalidTreeByteLength {
             expected: expected_tree_bytes,
-            found: commitment.tree_bytes().len(),
+            found: commitment.tree_byte_count(),
         });
     }
 
     let row_offset = query_row
         .checked_mul(row_byte_count)
         .ok_or(WitnessStageOpeningError::LengthOverflow)?;
-    let values = read_witness_opening_values(commitment.tree_bytes(), row_offset, row_byte_count)?;
+    let values = commitment.read_opening_values(row_offset, row_byte_count)?;
 
     let mut siblings = Vec::new();
     let mut level_offset = rows
@@ -224,11 +224,7 @@ pub fn open_witness_stage_commitment(
                 .checked_add(slot)
                 .ok_or(WitnessStageOpeningError::LengthOverflow)?;
             if child_index < level_len {
-                level_siblings.push(read_digest_at(
-                    commitment.tree_bytes(),
-                    level_offset,
-                    child_index,
-                )?);
+                level_siblings.push(commitment.read_digest_at(level_offset, child_index)?);
             } else {
                 level_siblings.push([Felt::ZERO; HASH_WORDS]);
             }
@@ -404,55 +400,6 @@ fn expected_witness_stage_tree_byte_count<E: Clone>(
 fn round_up_to_arity<E>(value: usize, arity: usize, length_overflow: E) -> Result<usize, E> {
     let extra = (arity - (value % arity)) % arity;
     value.checked_add(extra).ok_or(length_overflow)
-}
-
-fn read_witness_opening_values(
-    bytes: &[u8],
-    row_offset: usize,
-    row_byte_count: usize,
-) -> Result<Vec<Felt>, WitnessStageOpeningError> {
-    let end = row_offset
-        .checked_add(row_byte_count)
-        .ok_or(WitnessStageOpeningError::LengthOverflow)?;
-    let row =
-        bytes
-            .get(row_offset..end)
-            .ok_or(WitnessStageOpeningError::InvalidTreeByteLength {
-                expected: end,
-                found: bytes.len(),
-            })?;
-    row.chunks_exact(WORD_BYTES)
-        .map(|chunk| {
-            let value = u64::from_le_bytes(chunk.try_into().expect("slice length checked"));
-            Felt::from_canonical(value).map_err(WitnessStageOpeningError::Field)
-        })
-        .collect()
-}
-
-fn read_digest_at(
-    bytes: &[u8],
-    level_offset: usize,
-    index: usize,
-) -> Result<[Felt; HASH_WORDS], WitnessStageOpeningError> {
-    let digest_offset = index
-        .checked_mul(HASH_WORDS * WORD_BYTES)
-        .and_then(|offset| offset.checked_add(level_offset))
-        .ok_or(WitnessStageOpeningError::LengthOverflow)?;
-    let digest_end = digest_offset
-        .checked_add(HASH_WORDS * WORD_BYTES)
-        .ok_or(WitnessStageOpeningError::LengthOverflow)?;
-    let digest_bytes = bytes.get(digest_offset..digest_end).ok_or(
-        WitnessStageOpeningError::InvalidTreeByteLength {
-            expected: digest_end,
-            found: bytes.len(),
-        },
-    )?;
-    let mut digest = [Felt::ZERO; HASH_WORDS];
-    for (word, chunk) in digest.iter_mut().zip(digest_bytes.chunks_exact(WORD_BYTES)) {
-        let value = u64::from_le_bytes(chunk.try_into().expect("slice length checked"));
-        *word = Felt::from_canonical(value)?;
-    }
-    Ok(digest)
 }
 
 fn append_digest(out: &mut Vec<u8>, digest: [Felt; HASH_WORDS]) {

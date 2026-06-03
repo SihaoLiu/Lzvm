@@ -236,6 +236,32 @@ fn witness_commitment_segments_use_logical_tree_byte_count() {
 }
 
 #[test]
+fn witness_opening_reads_through_commitment_accessors() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_commitment/tree.rs");
+    let source = std::fs::read_to_string(&source_path).expect("witness tree source should read");
+
+    let body = function_body(
+        &source,
+        "pub fn open_witness_stage_commitment",
+        "pub fn decode_witness_stage_leaf_values",
+    );
+
+    assert!(
+        body.contains("commitment.read_opening_values"),
+        "witness openings should let the commitment choose how leaf rows are read"
+    );
+    assert!(
+        body.contains("commitment.read_digest_at"),
+        "witness openings should let the commitment choose how sibling digests are read"
+    );
+    assert!(
+        !body.contains("commitment.tree_bytes()"),
+        "witness openings should not force full tree byte materialization"
+    );
+}
+
+#[test]
 fn all_units_witness_reuses_shared_inputs_and_borrows_trace_bundle_bytes() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");

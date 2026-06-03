@@ -1,6 +1,6 @@
 use lzvm_field::Felt;
 
-use super::{errors::WitnessStageOpeningError, HASH_WORDS};
+use super::{errors::WitnessStageOpeningError, HASH_WORDS, WORD_BYTES};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WitnessStageLeaves {
@@ -94,6 +94,54 @@ impl WitnessStageCommitment {
 
     pub fn tree_byte_count(&self) -> usize {
         self.tree_bytes.len()
+    }
+
+    pub(crate) fn read_opening_values(
+        &self,
+        row_offset: usize,
+        row_byte_count: usize,
+    ) -> Result<Vec<Felt>, WitnessStageOpeningError> {
+        let end = row_offset
+            .checked_add(row_byte_count)
+            .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+        let row = self.tree_bytes.get(row_offset..end).ok_or(
+            WitnessStageOpeningError::InvalidTreeByteLength {
+                expected: end,
+                found: self.tree_byte_count(),
+            },
+        )?;
+        row.chunks_exact(WORD_BYTES)
+            .map(|chunk| {
+                let value = u64::from_le_bytes(chunk.try_into().expect("slice length checked"));
+                Felt::from_canonical(value).map_err(WitnessStageOpeningError::Field)
+            })
+            .collect()
+    }
+
+    pub(crate) fn read_digest_at(
+        &self,
+        level_offset: usize,
+        index: usize,
+    ) -> Result<[Felt; HASH_WORDS], WitnessStageOpeningError> {
+        let digest_offset = index
+            .checked_mul(HASH_WORDS * WORD_BYTES)
+            .and_then(|offset| offset.checked_add(level_offset))
+            .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+        let digest_end = digest_offset
+            .checked_add(HASH_WORDS * WORD_BYTES)
+            .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+        let digest_bytes = self.tree_bytes.get(digest_offset..digest_end).ok_or(
+            WitnessStageOpeningError::InvalidTreeByteLength {
+                expected: digest_end,
+                found: self.tree_byte_count(),
+            },
+        )?;
+        let mut digest = [Felt::ZERO; HASH_WORDS];
+        for (word, chunk) in digest.iter_mut().zip(digest_bytes.chunks_exact(WORD_BYTES)) {
+            let value = u64::from_le_bytes(chunk.try_into().expect("slice length checked"));
+            *word = Felt::from_canonical(value)?;
+        }
+        Ok(digest)
     }
 }
 
