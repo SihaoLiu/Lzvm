@@ -67,8 +67,8 @@ fn merkle_parent_poseidon_helpers_do_not_allocate_packed_states() {
 #[test]
 fn ntt_uses_block_twiddle_kernel_for_large_stages() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let source = std::fs::read_to_string(crate_root.join("native/cuda_field.cu"))
-        .expect("CUDA field source should read");
+    let source = std::fs::read_to_string(crate_root.join("native/cuda_goldilocks_ntt.cuh"))
+        .expect("CUDA NTT native source should read");
     let run_ntt_body = function_body(
         &source,
         "cudaError_t run_ntt",
