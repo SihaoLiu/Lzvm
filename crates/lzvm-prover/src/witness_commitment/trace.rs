@@ -66,6 +66,29 @@ impl WitnessStageCommitTiming {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct WitnessIndexedStageCommitTiming {
+    stage_index: usize,
+    timing: WitnessStageCommitTiming,
+}
+
+impl WitnessIndexedStageCommitTiming {
+    pub(crate) fn new(stage_index: usize, timing: WitnessStageCommitTiming) -> Self {
+        Self {
+            stage_index,
+            timing,
+        }
+    }
+
+    pub(crate) fn stage_index(&self) -> usize {
+        self.stage_index
+    }
+
+    pub(crate) fn timing(&self) -> WitnessStageCommitTiming {
+        self.timing
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct WitnessStageCommitParams {
     source_bits: usize,
@@ -208,57 +231,99 @@ pub(crate) fn commit_witness_stage_values_with_workers(
     ))
 }
 
-pub(crate) fn commit_witness_stage_values_with_workers_and_timing(
+pub(crate) fn commit_witness_stage_values_with_workers_and_indexed_timing(
     stages: &[WitnessTraceStageValues],
     unit: &ProveUnitSchedule,
     worker_count: usize,
     timing: &mut WitnessStageCommitTiming,
-) -> Result<WitnessTraceCommitments, WitnessTraceCommitmentError> {
+) -> Result<
+    (
+        WitnessTraceCommitments,
+        Vec<WitnessIndexedStageCommitTiming>,
+    ),
+    WitnessTraceCommitmentError,
+> {
+    commit_witness_stage_values_with_workers_and_timing_inner(stages, unit, worker_count, timing)
+}
+
+fn commit_witness_stage_values_with_workers_and_timing_inner(
+    stages: &[WitnessTraceStageValues],
+    unit: &ProveUnitSchedule,
+    worker_count: usize,
+    timing: &mut WitnessStageCommitTiming,
+) -> Result<
+    (
+        WitnessTraceCommitments,
+        Vec<WitnessIndexedStageCommitTiming>,
+    ),
+    WitnessTraceCommitmentError,
+> {
     let worker_count = worker_count.max(1);
     let params = WitnessStageCommitParams::from_unit(unit)?;
 
     if worker_count == 1 || stages.len() <= 1 {
         let mut commitments = Vec::with_capacity(stages.len());
+        let mut stage_timings = Vec::with_capacity(stages.len());
         for stage in stages {
-            commitments.push(commit_extended_witness_stage(stage, params, Some(timing))?);
+            let mut stage_timing = WitnessStageCommitTiming::default();
+            let commitment = commit_extended_witness_stage(stage, params, Some(&mut stage_timing))?;
+            timing.accumulate(stage_timing);
+            stage_timings.push(WitnessIndexedStageCommitTiming::new(
+                stage.stage_index(),
+                stage_timing,
+            ));
+            commitments.push(commitment);
         }
-        return Ok(WitnessTraceCommitments::new(commitments));
+        return Ok((WitnessTraceCommitments::new(commitments), stage_timings));
     }
 
     let worker_count = worker_count.min(stages.len());
     let chunk_size = stages.len().div_ceil(worker_count);
     let mut commitments = Vec::with_capacity(stages.len());
+    let mut stage_timings = Vec::with_capacity(stages.len());
     thread::scope(|scope| {
         let mut handles = Vec::new();
         for chunk in stages.chunks(chunk_size) {
             handles.push(scope.spawn(move || {
                 let mut out = Vec::with_capacity(chunk.len());
+                let mut out_timings = Vec::with_capacity(chunk.len());
                 let mut chunk_timing = WitnessStageCommitTiming::default();
                 for stage in chunk {
+                    let mut stage_timing = WitnessStageCommitTiming::default();
                     let commitment =
-                        commit_extended_witness_stage(stage, params, Some(&mut chunk_timing))?;
+                        commit_extended_witness_stage(stage, params, Some(&mut stage_timing))?;
+                    chunk_timing.accumulate(stage_timing);
                     out.push((stage.stage_index(), commitment));
+                    out_timings.push(WitnessIndexedStageCommitTiming::new(
+                        stage.stage_index(),
+                        stage_timing,
+                    ));
                 }
-                Ok::<_, WitnessTraceCommitmentError>((out, chunk_timing))
+                Ok::<_, WitnessTraceCommitmentError>((out, out_timings, chunk_timing))
             }));
         }
 
         for handle in handles {
-            let (chunk, chunk_timing) = handle
+            let (chunk, chunk_stage_timings, chunk_timing) = handle
                 .join()
                 .map_err(|_| WitnessTraceCommitmentError::WorkerPanic)??;
             commitments.extend(chunk);
+            stage_timings.extend(chunk_stage_timings);
             timing.accumulate(chunk_timing);
         }
         Ok::<(), WitnessTraceCommitmentError>(())
     })?;
 
     commitments.sort_by_key(|(stage_index, _)| *stage_index);
-    Ok(WitnessTraceCommitments::new(
-        commitments
-            .into_iter()
-            .map(|(_, commitment)| commitment)
-            .collect(),
+    stage_timings.sort_by_key(|timing| timing.stage_index());
+    Ok((
+        WitnessTraceCommitments::new(
+            commitments
+                .into_iter()
+                .map(|(_, commitment)| commitment)
+                .collect(),
+        ),
+        stage_timings,
     ))
 }
 

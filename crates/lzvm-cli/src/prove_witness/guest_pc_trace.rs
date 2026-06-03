@@ -104,4 +104,39 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_stage_tree_commit_work",
         timing.guest_stage_tree_commit_work_duration(),
     );
+    for stage_timing in timing.guest_stage_timings() {
+        let stage_index = stage_timing.stage_index();
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_leaf_extend_work"),
+            stage_timing.leaf_extend_work_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_leaf_setup_work"),
+            stage_timing.leaf_setup_work_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_leaf_upload_work"),
+            stage_timing.leaf_upload_work_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_leaf_kernel_work"),
+            stage_timing.leaf_kernel_work_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_leaf_download_work"),
+            stage_timing.leaf_download_work_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_leaf_validate_work"),
+            stage_timing.leaf_validate_work_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_leaf_hash_work"),
+            stage_timing.leaf_hash_work_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_tree_commit_work"),
+            stage_timing.tree_commit_work_duration(),
+        );
+    }
 }

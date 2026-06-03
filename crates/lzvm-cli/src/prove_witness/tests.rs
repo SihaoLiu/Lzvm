@@ -96,11 +96,11 @@ fn writes_timing_summary_lines() {
         &mut stdout,
         &[
             TimingEntry {
-                name: "witness",
+                name: "witness".to_owned(),
                 duration: std::time::Duration::from_millis(23),
             },
             TimingEntry {
-                name: "proof",
+                name: "proof".to_owned(),
                 duration: std::time::Duration::from_millis(7),
             },
         ],

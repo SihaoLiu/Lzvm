@@ -1,9 +1,9 @@
 use std::io::Write;
 use std::time::{Duration, Instant};
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct TimingEntry {
-    pub(super) name: &'static str,
+    pub(super) name: String,
     pub(super) duration: Duration,
 }
 
@@ -31,13 +31,20 @@ impl TimingRecorder {
         }
         let now = Instant::now();
         self.entries.push(TimingEntry {
-            name,
+            name: name.to_owned(),
             duration: now.duration_since(self.last_mark),
         });
         self.last_mark = now;
     }
 
     pub(super) fn record(&mut self, name: &'static str, duration: Duration) {
+        if !self.enabled {
+            return;
+        }
+        self.record_dynamic(name.to_owned(), duration);
+    }
+
+    pub(super) fn record_dynamic(&mut self, name: String, duration: Duration) {
         if !self.enabled {
             return;
         }
@@ -65,7 +72,7 @@ pub(super) fn write_timing_entries(
         let _ = writeln!(
             stdout,
             "timing_{}_ms={}",
-            entry.name,
+            entry.name.as_str(),
             entry.duration.as_millis()
         );
     }

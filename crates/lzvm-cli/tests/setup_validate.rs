@@ -6030,6 +6030,56 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
         stdout.contains("timing_guest_stage_tree_commit_work_ms="),
         "{stdout}"
     );
+    for stage_index in [1, 2] {
+        assert!(
+            stdout.contains(&format!(
+                "timing_guest_stage_{stage_index}_leaf_extend_work_ms="
+            )),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "timing_guest_stage_{stage_index}_leaf_setup_work_ms="
+            )),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "timing_guest_stage_{stage_index}_leaf_upload_work_ms="
+            )),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "timing_guest_stage_{stage_index}_leaf_kernel_work_ms="
+            )),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "timing_guest_stage_{stage_index}_leaf_download_work_ms="
+            )),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "timing_guest_stage_{stage_index}_leaf_validate_work_ms="
+            )),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "timing_guest_stage_{stage_index}_leaf_hash_work_ms="
+            )),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "timing_guest_stage_{stage_index}_tree_commit_work_ms="
+            )),
+            "{stdout}"
+        );
+    }
     assert!(stdout.contains("timing_witness_ms="), "{stdout}");
     assert!(stdout.contains("timing_total_ms="), "{stdout}");
 }

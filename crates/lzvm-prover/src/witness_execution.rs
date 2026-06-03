@@ -41,9 +41,10 @@ use crate::regular_constraints::{
 use crate::source_assignment_hints::validate_source_assignment_hints;
 use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
 use crate::witness_commitment::{
-    commit_witness_stage_values_with_workers, commit_witness_stage_values_with_workers_and_timing,
-    commit_witness_trace_stages_with_workers, WitnessStageCommitTiming,
-    WitnessTraceCommitmentError, WitnessTraceCommitments,
+    commit_witness_stage_values_with_workers,
+    commit_witness_stage_values_with_workers_and_indexed_timing,
+    commit_witness_trace_stages_with_workers, WitnessIndexedStageCommitTiming,
+    WitnessStageCommitTiming, WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
 use crate::witness_layout::{
     derive_witness_trace_layout, WitnessTraceLayout, WitnessTraceLayoutError,
@@ -178,7 +179,7 @@ pub struct ProveWitnessAuxiliaryInputs {
     pub evaluations: Vec<Ext3>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveWitnessGuestPcTraceTiming {
     segment_count: usize,
     guest_trace_stream_duration: Duration,
@@ -195,6 +196,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_stage_leaf_validate_work_duration: Duration,
     guest_stage_leaf_hash_work_duration: Duration,
     guest_stage_tree_commit_work_duration: Duration,
+    guest_stage_timings: Vec<ProveWitnessGuestStageTiming>,
 }
 
 impl ProveWitnessGuestPcTraceTiming {
@@ -220,6 +222,7 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_stage_leaf_validate_work_duration: trace_timing.stage_leaf_validate_work_duration,
             guest_stage_leaf_hash_work_duration: trace_timing.stage_leaf_hash_work_duration,
             guest_stage_tree_commit_work_duration: trace_timing.stage_tree_commit_work_duration,
+            guest_stage_timings: trace_timing.stage_timings,
         }
     }
 
@@ -282,9 +285,90 @@ impl ProveWitnessGuestPcTraceTiming {
     pub fn guest_stage_tree_commit_work_duration(&self) -> Duration {
         self.guest_stage_tree_commit_work_duration
     }
+
+    pub fn guest_stage_timings(&self) -> &[ProveWitnessGuestStageTiming] {
+        &self.guest_stage_timings
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ProveWitnessGuestStageTiming {
+    stage_index: usize,
+    leaf_extend_work_duration: Duration,
+    leaf_setup_work_duration: Duration,
+    leaf_upload_work_duration: Duration,
+    leaf_kernel_work_duration: Duration,
+    leaf_download_work_duration: Duration,
+    leaf_validate_work_duration: Duration,
+    leaf_hash_work_duration: Duration,
+    tree_commit_work_duration: Duration,
+}
+
+impl ProveWitnessGuestStageTiming {
+    fn from_witness_stage_timing(timing: WitnessIndexedStageCommitTiming) -> Self {
+        let timing_value = timing.timing();
+        Self {
+            stage_index: timing.stage_index(),
+            leaf_extend_work_duration: timing_value.leaf_extend_duration(),
+            leaf_setup_work_duration: timing_value.leaf_setup_duration(),
+            leaf_upload_work_duration: timing_value.leaf_upload_duration(),
+            leaf_kernel_work_duration: timing_value.leaf_kernel_duration(),
+            leaf_download_work_duration: timing_value.leaf_download_duration(),
+            leaf_validate_work_duration: timing_value.leaf_validate_duration(),
+            leaf_hash_work_duration: timing_value.leaf_hash_duration(),
+            tree_commit_work_duration: timing_value.tree_commit_duration(),
+        }
+    }
+
+    fn accumulate(&mut self, other: Self) {
+        self.leaf_extend_work_duration += other.leaf_extend_work_duration;
+        self.leaf_setup_work_duration += other.leaf_setup_work_duration;
+        self.leaf_upload_work_duration += other.leaf_upload_work_duration;
+        self.leaf_kernel_work_duration += other.leaf_kernel_work_duration;
+        self.leaf_download_work_duration += other.leaf_download_work_duration;
+        self.leaf_validate_work_duration += other.leaf_validate_work_duration;
+        self.leaf_hash_work_duration += other.leaf_hash_work_duration;
+        self.tree_commit_work_duration += other.tree_commit_work_duration;
+    }
+
+    pub fn stage_index(&self) -> usize {
+        self.stage_index
+    }
+
+    pub fn leaf_extend_work_duration(&self) -> Duration {
+        self.leaf_extend_work_duration
+    }
+
+    pub fn leaf_setup_work_duration(&self) -> Duration {
+        self.leaf_setup_work_duration
+    }
+
+    pub fn leaf_upload_work_duration(&self) -> Duration {
+        self.leaf_upload_work_duration
+    }
+
+    pub fn leaf_kernel_work_duration(&self) -> Duration {
+        self.leaf_kernel_work_duration
+    }
+
+    pub fn leaf_download_work_duration(&self) -> Duration {
+        self.leaf_download_work_duration
+    }
+
+    pub fn leaf_validate_work_duration(&self) -> Duration {
+        self.leaf_validate_work_duration
+    }
+
+    pub fn leaf_hash_work_duration(&self) -> Duration {
+        self.leaf_hash_work_duration
+    }
+
+    pub fn tree_commit_work_duration(&self) -> Duration {
+        self.tree_commit_work_duration
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ProveWitnessTraceTimingAccumulator {
     regular_constraint_duration: Duration,
     regular_hint_duration: Duration,
@@ -298,6 +382,7 @@ struct ProveWitnessTraceTimingAccumulator {
     stage_leaf_validate_work_duration: Duration,
     stage_leaf_hash_work_duration: Duration,
     stage_tree_commit_work_duration: Duration,
+    stage_timings: Vec<ProveWitnessGuestStageTiming>,
 }
 
 impl ProveWitnessTraceTimingAccumulator {
@@ -314,6 +399,29 @@ impl ProveWitnessTraceTimingAccumulator {
         self.stage_leaf_validate_work_duration += other.stage_leaf_validate_work_duration;
         self.stage_leaf_hash_work_duration += other.stage_leaf_hash_work_duration;
         self.stage_tree_commit_work_duration += other.stage_tree_commit_work_duration;
+        for stage_timing in other.stage_timings {
+            self.accumulate_stage_timing(stage_timing);
+        }
+    }
+
+    fn accumulate_indexed_stage_timing(&mut self, timing: WitnessIndexedStageCommitTiming) {
+        self.accumulate_stage_timing(ProveWitnessGuestStageTiming::from_witness_stage_timing(
+            timing,
+        ));
+    }
+
+    fn accumulate_stage_timing(&mut self, stage_timing: ProveWitnessGuestStageTiming) {
+        if let Some(existing) = self
+            .stage_timings
+            .iter_mut()
+            .find(|existing| existing.stage_index == stage_timing.stage_index)
+        {
+            existing.accumulate(stage_timing);
+            return;
+        }
+        self.stage_timings.push(stage_timing);
+        self.stage_timings
+            .sort_by_key(|stage_timing| stage_timing.stage_index);
     }
 }
 
@@ -1734,28 +1842,35 @@ fn run_prove_witness_commitments_from_trace_inner(
     let trace_rows = trace.row_count();
     let trace_columns = trace.column_count();
     let stage_commitments = if let Some(timing) = timing {
-        record_optional_duration(Some(&mut timing.stage_commit_duration), || {
+        let stage_commit_started = Instant::now();
+        let (stage_commitments, stage_timing, stage_timings) = (|| {
             let stage_traces =
                 record_optional_duration(Some(&mut timing.stage_trace_extract_duration), || {
                     stage_trace_cache.get_or_extract(&layout, &trace)
                 })?;
             let mut stage_timing = WitnessStageCommitTiming::default();
-            let stage_commitments = commit_witness_stage_values_with_workers_and_timing(
-                stage_traces,
-                unit,
-                plan.run_plan.gpu.witness_thread_pools,
-                &mut stage_timing,
-            )?;
-            timing.stage_leaf_extend_work_duration += stage_timing.leaf_extend_duration();
-            timing.stage_leaf_setup_work_duration += stage_timing.leaf_setup_duration();
-            timing.stage_leaf_upload_work_duration += stage_timing.leaf_upload_duration();
-            timing.stage_leaf_kernel_work_duration += stage_timing.leaf_kernel_duration();
-            timing.stage_leaf_download_work_duration += stage_timing.leaf_download_duration();
-            timing.stage_leaf_validate_work_duration += stage_timing.leaf_validate_duration();
-            timing.stage_leaf_hash_work_duration += stage_timing.leaf_hash_duration();
-            timing.stage_tree_commit_work_duration += stage_timing.tree_commit_duration();
-            Ok(stage_commitments)
-        })?
+            let (stage_commitments, stage_timings) =
+                commit_witness_stage_values_with_workers_and_indexed_timing(
+                    stage_traces,
+                    unit,
+                    plan.run_plan.gpu.witness_thread_pools,
+                    &mut stage_timing,
+                )?;
+            Ok::<_, ProveWitnessCommitmentError>((stage_commitments, stage_timing, stage_timings))
+        })()?;
+        timing.stage_commit_duration += stage_commit_started.elapsed();
+        timing.stage_leaf_extend_work_duration += stage_timing.leaf_extend_duration();
+        timing.stage_leaf_setup_work_duration += stage_timing.leaf_setup_duration();
+        timing.stage_leaf_upload_work_duration += stage_timing.leaf_upload_duration();
+        timing.stage_leaf_kernel_work_duration += stage_timing.leaf_kernel_duration();
+        timing.stage_leaf_download_work_duration += stage_timing.leaf_download_duration();
+        timing.stage_leaf_validate_work_duration += stage_timing.leaf_validate_duration();
+        timing.stage_leaf_hash_work_duration += stage_timing.leaf_hash_duration();
+        timing.stage_tree_commit_work_duration += stage_timing.tree_commit_duration();
+        for stage_timing in stage_timings {
+            timing.accumulate_indexed_stage_timing(stage_timing);
+        }
+        stage_commitments
     } else if stage_trace_cache.is_extracted() {
         let stage_traces = stage_trace_cache.get_or_extract(&layout, &trace)?;
         commit_witness_stage_values_with_workers(
