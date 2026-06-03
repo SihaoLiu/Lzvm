@@ -76,7 +76,6 @@ int run_poseidon2_width8_linear_round_row_major_on_device(
     poseidon2_width8_linear_round_row_major_kernel<<<blocks, kThreads>>>(
         current_states, row_values, device_out, row_count, column_count, offset, chunk_len);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
     return 0;
 }
 
@@ -103,6 +102,5 @@ int run_poseidon2_width16_linear_round_row_major_on_device(
     poseidon2_width16_linear_round_row_major_kernel<<<blocks, kThreads>>>(
         current_states, row_values, device_out, row_count, column_count, offset, chunk_len);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
     return 0;
 }

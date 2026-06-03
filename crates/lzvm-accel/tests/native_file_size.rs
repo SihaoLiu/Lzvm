@@ -35,6 +35,32 @@ fn row_major_poseidon_helpers_do_not_allocate_packed_states() {
 }
 
 #[test]
+fn row_major_poseidon_helpers_defer_synchronization_to_callers() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("native/cuda_poseidon2_row_major.cuh");
+    let source =
+        std::fs::read_to_string(&source_path).expect("row-major native source should read");
+
+    for body in [
+        function_body(
+            &source,
+            "int run_poseidon2_width8_linear_round_row_major_on_device",
+            "int run_poseidon2_width16_linear_round_row_major_on_device",
+        ),
+        function_body(
+            &source,
+            "int run_poseidon2_width16_linear_round_row_major_on_device",
+            "*** end of row-major source ***",
+        ),
+    ] {
+        assert!(
+            !body.contains("lzvm_cuda_synchronize"),
+            "row-major Poseidon helpers should let the next same-stream operation synchronize"
+        );
+    }
+}
+
+#[test]
 fn merkle_parent_poseidon_helpers_do_not_allocate_packed_states() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source =
