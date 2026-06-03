@@ -1018,7 +1018,7 @@ fn write_witness_output_summary_with_trace(
             stdout,
             "stage_{}_tree_bytes={}",
             commitment.stage_index(),
-            commitment.tree_bytes().len()
+            commitment.tree_byte_count()
         );
     }
 }

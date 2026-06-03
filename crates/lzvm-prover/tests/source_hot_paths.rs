@@ -236,6 +236,28 @@ fn witness_commitment_segments_use_logical_tree_byte_count() {
 }
 
 #[test]
+fn cli_witness_summary_uses_logical_tree_byte_count() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("../lzvm-cli/src/prove_witness.rs");
+    let source = std::fs::read_to_string(&source_path).expect("prove witness source should read");
+
+    let body = function_body(
+        &source,
+        "fn write_witness_output_summary_with_trace",
+        "fn finish_all_units_witness_run",
+    );
+
+    assert!(
+        body.contains("commitment.tree_byte_count()"),
+        "witness output summary should use the logical tree byte count"
+    );
+    assert!(
+        !body.contains("commitment.tree_bytes().len()"),
+        "witness output summary should not force tree byte materialization"
+    );
+}
+
+#[test]
 fn witness_opening_reads_through_commitment_accessors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_commitment/tree.rs");

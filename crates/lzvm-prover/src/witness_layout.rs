@@ -70,6 +70,21 @@ pub struct WitnessTraceBuilder<'a> {
 }
 
 impl WitnessTraceStageValues {
+    #[cfg(test)]
+    pub(crate) fn new_for_test(
+        stage_index: usize,
+        rows: usize,
+        columns: usize,
+        values: Vec<Felt>,
+    ) -> Self {
+        Self {
+            stage_index,
+            rows,
+            columns,
+            values,
+        }
+    }
+
     pub fn stage_index(&self) -> usize {
         self.stage_index
     }

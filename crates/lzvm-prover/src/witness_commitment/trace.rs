@@ -10,8 +10,9 @@ use crate::ProveUnitSchedule;
 use super::commit_witness_stage_leaves_owned;
 #[cfg(feature = "cuda")]
 use super::{
-    commit_witness_stage_leaves_owned_with_leaf_hashes,
-    extend_witness_stage_leaves_with_leaf_hashes,
+    commit_witness_stage_leaves_compact_with_leaf_hashes,
+    commit_witness_stage_leaves_owned_with_leaf_hashes, compact_witness_stage_leaf_hashes,
+    compact_witness_stage_leaf_hashes_and_timing, extend_witness_stage_leaves_with_leaf_hashes,
     extend_witness_stage_leaves_with_leaf_hashes_and_timing,
 };
 use super::{
@@ -334,6 +335,43 @@ fn commit_extended_witness_stage(
 ) -> Result<super::WitnessStageCommitment, WitnessTraceCommitmentError> {
     #[cfg(feature = "cuda")]
     {
+        if stage.column_count() > super::HASH_WORDS {
+            let leaf_hashes = if let Some(timing) = timing.as_deref_mut() {
+                let leaf_extend_duration = &mut timing.leaf_extend_duration;
+                let leaf_extend_timing = &mut timing.leaf_extend_timing;
+                record_optional_duration(Some(leaf_extend_duration), || {
+                    compact_witness_stage_leaf_hashes_and_timing(
+                        stage,
+                        params.source_bits,
+                        params.target_bits,
+                        params.arity,
+                        leaf_extend_timing,
+                    )
+                })?
+            } else {
+                compact_witness_stage_leaf_hashes(
+                    stage,
+                    params.source_bits,
+                    params.target_bits,
+                    params.arity,
+                )?
+            };
+            return record_optional_duration(
+                timing
+                    .as_mut()
+                    .map(|timing| &mut timing.tree_commit_duration),
+                || {
+                    commit_witness_stage_leaves_compact_with_leaf_hashes(
+                        stage,
+                        params.source_bits,
+                        params.target_bits,
+                        params.arity,
+                        leaf_hashes,
+                    )
+                    .map_err(WitnessTraceCommitmentError::from)
+                },
+            );
+        }
         let (leaves, leaf_hashes) = if let Some(timing) = timing.as_deref_mut() {
             let leaf_extend_duration = &mut timing.leaf_extend_duration;
             let leaf_extend_timing = &mut timing.leaf_extend_timing;
