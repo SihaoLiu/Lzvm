@@ -64,6 +64,27 @@ fn merkle_parent_poseidon_helpers_do_not_allocate_packed_states() {
     }
 }
 
+#[test]
+fn ntt_uses_block_twiddle_kernel_for_large_stages() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = std::fs::read_to_string(crate_root.join("native/cuda_field.cu"))
+        .expect("CUDA field source should read");
+    let run_ntt_body = function_body(
+        &source,
+        "cudaError_t run_ntt",
+        "int run_coset_extend_on_device_unsynced",
+    );
+
+    assert!(
+        run_ntt_body.contains("ntt_stage_block_twiddle_kernel"),
+        "large NTT stages should avoid per-butterfly full twiddle exponentiation"
+    );
+    assert!(
+        run_ntt_body.contains("stage_len / 2 > kThreads"),
+        "block twiddle path should be limited to stages with block-aligned offsets"
+    );
+}
+
 fn collect_oversized_sources(root: &Path, path: &Path, oversized: &mut Vec<String>) {
     let entries = std::fs::read_dir(path).expect("native source directory should read");
     for entry in entries {
