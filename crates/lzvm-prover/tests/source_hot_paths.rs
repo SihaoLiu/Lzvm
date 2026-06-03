@@ -262,6 +262,32 @@ fn witness_opening_reads_through_commitment_accessors() {
 }
 
 #[test]
+fn witness_stage_commitments_use_internal_tree_storage() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_commitment/values.rs");
+    let source = std::fs::read_to_string(&source_path).expect("witness values source should read");
+
+    let commitment_body = function_body(
+        &source,
+        "pub struct WitnessStageCommitment",
+        "impl WitnessStageCommitment",
+    );
+
+    assert!(
+        source.contains("enum WitnessStageTreeStorage"),
+        "witness stage commitments should have an internal tree storage abstraction"
+    );
+    assert!(
+        commitment_body.contains("tree: WitnessStageTreeStorage"),
+        "witness stage commitments should store tree data through the abstraction"
+    );
+    assert!(
+        !commitment_body.contains("tree_bytes: Vec<u8>"),
+        "witness stage commitments should not hard-code host tree bytes in the main struct"
+    );
+}
+
+#[test]
 fn all_units_witness_reuses_shared_inputs_and_borrows_trace_bundle_bytes() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");
@@ -388,7 +414,7 @@ fn cuda_parent_levels_upload_digest_prefixes_without_host_state_expansion() {
 #[test]
 fn cuda_state_prefix_expansion_avoids_temporary_prefix_device_buffer() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let source_path = crate_root.join("../lzvm-accel/src/lib.rs");
+    let source_path = crate_root.join("../lzvm-accel/src/cuda_buffer.rs");
     let source = std::fs::read_to_string(&source_path).expect("accel source should read");
 
     let body = function_body(

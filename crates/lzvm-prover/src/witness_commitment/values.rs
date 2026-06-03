@@ -58,7 +58,12 @@ pub struct WitnessStageCommitment {
     stage_index: usize,
     arity: usize,
     root: [Felt; HASH_WORDS],
-    tree_bytes: Vec<u8>,
+    tree: WitnessStageTreeStorage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum WitnessStageTreeStorage {
+    Host(Vec<u8>),
 }
 
 impl WitnessStageCommitment {
@@ -72,7 +77,7 @@ impl WitnessStageCommitment {
             stage_index,
             arity,
             root,
-            tree_bytes,
+            tree: WitnessStageTreeStorage::Host(tree_bytes),
         }
     }
 
@@ -89,11 +94,15 @@ impl WitnessStageCommitment {
     }
 
     pub fn tree_bytes(&self) -> &[u8] {
-        &self.tree_bytes
+        match &self.tree {
+            WitnessStageTreeStorage::Host(bytes) => bytes,
+        }
     }
 
     pub fn tree_byte_count(&self) -> usize {
-        self.tree_bytes.len()
+        match &self.tree {
+            WitnessStageTreeStorage::Host(bytes) => bytes.len(),
+        }
     }
 
     pub(crate) fn read_opening_values(
@@ -104,7 +113,8 @@ impl WitnessStageCommitment {
         let end = row_offset
             .checked_add(row_byte_count)
             .ok_or(WitnessStageOpeningError::LengthOverflow)?;
-        let row = self.tree_bytes.get(row_offset..end).ok_or(
+        let tree_bytes = self.tree_bytes();
+        let row = tree_bytes.get(row_offset..end).ok_or(
             WitnessStageOpeningError::InvalidTreeByteLength {
                 expected: end,
                 found: self.tree_byte_count(),
@@ -130,7 +140,8 @@ impl WitnessStageCommitment {
         let digest_end = digest_offset
             .checked_add(HASH_WORDS * WORD_BYTES)
             .ok_or(WitnessStageOpeningError::LengthOverflow)?;
-        let digest_bytes = self.tree_bytes.get(digest_offset..digest_end).ok_or(
+        let tree_bytes = self.tree_bytes();
+        let digest_bytes = tree_bytes.get(digest_offset..digest_end).ok_or(
             WitnessStageOpeningError::InvalidTreeByteLength {
                 expected: digest_end,
                 found: self.tree_byte_count(),

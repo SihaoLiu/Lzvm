@@ -186,6 +186,26 @@ fn cuda_device_buffer_round_trips_bytes() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_device_buffer_copies_byte_ranges_to_host() {
+    let input = (0_u8..96)
+        .map(|value| value.wrapping_mul(5).wrapping_add(7))
+        .collect::<Vec<_>>();
+    let mut buffer = CudaDeviceBuffer::new(input.len()).expect("device buffer should allocate");
+    buffer
+        .copy_from(&input)
+        .expect("host bytes should copy to device");
+
+    let mut output = vec![0_u8; 17];
+    buffer
+        .copy_range_to(29, &mut output)
+        .expect("device range should copy to host");
+
+    assert_eq!(output, input[29..46]);
+    assert!(buffer.copy_range_to(90, &mut output).is_err());
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_device_buffer_zeroed_initializes_bytes() {
     let buffer = CudaDeviceBuffer::zeroed(96).expect("device buffer should allocate");
 
