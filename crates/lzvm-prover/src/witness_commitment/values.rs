@@ -23,7 +23,7 @@ use lzvm_accel::{
 use lzvm_field::coset_extend_evaluations;
 use lzvm_field::Felt;
 
-use super::{errors::WitnessStageOpeningError, HASH_WORDS, WORD_BYTES};
+use super::{coset_extend_launch_work, errors::WitnessStageOpeningError, HASH_WORDS, WORD_BYTES};
 #[cfg(feature = "cuda")]
 use crate::gpu_setup::prepare_gpu_setup;
 #[cfg(feature = "cuda")]
@@ -49,6 +49,12 @@ pub(crate) struct WitnessStageOpeningWorkTiming {
     pub(crate) leaf_coset_extend_column_count: usize,
     pub(crate) leaf_coset_extend_max_column_count: usize,
     pub(crate) leaf_coset_extend_ntt_launch_count: usize,
+    pub(crate) leaf_coset_extend_bit_reverse_launch_count: usize,
+    pub(crate) leaf_coset_extend_ntt_stage_launch_count: usize,
+    pub(crate) leaf_coset_extend_ntt_block_twiddle_launch_count: usize,
+    pub(crate) leaf_coset_extend_normalize_launch_count: usize,
+    pub(crate) leaf_coset_extend_pack_launch_count: usize,
+    pub(crate) leaf_coset_extend_unpack_launch_count: usize,
     pub(crate) path: Duration,
     pub(crate) row_values: Duration,
 }
@@ -89,8 +95,15 @@ impl WitnessStageOpeningWorkTiming {
         self.leaf_coset_extend_column_count += column_count;
         self.leaf_coset_extend_max_column_count =
             self.leaf_coset_extend_max_column_count.max(column_count);
-        self.leaf_coset_extend_ntt_launch_count +=
-            column_count.saturating_mul(source_bits.saturating_add(target_bits).saturating_add(2));
+        let work = coset_extend_launch_work(column_count, source_bits, target_bits);
+        self.leaf_coset_extend_ntt_launch_count += work.ntt_launch_count;
+        self.leaf_coset_extend_bit_reverse_launch_count += work.bit_reverse_launch_count;
+        self.leaf_coset_extend_ntt_stage_launch_count += work.ntt_stage_launch_count;
+        self.leaf_coset_extend_ntt_block_twiddle_launch_count +=
+            work.ntt_block_twiddle_launch_count;
+        self.leaf_coset_extend_normalize_launch_count += work.normalize_launch_count;
+        self.leaf_coset_extend_pack_launch_count += work.pack_launch_count;
+        self.leaf_coset_extend_unpack_launch_count += work.unpack_launch_count;
     }
 }
 

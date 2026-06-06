@@ -330,6 +330,36 @@ impl WitnessStageCommitTiming {
     pub(crate) fn leaf_coset_extend_ntt_launch_count(&self) -> usize {
         self.leaf_extend_timing.leaf_coset_extend_ntt_launch_count()
     }
+
+    pub(crate) fn leaf_coset_extend_bit_reverse_launch_count(&self) -> usize {
+        self.leaf_extend_timing
+            .leaf_coset_extend_bit_reverse_launch_count()
+    }
+
+    pub(crate) fn leaf_coset_extend_ntt_stage_launch_count(&self) -> usize {
+        self.leaf_extend_timing
+            .leaf_coset_extend_ntt_stage_launch_count()
+    }
+
+    pub(crate) fn leaf_coset_extend_ntt_block_twiddle_launch_count(&self) -> usize {
+        self.leaf_extend_timing
+            .leaf_coset_extend_ntt_block_twiddle_launch_count()
+    }
+
+    pub(crate) fn leaf_coset_extend_normalize_launch_count(&self) -> usize {
+        self.leaf_extend_timing
+            .leaf_coset_extend_normalize_launch_count()
+    }
+
+    pub(crate) fn leaf_coset_extend_pack_launch_count(&self) -> usize {
+        self.leaf_extend_timing
+            .leaf_coset_extend_pack_launch_count()
+    }
+
+    pub(crate) fn leaf_coset_extend_unpack_launch_count(&self) -> usize {
+        self.leaf_extend_timing
+            .leaf_coset_extend_unpack_launch_count()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

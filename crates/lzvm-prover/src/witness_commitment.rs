@@ -16,3 +16,67 @@ pub use values::*;
 
 const HASH_WORDS: usize = 4;
 const WORD_BYTES: usize = 8;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct CosetExtendLaunchWork {
+    pub(crate) ntt_launch_count: usize,
+    pub(crate) bit_reverse_launch_count: usize,
+    pub(crate) ntt_stage_launch_count: usize,
+    pub(crate) ntt_block_twiddle_launch_count: usize,
+    pub(crate) normalize_launch_count: usize,
+    pub(crate) pack_launch_count: usize,
+    pub(crate) unpack_launch_count: usize,
+}
+
+pub(crate) fn coset_extend_launch_work(
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+) -> CosetExtendLaunchWork {
+    let bit_reverse_launch_count = column_count.saturating_mul(2);
+    let ntt_stage_launch_count = column_count.saturating_mul(
+        coset_extend_ntt_stage_launch_count(source_bits)
+            .saturating_add(coset_extend_ntt_stage_launch_count(target_bits)),
+    );
+    let ntt_block_twiddle_launch_count = column_count.saturating_mul(
+        coset_extend_ntt_block_twiddle_launch_count(source_bits)
+            .saturating_add(coset_extend_ntt_block_twiddle_launch_count(target_bits)),
+    );
+    CosetExtendLaunchWork {
+        ntt_launch_count: bit_reverse_launch_count
+            .saturating_add(ntt_stage_launch_count)
+            .saturating_add(ntt_block_twiddle_launch_count),
+        bit_reverse_launch_count,
+        ntt_stage_launch_count,
+        ntt_block_twiddle_launch_count,
+        normalize_launch_count: column_count,
+        pack_launch_count: 1,
+        unpack_launch_count: 1,
+    }
+}
+
+fn coset_extend_ntt_stage_launch_count(bits: usize) -> usize {
+    bits.min(9)
+}
+
+fn coset_extend_ntt_block_twiddle_launch_count(bits: usize) -> usize {
+    bits.saturating_sub(9)
+}
+
+#[cfg(test)]
+mod launch_work_tests {
+    use super::coset_extend_launch_work;
+
+    #[test]
+    fn coset_extend_launch_work_splits_ntt_and_memory_launches() {
+        let work = coset_extend_launch_work(3, 22, 25);
+
+        assert_eq!(work.bit_reverse_launch_count, 6);
+        assert_eq!(work.ntt_stage_launch_count, 54);
+        assert_eq!(work.ntt_block_twiddle_launch_count, 87);
+        assert_eq!(work.ntt_launch_count, 147);
+        assert_eq!(work.normalize_launch_count, 3);
+        assert_eq!(work.pack_launch_count, 1);
+        assert_eq!(work.unpack_launch_count, 1);
+    }
+}

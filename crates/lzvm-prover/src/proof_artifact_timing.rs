@@ -22,6 +22,12 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_leaf_coset_extend_column_count: usize,
     pub witness_opening_leaf_coset_extend_max_column_count: usize,
     pub witness_opening_leaf_coset_extend_ntt_launch_count: usize,
+    pub witness_opening_leaf_coset_extend_bit_reverse_launch_count: usize,
+    pub witness_opening_leaf_coset_extend_ntt_stage_launch_count: usize,
+    pub witness_opening_leaf_coset_extend_ntt_block_twiddle_launch_count: usize,
+    pub witness_opening_leaf_coset_extend_normalize_launch_count: usize,
+    pub witness_opening_leaf_coset_extend_pack_launch_count: usize,
+    pub witness_opening_leaf_coset_extend_unpack_launch_count: usize,
     pub witness_opening_path: Duration,
     pub witness_opening_row_values: Duration,
     pub witness_stage_external_source: Vec<WitnessProofStageOpeningTiming>,
@@ -62,6 +68,12 @@ pub struct WitnessProofStageOpeningWork {
     pub leaf_coset_extend_column_count: usize,
     pub leaf_coset_extend_max_column_count: usize,
     pub leaf_coset_extend_ntt_launch_count: usize,
+    pub leaf_coset_extend_bit_reverse_launch_count: usize,
+    pub leaf_coset_extend_ntt_stage_launch_count: usize,
+    pub leaf_coset_extend_ntt_block_twiddle_launch_count: usize,
+    pub leaf_coset_extend_normalize_launch_count: usize,
+    pub leaf_coset_extend_pack_launch_count: usize,
+    pub leaf_coset_extend_unpack_launch_count: usize,
 }
 
 impl WitnessProofStageOpeningWork {
@@ -79,6 +91,16 @@ impl WitnessProofStageOpeningWork {
             .leaf_coset_extend_max_column_count
             .max(timing.leaf_coset_extend_max_column_count);
         self.leaf_coset_extend_ntt_launch_count += timing.leaf_coset_extend_ntt_launch_count;
+        self.leaf_coset_extend_bit_reverse_launch_count +=
+            timing.leaf_coset_extend_bit_reverse_launch_count;
+        self.leaf_coset_extend_ntt_stage_launch_count +=
+            timing.leaf_coset_extend_ntt_stage_launch_count;
+        self.leaf_coset_extend_ntt_block_twiddle_launch_count +=
+            timing.leaf_coset_extend_ntt_block_twiddle_launch_count;
+        self.leaf_coset_extend_normalize_launch_count +=
+            timing.leaf_coset_extend_normalize_launch_count;
+        self.leaf_coset_extend_pack_launch_count += timing.leaf_coset_extend_pack_launch_count;
+        self.leaf_coset_extend_unpack_launch_count += timing.leaf_coset_extend_unpack_launch_count;
     }
 }
 
@@ -169,6 +191,18 @@ impl WitnessProofArtifactTiming {
             .max(timing.leaf_coset_extend_max_column_count);
         self.witness_opening_leaf_coset_extend_ntt_launch_count +=
             timing.leaf_coset_extend_ntt_launch_count;
+        self.witness_opening_leaf_coset_extend_bit_reverse_launch_count +=
+            timing.leaf_coset_extend_bit_reverse_launch_count;
+        self.witness_opening_leaf_coset_extend_ntt_stage_launch_count +=
+            timing.leaf_coset_extend_ntt_stage_launch_count;
+        self.witness_opening_leaf_coset_extend_ntt_block_twiddle_launch_count +=
+            timing.leaf_coset_extend_ntt_block_twiddle_launch_count;
+        self.witness_opening_leaf_coset_extend_normalize_launch_count +=
+            timing.leaf_coset_extend_normalize_launch_count;
+        self.witness_opening_leaf_coset_extend_pack_launch_count +=
+            timing.leaf_coset_extend_pack_launch_count;
+        self.witness_opening_leaf_coset_extend_unpack_launch_count +=
+            timing.leaf_coset_extend_unpack_launch_count;
         add_stage_opening_work(&mut self.witness_stage_opening_work, stage_index, timing);
         add_stage_duration(
             &mut self.witness_stage_opening_leaf_hash,

@@ -165,6 +165,30 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_stage_leaf_coset_extend_ntt_launches",
         timing.guest_stage_leaf_coset_extend_ntt_launch_count(),
     );
+    timings.record_count(
+        "guest_stage_leaf_coset_extend_bit_reverse_launches",
+        timing.guest_stage_leaf_coset_extend_bit_reverse_launch_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_coset_extend_ntt_stage_launches",
+        timing.guest_stage_leaf_coset_extend_ntt_stage_launch_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_coset_extend_ntt_block_twiddle_launches",
+        timing.guest_stage_leaf_coset_extend_ntt_block_twiddle_launch_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_coset_extend_normalize_launches",
+        timing.guest_stage_leaf_coset_extend_normalize_launch_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_coset_extend_pack_launches",
+        timing.guest_stage_leaf_coset_extend_pack_launch_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_coset_extend_unpack_launches",
+        timing.guest_stage_leaf_coset_extend_unpack_launch_count(),
+    );
     timings.record(
         "guest_stage_tree_commit_work",
         timing.guest_stage_tree_commit_work_duration(),
@@ -234,6 +258,30 @@ pub(super) fn record_guest_pc_trace_timing(
         timings.record_count_dynamic(
             format!("guest_stage_{stage_index}_leaf_coset_extend_ntt_launches"),
             stage_timing.leaf_coset_extend_ntt_launch_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_coset_extend_bit_reverse_launches"),
+            stage_timing.leaf_coset_extend_bit_reverse_launch_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_coset_extend_ntt_stage_launches"),
+            stage_timing.leaf_coset_extend_ntt_stage_launch_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_coset_extend_ntt_block_twiddle_launches"),
+            stage_timing.leaf_coset_extend_ntt_block_twiddle_launch_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_coset_extend_normalize_launches"),
+            stage_timing.leaf_coset_extend_normalize_launch_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_coset_extend_pack_launches"),
+            stage_timing.leaf_coset_extend_pack_launch_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_coset_extend_unpack_launches"),
+            stage_timing.leaf_coset_extend_unpack_launch_count(),
         );
         timings.record_dynamic(
             format!("guest_stage_{stage_index}_tree_commit_work"),

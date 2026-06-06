@@ -72,6 +72,30 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_leaf_coset_extend_ntt_launches",
         timing.witness_opening_leaf_coset_extend_ntt_launch_count,
     );
+    timings.record_count(
+        "finish_witness_opening_leaf_coset_extend_bit_reverse_launches",
+        timing.witness_opening_leaf_coset_extend_bit_reverse_launch_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_leaf_coset_extend_ntt_stage_launches",
+        timing.witness_opening_leaf_coset_extend_ntt_stage_launch_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_leaf_coset_extend_ntt_block_twiddle_launches",
+        timing.witness_opening_leaf_coset_extend_ntt_block_twiddle_launch_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_leaf_coset_extend_normalize_launches",
+        timing.witness_opening_leaf_coset_extend_normalize_launch_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_leaf_coset_extend_pack_launches",
+        timing.witness_opening_leaf_coset_extend_pack_launch_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_leaf_coset_extend_unpack_launches",
+        timing.witness_opening_leaf_coset_extend_unpack_launch_count,
+    );
     timings.record("finish_witness_opening_path", timing.witness_opening_path);
     timings.record(
         "finish_witness_opening_row_values",
@@ -162,6 +186,48 @@ pub(super) fn record_proof_artifact_timing(
                 stage_work.stage_index
             ),
             stage_work.leaf_coset_extend_ntt_launch_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_coset_extend_bit_reverse_launches",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_coset_extend_bit_reverse_launch_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_coset_extend_ntt_stage_launches",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_coset_extend_ntt_stage_launch_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_coset_extend_ntt_block_twiddle_launches",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_coset_extend_ntt_block_twiddle_launch_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_coset_extend_normalize_launches",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_coset_extend_normalize_launch_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_coset_extend_pack_launches",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_coset_extend_pack_launch_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_coset_extend_unpack_launches",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_coset_extend_unpack_launch_count,
         );
     }
     for stage_timing in &timing.witness_stage_opening_path {

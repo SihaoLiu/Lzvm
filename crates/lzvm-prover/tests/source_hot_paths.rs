@@ -1894,10 +1894,70 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "\"guest_stage_leaf_coset_extend_ntt_launches\"",
             "guest_stage_leaf_coset_extend_ntt_launch_count()",
         ),
+        (
+            "\"guest_stage_leaf_coset_extend_bit_reverse_launches\"",
+            "guest_stage_leaf_coset_extend_bit_reverse_launch_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_ntt_stage_launches\"",
+            "guest_stage_leaf_coset_extend_ntt_stage_launch_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_ntt_block_twiddle_launches\"",
+            "guest_stage_leaf_coset_extend_ntt_block_twiddle_launch_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_normalize_launches\"",
+            "guest_stage_leaf_coset_extend_normalize_launch_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_pack_launches\"",
+            "guest_stage_leaf_coset_extend_pack_launch_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_unpack_launches\"",
+            "guest_stage_leaf_coset_extend_unpack_launch_count()",
+        ),
     ] {
         assert!(
             cli_source.contains(line_name) && cli_source.contains(accessor),
             "CLI timing output should include {line_name}"
+        );
+    }
+
+    for (line_name, accessor) in [
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_ntt_launches",
+            "leaf_coset_extend_ntt_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_bit_reverse_launches",
+            "leaf_coset_extend_bit_reverse_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_ntt_stage_launches",
+            "leaf_coset_extend_ntt_stage_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_ntt_block_twiddle_launches",
+            "leaf_coset_extend_ntt_block_twiddle_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_normalize_launches",
+            "leaf_coset_extend_normalize_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_pack_launches",
+            "leaf_coset_extend_pack_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_unpack_launches",
+            "leaf_coset_extend_unpack_launch_count()",
+        ),
+    ] {
+        assert!(
+            cli_source.contains(line_name) && cli_source.contains(accessor),
+            "CLI timing output should include dynamic {line_name}"
         );
     }
 
@@ -1954,6 +2014,30 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "\"finish_witness_opening_leaf_coset_extend_ntt_launches\"",
             "witness_opening_leaf_coset_extend_ntt_launch_count",
         ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_bit_reverse_launches\"",
+            "witness_opening_leaf_coset_extend_bit_reverse_launch_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_ntt_stage_launches\"",
+            "witness_opening_leaf_coset_extend_ntt_stage_launch_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_ntt_block_twiddle_launches\"",
+            "witness_opening_leaf_coset_extend_ntt_block_twiddle_launch_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_normalize_launches\"",
+            "witness_opening_leaf_coset_extend_normalize_launch_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_pack_launches\"",
+            "witness_opening_leaf_coset_extend_pack_launch_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_unpack_launches\"",
+            "witness_opening_leaf_coset_extend_unpack_launch_count",
+        ),
     ] {
         assert!(
             proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
@@ -1990,6 +2074,30 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "finish_witness_stage_{}_opening_leaf_coset_extend_ntt_launches",
             "leaf_coset_extend_ntt_launch_count",
         ),
+        (
+            "finish_witness_stage_{}_opening_leaf_coset_extend_bit_reverse_launches",
+            "leaf_coset_extend_bit_reverse_launch_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_coset_extend_ntt_stage_launches",
+            "leaf_coset_extend_ntt_stage_launch_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_coset_extend_ntt_block_twiddle_launches",
+            "leaf_coset_extend_ntt_block_twiddle_launch_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_coset_extend_normalize_launches",
+            "leaf_coset_extend_normalize_launch_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_coset_extend_pack_launches",
+            "leaf_coset_extend_pack_launch_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_coset_extend_unpack_launches",
+            "leaf_coset_extend_unpack_launch_count",
+        ),
     ] {
         assert!(
             proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
@@ -2022,7 +2130,13 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
                 && source.contains("leaf_coset_extend_output_byte_count")
                 && source.contains("leaf_coset_extend_column_count")
                 && source.contains("leaf_coset_extend_max_column_count")
-                && source.contains("leaf_coset_extend_ntt_launch_count"),
+                && source.contains("leaf_coset_extend_ntt_launch_count")
+                && source.contains("leaf_coset_extend_bit_reverse_launch_count")
+                && source.contains("leaf_coset_extend_ntt_stage_launch_count")
+                && source.contains("leaf_coset_extend_ntt_block_twiddle_launch_count")
+                && source.contains("leaf_coset_extend_normalize_launch_count")
+                && source.contains("leaf_coset_extend_pack_launch_count")
+                && source.contains("leaf_coset_extend_unpack_launch_count"),
             "opening timing should expose coset extension workload shape"
         );
     }
@@ -2043,7 +2157,13 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
                 && source.contains("leaf_coset_extend_output_byte_count")
                 && source.contains("leaf_coset_extend_column_count")
                 && source.contains("leaf_coset_extend_max_column_count")
-                && source.contains("leaf_coset_extend_ntt_launch_count"),
+                && source.contains("leaf_coset_extend_ntt_launch_count")
+                && source.contains("leaf_coset_extend_bit_reverse_launch_count")
+                && source.contains("leaf_coset_extend_ntt_stage_launch_count")
+                && source.contains("leaf_coset_extend_ntt_block_twiddle_launch_count")
+                && source.contains("leaf_coset_extend_normalize_launch_count")
+                && source.contains("leaf_coset_extend_pack_launch_count")
+                && source.contains("leaf_coset_extend_unpack_launch_count"),
             "leaf extension timing should expose coset extension workload shape"
         );
     }
