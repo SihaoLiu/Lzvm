@@ -357,6 +357,56 @@ theorem runtime_pipeline_binding_checked_acceptance_core_obligations
       (And.intro publicInputBound
         (And.intro pcsOpeningsValid friQueriesValid))
 
+theorem runtime_pipeline_binding_checked_acceptance_soundness_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeArtifactSoundnessObligations
+          system
+          validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  have runtimeArtifactEvidence := sound.left.right.right.left
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have coreObligations :=
+    runtime_pipeline_binding_checked_acceptance_core_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro runtimeArtifactEvidence
+      (And.intro verifierAccepts
+        (And.intro coreObligations.left
+          (And.intro coreObligations.right.left
+            (And.intro coreObligations.right.right.left coreObligations.right.right.right))))
+
 theorem runtime_pipeline_binding_checked_acceptance_execution_obligations
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
