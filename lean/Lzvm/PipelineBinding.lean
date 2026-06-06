@@ -179,6 +179,48 @@ theorem runtime_pipeline_binding_checked_acceptance_query_plan
       proof
       accepted
 
+theorem runtime_pipeline_binding_checked_acceptance_verifier_accepts
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof := by
+  intro artifact publicInput proof accepted
+  have ethAccepted :=
+    runtime_pipeline_binding_checked_acceptance_eth
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactAccepted :=
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
+      validation.ethBindingValidation
+      artifact
+      publicInput
+      proof
+      ethAccepted
+  let proofArtifactValidation :=
+    validation.ethBindingValidation.proofArtifactBindingValidation
+  have runtimeAccepted :=
+    proofArtifactValidation.bindingAcceptedImpliesRuntimeAccepted
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  exact
+    runtime_artifact_checked_acceptance_implies_verifier_accepts
+      proofArtifactValidation.runtimeValidation
+      artifact
+      publicInput
+      proof
+      runtimeAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
