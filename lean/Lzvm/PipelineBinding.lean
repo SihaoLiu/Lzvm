@@ -775,6 +775,40 @@ theorem runtime_pipeline_binding_checked_acceptance_verifier_sound_witness
       accepted
   exact ⟨verifierAccepts, sound.right⟩
 
+theorem runtime_pipeline_binding_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ (system.transcriptBound publicInput proof
+            /\ system.publicInputBound publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof) := by
+  intro artifact publicInput proof accepted
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have coreObligations :=
+    runtime_pipeline_binding_checked_acceptance_core_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact And.intro verifierAccepts coreObligations
+
 theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
