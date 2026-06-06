@@ -62,9 +62,8 @@ use crate::{
     build_pcs_material_manifest_segment, build_pcs_query_nonce_segment_with_streams,
     build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_with_bindings, build_witness_commitment_segment_for_schedule,
-    build_witness_opening_segment_batch, ProveExecutionUnitArtifacts, ProvePcsEvaluationValues,
-    ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitments,
-    ProveWitnessTraceCommitments,
+    ProveExecutionUnitArtifacts, ProvePcsEvaluationValues, ProveSchedule,
+    ProveWitnessAuxiliaryInputs, ProveWitnessTraceCommitments,
 };
 
 trait ProveUnitValuesSliceExt {
@@ -141,7 +140,7 @@ pub fn build_witness_proof_core_artifact(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_values_hash: [u8; 32],
-    witness_outputs: &[&ProveWitnessCommitments],
+    witness_outputs: &[&ProveWitnessTraceCommitments],
 ) -> Result<ProofArtifact, String> {
     build_witness_proof_core_artifact_with_bindings(
         catalog,
@@ -156,7 +155,7 @@ pub(crate) fn build_witness_proof_core_artifact_with_bindings(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_values_hash: [u8; 32],
-    witness_outputs: &[&ProveWitnessCommitments],
+    witness_outputs: &[&ProveWitnessTraceCommitments],
     binding_segments: &[ProofSegment],
 ) -> Result<ProofArtifact, String> {
     build_witness_proof_core_artifact_with_bindings_and_material_summaries(
@@ -173,7 +172,7 @@ fn build_witness_proof_core_artifact_with_bindings_and_material_summaries(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_values_hash: [u8; 32],
-    witness_outputs: &[&ProveWitnessCommitments],
+    witness_outputs: &[&ProveWitnessTraceCommitments],
     binding_segments: &[ProofSegment],
     constant_tree_material_summaries: Option<&[Option<ConstantTreeFileSummary>]>,
 ) -> Result<ProofArtifact, String> {
@@ -182,8 +181,11 @@ fn build_witness_proof_core_artifact_with_bindings_and_material_summaries(
     let mut witness_segments = Vec::with_capacity(witness_outputs.len());
     for output in witness_outputs {
         witness_segments.push(
-            build_witness_commitment_segment_for_schedule(schedule.units.len(), output)
-                .map_err(|error| format!("build witness segment failed: {error}"))?,
+            build_witness_commitment_segment_for_schedule(
+                schedule.units.len(),
+                output.commitments(),
+            )
+            .map_err(|error| format!("build witness segment failed: {error}"))?,
         );
     }
     witness_segments.sort_by_key(|segment| segment.id);
@@ -203,11 +205,13 @@ fn build_witness_proof_core_artifact_with_bindings_and_material_summaries(
         constant_tree_material_summaries,
     )
     .map_err(|error| format!("build constant opening segment failed: {error}"))?;
-    let opening_segment =
-        build_witness_opening_segment_batch(schedule, &query_segment, witness_outputs)
-            .map_err(|error| format!("build core witness opening segment failed: {error}"))?;
-    let trace_constraint_segment =
-        build_trace_constraint_evidence_segment_from_commitments(catalog, witness_outputs)?;
+    let opening_segment = build_witness_opening_segment_batch_from_trace_outputs(
+        schedule,
+        &query_segment,
+        witness_outputs,
+    )
+    .map_err(|error| format!("build core witness opening segment failed: {error}"))?;
+    let trace_constraint_segment = build_trace_constraint_evidence_segment(witness_outputs)?;
 
     let mut segments = vec![
         material_segment,
@@ -229,7 +233,7 @@ pub fn build_witness_proof_artifact(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_values_hash: [u8; 32],
-    witness_outputs: &[&ProveWitnessCommitments],
+    witness_outputs: &[&ProveWitnessTraceCommitments],
     proof_values: &[Felt],
     group_values: &[Ext3],
     unit_values: &[ProveUnitValues],
@@ -252,7 +256,7 @@ pub fn build_witness_proof_artifact_with_bindings(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_values_hash: [u8; 32],
-    witness_outputs: &[&ProveWitnessCommitments],
+    witness_outputs: &[&ProveWitnessTraceCommitments],
     inputs: ProofArtifactInputs<'_>,
 ) -> Result<ProofArtifact, String> {
     build_witness_proof_artifact_with_bindings_and_material_summaries(
@@ -269,7 +273,7 @@ fn build_witness_proof_artifact_with_bindings_and_material_summaries(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_values_hash: [u8; 32],
-    witness_outputs: &[&ProveWitnessCommitments],
+    witness_outputs: &[&ProveWitnessTraceCommitments],
     inputs: ProofArtifactInputs<'_>,
     constant_tree_material_summaries: Option<&[Option<ConstantTreeFileSummary>]>,
 ) -> Result<ProofArtifact, String> {
@@ -440,42 +444,6 @@ fn build_trace_constraint_evidence_segment(
             regular_constraints_evaluated: evidence.regular_constraints_evaluated(),
             witness_values_committed: evidence.witness_values_committed(),
             constraint_checker_conformant: evidence.constraint_checker_conformant(),
-        });
-    }
-    let data = encode_trace_constraint_segment(&TraceConstraintSegment { units })
-        .map_err(|error| format!("build trace constraint evidence segment failed: {error}"))?;
-    Ok(ProofSegment {
-        id: TRACE_CONSTRAINT_SEGMENT_ID,
-        data,
-    })
-}
-
-fn build_trace_constraint_evidence_segment_from_commitments(
-    catalog: &KeyDirectoryCatalog,
-    outputs: &[&ProveWitnessCommitments],
-) -> Result<ProofSegment, String> {
-    let mut units = Vec::with_capacity(outputs.len());
-    for output in outputs {
-        let unit_index = output.unit_index();
-        let catalog_unit = catalog.units.get(unit_index).ok_or_else(|| {
-            format!("trace constraint evidence unit index out of range: {unit_index}")
-        })?;
-        units.push(TraceConstraintUnitSegment {
-            unit_index: u32::try_from(unit_index)
-                .map_err(|_| "trace constraint evidence unit index is too large".to_owned())?,
-            trace_instance_index: output.trace_instance_index(),
-            trace_row_count: u64::try_from(output.trace_row_count())
-                .map_err(|_| "trace constraint evidence row count is too large".to_owned())?,
-            trace_column_count: u32::try_from(output.trace_column_count())
-                .map_err(|_| "trace constraint evidence column count is too large".to_owned())?,
-            regular_constraint_count: u32::try_from(catalog_unit.regular_constraints.entries.len())
-                .map_err(|_| {
-                    "trace constraint evidence constraint count is too large".to_owned()
-                })?,
-            trace_extracted: true,
-            regular_constraints_evaluated: true,
-            witness_values_committed: true,
-            constraint_checker_conformant: true,
         });
     }
     let data = encode_trace_constraint_segment(&TraceConstraintSegment { units })
@@ -973,11 +941,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
         collect_all_units_evaluation_values(request.outputs, &request.auxiliary_inputs.evaluations);
     let proof_unit_values =
         collect_proof_unit_values(request.schedule, request.outputs, request.unit_values)?;
-    let witness_outputs = request
-        .outputs
-        .iter()
-        .map(|output| output.commitments())
-        .collect::<Vec<_>>();
+    let witness_outputs = request.outputs.iter().collect::<Vec<_>>();
     let needs_transcript = all_units_transcript_required(
         request.execution_units,
         request.outputs,
@@ -999,12 +963,11 @@ fn build_witness_proof_artifact_for_all_units_inner(
             timing,
         )?
     } else {
-        let witness_trace_outputs = request.outputs.iter().collect::<Vec<_>>();
         build_witness_proof_artifact_from_trace_outputs_with_bindings_and_material_summaries(
             request.catalog,
             request.schedule,
             public_values_hash,
-            &witness_trace_outputs,
+            &witness_outputs,
             ProofArtifactInputs {
                 proof_values: &proof_values,
                 group_values: &group_values,
@@ -1344,7 +1307,7 @@ fn all_units_transcript_required(
 fn build_witness_transcript_proof_artifact_for_all_units(
     request: &WitnessAllUnitsProofRequest<'_>,
     public_values_hash: [u8; 32],
-    witness_outputs: &[&ProveWitnessCommitments],
+    witness_outputs: &[&ProveWitnessTraceCommitments],
     proof_inputs: AllUnitsTranscriptProofInputs<'_>,
     mut timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<ProofArtifact, String> {
@@ -1353,8 +1316,11 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     let mut witness_segments = Vec::with_capacity(witness_outputs.len());
     for output in witness_outputs {
         witness_segments.push(
-            build_witness_commitment_segment_for_schedule(request.schedule.units.len(), output)
-                .map_err(|error| format!("build witness segment failed: {error}"))?,
+            build_witness_commitment_segment_for_schedule(
+                request.schedule.units.len(),
+                output.commitments(),
+            )
+            .map_err(|error| format!("build witness segment failed: {error}"))?,
         );
     }
     witness_segments.sort_by_key(|segment| segment.id);

@@ -141,8 +141,9 @@ use lzvm_prover::{
     build_pcs_query_plan_segment_with_bindings, build_witness_commitment_segment,
     build_witness_opening_segment, derive_prove_execution_plan, derive_prove_schedule,
     derive_prove_schedule_from_directory, run_prove_witness_commitments,
-    run_prove_witness_commitments_with_trace_backend, GpuRunOptions, ProveExecutionInputArtifacts,
-    ProvePartitionPlan, ProvePassRequest, ProveRunOptions, ProveRunRequest,
+    run_prove_witness_commitments_with_trace, run_prove_witness_commitments_with_trace_backend,
+    GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest,
+    ProveRunOptions, ProveRunRequest,
 };
 use lzvm_setup::{
     summarize_setup_directory, write_program_image_commitment_cache_file,
@@ -10589,8 +10590,10 @@ fn builds_witness_proof_core_for_multiple_units() {
         },
     )
     .expect("execution plan should derive");
-    let first = run_prove_witness_commitments(&plan, 0).expect("first unit should run");
-    let second = run_prove_witness_commitments(&plan, 1).expect("second unit should run");
+    let first = run_prove_witness_commitments_with_trace(&plan, 0, Default::default())
+        .expect("first unit should run");
+    let second = run_prove_witness_commitments_with_trace(&plan, 1, Default::default())
+        .expect("second unit should run");
 
     let proof = build_witness_proof_core_artifact(
         &catalog,
@@ -10698,8 +10701,10 @@ fn builds_witness_proof_artifact_for_multiple_units_with_unit_values() {
         },
     )
     .expect("execution plan should derive");
-    let first = run_prove_witness_commitments(&plan, 0).expect("first unit should run");
-    let second = run_prove_witness_commitments(&plan, 1).expect("second unit should run");
+    let first = run_prove_witness_commitments_with_trace(&plan, 0, Default::default())
+        .expect("first unit should run");
+    let second = run_prove_witness_commitments_with_trace(&plan, 1, Default::default())
+        .expect("second unit should run");
 
     let packed_unit_values = vec![
         Felt::from_u64(101),
@@ -10794,8 +10799,10 @@ fn builds_witness_proof_artifact_for_multiple_units_with_tail_segments() {
         },
     )
     .expect("execution plan should derive");
-    let first = run_prove_witness_commitments(&plan, 0).expect("first unit should run");
-    let second = run_prove_witness_commitments(&plan, 1).expect("second unit should run");
+    let first = run_prove_witness_commitments_with_trace(&plan, 0, Default::default())
+        .expect("first unit should run");
+    let second = run_prove_witness_commitments_with_trace(&plan, 1, Default::default())
+        .expect("second unit should run");
 
     let proof_values = vec![Felt::from_u64(51), Felt::from_u64(52), Felt::from_u64(53)];
     let group_values = vec![Ext3::from_u64s([61, 62, 63])];

@@ -2071,6 +2071,81 @@ fn all_units_non_transcript_proof_uses_trace_output_witness_openings() {
 }
 
 #[test]
+fn public_proof_artifact_builders_require_trace_evidence_outputs() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/proof_artifact.rs");
+    let source = std::fs::read_to_string(&source_path).expect("proof artifact source should read");
+
+    for (start, end, label) in [
+        (
+            "pub fn build_witness_proof_core_artifact",
+            "pub(crate) fn build_witness_proof_core_artifact_with_bindings",
+            "core proof artifact builder",
+        ),
+        (
+            "pub fn build_witness_proof_artifact",
+            "pub fn build_witness_proof_artifact_with_bindings",
+            "full proof artifact builder",
+        ),
+        (
+            "pub fn build_witness_proof_artifact_with_bindings",
+            "fn build_witness_proof_artifact_with_bindings_and_material_summaries",
+            "binding-aware proof artifact builder",
+        ),
+    ] {
+        let body = function_body(&source, start, end);
+        assert!(
+            body.contains("witness_outputs: &[&ProveWitnessTraceCommitments]"),
+            "{label} should require runtime trace evidence outputs"
+        );
+        assert!(
+            !body.contains("witness_outputs: &[&ProveWitnessCommitments]"),
+            "{label} should not accept commitment-only witness outputs"
+        );
+    }
+}
+
+#[test]
+fn trace_constraint_segment_uses_runtime_evidence_flags() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/proof_artifact.rs");
+    let source = std::fs::read_to_string(&source_path).expect("proof artifact source should read");
+    let body = function_body(
+        &source,
+        "fn build_trace_constraint_evidence_segment",
+        "pub struct WitnessProofRequest",
+    );
+
+    assert!(
+        body.contains("let evidence = output.trace_constraint_evidence();"),
+        "trace constraint segment should derive each unit from runtime evidence"
+    );
+    for accessor in [
+        "evidence.regular_constraint_count()",
+        "evidence.trace_extracted()",
+        "evidence.regular_constraints_evaluated()",
+        "evidence.witness_values_committed()",
+        "evidence.constraint_checker_conformant()",
+    ] {
+        assert!(
+            body.contains(accessor),
+            "trace constraint segment should encode runtime evidence through {accessor}"
+        );
+    }
+    for hardcoded_flag in [
+        "trace_extracted: true",
+        "regular_constraints_evaluated: true",
+        "witness_values_committed: true",
+        "constraint_checker_conformant: true",
+    ] {
+        assert!(
+            !body.contains(hardcoded_flag),
+            "trace constraint segment should not synthesize runtime evidence with {hardcoded_flag}"
+        );
+    }
+}
+
+#[test]
 fn guest_pc_trace_writes_use_direct_trace_builder_helpers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");

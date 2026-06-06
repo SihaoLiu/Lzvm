@@ -2342,7 +2342,9 @@ fn builds_witness_proof_artifact_in_prover() {
         },
     )
     .expect("execution plan should derive");
-    let witness = run_prove_witness_commitments(&plan, 0).expect("witness should run");
+    let witness =
+        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+            .expect("witness should run");
     let public_values_hash = [13_u8; 32];
 
     let proof = lzvm_prover::build_witness_proof_core_artifact(
@@ -2786,7 +2788,7 @@ fn preserves_binding_segments_in_public_proof_artifact_builder() {
         id: ETH_BLOCK_INPUT_SEGMENT_ID,
         data: encode_eth_block_input_segment(&block_input).expect("segment should encode"),
     };
-    let witness_outputs = vec![fixture.output.commitments()];
+    let witness_outputs = vec![&fixture.output];
 
     let proof = lzvm_prover::build_witness_proof_artifact_with_bindings(
         &fixture.catalog,
@@ -2825,7 +2827,7 @@ fn rejects_invalid_binding_segments_in_public_proof_artifact_builder() {
         id: ETH_BLOCK_INPUT_SEGMENT_ID,
         data: Vec::new(),
     };
-    let witness_outputs = vec![fixture.output.commitments()];
+    let witness_outputs = vec![&fixture.output];
 
     let error = lzvm_prover::build_witness_proof_artifact_with_bindings(
         &fixture.catalog,

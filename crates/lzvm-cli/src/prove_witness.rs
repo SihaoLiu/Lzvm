@@ -1132,7 +1132,7 @@ pub fn build_witness_proof_core_artifact(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_values_hash: [u8; 32],
-    witness_outputs: &[&ProveWitnessCommitments],
+    witness_outputs: &[&ProveWitnessTraceCommitments],
 ) -> Result<ProofArtifact, String> {
     lzvm_prover::build_witness_proof_core_artifact(
         catalog,
@@ -1146,7 +1146,7 @@ pub fn build_witness_proof_artifact(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_values_hash: [u8; 32],
-    witness_outputs: &[&ProveWitnessCommitments],
+    witness_outputs: &[&ProveWitnessTraceCommitments],
     proof_values: &[Felt],
     group_values: &[Ext3],
     unit_values: &[ProveUnitValues],
