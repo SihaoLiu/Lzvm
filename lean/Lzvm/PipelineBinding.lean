@@ -7,6 +7,7 @@ Authors: Sihao Liu
 import Lzvm.EthBlockPublicInputBinding
 import Lzvm.TraceConstraintArtifactBinding
 import Lzvm.QueryPlanBinding
+import Lzvm.DigestPrefix
 
 /-!
 Runtime proof pipeline binding obligations.
@@ -870,6 +871,81 @@ theorem runtime_pipeline_binding_checked_acceptance_challenge_query_opening_cont
                                             (And.intro transcriptBound
                                               (And.intro pcsOpeningsValid
                                                 (And.intro friQueriesValid soundWitness))))))))
+
+theorem runtime_pipeline_compact_digest_merkle_observation_eq_full_state
+    {alpha : Type u}
+    (evidence : DigestPrefixRoundEvidence alpha) :
+    DigestPrefixMerkleObservation (DigestPrefixRoundVisibleWords evidence) =
+      FullStateMerkleObservation evidence.fullStateWords := by
+  exact digest_prefix_round_merkle_observation_eq_full_state evidence
+
+theorem runtime_pipeline_binding_checked_acceptance_compact_digest_merkle_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    (digestValidation : RowMajorDigestPrefixValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RowMajorDigestPrefixEvidence
+            system
+            digestValidation
+            publicInput
+            proof ->
+          digestValidation.leafValidation.wideLinearDigestsBindRows publicInput proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted digestEvidence
+  have wideLinearDigests :=
+    row_major_digest_prefix_evidence_implies_wide_linear_digests
+      digestValidation
+      publicInput
+      proof
+      digestEvidence
+  have contract :=
+    runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  cases contract with
+  | intro _challengePayloadValid tail =>
+    cases tail with
+    | intro _challengeMatchesTranscript tail =>
+      cases tail with
+      | intro _challengeSegmentBound tail =>
+        cases tail with
+        | intro _transcriptQueryPlanBound tail =>
+          cases tail with
+          | intro _openingQueryPlanBound tail =>
+            cases tail with
+            | intro openingEvidence tail =>
+              cases tail with
+              | intro _transcriptBound tail =>
+                cases tail with
+                | intro pcsOpeningsValid tail =>
+                  cases tail with
+                  | intro friQueriesValid soundWitness =>
+                    exact
+                      And.intro wideLinearDigests
+                        (And.intro openingEvidence
+                          (And.intro pcsOpeningsValid
+                            (And.intro friQueriesValid soundWitness)))
 
 theorem runtime_pipeline_binding_checked_acceptance_soundness_obligations
     {system : VerifierModel}

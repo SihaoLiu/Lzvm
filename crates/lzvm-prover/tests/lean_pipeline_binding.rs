@@ -27,6 +27,11 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 .contains("runtime_pipeline_binding_checked_acceptance_full_soundness_contract")
             && lean_source
                 .contains("runtime_pipeline_binding_checked_acceptance_trace_conformance_contract")
+            && lean_source.contains("runtime_pipeline_compact_digest_merkle_observation_eq_full_state")
+            && lean_source
+                .contains("runtime_pipeline_binding_checked_acceptance_compact_digest_merkle_contract")
+            && lean_source.contains("RowMajorDigestPrefixEvidence")
+            && lean_source.contains("wideLinearDigestsBindRows")
             && lean_source
                 .contains("runtime_pipeline_binding_checked_acceptance_verifier_sound_witness")
             && lean_source
