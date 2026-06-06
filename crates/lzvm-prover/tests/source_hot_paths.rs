@@ -1052,6 +1052,37 @@ fn trace_less_guest_pc_opening_reuses_retained_device_descriptors() {
 }
 
 #[test]
+fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_path = crate_root.join("../../lean/Lzvm/EthBlockPublicInputBinding.lean");
+    let lean_source =
+        std::fs::read_to_string(&lean_path).expect("Lean ETH binding source should read");
+    let lean_root_path = crate_root.join("../../lean/Lzvm.lean");
+    let lean_root_source =
+        std::fs::read_to_string(&lean_root_path).expect("Lean root source should read");
+    let artifact_path = crate_root.join("src/proof_artifact.rs");
+    let artifact_source =
+        std::fs::read_to_string(&artifact_path).expect("proof artifact source should read");
+
+    assert!(
+        lean_root_source.contains("import Lzvm.EthBlockPublicInputBinding"),
+        "top-level Lean module should include the ETH block public-input binding model"
+    );
+    assert!(
+        lean_source.contains("structure RuntimeEthBlockPublicInputBindingValidation")
+            && lean_source
+                .contains("runtime_eth_block_public_input_binding_checked_acceptance_sound"),
+        "Lean should expose a checked ETH public-input binding soundness theorem"
+    );
+    assert!(
+        artifact_source.contains("fn validate_eth_block_binding")
+            && artifact_source.contains("public_values_hash")
+            && artifact_source.contains("validate_proof_bindings"),
+        "Rust proof artifact construction should keep runtime public-input binding checks"
+    );
+}
+
+#[test]
 fn external_source_device_commitments_do_not_retain_full_trace_sources() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let trace_path = crate_root.join("src/witness_commitment/trace.rs");

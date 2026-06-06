@@ -8,6 +8,7 @@ import Lzvm.AuxiliaryChecks
 import Lzvm.AssumptionAudit
 import Lzvm.Conformance
 import Lzvm.DigestPrefix
+import Lzvm.EthBlockPublicInputBinding
 import Lzvm.ExternalSource
 import Lzvm.ProofArtifactBinding
 import Lzvm.OpeningValidation
