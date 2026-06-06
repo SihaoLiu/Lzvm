@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
 
@@ -23,6 +24,7 @@ use lzvm_artifacts::program_image_segment::{
 };
 use lzvm_artifacts::proof::{
     read_proof_artifact_file, validate_proof_artifact, ProofArtifact, ProofArtifactError,
+    ProofSegment,
 };
 use lzvm_artifacts::public_values::{
     public_values_digest, read_public_values_file, PublicValues, PublicValuesError,
@@ -30,7 +32,10 @@ use lzvm_artifacts::public_values::{
 use lzvm_artifacts::trace_constraint_segment::{
     parse_trace_constraint_segment, TraceConstraintSegmentError, TRACE_CONSTRAINT_SEGMENT_ID,
 };
-use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
+use lzvm_artifacts::witness_segment::{
+    parse_witness_commitment_segment, witness_commitment_segment_id, WitnessCommitmentSegmentError,
+    WitnessCommitmentSegmentIdentity, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+};
 use lzvm_field::{Felt, FieldError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,6 +132,31 @@ pub enum ProofPreflightError {
     },
     MissingTraceConstraintEvidence,
     TraceConstraint(TraceConstraintSegmentError),
+    TraceConstraintWitness(WitnessCommitmentSegmentError),
+    TraceConstraintWitnessIdOverflow {
+        unit_index: u32,
+        trace_instance_index: u32,
+    },
+    TraceConstraintMissingWitnessCommitment {
+        unit_index: u32,
+        trace_instance_index: u32,
+    },
+    TraceConstraintUnexpectedWitnessCommitment {
+        segment_id: u32,
+    },
+    TraceConstraintWitnessUnitMismatch {
+        segment_id: u32,
+        expected_unit_index: u32,
+        found_unit_index: u32,
+    },
+    TraceConstraintWitnessShapeMismatch {
+        unit_index: u32,
+        trace_instance_index: u32,
+        expected_rows: u64,
+        found_rows: u64,
+        expected_columns: u64,
+        found_columns: u64,
+    },
     EthBlockInput(EthBlockInputError),
     EthBlockPublicValues(EthBlockPublicValuesError),
     MissingEthBlockInput,
@@ -195,6 +225,44 @@ impl fmt::Display for ProofPreflightError {
                 write!(f, "missing trace constraint evidence segment")
             }
             Self::TraceConstraint(error) => write!(f, "{error}"),
+            Self::TraceConstraintWitness(error) => write!(f, "{error}"),
+            Self::TraceConstraintWitnessIdOverflow {
+                unit_index,
+                trace_instance_index,
+            } => write!(
+                f,
+                "trace constraint witness commitment id overflow for unit {unit_index} trace instance {trace_instance_index}"
+            ),
+            Self::TraceConstraintMissingWitnessCommitment {
+                unit_index,
+                trace_instance_index,
+            } => write!(
+                f,
+                "missing trace constraint witness commitment for unit {unit_index} trace instance {trace_instance_index}"
+            ),
+            Self::TraceConstraintUnexpectedWitnessCommitment { segment_id } => write!(
+                f,
+                "witness commitment segment {segment_id} has no matching trace constraint evidence"
+            ),
+            Self::TraceConstraintWitnessUnitMismatch {
+                segment_id,
+                expected_unit_index,
+                found_unit_index,
+            } => write!(
+                f,
+                "witness commitment segment {segment_id} unit mismatch: expected unit {expected_unit_index}, found unit {found_unit_index}"
+            ),
+            Self::TraceConstraintWitnessShapeMismatch {
+                unit_index,
+                trace_instance_index,
+                expected_rows,
+                found_rows,
+                expected_columns,
+                found_columns,
+            } => write!(
+                f,
+                "trace constraint witness shape mismatch for unit {unit_index} trace instance {trace_instance_index}: expected rows {expected_rows} columns {expected_columns}, found rows {found_rows} columns {found_columns}"
+            ),
             Self::EthBlockInput(error) => write!(f, "{error}"),
             Self::EthBlockPublicValues(error) => write!(f, "{error}"),
             Self::MissingEthBlockInput => write!(f, "missing ETH block input proof segment"),
@@ -231,6 +299,7 @@ impl std::error::Error for ProofPreflightError {
             Self::ChallengeValues(error) => Some(error),
             Self::ChallengeValueNonCanonical { source, .. } => Some(source),
             Self::TraceConstraint(error) => Some(error),
+            Self::TraceConstraintWitness(error) => Some(error),
             Self::EthBlockInput(error) => Some(error),
             Self::EthBlockPublicValues(error) => Some(error),
             Self::ProofArtifact(error) => Some(error),
@@ -241,6 +310,11 @@ impl std::error::Error for ProofPreflightError {
             | Self::ProgramImageCachePublicValueElementCountMismatch { .. }
             | Self::ProgramImageCachePublicValueMismatch { .. }
             | Self::MissingTraceConstraintEvidence
+            | Self::TraceConstraintWitnessIdOverflow { .. }
+            | Self::TraceConstraintMissingWitnessCommitment { .. }
+            | Self::TraceConstraintUnexpectedWitnessCommitment { .. }
+            | Self::TraceConstraintWitnessUnitMismatch { .. }
+            | Self::TraceConstraintWitnessShapeMismatch { .. }
             | Self::MissingEthBlockInput => None,
         }
     }
@@ -377,6 +451,7 @@ fn validate_proof_public_values_inner(
     {
         return Err(ProofPreflightError::MissingTraceConstraintEvidence);
     }
+    validate_trace_constraint_witness_commitments(proof, &trace_constraint_units)?;
     let mut eth_block_input_hashes = Vec::new();
     let mut eth_block_input_byte_counts = Vec::new();
     let mut eth_block_input_block_rlp_byte_counts = Vec::new();
@@ -541,6 +616,201 @@ fn contains_witness_commitment_segments(proof: &ProofArtifact) -> bool {
     proof.segments.iter().any(|segment| {
         (WITNESS_COMMITMENT_SEGMENT_BASE_ID..PCS_MATERIAL_MANIFEST_SEGMENT_ID).contains(&segment.id)
     })
+}
+
+fn validate_trace_constraint_witness_commitments(
+    proof: &ProofArtifact,
+    trace_constraint_units: &[TraceConstraintPreflightUnit],
+) -> Result<(), ProofPreflightError> {
+    if trace_constraint_units.is_empty() || !contains_witness_commitment_segments(proof) {
+        return Ok(());
+    }
+    let max_unit_index = trace_constraint_units
+        .iter()
+        .map(|unit| unit.unit_index)
+        .max()
+        .ok_or(ProofPreflightError::TraceConstraintWitnessIdOverflow {
+            unit_index: u32::MAX,
+            trace_instance_index: 0,
+        })?;
+    let mut expected = BTreeMap::new();
+    for unit in trace_constraint_units {
+        if !unit.witness_values_committed {
+            continue;
+        }
+        let unit_count = max_unit_index.checked_add(1).ok_or(
+            ProofPreflightError::TraceConstraintWitnessIdOverflow {
+                unit_index: unit.unit_index,
+                trace_instance_index: unit.trace_instance_index,
+            },
+        )?;
+        witness_commitment_segment_id(
+            unit_count,
+            WitnessCommitmentSegmentIdentity {
+                unit_index: unit.unit_index,
+                trace_instance_index: unit.trace_instance_index,
+            },
+        )
+        .map_err(|_| ProofPreflightError::TraceConstraintWitnessIdOverflow {
+            unit_index: unit.unit_index,
+            trace_instance_index: unit.trace_instance_index,
+        })?;
+        expected.insert((unit.unit_index, unit.trace_instance_index), unit.clone());
+    }
+
+    let mut actual = Vec::new();
+    for segment in proof.segments.iter().filter(is_witness_commitment_segment) {
+        let witness = parse_witness_commitment_segment(&segment.data)
+            .map_err(ProofPreflightError::TraceConstraintWitness)?;
+        actual.push(ActualWitnessCommitment {
+            segment_id: segment.id,
+            unit_index: witness.unit_index,
+            trace_rows: witness.trace_rows,
+            trace_columns: witness.trace_columns,
+        });
+    }
+    let candidate_unit_counts =
+        trace_constraint_witness_unit_count_candidates(&actual, &expected, max_unit_index)?;
+    let mut first_error = None;
+    for unit_count in candidate_unit_counts {
+        match validate_trace_constraint_witness_commitments_for_unit_count(
+            unit_count, &actual, &expected,
+        ) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
+    }
+    Err(first_error.unwrap_or(
+        ProofPreflightError::TraceConstraintUnexpectedWitnessCommitment {
+            segment_id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        },
+    ))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ActualWitnessCommitment {
+    segment_id: u32,
+    unit_index: u32,
+    trace_rows: u64,
+    trace_columns: u64,
+}
+
+fn trace_constraint_witness_unit_count_candidates(
+    actual: &[ActualWitnessCommitment],
+    expected: &BTreeMap<(u32, u32), TraceConstraintPreflightUnit>,
+    max_unit_index: u32,
+) -> Result<BTreeSet<u32>, ProofPreflightError> {
+    let min_unit_count = max_unit_index.checked_add(1).ok_or(
+        ProofPreflightError::TraceConstraintWitnessIdOverflow {
+            unit_index: max_unit_index,
+            trace_instance_index: 0,
+        },
+    )?;
+    let mut candidates = BTreeSet::new();
+    for expected_unit in expected.values() {
+        if expected_unit.trace_instance_index == 0 {
+            continue;
+        }
+        for witness in actual
+            .iter()
+            .filter(|witness| witness.unit_index == expected_unit.unit_index)
+        {
+            let Some(offset) = witness
+                .segment_id
+                .checked_sub(WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+            else {
+                continue;
+            };
+            let Some(relative) = offset.checked_sub(expected_unit.unit_index) else {
+                continue;
+            };
+            if relative == 0 || relative % expected_unit.trace_instance_index != 0 {
+                continue;
+            }
+            let unit_count = relative / expected_unit.trace_instance_index;
+            if unit_count >= min_unit_count {
+                candidates.insert(unit_count);
+            }
+        }
+    }
+    if candidates.is_empty() {
+        candidates.insert(min_unit_count);
+    }
+    Ok(candidates)
+}
+
+fn validate_trace_constraint_witness_commitments_for_unit_count(
+    unit_count: u32,
+    actual: &[ActualWitnessCommitment],
+    expected: &BTreeMap<(u32, u32), TraceConstraintPreflightUnit>,
+) -> Result<(), ProofPreflightError> {
+    let mut expected_by_segment_id = BTreeMap::new();
+    for expected_unit in expected.values() {
+        let segment_id = witness_commitment_segment_id(
+            unit_count,
+            WitnessCommitmentSegmentIdentity {
+                unit_index: expected_unit.unit_index,
+                trace_instance_index: expected_unit.trace_instance_index,
+            },
+        )
+        .map_err(|_| ProofPreflightError::TraceConstraintWitnessIdOverflow {
+            unit_index: expected_unit.unit_index,
+            trace_instance_index: expected_unit.trace_instance_index,
+        })?;
+        expected_by_segment_id.insert(segment_id, expected_unit);
+    }
+    let actual_by_segment_id = actual
+        .iter()
+        .map(|witness| (witness.segment_id, witness))
+        .collect::<BTreeMap<_, _>>();
+    for (&segment_id, expected_unit) in &expected_by_segment_id {
+        if !actual_by_segment_id.contains_key(&segment_id) {
+            return Err(
+                ProofPreflightError::TraceConstraintMissingWitnessCommitment {
+                    unit_index: expected_unit.unit_index,
+                    trace_instance_index: expected_unit.trace_instance_index,
+                },
+            );
+        }
+    }
+    for witness in actual {
+        let Some(expected_unit) = expected_by_segment_id.get(&witness.segment_id) else {
+            return Err(
+                ProofPreflightError::TraceConstraintUnexpectedWitnessCommitment {
+                    segment_id: witness.segment_id,
+                },
+            );
+        };
+        if witness.unit_index != expected_unit.unit_index {
+            return Err(ProofPreflightError::TraceConstraintWitnessUnitMismatch {
+                segment_id: witness.segment_id,
+                expected_unit_index: expected_unit.unit_index,
+                found_unit_index: witness.unit_index,
+            });
+        }
+        let expected_columns = u64::from(expected_unit.trace_column_count);
+        if witness.trace_rows != expected_unit.trace_row_count
+            || witness.trace_columns != expected_columns
+        {
+            return Err(ProofPreflightError::TraceConstraintWitnessShapeMismatch {
+                unit_index: expected_unit.unit_index,
+                trace_instance_index: expected_unit.trace_instance_index,
+                expected_rows: expected_unit.trace_row_count,
+                found_rows: witness.trace_rows,
+                expected_columns,
+                found_columns: witness.trace_columns,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn is_witness_commitment_segment(segment: &&ProofSegment) -> bool {
+    (WITNESS_COMMITMENT_SEGMENT_BASE_ID..PCS_MATERIAL_MANIFEST_SEGMENT_ID).contains(&segment.id)
 }
 
 pub(crate) fn contains_named_eth_block_public_values(public_values: &PublicValues) -> bool {

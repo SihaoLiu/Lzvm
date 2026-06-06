@@ -22,7 +22,11 @@ use lzvm_artifacts::trace_constraint_segment::{
     encode_trace_constraint_segment, TraceConstraintSegment, TraceConstraintUnitSegment,
     TRACE_CONSTRAINT_SEGMENT_ID,
 };
-use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
+use lzvm_artifacts::witness_segment::{
+    encode_witness_commitment_segment, witness_commitment_segment_id, WitnessCommitmentSegment,
+    WitnessCommitmentSegmentIdentity, WitnessCommitmentStageSegment,
+    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+};
 use lzvm_field::{Felt, FieldError, MAX_ROOT_OF_UNITY_BITS, MODULUS};
 use lzvm_prover::proof_preflight::{
     public_values_as_fields, validate_proof_public_values, ProofPreflightError,
@@ -529,6 +533,80 @@ fn reports_trace_constraint_segments() {
 }
 
 #[test]
+fn rejects_trace_constraint_witness_shape_mismatches() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: TRACE_CONSTRAINT_SEGMENT_ID,
+        data: encode_trace_constraint_segment(&TraceConstraintSegment {
+            units: vec![TraceConstraintUnitSegment {
+                unit_index: 0,
+                trace_instance_index: 0,
+                trace_row_count: 32,
+                trace_column_count: 5,
+                regular_constraint_count: 17,
+                trace_extracted: true,
+                regular_constraints_evaluated: true,
+                witness_values_committed: true,
+                constraint_checker_conformant: true,
+            }],
+        })
+        .expect("trace constraint segment should encode"),
+    });
+    proof.segments.push(ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        data: encode_witness_commitment_segment(&sample_witness_commitment(0, 16, 5))
+            .expect("witness commitment should encode"),
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("trace evidence should match witness commitment shape");
+
+    assert_eq!(
+        error.to_string(),
+        "trace constraint witness shape mismatch for unit 0 trace instance 0: expected rows 32 columns 5, found rows 16 columns 5"
+    );
+}
+
+#[test]
+fn accepts_sparse_nonzero_trace_instance_witness_binding() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: TRACE_CONSTRAINT_SEGMENT_ID,
+        data: encode_trace_constraint_segment(&TraceConstraintSegment {
+            units: vec![TraceConstraintUnitSegment {
+                unit_index: 0,
+                trace_instance_index: 1,
+                trace_row_count: 16,
+                trace_column_count: 5,
+                regular_constraint_count: 17,
+                trace_extracted: true,
+                regular_constraints_evaluated: true,
+                witness_values_committed: true,
+                constraint_checker_conformant: true,
+            }],
+        })
+        .expect("trace constraint segment should encode"),
+    });
+    proof.segments.push(ProofSegment {
+        id: witness_commitment_segment_id(
+            25,
+            WitnessCommitmentSegmentIdentity {
+                unit_index: 0,
+                trace_instance_index: 1,
+            },
+        )
+        .expect("witness commitment id should encode"),
+        data: encode_witness_commitment_segment(&sample_witness_commitment(0, 16, 5))
+            .expect("witness commitment should encode"),
+    });
+
+    validate_proof_public_values(&proof, &public_values)
+        .expect("sparse trace evidence can still bind the witness segment identity");
+}
+
+#[test]
 fn rejects_witness_commitment_segments_without_trace_constraint_evidence() {
     let public_values = sample_public_values();
     let mut proof = sample_proof(&public_values);
@@ -544,6 +622,26 @@ fn rejects_witness_commitment_segments_without_trace_constraint_evidence() {
         error.to_string(),
         "missing trace constraint evidence segment"
     );
+}
+
+fn sample_witness_commitment(
+    unit_index: u32,
+    trace_rows: u64,
+    trace_columns: u64,
+) -> WitnessCommitmentSegment {
+    WitnessCommitmentSegment {
+        unit_index,
+        input_byte_count: 128,
+        trace_rows,
+        trace_columns,
+        stages: vec![WitnessCommitmentStageSegment {
+            stage_index: 1,
+            arity: 4,
+            root: [1, 2, 3, 4],
+            tree_byte_count: 256,
+            tree_digest: [0x5a; 32],
+        }],
+    }
 }
 
 #[test]
