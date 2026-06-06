@@ -743,6 +743,38 @@ theorem runtime_pipeline_binding_checked_acceptance_execution_obligations
       accepted
   exact runtime_pipeline_binding_evidence_implies_execution_obligations sound.left
 
+theorem runtime_pipeline_binding_checked_acceptance_verifier_sound_witness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  exact ⟨verifierAccepts, sound.right⟩
+
 theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
