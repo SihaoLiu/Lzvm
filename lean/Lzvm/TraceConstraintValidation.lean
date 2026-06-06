@@ -188,52 +188,30 @@ theorem runtime_trace_constraint_checked_acceptance_opening_evidence
       requiresExternalSource
       openingAccepted
 
-theorem runtime_trace_constraint_checked_acceptance_evidence
+theorem runtime_trace_constraint_checked_acceptance_trace_witness_evidence
     {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
     (validation : RuntimeTraceConstraintValidation system) :
-    forall artifact publicInput proof requiresExternalSource,
+    forall artifact publicInput proof,
       RuntimeTraceConstraintCheckedAcceptance
           system
           validation
           artifact
           publicInput
           proof ->
-        RuntimeTraceConstraintEvidence
-          system
-          validation
-          artifact
-          publicInput
-          proof
-          requiresExternalSource := by
-  intro artifact publicInput proof requiresExternalSource accepted
-  have openingAccepted :=
-    validation.traceConstraintAcceptedImpliesOpeningAccepted
-      artifact
-      publicInput
-      proof
-      accepted
-  have openingEvidence :=
-    runtime_opening_checked_acceptance_evidence
-      assumptions
-      validation.openingValidation
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      openingAccepted
-  have artifactBindingEvidence :=
-    And.intro
-      (validation.traceConstraintAcceptedImpliesTraceEvidenceMatchesWitnessCommitments
-        artifact
-        publicInput
-        proof
-        accepted)
-      (validation.traceConstraintAcceptedImpliesTraceEvidenceMatchesConstraintCatalog
-        artifact
-        publicInput
-        proof
-        accepted)
+        exists witness trace constraints,
+          validation.traceExtracted artifact publicInput proof trace
+            /\ validation.constraintsEvaluated artifact publicInput proof constraints trace
+            /\ validation.witnessExtractedFromTrace artifact publicInput proof witness trace
+            /\ validation.constraintBackendConformant
+              artifact
+              publicInput
+              proof
+              constraints
+              trace
+            /\ system.traceConsistent publicInput proof trace
+            /\ system.constraintsSatisfied constraints trace
+            /\ system.witnessMatchesTrace witness trace := by
+  intro artifact publicInput proof accepted
   cases
       validation.traceConstraintAcceptedImpliesTraceExtracted
         artifact
@@ -297,17 +275,61 @@ theorem runtime_trace_constraint_checked_acceptance_evidence
             trace
             witnessExtracted
         exact
-          And.intro openingEvidence
-            (And.intro artifactBindingEvidence
-              (Exists.intro witness
-                (Exists.intro trace
-                  (Exists.intro constraints
-                    (And.intro traceExtracted
-                      (And.intro constraintsEvaluated
-                        (And.intro witnessExtracted
-                          (And.intro backendConformant
-                            (And.intro traceConsistent
-                              (And.intro constraintsSatisfied witnessMatchesTrace))))))))))
+          Exists.intro witness
+            (Exists.intro trace
+              (Exists.intro constraints
+                (And.intro traceExtracted
+                  (And.intro constraintsEvaluated
+                    (And.intro witnessExtracted
+                      (And.intro backendConformant
+                        (And.intro traceConsistent
+                          (And.intro constraintsSatisfied witnessMatchesTrace))))))))
+
+theorem runtime_trace_constraint_checked_acceptance_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have openingEvidence :=
+    runtime_trace_constraint_checked_acceptance_opening_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have artifactBindingEvidence :=
+    runtime_trace_constraint_checked_acceptance_artifact_binding_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceWitnessEvidence :=
+    runtime_trace_constraint_checked_acceptance_trace_witness_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro openingEvidence
+      (And.intro artifactBindingEvidence traceWitnessEvidence)
 
 theorem runtime_trace_constraint_evidence_implies_sound_witness
     {system : VerifierModel}
