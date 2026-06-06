@@ -13,6 +13,7 @@ import Lzvm.EthBlockPublicInputBinding
 import Lzvm.ExternalSource
 import Lzvm.ProofArtifactBinding
 import Lzvm.OpeningValidation
+import Lzvm.OpeningSegmentBinding
 import Lzvm.RequiredExternalSource
 import Lzvm.RuntimeExternalSource
 import Lzvm.RuntimeSoundness

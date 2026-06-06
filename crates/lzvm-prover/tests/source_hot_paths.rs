@@ -2393,6 +2393,57 @@ fn lean_trace_constraint_artifact_binding_tracks_runtime_preflight_checks() {
 }
 
 #[test]
+fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_path = crate_root.join("../../lean/Lzvm/OpeningSegmentBinding.lean");
+    let lean_source = std::fs::read_to_string(&lean_path)
+        .expect("Lean opening segment binding source should read");
+    let lean_root_path = crate_root.join("../../lean/Lzvm.lean");
+    let lean_root_source =
+        std::fs::read_to_string(&lean_root_path).expect("top-level Lean source should read");
+    let setup_preflight_path = crate_root.join("src/setup_preflight.rs");
+    let setup_preflight_source =
+        std::fs::read_to_string(&setup_preflight_path).expect("setup preflight source should read");
+    let constant_opening_path = crate_root.join("src/constant_opening.rs");
+    let constant_opening_source = std::fs::read_to_string(&constant_opening_path)
+        .expect("constant opening source should read");
+    let witness_opening_path = crate_root.join("src/witness_opening.rs");
+    let witness_opening_source =
+        std::fs::read_to_string(&witness_opening_path).expect("witness opening source should read");
+    let fri_opening_path = crate_root.join("src/pcs_fri/validation.rs");
+    let fri_opening_source =
+        std::fs::read_to_string(&fri_opening_path).expect("FRI opening source should read");
+
+    assert!(
+        lean_root_source.contains("import Lzvm.OpeningSegmentBinding"),
+        "top-level Lean module should include the opening segment binding model"
+    );
+    assert!(
+        lean_source.contains("structure RuntimeOpeningSegmentBindingValidation")
+            && lean_source.contains("runtime_opening_segment_binding_checked_acceptance_sound"),
+        "Lean should expose a checked opening segment binding soundness theorem"
+    );
+    assert!(
+        lean_source.contains("RuntimeOpeningValidation")
+            && lean_source.contains("runtime_opening_checked_acceptance_sound"),
+        "Lean opening segment binding should compose with the opening soundness model"
+    );
+    assert!(
+        setup_preflight_source.contains("validate_constant_opening_segments")
+            && setup_preflight_source.contains("validate_witness_opening_segments")
+            && setup_preflight_source.contains("validate_optional_pcs_fri_opening_proof_segments"),
+        "setup preflight should keep runtime opening segment validation for all opening kinds"
+    );
+    assert!(
+        constant_opening_source.contains("verify_constant_tree_opening_root")
+            && witness_opening_source.contains("verify_witness_stage_opening_root")
+            && fri_opening_source.contains("verify_fri_query_path")
+            && fri_opening_source.contains("validate_pcs_fri_opening_folds_from_units"),
+        "opening validators should keep Merkle path and FRI fold checks"
+    );
+}
+
+#[test]
 fn guest_pc_trace_writes_use_direct_trace_builder_helpers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
