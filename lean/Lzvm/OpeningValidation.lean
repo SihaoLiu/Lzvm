@@ -148,6 +148,22 @@ theorem runtime_opening_checked_acceptance_evidence
           (And.intro friOpening
             (And.intro pcsOpenings friQueries))))
 
+theorem runtime_opening_evidence_implies_pcs_and_fri
+    {system : VerifierModel}
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact evidence.right.right.right.right
+
 theorem runtime_opening_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

@@ -331,6 +331,74 @@ theorem runtime_trace_constraint_checked_acceptance_evidence
     And.intro openingEvidence
       (And.intro artifactBindingEvidence traceWitnessEvidence)
 
+theorem runtime_trace_constraint_evidence_implies_opening_evidence
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeOpeningEvidence
+          system
+          validation.openingValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact evidence.left
+
+theorem runtime_trace_constraint_evidence_implies_artifact_binding_evidence
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeTraceConstraintArtifactBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact evidence.right.left
+
+theorem runtime_trace_constraint_evidence_implies_trace_witness_evidence
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        exists witness trace constraints,
+          validation.traceExtracted artifact publicInput proof trace
+            /\ validation.constraintsEvaluated artifact publicInput proof constraints trace
+            /\ validation.witnessExtractedFromTrace artifact publicInput proof witness trace
+            /\ validation.constraintBackendConformant
+              artifact
+              publicInput
+              proof
+              constraints
+              trace
+            /\ system.traceConsistent publicInput proof trace
+            /\ system.constraintsSatisfied constraints trace
+            /\ system.witnessMatchesTrace witness trace := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact evidence.right.right
+
 theorem runtime_trace_constraint_evidence_implies_sound_witness
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -346,34 +414,54 @@ theorem runtime_trace_constraint_evidence_implies_sound_witness
             requiresExternalSource ->
           SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource verifierAccepts evidence
-  cases evidence with
-  | intro openingEvidence remainingEvidence =>
-    cases remainingEvidence with
-    | intro _artifactBindingEvidence traceEvidence =>
-      cases traceEvidence with
-      | intro witness traceAndConstraints =>
-        cases traceAndConstraints with
-        | intro trace constraintEvidence =>
-          cases constraintEvidence with
-        | intro constraints checkedEvidence =>
-          have transcriptBound := openingEvidence.left.right.right.left
-          have publicInputBound :=
-            assumptions.semantic.public_input_binding publicInput proof verifierAccepts
-          have pcsOpenings := openingEvidence.right.right.right.right.left
-          have friQueries := openingEvidence.right.right.right.right.right
-          have traceConsistent := checkedEvidence.right.right.right.right.left
-          have constraintsSatisfied := checkedEvidence.right.right.right.right.right.left
-          have witnessMatchesTrace := checkedEvidence.right.right.right.right.right.right
-          exact
-            Exists.intro witness
-              (Exists.intro trace
-                (Exists.intro constraints
-                  (And.intro transcriptBound
-                    (And.intro publicInputBound
-                      (And.intro pcsOpenings
-                        (And.intro friQueries
-                          (And.intro traceConsistent
-                            (And.intro constraintsSatisfied witnessMatchesTrace))))))))
+  have openingEvidence :=
+    runtime_trace_constraint_evidence_implies_opening_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+  have traceWitnessEvidence :=
+    runtime_trace_constraint_evidence_implies_trace_witness_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+  have openingChecks :=
+    runtime_opening_evidence_implies_pcs_and_fri
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingEvidence
+  cases traceWitnessEvidence with
+  | intro witness traceAndConstraints =>
+    cases traceAndConstraints with
+    | intro trace constraintEvidence =>
+      cases constraintEvidence with
+      | intro constraints checkedEvidence =>
+        have transcriptBound := openingEvidence.left.right.right.left
+        have publicInputBound :=
+          assumptions.semantic.public_input_binding publicInput proof verifierAccepts
+        have pcsOpenings := openingChecks.left
+        have friQueries := openingChecks.right
+        have traceConsistent := checkedEvidence.right.right.right.right.left
+        have constraintsSatisfied := checkedEvidence.right.right.right.right.right.left
+        have witnessMatchesTrace := checkedEvidence.right.right.right.right.right.right
+        exact
+          Exists.intro witness
+            (Exists.intro trace
+              (Exists.intro constraints
+                (And.intro transcriptBound
+                  (And.intro publicInputBound
+                    (And.intro pcsOpenings
+                      (And.intro friQueries
+                        (And.intro traceConsistent
+                          (And.intro constraintsSatisfied witnessMatchesTrace))))))))
 
 theorem runtime_trace_constraint_checked_acceptance_sound
     {system : VerifierModel}
