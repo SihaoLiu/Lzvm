@@ -1791,6 +1791,9 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
     let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
     let cli_source =
         std::fs::read_to_string(&cli_path).expect("guest PC CLI timing source should read");
+    let proof_timing_path = crate_root.join("../lzvm-cli/src/prove_witness/proof_timing.rs");
+    let proof_timing_source =
+        std::fs::read_to_string(&proof_timing_path).expect("proof timing source should read");
 
     let timing_fields = function_body(
         &backend_source,
@@ -1838,9 +1841,33 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "\"guest_device_source_descriptor_upload_rows\"",
             "guest_device_source_descriptor_upload_row_count()",
         ),
+        (
+            "\"guest_stage_leaf_hash_rows\"",
+            "guest_stage_leaf_hash_row_count()",
+        ),
+        (
+            "\"guest_stage_leaf_hash_bytes\"",
+            "guest_stage_leaf_hash_byte_count()",
+        ),
     ] {
         assert!(
             cli_source.contains(line_name) && cli_source.contains(accessor),
+            "CLI timing output should include {line_name}"
+        );
+    }
+
+    for (line_name, field) in [
+        (
+            "\"finish_witness_opening_leaf_hash_rows\"",
+            "witness_opening_leaf_hash_row_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_hash_bytes\"",
+            "witness_opening_leaf_hash_byte_count",
+        ),
+    ] {
+        assert!(
+            proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
             "CLI timing output should include {line_name}"
         );
     }

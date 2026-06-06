@@ -82,6 +82,8 @@ pub(crate) struct WitnessStageLeafExtendTiming {
     download_duration: Duration,
     validate_duration: Duration,
     leaf_hash_duration: Duration,
+    leaf_hash_row_count: usize,
+    leaf_hash_byte_count: usize,
 }
 
 impl WitnessStageLeafExtendTiming {
@@ -92,6 +94,14 @@ impl WitnessStageLeafExtendTiming {
         self.download_duration += other.download_duration;
         self.validate_duration += other.validate_duration;
         self.leaf_hash_duration += other.leaf_hash_duration;
+        self.leaf_hash_row_count += other.leaf_hash_row_count;
+        self.leaf_hash_byte_count += other.leaf_hash_byte_count;
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    fn record_leaf_hash_work(&mut self, row_count: usize, byte_count: usize) {
+        self.leaf_hash_row_count += row_count;
+        self.leaf_hash_byte_count += byte_count;
     }
 
     pub(crate) fn setup_duration(&self) -> Duration {
@@ -116,6 +126,14 @@ impl WitnessStageLeafExtendTiming {
 
     pub(crate) fn leaf_hash_duration(&self) -> Duration {
         self.leaf_hash_duration
+    }
+
+    pub(crate) fn leaf_hash_row_count(&self) -> usize {
+        self.leaf_hash_row_count
+    }
+
+    pub(crate) fn leaf_hash_byte_count(&self) -> usize {
+        self.leaf_hash_byte_count
     }
 }
 
@@ -456,7 +474,7 @@ fn compact_witness_stage_leaf_hashes_timed(
     record_duration(&mut timing.validate_duration, || {
         validate_row_major_device_words(&output_buffer, out_byte_count)
     })?;
-    record_duration(&mut timing.leaf_hash_duration, || {
+    let leaf_hashes = record_duration(&mut timing.leaf_hash_duration, || {
         linear_hashes_from_validated_wide_row_major_device_buffer(
             &output_buffer,
             extended_rows,
@@ -464,7 +482,9 @@ fn compact_witness_stage_leaf_hashes_timed(
             arity,
         )
         .map_err(WitnessStageCommitmentError::from)
-    })
+    })?;
+    timing.record_leaf_hash_work(extended_rows, out_byte_count);
+    Ok(leaf_hashes)
 }
 
 #[cfg(feature = "cuda")]
@@ -527,6 +547,7 @@ fn compact_witness_stage_leaf_hash_level_timed(
         )
         .map_err(WitnessStageCommitmentError::from)
     })?;
+    timing.record_leaf_hash_work(extended_rows, out_byte_count);
     Ok(PendingCanonicalCudaDigestLevel::new(level, canonical_check))
 }
 
@@ -598,6 +619,7 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
         )
         .map_err(WitnessStageCommitmentError::from)
     })?;
+    timing.record_leaf_hash_work(extended_rows, out_byte_count);
     Ok(PendingCanonicalCudaDigestLevel::new(level, canonical_check))
 }
 

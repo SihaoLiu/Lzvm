@@ -9,6 +9,8 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_setup: Duration,
     pub witness_opening_leaf_extend: Duration,
     pub witness_opening_leaf_hash: Duration,
+    pub witness_opening_leaf_hash_row_count: usize,
+    pub witness_opening_leaf_hash_byte_count: usize,
     pub witness_opening_path: Duration,
     pub witness_opening_row_values: Duration,
     pub witness_stage_external_source: Vec<WitnessProofStageOpeningTiming>,
@@ -91,8 +93,12 @@ impl WitnessProofArtifactTiming {
         &mut self,
         stage_index: usize,
         duration: Duration,
+        row_count: usize,
+        byte_count: usize,
     ) {
         self.witness_opening_leaf_hash += duration;
+        self.witness_opening_leaf_hash_row_count += row_count;
+        self.witness_opening_leaf_hash_byte_count += byte_count;
         add_stage_duration(
             &mut self.witness_stage_opening_leaf_hash,
             stage_index,

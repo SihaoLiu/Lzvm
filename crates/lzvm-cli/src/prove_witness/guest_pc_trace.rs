@@ -121,6 +121,14 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_stage_leaf_hash_work",
         timing.guest_stage_leaf_hash_work_duration(),
     );
+    timings.record_count(
+        "guest_stage_leaf_hash_rows",
+        timing.guest_stage_leaf_hash_row_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_hash_bytes",
+        timing.guest_stage_leaf_hash_byte_count(),
+    );
     timings.record(
         "guest_stage_tree_commit_work",
         timing.guest_stage_tree_commit_work_duration(),

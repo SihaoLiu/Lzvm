@@ -6052,6 +6052,14 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
         "{stdout}"
     );
     assert!(
+        stdout.contains("timing_guest_stage_leaf_hash_rows="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_stage_leaf_hash_bytes="),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains("timing_guest_regular_constraints_ms="),
         "{stdout}"
     );
@@ -6251,6 +6259,14 @@ fn builds_segmented_guest_pc_trace_proof_output() {
     );
     assert!(
         stdout_text.contains("timing_finish_witness_opening_leaf_hash_ms="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_opening_leaf_hash_rows="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_opening_leaf_hash_bytes="),
         "{stdout_text}"
     );
     assert!(

@@ -38,6 +38,8 @@ pub(crate) struct WitnessStageOpeningWorkTiming {
     pub(crate) setup: Duration,
     pub(crate) leaf_extend: Duration,
     pub(crate) leaf_hash: Duration,
+    pub(crate) leaf_hash_rows: usize,
+    pub(crate) leaf_hash_bytes: usize,
     pub(crate) path: Duration,
     pub(crate) row_values: Duration,
 }
@@ -999,6 +1001,10 @@ impl WitnessStageCompactTreeStorage {
                 .map_err(WitnessStageOpeningError::from)
             },
         )?;
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.leaf_hash_rows += self.extended_rows;
+            timing.leaf_hash_bytes += self.raw_leaf_bytes;
+        }
         let path =
             record_opening_duration(timing.as_deref_mut().map(|timing| &mut timing.path), || {
                 leaf_level

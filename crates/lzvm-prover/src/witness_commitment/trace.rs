@@ -285,6 +285,14 @@ impl WitnessStageCommitTiming {
     pub(crate) fn leaf_hash_duration(&self) -> Duration {
         self.leaf_extend_timing.leaf_hash_duration()
     }
+
+    pub(crate) fn leaf_hash_row_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_hash_row_count()
+    }
+
+    pub(crate) fn leaf_hash_byte_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_hash_byte_count()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
