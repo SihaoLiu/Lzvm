@@ -2125,6 +2125,11 @@ struct ZiskMainTraceSegmentWrite {
 pub(crate) struct GuestPcTraceDeviceSegmentMaterial {
     trace_source_prefix_rows: usize,
     device_trace_descriptors: ZiskMainDeviceTraceDescriptors,
+}
+
+#[cfg(feature = "cuda")]
+struct GuestPcTraceDeviceSegmentBuild {
+    device_segment_material: GuestPcTraceDeviceSegmentMaterial,
     unit_values: Vec<WitnessTraceUnitValue>,
     final_state: ZiskMainTraceState,
     continuation_state: ZiskMainTraceState,
@@ -3047,7 +3052,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
     initial_state: &ZiskMainTraceState,
     lookahead_instruction: Option<RiscvInstruction>,
     segment: ZiskMainTraceSegmentInfo,
-) -> Result<Option<GuestPcTraceDeviceSegmentMaterial>, GuestPcTraceBackendError> {
+) -> Result<Option<GuestPcTraceDeviceSegmentBuild>, GuestPcTraceBackendError> {
     let Some(columns) = zisk_main_trace_columns(layout)? else {
         return Ok(None);
     };
@@ -3113,9 +3118,11 @@ fn build_layout_zisk_main_trace_segment_device_material(
         &state,
         segment,
     );
-    Ok(Some(GuestPcTraceDeviceSegmentMaterial {
-        trace_source_prefix_rows: output_row,
-        device_trace_descriptors,
+    Ok(Some(GuestPcTraceDeviceSegmentBuild {
+        device_segment_material: GuestPcTraceDeviceSegmentMaterial {
+            trace_source_prefix_rows: output_row,
+            device_trace_descriptors,
+        },
         unit_values,
         final_state: state,
         continuation_state,
@@ -3143,20 +3150,13 @@ fn build_layout_zisk_main_trace_segment_from_device_material(
         return Ok(None);
     };
     let produced_len = layout_trace_byte_len(layout.row_count(), layout.column_count());
-    let GuestPcTraceDeviceSegmentMaterial {
-        trace_source_prefix_rows,
-        device_trace_descriptors,
+    let GuestPcTraceDeviceSegmentBuild {
+        device_segment_material,
         unit_values,
         final_state,
         continuation_state,
     } = material;
-    let device_segment_material = GuestPcTraceDeviceSegmentMaterial {
-        trace_source_prefix_rows,
-        device_trace_descriptors,
-        unit_values: unit_values.clone(),
-        final_state: final_state.clone(),
-        continuation_state: continuation_state.clone(),
-    };
+    let trace_source_prefix_rows = device_segment_material.trace_source_prefix_rows;
     Ok(Some(ZiskMainTraceSegmentWrite {
         trace: None,
         trace_source_prefix_rows,
@@ -3302,9 +3302,6 @@ fn build_layout_zisk_main_trace_segment(
         GuestPcTraceDeviceSegmentMaterial {
             trace_source_prefix_rows: output_row,
             device_trace_descriptors,
-            unit_values: unit_values.clone(),
-            final_state: state.clone(),
-            continuation_state: continuation_state.clone(),
         }
     });
     Ok(Some(ZiskMainTraceSegmentWrite {

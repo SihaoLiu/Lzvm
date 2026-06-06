@@ -1503,6 +1503,38 @@ fn trace_less_guest_pc_segment_output_can_skip_host_trace_build() {
 }
 
 #[test]
+fn guest_pc_device_segment_material_avoids_duplicate_trace_metadata() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+
+    let material_struct = function_body(
+        &backend_source,
+        "pub(crate) struct GuestPcTraceDeviceSegmentMaterial",
+        "struct GuestPcTraceDeviceSegmentBuild",
+    );
+    for field in ["unit_values", "final_state", "continuation_state"] {
+        assert!(
+            !material_struct.contains(field),
+            "device segment material should not duplicate {field}"
+        );
+    }
+
+    let device_material_body = function_body(
+        &backend_source,
+        "fn build_layout_zisk_main_trace_segment_from_device_material",
+        "fn build_layout_zisk_main_trace_segment_for_segment_output",
+    );
+    assert!(
+        !device_material_body.contains("unit_values.clone()")
+            && !device_material_body.contains("final_state.clone()")
+            && !device_material_body.contains("continuation_state.clone()"),
+        "trace-less segmented output should move trace metadata instead of cloning it into device material"
+    );
+}
+
+#[test]
 fn guest_pc_trace_device_descriptors_preallocate_rows_once() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
