@@ -6,11 +6,13 @@ use lzvm_accel::{cuda_poseidon2_width16_device, cuda_poseidon2_width8_device};
 use lzvm_accel::{
     cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
-    cuda_poseidon2_width16_merkle_opening_path_device, cuda_poseidon2_width16_merkle_parent_device,
-    cuda_poseidon2_width16_merkle_root_device, cuda_poseidon2_width8_linear_round_device,
+    cuda_poseidon2_width16_merkle_digest_opening_path_device,
+    cuda_poseidon2_width16_merkle_digest_root_device, cuda_poseidon2_width16_merkle_parent_device,
+    cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
-    cuda_poseidon2_width8_merkle_opening_path_device, cuda_poseidon2_width8_merkle_parent_device,
-    cuda_poseidon2_width8_merkle_root_device, CudaDeviceBuffer,
+    cuda_poseidon2_width8_merkle_digest_opening_path_device,
+    cuda_poseidon2_width8_merkle_digest_root_device, cuda_poseidon2_width8_merkle_parent_device,
+    CudaDeviceBuffer,
 };
 use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt, FieldError};
 
@@ -51,10 +53,9 @@ pub(crate) struct MerkleParentLevel {
 #[cfg(feature = "cuda")]
 #[derive(Debug)]
 pub(crate) struct CudaDigestLevel {
-    states: CudaDeviceBuffer,
+    digests: CudaDeviceBuffer,
     state_count: usize,
     arity: usize,
-    width: usize,
     root_operation: CudaPoseidon2RootOp,
 }
 
@@ -67,17 +68,15 @@ pub(crate) struct CudaMerkleOpeningPath {
 #[cfg(feature = "cuda")]
 impl CudaDigestLevel {
     fn new(
-        states: CudaDeviceBuffer,
+        digests: CudaDeviceBuffer,
         state_count: usize,
         arity: usize,
-        width: usize,
         root_operation: CudaPoseidon2RootOp,
     ) -> Self {
         Self {
-            states,
+            digests,
             state_count,
             arity,
-            width,
             root_operation,
         }
     }
@@ -92,15 +91,15 @@ impl CudaDigestLevel {
 
     pub(crate) fn to_digests(&self) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
         let output = self
-            .states
-            .to_state_prefix_u64_words(self.state_count, self.width, HASH_WORDS)
+            .digests
+            .to_u64_words()
             .map_err(|_| MerkleHashError::LengthOverflow)?;
         digests_from_hashed_states(&output, HASH_WORDS)
     }
 
     pub(crate) fn root(&self) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
         let root_words =
-            (self.root_operation)(&self.states).map_err(|_| MerkleHashError::LengthOverflow)?;
+            (self.root_operation)(&self.digests).map_err(|_| MerkleHashError::LengthOverflow)?;
         digest_from_state_words(&root_words)
     }
 
@@ -119,8 +118,8 @@ impl CudaDigestLevel {
             return Err(MerkleHashError::LengthOverflow);
         }
         let path = match self.arity {
-            2 => cuda_poseidon2_width8_merkle_opening_path_device(&self.states, query_row),
-            4 => cuda_poseidon2_width16_merkle_opening_path_device(&self.states, query_row),
+            2 => cuda_poseidon2_width8_merkle_digest_opening_path_device(&self.digests, query_row),
+            4 => cuda_poseidon2_width16_merkle_digest_opening_path_device(&self.digests, query_row),
             _ => return Err(MerkleHashError::UnsupportedArity { arity: self.arity }),
         }
         .map_err(|_| MerkleHashError::LengthOverflow)?;
@@ -258,57 +257,57 @@ pub(crate) fn linear_hash_level_from_validated_row_major_device_buffer(
 
     match arity {
         2 => {
-            let states = if column_count <= HASH_WORDS {
+            let digests = if column_count <= HASH_WORDS {
                 CudaDeviceBuffer::from_device_state_prefix_u64_words(
                     row_values,
                     row_count,
-                    8,
+                    HASH_WORDS,
                     column_count,
                 )
                 .map_err(|_| MerkleHashError::LengthOverflow)?
             } else {
-                cuda_linear_hash_states_with_row_major_device_rounds(
+                let states = cuda_linear_hash_states_with_row_major_device_rounds(
                     row_count,
                     column_count,
                     HASH_WORDS,
                     8,
                     cuda_poseidon2_width8_linear_round_row_major_digest_device,
                     row_values,
-                )?
+                )?;
+                compact_digest_buffer_from_state_buffer(&states, row_count, 8)?
             };
             Ok(CudaDigestLevel::new(
-                states,
+                digests,
                 row_count,
                 arity,
-                8,
-                cuda_poseidon2_width8_merkle_root_device,
+                cuda_poseidon2_width8_merkle_digest_root_device,
             ))
         }
         4 => {
-            let states = if column_count <= HASH_WORDS {
+            let digests = if column_count <= HASH_WORDS {
                 CudaDeviceBuffer::from_device_state_prefix_u64_words(
                     row_values,
                     row_count,
-                    16,
+                    HASH_WORDS,
                     column_count,
                 )
                 .map_err(|_| MerkleHashError::LengthOverflow)?
             } else {
-                cuda_linear_hash_states_with_row_major_device_rounds(
+                let states = cuda_linear_hash_states_with_row_major_device_rounds(
                     row_count,
                     column_count,
                     12,
                     16,
                     cuda_poseidon2_width16_linear_round_row_major_digest_device,
                     row_values,
-                )?
+                )?;
+                compact_digest_buffer_from_state_buffer(&states, row_count, 16)?
             };
             Ok(CudaDigestLevel::new(
-                states,
+                digests,
                 row_count,
                 arity,
-                16,
-                cuda_poseidon2_width16_merkle_root_device,
+                cuda_poseidon2_width16_merkle_digest_root_device,
             ))
         }
         _ => Err(MerkleHashError::UnsupportedArity { arity }),
@@ -538,22 +537,32 @@ fn root_from_digest_level_on_cuda(
         return Ok(level[0]);
     }
 
-    let width = match arity {
-        2 => 8,
-        4 => 16,
-        _ => unreachable!("arity is validated"),
-    };
-
-    let input_words = digest_level_as_state_words(level, width)?;
+    let input_words = digest_level_as_words(level)?;
     let input_buffer = CudaDeviceBuffer::from_u64_words(&input_words)
         .map_err(|_| MerkleHashError::LengthOverflow)?;
     let root_words = match arity {
-        2 => cuda_poseidon2_width8_merkle_root_device(&input_buffer),
-        4 => cuda_poseidon2_width16_merkle_root_device(&input_buffer),
+        2 => cuda_poseidon2_width8_merkle_digest_root_device(&input_buffer),
+        4 => cuda_poseidon2_width16_merkle_digest_root_device(&input_buffer),
         _ => unreachable!("arity is validated"),
     }
     .map_err(|_| MerkleHashError::LengthOverflow)?;
     digest_from_state_words(&root_words)
+}
+
+#[cfg(feature = "cuda")]
+fn digest_level_as_words(level: &[[Felt; HASH_WORDS]]) -> Result<Vec<u64>, MerkleHashError> {
+    let mut words = Vec::with_capacity(
+        level
+            .len()
+            .checked_mul(HASH_WORDS)
+            .ok_or(MerkleHashError::LengthOverflow)?,
+    );
+    for digest in level {
+        for value in digest {
+            words.push(value.to_u64());
+        }
+    }
+    Ok(words)
 }
 
 #[cfg(feature = "cuda")]
@@ -577,6 +586,25 @@ fn digest_level_as_state_words(
         }
     }
     Ok(words)
+}
+
+#[cfg(feature = "cuda")]
+fn compact_digest_buffer_from_state_buffer(
+    states: &CudaDeviceBuffer,
+    row_count: usize,
+    state_width: usize,
+) -> Result<CudaDeviceBuffer, MerkleHashError> {
+    let mut digests = CudaDeviceBuffer::new(
+        row_count
+            .checked_mul(HASH_WORDS)
+            .and_then(|word_count| word_count.checked_mul(8))
+            .ok_or(MerkleHashError::LengthOverflow)?,
+    )
+    .map_err(|_| MerkleHashError::LengthOverflow)?;
+    digests
+        .copy_from_device_row_major_u64_slice(states, row_count, state_width, 0, HASH_WORDS)
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+    Ok(digests)
 }
 
 #[cfg(feature = "cuda")]

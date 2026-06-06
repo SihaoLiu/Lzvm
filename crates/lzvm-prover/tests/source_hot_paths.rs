@@ -167,12 +167,12 @@ fn cuda_merkle_root_folds_on_device_without_host_level_loop() {
     );
 
     assert!(
-        cuda_body.contains("cuda_poseidon2_width8_merkle_root_device"),
-        "arity-2 CUDA root folding should use the native root operation"
+        cuda_body.contains("cuda_poseidon2_width8_merkle_digest_root_device"),
+        "arity-2 CUDA root folding should use compact digest root folding"
     );
     assert!(
-        cuda_body.contains("cuda_poseidon2_width16_merkle_root_device"),
-        "arity-4 CUDA root folding should use the native root operation"
+        cuda_body.contains("cuda_poseidon2_width16_merkle_digest_root_device"),
+        "arity-4 CUDA root folding should use compact digest root folding"
     );
     assert!(
         !cuda_body.contains("while state_count > 1"),
@@ -419,9 +419,9 @@ fn cuda_merkle_opening_uses_bounded_device_path_primitive() {
     );
 
     assert!(
-        opening_body.contains("cuda_poseidon2_width16_merkle_opening_path_device")
-            && opening_body.contains("cuda_poseidon2_width8_merkle_opening_path_device"),
-        "CUDA Merkle openings should gather siblings and root with bounded device primitives"
+        opening_body.contains("cuda_poseidon2_width16_merkle_digest_opening_path_device")
+            && opening_body.contains("cuda_poseidon2_width8_merkle_digest_opening_path_device"),
+        "CUDA Merkle openings should gather compact digest siblings and root"
     );
     assert!(
         !opening_body.contains("read_device_state_digest("),
