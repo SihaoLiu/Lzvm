@@ -521,19 +521,9 @@ theorem runtime_pipeline_binding_checked_acceptance_soundness_obligations
       proof
       accepted
   have coreObligations :=
-    runtime_pipeline_binding_checked_acceptance_core_obligations
-      assumptions
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
+    runtime_pipeline_binding_evidence_implies_core_obligations sound.left
   exact
-    And.intro runtimeArtifactEvidence
-      (And.intro verifierAccepts
-        (And.intro coreObligations.left
-          (And.intro coreObligations.right.left
-            (And.intro coreObligations.right.right.left coreObligations.right.right.right))))
+    ⟨runtimeArtifactEvidence, verifierAccepts, coreObligations⟩
 
 theorem runtime_pipeline_binding_checked_acceptance_execution_obligations
     {system : VerifierModel}

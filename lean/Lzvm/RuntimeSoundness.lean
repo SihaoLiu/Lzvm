@@ -182,6 +182,46 @@ theorem runtime_soundness_checked_acceptance_sound
       checked.left
   exact And.intro evidence transcriptSound.right.right.right
 
+theorem runtime_soundness_checked_acceptance_core_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have sound :=
+    runtime_soundness_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  rcases sound.right with
+    ⟨_witness,
+      _trace,
+      _constraints,
+      transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      _traceConsistent,
+      _constraintsSatisfied,
+      _witnessMatchesTrace⟩
+  exact
+    ⟨transcriptBound, publicInputBound, pcsOpeningsValid, friQueriesValid⟩
+
 theorem runtime_soundness_required_external_source_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
