@@ -12,6 +12,18 @@ pub(super) fn record_proof_artifact_timing(
         timing.witness_opening_query_count,
     );
     timings.record_count(
+        "finish_witness_opening_query_unit_count",
+        timing.witness_opening_query_unit_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_single_query_unit_count",
+        timing.witness_opening_single_query_unit_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_max_queries_per_unit",
+        timing.witness_opening_max_queries_per_unit,
+    );
+    timings.record_count(
         "finish_witness_opening_stage_count",
         timing.witness_opening_stage_count,
     );

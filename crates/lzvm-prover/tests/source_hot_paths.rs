@@ -1967,6 +1967,18 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "witness_opening_query_count",
         ),
         (
+            "\"finish_witness_opening_query_unit_count\"",
+            "witness_opening_query_unit_count",
+        ),
+        (
+            "\"finish_witness_opening_single_query_unit_count\"",
+            "witness_opening_single_query_unit_count",
+        ),
+        (
+            "\"finish_witness_opening_max_queries_per_unit\"",
+            "witness_opening_max_queries_per_unit",
+        ),
+        (
             "\"finish_witness_opening_stage_count\"",
             "witness_opening_stage_count",
         ),

@@ -6,6 +6,9 @@ pub struct WitnessProofArtifactTiming {
     pub constant_opening: Duration,
     pub witness_opening: Duration,
     pub witness_opening_query_count: usize,
+    pub witness_opening_query_unit_count: usize,
+    pub witness_opening_single_query_unit_count: usize,
+    pub witness_opening_max_queries_per_unit: usize,
     pub witness_opening_stage_count: usize,
     pub witness_opening_retained_source_count: usize,
     pub witness_opening_external_source_count: usize,
@@ -145,6 +148,12 @@ impl WitnessProofArtifactTiming {
 
     pub(crate) fn add_witness_opening_queries(&mut self, count: usize) {
         self.witness_opening_query_count += count;
+        self.witness_opening_query_unit_count += 1;
+        if count == 1 {
+            self.witness_opening_single_query_unit_count += 1;
+        }
+        self.witness_opening_max_queries_per_unit =
+            self.witness_opening_max_queries_per_unit.max(count);
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
