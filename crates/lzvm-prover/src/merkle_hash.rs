@@ -6,11 +6,11 @@ use lzvm_accel::{cuda_poseidon2_width16_device, cuda_poseidon2_width8_device};
 use lzvm_accel::{
     cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
-    cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width16_merkle_root_device,
-    cuda_poseidon2_width8_linear_round_device,
+    cuda_poseidon2_width16_merkle_opening_path_device, cuda_poseidon2_width16_merkle_parent_device,
+    cuda_poseidon2_width16_merkle_root_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
-    cuda_poseidon2_width8_merkle_parent_device, cuda_poseidon2_width8_merkle_root_device,
-    CudaDeviceBuffer,
+    cuda_poseidon2_width8_merkle_opening_path_device, cuda_poseidon2_width8_merkle_parent_device,
+    cuda_poseidon2_width8_merkle_root_device, CudaDeviceBuffer,
 };
 use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt, FieldError};
 
@@ -55,7 +55,6 @@ pub(crate) struct CudaDigestLevel {
     state_count: usize,
     arity: usize,
     width: usize,
-    parent_operation: CudaPoseidon2DeviceOp,
     root_operation: CudaPoseidon2RootOp,
 }
 
@@ -72,7 +71,6 @@ impl CudaDigestLevel {
         state_count: usize,
         arity: usize,
         width: usize,
-        parent_operation: CudaPoseidon2DeviceOp,
         root_operation: CudaPoseidon2RootOp,
     ) -> Self {
         Self {
@@ -80,7 +78,6 @@ impl CudaDigestLevel {
             state_count,
             arity,
             width,
-            parent_operation,
             root_operation,
         }
     }
@@ -121,59 +118,37 @@ impl CudaDigestLevel {
         if query_row >= self.state_count {
             return Err(MerkleHashError::LengthOverflow);
         }
-        let mut current_owned = None;
+        let path = match self.arity {
+            2 => cuda_poseidon2_width8_merkle_opening_path_device(&self.states, query_row),
+            4 => cuda_poseidon2_width16_merkle_opening_path_device(&self.states, query_row),
+            _ => return Err(MerkleHashError::UnsupportedArity { arity: self.arity }),
+        }
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+        let root = digest_from_state_words(&path.root)?;
         let mut state_count = self.state_count;
-        let mut level_query = query_row;
         let mut siblings = Vec::new();
+        let mut cursor = 0_usize;
 
         while state_count > 1 {
-            let child_slot = level_query % self.arity;
-            let group_start = (level_query / self.arity)
-                .checked_mul(self.arity)
-                .ok_or(MerkleHashError::LengthOverflow)?;
             let mut level_siblings = Vec::with_capacity(self.arity - 1);
-            {
-                let current = current_owned.as_ref().unwrap_or(&self.states);
-                for slot in 0..self.arity {
-                    if slot == child_slot {
-                        continue;
-                    }
-                    let child_index = group_start
-                        .checked_add(slot)
-                        .ok_or(MerkleHashError::LengthOverflow)?;
-                    if child_index < state_count {
-                        level_siblings.push(read_device_state_digest(
-                            current,
-                            child_index,
-                            self.width,
-                        )?);
-                    } else {
-                        level_siblings.push([Felt::ZERO; HASH_WORDS]);
-                    }
-                }
+            for _ in 0..self.arity - 1 {
+                let end = cursor
+                    .checked_add(HASH_WORDS)
+                    .ok_or(MerkleHashError::LengthOverflow)?;
+                let words = path
+                    .siblings
+                    .get(cursor..end)
+                    .ok_or(MerkleHashError::LengthOverflow)?;
+                level_siblings.push(digest_from_state_words(words)?);
+                cursor = end;
             }
             siblings.push(level_siblings);
-
-            let parent_count = state_count.div_ceil(self.arity);
-            let mut next = CudaDeviceBuffer::new(
-                parent_count
-                    .checked_mul(self.width)
-                    .and_then(|word_count| word_count.checked_mul(8))
-                    .ok_or(MerkleHashError::LengthOverflow)?,
-            )
-            .map_err(|_| MerkleHashError::LengthOverflow)?;
-            {
-                let current = current_owned.as_ref().unwrap_or(&self.states);
-                (self.parent_operation)(current, &mut next)
-                    .map_err(|_| MerkleHashError::LengthOverflow)?;
-            }
-            current_owned = Some(next);
-            state_count = parent_count;
-            level_query /= self.arity;
+            state_count = state_count.div_ceil(self.arity);
         }
 
-        let current = current_owned.as_ref().unwrap_or(&self.states);
-        let root = read_device_state_digest(current, 0, self.width)?;
+        if cursor != path.siblings.len() {
+            return Err(MerkleHashError::LengthOverflow);
+        }
         Ok(CudaMerkleOpeningPath { root, siblings })
     }
 }
@@ -306,7 +281,6 @@ pub(crate) fn linear_hash_level_from_validated_row_major_device_buffer(
                 row_count,
                 arity,
                 8,
-                cuda_poseidon2_width8_merkle_parent_device,
                 cuda_poseidon2_width8_merkle_root_device,
             ))
         }
@@ -334,7 +308,6 @@ pub(crate) fn linear_hash_level_from_validated_row_major_device_buffer(
                 row_count,
                 arity,
                 16,
-                cuda_poseidon2_width16_merkle_parent_device,
                 cuda_poseidon2_width16_merkle_root_device,
             ))
         }
@@ -1159,31 +1132,6 @@ fn digest_from_state_words(words: &[u64]) -> Result<[Felt; HASH_WORDS], MerkleHa
     let mut digest = [Felt::ZERO; HASH_WORDS];
     for (slot, word) in digest.iter_mut().zip(words.iter()) {
         *slot = Felt::from_canonical(*word).map_err(|_| MerkleHashError::LengthOverflow)?;
-    }
-    Ok(digest)
-}
-
-#[cfg(feature = "cuda")]
-fn read_device_state_digest(
-    states: &CudaDeviceBuffer,
-    state_index: usize,
-    state_width: usize,
-) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
-    if HASH_WORDS > state_width {
-        return Err(MerkleHashError::LengthOverflow);
-    }
-    let byte_offset = state_index
-        .checked_mul(state_width)
-        .and_then(|word_offset| word_offset.checked_mul(8))
-        .ok_or(MerkleHashError::LengthOverflow)?;
-    let mut bytes = [0_u8; HASH_WORDS * 8];
-    states
-        .copy_range_to(byte_offset, &mut bytes)
-        .map_err(|_| MerkleHashError::LengthOverflow)?;
-    let mut digest = [Felt::ZERO; HASH_WORDS];
-    for (slot, chunk) in digest.iter_mut().zip(bytes.chunks_exact(8)) {
-        let word = u64::from_le_bytes(chunk.try_into().expect("slice length checked"));
-        *slot = Felt::from_canonical(word).map_err(MerkleHashError::Field)?;
     }
     Ok(digest)
 }

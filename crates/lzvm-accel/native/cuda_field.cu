@@ -625,6 +625,7 @@ int run_poseidon2_width16_linear_round_on_device(
 }
 
 #include "cuda_poseidon2_merkle_parent.cuh"
+#include "cuda_poseidon2_merkle_opening.cuh"
 #include "cuda_poseidon2_merkle_root.cuh"
 #include "cuda_poseidon2_row_major.cuh"
 
@@ -1215,20 +1216,6 @@ extern "C" int lzvm_cuda_poseidon2_width8_device(
     return run_poseidon2_width8_on_device(values, out, state_count);
 }
 
-extern "C" int lzvm_cuda_poseidon2_width8_merkle_parent_device(
-    const uint64_t* values,
-    uint64_t* out,
-    size_t child_state_count) {
-    return run_poseidon2_width8_merkle_parent_on_device(values, out, child_state_count);
-}
-
-extern "C" int lzvm_cuda_poseidon2_width8_merkle_root_device(
-    const uint64_t* values,
-    uint64_t* out,
-    size_t child_state_count) {
-    return run_poseidon2_width8_merkle_root_on_device(values, out, child_state_count);
-}
-
 extern "C" int lzvm_cuda_poseidon2_width8_linear_round_device(
     const uint64_t* current_states,
     const uint64_t* row_values,
@@ -1271,20 +1258,6 @@ extern "C" int lzvm_cuda_poseidon2_width16_device(
     return run_poseidon2_width16_on_device(values, out, state_count);
 }
 
-extern "C" int lzvm_cuda_poseidon2_width16_merkle_parent_device(
-    const uint64_t* values,
-    uint64_t* out,
-    size_t child_state_count) {
-    return run_poseidon2_width16_merkle_parent_on_device(values, out, child_state_count);
-}
-
-extern "C" int lzvm_cuda_poseidon2_width16_merkle_root_device(
-    const uint64_t* values,
-    uint64_t* out,
-    size_t child_state_count) {
-    return run_poseidon2_width16_merkle_root_on_device(values, out, child_state_count);
-}
-
 extern "C" int lzvm_cuda_poseidon2_width16_linear_round_device(
     const uint64_t* current_states,
     const uint64_t* row_values,
@@ -1295,5 +1268,6 @@ extern "C" int lzvm_cuda_poseidon2_width16_linear_round_device(
         current_states, row_values, out, row_count, chunk_len);
 }
 
+#include "cuda_poseidon2_merkle_exports.cuh"
 #include "cuda_poseidon2_row_major_exports.cuh"
 #include "cuda_keccak_exports.cuh"

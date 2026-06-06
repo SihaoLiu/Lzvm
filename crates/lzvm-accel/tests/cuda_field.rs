@@ -16,13 +16,14 @@ use lzvm_accel::{
     cuda_poseidon2_width16_device, cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
-    cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width16_merkle_root_device,
-    cuda_poseidon2_width4, cuda_poseidon2_width4_device, cuda_poseidon2_width4_find_nonce,
-    cuda_poseidon2_width8, cuda_poseidon2_width8_device, cuda_poseidon2_width8_linear_round_device,
-    cuda_poseidon2_width8_linear_round_row_major_device,
+    cuda_poseidon2_width16_merkle_opening_path_device, cuda_poseidon2_width16_merkle_parent_device,
+    cuda_poseidon2_width16_merkle_root_device, cuda_poseidon2_width4, cuda_poseidon2_width4_device,
+    cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8, cuda_poseidon2_width8_device,
+    cuda_poseidon2_width8_linear_round_device, cuda_poseidon2_width8_linear_round_row_major_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
-    cuda_poseidon2_width8_merkle_parent_device, cuda_poseidon2_width8_merkle_root_device,
-    cuda_setup_init, AccelError, CudaDeviceBuffer, CudaRowMajorColumnView,
+    cuda_poseidon2_width8_merkle_opening_path_device, cuda_poseidon2_width8_merkle_parent_device,
+    cuda_poseidon2_width8_merkle_root_device, cuda_setup_init, AccelError, CudaDeviceBuffer,
+    CudaRowMajorColumnView,
 };
 #[cfg(feature = "cuda")]
 use lzvm_crypto::keccak256;
@@ -1619,6 +1620,24 @@ fn cuda_poseidon2_width8_merkle_root_device_matches_cpu_reference() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_poseidon2_width8_merkle_opening_path_device_matches_cpu_reference() {
+    let input = vec![
+        1, 2, 3, 4, 101, 102, 103, 104, 5, 6, 7, 8, 201, 202, 203, 204, 9, 10, 11, 12, 301, 302,
+        303, 304, 13, 14, 15, 16, 401, 402, 403, 404, 17, 18, 19, 20, 501, 502, 503, 504,
+    ];
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+    let expected = cpu_merkle_opening_width8(&input, 3);
+
+    let actual = cuda_poseidon2_width8_merkle_opening_path_device(&input_buffer, 3)
+        .expect("cuda device opening path should run");
+
+    assert_eq!(actual.root, expected.root);
+    assert_eq!(actual.siblings, expected.siblings);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_hashes_poseidon2_width_16_states() {
     let input = (0_u64..32).collect::<Vec<_>>();
     let expected = input
@@ -1852,6 +1871,32 @@ fn cuda_poseidon2_width16_merkle_root_device_matches_cpu_reference() {
     assert_eq!(actual, expected);
 }
 
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_width16_merkle_opening_path_device_matches_cpu_reference() {
+    let mut input = Vec::with_capacity(7 * 16);
+    for child in 0..7_u64 {
+        input.extend((child * 4 + 1)..=(child * 4 + 4));
+        input.extend((0..12_u64).map(|tail| 1_000 + child * 100 + tail));
+    }
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+    let expected = cpu_merkle_opening_width16(&input, 5);
+
+    let actual = cuda_poseidon2_width16_merkle_opening_path_device(&input_buffer, 5)
+        .expect("cuda device opening path should run");
+
+    assert_eq!(actual.root, expected.root);
+    assert_eq!(actual.siblings, expected.siblings);
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CpuMerkleOpening {
+    root: [u64; 4],
+    siblings: Vec<u64>,
+}
+
 #[cfg(feature = "cuda")]
 fn cpu_merkle_root_width8(states: &[u64]) -> [u64; 4] {
     assert!(states.len().is_multiple_of(8));
@@ -1875,6 +1920,16 @@ fn cpu_merkle_root_width8(states: &[u64]) -> [u64; 4] {
     }
 
     level[0]
+}
+
+#[cfg(feature = "cuda")]
+fn cpu_merkle_opening_width8(states: &[u64], query: usize) -> CpuMerkleOpening {
+    assert!(states.len().is_multiple_of(8));
+    let level = states
+        .chunks_exact(8)
+        .map(|chunk| [chunk[0], chunk[1], chunk[2], chunk[3]])
+        .collect::<Vec<_>>();
+    cpu_merkle_opening(level, query, 2)
 }
 
 #[cfg(feature = "cuda")]
@@ -1915,6 +1970,70 @@ fn cpu_merkle_root_width16(states: &[u64]) -> [u64; 4] {
     }
 
     level[0]
+}
+
+#[cfg(feature = "cuda")]
+fn cpu_merkle_opening_width16(states: &[u64], query: usize) -> CpuMerkleOpening {
+    assert!(states.len().is_multiple_of(16));
+    let level = states
+        .chunks_exact(16)
+        .map(|chunk| [chunk[0], chunk[1], chunk[2], chunk[3]])
+        .collect::<Vec<_>>();
+    cpu_merkle_opening(level, query, 4)
+}
+
+#[cfg(feature = "cuda")]
+fn cpu_merkle_opening(
+    mut level: Vec<[u64; 4]>,
+    mut query: usize,
+    arity: usize,
+) -> CpuMerkleOpening {
+    assert!(query < level.len());
+    let mut siblings = Vec::new();
+    while level.len() > 1 {
+        let child_slot = query % arity;
+        let group_start = (query / arity) * arity;
+        for slot in 0..arity {
+            if slot == child_slot {
+                continue;
+            }
+            let child_index = group_start + slot;
+            if child_index < level.len() {
+                siblings.extend(level[child_index]);
+            } else {
+                siblings.extend([0_u64; 4]);
+            }
+        }
+        level = level
+            .chunks(arity)
+            .map(|chunk| {
+                let mut state = vec![0_u64; arity * 4];
+                for (slot, digest) in chunk.iter().enumerate() {
+                    state[slot * 4..slot * 4 + 4].copy_from_slice(digest);
+                }
+                match arity {
+                    2 => {
+                        let state = std::array::from_fn(|index| Felt::from_u64(state[index]));
+                        poseidon2_hash_8(state).map(Felt::to_u64)[0..4]
+                            .try_into()
+                            .expect("digest width should match")
+                    }
+                    4 => {
+                        let state = std::array::from_fn(|index| Felt::from_u64(state[index]));
+                        poseidon2_hash_16(state).map(Felt::to_u64)[0..4]
+                            .try_into()
+                            .expect("digest width should match")
+                    }
+                    _ => unreachable!("test arity should be supported"),
+                }
+            })
+            .collect();
+        query /= arity;
+    }
+    CpuMerkleOpening {
+        root: level[0],
+        siblings,
+    }
 }
 
 #[test]

@@ -406,6 +406,30 @@ fn cuda_compact_witness_commit_reuses_device_leaf_hash_level() {
 }
 
 #[test]
+fn cuda_merkle_opening_uses_bounded_device_path_primitive() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let merkle_path = crate_root.join("src/merkle_hash.rs");
+    let merkle_source =
+        std::fs::read_to_string(&merkle_path).expect("Merkle hash source should read");
+
+    let opening_body = function_body(
+        &merkle_source,
+        "pub(crate) fn opening_path",
+        "pub(crate) fn linear_hash",
+    );
+
+    assert!(
+        opening_body.contains("cuda_poseidon2_width16_merkle_opening_path_device")
+            && opening_body.contains("cuda_poseidon2_width8_merkle_opening_path_device"),
+        "CUDA Merkle openings should gather siblings and root with bounded device primitives"
+    );
+    assert!(
+        !opening_body.contains("read_device_state_digest("),
+        "CUDA Merkle openings should not perform per-level device-to-host digest reads"
+    );
+}
+
+#[test]
 fn cuda_compact_witness_commit_defers_canonical_check_synchronization_until_root_read() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let extend_path = crate_root.join("src/witness_commitment/extend.rs");

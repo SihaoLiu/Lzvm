@@ -8,6 +8,8 @@ fn main() {
     println!("cargo:rerun-if-changed=native/cuda_goldilocks_row_extend.cuh");
     println!("cargo:rerun-if-changed=native/cuda_row_major_fill.cuh");
     println!("cargo:rerun-if-changed=native/cuda_zisk_main_trace.cuh");
+    println!("cargo:rerun-if-changed=native/cuda_poseidon2_merkle_exports.cuh");
+    println!("cargo:rerun-if-changed=native/cuda_poseidon2_merkle_opening.cuh");
     println!("cargo:rerun-if-changed=native/cuda_poseidon2_merkle_parent.cuh");
     println!("cargo:rerun-if-changed=native/cuda_poseidon2_merkle_root.cuh");
     println!("cargo:rerun-if-changed=native/cuda_poseidon2_row_major.cuh");
