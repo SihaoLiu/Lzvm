@@ -480,6 +480,18 @@ def runtime_pipeline_opening_source_validation
     validation.queryPlanBindingValidation.openingValidation.openingValidation
   openingValidation.runtimeSoundnessValidation.sourceValidation
 
+def runtime_pipeline_challenge_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    RuntimeChallengeSegmentBindingValidation system :=
+  validation.queryPlanBindingValidation.challengeValidation
+
+def runtime_pipeline_transcript_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    RuntimeTranscriptBindingValidation system :=
+  (runtime_pipeline_challenge_validation validation).transcriptValidation
+
 theorem runtime_pipeline_binding_required_external_source_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -767,6 +779,97 @@ theorem runtime_pipeline_binding_checked_acceptance_query_opening_contract
                                         (And.intro publicInputBound
                                           (And.intro pcsOpeningsValid friQueriesValid)))
                                       sound.right))))
+
+theorem runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        (runtime_pipeline_challenge_validation validation).challengeSegmentPayloadValid
+            artifact
+            publicInput
+            proof
+          /\ (runtime_pipeline_challenge_validation validation).challengeSegmentMatchesTranscript
+            artifact
+            publicInput
+            proof
+          /\ (runtime_pipeline_transcript_validation validation).challengeSegmentBound
+            artifact
+            publicInput
+            proof
+          /\ (runtime_pipeline_transcript_validation validation).queryPlanBound
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.openingValidation.queryPlanBound
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.transcriptBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have contract :=
+    runtime_pipeline_binding_checked_acceptance_query_opening_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  cases contract with
+  | intro queryPlanEvidence tail =>
+    cases tail with
+    | intro challengeEvidence tail =>
+      cases tail with
+      | intro _openingSegmentEvidence tail =>
+        cases tail with
+        | intro openingEvidence tail =>
+          cases tail with
+          | intro obligations soundWitness =>
+            cases queryPlanEvidence with
+            | intro _segmentCanonical tail =>
+              cases tail with
+              | intro _derivedFromTranscript tail =>
+                cases tail with
+                | intro _matchesOpenedArtifacts tail =>
+                  cases tail with
+                  | intro transcriptQueryPlanBound openingQueryPlanBound =>
+                    cases challengeEvidence with
+                    | intro challengePayloadValid tail =>
+                      cases tail with
+                      | intro challengeMatchesTranscript challengeSegmentBound =>
+                        cases obligations with
+                        | intro transcriptBound tail =>
+                          cases tail with
+                          | intro _publicInputBound tail =>
+                            cases tail with
+                            | intro pcsOpeningsValid friQueriesValid =>
+                              exact
+                                And.intro challengePayloadValid
+                                  (And.intro challengeMatchesTranscript
+                                    (And.intro challengeSegmentBound
+                                      (And.intro transcriptQueryPlanBound
+                                        (And.intro openingQueryPlanBound
+                                          (And.intro openingEvidence
+                                            (And.intro transcriptBound
+                                              (And.intro pcsOpeningsValid
+                                                (And.intro friQueriesValid soundWitness))))))))
 
 theorem runtime_pipeline_binding_checked_acceptance_soundness_obligations
     {system : VerifierModel}

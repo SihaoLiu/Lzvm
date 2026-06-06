@@ -22,6 +22,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             && lean_source
                 .contains("runtime_pipeline_binding_checked_acceptance_query_opening_contract")
             && lean_source
+                .contains("runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract")
+            && lean_source
                 .contains("runtime_pipeline_binding_checked_acceptance_full_soundness_contract")
             && lean_source
                 .contains("runtime_pipeline_binding_checked_acceptance_trace_conformance_contract")
