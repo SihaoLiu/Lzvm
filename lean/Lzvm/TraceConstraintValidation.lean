@@ -153,6 +153,41 @@ theorem runtime_trace_constraint_checked_acceptance_artifact_binding_evidence
         proof
         accepted)
 
+theorem runtime_trace_constraint_checked_acceptance_opening_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningEvidence
+          system
+          validation.openingValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have openingAccepted :=
+    validation.traceConstraintAcceptedImpliesOpeningAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_checked_acceptance_evidence
+      assumptions
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
+
 theorem runtime_trace_constraint_checked_acceptance_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
