@@ -123,6 +123,26 @@ def RuntimeTraceConstraintEvidence
         /\ system.constraintsSatisfied constraints trace
         /\ system.witnessMatchesTrace witness trace
 
+def RuntimeTraceConstraintSoundnessObligations
+    (system : VerifierModel)
+    (validation : RuntimeTraceConstraintValidation system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof)
+    (requiresExternalSource : Prop) : Prop :=
+  RuntimeTraceConstraintEvidence
+      system
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+    /\ system.accepts publicInput proof
+    /\ system.transcriptBound publicInput proof
+    /\ system.publicInputBound publicInput proof
+    /\ system.pcsOpeningsValid publicInput proof
+    /\ system.friQueriesValid publicInput proof
+
 theorem runtime_trace_constraint_checked_acceptance_artifact_binding_evidence
     {system : VerifierModel}
     (validation : RuntimeTraceConstraintValidation system) :
@@ -157,7 +177,7 @@ theorem runtime_trace_constraint_checked_acceptance_opening_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
     (validation : RuntimeTraceConstraintValidation system) :
-    forall artifact publicInput proof requiresExternalSource,
+    forall artifact publicInput proof (requiresExternalSource : Prop),
       RuntimeTraceConstraintCheckedAcceptance
           system
           validation
@@ -331,6 +351,144 @@ theorem runtime_trace_constraint_checked_acceptance_evidence
     And.intro openingEvidence
       (And.intro artifactBindingEvidence traceWitnessEvidence)
 
+theorem runtime_trace_constraint_checked_acceptance_implies_verifier_accepts
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof := by
+  intro artifact publicInput proof accepted
+  have openingAccepted :=
+    validation.traceConstraintAcceptedImpliesOpeningAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  have runtimeAccepted :=
+    validation.openingValidation.openingAcceptedImpliesRuntimeSoundnessAccepted
+      artifact
+      publicInput
+      proof
+      False
+      openingAccepted
+  have transcriptAccepted := runtimeAccepted.left
+  have artifactBindingAccepted :=
+    validation.openingValidation.runtimeSoundnessValidation.transcriptValidation
+      |>.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+  have runtimeArtifactAccepted :=
+    validation.openingValidation.runtimeSoundnessValidation.transcriptValidation
+      |>.artifactBindingValidation
+      |>.bindingAcceptedImpliesRuntimeAccepted
+      artifact
+      publicInput
+      proof
+      artifactBindingAccepted
+  exact
+    runtime_artifact_checked_acceptance_implies_verifier_accepts
+      (validation.openingValidation.runtimeSoundnessValidation.transcriptValidation
+        |>.artifactBindingValidation
+        |>.runtimeValidation)
+      artifact
+      publicInput
+      proof
+      runtimeArtifactAccepted
+
+namespace RuntimeTraceConstraintSoundnessObligations
+
+theorem fromCheckedAcceptance
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintSoundnessObligations
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have evidence :=
+    runtime_trace_constraint_checked_acceptance_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have openingEvidence := evidence.left
+  have verifierAccepts :=
+    runtime_trace_constraint_checked_acceptance_implies_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have transcriptBound := openingEvidence.left.right.right.left
+  have publicInputBound :=
+    assumptions.semantic.public_input_binding publicInput proof verifierAccepts
+  have openingChecks :=
+    runtime_opening_evidence_implies_pcs_and_fri
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingEvidence
+  exact
+    And.intro evidence
+      (And.intro verifierAccepts
+        (And.intro transcriptBound
+          (And.intro publicInputBound
+            (And.intro openingChecks.left openingChecks.right))))
+
+end RuntimeTraceConstraintSoundnessObligations
+
+theorem runtime_trace_constraint_checked_acceptance_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintSoundnessObligations
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  exact
+    RuntimeTraceConstraintSoundnessObligations.fromCheckedAcceptance
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+
 theorem runtime_trace_constraint_evidence_implies_opening_evidence
     {system : VerifierModel}
     (validation : RuntimeTraceConstraintValidation system) :
@@ -483,44 +641,13 @@ theorem runtime_trace_constraint_checked_acceptance_sound
             requiresExternalSource
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have openingAccepted :=
-    validation.traceConstraintAcceptedImpliesOpeningAccepted
+  have verifierAccepts :=
+    runtime_trace_constraint_checked_acceptance_implies_verifier_accepts
+      validation
       artifact
       publicInput
       proof
       accepted
-  have runtimeAccepted :=
-    validation.openingValidation.openingAcceptedImpliesRuntimeSoundnessAccepted
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      openingAccepted
-  have transcriptAccepted := runtimeAccepted.left
-  have artifactBindingAccepted :=
-    validation.openingValidation.runtimeSoundnessValidation.transcriptValidation
-      |>.transcriptAcceptedImpliesArtifactBindingAccepted
-      artifact
-      publicInput
-      proof
-      transcriptAccepted
-  have runtimeArtifactAccepted :=
-    validation.openingValidation.runtimeSoundnessValidation.transcriptValidation
-      |>.artifactBindingValidation
-      |>.bindingAcceptedImpliesRuntimeAccepted
-      artifact
-      publicInput
-      proof
-      artifactBindingAccepted
-  have verifierAccepts :=
-    runtime_artifact_checked_acceptance_implies_verifier_accepts
-      (validation.openingValidation.runtimeSoundnessValidation.transcriptValidation
-        |>.artifactBindingValidation
-        |>.runtimeValidation)
-      artifact
-      publicInput
-      proof
-      runtimeArtifactAccepted
   have evidence :=
     runtime_trace_constraint_checked_acceptance_evidence
       assumptions
