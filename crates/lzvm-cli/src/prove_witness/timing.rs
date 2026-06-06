@@ -7,11 +7,18 @@ pub(super) struct TimingEntry {
     pub(super) duration: Duration,
 }
 
+#[derive(Clone)]
+pub(super) struct TimingCountEntry {
+    pub(super) name: String,
+    pub(super) value: usize,
+}
+
 pub(super) struct TimingRecorder {
     enabled: bool,
     started: Instant,
     last_mark: Instant,
     entries: Vec<TimingEntry>,
+    count_entries: Vec<TimingCountEntry>,
 }
 
 impl TimingRecorder {
@@ -22,6 +29,7 @@ impl TimingRecorder {
             started: now,
             last_mark: now,
             entries: Vec::new(),
+            count_entries: Vec::new(),
         }
     }
 
@@ -51,6 +59,16 @@ impl TimingRecorder {
         self.entries.push(TimingEntry { name, duration });
     }
 
+    pub(super) fn record_count(&mut self, name: &'static str, value: usize) {
+        if !self.enabled {
+            return;
+        }
+        self.count_entries.push(TimingCountEntry {
+            name: name.to_owned(),
+            value,
+        });
+    }
+
     fn total(&self) -> Duration {
         self.last_mark.duration_since(self.started)
     }
@@ -60,12 +78,18 @@ pub(super) fn write_timing_summary(stdout: &mut dyn Write, timings: &TimingRecor
     if !timings.enabled {
         return;
     }
-    write_timing_entries(stdout, &timings.entries, timings.total());
+    write_timing_entries(
+        stdout,
+        &timings.entries,
+        &timings.count_entries,
+        timings.total(),
+    );
 }
 
 pub(super) fn write_timing_entries(
     stdout: &mut dyn Write,
     entries: &[TimingEntry],
+    count_entries: &[TimingCountEntry],
     total: Duration,
 ) {
     let _ = writeln!(stdout, "prover_gpu_mode={}", prover_gpu_mode());
@@ -76,6 +100,9 @@ pub(super) fn write_timing_entries(
             entry.name.as_str(),
             entry.duration.as_millis()
         );
+    }
+    for entry in count_entries {
+        let _ = writeln!(stdout, "timing_{}={}", entry.name.as_str(), entry.value);
     }
     let _ = writeln!(stdout, "timing_total_ms={}", total.as_millis());
 }

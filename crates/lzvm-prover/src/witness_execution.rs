@@ -340,6 +340,8 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_segment_commit_duration: Duration,
     guest_device_source_build_duration: Duration,
     guest_device_source_descriptor_upload_duration: Duration,
+    guest_device_source_descriptor_upload_byte_count: usize,
+    guest_device_source_descriptor_upload_row_count: usize,
     guest_device_source_trace_expand_duration: Duration,
     guest_regular_constraint_duration: Duration,
     guest_regular_hint_duration: Duration,
@@ -370,6 +372,10 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_device_source_build_duration: trace_timing.device_source_build_duration,
             guest_device_source_descriptor_upload_duration: trace_timing
                 .device_source_descriptor_upload_duration,
+            guest_device_source_descriptor_upload_byte_count: trace_timing
+                .device_source_descriptor_upload_byte_count,
+            guest_device_source_descriptor_upload_row_count: trace_timing
+                .device_source_descriptor_upload_row_count,
             guest_device_source_trace_expand_duration: trace_timing
                 .device_source_trace_expand_duration,
             guest_regular_constraint_duration: trace_timing.regular_constraint_duration,
@@ -406,6 +412,14 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_device_source_descriptor_upload_duration(&self) -> Duration {
         self.guest_device_source_descriptor_upload_duration
+    }
+
+    pub fn guest_device_source_descriptor_upload_byte_count(&self) -> usize {
+        self.guest_device_source_descriptor_upload_byte_count
+    }
+
+    pub fn guest_device_source_descriptor_upload_row_count(&self) -> usize {
+        self.guest_device_source_descriptor_upload_row_count
     }
 
     pub fn guest_device_source_trace_expand_duration(&self) -> Duration {
@@ -546,6 +560,8 @@ impl ProveWitnessGuestStageTiming {
 struct ProveWitnessTraceTimingAccumulator {
     device_source_build_duration: Duration,
     device_source_descriptor_upload_duration: Duration,
+    device_source_descriptor_upload_byte_count: usize,
+    device_source_descriptor_upload_row_count: usize,
     device_source_trace_expand_duration: Duration,
     regular_constraint_duration: Duration,
     regular_hint_duration: Duration,
@@ -567,6 +583,10 @@ impl ProveWitnessTraceTimingAccumulator {
         self.device_source_build_duration += other.device_source_build_duration;
         self.device_source_descriptor_upload_duration +=
             other.device_source_descriptor_upload_duration;
+        self.device_source_descriptor_upload_byte_count +=
+            other.device_source_descriptor_upload_byte_count;
+        self.device_source_descriptor_upload_row_count +=
+            other.device_source_descriptor_upload_row_count;
         self.device_source_trace_expand_duration += other.device_source_trace_expand_duration;
         self.regular_constraint_duration += other.regular_constraint_duration;
         self.regular_hint_duration += other.regular_hint_duration;
@@ -1899,6 +1919,10 @@ fn build_preloaded_guest_pc_trace_stage_source_devices(
         if let Some(timing) = timing {
             timing.device_source_descriptor_upload_duration +=
                 source_timing.descriptor_upload_duration();
+            timing.device_source_descriptor_upload_byte_count +=
+                source_timing.descriptor_upload_byte_count();
+            timing.device_source_descriptor_upload_row_count +=
+                source_timing.descriptor_upload_row_count();
             timing.device_source_trace_expand_duration += source_timing.trace_expand_duration();
         }
         return Ok(Some(

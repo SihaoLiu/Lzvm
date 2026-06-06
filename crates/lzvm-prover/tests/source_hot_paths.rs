@@ -1780,6 +1780,72 @@ fn guest_pc_trace_timing_splits_device_source_upload_and_expand_work() {
 }
 
 #[test]
+fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source =
+        std::fs::read_to_string(&cli_path).expect("guest PC CLI timing source should read");
+
+    let timing_fields = function_body(
+        &backend_source,
+        "struct GuestPcDeviceSourceBuildTiming",
+        "impl GuestPcDeviceSourceBuildTiming",
+    );
+    assert!(
+        timing_fields.contains("descriptor_upload_byte_count")
+            && timing_fields.contains("descriptor_upload_row_count"),
+        "guest PC backend timing should carry descriptor upload bytes and rows"
+    );
+
+    let material_body = function_body(
+        &backend_source,
+        "fn build_guest_pc_trace_stage_source_devices_from_device_material",
+        "#[cfg(feature = \"cuda\")]\npub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors",
+    );
+    assert!(
+        material_body.contains("descriptor_upload_byte_count")
+            && material_body.contains("descriptor_upload_row_count")
+            && material_body.contains("descriptors.words()")
+            && material_body.contains(".saturating_mul(std::mem::size_of::<u64>())")
+            && material_body.contains("descriptors.descriptor_rows()"),
+        "guest PC device material source build should count uploaded descriptor bytes and rows"
+    );
+
+    let accumulator_fields = function_body(
+        &execution_source,
+        "struct ProveWitnessTraceTimingAccumulator",
+        "impl ProveWitnessTraceTimingAccumulator",
+    );
+    assert!(
+        accumulator_fields.contains("device_source_descriptor_upload_byte_count")
+            && accumulator_fields.contains("device_source_descriptor_upload_row_count"),
+        "trace timing accumulation should retain descriptor upload byte and row counts"
+    );
+
+    for (line_name, accessor) in [
+        (
+            "\"guest_device_source_descriptor_upload_bytes\"",
+            "guest_device_source_descriptor_upload_byte_count()",
+        ),
+        (
+            "\"guest_device_source_descriptor_upload_rows\"",
+            "guest_device_source_descriptor_upload_row_count()",
+        ),
+    ] {
+        assert!(
+            cli_source.contains(line_name) && cli_source.contains(accessor),
+            "CLI timing output should include {line_name}"
+        );
+    }
+}
+
+#[test]
 fn guest_pc_trace_segments_split_runner_and_lowerer_with_bounded_pending_queue() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

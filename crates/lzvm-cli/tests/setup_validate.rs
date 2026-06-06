@@ -6031,6 +6031,26 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
         "{stdout}"
     );
     assert!(
+        stdout.contains("timing_guest_device_source_build_ms="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_device_source_descriptor_upload_ms="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_device_source_descriptor_upload_bytes="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_device_source_descriptor_upload_rows="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_device_source_trace_expand_ms="),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains("timing_guest_regular_constraints_ms="),
         "{stdout}"
     );

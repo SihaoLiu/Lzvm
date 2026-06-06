@@ -1,5 +1,5 @@
 use super::args::parsed_inputs;
-use super::timing::{prover_gpu_mode, write_timing_entries, TimingEntry};
+use super::timing::{prover_gpu_mode, write_timing_entries, TimingCountEntry, TimingEntry};
 use super::*;
 use lzvm_artifacts::eth_block_input::parse_eth_block_input;
 use lzvm_artifacts::eth_public_input::parse_eth_public_block_prefix;
@@ -105,6 +105,7 @@ fn writes_timing_summary_lines() {
                 duration: std::time::Duration::from_millis(7),
             },
         ],
+        &[],
         std::time::Duration::from_millis(31),
     );
 
@@ -113,6 +114,38 @@ fn writes_timing_summary_lines() {
         stdout,
         format!(
             "prover_gpu_mode={}\ntiming_witness_ms=23\ntiming_proof_ms=7\ntiming_total_ms=31\n",
+            prover_gpu_mode()
+        )
+    );
+}
+
+#[test]
+fn writes_timing_count_summary_lines_without_ms_suffix() {
+    let mut stdout = Vec::new();
+    write_timing_entries(
+        &mut stdout,
+        &[TimingEntry {
+            name: "witness".to_owned(),
+            duration: std::time::Duration::from_millis(23),
+        }],
+        &[
+            TimingCountEntry {
+                name: "descriptor_upload_bytes".to_owned(),
+                value: 88,
+            },
+            TimingCountEntry {
+                name: "descriptor_upload_rows".to_owned(),
+                value: 1,
+            },
+        ],
+        std::time::Duration::from_millis(31),
+    );
+
+    let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+    assert_eq!(
+        stdout,
+        format!(
+            "prover_gpu_mode={}\ntiming_witness_ms=23\ntiming_descriptor_upload_bytes=88\ntiming_descriptor_upload_rows=1\ntiming_total_ms=31\n",
             prover_gpu_mode()
         )
     );

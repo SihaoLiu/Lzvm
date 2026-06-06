@@ -70,6 +70,14 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_device_source_descriptor_upload",
         timing.guest_device_source_descriptor_upload_duration(),
     );
+    timings.record_count(
+        "guest_device_source_descriptor_upload_bytes",
+        timing.guest_device_source_descriptor_upload_byte_count(),
+    );
+    timings.record_count(
+        "guest_device_source_descriptor_upload_rows",
+        timing.guest_device_source_descriptor_upload_row_count(),
+    );
     timings.record(
         "guest_device_source_trace_expand",
         timing.guest_device_source_trace_expand_duration(),
