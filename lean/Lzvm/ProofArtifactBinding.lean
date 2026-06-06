@@ -159,6 +159,54 @@ theorem runtime_proof_artifact_binding_checked_acceptance_runtime_evidence
         proof
         accepted)
 
+theorem runtime_proof_artifact_binding_checked_acceptance_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactSoundnessObligations
+            system
+            validation.runtimeValidation
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have bindingEvidence :=
+    runtime_proof_artifact_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have runtimeAccepted :=
+    validation.bindingAcceptedImpliesRuntimeAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  have runtimeObligations :=
+    runtime_artifact_checked_acceptance_obligations
+      assumptions
+      validation.runtimeValidation
+      artifact
+      publicInput
+      proof
+      runtimeAccepted
+  exact
+    And.intro bindingEvidence runtimeObligations
+
 theorem runtime_proof_artifact_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -184,36 +232,18 @@ theorem runtime_proof_artifact_binding_checked_acceptance_sound
             proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof accepted
-  have bindingEvidence :=
-    runtime_proof_artifact_binding_checked_acceptance_evidence
+  have obligations :=
+    runtime_proof_artifact_binding_checked_acceptance_obligations
+      assumptions
       validation
       artifact
       publicInput
       proof
       accepted
-  have runtimeEvidence :=
-    runtime_proof_artifact_binding_evidence_implies_runtime_evidence
-      validation
-      artifact
-      publicInput
-      proof
-      bindingEvidence
-  have runtimeAccepted :=
-    validation.bindingAcceptedImpliesRuntimeAccepted
-      artifact
-      publicInput
-      proof
-      accepted
-  have verifierAccepts :=
-    runtime_artifact_checked_acceptance_implies_verifier_accepts
-      validation.runtimeValidation
-      artifact
-      publicInput
-      proof
-      runtimeAccepted
+  have verifierAccepts := obligations.right.right.left
   exact
-    And.intro bindingEvidence
-      (And.intro runtimeEvidence
+    And.intro obligations.left
+      (And.intro obligations.right.left
         (abstract_verifier_sound assumptions publicInput proof verifierAccepts))
 
 end Lzvm
