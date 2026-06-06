@@ -7,6 +7,14 @@ pub(super) fn record_proof_artifact_timing(
     timings.record("finish_query_plan", timing.query_plan);
     timings.record("finish_constant_opening", timing.constant_opening);
     timings.record("finish_witness_opening", timing.witness_opening);
+    timings.record_count(
+        "finish_witness_opening_query_count",
+        timing.witness_opening_query_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_stage_count",
+        timing.witness_opening_stage_count,
+    );
     timings.record(
         "finish_witness_external_source",
         timing.witness_external_source,
@@ -103,6 +111,57 @@ pub(super) fn record_proof_artifact_timing(
                 stage_timing.stage_index
             ),
             stage_timing.duration,
+        );
+    }
+    for stage_work in &timing.witness_stage_opening_work {
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_hash_rows",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_hash_row_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_hash_bytes",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_hash_byte_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_coset_extend_calls",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_coset_extend_call_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_coset_extend_output_bytes",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_coset_extend_output_byte_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_coset_extend_columns",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_coset_extend_column_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_coset_extend_max_columns",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_coset_extend_max_column_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_coset_extend_ntt_launches",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_coset_extend_ntt_launch_count,
         );
     }
     for stage_timing in &timing.witness_stage_opening_path {

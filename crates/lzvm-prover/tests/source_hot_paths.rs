@@ -1903,6 +1903,14 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
 
     for (line_name, field) in [
         (
+            "\"finish_witness_opening_query_count\"",
+            "witness_opening_query_count",
+        ),
+        (
+            "\"finish_witness_opening_stage_count\"",
+            "witness_opening_stage_count",
+        ),
+        (
             "\"finish_witness_opening_leaf_hash_rows\"",
             "witness_opening_leaf_hash_row_count",
         ),
@@ -1953,6 +1961,42 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         );
     }
 
+    for (line_name, field) in [
+        (
+            "finish_witness_stage_{}_opening_leaf_hash_rows",
+            "leaf_hash_row_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_hash_bytes",
+            "leaf_hash_byte_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_coset_extend_calls",
+            "leaf_coset_extend_call_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_coset_extend_output_bytes",
+            "leaf_coset_extend_output_byte_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_coset_extend_columns",
+            "leaf_coset_extend_column_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_coset_extend_max_columns",
+            "leaf_coset_extend_max_column_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_coset_extend_ntt_launches",
+            "leaf_coset_extend_ntt_launch_count",
+        ),
+    ] {
+        assert!(
+            proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
+            "CLI timing output should include dynamic {line_name}"
+        );
+    }
+
     for source in [
         leaf_extend_source.as_str(),
         opening_values_source.as_str(),
@@ -1982,6 +2026,12 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "opening timing should expose coset extension workload shape"
         );
     }
+
+    assert!(
+        artifact_timing_source.contains("witness_stage_opening_work")
+            && proof_timing_source.contains("witness_stage_opening_work"),
+        "opening timing aggregation should expose per-stage work shape"
+    );
 
     for source in [
         leaf_extend_source.as_str(),

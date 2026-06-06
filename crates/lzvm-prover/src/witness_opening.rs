@@ -765,6 +765,9 @@ fn build_witness_opening_unit_segment_from_trace_output(
     )?;
     #[cfg(feature = "cuda")]
     let mut guest_pc_external_stage_sources = None;
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.add_witness_opening_queries(query_unit.queries.len());
+    }
     let mut queries = Vec::with_capacity(query_unit.queries.len());
     for row_index in &query_unit.queries {
         let mut stages = Vec::with_capacity(commitments.stage_commitments().stage_count());
