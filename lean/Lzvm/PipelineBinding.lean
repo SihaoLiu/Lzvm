@@ -96,8 +96,41 @@ def RuntimePipelineBindingEvidence
       proof
       requiresExternalSource
     /\ system.transcriptBound publicInput proof
+    /\ system.publicInputBound publicInput proof
     /\ system.pcsOpeningsValid publicInput proof
     /\ system.friQueriesValid publicInput proof
+
+theorem runtime_pipeline_binding_evidence_implies_public_input_bound
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      system.publicInputBound publicInput proof := by
+  intro evidence
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      _traceConstraintEvidence,
+      _queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      _openingEvidence,
+      _transcriptBound,
+      publicInputBound,
+      _pcsOpeningsValid,
+      _friQueriesValid⟩
+  exact publicInputBound
 
 def RuntimePipelineBindingCheckedAcceptance
     (_system : VerifierModel)
@@ -301,20 +334,34 @@ theorem runtime_pipeline_binding_checked_acceptance_sound
   have pcsOpeningsValid := queryPlanSound.right.right.right.right.right.left
   have friQueriesValid := queryPlanSound.right.right.right.right.right.right.left
   have soundWitness := queryPlanSound.right.right.right.right.right.right.right
+  have publicInputBound : system.publicInputBound publicInput proof := by
+    rcases soundWitness with
+      ⟨_witness,
+        _trace,
+        _constraints,
+        _transcriptBound,
+        publicInputBound,
+        _pcsOpeningsValid,
+        _friQueriesValid,
+        _traceConsistent,
+        _constraintsSatisfied,
+        _witnessMatchesTrace⟩
+    exact publicInputBound
   exact
-    And.intro
-      (And.intro ethEvidence
-        (And.intro artifactEvidence
-          (And.intro runtimeArtifactEvidence
-            (And.intro tracePreflightEvidence
-              (And.intro traceConstraintEvidence
-                (And.intro queryPlanEvidence
-                  (And.intro challengeEvidence
-                    (And.intro openingSegmentEvidence
-                      (And.intro openingEvidence
-                        (And.intro transcriptBound
-                          (And.intro pcsOpeningsValid friQueriesValid)))))))))))
-      soundWitness
+    ⟨⟨ethEvidence,
+        artifactEvidence,
+        runtimeArtifactEvidence,
+        tracePreflightEvidence,
+        traceConstraintEvidence,
+        queryPlanEvidence,
+        challengeEvidence,
+        openingSegmentEvidence,
+        openingEvidence,
+        transcriptBound,
+        publicInputBound,
+        pcsOpeningsValid,
+        friQueriesValid⟩,
+      soundWitness⟩
 
 theorem runtime_pipeline_binding_checked_acceptance_core_obligations
     {system : VerifierModel}
