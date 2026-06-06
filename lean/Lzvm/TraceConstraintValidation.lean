@@ -123,6 +123,36 @@ def RuntimeTraceConstraintEvidence
         /\ system.constraintsSatisfied constraints trace
         /\ system.witnessMatchesTrace witness trace
 
+theorem runtime_trace_constraint_checked_acceptance_artifact_binding_evidence
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintArtifactBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (validation.traceConstraintAcceptedImpliesTraceEvidenceMatchesWitnessCommitments
+        artifact
+        publicInput
+        proof
+        accepted)
+      (validation.traceConstraintAcceptedImpliesTraceEvidenceMatchesConstraintCatalog
+        artifact
+        publicInput
+        proof
+        accepted)
+
 theorem runtime_trace_constraint_checked_acceptance_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
