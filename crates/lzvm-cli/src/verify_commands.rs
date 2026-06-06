@@ -155,6 +155,7 @@ pub(super) fn verify_setup_preflight(
             eth_public_input: parsed.eth_public_input,
             eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
             program_image_cache: parsed.program_image_cache,
+            proof_artifact_match_summary: false,
         },
         stdout,
         stderr,
@@ -415,6 +416,7 @@ pub(super) fn verify_proof(args: &[&str], stdout: &mut dyn Write, stderr: &mut d
             eth_public_input: parsed.eth_public_input,
             eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
             program_image_cache: parsed.program_image_cache,
+            proof_artifact_match_summary: true,
         },
         stdout,
         stderr,
@@ -578,6 +580,7 @@ struct VerifySetupValidationCommand<'a> {
     eth_public_input: Option<&'a str>,
     eth_public_input_allow_trailing: bool,
     program_image_cache: Option<&'a str>,
+    proof_artifact_match_summary: bool,
 }
 
 fn verify_setup_validation(
@@ -632,6 +635,9 @@ fn verify_setup_validation(
         "public_value_fields={}",
         public_report.public_value_field_count
     );
+    if command.proof_artifact_match_summary {
+        let _ = writeln!(stdout, "proof_artifact_match=ok");
+    }
     if public_report.source_fixed_file_manifest_present
         || public_report.source_program_archive_present
     {

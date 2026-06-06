@@ -1,21 +1,17 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use std::thread::{self, JoinHandle};
+use std::time::Instant;
 
+use lzvm_artifacts::constant_tree::ConstantTreeFileSummary;
 use lzvm_artifacts::eth_block_input::EthBlockInput;
-use lzvm_artifacts::eth_block_public_values::{
-    public_values_from_eth_block_input_for_metadata,
-    validate_eth_block_public_values_with_program_image_cache,
-};
+use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values_with_program_image_cache;
 use lzvm_artifacts::global_info::GlobalInfo;
-use lzvm_artifacts::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog};
-use lzvm_artifacts::program_image::{
-    read_program_image_commitment_cache_file, ProgramImageCommitmentCache,
-};
+use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
+use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
-use lzvm_artifacts::public_values::{
-    encode_public_values, public_values_digest, read_public_values_file, PublicValues,
-};
+use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_artifacts::trace_bundle::{parse_trace_bundle_ref, read_trace_bundle_file_bytes};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::guest_pc_trace_backend::{
@@ -31,16 +27,12 @@ use lzvm_prover::{
     run_prove_witness_commitments_for_all_units,
     run_prove_witness_commitments_for_all_units_with_trace_bundle,
     run_prove_witness_commitments_with_trace_backend,
-    run_prove_witness_commitments_with_trace_bytes, ProveExecutionInputArtifacts,
-    ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassKind, ProvePassRequest,
-    ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitments,
-    ProveWitnessTraceCommitments,
+    run_prove_witness_commitments_with_trace_bytes, ProveExecutionPlan,
+    ProveExecutionUnitArtifacts, ProvePassKind, ProvePassRequest, ProveRunRequest, ProveSchedule,
+    ProveWitnessAuxiliaryInputs, ProveWitnessCommitments, ProveWitnessTraceCommitments,
 };
 
-use crate::eth_block_prove_input::{
-    validate_eth_block_input, write_eth_block_input_from_public_input,
-    write_eth_block_input_summary, EthBlockInputSummary, EthPublicInputMode,
-};
+use crate::eth_block_prove_input::{write_eth_block_input_summary, EthBlockInputSummary};
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
     prepare_requested_gpu_setup, read_prove_setup_catalog, set_default_input_data,
@@ -50,15 +42,22 @@ use crate::prove_plan::{
 use crate::trace_input_shape::validate_trace_input_shapes;
 
 mod args;
+mod eth_inputs;
 mod guest_pc_trace;
 mod output_file;
+mod proof_timing;
 mod timing;
 mod usage;
 mod value_inputs;
 
-use args::{parse_witness_args, parsed_inputs, ParsedWitnessArgs};
+use args::{parse_witness_args, ParsedWitnessArgs};
+use eth_inputs::{
+    prepare_eth_block_input, prepare_eth_block_public_inputs, public_values_field_count,
+    summarize_public_inputs,
+};
 use guest_pc_trace::{record_guest_pc_trace_timing, run_guest_pc_trace_witness};
 use output_file::{write_output_file, write_proof_output};
+use proof_timing::record_proof_artifact_timing;
 use timing::{write_timing_summary, TimingRecorder};
 use usage::write_usage;
 use value_inputs::{
@@ -160,6 +159,11 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
     let contribution_only = contribution_artifact_requested(&plan);
+    let mut constant_tree_material_validation = start_constant_tree_material_validation(
+        &catalog,
+        &plan.run_plan.schedule,
+        !contribution_only && plan.inputs.public_inputs.is_some(),
+    );
     if parsed.evaluation_values_segment.is_some()
         && !(parsed.all_units || plan.run_plan.options.aggregate)
     {
@@ -261,10 +265,21 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 }
             };
             timings.mark("witness");
+            let constant_tree_material_summaries = match join_constant_tree_material_validation(
+                &mut constant_tree_material_validation,
+            ) {
+                Ok(summaries) => summaries,
+                Err(message) => {
+                    let _ = writeln!(stderr, "prove witness failed: {message}");
+                    return 1;
+                }
+            };
+            timings.mark("constant_material_wait");
             if let Err(message) = finish_all_units_witness_run(
                 FinishAllUnitsWitnessRunRequest {
                     catalog: &catalog,
                     plan: &plan,
+                    constant_tree_material_summaries: constant_tree_material_summaries.as_deref(),
                     parsed: &parsed,
                     auxiliary_inputs: &auxiliary_inputs,
                     outputs: &outputs,
@@ -278,6 +293,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                     challenge_values_segment: challenge_values_segment.as_ref(),
                 },
                 stdout,
+                &mut timings,
             ) {
                 let _ = writeln!(stderr, "prove witness failed: {message}");
                 return 1;
@@ -308,10 +324,21 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 }
             };
             timings.mark("witness");
+            let constant_tree_material_summaries = match join_constant_tree_material_validation(
+                &mut constant_tree_material_validation,
+            ) {
+                Ok(summaries) => summaries,
+                Err(message) => {
+                    let _ = writeln!(stderr, "prove witness failed: {message}");
+                    return 1;
+                }
+            };
+            timings.mark("constant_material_wait");
             if let Err(message) = finish_all_units_witness_run(
                 FinishAllUnitsWitnessRunRequest {
                     catalog: &catalog,
                     plan: &plan,
+                    constant_tree_material_summaries: constant_tree_material_summaries.as_deref(),
                     parsed: &parsed,
                     auxiliary_inputs: &auxiliary_inputs,
                     outputs: &outputs,
@@ -325,6 +352,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                     challenge_values_segment: challenge_values_segment.as_ref(),
                 },
                 stdout,
+                &mut timings,
             ) {
                 let _ = writeln!(stderr, "prove witness failed: {message}");
                 return 1;
@@ -418,10 +446,22 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             }
             if outputs.len() > 1 {
                 timings.mark("witness");
+                let constant_tree_material_summaries = match join_constant_tree_material_validation(
+                    &mut constant_tree_material_validation,
+                ) {
+                    Ok(summaries) => summaries,
+                    Err(message) => {
+                        let _ = writeln!(stderr, "prove witness failed: {message}");
+                        return 1;
+                    }
+                };
+                timings.mark("constant_material_wait");
                 if let Err(message) = finish_all_units_witness_run(
                     FinishAllUnitsWitnessRunRequest {
                         catalog: &catalog,
                         plan: &plan,
+                        constant_tree_material_summaries: constant_tree_material_summaries
+                            .as_deref(),
                         parsed: &parsed,
                         auxiliary_inputs: &finish_auxiliary_inputs,
                         outputs: &outputs,
@@ -435,6 +475,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                         challenge_values_segment: challenge_values_segment.as_ref(),
                     },
                     stdout,
+                    &mut timings,
                 ) {
                     let _ = writeln!(stderr, "prove witness failed: {message}");
                     return 1;
@@ -506,6 +547,15 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         return 1;
     };
     timings.mark("witness");
+    let constant_tree_material_summaries =
+        match join_constant_tree_material_validation(&mut constant_tree_material_validation) {
+            Ok(summaries) => summaries,
+            Err(message) => {
+                let _ = writeln!(stderr, "prove witness failed: {message}");
+                return 1;
+            }
+        };
+    timings.mark("constant_material_wait");
     let commitments = output.commitments();
     let output_unit_index = commitments.unit_index();
     let execution_unit = match plan.units.get(output_unit_index) {
@@ -522,6 +572,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         output_dir: &plan.run_plan.options.output_dir,
         catalog: &catalog,
         schedule: &plan.run_plan.schedule,
+        constant_tree_material_summaries: constant_tree_material_summaries.as_deref(),
         execution_unit,
         gpu_streams: plan.run_plan.gpu.max_streams,
         public_inputs: plan.inputs.public_inputs.as_deref(),
@@ -539,13 +590,14 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         contribution_only,
         include_contribution_segment: false,
     };
-    let proof_bytes = match build_proof_bytes(&request, plan.run_plan.options.verify_outputs) {
-        Ok(proof_bytes) => proof_bytes,
-        Err(message) => {
-            let _ = writeln!(stderr, "prove witness failed: {message}");
-            return 1;
-        }
-    };
+    let proof_bytes =
+        match build_proof_bytes(&request, plan.run_plan.options.verify_outputs, &mut timings) {
+            Ok(proof_bytes) => proof_bytes,
+            Err(message) => {
+                let _ = writeln!(stderr, "prove witness failed: {message}");
+                return 1;
+            }
+        };
     timings.mark("proof");
     if plan.run_plan.options.save_outputs {
         let segment = match build_witness_commitment_segment_for_schedule(
@@ -609,20 +661,38 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     0
 }
 
-struct PreparedPublicInputs {
-    inputs: ProveExecutionInputArtifacts,
-    generated: bool,
+struct ConstantTreeMaterialValidationJob {
+    handle: JoinHandle<Result<Vec<Option<ConstantTreeFileSummary>>, String>>,
 }
 
-struct PreparedEthBlockInput {
-    summary: Option<EthBlockInputSummary>,
-    generated_from_public_input: bool,
+fn start_constant_tree_material_validation(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    enabled: bool,
+) -> Option<ConstantTreeMaterialValidationJob> {
+    if !enabled {
+        return None;
+    }
+    let catalog = catalog.clone();
+    let schedule = schedule.clone();
+    Some(ConstantTreeMaterialValidationJob {
+        handle: thread::spawn(move || {
+            lzvm_prover::validate_constant_opening_materials(&catalog, &schedule)
+                .map_err(|error| error.to_string())
+        }),
+    })
 }
 
-struct PublicInputSummary {
-    digest: [u8; 32],
-    value_count: usize,
-    field_count: usize,
+fn join_constant_tree_material_validation(
+    job: &mut Option<ConstantTreeMaterialValidationJob>,
+) -> Result<Option<Vec<Option<ConstantTreeFileSummary>>>, String> {
+    let Some(job) = job.take() else {
+        return Ok(None);
+    };
+    job.handle
+        .join()
+        .map_err(|_| "constant-tree material validation thread panicked".to_owned())?
+        .map(Some)
 }
 
 fn contribution_artifact_requested(plan: &ProveExecutionPlan) -> bool {
@@ -681,147 +751,6 @@ fn selected_guest_pc_trace_unit_index(plan: &ProveExecutionPlan) -> Result<usize
     })
 }
 
-fn summarize_public_inputs(path: Option<&Path>) -> Result<Option<PublicInputSummary>, String> {
-    let Some(path) = path else {
-        return Ok(None);
-    };
-    let public_values = read_public_values_file(path)
-        .map_err(|error| format!("read public inputs failed: {}: {error}", path.display()))?;
-    let digest = public_values_digest(&public_values)
-        .map_err(|error| format!("digest public inputs failed: {}: {error}", path.display()))?;
-    Ok(Some(PublicInputSummary {
-        digest,
-        value_count: public_values.values.len(),
-        field_count: public_values_field_count(&public_values),
-    }))
-}
-
-fn public_values_field_count(public_values: &PublicValues) -> usize {
-    public_values
-        .values
-        .iter()
-        .map(|entry| entry.elements.len())
-        .sum()
-}
-
-fn prepare_eth_block_input(parsed: &ParsedWitnessArgs) -> Result<PreparedEthBlockInput, String> {
-    if let Some(path) = &parsed.eth_block_input {
-        return Ok(PreparedEthBlockInput {
-            summary: validate_eth_block_input(&Some(path.clone()))?,
-            generated_from_public_input: false,
-        });
-    }
-    let Some(path) = &parsed.eth_public_input else {
-        return Ok(PreparedEthBlockInput {
-            summary: None,
-            generated_from_public_input: false,
-        });
-    };
-
-    let output_path = parsed.run_args.positionals[1].join("eth-block.input");
-    let mode = if parsed.eth_public_input_allow_trailing {
-        EthPublicInputMode::AllowTrailing
-    } else {
-        EthPublicInputMode::Strict
-    };
-    Ok(PreparedEthBlockInput {
-        summary: Some(write_eth_block_input_from_public_input(
-            path,
-            &output_path,
-            mode,
-        )?),
-        generated_from_public_input: true,
-    })
-}
-
-fn prepare_eth_block_public_inputs(
-    parsed: &ParsedWitnessArgs,
-    catalog: &KeyDirectoryCatalog,
-    eth_block_input: Option<&EthBlockInputSummary>,
-) -> Result<PreparedPublicInputs, String> {
-    let mut inputs = parsed_inputs(parsed);
-    let Some(summary) = eth_block_input else {
-        return Ok(PreparedPublicInputs {
-            inputs,
-            generated: false,
-        });
-    };
-    let setup_hash = key_directory_catalog_digest(catalog)
-        .map_err(|error| format!("derive setup hash failed: {error}"))?;
-    if let Some(public_inputs) = &inputs.public_inputs {
-        let public_values = read_public_values_file(public_inputs).map_err(|error| {
-            format!(
-                "read public inputs failed: {}: {error}",
-                public_inputs.display()
-            )
-        })?;
-        if public_values.setup_hash != setup_hash {
-            return Err("public inputs setup hash mismatch".to_owned());
-        }
-        let program_image_cache =
-            read_optional_program_image_cache(parsed.run_args.program_image_cache.as_deref())?;
-        validate_eth_block_public_values_with_program_image_cache(
-            &summary.input,
-            &public_values,
-            program_image_cache.as_ref(),
-        )
-        .map_err(|error| error.to_string())?;
-        return Ok(PreparedPublicInputs {
-            inputs,
-            generated: false,
-        });
-    }
-
-    let output_dir = &parsed.run_args.positionals[1];
-    let public_inputs = output_dir.join("eth-block-public-values.bin");
-    let program_image_cache =
-        read_optional_program_image_cache(parsed.run_args.program_image_cache.as_deref())?;
-    let public_values = public_values_from_eth_block_input_for_metadata(
-        setup_hash,
-        &summary.input,
-        &catalog.layout.global_info,
-        program_image_cache.as_ref(),
-    )
-    .map_err(|error| format!("encode ETH block public values failed: {error}"))?;
-    let encoded = encode_public_values(&public_values)
-        .map_err(|error| format!("encode ETH block public values failed: {error}"))?;
-    if let Some(parent) = public_inputs.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).map_err(|error| {
-                format!(
-                    "create public inputs directory failed: {}: {error}",
-                    parent.display()
-                )
-            })?;
-        }
-    }
-    fs::write(&public_inputs, encoded).map_err(|error| {
-        format!(
-            "write ETH block public values failed: {}: {error}",
-            public_inputs.display()
-        )
-    })?;
-    inputs.public_inputs = Some(public_inputs);
-    Ok(PreparedPublicInputs {
-        inputs,
-        generated: true,
-    })
-}
-
-fn read_optional_program_image_cache(
-    path: Option<&Path>,
-) -> Result<Option<ProgramImageCommitmentCache>, String> {
-    path.map(|path| {
-        read_program_image_commitment_cache_file(path).map_err(|error| {
-            format!(
-                "read program-image cache failed: {}: {error}",
-                path.display()
-            )
-        })
-    })
-    .transpose()
-}
-
 #[derive(Clone, Copy)]
 struct FinishEthBlockInput<'a> {
     summary: Option<&'a EthBlockInputSummary>,
@@ -833,6 +762,7 @@ struct FinishEthBlockInput<'a> {
 struct FinishAllUnitsWitnessRunRequest<'a> {
     catalog: &'a KeyDirectoryCatalog,
     plan: &'a ProveExecutionPlan,
+    constant_tree_material_summaries: Option<&'a [Option<ConstantTreeFileSummary>]>,
     parsed: &'a ParsedWitnessArgs,
     auxiliary_inputs: &'a ProveWitnessAuxiliaryInputs,
     outputs: &'a [ProveWitnessTraceCommitments],
@@ -892,6 +822,7 @@ struct WitnessOutputSaveRequest<'a> {
     output_dir: &'a Path,
     catalog: &'a KeyDirectoryCatalog,
     schedule: &'a ProveSchedule,
+    constant_tree_material_summaries: Option<&'a [Option<ConstantTreeFileSummary>]>,
     execution_unit: &'a ProveExecutionUnitArtifacts,
     gpu_streams: usize,
     public_inputs: Option<&'a Path>,
@@ -1026,10 +957,12 @@ fn write_witness_output_summary_with_trace(
 fn finish_all_units_witness_run(
     request: FinishAllUnitsWitnessRunRequest<'_>,
     stdout: &mut dyn Write,
+    timings: &mut TimingRecorder,
 ) -> Result<(), String> {
     let FinishAllUnitsWitnessRunRequest {
         catalog,
         plan,
+        constant_tree_material_summaries,
         parsed,
         auxiliary_inputs,
         outputs,
@@ -1067,6 +1000,7 @@ fn finish_all_units_witness_run(
     let proof_request = lzvm_prover::WitnessAllUnitsProofRequest {
         catalog,
         schedule: &plan.run_plan.schedule,
+        constant_tree_material_summaries,
         execution_units: &plan.units,
         gpu_streams: plan.run_plan.gpu.max_streams,
         public_values: public_values.as_ref(),
@@ -1085,16 +1019,24 @@ fn finish_all_units_witness_run(
             && plan.run_plan.options.aggregate
             && challenge_values_segment.is_some(),
     };
+    let mut proof_artifact_timing = lzvm_prover::WitnessProofArtifactTiming::default();
     let proof = if contribution_artifact_requested(plan) {
         lzvm_prover::build_witness_contribution_proof_artifact_for_all_units(&proof_request)?
     } else {
-        lzvm_prover::build_witness_proof_artifact_for_all_units(&proof_request)?
+        lzvm_prover::build_witness_proof_artifact_for_all_units_with_timing(
+            &proof_request,
+            &mut proof_artifact_timing,
+        )?
     };
+    record_proof_artifact_timing(timings, &proof_artifact_timing);
     let proof_bytes = match proof {
-        Some(proof) => Some(
-            encode_proof_artifact(&proof)
-                .map_err(|error| format!("encode witness proof artifact failed: {error}"))?,
-        ),
+        Some(proof) => {
+            let started = Instant::now();
+            let proof_bytes = encode_proof_artifact(&proof)
+                .map_err(|error| format!("encode witness proof artifact failed: {error}"))?;
+            timings.record("finish_proof_encode", started.elapsed());
+            Some(proof_bytes)
+        }
         None => None,
     };
     if plan.run_plan.options.save_outputs {
@@ -1114,6 +1056,7 @@ fn finish_all_units_witness_run(
                 output_dir: &plan.run_plan.options.output_dir,
                 catalog,
                 schedule: &plan.run_plan.schedule,
+                constant_tree_material_summaries,
                 execution_unit,
                 gpu_streams: plan.run_plan.gpu.max_streams,
                 public_inputs: plan.inputs.public_inputs.as_deref(),
@@ -1222,6 +1165,7 @@ pub fn build_witness_proof_artifact(
 fn build_proof_bytes(
     request: &WitnessOutputSaveRequest<'_>,
     verify_outputs: bool,
+    timings: &mut TimingRecorder,
 ) -> Result<Option<Vec<u8>>, String> {
     let Some(public_inputs) = request.public_inputs else {
         return Ok(None);
@@ -1247,11 +1191,13 @@ fn build_proof_bytes(
         )?),
         None => None,
     };
+    let mut proof_artifact_timing = lzvm_prover::WitnessProofArtifactTiming::default();
     let proof = if request.contribution_only {
         lzvm_prover::build_witness_contribution_proof_artifact_for_unit(
             &lzvm_prover::WitnessProofRequest {
                 catalog: request.catalog,
                 schedule: request.schedule,
+                constant_tree_material_summaries: request.constant_tree_material_summaries,
                 execution_unit: request.execution_unit,
                 gpu_streams: request.gpu_streams,
                 public_values: Some(&public_values),
@@ -1265,25 +1211,34 @@ fn build_proof_bytes(
             },
         )?
     } else {
-        lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
-            catalog: request.catalog,
-            schedule: request.schedule,
-            execution_unit: request.execution_unit,
-            gpu_streams: request.gpu_streams,
-            public_values: Some(&public_values),
-            unit_values: unit_values.as_deref(),
-            output: request.output,
-            verify_outputs,
-            program_image_cache: request.program_image_cache,
-            eth_block_input: request.eth_block_input,
-            challenge_values_segment: request.challenge_values_segment,
-            include_contribution_segment: request.include_contribution_segment,
-        })?
+        lzvm_prover::build_witness_proof_artifact_for_unit_with_timing(
+            &lzvm_prover::WitnessProofRequest {
+                catalog: request.catalog,
+                schedule: request.schedule,
+                constant_tree_material_summaries: request.constant_tree_material_summaries,
+                execution_unit: request.execution_unit,
+                gpu_streams: request.gpu_streams,
+                public_values: Some(&public_values),
+                unit_values: unit_values.as_deref(),
+                output: request.output,
+                verify_outputs,
+                program_image_cache: request.program_image_cache,
+                eth_block_input: request.eth_block_input,
+                challenge_values_segment: request.challenge_values_segment,
+                include_contribution_segment: request.include_contribution_segment,
+            },
+            &mut proof_artifact_timing,
+        )?
     };
+    record_proof_artifact_timing(timings, &proof_artifact_timing);
     match proof {
-        Some(proof) => encode_proof_artifact(&proof)
-            .map(Some)
-            .map_err(|error| format!("encode witness proof artifact failed: {error}")),
+        Some(proof) => {
+            let started = Instant::now();
+            let proof_bytes = encode_proof_artifact(&proof)
+                .map_err(|error| format!("encode witness proof artifact failed: {error}"))?;
+            timings.record("finish_proof_encode", started.elapsed());
+            Ok(Some(proof_bytes))
+        }
         None => Ok(None),
     }
 }

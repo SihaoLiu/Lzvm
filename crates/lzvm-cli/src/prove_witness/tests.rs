@@ -1,3 +1,4 @@
+use super::args::parsed_inputs;
 use super::timing::{write_timing_entries, TimingEntry};
 use super::*;
 use lzvm_artifacts::eth_block_input::parse_eth_block_input;

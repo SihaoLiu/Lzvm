@@ -95,6 +95,10 @@ use lzvm_artifacts::source_program::{
     SourceProgramArchiveSource,
 };
 use lzvm_artifacts::trace_bundle::{encode_trace_bundle, TraceBundle, TraceBundleUnit};
+use lzvm_artifacts::trace_constraint_segment::{
+    encode_trace_constraint_segment, TraceConstraintSegment, TraceConstraintUnitSegment,
+    TRACE_CONSTRAINT_SEGMENT_ID,
+};
 use lzvm_artifacts::unit_values_segment::{
     encode_unit_values_segment, parse_unit_values_segment, UnitValuesSegment,
     UnitValuesUnitSegment, UNIT_VALUES_SEGMENT_ID,
@@ -433,6 +437,7 @@ fn sample_proof_with_material(
     let material_segment =
         build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
     let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let trace_constraint_segment = sample_trace_constraint_segment(&schedule, catalog, 0);
     let query_segment = build_pcs_query_plan_segment(
         &schedule,
         public_values_digest(public_values).expect("digest should compute"),
@@ -453,6 +458,7 @@ fn sample_proof_with_material(
             constant_opening_segment,
             opening_segment,
             witness_segment,
+            trace_constraint_segment,
         ],
     }
 }
@@ -512,6 +518,38 @@ fn sample_witness_proof_segment(
     ProofSegment {
         id: WITNESS_COMMITMENT_SEGMENT_BASE_ID + unit_index as u32,
         data: encode_witness_commitment_segment(&segment).expect("witness segment should encode"),
+    }
+}
+
+fn sample_trace_constraint_segment(
+    schedule: &lzvm_prover::ProveSchedule,
+    catalog: &lzvm_artifacts::key_directory::KeyDirectoryCatalog,
+    unit_index: usize,
+) -> ProofSegment {
+    let unit = &schedule.units[unit_index];
+    let trace_column_count = unit.stage_commit_widths.iter().sum();
+    let segment = TraceConstraintSegment {
+        units: vec![TraceConstraintUnitSegment {
+            unit_index: unit_index as u32,
+            trace_instance_index: 0,
+            trace_row_count: unit.base_domain_size,
+            trace_column_count,
+            regular_constraint_count: catalog.units[unit_index]
+                .regular_constraints
+                .entries
+                .len()
+                .try_into()
+                .expect("regular constraint count should fit"),
+            trace_extracted: true,
+            regular_constraints_evaluated: true,
+            witness_values_committed: true,
+            constraint_checker_conformant: true,
+        }],
+    };
+    ProofSegment {
+        id: TRACE_CONSTRAINT_SEGMENT_ID,
+        data: encode_trace_constraint_segment(&segment)
+            .expect("trace constraint segment should encode"),
     }
 }
 
@@ -2371,6 +2409,7 @@ fn write_proof_value_query_preflight_fixture(
         .units[0]
         .clone();
     let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let trace_constraint_segment = sample_trace_constraint_segment(&schedule, &catalog, 0);
     let witness = parse_witness_commitment_segment(&witness_segment.data)
         .expect("witness segment should parse");
     let evaluation_segment = sample_pcs_evaluation_segment(0);
@@ -2428,6 +2467,7 @@ fn write_proof_value_query_preflight_fixture(
         constant_opening_segment,
         opening_segment,
         witness_segment,
+        trace_constraint_segment,
         evaluation_segment,
         fri_segment,
         nonce_segment,
@@ -2622,6 +2662,7 @@ fn write_unit_value_query_preflight_fixture(
         .units[0]
         .clone();
     let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let trace_constraint_segment = sample_trace_constraint_segment(&schedule, &catalog, 0);
     let witness = parse_witness_commitment_segment(&witness_segment.data)
         .expect("witness segment should parse");
     let evaluation_segment = sample_pcs_evaluation_segment(0);
@@ -2680,6 +2721,7 @@ fn write_unit_value_query_preflight_fixture(
         constant_opening_segment,
         opening_segment,
         witness_segment,
+        trace_constraint_segment,
         evaluation_segment,
         fri_segment,
         nonce_segment,
@@ -2792,12 +2834,14 @@ fn write_challenge_global_constraint_preflight_fixture(root: &Path) -> (PathBuf,
     let catalog = read_key_directory_catalog(root).expect("catalog should load after rewrite");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
+    let trace_constraint_segment = sample_trace_constraint_segment(&schedule, &catalog, 0);
     let segments = vec![
         material_segment,
         query_segment,
         constant_opening_segment,
         opening_segment,
         witness_segment,
+        trace_constraint_segment,
         evaluation_segment,
         fri_segment,
         nonce_segment,
@@ -6115,6 +6159,7 @@ fn builds_segmented_guest_pc_trace_proof_output() {
         &[
             "prove",
             "witness",
+            "--timings",
             "--guest-pc-trace",
             "16",
             dir.to_str().expect("path should be utf-8"),
@@ -6156,6 +6201,54 @@ fn builds_segmented_guest_pc_trace_proof_output() {
     );
     assert!(
         stdout_text.contains("trace_instance_index=1\n"),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_query_plan_ms="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_constant_opening_ms="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_opening_ms="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_external_source_ms="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_opening_setup_ms="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_opening_leaf_extend_ms="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_opening_leaf_hash_ms="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_opening_path_ms="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_opening_row_values_ms="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_stage_1_opening_ms="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_stage_2_opening_ms="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_proof_encode_ms="),
         "{stdout_text}"
     );
     assert_eq!(proof.setup_hash, setup_hash);
@@ -7619,7 +7712,7 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
         proof.public_values_hash,
         public_values_digest(&public_values).expect("digest should compute")
     );
-    assert_eq!(proof.segments.len(), 5);
+    assert_eq!(proof.segments.len(), 6);
     assert_has_no_contribution_segment(&proof);
     assert_eq!(proof.segments[0].id, PCS_MATERIAL_MANIFEST_SEGMENT_ID);
     let manifest = parse_pcs_material_manifest_segment(&proof.segments[0].data)
@@ -7695,7 +7788,12 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
         opening.units[0].queries.len(),
         query_plan.units[0].queries.len()
     );
-    assert_eq!(proof.segments[4], expected_segment);
+    assert_eq!(proof.segments[4].id, TRACE_CONSTRAINT_SEGMENT_ID);
+    assert_eq!(proof.segments[5], expected_segment);
+    assert!(proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == TRACE_CONSTRAINT_SEGMENT_ID));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
@@ -7801,7 +7899,7 @@ fn writes_prove_witness_proof_without_save_outputs() {
     );
     assert!(stderr.is_empty());
     assert_eq!(proof.setup_hash, setup_hash);
-    assert_eq!(proof.segments.len(), 5);
+    assert_eq!(proof.segments.len(), 6);
     assert_has_no_contribution_segment(&proof);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
@@ -8285,6 +8383,7 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
         "program_image_cache_program_digest={}\n",
         format_hash(&expected_cache.program_digest)
     )));
+    assert!(proof_verify_stdout_text.contains("proof_artifact_match=ok\n"));
     assert!(proof_verify_stdout_text.contains("program_image_cache_match=ok\n"));
     assert_eq!(mismatch_code, 1);
     assert!(mismatch_stdout.is_empty());
@@ -11579,7 +11678,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-    assert_eq!(proof.segments.len(), 11);
+    assert_eq!(proof.segments.len(), 12);
     assert_has_no_contribution_segment(&proof);
     assert!(proof
         .segments
@@ -11662,7 +11761,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(11, &public_values_path)
+        expected_setup_verify_stdout(12, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
 
@@ -11689,7 +11788,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     );
     assert_eq!(
         String::from_utf8(proof_verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(11, &public_values_path)
+        expected_proof_verify_stdout(12, &public_values_path)
     );
     assert!(proof_verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -11778,7 +11877,7 @@ fn runs_prove_witness_for_aggregate_with_evaluation_values_segment() {
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-    assert_eq!(proof.segments.len(), 11);
+    assert_eq!(proof.segments.len(), 12);
     assert_has_no_contribution_segment(&proof);
 
     let evaluation_segment = proof
@@ -11821,7 +11920,7 @@ fn runs_prove_witness_for_aggregate_with_evaluation_values_segment() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(11, &public_values_path)
+        expected_setup_verify_stdout(12, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -11943,7 +12042,7 @@ fn runs_prove_witness_for_aggregate_fri_with_unit_values_segment() {
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-    assert_eq!(proof.segments.len(), 12);
+    assert_eq!(proof.segments.len(), 13);
     assert_has_no_contribution_segment(&proof);
 
     let unit_values_segment = proof
@@ -11987,7 +12086,7 @@ fn runs_prove_witness_for_aggregate_fri_with_unit_values_segment() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(12, &public_values_path)
+        expected_setup_verify_stdout(13, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -12047,7 +12146,7 @@ fn saves_prove_witness_transcript_fri_outputs_when_requested() {
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-    assert_eq!(proof.segments.len(), 8);
+    assert_eq!(proof.segments.len(), 9);
     assert_has_no_contribution_segment(&proof);
     assert!(proof
         .segments
@@ -12190,7 +12289,7 @@ fn saves_prove_witness_transcript_fri_outputs_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(8, &public_values_path)
+        expected_setup_verify_stdout(9, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -12404,7 +12503,7 @@ fn saves_prove_witness_proof_values_segment_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(6, &public_values_path)
+        expected_setup_verify_stdout(7, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -12517,7 +12616,7 @@ fn saves_prove_witness_group_values_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(6, &public_values_path)
+        expected_setup_verify_stdout(7, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -12687,7 +12786,7 @@ fn saves_prove_witness_unit_values_segment_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(6, &public_values_path)
+        expected_setup_verify_stdout(7, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -13339,7 +13438,7 @@ fn runs_setup_aware_verify_preflight() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits=4\nsegments=5\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\n",
+            "status=ok\nunits=4\nsegments=6\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\n",
             format_hash(&public_values_hash)
         )
     );
@@ -13410,7 +13509,7 @@ fn runs_setup_aware_verify_preflight_with_source_generated_key_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits=4\nsegments=5\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=0\nsource_program_archive=present\nsource_program_archive_sources=1\nsource_program_archive_edges=0\n",
+            "status=ok\nunits=4\nsegments=6\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=0\nsource_program_archive=present\nsource_program_archive_sources=1\nsource_program_archive_edges=0\n",
             format_hash(&public_values_hash)
         )
     );
@@ -13485,6 +13584,7 @@ fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
         .units[0]
         .clone();
     let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let trace_constraint_segment = sample_trace_constraint_segment(&schedule, &catalog, 0);
     let witness = parse_witness_commitment_segment(&witness_segment.data)
         .expect("witness segment should parse");
     let evaluation_segment = sample_pcs_evaluation_segment(0);
@@ -13537,6 +13637,7 @@ fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
             constant_opening_segment,
             opening_segment,
             witness_segment,
+            trace_constraint_segment,
             evaluation_segment,
             fri_segment,
             nonce_segment,
@@ -13572,7 +13673,7 @@ fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(8, &public_values_path)
+        expected_setup_verify_stdout(9, &public_values_path)
     );
     assert!(stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -13673,6 +13774,7 @@ fn rejects_setup_aware_verify_preflight_with_missing_contribution_challenge() {
     let material_segment =
         build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
     let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let trace_constraint_segment = sample_trace_constraint_segment(&schedule, &catalog, 0);
     let entries = sample_contribution_entries(
         catalog
             .layout
@@ -13703,6 +13805,7 @@ fn rejects_setup_aware_verify_preflight_with_missing_contribution_challenge() {
             constant_opening_segment,
             opening_segment,
             witness_segment,
+            trace_constraint_segment,
             contribution_segment,
         ],
     };
@@ -13756,6 +13859,7 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_contribution_challenge()
     let material_segment =
         build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
     let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let trace_constraint_segment = sample_trace_constraint_segment(&schedule, &catalog, 0);
     let entries = sample_contribution_entries(
         catalog
             .layout
@@ -13805,6 +13909,7 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_contribution_challenge()
             constant_opening_segment,
             opening_segment,
             witness_segment,
+            trace_constraint_segment,
             contribution_segment,
             bad_challenge_segment,
         ],
@@ -14091,11 +14196,52 @@ fn validates_setup_aware_verify_proof_with_proof_values() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(segment_count, &public_values_path)
+        expected_proof_verify_stdout(segment_count, &public_values_path)
     );
     assert!(stderr.is_empty());
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_verify_proof_with_missing_trace_constraint_evidence() {
+    let dir = temp_dir("verify-proof-missing-trace-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    let (proof_path, public_values_path, _) =
+        write_proof_value_query_preflight_fixture(&dir, Some(vec![[51, 52, 53]]));
+    let proof_bytes = fs::read(&proof_path).expect("proof should read");
+    let mut proof = parse_proof_artifact(&proof_bytes).expect("proof should parse");
+    proof
+        .segments
+        .retain(|segment| segment.id != TRACE_CONSTRAINT_SEGMENT_ID);
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "proof",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify proof failed: missing trace constraint evidence segment\n"
+    );
 }
 
 #[test]
@@ -14467,6 +14613,7 @@ fn rejects_setup_aware_verify_preflight_with_bad_fri_fold_chain() {
         .units[0]
         .clone();
     let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let trace_constraint_segment = sample_trace_constraint_segment(&schedule, &catalog, 0);
     let witness = parse_witness_commitment_segment(&witness_segment.data)
         .expect("witness segment should parse");
     let evaluation_segment = sample_pcs_evaluation_segment(0);
@@ -14512,6 +14659,7 @@ fn rejects_setup_aware_verify_preflight_with_bad_fri_fold_chain() {
             constant_opening_segment,
             opening_segment,
             witness_segment,
+            trace_constraint_segment,
             evaluation_segment,
             fri_segment,
             nonce_segment,
@@ -14574,6 +14722,7 @@ fn rejects_setup_aware_verify_preflight_with_bad_query_output() {
         .units[0]
         .clone();
     let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let trace_constraint_segment = sample_trace_constraint_segment(&schedule, &catalog, 0);
     let witness = parse_witness_commitment_segment(&witness_segment.data)
         .expect("witness segment should parse");
     let evaluation_segment = sample_pcs_evaluation_segment(0);
@@ -14633,6 +14782,7 @@ fn rejects_setup_aware_verify_preflight_with_bad_query_output() {
             constant_opening_segment,
             opening_segment,
             witness_segment,
+            trace_constraint_segment,
             evaluation_segment,
             fri_segment,
             nonce_segment,
@@ -14695,6 +14845,7 @@ fn rejects_setup_aware_verify_preflight_with_wrong_evaluation_value_count() {
         .units[0]
         .clone();
     let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let trace_constraint_segment = sample_trace_constraint_segment(&schedule, &catalog, 0);
     let witness = parse_witness_commitment_segment(&witness_segment.data)
         .expect("witness segment should parse");
     let evaluation_segment = sample_pcs_evaluation_segment_with_values(0, vec![[31, 32, 33]]);
@@ -14740,6 +14891,7 @@ fn rejects_setup_aware_verify_preflight_with_wrong_evaluation_value_count() {
             constant_opening_segment,
             opening_segment,
             witness_segment,
+            trace_constraint_segment,
             evaluation_segment,
             fri_segment,
             nonce_segment,
@@ -18501,4 +18653,10 @@ fn expected_setup_verify_stdout(segment_count: usize, public_values_path: &Path)
         public_values.values.len(),
         format_hash(&public_values_hash)
     )
+}
+
+fn expected_proof_verify_stdout(segment_count: usize, public_values_path: &Path) -> String {
+    let mut stdout = expected_setup_verify_stdout(segment_count, public_values_path);
+    stdout.push_str("proof_artifact_match=ok\n");
+    stdout
 }
