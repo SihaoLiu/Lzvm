@@ -64,6 +64,23 @@ def RuntimeSoundnessEvidence
       proof
       requiresExternalSource
     /\ system.pcsOpeningsValid publicInput proof
+    /\ system.friQueriesValid publicInput proof
+
+theorem runtime_soundness_evidence_implies_pcs_and_fri
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact evidence.right.right.right.right
 
 theorem runtime_soundness_checked_acceptance_evidence
     {system : VerifierModel}
@@ -116,11 +133,14 @@ theorem runtime_soundness_checked_acceptance_evidence
       runtimeAccepted
   have pcsOpenings :=
     assumptions.crypto.pcs_opening_sound publicInput proof verifierAccepts
+  have friQueries :=
+    assumptions.crypto.fri_query_sound publicInput proof verifierAccepts
   exact
     And.intro transcriptSound.left
       (And.intro transcriptSound.right.left
         (And.intro transcriptSound.right.right.left
-          (And.intro sourceRequirement pcsOpenings)))
+          (And.intro sourceRequirement
+            (And.intro pcsOpenings friQueries))))
 
 theorem runtime_soundness_checked_acceptance_sound
     {system : VerifierModel}
