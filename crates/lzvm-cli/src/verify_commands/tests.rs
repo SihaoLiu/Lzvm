@@ -10,6 +10,7 @@ use lzvm_artifacts::eth_public_input::parse_eth_public_block_prefix;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{encode_public_values, public_values_digest};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
+use lzvm_prover::proof_preflight::TraceConstraintPreflightUnit;
 
 #[test]
 fn parses_eth_public_input_option_for_verify_proof_args() {
@@ -170,6 +171,34 @@ fn rejects_missing_eth_public_input_value_for_verify_preflight_args() {
         result,
         Err(SetupValidationArgError::Invalid(message)) if message == "missing --eth-public-input value"
     ));
+}
+
+#[test]
+fn writes_trace_constraint_summary() {
+    let mut output = Vec::new();
+    write_trace_constraint_summary(
+        &mut output,
+        1,
+        &[36],
+        &[TraceConstraintPreflightUnit {
+            unit_index: 3,
+            trace_instance_index: 2,
+            trace_row_count: 1024,
+            trace_column_count: 9,
+            regular_constraint_count: 17,
+            trace_extracted: true,
+            regular_constraints_evaluated: true,
+            witness_values_committed: true,
+            constraint_checker_conformant: true,
+        }],
+    );
+
+    let output = String::from_utf8(output).expect("summary should be utf-8");
+    assert!(output.contains("trace_constraint_segments=1\n"));
+    assert!(output.contains("trace_constraint_segment_bytes=36\n"));
+    assert!(output.contains("trace_constraint_units=1\n"));
+    assert!(output.contains("trace_constraint_unit=3,2,1024,9,17\n"));
+    assert!(output.contains("trace_constraint_unit_flags=1,1,1,1\n"));
 }
 
 #[test]

@@ -10,7 +10,9 @@ use lzvm_prover::contribution::{
     derive_global_challenge_from_embedded_contribution_proofs, derive_global_challenge_from_files,
     ContributionChallengeReport,
 };
-use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
+use lzvm_prover::proof_preflight::{
+    validate_proof_public_values_from_files, TraceConstraintPreflightUnit,
+};
 use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
 
 use crate::{
@@ -109,6 +111,12 @@ pub(super) fn verify_preflight(
         report.challenge_values_segment_count,
         &report.challenge_values_segment_byte_counts,
         &report.challenge_values_value_counts,
+    );
+    write_trace_constraint_summary(
+        stdout,
+        report.trace_constraint_segment_count,
+        &report.trace_constraint_segment_byte_counts,
+        &report.trace_constraint_units,
     );
     if report.eth_block_input_count > 0 {
         let _ = writeln!(stdout, "eth_block_inputs={}", report.eth_block_input_count);
@@ -1077,6 +1085,41 @@ fn write_challenge_values_summary(
     for (byte_count, value_count) in segment_byte_counts.iter().zip(value_counts) {
         let _ = writeln!(stdout, "challenge_values_segment_bytes={byte_count}");
         let _ = writeln!(stdout, "challenge_values_count={value_count}");
+    }
+}
+
+fn write_trace_constraint_summary(
+    stdout: &mut dyn Write,
+    segment_count: usize,
+    segment_byte_counts: &[usize],
+    units: &[TraceConstraintPreflightUnit],
+) {
+    if segment_count == 0 {
+        return;
+    }
+    let _ = writeln!(stdout, "trace_constraint_segments={segment_count}");
+    for byte_count in segment_byte_counts {
+        let _ = writeln!(stdout, "trace_constraint_segment_bytes={byte_count}");
+    }
+    let _ = writeln!(stdout, "trace_constraint_units={}", units.len());
+    for unit in units {
+        let _ = writeln!(
+            stdout,
+            "trace_constraint_unit={},{},{},{},{}",
+            unit.unit_index,
+            unit.trace_instance_index,
+            unit.trace_row_count,
+            unit.trace_column_count,
+            unit.regular_constraint_count
+        );
+        let _ = writeln!(
+            stdout,
+            "trace_constraint_unit_flags={},{},{},{}",
+            u8::from(unit.trace_extracted),
+            u8::from(unit.regular_constraints_evaluated),
+            u8::from(unit.witness_values_committed),
+            u8::from(unit.constraint_checker_conformant)
+        );
     }
 }
 
