@@ -530,6 +530,47 @@ theorem runtime_trace_constraint_evidence_implies_artifact_binding_evidence
   intro artifact publicInput proof requiresExternalSource evidence
   exact evidence.right.left
 
+theorem runtime_trace_constraint_checked_acceptance_witness_commitment_binding
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.traceEvidenceMatchesWitnessCommitments
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    (runtime_trace_constraint_checked_acceptance_artifact_binding_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted).left
+
+theorem runtime_trace_constraint_soundness_obligations_imply_witness_commitment_binding
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintSoundnessObligations
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        validation.traceEvidenceMatchesWitnessCommitments
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource obligations
+  exact obligations.left.right.left.left
+
 theorem runtime_trace_constraint_evidence_implies_trace_witness_evidence
     {system : VerifierModel}
     (validation : RuntimeTraceConstraintValidation system) :

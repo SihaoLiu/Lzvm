@@ -2641,7 +2641,7 @@ fn proof_artifact_contains_trace_constraint_evidence_segment() {
     assert!(
         error
             .to_string()
-            .contains("trace constraint evidence unexpected witness identity"),
+            .contains("missing trace constraint witness commitment"),
         "{error}"
     );
 
@@ -2663,7 +2663,7 @@ fn proof_artifact_contains_trace_constraint_evidence_segment() {
     assert!(
         error
             .to_string()
-            .contains("trace constraint evidence shape mismatch"),
+            .contains("trace constraint witness shape mismatch"),
         "{error}"
     );
 }

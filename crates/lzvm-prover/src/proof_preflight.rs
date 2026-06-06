@@ -622,7 +622,21 @@ fn validate_trace_constraint_witness_commitments(
     proof: &ProofArtifact,
     trace_constraint_units: &[TraceConstraintPreflightUnit],
 ) -> Result<(), ProofPreflightError> {
-    if trace_constraint_units.is_empty() || !contains_witness_commitment_segments(proof) {
+    if trace_constraint_units.is_empty() {
+        return Ok(());
+    }
+    if !contains_witness_commitment_segments(proof) {
+        if let Some(unit) = trace_constraint_units
+            .iter()
+            .find(|unit| unit.witness_values_committed)
+        {
+            return Err(
+                ProofPreflightError::TraceConstraintMissingWitnessCommitment {
+                    unit_index: unit.unit_index,
+                    trace_instance_index: unit.trace_instance_index,
+                },
+            );
+        }
         return Ok(());
     }
     let max_unit_index = trace_constraint_units

@@ -507,6 +507,18 @@ fn reports_trace_constraint_segments() {
         id: TRACE_CONSTRAINT_SEGMENT_ID,
         data: segment_data,
     });
+    proof.segments.push(ProofSegment {
+        id: witness_commitment_segment_id(
+            4,
+            WitnessCommitmentSegmentIdentity {
+                unit_index: 3,
+                trace_instance_index: 2,
+            },
+        )
+        .expect("witness commitment id should encode"),
+        data: encode_witness_commitment_segment(&sample_witness_commitment(3, 1024, 9))
+            .expect("witness commitment should encode"),
+    });
 
     let report = validate_proof_public_values(&proof, &public_values)
         .expect("proof and public values should match");
@@ -621,6 +633,40 @@ fn rejects_witness_commitment_segments_without_trace_constraint_evidence() {
     assert_eq!(
         error.to_string(),
         "missing trace constraint evidence segment"
+    );
+}
+
+#[test]
+fn rejects_trace_constraint_evidence_without_witness_commitments() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: TRACE_CONSTRAINT_SEGMENT_ID,
+        data: encode_trace_constraint_segment(&TraceConstraintSegment {
+            units: vec![TraceConstraintUnitSegment {
+                unit_index: 0,
+                trace_instance_index: 0,
+                trace_row_count: 16,
+                trace_column_count: 5,
+                regular_constraint_count: 17,
+                trace_extracted: true,
+                regular_constraints_evaluated: true,
+                witness_values_committed: true,
+                constraint_checker_conformant: true,
+            }],
+        })
+        .expect("trace constraint segment should encode"),
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("trace evidence should require the committed witness segment");
+
+    assert_eq!(
+        error,
+        ProofPreflightError::TraceConstraintMissingWitnessCommitment {
+            unit_index: 0,
+            trace_instance_index: 0,
+        }
     );
 }
 
