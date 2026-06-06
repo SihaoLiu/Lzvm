@@ -627,6 +627,7 @@ int run_poseidon2_width16_linear_round_on_device(
 #include "cuda_poseidon2_merkle_parent.cuh"
 #include "cuda_poseidon2_merkle_opening.cuh"
 #include "cuda_poseidon2_merkle_root.cuh"
+#include "cuda_poseidon2_merkle_digest.cuh"
 #include "cuda_poseidon2_row_major.cuh"
 
 }  // namespace

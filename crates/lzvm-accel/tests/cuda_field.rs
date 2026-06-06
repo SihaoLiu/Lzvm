@@ -16,11 +16,15 @@ use lzvm_accel::{
     cuda_poseidon2_width16_device, cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
+    cuda_poseidon2_width16_merkle_digest_opening_path_device,
+    cuda_poseidon2_width16_merkle_digest_root_device,
     cuda_poseidon2_width16_merkle_opening_path_device, cuda_poseidon2_width16_merkle_parent_device,
     cuda_poseidon2_width16_merkle_root_device, cuda_poseidon2_width4, cuda_poseidon2_width4_device,
     cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8, cuda_poseidon2_width8_device,
     cuda_poseidon2_width8_linear_round_device, cuda_poseidon2_width8_linear_round_row_major_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
+    cuda_poseidon2_width8_merkle_digest_opening_path_device,
+    cuda_poseidon2_width8_merkle_digest_root_device,
     cuda_poseidon2_width8_merkle_opening_path_device, cuda_poseidon2_width8_merkle_parent_device,
     cuda_poseidon2_width8_merkle_root_device, cuda_setup_init, AccelError, CudaDeviceBuffer,
     CudaRowMajorColumnView,
@@ -1638,6 +1642,50 @@ fn cuda_poseidon2_width8_merkle_opening_path_device_matches_cpu_reference() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_poseidon2_width8_merkle_digest_root_device_matches_padded_layout() {
+    let digests = (0..5_u64)
+        .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
+        .collect::<Vec<_>>();
+    let padded = padded_digest_states(&digests, 8);
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests).expect("digest buffer should allocate");
+    let expected = cpu_merkle_root_width8(&padded);
+
+    let actual = cuda_poseidon2_width8_merkle_digest_root_device(&input_buffer)
+        .expect("cuda compact digest root should run");
+
+    assert_eq!(actual, expected);
+
+    let single_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests[..4]).expect("single digest should allocate");
+    let single_root = cuda_poseidon2_width8_merkle_digest_root_device(&single_buffer)
+        .expect("single compact digest root should run");
+    assert_eq!(
+        single_root,
+        [digests[0], digests[1], digests[2], digests[3]]
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_width8_merkle_digest_opening_path_device_matches_padded_layout() {
+    let digests = (0..5_u64)
+        .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
+        .collect::<Vec<_>>();
+    let padded = padded_digest_states(&digests, 8);
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests).expect("digest buffer should allocate");
+    let expected = cpu_merkle_opening_width8(&padded, 4);
+
+    let actual = cuda_poseidon2_width8_merkle_digest_opening_path_device(&input_buffer, 4)
+        .expect("cuda compact digest opening should run");
+
+    assert_eq!(actual.root, expected.root);
+    assert_eq!(actual.siblings, expected.siblings);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_hashes_poseidon2_width_16_states() {
     let input = (0_u64..32).collect::<Vec<_>>();
     let expected = input
@@ -1890,6 +1938,50 @@ fn cuda_poseidon2_width16_merkle_opening_path_device_matches_cpu_reference() {
     assert_eq!(actual.siblings, expected.siblings);
 }
 
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_width16_merkle_digest_root_device_matches_padded_layout() {
+    let digests = (0..7_u64)
+        .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
+        .collect::<Vec<_>>();
+    let padded = padded_digest_states(&digests, 16);
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests).expect("digest buffer should allocate");
+    let expected = cpu_merkle_root_width16(&padded);
+
+    let actual = cuda_poseidon2_width16_merkle_digest_root_device(&input_buffer)
+        .expect("cuda compact digest root should run");
+
+    assert_eq!(actual, expected);
+
+    let single_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests[..4]).expect("single digest should allocate");
+    let single_root = cuda_poseidon2_width16_merkle_digest_root_device(&single_buffer)
+        .expect("single compact digest root should run");
+    assert_eq!(
+        single_root,
+        [digests[0], digests[1], digests[2], digests[3]]
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_width16_merkle_digest_opening_path_device_matches_padded_layout() {
+    let digests = (0..7_u64)
+        .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
+        .collect::<Vec<_>>();
+    let padded = padded_digest_states(&digests, 16);
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests).expect("digest buffer should allocate");
+    let expected = cpu_merkle_opening_width16(&padded, 6);
+
+    let actual = cuda_poseidon2_width16_merkle_digest_opening_path_device(&input_buffer, 6)
+        .expect("cuda compact digest opening should run");
+
+    assert_eq!(actual.root, expected.root);
+    assert_eq!(actual.siblings, expected.siblings);
+}
+
 #[cfg(feature = "cuda")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CpuMerkleOpening {
@@ -1980,6 +2072,16 @@ fn cpu_merkle_opening_width16(states: &[u64], query: usize) -> CpuMerkleOpening 
         .map(|chunk| [chunk[0], chunk[1], chunk[2], chunk[3]])
         .collect::<Vec<_>>();
     cpu_merkle_opening(level, query, 4)
+}
+
+#[cfg(feature = "cuda")]
+fn padded_digest_states(digests: &[u64], width: usize) -> Vec<u64> {
+    assert!(digests.len().is_multiple_of(4));
+    let mut padded = vec![0_u64; digests.len() / 4 * width];
+    for (index, digest) in digests.chunks_exact(4).enumerate() {
+        padded[index * width..index * width + 4].copy_from_slice(digest);
+    }
+    padded
 }
 
 #[cfg(feature = "cuda")]
