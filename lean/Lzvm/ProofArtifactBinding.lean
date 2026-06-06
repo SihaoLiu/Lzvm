@@ -207,6 +207,33 @@ theorem runtime_proof_artifact_binding_checked_acceptance_obligations
   exact
     And.intro bindingEvidence runtimeObligations
 
+theorem runtime_proof_artifact_binding_checked_acceptance_soundness_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeArtifactSoundnessObligations
+          system
+          validation.runtimeValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    (runtime_proof_artifact_binding_checked_acceptance_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted).right
+
 theorem runtime_proof_artifact_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
