@@ -597,4 +597,45 @@ theorem runtime_trace_constraint_required_external_source_sound
     And.intro traceSound.left
       (And.intro openingSound.right.left traceSound.right)
 
+theorem runtime_trace_constraint_required_external_source_pcs_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          ExternalSourceOpeningEvidence
+              system
+              validation.openingValidation.runtimeSoundnessValidation.sourceValidation
+              publicInput
+              proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have requiredSound :=
+    runtime_trace_constraint_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  have externalEvidence := requiredSound.right.left
+  have pcsOpenings :=
+    external_source_opening_evidence_implies_pcs_openings
+      validation.openingValidation.runtimeSoundnessValidation.sourceValidation
+      publicInput
+      proof
+      externalEvidence
+  exact
+    And.intro externalEvidence
+      (And.intro pcsOpenings requiredSound.right.right)
+
 end Lzvm
