@@ -6246,6 +6246,22 @@ fn builds_segmented_guest_pc_trace_proof_output() {
         "{stdout_text}"
     );
     assert!(
+        stdout_text.contains("timing_finish_witness_opening_retained_source_count="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_opening_external_source_count="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_opening_embedded_source_count="),
+        "{stdout_text}"
+    );
+    assert!(
+        stdout_text.contains("timing_finish_witness_opening_missing_source_count="),
+        "{stdout_text}"
+    );
+    assert!(
         stdout_text.contains("timing_finish_witness_external_source_ms="),
         "{stdout_text}"
     );

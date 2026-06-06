@@ -7,6 +7,10 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening: Duration,
     pub witness_opening_query_count: usize,
     pub witness_opening_stage_count: usize,
+    pub witness_opening_retained_source_count: usize,
+    pub witness_opening_external_source_count: usize,
+    pub witness_opening_embedded_source_count: usize,
+    pub witness_opening_missing_source_count: usize,
     pub witness_external_source: Duration,
     pub witness_opening_setup: Duration,
     pub witness_opening_leaf_extend: Duration,
@@ -57,6 +61,10 @@ pub struct WitnessProofStageOpeningTiming {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WitnessProofStageOpeningWork {
     pub stage_index: usize,
+    pub retained_source_count: usize,
+    pub external_source_count: usize,
+    pub embedded_source_count: usize,
+    pub missing_source_count: usize,
     pub leaf_hash_row_count: usize,
     pub leaf_hash_byte_count: usize,
     pub leaf_hash_arity2_row_count: usize,
@@ -74,6 +82,15 @@ pub struct WitnessProofStageOpeningWork {
     pub leaf_coset_extend_normalize_launch_count: usize,
     pub leaf_coset_extend_pack_launch_count: usize,
     pub leaf_coset_extend_unpack_launch_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+pub(crate) enum WitnessOpeningSourceKind {
+    Retained,
+    External,
+    Embedded,
+    Missing,
 }
 
 impl WitnessProofStageOpeningWork {
@@ -102,6 +119,15 @@ impl WitnessProofStageOpeningWork {
         self.leaf_coset_extend_pack_launch_count += timing.leaf_coset_extend_pack_launch_count;
         self.leaf_coset_extend_unpack_launch_count += timing.leaf_coset_extend_unpack_launch_count;
     }
+
+    fn add_source(&mut self, kind: WitnessOpeningSourceKind) {
+        match kind {
+            WitnessOpeningSourceKind::Retained => self.retained_source_count += 1,
+            WitnessOpeningSourceKind::External => self.external_source_count += 1,
+            WitnessOpeningSourceKind::Embedded => self.embedded_source_count += 1,
+            WitnessOpeningSourceKind::Missing => self.missing_source_count += 1,
+        }
+    }
 }
 
 impl WitnessProofArtifactTiming {
@@ -119,6 +145,21 @@ impl WitnessProofArtifactTiming {
 
     pub(crate) fn add_witness_opening_queries(&mut self, count: usize) {
         self.witness_opening_query_count += count;
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn add_witness_stage_opening_source(
+        &mut self,
+        stage_index: usize,
+        kind: WitnessOpeningSourceKind,
+    ) {
+        match kind {
+            WitnessOpeningSourceKind::Retained => self.witness_opening_retained_source_count += 1,
+            WitnessOpeningSourceKind::External => self.witness_opening_external_source_count += 1,
+            WitnessOpeningSourceKind::Embedded => self.witness_opening_embedded_source_count += 1,
+            WitnessOpeningSourceKind::Missing => self.witness_opening_missing_source_count += 1,
+        }
+        add_stage_opening_source(&mut self.witness_stage_opening_work, stage_index, kind);
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
@@ -289,6 +330,27 @@ fn add_stage_opening_work(
         ..WitnessProofStageOpeningWork::default()
     };
     entry.add(timing);
+    entries.push(entry);
+    entries.sort_by_key(|entry| entry.stage_index);
+}
+
+fn add_stage_opening_source(
+    entries: &mut Vec<WitnessProofStageOpeningWork>,
+    stage_index: usize,
+    kind: WitnessOpeningSourceKind,
+) {
+    if let Some(entry) = entries
+        .iter_mut()
+        .find(|entry| entry.stage_index == stage_index)
+    {
+        entry.add_source(kind);
+        return;
+    }
+    let mut entry = WitnessProofStageOpeningWork {
+        stage_index,
+        ..WitnessProofStageOpeningWork::default()
+    };
+    entry.add_source(kind);
     entries.push(entry);
     entries.sort_by_key(|entry| entry.stage_index);
 }

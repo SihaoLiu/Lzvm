@@ -15,6 +15,22 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_stage_count",
         timing.witness_opening_stage_count,
     );
+    timings.record_count(
+        "finish_witness_opening_retained_source_count",
+        timing.witness_opening_retained_source_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_external_source_count",
+        timing.witness_opening_external_source_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_embedded_source_count",
+        timing.witness_opening_embedded_source_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_missing_source_count",
+        timing.witness_opening_missing_source_count,
+    );
     timings.record(
         "finish_witness_external_source",
         timing.witness_external_source,
@@ -138,6 +154,34 @@ pub(super) fn record_proof_artifact_timing(
         );
     }
     for stage_work in &timing.witness_stage_opening_work {
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_retained_source_count",
+                stage_work.stage_index
+            ),
+            stage_work.retained_source_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_external_source_count",
+                stage_work.stage_index
+            ),
+            stage_work.external_source_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_embedded_source_count",
+                stage_work.stage_index
+            ),
+            stage_work.embedded_source_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_missing_source_count",
+                stage_work.stage_index
+            ),
+            stage_work.missing_source_count,
+        );
         timings.record_count_dynamic(
             format!(
                 "finish_witness_stage_{}_opening_leaf_hash_rows",

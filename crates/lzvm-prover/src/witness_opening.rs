@@ -22,6 +22,8 @@ use crate::guest_pc_trace_backend::{
     build_guest_pc_trace_stage_source_devices_from_device_material,
 };
 use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
+#[cfg(feature = "cuda")]
+use crate::proof_artifact_timing::WitnessOpeningSourceKind;
 use crate::proof_artifact_timing::WitnessProofArtifactTiming;
 use crate::witness_commitment::{
     load_witness_commitment_segments, open_witness_stage_commitment,
@@ -819,6 +821,18 @@ fn build_witness_opening_unit_segment_from_trace_output(
                         None
                     };
                 let source_view = retained_source_view.or(external_source_view.as_ref());
+                let source_kind = if retained_source_view.is_some() {
+                    WitnessOpeningSourceKind::Retained
+                } else if external_source_view.is_some() {
+                    WitnessOpeningSourceKind::External
+                } else if commitment.requires_external_source() {
+                    WitnessOpeningSourceKind::Missing
+                } else {
+                    WitnessOpeningSourceKind::Embedded
+                };
+                if let Some(timing) = timing.as_deref_mut() {
+                    timing.add_witness_stage_opening_source(stage_index, source_kind);
+                }
                 if commitment.requires_external_source() && source_view.is_none() {
                     let provider_stage_count =
                         guest_pc_external_stage_sources.as_ref().map_or(0, Vec::len);

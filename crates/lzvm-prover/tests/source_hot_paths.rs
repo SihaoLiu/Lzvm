@@ -1971,6 +1971,22 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "witness_opening_stage_count",
         ),
         (
+            "\"finish_witness_opening_retained_source_count\"",
+            "witness_opening_retained_source_count",
+        ),
+        (
+            "\"finish_witness_opening_external_source_count\"",
+            "witness_opening_external_source_count",
+        ),
+        (
+            "\"finish_witness_opening_embedded_source_count\"",
+            "witness_opening_embedded_source_count",
+        ),
+        (
+            "\"finish_witness_opening_missing_source_count\"",
+            "witness_opening_missing_source_count",
+        ),
+        (
             "\"finish_witness_opening_leaf_hash_rows\"",
             "witness_opening_leaf_hash_row_count",
         ),
@@ -2049,6 +2065,22 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "finish_witness_stage_{}_opening_leaf_hash_rows",
             "leaf_hash_row_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_retained_source_count",
+            "retained_source_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_external_source_count",
+            "external_source_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_embedded_source_count",
+            "embedded_source_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_missing_source_count",
+            "missing_source_count",
         ),
         (
             "finish_witness_stage_{}_opening_leaf_hash_bytes",
