@@ -466,6 +466,12 @@ def runtime_pipeline_trace_source_validation
     validation.traceBindingValidation.traceConstraintValidation.openingValidation
   openingValidation.runtimeSoundnessValidation.sourceValidation
 
+def runtime_pipeline_trace_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    RuntimeTraceConstraintValidation system :=
+  validation.traceBindingValidation.traceConstraintValidation
+
 def runtime_pipeline_opening_source_validation
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
@@ -828,6 +834,100 @@ theorem runtime_pipeline_binding_checked_acceptance_execution_obligations
       False
       accepted
   exact runtime_pipeline_binding_evidence_implies_execution_obligations sound.left
+
+theorem runtime_pipeline_binding_checked_acceptance_trace_conformance_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintEvidence
+            system
+            (runtime_pipeline_trace_validation validation)
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ (exists witness trace constraints,
+            (runtime_pipeline_trace_validation validation).traceExtracted
+              artifact
+              publicInput
+              proof
+              trace
+              /\ (runtime_pipeline_trace_validation validation).constraintsEvaluated
+                artifact
+                publicInput
+                proof
+                constraints
+                trace
+              /\ (runtime_pipeline_trace_validation validation).witnessExtractedFromTrace
+                artifact
+                publicInput
+                proof
+                witness
+                trace
+              /\ (runtime_pipeline_trace_validation validation).constraintBackendConformant
+                artifact
+                publicInput
+                proof
+                constraints
+                trace
+              /\ system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  cases sound.left with
+  | intro _ethEvidence tail =>
+    cases tail with
+    | intro _artifactEvidence tail =>
+      cases tail with
+      | intro _runtimeArtifactEvidence tail =>
+        cases tail with
+        | intro _tracePreflightEvidence tail =>
+          cases tail with
+          | intro traceConstraintEvidence tail =>
+            cases tail with
+            | intro _queryPlanEvidence tail =>
+              cases tail with
+              | intro _challengeEvidence tail =>
+                cases tail with
+                | intro _openingSegmentEvidence tail =>
+                  cases tail with
+                  | intro _openingEvidence tail =>
+                    cases tail with
+                    | intro _transcriptBound tail =>
+                      cases tail with
+                      | intro _publicInputBound tail =>
+                        cases tail with
+                        | intro pcsOpeningsValid _friQueriesValid =>
+                          have traceWitnessEvidence :=
+                            runtime_trace_constraint_evidence_implies_trace_witness_evidence
+                              (runtime_pipeline_trace_validation validation)
+                              artifact
+                              publicInput
+                              proof
+                              requiresExternalSource
+                              traceConstraintEvidence
+                          exact
+                            And.intro traceConstraintEvidence
+                              (And.intro traceWitnessEvidence
+                                (And.intro pcsOpeningsValid sound.right))
 
 theorem runtime_pipeline_binding_checked_acceptance_verifier_sound_witness
     {system : VerifierModel}

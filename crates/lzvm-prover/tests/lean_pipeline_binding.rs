@@ -24,9 +24,12 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             && lean_source
                 .contains("runtime_pipeline_binding_checked_acceptance_full_soundness_contract")
             && lean_source
+                .contains("runtime_pipeline_binding_checked_acceptance_trace_conformance_contract")
+            && lean_source
                 .contains("runtime_pipeline_binding_checked_acceptance_verifier_sound_witness")
             && lean_source
                 .contains("runtime_pipeline_binding_checked_acceptance_verifier_core_contract")
+            && lean_source.contains("constraintBackendConformant")
             && lean_source.contains("system.accepts publicInput proof")
             && lean_source.contains("RuntimeArtifactSoundnessObligations")
             && lean_source.contains("runtime_pipeline_binding_checked_acceptance_execution_obligations")
