@@ -18,8 +18,13 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             && lean_source.contains("runtime_trace_constraint_required_external_source_pcs_sound")
             && lean_source.contains("runtime_opening_required_external_source_sound")
             && lean_source
-                .contains("runtime_pipeline_binding_checked_acceptance_query_opening_evidence"),
-        "Lean pipeline binding should expose query-plan, opening, and required external source evidence"
+                .contains("runtime_pipeline_binding_checked_acceptance_query_opening_evidence")
+            && lean_source
+                .contains("runtime_pipeline_binding_checked_acceptance_full_soundness_contract")
+            && lean_source.contains("RuntimeArtifactSoundnessObligations")
+            && lean_source.contains("runtime_pipeline_binding_checked_acceptance_execution_obligations")
+            && lean_source.contains("SoundWitness system publicInput proof"),
+        "Lean pipeline binding should expose query-plan, opening, execution, and full runtime soundness evidence"
     );
     assert!(
         setup_preflight_source.contains("validate_global_source_lookup_hints")

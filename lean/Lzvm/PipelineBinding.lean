@@ -743,4 +743,78 @@ theorem runtime_pipeline_binding_checked_acceptance_execution_obligations
       accepted
   exact runtime_pipeline_binding_evidence_implies_execution_obligations sound.left
 
+theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimePipelineBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeArtifactSoundnessObligations
+            system
+            validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ (system.transcriptBound publicInput proof
+            /\ system.publicInputBound publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof)
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have artifactObligations :=
+    runtime_pipeline_binding_checked_acceptance_soundness_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have coreObligations :=
+    runtime_pipeline_binding_checked_acceptance_core_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have executionObligations :=
+    runtime_pipeline_binding_checked_acceptance_execution_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    ⟨sound.left,
+      artifactObligations,
+      coreObligations,
+      executionObligations,
+      sound.right⟩
+
 end Lzvm
