@@ -32,6 +32,30 @@ use lzvm_field::{
     poseidon2_hash_8, Felt,
 };
 
+#[test]
+fn native_host_header_declares_row_range_extension_exports() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let header = std::fs::read_to_string(manifest_dir.join("native/cuda_host.hpp"))
+        .expect("native host header should be readable");
+    let source =
+        std::fs::read_to_string(manifest_dir.join("native/cuda_goldilocks_row_extend.cuh"))
+            .expect("row extension source should be readable");
+
+    for symbol in [
+        "lzvm_cuda_goldilocks_coset_extend_row_major_columns_rows_device",
+        "lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_rows_device",
+    ] {
+        assert!(
+            source.contains(symbol),
+            "row extension source should export {symbol}"
+        );
+        assert!(
+            header.contains(symbol),
+            "native host header should declare {symbol}"
+        );
+    }
+}
+
 #[cfg(feature = "cuda")]
 const MODULUS: u64 = 0xffff_ffff_0000_0001;
 

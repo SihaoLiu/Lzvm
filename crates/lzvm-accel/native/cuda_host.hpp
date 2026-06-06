@@ -146,6 +146,13 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_row_device(
     std::uint64_t* out,
     std::size_t source_len,
     std::size_t column_count);
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_rows_device(
+    const std::uint64_t* values,
+    const std::uint64_t* weights,
+    std::uint64_t* out,
+    std::size_t source_len,
+    std::size_t column_count,
+    std::size_t target_row_count);
 extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_row_device(
     const std::uint64_t* values,
     const std::uint64_t* weights,
@@ -154,6 +161,15 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_row_d
     std::size_t source_row_stride,
     std::size_t column_offset,
     std::size_t column_count);
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_rows_device(
+    const std::uint64_t* values,
+    const std::uint64_t* weights,
+    std::uint64_t* out,
+    std::size_t source_len,
+    std::size_t source_row_stride,
+    std::size_t column_offset,
+    std::size_t column_count,
+    std::size_t target_row_count);
 extern "C" int lzvm_cuda_regular_constraints_base(
     const LzvmCudaRegularConstraintEntry* entries,
     std::size_t entry_count,
