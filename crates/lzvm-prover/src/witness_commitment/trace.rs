@@ -309,6 +309,27 @@ impl WitnessStageCommitTiming {
     pub(crate) fn leaf_hash_arity4_byte_count(&self) -> usize {
         self.leaf_extend_timing.leaf_hash_arity4_byte_count()
     }
+
+    pub(crate) fn leaf_coset_extend_call_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_coset_extend_call_count()
+    }
+
+    pub(crate) fn leaf_coset_extend_output_byte_count(&self) -> usize {
+        self.leaf_extend_timing
+            .leaf_coset_extend_output_byte_count()
+    }
+
+    pub(crate) fn leaf_coset_extend_column_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_coset_extend_column_count()
+    }
+
+    pub(crate) fn leaf_coset_extend_max_column_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_coset_extend_max_column_count()
+    }
+
+    pub(crate) fn leaf_coset_extend_ntt_launch_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_coset_extend_ntt_launch_count()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

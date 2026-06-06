@@ -1874,6 +1874,26 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "\"guest_stage_leaf_hash_arity4_bytes\"",
             "guest_stage_leaf_hash_arity4_byte_count()",
         ),
+        (
+            "\"guest_stage_leaf_coset_extend_calls\"",
+            "guest_stage_leaf_coset_extend_call_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_output_bytes\"",
+            "guest_stage_leaf_coset_extend_output_byte_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_columns\"",
+            "guest_stage_leaf_coset_extend_column_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_max_columns\"",
+            "guest_stage_leaf_coset_extend_max_column_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_ntt_launches\"",
+            "guest_stage_leaf_coset_extend_ntt_launch_count()",
+        ),
     ] {
         assert!(
             cli_source.contains(line_name) && cli_source.contains(accessor),
@@ -1925,6 +1945,21 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
                 && source.contains("leaf_hash_arity4_row_count")
                 && source.contains("leaf_hash_arity4_byte_count"),
             "leaf hash timing should split arity2 and arity4 row and byte counts"
+        );
+    }
+
+    for source in [
+        leaf_extend_source.as_str(),
+        execution_source.as_str(),
+        cli_source.as_str(),
+    ] {
+        assert!(
+            source.contains("leaf_coset_extend_call_count")
+                && source.contains("leaf_coset_extend_output_byte_count")
+                && source.contains("leaf_coset_extend_column_count")
+                && source.contains("leaf_coset_extend_max_column_count")
+                && source.contains("leaf_coset_extend_ntt_launch_count"),
+            "leaf extension timing should expose coset extension workload shape"
         );
     }
 }

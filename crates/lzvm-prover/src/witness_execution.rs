@@ -360,6 +360,11 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_stage_leaf_hash_arity2_byte_count: usize,
     guest_stage_leaf_hash_arity4_row_count: usize,
     guest_stage_leaf_hash_arity4_byte_count: usize,
+    guest_stage_leaf_coset_extend_call_count: usize,
+    guest_stage_leaf_coset_extend_output_byte_count: usize,
+    guest_stage_leaf_coset_extend_column_count: usize,
+    guest_stage_leaf_coset_extend_max_column_count: usize,
+    guest_stage_leaf_coset_extend_ntt_launch_count: usize,
     guest_stage_tree_commit_work_duration: Duration,
     guest_stage_timings: Vec<ProveWitnessGuestStageTiming>,
 }
@@ -401,6 +406,16 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_stage_leaf_hash_arity2_byte_count: trace_timing.stage_leaf_hash_arity2_byte_count,
             guest_stage_leaf_hash_arity4_row_count: trace_timing.stage_leaf_hash_arity4_row_count,
             guest_stage_leaf_hash_arity4_byte_count: trace_timing.stage_leaf_hash_arity4_byte_count,
+            guest_stage_leaf_coset_extend_call_count: trace_timing
+                .stage_leaf_coset_extend_call_count,
+            guest_stage_leaf_coset_extend_output_byte_count: trace_timing
+                .stage_leaf_coset_extend_output_byte_count,
+            guest_stage_leaf_coset_extend_column_count: trace_timing
+                .stage_leaf_coset_extend_column_count,
+            guest_stage_leaf_coset_extend_max_column_count: trace_timing
+                .stage_leaf_coset_extend_max_column_count,
+            guest_stage_leaf_coset_extend_ntt_launch_count: trace_timing
+                .stage_leaf_coset_extend_ntt_launch_count,
             guest_stage_tree_commit_work_duration: trace_timing.stage_tree_commit_work_duration,
             guest_stage_timings: trace_timing.stage_timings,
         }
@@ -506,6 +521,26 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_stage_leaf_hash_arity4_byte_count
     }
 
+    pub fn guest_stage_leaf_coset_extend_call_count(&self) -> usize {
+        self.guest_stage_leaf_coset_extend_call_count
+    }
+
+    pub fn guest_stage_leaf_coset_extend_output_byte_count(&self) -> usize {
+        self.guest_stage_leaf_coset_extend_output_byte_count
+    }
+
+    pub fn guest_stage_leaf_coset_extend_column_count(&self) -> usize {
+        self.guest_stage_leaf_coset_extend_column_count
+    }
+
+    pub fn guest_stage_leaf_coset_extend_max_column_count(&self) -> usize {
+        self.guest_stage_leaf_coset_extend_max_column_count
+    }
+
+    pub fn guest_stage_leaf_coset_extend_ntt_launch_count(&self) -> usize {
+        self.guest_stage_leaf_coset_extend_ntt_launch_count
+    }
+
     pub fn guest_stage_tree_commit_work_duration(&self) -> Duration {
         self.guest_stage_tree_commit_work_duration
     }
@@ -531,6 +566,11 @@ pub struct ProveWitnessGuestStageTiming {
     leaf_hash_arity2_byte_count: usize,
     leaf_hash_arity4_row_count: usize,
     leaf_hash_arity4_byte_count: usize,
+    leaf_coset_extend_call_count: usize,
+    leaf_coset_extend_output_byte_count: usize,
+    leaf_coset_extend_column_count: usize,
+    leaf_coset_extend_max_column_count: usize,
+    leaf_coset_extend_ntt_launch_count: usize,
     tree_commit_work_duration: Duration,
 }
 
@@ -552,6 +592,11 @@ impl ProveWitnessGuestStageTiming {
             leaf_hash_arity2_byte_count: timing_value.leaf_hash_arity2_byte_count(),
             leaf_hash_arity4_row_count: timing_value.leaf_hash_arity4_row_count(),
             leaf_hash_arity4_byte_count: timing_value.leaf_hash_arity4_byte_count(),
+            leaf_coset_extend_call_count: timing_value.leaf_coset_extend_call_count(),
+            leaf_coset_extend_output_byte_count: timing_value.leaf_coset_extend_output_byte_count(),
+            leaf_coset_extend_column_count: timing_value.leaf_coset_extend_column_count(),
+            leaf_coset_extend_max_column_count: timing_value.leaf_coset_extend_max_column_count(),
+            leaf_coset_extend_ntt_launch_count: timing_value.leaf_coset_extend_ntt_launch_count(),
             tree_commit_work_duration: timing_value.tree_commit_duration(),
         }
     }
@@ -570,6 +615,13 @@ impl ProveWitnessGuestStageTiming {
         self.leaf_hash_arity2_byte_count += other.leaf_hash_arity2_byte_count;
         self.leaf_hash_arity4_row_count += other.leaf_hash_arity4_row_count;
         self.leaf_hash_arity4_byte_count += other.leaf_hash_arity4_byte_count;
+        self.leaf_coset_extend_call_count += other.leaf_coset_extend_call_count;
+        self.leaf_coset_extend_output_byte_count += other.leaf_coset_extend_output_byte_count;
+        self.leaf_coset_extend_column_count += other.leaf_coset_extend_column_count;
+        self.leaf_coset_extend_max_column_count = self
+            .leaf_coset_extend_max_column_count
+            .max(other.leaf_coset_extend_max_column_count);
+        self.leaf_coset_extend_ntt_launch_count += other.leaf_coset_extend_ntt_launch_count;
         self.tree_commit_work_duration += other.tree_commit_work_duration;
     }
 
@@ -629,6 +681,26 @@ impl ProveWitnessGuestStageTiming {
         self.leaf_hash_arity4_byte_count
     }
 
+    pub fn leaf_coset_extend_call_count(&self) -> usize {
+        self.leaf_coset_extend_call_count
+    }
+
+    pub fn leaf_coset_extend_output_byte_count(&self) -> usize {
+        self.leaf_coset_extend_output_byte_count
+    }
+
+    pub fn leaf_coset_extend_column_count(&self) -> usize {
+        self.leaf_coset_extend_column_count
+    }
+
+    pub fn leaf_coset_extend_max_column_count(&self) -> usize {
+        self.leaf_coset_extend_max_column_count
+    }
+
+    pub fn leaf_coset_extend_ntt_launch_count(&self) -> usize {
+        self.leaf_coset_extend_ntt_launch_count
+    }
+
     pub fn tree_commit_work_duration(&self) -> Duration {
         self.tree_commit_work_duration
     }
@@ -658,6 +730,11 @@ struct ProveWitnessTraceTimingAccumulator {
     stage_leaf_hash_arity2_byte_count: usize,
     stage_leaf_hash_arity4_row_count: usize,
     stage_leaf_hash_arity4_byte_count: usize,
+    stage_leaf_coset_extend_call_count: usize,
+    stage_leaf_coset_extend_output_byte_count: usize,
+    stage_leaf_coset_extend_column_count: usize,
+    stage_leaf_coset_extend_max_column_count: usize,
+    stage_leaf_coset_extend_ntt_launch_count: usize,
     stage_tree_commit_work_duration: Duration,
     stage_timings: Vec<ProveWitnessGuestStageTiming>,
 }
@@ -689,6 +766,15 @@ impl ProveWitnessTraceTimingAccumulator {
         self.stage_leaf_hash_arity2_byte_count += other.stage_leaf_hash_arity2_byte_count;
         self.stage_leaf_hash_arity4_row_count += other.stage_leaf_hash_arity4_row_count;
         self.stage_leaf_hash_arity4_byte_count += other.stage_leaf_hash_arity4_byte_count;
+        self.stage_leaf_coset_extend_call_count += other.stage_leaf_coset_extend_call_count;
+        self.stage_leaf_coset_extend_output_byte_count +=
+            other.stage_leaf_coset_extend_output_byte_count;
+        self.stage_leaf_coset_extend_column_count += other.stage_leaf_coset_extend_column_count;
+        self.stage_leaf_coset_extend_max_column_count = self
+            .stage_leaf_coset_extend_max_column_count
+            .max(other.stage_leaf_coset_extend_max_column_count);
+        self.stage_leaf_coset_extend_ntt_launch_count +=
+            other.stage_leaf_coset_extend_ntt_launch_count;
         self.stage_tree_commit_work_duration += other.stage_tree_commit_work_duration;
         for stage_timing in other.stage_timings {
             self.accumulate_stage_timing(stage_timing);
@@ -2946,6 +3032,16 @@ fn run_prove_witness_commitments_from_trace_inner(
         timing.stage_leaf_hash_arity2_byte_count += stage_timing.leaf_hash_arity2_byte_count();
         timing.stage_leaf_hash_arity4_row_count += stage_timing.leaf_hash_arity4_row_count();
         timing.stage_leaf_hash_arity4_byte_count += stage_timing.leaf_hash_arity4_byte_count();
+        timing.stage_leaf_coset_extend_call_count += stage_timing.leaf_coset_extend_call_count();
+        timing.stage_leaf_coset_extend_output_byte_count +=
+            stage_timing.leaf_coset_extend_output_byte_count();
+        timing.stage_leaf_coset_extend_column_count +=
+            stage_timing.leaf_coset_extend_column_count();
+        timing.stage_leaf_coset_extend_max_column_count = timing
+            .stage_leaf_coset_extend_max_column_count
+            .max(stage_timing.leaf_coset_extend_max_column_count());
+        timing.stage_leaf_coset_extend_ntt_launch_count +=
+            stage_timing.leaf_coset_extend_ntt_launch_count();
         timing.stage_tree_commit_work_duration += stage_timing.tree_commit_duration();
         for stage_timing in stage_timings {
             timing.accumulate_indexed_stage_timing(stage_timing);

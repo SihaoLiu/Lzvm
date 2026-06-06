@@ -88,6 +88,11 @@ pub(crate) struct WitnessStageLeafExtendTiming {
     leaf_hash_arity2_byte_count: usize,
     leaf_hash_arity4_row_count: usize,
     leaf_hash_arity4_byte_count: usize,
+    leaf_coset_extend_call_count: usize,
+    leaf_coset_extend_output_byte_count: usize,
+    leaf_coset_extend_column_count: usize,
+    leaf_coset_extend_max_column_count: usize,
+    leaf_coset_extend_ntt_launch_count: usize,
 }
 
 impl WitnessStageLeafExtendTiming {
@@ -104,6 +109,13 @@ impl WitnessStageLeafExtendTiming {
         self.leaf_hash_arity2_byte_count += other.leaf_hash_arity2_byte_count;
         self.leaf_hash_arity4_row_count += other.leaf_hash_arity4_row_count;
         self.leaf_hash_arity4_byte_count += other.leaf_hash_arity4_byte_count;
+        self.leaf_coset_extend_call_count += other.leaf_coset_extend_call_count;
+        self.leaf_coset_extend_output_byte_count += other.leaf_coset_extend_output_byte_count;
+        self.leaf_coset_extend_column_count += other.leaf_coset_extend_column_count;
+        self.leaf_coset_extend_max_column_count = self
+            .leaf_coset_extend_max_column_count
+            .max(other.leaf_coset_extend_max_column_count);
+        self.leaf_coset_extend_ntt_launch_count += other.leaf_coset_extend_ntt_launch_count;
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
@@ -121,6 +133,23 @@ impl WitnessStageLeafExtendTiming {
             }
             _ => {}
         }
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    fn record_coset_extend_work(
+        &mut self,
+        output_byte_count: usize,
+        column_count: usize,
+        source_bits: usize,
+        target_bits: usize,
+    ) {
+        self.leaf_coset_extend_call_count += 1;
+        self.leaf_coset_extend_output_byte_count += output_byte_count;
+        self.leaf_coset_extend_column_count += column_count;
+        self.leaf_coset_extend_max_column_count =
+            self.leaf_coset_extend_max_column_count.max(column_count);
+        self.leaf_coset_extend_ntt_launch_count +=
+            column_count.saturating_mul(source_bits.saturating_add(target_bits).saturating_add(2));
     }
 
     pub(crate) fn setup_duration(&self) -> Duration {
@@ -169,6 +198,26 @@ impl WitnessStageLeafExtendTiming {
 
     pub(crate) fn leaf_hash_arity4_byte_count(&self) -> usize {
         self.leaf_hash_arity4_byte_count
+    }
+
+    pub(crate) fn leaf_coset_extend_call_count(&self) -> usize {
+        self.leaf_coset_extend_call_count
+    }
+
+    pub(crate) fn leaf_coset_extend_output_byte_count(&self) -> usize {
+        self.leaf_coset_extend_output_byte_count
+    }
+
+    pub(crate) fn leaf_coset_extend_column_count(&self) -> usize {
+        self.leaf_coset_extend_column_count
+    }
+
+    pub(crate) fn leaf_coset_extend_max_column_count(&self) -> usize {
+        self.leaf_coset_extend_max_column_count
+    }
+
+    pub(crate) fn leaf_coset_extend_ntt_launch_count(&self) -> usize {
+        self.leaf_coset_extend_ntt_launch_count
     }
 }
 
@@ -505,6 +554,7 @@ fn compact_witness_stage_leaf_hashes_timed(
         )
         .map_err(WitnessStageLeafError::from)
     })?;
+    timing.record_coset_extend_work(out_byte_count, column_count, source_bits, target_bits);
     let extended_rows = extended_row_count_from_bytes(out_byte_count, column_count)?;
     record_duration(&mut timing.validate_duration, || {
         validate_row_major_device_words(&output_buffer, out_byte_count)
@@ -569,6 +619,7 @@ fn compact_witness_stage_leaf_hash_level_timed(
         )
         .map_err(WitnessStageLeafError::from)
     })?;
+    timing.record_coset_extend_work(out_byte_count, column_count, source_bits, target_bits);
     let extended_rows = extended_row_count_from_bytes(out_byte_count, column_count)?;
     let canonical_check = record_duration(&mut timing.validate_duration, || {
         begin_validate_row_major_device_words(&output_buffer, out_byte_count)
@@ -641,6 +692,7 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
         }
         .map_err(WitnessStageLeafError::from)
     })?;
+    timing.record_coset_extend_work(out_byte_count, view.column_count, source_bits, target_bits);
     let extended_rows = extended_row_count_from_bytes(out_byte_count, view.column_count)?;
     let canonical_check = record_duration(&mut timing.validate_duration, || {
         begin_validate_row_major_device_words(&output_buffer, out_byte_count)
