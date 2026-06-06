@@ -43,6 +43,7 @@ use crate::proof_values::{
     load_pcs_proof_values_from_segments,
 };
 use crate::prove_fri_opening::{
+    build_pcs_fri_opening_segment_from_transcript_values_with_timing,
     build_pcs_fri_transcript_values_from_trace_segment_refs,
     ProvePcsFriTranscriptTraceSegmentValueRef,
 };
@@ -683,14 +684,24 @@ fn build_witness_proof_artifact_for_unit_inner(
     ];
     if let Some((evaluation_segment, transcript_values)) = transcript_values {
         let fri_opening_start = Instant::now();
-        let fri_segment = build_pcs_fri_opening_segment_from_transcript_values(
-            request.schedule,
-            &segments[1],
-            &transcript_values,
-        )
+        let mut fri_build_timing = crate::pcs_fri::PcsFriOpeningBuildTiming::default();
+        let fri_segment = match timing.as_deref_mut() {
+            Some(_) => build_pcs_fri_opening_segment_from_transcript_values_with_timing(
+                request.schedule,
+                &segments[1],
+                &transcript_values,
+                Some(&mut fri_build_timing),
+            ),
+            None => build_pcs_fri_opening_segment_from_transcript_values(
+                request.schedule,
+                &segments[1],
+                &transcript_values,
+            ),
+        }
         .map_err(|error| format!("build FRI opening segment failed: {error}"))?;
         if let Some(timing) = timing {
             timing.add_fri_opening(fri_opening_start.elapsed());
+            timing.add_fri_opening_build_timing(&fri_build_timing);
         }
         segments.push(evaluation_segment);
         segments.push(fri_segment);
@@ -1478,14 +1489,24 @@ fn build_witness_transcript_proof_artifact_for_all_units(
         timing.add_witness_opening(witness_opening_start.elapsed());
     }
     let fri_opening_start = Instant::now();
-    let fri_segment = build_pcs_fri_opening_segment_from_transcript_values(
-        request.schedule,
-        &query_segment,
-        &transcript_values,
-    )
+    let mut fri_build_timing = crate::pcs_fri::PcsFriOpeningBuildTiming::default();
+    let fri_segment = match timing.as_deref_mut() {
+        Some(_) => build_pcs_fri_opening_segment_from_transcript_values_with_timing(
+            request.schedule,
+            &query_segment,
+            &transcript_values,
+            Some(&mut fri_build_timing),
+        ),
+        None => build_pcs_fri_opening_segment_from_transcript_values(
+            request.schedule,
+            &query_segment,
+            &transcript_values,
+        ),
+    }
     .map_err(|error| format!("build FRI opening segment failed: {error}"))?;
     if let Some(timing) = timing {
         timing.add_fri_opening(fri_opening_start.elapsed());
+        timing.add_fri_opening_build_timing(&fri_build_timing);
     }
 
     let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(

@@ -2995,6 +2995,57 @@ fn guest_pc_trace_slice_reuses_prepared_instruction_for_advance() {
     );
 }
 
+#[test]
+fn fri_opening_timing_reports_unit_tree_query_and_fold_work() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let timing_path = crate_root.join("src/proof_artifact_timing.rs");
+    let timing_source =
+        std::fs::read_to_string(&timing_path).expect("proof artifact timing source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/proof_timing.rs");
+    let cli_source = std::fs::read_to_string(&cli_path).expect("proof timing source should read");
+    let opening_path = crate_root.join("src/prove_fri_opening.rs");
+    let opening_source =
+        std::fs::read_to_string(&opening_path).expect("FRI opening source should read");
+    let fri_build_path = crate_root.join("src/pcs_fri/build.rs");
+    let fri_build_source =
+        std::fs::read_to_string(&fri_build_path).expect("FRI build source should read");
+
+    assert!(
+        timing_source.contains("fri_opening_unit_build")
+            && timing_source.contains("fri_opening_layer_tree")
+            && timing_source.contains("fri_opening_query")
+            && timing_source.contains("fri_opening_fold")
+            && timing_source.contains("fri_opening_unit_count")
+            && timing_source.contains("fri_opening_layer_count")
+            && timing_source.contains("fri_opening_query_count"),
+        "proof artifact timing should expose FRI opening work shape"
+    );
+    assert!(
+        cli_source.contains("finish_fri_opening_unit_build")
+            && cli_source.contains("finish_fri_opening_layer_tree")
+            && cli_source.contains("finish_fri_opening_query")
+            && cli_source.contains("finish_fri_opening_fold")
+            && cli_source.contains("finish_fri_opening_unit_count")
+            && cli_source.contains("finish_fri_opening_layer_count")
+            && cli_source.contains("finish_fri_opening_query_count"),
+        "CLI timing output should report FRI opening sub-buckets and counts"
+    );
+    assert!(
+        opening_source.contains("build_pcs_fri_opening_segment_from_transcript_values_with_timing")
+            && opening_source.contains("build_pcs_fri_opening_segment_from_value_refs_with_timing")
+            && opening_source.contains("PcsFriOpeningBuildTiming"),
+        "proof artifact finish should be able to pass a FRI opening timing accumulator"
+    );
+    assert!(
+        fri_build_source.contains("build_pcs_fri_opening_unit_with_timing")
+            && fri_build_source.contains("record_fri_opening_duration")
+            && fri_build_source.contains("timing.add_layer_tree")
+            && fri_build_source.contains("timing.add_query_work")
+            && fri_build_source.contains("timing.add_fold_work"),
+        "FRI opening unit build should time tree, query, and fold work separately"
+    );
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)

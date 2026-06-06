@@ -26,7 +26,8 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_field::{Ext3, Felt, FieldError};
 
 use crate::pcs_fri::{
-    build_pcs_fri_opening_unit, build_pcs_fri_transcript_commitments, PcsFriOpeningBuildRequest,
+    build_pcs_fri_opening_unit, build_pcs_fri_opening_unit_with_timing,
+    build_pcs_fri_transcript_commitments, PcsFriOpeningBuildRequest, PcsFriOpeningBuildTiming,
     PcsFriTranscriptCommitmentRequest,
 };
 use crate::pcs_transcript::{derive_pcs_transcript_prefix_challenges, PcsTranscriptPrefixInputs};
@@ -205,6 +206,22 @@ fn build_pcs_fri_opening_segment_from_value_refs<'a>(
     values: impl IntoIterator<Item = PcsFriOpeningValueRef<'a>>,
     value_count: usize,
 ) -> Result<ProofSegment, ProvePcsFriOpeningSegmentError> {
+    build_pcs_fri_opening_segment_from_value_refs_with_timing(
+        schedule,
+        query_segment,
+        values,
+        value_count,
+        None,
+    )
+}
+
+fn build_pcs_fri_opening_segment_from_value_refs_with_timing<'a>(
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    values: impl IntoIterator<Item = PcsFriOpeningValueRef<'a>>,
+    value_count: usize,
+    mut timing: Option<&mut PcsFriOpeningBuildTiming>,
+) -> Result<ProofSegment, ProvePcsFriOpeningSegmentError> {
     if query_segment.id != PCS_QUERY_PLAN_SEGMENT_ID {
         return Err(ProvePcsFriOpeningSegmentError::InvalidQuerySegmentId {
             segment_id: query_segment.id,
@@ -240,16 +257,17 @@ fn build_pcs_fri_opening_segment_from_value_refs<'a>(
             .ok_or(ProvePcsFriOpeningSegmentError::MissingQueryUnit {
                 unit_index: input.unit_index,
             })?;
-        let opening = build_pcs_fri_opening_unit(
-            unit,
-            PcsFriOpeningBuildRequest {
-                unit_index: unit_index_u32,
-                trace_instance_index: input.trace_instance_index,
-                query_rows: &query_unit.queries,
-                challenges: input.challenges,
-                polynomial: input.polynomial,
-            },
-        )
+        let request = PcsFriOpeningBuildRequest {
+            unit_index: unit_index_u32,
+            trace_instance_index: input.trace_instance_index,
+            query_rows: &query_unit.queries,
+            challenges: input.challenges,
+            polynomial: input.polynomial,
+        };
+        let opening = match timing.as_deref_mut() {
+            Some(timing) => build_pcs_fri_opening_unit_with_timing(unit, request, Some(timing)),
+            None => build_pcs_fri_opening_unit(unit, request),
+        }
         .map_err(|source| ProvePcsFriOpeningSegmentError::Build {
             unit_index: input.unit_index,
             source,
@@ -589,7 +607,21 @@ pub fn build_pcs_fri_opening_segment_from_transcript_values(
     query_segment: &ProofSegment,
     values: &[ProvePcsFriTranscriptValues],
 ) -> Result<ProofSegment, ProvePcsFriOpeningSegmentError> {
-    build_pcs_fri_opening_segment_from_value_refs(
+    build_pcs_fri_opening_segment_from_transcript_values_with_timing(
+        schedule,
+        query_segment,
+        values,
+        None,
+    )
+}
+
+pub fn build_pcs_fri_opening_segment_from_transcript_values_with_timing(
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    values: &[ProvePcsFriTranscriptValues],
+    timing: Option<&mut PcsFriOpeningBuildTiming>,
+) -> Result<ProofSegment, ProvePcsFriOpeningSegmentError> {
+    build_pcs_fri_opening_segment_from_value_refs_with_timing(
         schedule,
         query_segment,
         values.iter().map(|value| PcsFriOpeningValueRef {
@@ -599,6 +631,7 @@ pub fn build_pcs_fri_opening_segment_from_transcript_values(
             polynomial: &value.polynomial,
         }),
         values.len(),
+        timing,
     )
 }
 

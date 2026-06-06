@@ -94,4 +94,26 @@ pub(super) fn record_proof_artifact_timing(
         );
     }
     timings.record("finish_fri_opening", timing.fri_opening);
+    timings.record(
+        "finish_fri_opening_unit_build",
+        timing.fri_opening_unit_build,
+    );
+    timings.record(
+        "finish_fri_opening_layer_tree",
+        timing.fri_opening_layer_tree,
+    );
+    timings.record("finish_fri_opening_query", timing.fri_opening_query);
+    timings.record("finish_fri_opening_fold", timing.fri_opening_fold);
+    timings.record_count(
+        "finish_fri_opening_unit_count",
+        timing.fri_opening_unit_count,
+    );
+    timings.record_count(
+        "finish_fri_opening_layer_count",
+        timing.fri_opening_layer_count,
+    );
+    timings.record_count(
+        "finish_fri_opening_query_count",
+        timing.fri_opening_query_count,
+    );
 }

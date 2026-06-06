@@ -4,6 +4,7 @@ use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::verifier_info::VerifierCode;
 use lzvm_field::{Ext3, Felt};
+use std::time::Duration;
 
 use crate::ProveSchedule;
 
@@ -22,6 +23,38 @@ pub struct PcsFriOpeningBuildRequest<'a> {
     pub query_rows: &'a [u64],
     pub challenges: &'a [Ext3],
     pub polynomial: &'a [Ext3],
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PcsFriOpeningBuildTiming {
+    pub unit_build: Duration,
+    pub layer_tree: Duration,
+    pub query_work: Duration,
+    pub fold_work: Duration,
+    pub unit_count: usize,
+    pub layer_count: usize,
+    pub query_count: usize,
+}
+
+impl PcsFriOpeningBuildTiming {
+    pub(crate) fn add_unit_build(&mut self, duration: Duration) {
+        self.unit_build += duration;
+        self.unit_count += 1;
+    }
+
+    pub(crate) fn add_layer_tree(&mut self, duration: Duration) {
+        self.layer_tree += duration;
+        self.layer_count += 1;
+    }
+
+    pub(crate) fn add_query_work(&mut self, duration: Duration, query_count: usize) {
+        self.query_work += duration;
+        self.query_count += query_count;
+    }
+
+    pub(crate) fn add_fold_work(&mut self, duration: Duration) {
+        self.fold_work += duration;
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

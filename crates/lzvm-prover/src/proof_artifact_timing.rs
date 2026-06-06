@@ -21,6 +21,13 @@ pub struct WitnessProofArtifactTiming {
     pub witness_stage_opening_path: Vec<WitnessProofStageOpeningTiming>,
     pub witness_stage_opening_row_values: Vec<WitnessProofStageOpeningTiming>,
     pub fri_opening: Duration,
+    pub fri_opening_unit_build: Duration,
+    pub fri_opening_layer_tree: Duration,
+    pub fri_opening_query: Duration,
+    pub fri_opening_fold: Duration,
+    pub fri_opening_unit_count: usize,
+    pub fri_opening_layer_count: usize,
+    pub fri_opening_query_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,6 +139,19 @@ impl WitnessProofArtifactTiming {
 
     pub(crate) fn add_fri_opening(&mut self, duration: Duration) {
         self.fri_opening += duration;
+    }
+
+    pub(crate) fn add_fri_opening_build_timing(
+        &mut self,
+        timing: &crate::pcs_fri::PcsFriOpeningBuildTiming,
+    ) {
+        self.fri_opening_unit_build += timing.unit_build;
+        self.fri_opening_layer_tree += timing.layer_tree;
+        self.fri_opening_query += timing.query_work;
+        self.fri_opening_fold += timing.fold_work;
+        self.fri_opening_unit_count += timing.unit_count;
+        self.fri_opening_layer_count += timing.layer_count;
+        self.fri_opening_query_count += timing.query_count;
     }
 }
 

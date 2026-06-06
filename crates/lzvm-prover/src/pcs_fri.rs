@@ -5,7 +5,10 @@ mod merkle;
 mod requests;
 mod validation;
 
-pub use build::{build_pcs_fri_opening_unit, build_pcs_fri_transcript_commitments};
+pub use build::{
+    build_pcs_fri_opening_unit, build_pcs_fri_opening_unit_with_timing,
+    build_pcs_fri_transcript_commitments,
+};
 pub use errors::*;
 pub use fold::{verify_fri_fold, verify_fri_opening_folds, PcsFriFoldError};
 use lzvm_artifacts::pcs_fri_segment::{

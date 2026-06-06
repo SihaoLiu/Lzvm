@@ -12,14 +12,14 @@ use lzvm_artifacts::pcs_query_segment::{
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{poseidon2_hash_8, Ext3, Felt, SHIFT};
 use lzvm_prover::pcs_fri::{
-    build_pcs_fri_opening_unit, build_pcs_fri_transcript_commitments,
-    load_pcs_fri_opening_segment_from_segments, load_pcs_fri_opening_unit_from_segments,
-    validate_optional_pcs_fri_opening_proof_segments, validate_pcs_fri_opening_folds_from_units,
-    validate_pcs_fri_opening_segments, verify_fri_fold, verify_fri_last_level_root,
-    verify_fri_opening_folds, verify_fri_query_path, LoadPcsFriOpeningSegmentError,
-    LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError, PcsFriOpeningBuildRequest,
-    PcsFriOpeningFoldRequest, PcsFriTranscriptCommitmentRequest,
-    ValidateOptionalPcsFriOpeningProofSegmentsError,
+    build_pcs_fri_opening_unit, build_pcs_fri_opening_unit_with_timing,
+    build_pcs_fri_transcript_commitments, load_pcs_fri_opening_segment_from_segments,
+    load_pcs_fri_opening_unit_from_segments, validate_optional_pcs_fri_opening_proof_segments,
+    validate_pcs_fri_opening_folds_from_units, validate_pcs_fri_opening_segments, verify_fri_fold,
+    verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
+    LoadPcsFriOpeningSegmentError, LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError,
+    PcsFriOpeningBuildRequest, PcsFriOpeningBuildTiming, PcsFriOpeningFoldRequest,
+    PcsFriTranscriptCommitmentRequest, ValidateOptionalPcsFriOpeningProofSegmentsError,
     ValidateOptionalPcsFriOpeningProofSegmentsRequest, ValidatePcsFriOpeningFoldUnitsError,
     ValidatePcsFriOpeningSegmentsError,
 };
@@ -410,6 +410,51 @@ fn builds_fri_opening_unit_from_polynomial_values() {
             .expect("query path should verify"));
         }
     }
+}
+
+#[test]
+fn records_fri_opening_unit_build_timing_shape() {
+    let schedule = sample_validation_unit();
+    let query_rows = [1_u64, 6_u64];
+    let polynomial = (0_u64..8)
+        .map(|index| Ext3::from_u64s([index + 1, index + 11, index + 21]))
+        .collect::<Vec<_>>();
+    let mut challenges = vec![Ext3::ZERO; 9];
+    challenges[7] = Ext3::from_u64s([31, 32, 33]);
+    challenges[8] = Ext3::from_u64s([41, 42, 43]);
+
+    let expected = build_pcs_fri_opening_unit(
+        &schedule,
+        PcsFriOpeningBuildRequest {
+            unit_index: 5,
+            trace_instance_index: 0,
+            query_rows: &query_rows,
+            challenges: &challenges,
+            polynomial: &polynomial,
+        },
+    )
+    .expect("FRI opening should build without timing");
+    let mut timing = PcsFriOpeningBuildTiming::default();
+    let actual = build_pcs_fri_opening_unit_with_timing(
+        &schedule,
+        PcsFriOpeningBuildRequest {
+            unit_index: 5,
+            trace_instance_index: 0,
+            query_rows: &query_rows,
+            challenges: &challenges,
+            polynomial: &polynomial,
+        },
+        Some(&mut timing),
+    )
+    .expect("FRI opening should build with timing");
+
+    assert_eq!(actual, expected);
+    assert_eq!(timing.unit_count, 1);
+    assert_eq!(timing.layer_count, schedule.fri_layers.len());
+    assert_eq!(
+        timing.query_count,
+        query_rows.len() * schedule.fri_layers.len()
+    );
 }
 
 #[test]

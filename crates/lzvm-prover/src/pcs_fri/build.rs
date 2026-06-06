@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use lzvm_artifacts::pcs_fri_segment::{
     PcsFriOpeningLayerSegment, PcsFriOpeningQuerySegment, PcsFriOpeningUnitSegment,
 };
@@ -8,7 +10,8 @@ use super::errors::{PcsFriOpeningBuildError, PcsFriTranscriptCommitmentError};
 use super::fold::verify_fri_fold;
 use super::merkle;
 use super::requests::{
-    PcsFriOpeningBuildRequest, PcsFriTranscriptCommitmentRequest, PcsFriTranscriptCommitments,
+    PcsFriOpeningBuildRequest, PcsFriOpeningBuildTiming, PcsFriTranscriptCommitmentRequest,
+    PcsFriTranscriptCommitments,
 };
 use crate::pcs_transcript::{absorb_binding_segments, absorb_commit_values, PcsTranscriptError};
 use crate::ProveUnitSchedule;
@@ -128,6 +131,15 @@ pub fn build_pcs_fri_opening_unit(
     schedule: &ProveUnitSchedule,
     request: PcsFriOpeningBuildRequest<'_>,
 ) -> Result<PcsFriOpeningUnitSegment, PcsFriOpeningBuildError> {
+    build_pcs_fri_opening_unit_with_timing(schedule, request, None)
+}
+
+pub fn build_pcs_fri_opening_unit_with_timing(
+    schedule: &ProveUnitSchedule,
+    request: PcsFriOpeningBuildRequest<'_>,
+    mut timing: Option<&mut PcsFriOpeningBuildTiming>,
+) -> Result<PcsFriOpeningUnitSegment, PcsFriOpeningBuildError> {
+    let unit_started = timing.as_ref().map(|_| Instant::now());
     if schedule.fri_layers.is_empty() {
         return Err(PcsFriOpeningBuildError::EmptyFriLayers);
     }
@@ -185,31 +197,46 @@ pub fn build_pcs_fri_opening_unit(
 
         let grouped_values =
             group_fri_layer_values(layer_index, &current, output_size, folding_factor)?;
-        let tree =
-            merkle::build_fri_layer_tree(&grouped_values, arity, schedule.last_level_verification)?;
+        let tree = record_fri_opening_duration(
+            timing.as_deref_mut(),
+            |timing, duration| timing.add_layer_tree(duration),
+            || {
+                merkle::build_fri_layer_tree(
+                    &grouped_values,
+                    arity,
+                    schedule.last_level_verification,
+                )
+            },
+        )?;
         let layer_index_u32 =
             u32::try_from(layer_index).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
         let output_size_u64 =
             u64::try_from(output_size).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
-        let queries = request
-            .query_rows
-            .iter()
-            .map(|query_row| {
-                let row_index = *query_row % output_size_u64;
-                let row_index_usize = usize::try_from(row_index)
-                    .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
-                let values = grouped_values[row_index_usize]
+        let queries = record_fri_opening_duration(
+            timing.as_deref_mut(),
+            |timing, duration| timing.add_query_work(duration, request.query_rows.len()),
+            || {
+                request
+                    .query_rows
                     .iter()
-                    .map(|value| value.to_u64s())
-                    .collect();
-                let siblings = tree.query_siblings(row_index_usize)?;
-                Ok(PcsFriOpeningQuerySegment {
-                    row_index,
-                    values,
-                    siblings,
-                })
-            })
-            .collect::<Result<Vec<_>, PcsFriOpeningBuildError>>()?;
+                    .map(|query_row| {
+                        let row_index = *query_row % output_size_u64;
+                        let row_index_usize = usize::try_from(row_index)
+                            .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+                        let values = grouped_values[row_index_usize]
+                            .iter()
+                            .map(|value| value.to_u64s())
+                            .collect();
+                        let siblings = tree.query_siblings(row_index_usize)?;
+                        Ok(PcsFriOpeningQuerySegment {
+                            row_index,
+                            values,
+                            siblings,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, PcsFriOpeningBuildError>>()
+            },
+        )?;
 
         layers.push(PcsFriOpeningLayerSegment {
             layer_index: layer_index_u32,
@@ -238,17 +265,25 @@ pub fn build_pcs_fri_opening_unit(
                 len: request.challenges.len(),
             },
         )?;
-        let mut next = Vec::with_capacity(output_size);
-        for (row_index, values) in grouped_values.iter().enumerate() {
-            next.push(verify_fri_fold(
-                schedule.extended_domain_bits,
-                layer.output_bits,
-                layer.input_bits,
-                challenge,
-                u64::try_from(row_index).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?,
-                values,
-            )?);
-        }
+        let next = record_fri_opening_duration(
+            timing.as_deref_mut(),
+            |timing, duration| timing.add_fold_work(duration),
+            || {
+                let mut next = Vec::with_capacity(output_size);
+                for (row_index, values) in grouped_values.iter().enumerate() {
+                    next.push(verify_fri_fold(
+                        schedule.extended_domain_bits,
+                        layer.output_bits,
+                        layer.input_bits,
+                        challenge,
+                        u64::try_from(row_index)
+                            .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?,
+                        values,
+                    )?);
+                }
+                Ok::<Vec<Ext3>, PcsFriOpeningBuildError>(next)
+            },
+        )?;
         current = next;
         current_bits = layer.output_bits;
     }
@@ -260,12 +295,30 @@ pub fn build_pcs_fri_opening_unit(
         });
     }
 
-    Ok(PcsFriOpeningUnitSegment {
+    let segment = PcsFriOpeningUnitSegment {
         unit_index: request.unit_index,
         trace_instance_index: request.trace_instance_index,
         layers,
         final_polynomial: current.iter().map(|value| value.to_u64s()).collect(),
-    })
+    };
+    if let (Some(timing), Some(started)) = (timing, unit_started) {
+        timing.add_unit_build(started.elapsed());
+    }
+    Ok(segment)
+}
+
+fn record_fri_opening_duration<T, E>(
+    timing: Option<&mut PcsFriOpeningBuildTiming>,
+    record: impl FnOnce(&mut PcsFriOpeningBuildTiming, std::time::Duration),
+    build: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E> {
+    let Some(timing) = timing else {
+        return build();
+    };
+    let started = Instant::now();
+    let result = build();
+    record(timing, started.elapsed());
+    result
 }
 
 fn build_fri_transcript_prefix(
