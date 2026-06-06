@@ -604,6 +604,78 @@ theorem runtime_pipeline_binding_checked_acceptance_core_obligations
       accepted
   exact runtime_pipeline_binding_evidence_implies_core_obligations sound.left
 
+theorem runtime_pipeline_binding_checked_acceptance_query_opening_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingEvidence
+            system
+            validation.queryPlanBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeChallengeSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.challengeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.transcriptBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  rcases sound.left with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      _traceConstraintEvidence,
+      queryPlanEvidence,
+      challengeEvidence,
+      openingSegmentEvidence,
+      openingEvidence,
+      transcriptBound,
+      _publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid⟩
+  exact
+    ⟨queryPlanEvidence,
+      challengeEvidence,
+      openingSegmentEvidence,
+      openingEvidence,
+      transcriptBound,
+      pcsOpeningsValid,
+      friQueriesValid⟩
+
 theorem runtime_pipeline_binding_checked_acceptance_soundness_obligations
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
