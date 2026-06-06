@@ -2444,6 +2444,70 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
 }
 
 #[test]
+fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_path = crate_root.join("../../lean/Lzvm/QueryPlanBinding.lean");
+    let lean_source =
+        std::fs::read_to_string(&lean_path).expect("Lean query plan binding source should read");
+    let lean_root_path = crate_root.join("../../lean/Lzvm.lean");
+    let lean_root_source =
+        std::fs::read_to_string(&lean_root_path).expect("top-level Lean source should read");
+    let setup_preflight_path = crate_root.join("src/setup_preflight.rs");
+    let setup_preflight_source =
+        std::fs::read_to_string(&setup_preflight_path).expect("setup preflight source should read");
+    let query_plan_path = crate_root.join("src/pcs_query_plan.rs");
+    let query_plan_source =
+        std::fs::read_to_string(&query_plan_path).expect("PCS query plan source should read");
+    let transcript_segments_path = crate_root.join("src/pcs_transcript_segments.rs");
+    let transcript_segments_source = std::fs::read_to_string(&transcript_segments_path)
+        .expect("PCS transcript segments source should read");
+
+    assert!(
+        lean_root_source.contains("import Lzvm.QueryPlanBinding"),
+        "top-level Lean module should include the query plan binding model"
+    );
+    assert!(
+        lean_source.contains("structure RuntimeQueryPlanBindingValidation")
+            && lean_source.contains("runtime_query_plan_binding_checked_acceptance_sound"),
+        "Lean should expose a checked query plan binding soundness theorem"
+    );
+    assert!(
+        lean_source.contains("RuntimeChallengeSegmentBindingValidation")
+            && lean_source.contains("RuntimeOpeningSegmentBindingValidation")
+            && lean_source.contains("runtime_challenge_segment_binding_checked_acceptance_sound")
+            && lean_source.contains("runtime_opening_segment_binding_checked_acceptance_sound"),
+        "Lean query plan binding should compose challenge and opening segment soundness"
+    );
+    assert!(
+        setup_preflight_source.contains("validate_pcs_query_plan_segments")
+            && setup_preflight_source.contains("validate_constant_opening_segments")
+            && setup_preflight_source.contains("validate_witness_opening_segments")
+            && setup_preflight_source.contains("validate_optional_pcs_fri_opening_proof_segments"),
+        "setup preflight should validate query plan before opening-dependent checks"
+    );
+    assert!(
+        query_plan_source.contains("validate_transcript_pcs_query_plan_segments")
+            && query_plan_source.contains("validate_seeded_pcs_query_plan_segments")
+            && query_plan_source.contains("derive_pcs_final_query_challenge_from_segments")
+            && query_plan_source.contains("build_pcs_query_plan_segment_from_challenge")
+            && query_plan_source.contains("build_pcs_query_plan_segment_with_bindings")
+            && query_plan_source.contains("validate_pcs_evaluation_units_match_query_units")
+            && query_plan_source.contains("validate_pcs_fri_opening_units_match_query_units")
+            && query_plan_source.contains("validate_unit_values_units_match_query_units"),
+        "query plan validation should bind transcript-derived challenges and all query-indexed artifacts"
+    );
+    assert!(
+        transcript_segments_source.contains("derive_pcs_transcript_challenges_from_segments")
+            && transcript_segments_source
+                .contains("validate_pcs_evaluation_units_match_query_units")
+            && transcript_segments_source
+                .contains("validate_pcs_fri_opening_units_match_query_units")
+            && transcript_segments_source.contains("validate_unit_values_units_match_query_units"),
+        "transcript segment checks should retain query-unit matching for each opened artifact"
+    );
+}
+
+#[test]
 fn guest_pc_trace_writes_use_direct_trace_builder_helpers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
