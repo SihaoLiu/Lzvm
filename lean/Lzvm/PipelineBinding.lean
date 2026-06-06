@@ -676,6 +676,92 @@ theorem runtime_pipeline_binding_checked_acceptance_query_opening_evidence
       pcsOpeningsValid,
       friQueriesValid⟩
 
+theorem runtime_pipeline_binding_checked_acceptance_query_opening_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingEvidence
+            system
+            validation.queryPlanBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeChallengeSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.challengeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ (system.transcriptBound publicInput proof
+            /\ system.publicInputBound publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  cases sound.left with
+  | intro _ethEvidence tail =>
+    cases tail with
+    | intro _artifactEvidence tail =>
+      cases tail with
+      | intro _runtimeArtifactEvidence tail =>
+        cases tail with
+        | intro _tracePreflightEvidence tail =>
+          cases tail with
+          | intro _traceConstraintEvidence tail =>
+            cases tail with
+            | intro queryPlanEvidence tail =>
+              cases tail with
+              | intro challengeEvidence tail =>
+                cases tail with
+                | intro openingSegmentEvidence tail =>
+                  cases tail with
+                  | intro openingEvidence tail =>
+                    cases tail with
+                    | intro transcriptBound tail =>
+                      cases tail with
+                      | intro publicInputBound tail =>
+                        cases tail with
+                        | intro pcsOpeningsValid friQueriesValid =>
+                          exact
+                            And.intro queryPlanEvidence
+                              (And.intro challengeEvidence
+                                (And.intro openingSegmentEvidence
+                                  (And.intro openingEvidence
+                                    (And.intro
+                                      (And.intro transcriptBound
+                                        (And.intro publicInputBound
+                                          (And.intro pcsOpeningsValid friQueriesValid)))
+                                      sound.right))))
+
 theorem runtime_pipeline_binding_checked_acceptance_soundness_obligations
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
