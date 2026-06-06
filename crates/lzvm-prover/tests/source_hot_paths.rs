@@ -2508,6 +2508,71 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
 }
 
 #[test]
+fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_path = crate_root.join("../../lean/Lzvm/PipelineBinding.lean");
+    let lean_source =
+        std::fs::read_to_string(&lean_path).expect("Lean pipeline binding source should read");
+    let lean_root_path = crate_root.join("../../lean/Lzvm.lean");
+    let lean_root_source =
+        std::fs::read_to_string(&lean_root_path).expect("top-level Lean source should read");
+    let proof_artifact_path = crate_root.join("src/proof_artifact.rs");
+    let proof_artifact_source =
+        std::fs::read_to_string(&proof_artifact_path).expect("proof artifact source should read");
+    let setup_preflight_path = crate_root.join("src/setup_preflight.rs");
+    let setup_preflight_source =
+        std::fs::read_to_string(&setup_preflight_path).expect("setup preflight source should read");
+    let proof_preflight_path = crate_root.join("src/proof_preflight.rs");
+    let proof_preflight_source =
+        std::fs::read_to_string(&proof_preflight_path).expect("proof preflight source should read");
+
+    assert!(
+        lean_root_source.contains("import Lzvm.PipelineBinding"),
+        "top-level Lean module should include the runtime pipeline binding model"
+    );
+    assert!(
+        lean_source.contains("structure RuntimePipelineBindingValidation")
+            && lean_source.contains("runtime_pipeline_binding_checked_acceptance_sound"),
+        "Lean should expose a checked runtime pipeline binding soundness theorem"
+    );
+    assert!(
+        lean_source.contains("RuntimeEthBlockPublicInputBindingValidation")
+            && lean_source.contains("RuntimeTraceConstraintArtifactBindingValidation")
+            && lean_source.contains("RuntimeQueryPlanBindingValidation")
+            && lean_source
+                .contains("runtime_eth_block_public_input_binding_checked_acceptance_sound")
+            && lean_source
+                .contains("runtime_trace_constraint_artifact_binding_checked_acceptance_sound")
+            && lean_source.contains("runtime_query_plan_binding_checked_acceptance_sound"),
+        "Lean runtime pipeline binding should compose public input, trace, and query plan soundness"
+    );
+    assert!(
+        proof_artifact_source.contains("fn validate_proof_bindings")
+            && proof_artifact_source.contains("validate_setup_preflight")
+            && proof_artifact_source.contains("validate_setup_preflight_hashes")
+            && proof_artifact_source.contains("public inputs setup hash mismatch"),
+        "proof artifact verification should retain binding and setup preflight checks"
+    );
+    assert!(
+        setup_preflight_source.contains("validate_setup_preflight_hashes")
+            && setup_preflight_source.contains("validate_proof_public_values_for_setup_preflight")
+            && setup_preflight_source.contains("validate_optional_trace_constraint_segment")
+            && setup_preflight_source.contains("validate_pcs_query_plan_segments")
+            && setup_preflight_source.contains("validate_constant_opening_segments")
+            && setup_preflight_source.contains("validate_witness_opening_segments")
+            && setup_preflight_source.contains("validate_optional_pcs_fri_opening_proof_segments"),
+        "setup preflight should keep all runtime proof-artifact binding checks wired together"
+    );
+    assert!(
+        proof_preflight_source.contains("validate_proof_public_values_for_setup_preflight")
+            && proof_preflight_source.contains("validate_trace_constraint_witness_commitments")
+            && proof_preflight_source.contains("parse_trace_constraint_segment")
+            && proof_preflight_source.contains("TRACE_CONSTRAINT_SEGMENT_ID"),
+        "proof preflight should keep public values and trace constraint artifact checks"
+    );
+}
+
+#[test]
 fn guest_pc_trace_writes_use_direct_trace_builder_helpers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");

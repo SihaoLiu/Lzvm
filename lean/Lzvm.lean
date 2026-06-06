@@ -14,6 +14,7 @@ import Lzvm.ExternalSource
 import Lzvm.ProofArtifactBinding
 import Lzvm.OpeningValidation
 import Lzvm.OpeningSegmentBinding
+import Lzvm.PipelineBinding
 import Lzvm.QueryPlanBinding
 import Lzvm.RequiredExternalSource
 import Lzvm.RuntimeExternalSource
