@@ -32,6 +32,19 @@ use lzvm_artifacts::trace_constraint_segment::{
 use lzvm_field::{Felt, FieldError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraceConstraintPreflightUnit {
+    pub unit_index: u32,
+    pub trace_instance_index: u32,
+    pub trace_row_count: u64,
+    pub trace_column_count: u32,
+    pub regular_constraint_count: u32,
+    pub trace_extracted: bool,
+    pub regular_constraints_evaluated: bool,
+    pub witness_values_committed: bool,
+    pub constraint_checker_conformant: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProofPreflightReport {
     pub segment_count: usize,
     pub public_value_count: usize,
@@ -43,6 +56,9 @@ pub struct ProofPreflightReport {
     pub challenge_values_segment_count: usize,
     pub challenge_values_segment_byte_counts: Vec<usize>,
     pub challenge_values_value_counts: Vec<usize>,
+    pub trace_constraint_segment_count: usize,
+    pub trace_constraint_segment_byte_counts: Vec<usize>,
+    pub trace_constraint_units: Vec<TraceConstraintPreflightUnit>,
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
     pub eth_block_input_byte_counts: Vec<usize>,
@@ -308,14 +324,31 @@ pub fn validate_proof_public_values(
         challenge_values_value_counts.push(challenge_values.values.len());
     }
     let challenge_values_segment_count = challenge_values_value_counts.len();
+    let mut trace_constraint_segment_byte_counts = Vec::new();
+    let mut trace_constraint_units = Vec::new();
     for segment in proof
         .segments
         .iter()
         .filter(|segment| segment.id == TRACE_CONSTRAINT_SEGMENT_ID)
     {
-        parse_trace_constraint_segment(&segment.data)
+        let evidence = parse_trace_constraint_segment(&segment.data)
             .map_err(ProofPreflightError::TraceConstraint)?;
+        trace_constraint_segment_byte_counts.push(segment.data.len());
+        trace_constraint_units.extend(evidence.units.into_iter().map(|unit| {
+            TraceConstraintPreflightUnit {
+                unit_index: unit.unit_index,
+                trace_instance_index: unit.trace_instance_index,
+                trace_row_count: unit.trace_row_count,
+                trace_column_count: unit.trace_column_count,
+                regular_constraint_count: unit.regular_constraint_count,
+                trace_extracted: unit.trace_extracted,
+                regular_constraints_evaluated: unit.regular_constraints_evaluated,
+                witness_values_committed: unit.witness_values_committed,
+                constraint_checker_conformant: unit.constraint_checker_conformant,
+            }
+        }));
     }
+    let trace_constraint_segment_count = trace_constraint_segment_byte_counts.len();
     let mut eth_block_input_hashes = Vec::new();
     let mut eth_block_input_byte_counts = Vec::new();
     let mut eth_block_input_block_rlp_byte_counts = Vec::new();
@@ -437,6 +470,9 @@ pub fn validate_proof_public_values(
         challenge_values_segment_count,
         challenge_values_segment_byte_counts,
         challenge_values_value_counts,
+        trace_constraint_segment_count,
+        trace_constraint_segment_byte_counts,
+        trace_constraint_units,
         eth_block_input_count,
         eth_block_input_hashes,
         eth_block_input_byte_counts,

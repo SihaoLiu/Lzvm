@@ -18,10 +18,14 @@ use lzvm_artifacts::program_image_segment::{
 use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, PublicValueEntry, PublicValues};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
+use lzvm_artifacts::trace_constraint_segment::{
+    encode_trace_constraint_segment, TraceConstraintSegment, TraceConstraintUnitSegment,
+    TRACE_CONSTRAINT_SEGMENT_ID,
+};
 use lzvm_field::{Felt, FieldError, MAX_ROOT_OF_UNITY_BITS, MODULUS};
 use lzvm_prover::proof_preflight::{
     public_values_as_fields, validate_proof_public_values, ProofPreflightError,
-    ProofPreflightReport, PublicValueFieldError,
+    ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
 };
 
 const FIRST_CHALLENGE_VALUE_OFFSET: usize = 12;
@@ -187,6 +191,9 @@ fn validates_proof_public_value_preflight_hashes() {
             challenge_values_segment_count: 0,
             challenge_values_segment_byte_counts: Vec::new(),
             challenge_values_value_counts: Vec::new(),
+            trace_constraint_segment_count: 0,
+            trace_constraint_segment_byte_counts: Vec::new(),
+            trace_constraint_units: Vec::new(),
             eth_block_input_count: 0,
             eth_block_input_hashes: Vec::new(),
             eth_block_input_byte_counts: Vec::new(),
@@ -466,6 +473,54 @@ fn reports_challenge_values_segments() {
         vec![segment_len]
     );
     assert_eq!(report.challenge_values_value_counts, vec![2]);
+}
+
+#[test]
+fn reports_trace_constraint_segments() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    let segment_data = encode_trace_constraint_segment(&TraceConstraintSegment {
+        units: vec![TraceConstraintUnitSegment {
+            unit_index: 3,
+            trace_instance_index: 2,
+            trace_row_count: 1024,
+            trace_column_count: 9,
+            regular_constraint_count: 17,
+            trace_extracted: true,
+            regular_constraints_evaluated: true,
+            witness_values_committed: true,
+            constraint_checker_conformant: true,
+        }],
+    })
+    .expect("trace constraint segment should encode");
+    let segment_len = segment_data.len();
+    proof.segments.push(ProofSegment {
+        id: TRACE_CONSTRAINT_SEGMENT_ID,
+        data: segment_data,
+    });
+
+    let report = validate_proof_public_values(&proof, &public_values)
+        .expect("proof and public values should match");
+
+    assert_eq!(report.trace_constraint_segment_count, 1);
+    assert_eq!(
+        report.trace_constraint_segment_byte_counts,
+        vec![segment_len]
+    );
+    assert_eq!(
+        report.trace_constraint_units,
+        vec![TraceConstraintPreflightUnit {
+            unit_index: 3,
+            trace_instance_index: 2,
+            trace_row_count: 1024,
+            trace_column_count: 9,
+            regular_constraint_count: 17,
+            trace_extracted: true,
+            regular_constraints_evaluated: true,
+            witness_values_committed: true,
+            constraint_checker_conformant: true,
+        }]
+    );
 }
 
 #[test]

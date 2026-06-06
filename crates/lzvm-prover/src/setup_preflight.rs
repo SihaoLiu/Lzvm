@@ -72,7 +72,7 @@ use crate::pcs_query_plan::{
 };
 use crate::proof_preflight::{
     public_values_as_fields, validate_proof_public_values, ProofPreflightError,
-    ProofPreflightReport, PublicValueFieldError,
+    ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
 };
 use crate::proof_values::{
     flatten_pcs_proof_values, load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
@@ -106,6 +106,9 @@ pub struct SetupPreflightReport {
     pub challenge_values_segment_count: usize,
     pub challenge_values_segment_byte_counts: Vec<usize>,
     pub challenge_values_value_counts: Vec<usize>,
+    pub trace_constraint_segment_count: usize,
+    pub trace_constraint_segment_byte_counts: Vec<usize>,
+    pub trace_constraint_units: Vec<TraceConstraintPreflightUnit>,
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
     pub eth_block_input_byte_counts: Vec<usize>,
@@ -416,6 +419,9 @@ pub fn validate_setup_preflight_hashes(
         challenge_values_segment_count,
         challenge_values_segment_byte_counts,
         challenge_values_value_counts,
+        trace_constraint_segment_count,
+        trace_constraint_segment_byte_counts,
+        trace_constraint_units,
         eth_block_input_count,
         eth_block_input_hashes,
         eth_block_input_byte_counts,
@@ -493,6 +499,9 @@ pub fn validate_setup_preflight_hashes(
         challenge_values_segment_count,
         challenge_values_segment_byte_counts,
         challenge_values_value_counts,
+        trace_constraint_segment_count,
+        trace_constraint_segment_byte_counts,
+        trace_constraint_units,
         eth_block_input_count,
         eth_block_input_hashes,
         eth_block_input_byte_counts,
