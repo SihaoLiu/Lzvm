@@ -4,6 +4,8 @@ use std::sync::mpsc;
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
 use std::thread;
+#[cfg(feature = "cuda")]
+use std::time::{Duration, Instant};
 
 use crate::guest_instruction::{
     RiscvAmoKind, RiscvAmoWidth, RiscvDmaKind, RiscvInstruction, RiscvOpImmKind, RiscvOpKind,
@@ -340,6 +342,24 @@ pub(crate) struct GuestPcTraceDeviceTraceBuilder {
     trace: Arc<CudaDeviceBuffer>,
     device_trace_descriptor_buffer: Option<Arc<CudaDeviceBuffer>>,
     stages: Vec<GuestPcTraceDeviceTraceStage>,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct GuestPcDeviceSourceBuildTiming {
+    descriptor_upload_duration: Duration,
+    trace_expand_duration: Duration,
+}
+
+#[cfg(feature = "cuda")]
+impl GuestPcDeviceSourceBuildTiming {
+    pub(crate) fn descriptor_upload_duration(&self) -> Duration {
+        self.descriptor_upload_duration
+    }
+
+    pub(crate) fn trace_expand_duration(&self) -> Duration {
+        self.trace_expand_duration
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -745,6 +765,15 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material(
     layout: &WitnessTraceLayout,
     material: &GuestPcTraceDeviceSegmentMaterial,
 ) -> Result<GuestPcTraceDeviceTraceBuilder, WitnessTraceRunError> {
+    build_guest_pc_trace_stage_source_devices_from_device_material_timing(layout, material, None)
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_timing(
+    layout: &WitnessTraceLayout,
+    material: &GuestPcTraceDeviceSegmentMaterial,
+    mut timing: Option<&mut GuestPcDeviceSourceBuildTiming>,
+) -> Result<GuestPcTraceDeviceTraceBuilder, WitnessTraceRunError> {
     if !is_guest_pc_trace_segmented_layout_supported(layout) {
         return Err(guest_pc_device_trace_source_error(
             "guest PC device material requires a supported segmented layout",
@@ -760,20 +789,40 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material(
         ));
     }
 
-    let descriptor_buffer = Arc::new(
-        CudaDeviceBuffer::from_u64_words(descriptors.words()).map_err(|error| {
-            guest_pc_device_trace_source_error(format!(
-                "CUDA trace descriptor upload failed: {error}"
-            ))
-        })?,
-    );
-    let mut builder = build_guest_pc_trace_stage_source_devices_from_device_descriptors(
+    let descriptor_buffer = Arc::new(record_device_source_build_duration(
+        timing
+            .as_mut()
+            .map(|timing| &mut timing.descriptor_upload_duration),
+        || {
+            CudaDeviceBuffer::from_u64_words(descriptors.words()).map_err(|error| {
+                guest_pc_device_trace_source_error(format!(
+                    "CUDA trace descriptor upload failed: {error}"
+                ))
+            })
+        },
+    )?);
+    let mut builder = build_guest_pc_trace_stage_source_devices_from_device_descriptors_timing(
         layout,
         material,
         descriptor_buffer.as_ref(),
+        timing,
     )?;
     builder.device_trace_descriptor_buffer = Some(descriptor_buffer);
     Ok(builder)
+}
+
+#[cfg(feature = "cuda")]
+fn record_device_source_build_duration<T>(
+    duration: Option<&mut Duration>,
+    f: impl FnOnce() -> Result<T, WitnessTraceRunError>,
+) -> Result<T, WitnessTraceRunError> {
+    if let Some(duration) = duration {
+        let started = Instant::now();
+        let result = f();
+        *duration += started.elapsed();
+        return result;
+    }
+    f()
 }
 
 #[cfg(feature = "cuda")]
@@ -781,6 +830,21 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors(
     layout: &WitnessTraceLayout,
     material: &GuestPcTraceDeviceSegmentMaterial,
     device_trace_descriptor_buffer: &CudaDeviceBuffer,
+) -> Result<GuestPcTraceDeviceTraceBuilder, WitnessTraceRunError> {
+    build_guest_pc_trace_stage_source_devices_from_device_descriptors_timing(
+        layout,
+        material,
+        device_trace_descriptor_buffer,
+        None,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors_timing(
+    layout: &WitnessTraceLayout,
+    material: &GuestPcTraceDeviceSegmentMaterial,
+    device_trace_descriptor_buffer: &CudaDeviceBuffer,
+    timing: Option<&mut GuestPcDeviceSourceBuildTiming>,
 ) -> Result<GuestPcTraceDeviceTraceBuilder, WitnessTraceRunError> {
     if !is_guest_pc_trace_segmented_layout_supported(layout) {
         return Err(guest_pc_device_trace_source_error(
@@ -797,19 +861,24 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors(
         ));
     }
 
-    let trace_device = CudaDeviceBuffer::from_zisk_main_trace_descriptors_device(
-        device_trace_descriptor_buffer,
-        descriptors.descriptor_word_count(),
-        descriptors.descriptor_rows(),
-        descriptors.row_count(),
-        descriptors.column_count(),
-        descriptors.terminal_pc(),
-    )
-    .map_err(|error| {
-        guest_pc_device_trace_source_error(format!(
-            "CUDA trace descriptor expansion failed: {error}"
-        ))
-    })?;
+    let trace_device = record_device_source_build_duration(
+        timing.map(|timing| &mut timing.trace_expand_duration),
+        || {
+            CudaDeviceBuffer::from_zisk_main_trace_descriptors_device(
+                device_trace_descriptor_buffer,
+                descriptors.descriptor_word_count(),
+                descriptors.descriptor_rows(),
+                descriptors.row_count(),
+                descriptors.column_count(),
+                descriptors.terminal_pc(),
+            )
+            .map_err(|error| {
+                guest_pc_device_trace_source_error(format!(
+                    "CUDA trace descriptor expansion failed: {error}"
+                ))
+            })
+        },
+    )?;
     let builder =
         guest_pc_device_trace_builder_from_layout_with_descriptors(layout, trace_device, None);
     validate_guest_pc_trace_device_source_matches_layout(layout, &builder)?;

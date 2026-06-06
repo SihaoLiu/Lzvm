@@ -67,6 +67,14 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_device_source_build_duration(),
     );
     timings.record(
+        "guest_device_source_descriptor_upload",
+        timing.guest_device_source_descriptor_upload_duration(),
+    );
+    timings.record(
+        "guest_device_source_trace_expand",
+        timing.guest_device_source_trace_expand_duration(),
+    );
+    timings.record(
         "guest_regular_constraints",
         timing.guest_regular_constraint_duration(),
     );

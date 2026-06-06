@@ -1168,8 +1168,8 @@ fn guest_pc_trace_device_material_builds_stage_sources_without_host_trace() {
     );
     let device_body = function_body(
         &backend_source,
-        "fn build_guest_pc_trace_stage_source_devices_from_device_descriptors",
-        "fn build_guest_pc_trace_stage_source_devices",
+        "fn build_guest_pc_trace_stage_source_devices_from_device_descriptors_timing",
+        "fn build_guest_pc_trace_stage_source_devices(\n",
     );
     assert!(
         device_body.contains("CudaDeviceBuffer::from_zisk_main_trace_descriptors_device"),
@@ -1647,6 +1647,74 @@ fn guest_pc_trace_timing_reports_device_source_build_work() {
             && cli_source.contains("guest_device_source_build_duration()"),
         "CLI timing output should include device source build work"
     );
+}
+
+#[test]
+fn guest_pc_trace_timing_splits_device_source_upload_and_expand_work() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source =
+        std::fs::read_to_string(&cli_path).expect("guest PC CLI timing source should read");
+
+    assert!(
+        backend_source.contains("struct GuestPcDeviceSourceBuildTiming"),
+        "guest PC backend should expose device source sub-timing"
+    );
+
+    let material_body = function_body(
+        &backend_source,
+        "fn build_guest_pc_trace_stage_source_devices_from_device_material",
+        "#[cfg(feature = \"cuda\")]\npub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors",
+    );
+    assert!(
+        material_body.contains("descriptor_upload_duration")
+            && material_body.contains("CudaDeviceBuffer::from_u64_words"),
+        "guest PC device material source build should time descriptor uploads"
+    );
+
+    let descriptor_body = function_body(
+        &backend_source,
+        "fn build_guest_pc_trace_stage_source_devices_from_device_descriptors_timing",
+        "#[cfg(feature = \"cuda\")]\npub(crate) fn build_guest_pc_trace_stage_source_devices(\n",
+    );
+    assert!(
+        descriptor_body.contains("trace_expand_duration")
+            && descriptor_body.contains("from_zisk_main_trace_descriptors_device"),
+        "guest PC device descriptor source build should time trace expansion"
+    );
+
+    let accumulator_fields = function_body(
+        &execution_source,
+        "struct ProveWitnessTraceTimingAccumulator",
+        "impl ProveWitnessTraceTimingAccumulator",
+    );
+    assert!(
+        accumulator_fields.contains("device_source_descriptor_upload_duration")
+            && accumulator_fields.contains("device_source_trace_expand_duration"),
+        "trace timing accumulation should retain upload and expansion buckets"
+    );
+
+    for (line_name, accessor) in [
+        (
+            "\"guest_device_source_descriptor_upload\"",
+            "guest_device_source_descriptor_upload_duration()",
+        ),
+        (
+            "\"guest_device_source_trace_expand\"",
+            "guest_device_source_trace_expand_duration()",
+        ),
+    ] {
+        assert!(
+            cli_source.contains(line_name) && cli_source.contains(accessor),
+            "CLI timing output should include {line_name}"
+        );
+    }
 }
 
 #[test]

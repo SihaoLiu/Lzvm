@@ -26,8 +26,9 @@ use crate::global_constraints::GlobalConstraintInputs;
 #[cfg(feature = "cuda")]
 use crate::guest_pc_trace_backend::{
     build_guest_pc_trace_stage_source_devices,
-    build_guest_pc_trace_stage_source_devices_from_device_material,
-    GuestPcTraceDeviceSegmentMaterial, GuestPcTraceDeviceTraceBuilder,
+    build_guest_pc_trace_stage_source_devices_from_device_material_timing,
+    GuestPcDeviceSourceBuildTiming, GuestPcTraceDeviceSegmentMaterial,
+    GuestPcTraceDeviceTraceBuilder,
 };
 use crate::guest_pc_trace_backend::{
     for_each_guest_pc_trace_segment_collecting_proof_values_with_context,
@@ -338,6 +339,8 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_stream_duration: Duration,
     guest_segment_commit_duration: Duration,
     guest_device_source_build_duration: Duration,
+    guest_device_source_descriptor_upload_duration: Duration,
+    guest_device_source_trace_expand_duration: Duration,
     guest_regular_constraint_duration: Duration,
     guest_regular_hint_duration: Duration,
     guest_stage_commit_duration: Duration,
@@ -365,6 +368,10 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_stream_duration,
             guest_segment_commit_duration,
             guest_device_source_build_duration: trace_timing.device_source_build_duration,
+            guest_device_source_descriptor_upload_duration: trace_timing
+                .device_source_descriptor_upload_duration,
+            guest_device_source_trace_expand_duration: trace_timing
+                .device_source_trace_expand_duration,
             guest_regular_constraint_duration: trace_timing.regular_constraint_duration,
             guest_regular_hint_duration: trace_timing.regular_hint_duration,
             guest_stage_commit_duration: trace_timing.stage_commit_duration,
@@ -395,6 +402,14 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_device_source_build_duration(&self) -> Duration {
         self.guest_device_source_build_duration
+    }
+
+    pub fn guest_device_source_descriptor_upload_duration(&self) -> Duration {
+        self.guest_device_source_descriptor_upload_duration
+    }
+
+    pub fn guest_device_source_trace_expand_duration(&self) -> Duration {
+        self.guest_device_source_trace_expand_duration
     }
 
     pub fn guest_regular_constraint_duration(&self) -> Duration {
@@ -530,6 +545,8 @@ impl ProveWitnessGuestStageTiming {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ProveWitnessTraceTimingAccumulator {
     device_source_build_duration: Duration,
+    device_source_descriptor_upload_duration: Duration,
+    device_source_trace_expand_duration: Duration,
     regular_constraint_duration: Duration,
     regular_hint_duration: Duration,
     stage_commit_duration: Duration,
@@ -548,6 +565,9 @@ struct ProveWitnessTraceTimingAccumulator {
 impl ProveWitnessTraceTimingAccumulator {
     fn accumulate(&mut self, other: Self) {
         self.device_source_build_duration += other.device_source_build_duration;
+        self.device_source_descriptor_upload_duration +=
+            other.device_source_descriptor_upload_duration;
+        self.device_source_trace_expand_duration += other.device_source_trace_expand_duration;
         self.regular_constraint_duration += other.regular_constraint_duration;
         self.regular_hint_duration += other.regular_hint_duration;
         self.stage_commit_duration += other.stage_commit_duration;
@@ -1867,10 +1887,20 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
 fn build_preloaded_guest_pc_trace_stage_source_devices(
     layout: &WitnessTraceLayout,
     segment_output: &GuestPcTraceSegmentRunOutput,
+    timing: Option<&mut ProveWitnessTraceTimingAccumulator>,
 ) -> Result<Option<WitnessStageSourceDeviceCache>, ProveWitnessCommitmentError> {
     if let Some(material) = segment_output.device_segment_material() {
-        let builder =
-            build_guest_pc_trace_stage_source_devices_from_device_material(layout, material)?;
+        let mut source_timing = GuestPcDeviceSourceBuildTiming::default();
+        let builder = build_guest_pc_trace_stage_source_devices_from_device_material_timing(
+            layout,
+            material,
+            timing.as_ref().map(|_| &mut source_timing),
+        )?;
+        if let Some(timing) = timing {
+            timing.device_source_descriptor_upload_duration +=
+                source_timing.descriptor_upload_duration();
+            timing.device_source_trace_expand_duration += source_timing.trace_expand_duration();
+        }
         return Ok(Some(
             WitnessStageSourceDeviceCache::from_guest_pc_device_trace_builder(builder),
         ));
@@ -1989,7 +2019,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
         let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
         #[cfg(feature = "cuda")]
         let preloaded_stage_source_devices =
-            build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output)?;
+            build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output, None)?;
         #[cfg(feature = "cuda")]
         let has_preloaded_stage_source_devices = preloaded_stage_source_devices.is_some();
         #[cfg(feature = "cuda")]
@@ -2108,17 +2138,23 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 #[cfg(feature = "cuda")]
                 let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
                 #[cfg(feature = "cuda")]
-                let preloaded_stage_source_devices = record_optional_duration(
-                    segment_trace_timing
-                        .as_mut()
-                        .map(|timing| &mut timing.device_source_build_duration),
-                    || {
+                let preloaded_stage_source_devices =
+                    if let Some(timing) = segment_trace_timing.as_mut() {
+                        let started = Instant::now();
+                        let result = build_preloaded_guest_pc_trace_stage_source_devices(
+                            &layout,
+                            &segment_output,
+                            Some(timing),
+                        );
+                        timing.device_source_build_duration += started.elapsed();
+                        result
+                    } else {
                         build_preloaded_guest_pc_trace_stage_source_devices(
                             &layout,
                             &segment_output,
+                            None,
                         )
-                    },
-                )?;
+                    }?;
                 #[cfg(feature = "cuda")]
                 let has_preloaded_stage_source_devices = preloaded_stage_source_devices.is_some();
                 #[cfg(feature = "cuda")]
@@ -2245,12 +2281,19 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             #[cfg(feature = "cuda")]
             let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
             #[cfg(feature = "cuda")]
-            let preloaded_stage_source_devices = record_optional_duration(
-                segment_trace_timing
-                    .as_mut()
-                    .map(|timing| &mut timing.device_source_build_duration),
-                || build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output),
-            )?;
+            let preloaded_stage_source_devices = if let Some(timing) = segment_trace_timing.as_mut()
+            {
+                let started = Instant::now();
+                let result = build_preloaded_guest_pc_trace_stage_source_devices(
+                    &layout,
+                    &segment_output,
+                    Some(timing),
+                );
+                timing.device_source_build_duration += started.elapsed();
+                result
+            } else {
+                build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output, None)
+            }?;
             #[cfg(feature = "cuda")]
             let has_preloaded_stage_source_devices = preloaded_stage_source_devices.is_some();
             #[cfg(feature = "cuda")]
