@@ -167,6 +167,66 @@ theorem runtime_pipeline_binding_evidence_implies_core_obligations
       friQueriesValid⟩
   exact ⟨transcriptBound, publicInputBound, pcsOpeningsValid, friQueriesValid⟩
 
+theorem runtime_pipeline_binding_evidence_implies_execution_obligations
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      exists witness trace constraints,
+        system.traceConsistent publicInput proof trace
+          /\ system.constraintsSatisfied constraints trace
+          /\ system.witnessMatchesTrace witness trace := by
+  intro evidence
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      traceConstraintEvidence,
+      _queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      _openingEvidence,
+      _transcriptBound,
+      _publicInputBound,
+      _pcsOpeningsValid,
+      _friQueriesValid⟩
+  have traceWitnessEvidence :=
+    runtime_trace_constraint_evidence_implies_trace_witness_evidence
+      validation.traceBindingValidation.traceConstraintValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      traceConstraintEvidence
+  rcases traceWitnessEvidence with
+    ⟨witness,
+      trace,
+      constraints,
+      _traceExtracted,
+      _constraintsEvaluated,
+      _witnessExtracted,
+      _backendConformant,
+      traceConsistent,
+      constraintsSatisfied,
+      witnessMatchesTrace⟩
+  exact
+    ⟨witness,
+      trace,
+      constraints,
+      traceConsistent,
+      constraintsSatisfied,
+      witnessMatchesTrace⟩
+
 def RuntimePipelineBindingCheckedAcceptance
     (_system : VerifierModel)
     (validation : RuntimePipelineBindingValidation _system)
@@ -500,22 +560,6 @@ theorem runtime_pipeline_binding_checked_acceptance_execution_obligations
       proof
       False
       accepted
-  rcases sound.right with
-    ⟨witness,
-      trace,
-      constraints,
-      _transcriptBound,
-      _publicInputBound,
-      _pcsOpeningsValid,
-      _friQueriesValid,
-      traceConsistent,
-      constraintsSatisfied,
-      witnessMatchesTrace⟩
-  exact
-    Exists.intro witness
-      (Exists.intro trace
-        (Exists.intro constraints
-          (And.intro traceConsistent
-            (And.intro constraintsSatisfied witnessMatchesTrace))))
+  exact runtime_pipeline_binding_evidence_implies_execution_obligations sound.left
 
 end Lzvm
