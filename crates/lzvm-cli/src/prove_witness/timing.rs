@@ -68,6 +68,7 @@ pub(super) fn write_timing_entries(
     entries: &[TimingEntry],
     total: Duration,
 ) {
+    let _ = writeln!(stdout, "prover_gpu_mode={}", prover_gpu_mode());
     for entry in entries {
         let _ = writeln!(
             stdout,
@@ -77,4 +78,12 @@ pub(super) fn write_timing_entries(
         );
     }
     let _ = writeln!(stdout, "timing_total_ms={}", total.as_millis());
+}
+
+pub(super) fn prover_gpu_mode() -> &'static str {
+    if lzvm_prover::gpu_setup_available() {
+        "cuda"
+    } else {
+        "unavailable"
+    }
 }

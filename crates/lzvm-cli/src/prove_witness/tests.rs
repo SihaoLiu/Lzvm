@@ -1,5 +1,5 @@
 use super::args::parsed_inputs;
-use super::timing::{write_timing_entries, TimingEntry};
+use super::timing::{prover_gpu_mode, write_timing_entries, TimingEntry};
 use super::*;
 use lzvm_artifacts::eth_block_input::parse_eth_block_input;
 use lzvm_artifacts::eth_public_input::parse_eth_public_block_prefix;
@@ -111,7 +111,10 @@ fn writes_timing_summary_lines() {
     let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
     assert_eq!(
         stdout,
-        "timing_witness_ms=23\ntiming_proof_ms=7\ntiming_total_ms=31\n"
+        format!(
+            "prover_gpu_mode={}\ntiming_witness_ms=23\ntiming_proof_ms=7\ntiming_total_ms=31\n",
+            prover_gpu_mode()
+        )
     );
 }
 
