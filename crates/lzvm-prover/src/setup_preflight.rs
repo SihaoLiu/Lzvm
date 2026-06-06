@@ -71,7 +71,7 @@ use crate::pcs_query_plan::{
     ValidatePcsQueryPlanSegmentsError,
 };
 use crate::proof_preflight::{
-    public_values_as_fields, validate_proof_public_values, ProofPreflightError,
+    public_values_as_fields, validate_proof_public_values_for_setup_preflight, ProofPreflightError,
     ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
 };
 use crate::proof_values::{
@@ -455,7 +455,8 @@ pub fn validate_setup_preflight_hashes(
         eth_block_input_withdrawal_roots,
         eth_block_input_withdrawal_counts,
         eth_block_input_withdrawal_preimage_counts,
-    } = validate_proof_public_values(proof, public_values).map_err(SetupPreflightError::Proof)?;
+    } = validate_proof_public_values_for_setup_preflight(proof, public_values)
+        .map_err(SetupPreflightError::Proof)?;
 
     validate_public_values_metadata_with_field_count(
         &catalog.layout.global_info,

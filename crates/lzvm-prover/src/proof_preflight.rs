@@ -15,6 +15,7 @@ use lzvm_artifacts::eth_block_input_segment::{
 use lzvm_artifacts::eth_block_public_values::{
     validate_eth_block_public_values, EthBlockPublicValuesError,
 };
+use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::program_image_segment::{
     parse_program_image_cache_segment, program_image_cache_segment_digest,
@@ -29,6 +30,7 @@ use lzvm_artifacts::public_values::{
 use lzvm_artifacts::trace_constraint_segment::{
     parse_trace_constraint_segment, TraceConstraintSegmentError, TRACE_CONSTRAINT_SEGMENT_ID,
 };
+use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 use lzvm_field::{Felt, FieldError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,6 +125,7 @@ pub enum ProofPreflightError {
         word_index: usize,
         source: FieldError,
     },
+    MissingTraceConstraintEvidence,
     TraceConstraint(TraceConstraintSegmentError),
     EthBlockInput(EthBlockInputError),
     EthBlockPublicValues(EthBlockPublicValuesError),
@@ -188,6 +191,9 @@ impl fmt::Display for ProofPreflightError {
                 f,
                 "invalid challenge values segment value {value_index} word {word_index}: {source}"
             ),
+            Self::MissingTraceConstraintEvidence => {
+                write!(f, "missing trace constraint evidence segment")
+            }
             Self::TraceConstraint(error) => write!(f, "{error}"),
             Self::EthBlockInput(error) => write!(f, "{error}"),
             Self::EthBlockPublicValues(error) => write!(f, "{error}"),
@@ -234,6 +240,7 @@ impl std::error::Error for ProofPreflightError {
             | Self::MissingProgramImageCachePublicValue { .. }
             | Self::ProgramImageCachePublicValueElementCountMismatch { .. }
             | Self::ProgramImageCachePublicValueMismatch { .. }
+            | Self::MissingTraceConstraintEvidence
             | Self::MissingEthBlockInput => None,
         }
     }
@@ -278,6 +285,21 @@ impl From<ProofPreflightError> for ProofPreflightFileError {
 pub fn validate_proof_public_values(
     proof: &ProofArtifact,
     public_values: &PublicValues,
+) -> Result<ProofPreflightReport, ProofPreflightError> {
+    validate_proof_public_values_inner(proof, public_values, true)
+}
+
+pub(crate) fn validate_proof_public_values_for_setup_preflight(
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+) -> Result<ProofPreflightReport, ProofPreflightError> {
+    validate_proof_public_values_inner(proof, public_values, false)
+}
+
+fn validate_proof_public_values_inner(
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+    require_trace_constraint_evidence: bool,
 ) -> Result<ProofPreflightReport, ProofPreflightError> {
     validate_proof_artifact(proof).map_err(ProofPreflightError::ProofArtifact)?;
 
@@ -349,6 +371,12 @@ pub fn validate_proof_public_values(
         }));
     }
     let trace_constraint_segment_count = trace_constraint_segment_byte_counts.len();
+    if require_trace_constraint_evidence
+        && trace_constraint_segment_count == 0
+        && contains_witness_commitment_segments(proof)
+    {
+        return Err(ProofPreflightError::MissingTraceConstraintEvidence);
+    }
     let mut eth_block_input_hashes = Vec::new();
     let mut eth_block_input_byte_counts = Vec::new();
     let mut eth_block_input_block_rlp_byte_counts = Vec::new();
@@ -506,6 +534,12 @@ pub fn validate_proof_public_values(
         eth_block_input_withdrawal_roots,
         eth_block_input_withdrawal_counts,
         eth_block_input_withdrawal_preimage_counts,
+    })
+}
+
+fn contains_witness_commitment_segments(proof: &ProofArtifact) -> bool {
+    proof.segments.iter().any(|segment| {
+        (WITNESS_COMMITMENT_SEGMENT_BASE_ID..PCS_MATERIAL_MANIFEST_SEGMENT_ID).contains(&segment.id)
     })
 }
 

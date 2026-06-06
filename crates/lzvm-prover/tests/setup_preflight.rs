@@ -13,6 +13,8 @@ use lzvm_prover::setup_preflight::{
 };
 use lzvm_prover::ProveScheduleError;
 
+const SAMPLE_AUX_SEGMENT_ID: u32 = 20_000;
+
 fn sample_catalog() -> KeyDirectoryCatalog {
     KeyDirectoryCatalog {
         layout: KeyDirectoryLayout {
@@ -85,7 +87,7 @@ fn sample_proof(public_values: &PublicValues) -> ProofArtifact {
         setup_hash: public_values.setup_hash,
         public_values_hash: public_values_digest(public_values).expect("digest should compute"),
         segments: vec![ProofSegment {
-            id: 100,
+            id: SAMPLE_AUX_SEGMENT_ID,
             data: vec![1, 2, 3, 4],
         }],
     }

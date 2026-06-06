@@ -22,12 +22,14 @@ use lzvm_artifacts::trace_constraint_segment::{
     encode_trace_constraint_segment, TraceConstraintSegment, TraceConstraintUnitSegment,
     TRACE_CONSTRAINT_SEGMENT_ID,
 };
+use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 use lzvm_field::{Felt, FieldError, MAX_ROOT_OF_UNITY_BITS, MODULUS};
 use lzvm_prover::proof_preflight::{
     public_values_as_fields, validate_proof_public_values, ProofPreflightError,
     ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
 };
 
+const SAMPLE_AUX_SEGMENT_ID: u32 = 20_000;
 const FIRST_CHALLENGE_VALUE_OFFSET: usize = 12;
 const PROGRAM_IMAGE_SEGMENT_PAYLOAD_OFFSET: usize = 8;
 const PROGRAM_IMAGE_SEGMENT_TREE_ROOT_OFFSET: usize = PROGRAM_IMAGE_SEGMENT_PAYLOAD_OFFSET + 32 * 3;
@@ -56,7 +58,7 @@ fn sample_proof(public_values: &PublicValues) -> ProofArtifact {
         setup_hash: public_values.setup_hash,
         public_values_hash: public_values_digest(public_values).expect("digest should compute"),
         segments: vec![ProofSegment {
-            id: 100,
+            id: SAMPLE_AUX_SEGMENT_ID,
             data: vec![1, 2, 3, 4],
         }],
     }
@@ -260,14 +262,17 @@ fn rejects_duplicate_proof_segments_in_memory() {
     let public_values = sample_public_values();
     let mut proof = sample_proof(&public_values);
     proof.segments.push(ProofSegment {
-        id: 100,
+        id: SAMPLE_AUX_SEGMENT_ID,
         data: vec![5, 6, 7, 8],
     });
 
     let error = validate_proof_public_values(&proof, &public_values)
         .expect_err("proof preflight should validate artifact invariants");
 
-    assert_eq!(error.to_string(), "duplicate proof segment id: 100");
+    assert_eq!(
+        error.to_string(),
+        format!("duplicate proof segment id: {SAMPLE_AUX_SEGMENT_ID}")
+    );
 }
 
 #[test]
@@ -520,6 +525,24 @@ fn reports_trace_constraint_segments() {
             witness_values_committed: true,
             constraint_checker_conformant: true,
         }]
+    );
+}
+
+#[test]
+fn rejects_witness_commitment_segments_without_trace_constraint_evidence() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        data: vec![5, 6, 7, 8],
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("witness commitments should require trace constraint evidence");
+
+    assert_eq!(
+        error.to_string(),
+        "missing trace constraint evidence segment"
     );
 }
 
