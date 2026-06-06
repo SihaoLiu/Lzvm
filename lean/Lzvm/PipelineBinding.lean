@@ -458,6 +458,125 @@ theorem runtime_pipeline_binding_checked_acceptance_sound
         friQueriesValid⟩,
       soundWitness⟩
 
+def runtime_pipeline_trace_source_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    ExternalSourceOpeningValidation system :=
+  let openingValidation :=
+    validation.traceBindingValidation.traceConstraintValidation.openingValidation
+  openingValidation.runtimeSoundnessValidation.sourceValidation
+
+def runtime_pipeline_opening_source_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    ExternalSourceOpeningValidation system :=
+  let openingValidation :=
+    validation.queryPlanBindingValidation.openingValidation.openingValidation
+  openingValidation.runtimeSoundnessValidation.sourceValidation
+
+theorem runtime_pipeline_binding_required_external_source_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          RuntimePipelineBindingEvidence
+              system
+              validation
+              artifact
+              publicInput
+              proof
+              requiresExternalSource
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have pipelineSound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have traceAccepted :=
+    runtime_pipeline_binding_checked_acceptance_trace
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceConstraintAccepted :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint
+      validation.traceBindingValidation
+      artifact
+      publicInput
+      proof
+      traceAccepted
+  have traceRequired :=
+    runtime_trace_constraint_required_external_source_pcs_sound
+      assumptions
+      validation.traceBindingValidation.traceConstraintValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      traceConstraintAccepted
+      required
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingSegmentAccepted :=
+    runtime_query_plan_binding_checked_acceptance_opening
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+  have openingAccepted :=
+    runtime_opening_segment_binding_checked_acceptance_opening
+      validation.queryPlanBindingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentAccepted
+  have openingRequired :=
+    runtime_opening_required_external_source_sound
+      assumptions
+      validation.queryPlanBindingValidation.openingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
+      required
+  exact
+    ⟨pipelineSound.left,
+      traceRequired.left,
+      openingRequired.right.left,
+      traceRequired.right.left,
+      pipelineSound.right⟩
+
 theorem runtime_pipeline_binding_checked_acceptance_core_obligations
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
