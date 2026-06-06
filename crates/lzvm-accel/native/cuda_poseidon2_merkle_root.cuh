@@ -33,7 +33,6 @@ int run_poseidon2_width8_merkle_root_on_device(
         poseidon2_width8_merkle_parent_kernel<<<blocks, kThreads>>>(
             current, next, state_count);
         LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-        LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
 
         current = next;
         state_count = parent_state_count;
@@ -82,7 +81,6 @@ int run_poseidon2_width16_merkle_root_on_device(
         poseidon2_width16_merkle_parent_kernel<<<blocks, kThreads>>>(
             current, next, state_count);
         LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-        LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
 
         current = next;
         state_count = parent_state_count;

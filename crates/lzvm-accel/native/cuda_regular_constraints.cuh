@@ -87,7 +87,7 @@ __device__ bool regular_read_source(
         }
         const size_t source_row =
             regular_row_with_offset(row, opening_point_offsets[row_offset_index], domain_size);
-        const size_t index = source_row * stage->column_count + offset;
+        const size_t index = source_row * stage->row_stride + stage->column_offset + offset;
         if (index >= stage->value_count) {
             return false;
         }
@@ -369,8 +369,10 @@ int validate_regular_base_inputs(
     }
     for (size_t stage_index = 0; stage_index < stage_input_count; ++stage_index) {
         const LzvmCudaRegularStage& stage = stages[stage_index];
-        if (stage.column_count == 0 || stage.value_count % stage.column_count != 0 ||
-            (stage.value_count > 0 && stage.values == nullptr)) {
+        if (stage.column_count == 0 || stage.row_stride == 0 ||
+            stage.column_offset > stage.row_stride ||
+            stage.column_count > stage.row_stride - stage.column_offset ||
+            (stage.value_count > 0 && stage.values == nullptr && stage.values_device == nullptr)) {
             return -2;
         }
     }
@@ -463,10 +465,15 @@ extern "C" int lzvm_cuda_regular_constraints_base(
     std::vector<DeviceBuffer<uint64_t>> stage_value_buffers(stage_input_count);
     std::vector<LzvmCudaRegularStage> device_stage_descriptors(stage_input_count);
     for (size_t index = 0; index < stage_input_count; ++index) {
-        LZVM_CUDA_RETURN_ON_ERROR(
-            copy_device_array(stage_value_buffers[index], stages[index].values, stages[index].value_count));
+        const uint64_t* stage_values = stages[index].values_device;
+        if (stage_values == nullptr) {
+            LZVM_CUDA_RETURN_ON_ERROR(
+                copy_device_array(stage_value_buffers[index], stages[index].values, stages[index].value_count));
+            stage_values = stage_value_buffers[index].data();
+        }
         device_stage_descriptors[index] = stages[index];
-        device_stage_descriptors[index].values = stage_value_buffers[index].data();
+        device_stage_descriptors[index].values = stage_values;
+        device_stage_descriptors[index].values_device = nullptr;
     }
     LZVM_CUDA_RETURN_ON_ERROR(copy_device_array(
         device_stages, device_stage_descriptors.data(), device_stage_descriptors.size()));

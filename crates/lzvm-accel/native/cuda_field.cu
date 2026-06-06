@@ -333,10 +333,26 @@ __global__ void normalize_shift_and_pad_kernel(
     size_t target_len,
     uint64_t inverse_len,
     uint64_t shift) {
+    __shared__ uint64_t block_shift;
+    __shared__ uint64_t thread_powers[8];
+    if (threadIdx.x == 0) {
+        block_shift = pow_mod(shift, static_cast<size_t>(blockIdx.x) * blockDim.x);
+        thread_powers[0] = shift;
+        for (size_t bit = 1; bit < 8; ++bit) {
+            thread_powers[bit] = mul_mod(thread_powers[bit - 1], thread_powers[bit - 1]);
+        }
+    }
+    __syncthreads();
+
     const size_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < target_len) {
         if (index < source_len) {
-            values[index] = mul_mod(mul_mod(values[index], inverse_len), pow_mod(shift, index));
+            uint64_t factor = block_shift;
+            size_t exponent = static_cast<size_t>(threadIdx.x);
+            for (size_t bit = 0; exponent != 0 && bit < 8; ++bit, exponent >>= 1) {
+                if ((exponent & 1) != 0) { factor = mul_mod(factor, thread_powers[bit]); }
+            }
+            values[index] = mul_mod(mul_mod(values[index], inverse_len), factor);
         } else {
             values[index] = 0;
         }
@@ -354,6 +370,18 @@ __global__ void pack_row_major_columns_kernel(const uint64_t* values, uint64_t* 
         const size_t row = index / column_count;
         const size_t column = index % column_count;
         columns[column * target_len + row] = values[index];
+    }
+}
+
+__global__ void pack_row_major_columns_strided_kernel(
+    const uint64_t* values, uint64_t* columns, size_t source_len, size_t target_len,
+    size_t source_row_stride, size_t column_offset, size_t column_count) {
+    const size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    const size_t total = source_len * column_count;
+    if (index < total) {
+        const size_t row = index / column_count;
+        const size_t column = index % column_count;
+        columns[column * target_len + row] = values[row * source_row_stride + column_offset + column];
     }
 }
 
@@ -857,10 +885,10 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend(
     return 0;
 }
 
-extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_device(
-    const uint64_t* values, uint64_t* out, size_t source_len, size_t source_bits,
-    size_t target_len, size_t target_bits, size_t column_count, uint64_t source_root_inverse,
-    uint64_t target_root, uint64_t shift) {
+int run_row_major_columns_device(
+    const uint64_t* values, uint64_t* out, uint64_t* workspace, size_t source_len,
+    size_t source_bits, size_t target_len, size_t target_bits, size_t column_count,
+    uint64_t source_root_inverse, uint64_t target_root, uint64_t shift, bool synchronize) {
     if (values == nullptr || out == nullptr) { return -1; }
     if (source_len == 0 || target_len == 0 || source_len > target_len || column_count == 0) {
         return -2;
@@ -869,23 +897,107 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_device(
     const size_t source_words = source_len * column_count;
     const size_t target_words = target_len * column_count;
     DeviceBuffer<uint64_t> device_columns;
+    uint64_t* columns = workspace;
 
-    LZVM_CUDA_RETURN_ON_ERROR(device_columns.reset(target_words));
+    if (columns == nullptr) {
+        if (!synchronize) {
+            return -1;
+        }
+        LZVM_CUDA_RETURN_ON_ERROR(device_columns.reset(target_words));
+        columns = device_columns.data();
+    }
     const size_t source_blocks = (source_words + kThreads - 1) / kThreads;
     pack_row_major_columns_kernel<<<source_blocks, kThreads>>>(
-        values, device_columns.data(), source_len, target_len, column_count);
+        values, columns, source_len, target_len, column_count);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
     for (size_t column = 0; column < column_count; ++column) {
         LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_on_device_unsynced(
-            device_columns.data() + column * target_len, source_len, source_bits, target_len,
-            target_bits, source_root_inverse, target_root, shift));
+            columns + column * target_len, source_len, source_bits, target_len, target_bits,
+            source_root_inverse, target_root, shift));
     }
     const size_t target_blocks = (target_words + kThreads - 1) / kThreads;
-    unpack_row_major_columns_kernel<<<target_blocks, kThreads>>>(
-        device_columns.data(), out, target_len, column_count);
+    unpack_row_major_columns_kernel<<<target_blocks, kThreads>>>(columns, out, target_len, column_count);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    return lzvm_cuda_synchronize();
+    return synchronize ? lzvm_cuda_synchronize() : 0;
 }
+
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_device(
+    const uint64_t* values, uint64_t* out, size_t source_len, size_t source_bits,
+    size_t target_len, size_t target_bits, size_t column_count, uint64_t source_root_inverse,
+    uint64_t target_root, uint64_t shift) {
+    return run_row_major_columns_device(
+        values, out, nullptr, source_len, source_bits, target_len, target_bits, column_count,
+        source_root_inverse, target_root, shift, true);
+}
+
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(
+    const uint64_t* values, uint64_t* out, uint64_t* workspace, size_t source_len,
+    size_t source_bits, size_t target_len, size_t target_bits, size_t column_count,
+    uint64_t source_root_inverse, uint64_t target_root, uint64_t shift) {
+    return run_row_major_columns_device(
+        values, out, workspace, source_len, source_bits, target_len, target_bits, column_count,
+        source_root_inverse, target_root, shift, false);
+}
+
+int run_row_major_columns_strided_device(
+    const uint64_t* values, uint64_t* out, uint64_t* workspace, size_t source_len,
+    size_t source_bits, size_t target_len, size_t target_bits, size_t source_row_stride,
+    size_t column_offset, size_t column_count, uint64_t source_root_inverse, uint64_t target_root,
+    uint64_t shift, bool synchronize) {
+    if (values == nullptr || out == nullptr) { return -1; }
+    if (source_len == 0 || target_len == 0 || source_len > target_len || column_count == 0 ||
+        source_row_stride == 0 || column_offset > source_row_stride ||
+        column_count > source_row_stride - column_offset) {
+        return -2;
+    }
+
+    const size_t source_words = source_len * column_count;
+    const size_t target_words = target_len * column_count;
+    DeviceBuffer<uint64_t> device_columns;
+    uint64_t* columns = workspace;
+
+    if (columns == nullptr) {
+        if (!synchronize) {
+            return -1;
+        }
+        LZVM_CUDA_RETURN_ON_ERROR(device_columns.reset(target_words));
+        columns = device_columns.data();
+    }
+    const size_t source_blocks = (source_words + kThreads - 1) / kThreads;
+    pack_row_major_columns_strided_kernel<<<source_blocks, kThreads>>>(
+        values, columns, source_len, target_len, source_row_stride, column_offset, column_count);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    for (size_t column = 0; column < column_count; ++column) {
+        LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_on_device_unsynced(
+            columns + column * target_len, source_len, source_bits, target_len, target_bits,
+            source_root_inverse, target_root, shift));
+    }
+    const size_t target_blocks = (target_words + kThreads - 1) / kThreads;
+    unpack_row_major_columns_kernel<<<target_blocks, kThreads>>>(columns, out, target_len, column_count);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    return synchronize ? lzvm_cuda_synchronize() : 0;
+}
+
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_device(
+    const uint64_t* values, uint64_t* out, size_t source_len, size_t source_bits,
+    size_t target_len, size_t target_bits, size_t source_row_stride, size_t column_offset,
+    size_t column_count, uint64_t source_root_inverse, uint64_t target_root, uint64_t shift) {
+    return run_row_major_columns_strided_device(
+        values, out, nullptr, source_len, source_bits, target_len, target_bits, source_row_stride,
+        column_offset, column_count, source_root_inverse, target_root, shift, true);
+}
+
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced(
+    const uint64_t* values, uint64_t* out, uint64_t* workspace, size_t source_len,
+    size_t source_bits, size_t target_len, size_t target_bits, size_t source_row_stride,
+    size_t column_offset, size_t column_count, uint64_t source_root_inverse, uint64_t target_root,
+    uint64_t shift) {
+    return run_row_major_columns_strided_device(
+        values, out, workspace, source_len, source_bits, target_len, target_bits, source_row_stride,
+        column_offset, column_count, source_root_inverse, target_root, shift, false);
+}
+
+#include "cuda_goldilocks_row_extend.cuh"
 
 extern "C" int lzvm_cuda_goldilocks_validate_canonical_words_device(
     const uint64_t* values,
@@ -914,6 +1026,28 @@ extern "C" int lzvm_cuda_goldilocks_validate_canonical_words_device(
     LZVM_CUDA_RETURN_ON_ERROR(device_found.copy_to_bytes(found, sizeof(unsigned int)));
     return 0;
 }
+
+extern "C" int lzvm_cuda_goldilocks_begin_validate_canonical_words_device(
+    const uint64_t* values,
+    size_t word_count,
+    unsigned int* device_found) {
+    if (device_found == nullptr) {
+        return -1;
+    }
+    if (word_count == 0) {
+        return 0;
+    }
+    if (values == nullptr) {
+        return -1;
+    }
+
+    const size_t blocks = (word_count + kThreads - 1) / kThreads;
+    validate_canonical_words_kernel<<<blocks, kThreads>>>(values, word_count, device_found);
+    return lzvm_cuda_check_launch();
+}
+
+#include "cuda_row_major_fill.cuh"
+#include "cuda_zisk_main_trace.cuh"
 
 extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns(
     const uint64_t* values, uint64_t* out, size_t source_len, size_t source_bits,
@@ -1162,37 +1296,4 @@ extern "C" int lzvm_cuda_poseidon2_width16_linear_round_device(
 }
 
 #include "cuda_poseidon2_row_major_exports.cuh"
-
-extern "C" int lzvm_cuda_keccak256_fixed(
-    const uint8_t* input,
-    size_t message_len,
-    uint8_t* out,
-    size_t message_count) {
-    if (message_count == 0) {
-        return 0;
-    }
-    if (message_len == 0) {
-        return -2;
-    }
-    if (input == nullptr || out == nullptr) {
-        return -1;
-    }
-
-    const size_t input_bytes = message_count * message_len;
-    const size_t output_bytes = message_count * kKeccakOutputBytes;
-    DeviceBuffer<uint8_t> device_input;
-    DeviceBuffer<uint8_t> device_out;
-
-    LZVM_CUDA_RETURN_ON_ERROR(device_input.reset(input_bytes));
-    LZVM_CUDA_RETURN_ON_ERROR(device_out.reset(output_bytes));
-
-    LZVM_CUDA_RETURN_ON_ERROR(device_input.copy_from_bytes(input, input_bytes));
-
-    const size_t blocks = (message_count + kThreads - 1) / kThreads;
-    keccak256_fixed_kernel<<<blocks, kThreads>>>(
-        device_input.data(), device_out.data(), message_len, message_count);
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
-    LZVM_CUDA_RETURN_ON_ERROR(device_out.copy_to_bytes(out, output_bytes));
-    return 0;
-}
+#include "cuda_keccak_exports.cuh"

@@ -17,7 +17,10 @@ struct LzvmCudaRegularConstraintEntry {
 struct LzvmCudaRegularStage {
     std::uint32_t stage_index;
     std::size_t column_count;
+    std::size_t row_stride;
+    std::size_t column_offset;
     const std::uint64_t* values;
+    const std::uint64_t* values_device;
     std::size_t value_count;
 };
 
@@ -35,12 +38,32 @@ struct LzvmCudaAllocatorStats {
     std::size_t cached_bytes;
 };
 
+struct LzvmCudaMemoryInfo {
+    std::size_t free_bytes;
+    std::size_t total_bytes;
+};
+
 extern "C" int lzvm_cuda_alloc_bytes(void** out, std::size_t bytes);
 extern "C" void lzvm_cuda_free_bytes(void* ptr);
 extern "C" int lzvm_cuda_allocator_clear_cache(void);
 extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out);
+extern "C" int lzvm_cuda_memory_info(LzvmCudaMemoryInfo* out);
 extern "C" int lzvm_cuda_copy_h2d_bytes(void* dst, const void* src, std::size_t bytes);
 extern "C" int lzvm_cuda_copy_d2h_bytes(void* dst, const void* src, std::size_t bytes);
+extern "C" int lzvm_cuda_copy_h2d_row_slice_words(
+    void* dst,
+    const void* src,
+    std::size_t row_count,
+    std::size_t source_width_words,
+    std::size_t start_word,
+    std::size_t slice_width_words);
+extern "C" int lzvm_cuda_copy_d2d_row_slice_words(
+    void* dst,
+    const void* src,
+    std::size_t row_count,
+    std::size_t source_width_words,
+    std::size_t start_word,
+    std::size_t slice_width_words);
 extern "C" int lzvm_cuda_copy_d2h_state_prefix_words(
     void* dst,
     const void* src,
@@ -53,13 +76,84 @@ extern "C" int lzvm_cuda_expand_state_prefix_words(
     std::size_t state_count,
     std::size_t state_width_words,
     std::size_t prefix_words);
+extern "C" int lzvm_cuda_expand_state_prefix_words_device_to_device(
+    void* dst,
+    const void* src,
+    std::size_t state_count,
+    std::size_t state_width_words,
+    std::size_t prefix_words);
 extern "C" int lzvm_cuda_memset_zero_bytes(void* dst, std::size_t bytes);
+extern "C" int lzvm_cuda_fill_row_major_column_u64(
+    std::uint64_t* dst,
+    std::size_t row_count,
+    std::size_t row_width_words,
+    std::size_t start_row,
+    std::size_t column,
+    std::uint64_t value);
+extern "C" int lzvm_cuda_fill_row_major_suffix_from_row_u64(
+    std::uint64_t* dst,
+    const std::uint64_t* row_values,
+    std::size_t row_count,
+    std::size_t row_width_words,
+    std::size_t start_row);
+extern "C" int lzvm_cuda_expand_zisk_main_trace_descriptors(
+    std::uint64_t* dst,
+    const std::uint64_t* descriptors,
+    std::size_t descriptor_words,
+    std::size_t descriptor_count,
+    std::size_t row_count,
+    std::size_t row_width_words,
+    std::uint64_t terminal_pc);
 extern "C" int lzvm_cuda_check_launch(void);
 extern "C" int lzvm_cuda_synchronize(void);
 extern "C" int lzvm_cuda_goldilocks_validate_canonical_words_device(
     const std::uint64_t* values,
     std::size_t word_count,
     std::uint32_t* found);
+extern "C" int lzvm_cuda_goldilocks_begin_validate_canonical_words_device(
+    const std::uint64_t* values,
+    std::size_t word_count,
+    std::uint32_t* device_found);
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(
+    const std::uint64_t* values,
+    std::uint64_t* out,
+    std::uint64_t* workspace,
+    std::size_t source_len,
+    std::size_t source_bits,
+    std::size_t target_len,
+    std::size_t target_bits,
+    std::size_t column_count,
+    std::uint64_t source_root_inverse,
+    std::uint64_t target_root,
+    std::uint64_t shift);
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced(
+    const std::uint64_t* values,
+    std::uint64_t* out,
+    std::uint64_t* workspace,
+    std::size_t source_len,
+    std::size_t source_bits,
+    std::size_t target_len,
+    std::size_t target_bits,
+    std::size_t source_row_stride,
+    std::size_t column_offset,
+    std::size_t column_count,
+    std::uint64_t source_root_inverse,
+    std::uint64_t target_root,
+    std::uint64_t shift);
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_row_device(
+    const std::uint64_t* values,
+    const std::uint64_t* weights,
+    std::uint64_t* out,
+    std::size_t source_len,
+    std::size_t column_count);
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_row_device(
+    const std::uint64_t* values,
+    const std::uint64_t* weights,
+    std::uint64_t* out,
+    std::size_t source_len,
+    std::size_t source_row_stride,
+    std::size_t column_offset,
+    std::size_t column_count);
 extern "C" int lzvm_cuda_regular_constraints_base(
     const LzvmCudaRegularConstraintEntry* entries,
     std::size_t entry_count,

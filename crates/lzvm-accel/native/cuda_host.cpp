@@ -7,6 +7,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+#include <unistd.h>
 
 namespace {
 
@@ -23,6 +24,7 @@ struct CachedAllocation {
 
 constexpr std::size_t kMaxCachedBytes = std::size_t{16} << 30;
 constexpr std::size_t kMaxCachedBlocksPerSize = 2;
+constexpr std::size_t kPinnedCopyThreshold = std::size_t{1} << 20;
 
 std::mutex g_allocator_mutex;
 std::unordered_map<void*, AllocationRecord> g_active_allocations;
@@ -30,6 +32,12 @@ std::vector<CachedAllocation> g_cached_allocations;
 std::size_t g_cuda_malloc_calls = 0;
 std::size_t g_cuda_free_calls = 0;
 std::size_t g_cuda_device_synchronize_calls = 0;
+
+struct RegisteredHostRange {
+    void* base = nullptr;
+    std::size_t bytes = 0;
+    bool registered = false;
+};
 
 std::size_t cached_bytes_locked() {
     std::size_t total = 0;
@@ -70,6 +78,54 @@ int restore_device(int previous_device) {
         return 0;
     }
     return static_cast<int>(cudaSetDevice(previous_device));
+}
+
+std::size_t host_page_size() {
+    static const std::size_t page_size = []() {
+        const long value = sysconf(_SC_PAGESIZE);
+        return value > 0 ? static_cast<std::size_t>(value) : std::size_t{4096};
+    }();
+    return page_size;
+}
+
+RegisteredHostRange register_large_host_copy(const void* src, std::size_t bytes) {
+    RegisteredHostRange range;
+    if (src == nullptr || bytes < kPinnedCopyThreshold) {
+        return range;
+    }
+
+    const auto start = reinterpret_cast<std::uintptr_t>(src);
+    if (bytes > std::numeric_limits<std::uintptr_t>::max() - start) {
+        return range;
+    }
+    const std::uintptr_t end = start + bytes;
+    const std::size_t page_size = host_page_size();
+    if (page_size == 0) {
+        return range;
+    }
+
+    const std::uintptr_t aligned_start = (start / page_size) * page_size;
+    if (end > std::numeric_limits<std::uintptr_t>::max() - (page_size - 1)) {
+        return range;
+    }
+    const std::uintptr_t aligned_end = ((end + page_size - 1) / page_size) * page_size;
+    if (aligned_end < aligned_start) {
+        return range;
+    }
+
+    range.base = reinterpret_cast<void*>(aligned_start);
+    range.bytes = static_cast<std::size_t>(aligned_end - aligned_start);
+    const int status =
+        static_cast<int>(cudaHostRegister(range.base, range.bytes, cudaHostRegisterDefault));
+    range.registered = status == 0;
+    return range;
+}
+
+int unregister_host_copy(const RegisteredHostRange& range) {
+    if (!range.registered) {
+        return 0;
+    }
+    return static_cast<int>(cudaHostUnregister(range.base));
 }
 
 int synchronize_allocation_device(int device) {
@@ -299,6 +355,25 @@ extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out) {
     }
 }
 
+extern "C" int lzvm_cuda_memory_info(LzvmCudaMemoryInfo* out) {
+    try {
+        if (out == nullptr) {
+            return -1;
+        }
+        std::size_t free_bytes = 0;
+        std::size_t total_bytes = 0;
+        const int status = static_cast<int>(cudaMemGetInfo(&free_bytes, &total_bytes));
+        if (status != 0) {
+            return status;
+        }
+        out->free_bytes = free_bytes;
+        out->total_bytes = total_bytes;
+        return 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
 extern "C" int lzvm_cuda_copy_h2d_bytes(void* dst, const void* src, std::size_t bytes) {
     if (bytes == 0) {
         return 0;
@@ -306,7 +381,10 @@ extern "C" int lzvm_cuda_copy_h2d_bytes(void* dst, const void* src, std::size_t 
     if (dst == nullptr || src == nullptr) {
         return -1;
     }
-    return static_cast<int>(cudaMemcpy(dst, src, bytes, cudaMemcpyHostToDevice));
+    const RegisteredHostRange registered = register_large_host_copy(src, bytes);
+    const int status = static_cast<int>(cudaMemcpy(dst, src, bytes, cudaMemcpyHostToDevice));
+    const int unregister_status = unregister_host_copy(registered);
+    return first_status(status, unregister_status);
 }
 
 extern "C" int lzvm_cuda_copy_d2h_bytes(void* dst, const void* src, std::size_t bytes) {
@@ -317,6 +395,74 @@ extern "C" int lzvm_cuda_copy_d2h_bytes(void* dst, const void* src, std::size_t 
         return -1;
     }
     return static_cast<int>(cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToHost));
+}
+
+extern "C" int lzvm_cuda_copy_h2d_row_slice_words(
+    void* dst,
+    const void* src,
+    std::size_t row_count,
+    std::size_t source_width_words,
+    std::size_t start_word,
+    std::size_t slice_width_words) {
+    if (row_count == 0 || slice_width_words == 0) {
+        return 0;
+    }
+    if (dst == nullptr || src == nullptr) {
+        return -1;
+    }
+    if (source_width_words == 0 || start_word > source_width_words ||
+        slice_width_words > source_width_words - start_word) {
+        return -2;
+    }
+
+    constexpr std::size_t word_bytes = sizeof(std::uint64_t);
+    if (source_width_words > std::numeric_limits<std::size_t>::max() / word_bytes ||
+        slice_width_words > std::numeric_limits<std::size_t>::max() / word_bytes ||
+        start_word > std::numeric_limits<std::size_t>::max() / word_bytes) {
+        return -2;
+    }
+
+    const std::size_t dst_pitch = slice_width_words * word_bytes;
+    const std::size_t src_pitch = source_width_words * word_bytes;
+    const std::size_t width_bytes = slice_width_words * word_bytes;
+    const auto* source = static_cast<const std::uint8_t*>(src) + start_word * word_bytes;
+    return static_cast<int>(
+        cudaMemcpy2D(dst, dst_pitch, source, src_pitch, width_bytes, row_count,
+                     cudaMemcpyHostToDevice));
+}
+
+extern "C" int lzvm_cuda_copy_d2d_row_slice_words(
+    void* dst,
+    const void* src,
+    std::size_t row_count,
+    std::size_t source_width_words,
+    std::size_t start_word,
+    std::size_t slice_width_words) {
+    if (row_count == 0 || slice_width_words == 0) {
+        return 0;
+    }
+    if (dst == nullptr || src == nullptr) {
+        return -1;
+    }
+    if (source_width_words == 0 || start_word > source_width_words ||
+        slice_width_words > source_width_words - start_word) {
+        return -2;
+    }
+
+    constexpr std::size_t word_bytes = sizeof(std::uint64_t);
+    if (source_width_words > std::numeric_limits<std::size_t>::max() / word_bytes ||
+        slice_width_words > std::numeric_limits<std::size_t>::max() / word_bytes ||
+        start_word > std::numeric_limits<std::size_t>::max() / word_bytes) {
+        return -2;
+    }
+
+    const std::size_t dst_pitch = slice_width_words * word_bytes;
+    const std::size_t src_pitch = source_width_words * word_bytes;
+    const std::size_t width_bytes = slice_width_words * word_bytes;
+    const auto* source = static_cast<const std::uint8_t*>(src) + start_word * word_bytes;
+    return static_cast<int>(
+        cudaMemcpy2D(dst, dst_pitch, source, src_pitch, width_bytes, row_count,
+                     cudaMemcpyDeviceToDevice));
 }
 
 extern "C" int lzvm_cuda_copy_d2h_state_prefix_words(
@@ -386,6 +532,45 @@ extern "C" int lzvm_cuda_expand_state_prefix_words(
     return static_cast<int>(
         cudaMemcpy2D(dst, dst_pitch, src, src_pitch, width_bytes, state_count,
                      cudaMemcpyHostToDevice));
+}
+
+extern "C" int lzvm_cuda_expand_state_prefix_words_device_to_device(
+    void* dst,
+    const void* src,
+    std::size_t state_count,
+    std::size_t state_width_words,
+    std::size_t prefix_words) {
+    if (state_count == 0) {
+        return 0;
+    }
+    if (state_width_words == 0 || prefix_words > state_width_words) {
+        return -2;
+    }
+    if (dst == nullptr || (prefix_words != 0 && src == nullptr)) {
+        return -1;
+    }
+
+    constexpr std::size_t word_bytes = sizeof(std::uint64_t);
+    if (state_width_words > std::numeric_limits<std::size_t>::max() / word_bytes ||
+        prefix_words > std::numeric_limits<std::size_t>::max() / word_bytes) {
+        return -2;
+    }
+
+    const std::size_t dst_pitch = state_width_words * word_bytes;
+    const std::size_t src_pitch = prefix_words * word_bytes;
+    const std::size_t width_bytes = prefix_words * word_bytes;
+    if (state_count > std::numeric_limits<std::size_t>::max() / dst_pitch) {
+        return -2;
+    }
+    const std::size_t dst_bytes = state_count * dst_pitch;
+    const int clear_status = static_cast<int>(cudaMemset(dst, 0, dst_bytes));
+    if (clear_status != 0 || prefix_words == 0) {
+        return clear_status;
+    }
+
+    return static_cast<int>(
+        cudaMemcpy2D(dst, dst_pitch, src, src_pitch, width_bytes, state_count,
+                     cudaMemcpyDeviceToDevice));
 }
 
 extern "C" int lzvm_cuda_memset_zero_bytes(void* dst, std::size_t bytes) {

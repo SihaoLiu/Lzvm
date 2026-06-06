@@ -2,19 +2,25 @@
 use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
-    cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_coset_extend_device,
+    cuda_goldilocks_begin_validate_canonical_words_device, cuda_goldilocks_butterfly,
+    cuda_goldilocks_coset_extend, cuda_goldilocks_coset_extend_device,
     cuda_goldilocks_coset_extend_row_major_columns,
     cuda_goldilocks_coset_extend_row_major_columns_device,
-    cuda_goldilocks_coset_extend_row_major_columns_output_bytes, cuda_goldilocks_intt,
+    cuda_goldilocks_coset_extend_row_major_columns_output_bytes,
+    cuda_goldilocks_coset_extend_row_major_columns_row_device,
+    cuda_goldilocks_coset_extend_row_major_columns_strided_device,
+    cuda_goldilocks_coset_extend_row_major_columns_strided_row_device, cuda_goldilocks_intt,
     cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16,
     cuda_poseidon2_width16_device, cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_device,
+    cuda_poseidon2_width16_linear_round_row_major_digest_device,
     cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width16_merkle_root_device,
     cuda_poseidon2_width4, cuda_poseidon2_width4_device, cuda_poseidon2_width4_find_nonce,
     cuda_poseidon2_width8, cuda_poseidon2_width8_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_device,
+    cuda_poseidon2_width8_linear_round_row_major_digest_device,
     cuda_poseidon2_width8_merkle_parent_device, cuda_poseidon2_width8_merkle_root_device,
-    cuda_setup_init, AccelError, CudaDeviceBuffer,
+    cuda_setup_init, AccelError, CudaDeviceBuffer, CudaRowMajorColumnView,
 };
 #[cfg(feature = "cuda")]
 use lzvm_crypto::keccak256;
@@ -26,6 +32,32 @@ use lzvm_field::{
 
 #[cfg(feature = "cuda")]
 const MODULUS: u64 = 0xffff_ffff_0000_0001;
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_pending_canonical_check_reports_valid_and_invalid_words() {
+    let valid = CudaDeviceBuffer::from_u64_words(&[0, 1, MODULUS - 1, 12345])
+        .expect("valid field words should upload");
+    let valid_check = cuda_goldilocks_begin_validate_canonical_words_device(&valid, 4)
+        .expect("pending canonical check should launch");
+    assert!(
+        valid_check
+            .is_canonical()
+            .expect("valid canonical check should finish"),
+        "canonical field words should be accepted"
+    );
+
+    let invalid = CudaDeviceBuffer::from_u64_words(&[0, MODULUS, MODULUS + 1])
+        .expect("invalid field words should upload");
+    let invalid_check = cuda_goldilocks_begin_validate_canonical_words_device(&invalid, 3)
+        .expect("pending canonical check should launch");
+    assert!(
+        !invalid_check
+            .is_canonical()
+            .expect("invalid canonical check should finish"),
+        "non-canonical field words should be rejected"
+    );
+}
 
 #[cfg(feature = "cuda")]
 fn add_mod(lhs: u64, rhs: u64) -> u64 {
@@ -77,7 +109,205 @@ fn cuda_adds_goldilocks_vectors() {
 
     let actual = cuda_goldilocks_add(&lhs, &rhs).expect("cuda addition should run");
 
-    assert_eq!(actual, expected);
+    assert_same_words(&actual, &expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_expands_zisk_main_trace_descriptors() {
+    const WORDS_PER_DESCRIPTOR: usize = 11;
+    const KIND_MEMORY: u64 = 1;
+    const KIND_IMMEDIATE: u64 = 2;
+    const KIND_REGISTER: u64 = 3;
+    const KIND_INDIRECT: u64 = 4;
+    const STORE_REGISTER: u64 = 2;
+    const STORE_INDIRECT: u64 = 3;
+    const A_KIND_SHIFT: u64 = 32;
+    const B_KIND_SHIFT: u64 = 35;
+    const STORE_KIND_SHIFT: u64 = 38;
+
+    fn signed_word(value: i64) -> u64 {
+        value as u64
+    }
+
+    fn packed_u32_pair(lhs: u32, rhs: u32) -> u64 {
+        u64::from(lhs) | (u64::from(rhs) << 32)
+    }
+
+    fn packed_i32_pair(lhs: i32, rhs: i32) -> u64 {
+        u64::from(lhs as u32) | (u64::from(rhs as u32) << 32)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn control(
+        op: u64,
+        flag: bool,
+        store_pc: bool,
+        set_pc: bool,
+        m32: bool,
+        is_external_op: bool,
+        is_precompiled: bool,
+        ind_width: u64,
+        a_kind: u64,
+        b_kind: u64,
+        store_kind: u64,
+    ) -> u64 {
+        op | (u64::from(flag) << 8)
+            | (u64::from(store_pc) << 9)
+            | (u64::from(set_pc) << 10)
+            | (u64::from(m32) << 11)
+            | (u64::from(is_external_op) << 12)
+            | (u64::from(is_precompiled) << 13)
+            | (ind_width << 16)
+            | (a_kind << A_KIND_SHIFT)
+            | (b_kind << B_KIND_SHIFT)
+            | (store_kind << STORE_KIND_SHIFT)
+    }
+
+    fn signed_field(value: i64) -> u64 {
+        if value >= 0 {
+            value as u64
+        } else {
+            MODULUS - value.unsigned_abs()
+        }
+    }
+
+    let row0_a = (2_u64 << 32) | 1;
+    let row0_b = (4_u64 << 32) | 3;
+    let row0_c = (6_u64 << 32) | 5;
+    let row0_a_source = (8_u64 << 32) | 7;
+    let row0_store_prev = (12_u64 << 32) | 11;
+    let row1_b_source = (9_u64 << 32) | 8;
+    let row1_store_prev = (14_u64 << 32) | 13;
+    let descriptors = [
+        [
+            row0_a,
+            row0_b,
+            row0_c,
+            row0_a_source,
+            9,
+            10,
+            control(
+                0x0a,
+                true,
+                false,
+                true,
+                false,
+                true,
+                false,
+                4,
+                KIND_IMMEDIATE,
+                KIND_REGISTER,
+                STORE_REGISTER,
+            ),
+            packed_u32_pair(0x1000, 23),
+            packed_i32_pair(2, 3),
+            packed_u32_pair(21, 22),
+            row0_store_prev,
+        ],
+        [
+            100,
+            200,
+            300,
+            signed_word(-3),
+            row1_b_source,
+            signed_word(-2),
+            control(
+                0x0b,
+                false,
+                false,
+                false,
+                true,
+                true,
+                true,
+                8,
+                KIND_INDIRECT,
+                KIND_MEMORY,
+                STORE_INDIRECT,
+            ),
+            packed_u32_pair(0x2000, 33),
+            packed_i32_pair(-4, 6),
+            packed_u32_pair(31, 32),
+            row1_store_prev,
+        ],
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    assert_eq!(descriptors.len(), WORDS_PER_DESCRIPTOR * 2);
+
+    let buffer = CudaDeviceBuffer::from_zisk_main_trace_descriptors(
+        descriptors.as_slice(),
+        WORDS_PER_DESCRIPTOR,
+        2,
+        4,
+        39,
+        0x3000,
+    )
+    .expect("descriptor expansion should run");
+    let actual = buffer
+        .to_u64_words()
+        .expect("expanded trace should download");
+    let mut expected = vec![0_u64; 4 * 39];
+    expected[0] = 1;
+    expected[1] = 2;
+    expected[2] = 3;
+    expected[3] = 4;
+    expected[4] = 5;
+    expected[5] = 6;
+    expected[6] = 1;
+    expected[7] = 0x1000;
+    expected[8] = 1;
+    expected[10] = 7;
+    expected[11] = 8;
+    expected[15] = 9;
+    expected[18] = 4;
+    expected[19] = 1;
+    expected[20] = 0x0a;
+    expected[24] = 10;
+    expected[25] = 1;
+    expected[26] = 2;
+    expected[27] = 3;
+    expected[29] = 9;
+    expected[30] = 21;
+    expected[31] = 22;
+    expected[32] = 23;
+    expected[33] = 11;
+    expected[34] = 12;
+    expected[36] = 1;
+    expected[37] = 1;
+    expected[39] = 100;
+    expected[41] = 200;
+    expected[43] = 300;
+    expected[46] = 0x2000;
+    expected[49] = signed_field(-3);
+    expected[51] = 1;
+    expected[53] = 1;
+    expected[54] = 8;
+    expected[55] = 9;
+    expected[57] = 8;
+    expected[58] = 1;
+    expected[59] = 0x0b;
+    expected[62] = 1;
+    expected[63] = signed_field(-2);
+    expected[65] = signed_field(-4);
+    expected[66] = 6;
+    expected[67] = 1;
+    expected[68] = 8;
+    expected[69] = 31;
+    expected[70] = 32;
+    expected[71] = 33;
+    expected[72] = 13;
+    expected[73] = 14;
+    for row in 2..4 {
+        let base = row * 39;
+        expected[base + 7] = 0x3000;
+        expected[base + 8] = 1;
+        expected[base + 13] = 1;
+        expected[base + 20] = 1;
+    }
+
+    assert_same_words(&actual, &expected);
 }
 
 #[test]
@@ -119,7 +349,7 @@ fn cuda_multiplies_goldilocks_vectors() {
 
     let actual = cuda_goldilocks_mul(&lhs, &rhs).expect("cuda multiplication should run");
 
-    assert_eq!(actual, expected);
+    assert_same_words(&actual, &expected);
 }
 
 #[test]
@@ -186,6 +416,16 @@ fn cuda_device_buffer_round_trips_bytes() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_memory_info_reports_available_device_memory() {
+    let info = lzvm_accel::cuda_memory_info().expect("cuda memory info should be available");
+
+    assert!(info.total_bytes > 0);
+    assert!(info.free_bytes > 0);
+    assert!(info.free_bytes <= info.total_bytes);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_device_buffer_copies_byte_ranges_to_host() {
     let input = (0_u8..96)
         .map(|value| value.wrapping_mul(5).wrapping_add(7))
@@ -236,6 +476,106 @@ fn cuda_device_buffer_round_trips_u64_words() {
         .expect("device words should copy back to host");
 
     assert_eq!(output, input);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_device_buffer_fills_row_major_column_ranges() {
+    let mut buffer = CudaDeviceBuffer::zeroed(4 * 5 * 8).expect("device buffer should allocate");
+
+    buffer
+        .fill_row_major_column_u64(4, 5, 1, 2, 0xfeed_beef)
+        .expect("device column fill should run");
+
+    let words = buffer
+        .to_u64_words()
+        .expect("device words should read back");
+    let mut expected = vec![0_u64; 20];
+    expected[7] = 0xfeed_beef;
+    expected[12] = 0xfeed_beef;
+    expected[17] = 0xfeed_beef;
+    assert_eq!(words, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_device_buffer_copies_u64_word_prefixes() {
+    let mut buffer = CudaDeviceBuffer::zeroed(5 * 8).expect("device buffer should allocate");
+
+    buffer
+        .copy_prefix_from_u64_words(&[11, 12, 13])
+        .expect("prefix words should copy");
+
+    let words = buffer
+        .to_u64_words()
+        .expect("device words should read back");
+    assert_eq!(words, vec![11, 12, 13, 0, 0]);
+    assert!(buffer
+        .copy_prefix_from_u64_words(&[1, 2, 3, 4, 5, 6])
+        .is_err());
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_device_buffer_copies_prefix_and_fills_suffix_rows() {
+    let prefix = vec![1, 2, 3, 4, 5, 6];
+    let terminal = vec![10, 11, 12];
+    let buffer =
+        CudaDeviceBuffer::from_row_major_u64_prefix_and_suffix_row(&prefix, &terminal, 4, 3, 2)
+            .expect("device suffix fill should build a full row-major buffer");
+
+    let actual = buffer
+        .to_u64_words()
+        .expect("device buffer should read back");
+
+    assert_eq!(actual, vec![1, 2, 3, 4, 5, 6, 10, 11, 12, 10, 11, 12]);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_device_buffer_rebuilds_sparse_u64_words() {
+    let indices = vec![1, 4, 7, 9];
+    let values = vec![11, 44, 77, MODULUS - 1];
+
+    let buffer = CudaDeviceBuffer::from_sparse_u64_words(12, &indices, &values)
+        .expect("sparse words should rebuild on device");
+
+    let actual = buffer
+        .to_u64_words()
+        .expect("device buffer should read back");
+    assert_eq!(
+        actual,
+        vec![0, 11, 0, 0, 44, 0, 0, 77, 0, MODULUS - 1, 0, 0]
+    );
+    assert!(CudaDeviceBuffer::from_sparse_u64_words(12, &[3], &[1, 2]).is_err());
+    assert!(CudaDeviceBuffer::from_sparse_u64_words(12, &[12], &[1]).is_err());
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_device_buffer_uploads_row_major_column_slice() {
+    let source = (0_u64..15).collect::<Vec<_>>();
+    let buffer = CudaDeviceBuffer::from_row_major_u64_slice(&source, 3, 5, 1, 3)
+        .expect("row-major column slice should upload");
+
+    let actual = buffer
+        .to_u64_words()
+        .expect("uploaded slice should download");
+
+    assert_eq!(actual, vec![1, 2, 3, 6, 7, 8, 11, 12, 13]);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_device_buffer_copies_row_major_column_slice_from_device() {
+    let source = CudaDeviceBuffer::from_u64_words(&(0_u64..15).collect::<Vec<_>>())
+        .expect("source device buffer should upload");
+    let buffer = CudaDeviceBuffer::from_device_row_major_u64_slice(&source, 3, 5, 1, 3)
+        .expect("device row-major column slice should copy");
+
+    let actual = buffer.to_u64_words().expect("device slice should download");
+
+    assert_eq!(actual, vec![1, 2, 3, 6, 7, 8, 11, 12, 13]);
 }
 
 #[test]
@@ -353,6 +693,23 @@ fn cuda_device_buffer_expands_state_prefix_words() {
     assert_eq!(
         empty.to_u64_words().expect("empty states should copy back"),
         Vec::<u64>::new()
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_device_buffer_expands_state_prefix_words_from_device_source() {
+    let source =
+        CudaDeviceBuffer::from_u64_words(&[1, 2, 3, 4, 5, 6]).expect("source rows should upload");
+
+    let buffer = CudaDeviceBuffer::from_device_state_prefix_u64_words(&source, 2, 8, 3)
+        .expect("device prefix rows should expand into padded states");
+
+    assert_eq!(
+        buffer
+            .to_u64_words()
+            .expect("expanded state words should copy back"),
+        vec![1, 2, 3, 0, 0, 0, 0, 0, 4, 5, 6, 0, 0, 0, 0, 0]
     );
 }
 
@@ -574,6 +931,191 @@ fn cuda_extends_row_major_columns_from_device_memory() {
         .expect("device output should copy back");
 
     assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_extends_row_major_columns_from_strided_device_memory() {
+    let trace = vec![
+        100, 5, 9, 2, 200, 101, 1, 9, 4, 201, 102, 3, 7, 6, 202, 103, 8, 11, 10, 203,
+    ];
+    let compact = vec![5, 9, 2, 1, 9, 4, 3, 7, 6, 8, 11, 10];
+    let source_bits = 2;
+    let target_bits = 4;
+    let column_count = 3;
+    let expected = cuda_goldilocks_coset_extend_row_major_columns(
+        &compact,
+        column_count,
+        source_bits,
+        target_bits,
+    )
+    .expect("compact row-major extension should run");
+    let trace_buffer =
+        CudaDeviceBuffer::from_u64_words(&trace).expect("trace device buffer should allocate");
+    let mut output_buffer =
+        CudaDeviceBuffer::new(expected.len() * 8).expect("output device buffer should allocate");
+
+    cuda_goldilocks_coset_extend_row_major_columns_strided_device(
+        &trace_buffer,
+        &mut output_buffer,
+        CudaRowMajorColumnView {
+            source_rows: 4,
+            source_row_stride: 5,
+            column_offset: 1,
+            column_count,
+        },
+        source_bits,
+        target_bits,
+    )
+    .expect("strided device row-major extension should run");
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("device output should copy back");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_extends_many_row_major_columns_across_large_stages() {
+    let source_bits = 10;
+    let target_bits = 12;
+    let column_count = 7;
+    let source_rows = 1_usize << source_bits;
+    let target_rows = 1_usize << target_bits;
+    let input = (0..source_rows * column_count)
+        .map(|index| {
+            let mixed = index as u64 * 17 + (index / column_count) as u64 * 29 + 5;
+            mixed % 1_000_003
+        })
+        .collect::<Vec<_>>();
+    let extended_columns = (0..column_count)
+        .map(|column| {
+            let source = (0..source_rows)
+                .map(|row| Felt::from_u64(input[row * column_count + column]))
+                .collect::<Vec<_>>();
+            coset_extend_evaluations(&source, source_bits, target_bits)
+                .expect("cpu coset extension should run")
+        })
+        .collect::<Vec<_>>();
+    let expected = (0..target_rows)
+        .flat_map(|row| {
+            extended_columns
+                .iter()
+                .map(move |column| column[row].to_u64())
+        })
+        .collect::<Vec<_>>();
+
+    let actual = cuda_goldilocks_coset_extend_row_major_columns(
+        &input,
+        column_count,
+        source_bits,
+        target_bits,
+    )
+    .expect("cuda row-major column extension should run");
+
+    assert_same_words(&actual, &expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_extends_one_row_major_coset_row_from_device_memory() {
+    let input = vec![5, 9, 2, 1, 9, 4, 3, 7, 6, 8, 11, 10];
+    let source_bits = 2;
+    let target_bits = 4;
+    let column_count = 3;
+    let target_rows = 1_usize << target_bits;
+    let extended = cuda_goldilocks_coset_extend_row_major_columns(
+        &input,
+        column_count,
+        source_bits,
+        target_bits,
+    )
+    .expect("host row-major extension should run");
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+
+    for target_row in 0..target_rows {
+        let mut row_buffer =
+            CudaDeviceBuffer::new(column_count * 8).expect("row output should allocate");
+
+        cuda_goldilocks_coset_extend_row_major_columns_row_device(
+            &input_buffer,
+            &mut row_buffer,
+            column_count,
+            source_bits,
+            target_bits,
+            target_row,
+        )
+        .expect("device row-major row extension should run");
+        let actual = row_buffer
+            .to_u64_words()
+            .expect("device row output should copy back");
+        let expected =
+            extended[target_row * column_count..(target_row + 1) * column_count].to_vec();
+
+        assert_eq!(actual, expected, "target row {target_row} should match");
+    }
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_extends_one_strided_row_major_coset_row_from_device_memory() {
+    let source_bits = 2;
+    let target_bits = 4;
+    let source_rows = 1_usize << source_bits;
+    let target_rows = 1_usize << target_bits;
+    let source_row_stride = 5;
+    let column_offset = 1;
+    let column_count = 3;
+    let mut strided = Vec::with_capacity(source_rows * source_row_stride);
+    let mut compact = Vec::with_capacity(source_rows * column_count);
+    for row in 0..source_rows {
+        strided.push(90 + row as u64);
+        for column in 0..column_count {
+            let value = (row * 10 + column + 1) as u64;
+            strided.push(value);
+            compact.push(value);
+        }
+        strided.push(190 + row as u64);
+    }
+    let expected = cuda_goldilocks_coset_extend_row_major_columns(
+        &compact,
+        column_count,
+        source_bits,
+        target_bits,
+    )
+    .expect("host row-major extension should run");
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&strided).expect("input device buffer should allocate");
+    let view = CudaRowMajorColumnView {
+        source_rows,
+        source_row_stride,
+        column_offset,
+        column_count,
+    };
+
+    for target_row in 0..target_rows {
+        let mut row_buffer =
+            CudaDeviceBuffer::new(column_count * 8).expect("row output should allocate");
+
+        cuda_goldilocks_coset_extend_row_major_columns_strided_row_device(
+            &input_buffer,
+            &mut row_buffer,
+            view,
+            source_bits,
+            target_bits,
+            target_row,
+        )
+        .expect("device strided row-major row extension should run");
+        let actual = row_buffer
+            .to_u64_words()
+            .expect("device row output should copy back");
+        let expected =
+            expected[target_row * column_count..(target_row + 1) * column_count].to_vec();
+
+        assert_eq!(actual, expected, "target row {target_row} should match");
+    }
 }
 
 #[test]
@@ -822,6 +1364,52 @@ fn cuda_linear_round_poseidon2_width_8_gathers_row_major_device_memory() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_linear_round_poseidon2_width_8_digest_row_major_matches_full_state_prefix() {
+    let current_states = CudaDeviceBuffer::from_u64_words(&[
+        101, 102, 103, 104, 0, 0, 0, 0, 201, 202, 203, 204, 0, 0, 0, 0,
+    ])
+    .expect("current state buffer should allocate");
+    let row_values = CudaDeviceBuffer::from_u64_words(&[1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 16])
+        .expect("row-major value buffer should allocate");
+    let mut full_states =
+        CudaDeviceBuffer::new(16 * 8).expect("full output state buffer should allocate");
+    let mut digest_states =
+        CudaDeviceBuffer::zeroed(16 * 8).expect("digest output state buffer should allocate");
+
+    cuda_poseidon2_width8_linear_round_row_major_device(
+        &current_states,
+        &row_values,
+        &mut full_states,
+        6,
+        2,
+        3,
+    )
+    .expect("full row-major linear round should run");
+    cuda_poseidon2_width8_linear_round_row_major_digest_device(
+        &current_states,
+        &row_values,
+        &mut digest_states,
+        6,
+        2,
+        3,
+    )
+    .expect("digest row-major linear round should run");
+
+    let full = full_states
+        .to_u64_words()
+        .expect("full output should copy back");
+    let digest = digest_states
+        .to_u64_words()
+        .expect("digest output should copy back");
+    for row in 0..2 {
+        let base = row * 8;
+        assert_eq!(&digest[base..base + 4], &full[base..base + 4]);
+        assert_eq!(&digest[base + 4..base + 8], &[0, 0, 0, 0]);
+    }
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_linear_round_row_major_device_rejects_invalid_shapes() {
     let current_states =
         CudaDeviceBuffer::zeroed(16 * 8).expect("current state buffer should allocate");
@@ -1012,6 +1600,56 @@ fn cuda_linear_round_poseidon2_width_16_gathers_row_major_device_memory() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_linear_round_poseidon2_width_16_digest_row_major_matches_full_state_prefix() {
+    let current_states = CudaDeviceBuffer::from_u64_words(&[
+        101, 102, 103, 104, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 201, 202, 203, 204, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0,
+    ])
+    .expect("current state buffer should allocate");
+    let row_values = CudaDeviceBuffer::from_u64_words(&[
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1011, 1012, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+        31, 32, 2011, 2012,
+    ])
+    .expect("row-major value buffer should allocate");
+    let mut full_states =
+        CudaDeviceBuffer::new(32 * 8).expect("full output state buffer should allocate");
+    let mut digest_states =
+        CudaDeviceBuffer::zeroed(32 * 8).expect("digest output state buffer should allocate");
+
+    cuda_poseidon2_width16_linear_round_row_major_device(
+        &current_states,
+        &row_values,
+        &mut full_states,
+        14,
+        7,
+        5,
+    )
+    .expect("full row-major linear round should run");
+    cuda_poseidon2_width16_linear_round_row_major_digest_device(
+        &current_states,
+        &row_values,
+        &mut digest_states,
+        14,
+        7,
+        5,
+    )
+    .expect("digest row-major linear round should run");
+
+    let full = full_states
+        .to_u64_words()
+        .expect("full output should copy back");
+    let digest = digest_states
+        .to_u64_words()
+        .expect("digest output should copy back");
+    for row in 0..2 {
+        let base = row * 16;
+        assert_eq!(&digest[base..base + 4], &full[base..base + 4]);
+        assert_eq!(&digest[base + 4..base + 16], &[0; 12]);
+    }
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_hashes_poseidon2_width_16_states_from_device_memory() {
     let input = (0_u64..32).collect::<Vec<_>>();
     let expected = input
@@ -1110,6 +1748,21 @@ fn cpu_merkle_root_width8(states: &[u64]) -> [u64; 4] {
     }
 
     level[0]
+}
+
+#[cfg(feature = "cuda")]
+fn assert_same_words(actual: &[u64], expected: &[u64]) {
+    assert_eq!(actual.len(), expected.len());
+    if let Some(index) = actual
+        .iter()
+        .zip(expected.iter())
+        .position(|(actual, expected)| actual != expected)
+    {
+        panic!(
+            "word mismatch at index {index}: actual={}, expected={}",
+            actual[index], expected[index]
+        );
+    }
 }
 
 #[cfg(feature = "cuda")]

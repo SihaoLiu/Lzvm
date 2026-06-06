@@ -19,7 +19,11 @@ pub struct CudaRegularConstraintEntry {
 pub struct CudaRegularStage<'a> {
     pub stage_index: u32,
     pub column_count: usize,
+    pub row_stride: usize,
+    pub column_offset: usize,
     pub values: &'a [u64],
+    pub values_device: Option<&'a CudaDeviceBuffer>,
+    pub value_count: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -46,7 +50,10 @@ pub struct CudaRegularConstraintResult {
 struct CudaRegularStageRaw {
     stage_index: u32,
     column_count: usize,
+    row_stride: usize,
+    column_offset: usize,
     values: *const u64,
+    values_device: *const u64,
     value_count: usize,
 }
 
@@ -93,13 +100,70 @@ pub fn cuda_regular_constraints_base(
     let stages = inputs
         .stages
         .iter()
-        .map(|stage| CudaRegularStageRaw {
-            stage_index: stage.stage_index,
-            column_count: stage.column_count,
-            values: stage.values.as_ptr(),
-            value_count: stage.values.len(),
+        .map(|stage| {
+            let values_device = if let Some(buffer) = stage.values_device {
+                let required_words = if inputs.domain_size == 0 {
+                    0
+                } else {
+                    inputs
+                        .domain_size
+                        .checked_sub(1)
+                        .and_then(|last_row| last_row.checked_mul(stage.row_stride))
+                        .and_then(|base| base.checked_add(stage.column_offset))
+                        .and_then(|base| base.checked_add(stage.column_count))
+                        .ok_or(AccelError::InvalidDomain {
+                            bits: stage.row_stride,
+                            len: stage.column_count,
+                        })?
+                };
+                let expected_len = u64_word_byte_len(required_words)?;
+                if buffer.len() < expected_len {
+                    return Err(AccelError::LengthMismatch {
+                        lhs: buffer.len(),
+                        rhs: expected_len,
+                    });
+                }
+                buffer.as_raw_ptr().cast::<u64>() as *const u64
+            } else {
+                ptr::null()
+            };
+            let values = if stage.values.is_empty() {
+                ptr::null()
+            } else {
+                if stage.values.len() != stage.value_count {
+                    return Err(AccelError::LengthMismatch {
+                        lhs: stage.values.len(),
+                        rhs: stage.value_count,
+                    });
+                }
+                stage.values.as_ptr()
+            };
+            if values_device.is_null() && stage.value_count != stage.values.len() {
+                return Err(AccelError::LengthMismatch {
+                    lhs: stage.values.len(),
+                    rhs: stage.value_count,
+                });
+            }
+            if stage.column_count > stage.row_stride
+                || stage.column_offset > stage.row_stride
+                || stage.column_count > stage.row_stride - stage.column_offset
+            {
+                return Err(AccelError::InvalidDomain {
+                    bits: stage.row_stride,
+                    len: stage.column_count,
+                });
+            }
+            Ok(CudaRegularStageRaw {
+                stage_index: stage.stage_index,
+                column_count: stage.column_count,
+                row_stride: stage.row_stride,
+                column_offset: stage.column_offset,
+                values,
+                values_device,
+                value_count: stage.value_count,
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, AccelError>>()?;
     let fixed_values_device = if let Some(buffer) = inputs.fixed_values_device {
         let expected_len = u64_word_byte_len(inputs.fixed_values.len())?;
         if buffer.len() != expected_len {
