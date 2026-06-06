@@ -1926,6 +1926,26 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "\"finish_witness_opening_leaf_hash_arity4_bytes\"",
             "witness_opening_leaf_hash_arity4_byte_count",
         ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_calls\"",
+            "witness_opening_leaf_coset_extend_call_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_output_bytes\"",
+            "witness_opening_leaf_coset_extend_output_byte_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_columns\"",
+            "witness_opening_leaf_coset_extend_column_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_max_columns\"",
+            "witness_opening_leaf_coset_extend_max_column_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_ntt_launches\"",
+            "witness_opening_leaf_coset_extend_ntt_launch_count",
+        ),
     ] {
         assert!(
             proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
@@ -1945,6 +1965,21 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
                 && source.contains("leaf_hash_arity4_row_count")
                 && source.contains("leaf_hash_arity4_byte_count"),
             "leaf hash timing should split arity2 and arity4 row and byte counts"
+        );
+    }
+
+    for source in [
+        opening_values_source.as_str(),
+        artifact_timing_source.as_str(),
+        proof_timing_source.as_str(),
+    ] {
+        assert!(
+            source.contains("leaf_coset_extend_call_count")
+                && source.contains("leaf_coset_extend_output_byte_count")
+                && source.contains("leaf_coset_extend_column_count")
+                && source.contains("leaf_coset_extend_max_column_count")
+                && source.contains("leaf_coset_extend_ntt_launch_count"),
+            "opening timing should expose coset extension workload shape"
         );
     }
 

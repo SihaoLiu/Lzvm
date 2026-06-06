@@ -15,6 +15,11 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_leaf_hash_arity2_byte_count: usize,
     pub witness_opening_leaf_hash_arity4_row_count: usize,
     pub witness_opening_leaf_hash_arity4_byte_count: usize,
+    pub witness_opening_leaf_coset_extend_call_count: usize,
+    pub witness_opening_leaf_coset_extend_output_byte_count: usize,
+    pub witness_opening_leaf_coset_extend_column_count: usize,
+    pub witness_opening_leaf_coset_extend_max_column_count: usize,
+    pub witness_opening_leaf_coset_extend_ntt_launch_count: usize,
     pub witness_opening_path: Duration,
     pub witness_opening_row_values: Duration,
     pub witness_stage_external_source: Vec<WitnessProofStageOpeningTiming>,
@@ -112,6 +117,16 @@ impl WitnessProofArtifactTiming {
         self.witness_opening_leaf_hash_arity2_byte_count += timing.leaf_hash_arity2_byte_count;
         self.witness_opening_leaf_hash_arity4_row_count += timing.leaf_hash_arity4_row_count;
         self.witness_opening_leaf_hash_arity4_byte_count += timing.leaf_hash_arity4_byte_count;
+        self.witness_opening_leaf_coset_extend_call_count += timing.leaf_coset_extend_call_count;
+        self.witness_opening_leaf_coset_extend_output_byte_count +=
+            timing.leaf_coset_extend_output_byte_count;
+        self.witness_opening_leaf_coset_extend_column_count +=
+            timing.leaf_coset_extend_column_count;
+        self.witness_opening_leaf_coset_extend_max_column_count = self
+            .witness_opening_leaf_coset_extend_max_column_count
+            .max(timing.leaf_coset_extend_max_column_count);
+        self.witness_opening_leaf_coset_extend_ntt_launch_count +=
+            timing.leaf_coset_extend_ntt_launch_count;
         add_stage_duration(
             &mut self.witness_stage_opening_leaf_hash,
             stage_index,

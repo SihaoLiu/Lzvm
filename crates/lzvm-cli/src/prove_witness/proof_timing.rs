@@ -44,6 +44,26 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_leaf_hash_arity4_bytes",
         timing.witness_opening_leaf_hash_arity4_byte_count,
     );
+    timings.record_count(
+        "finish_witness_opening_leaf_coset_extend_calls",
+        timing.witness_opening_leaf_coset_extend_call_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_leaf_coset_extend_output_bytes",
+        timing.witness_opening_leaf_coset_extend_output_byte_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_leaf_coset_extend_columns",
+        timing.witness_opening_leaf_coset_extend_column_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_leaf_coset_extend_max_columns",
+        timing.witness_opening_leaf_coset_extend_max_column_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_leaf_coset_extend_ntt_launches",
+        timing.witness_opening_leaf_coset_extend_ntt_launch_count,
+    );
     timings.record("finish_witness_opening_path", timing.witness_opening_path);
     timings.record(
         "finish_witness_opening_row_values",

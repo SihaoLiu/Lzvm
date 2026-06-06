@@ -44,6 +44,11 @@ pub(crate) struct WitnessStageOpeningWorkTiming {
     pub(crate) leaf_hash_arity2_byte_count: usize,
     pub(crate) leaf_hash_arity4_row_count: usize,
     pub(crate) leaf_hash_arity4_byte_count: usize,
+    pub(crate) leaf_coset_extend_call_count: usize,
+    pub(crate) leaf_coset_extend_output_byte_count: usize,
+    pub(crate) leaf_coset_extend_column_count: usize,
+    pub(crate) leaf_coset_extend_max_column_count: usize,
+    pub(crate) leaf_coset_extend_ntt_launch_count: usize,
     pub(crate) path: Duration,
     pub(crate) row_values: Duration,
 }
@@ -69,6 +74,23 @@ impl WitnessStageOpeningWorkTiming {
             }
             _ => {}
         }
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn record_coset_extend_work(
+        &mut self,
+        output_byte_count: usize,
+        column_count: usize,
+        source_bits: usize,
+        target_bits: usize,
+    ) {
+        self.leaf_coset_extend_call_count += 1;
+        self.leaf_coset_extend_output_byte_count += output_byte_count;
+        self.leaf_coset_extend_column_count += column_count;
+        self.leaf_coset_extend_max_column_count =
+            self.leaf_coset_extend_max_column_count.max(column_count);
+        self.leaf_coset_extend_ntt_launch_count +=
+            column_count.saturating_mul(source_bits.saturating_add(target_bits).saturating_add(2));
     }
 }
 
@@ -1017,6 +1039,14 @@ impl WitnessStageCompactTreeStorage {
             timing.as_deref_mut().map(|timing| &mut timing.leaf_extend),
             || self.extend_source_device_buffer_cuda_unsynced(source_buffer, &mut output_buffer),
         )?;
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.record_coset_extend_work(
+                self.raw_leaf_bytes,
+                self.columns,
+                self.source_bits,
+                self.target_bits,
+            );
+        }
         let leaf_level = record_opening_duration(
             timing.as_deref_mut().map(|timing| &mut timing.leaf_hash),
             || {
