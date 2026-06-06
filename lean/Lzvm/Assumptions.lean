@@ -19,19 +19,79 @@ them with component-level theorems tied to concrete artifacts, verifier data,
 and checked execution traces.
 -/
 
-structure CryptographicAssumptions (system : VerifierModel) : Prop where
-  transcript_binding :
+structure NamedCryptographicAssumption (statement : Prop) where
+  evidence : statement
+
+structure HashCollisionResistanceAssumption where
+  merkleHashCollisionResistanceStatement : Prop
+  transcriptHashCollisionResistanceStatement : Prop
+  merkleHashCollisionResistance :
+    NamedCryptographicAssumption merkleHashCollisionResistanceStatement
+  transcriptHashCollisionResistance :
+    NamedCryptographicAssumption transcriptHashCollisionResistanceStatement
+
+structure FiatShamirRandomOracleAssumption (system : VerifierModel) where
+  randomOracleModelStatement : Prop
+  randomOracleModel :
+    NamedCryptographicAssumption randomOracleModelStatement
+  fiatShamirTranscriptBinding :
+    NamedCryptographicAssumption
+      (forall publicInput proof,
+        system.accepts publicInput proof ->
+          system.transcriptBound publicInput proof)
+
+structure PcsOpeningSoundnessAssumption (system : VerifierModel) where
+  pcsBindingStatement : Prop
+  pcsBinding : NamedCryptographicAssumption pcsBindingStatement
+  pcsOpeningSoundness :
+    NamedCryptographicAssumption
+      (forall publicInput proof,
+        system.accepts publicInput proof ->
+          system.pcsOpeningsValid publicInput proof)
+
+structure FriQuerySoundnessAssumption (system : VerifierModel) where
+  friLowDegreeSoundnessStatement : Prop
+  friLowDegreeSoundness :
+    NamedCryptographicAssumption friLowDegreeSoundnessStatement
+  friQuerySoundness :
+    NamedCryptographicAssumption
+      (forall publicInput proof,
+        system.accepts publicInput proof ->
+          system.friQueriesValid publicInput proof)
+
+structure CryptographicAssumptions (system : VerifierModel) where
+  hashCollisionResistance : HashCollisionResistanceAssumption
+  randomOracleFiatShamir : FiatShamirRandomOracleAssumption system
+  pcsSoundness : PcsOpeningSoundnessAssumption system
+  friSoundness : FriQuerySoundnessAssumption system
+
+namespace CryptographicAssumptions
+
+def transcript_binding
+    {system : VerifierModel}
+    (assumptions : CryptographicAssumptions system) :
     forall publicInput proof,
       system.accepts publicInput proof ->
-        system.transcriptBound publicInput proof
-  pcs_opening_sound :
+        system.transcriptBound publicInput proof :=
+  assumptions.randomOracleFiatShamir.fiatShamirTranscriptBinding.evidence
+
+def pcs_opening_sound
+    {system : VerifierModel}
+    (assumptions : CryptographicAssumptions system) :
     forall publicInput proof,
       system.accepts publicInput proof ->
-        system.pcsOpeningsValid publicInput proof
-  fri_query_sound :
+        system.pcsOpeningsValid publicInput proof :=
+  assumptions.pcsSoundness.pcsOpeningSoundness.evidence
+
+def fri_query_sound
+    {system : VerifierModel}
+    (assumptions : CryptographicAssumptions system) :
     forall publicInput proof,
       system.accepts publicInput proof ->
-        system.friQueriesValid publicInput proof
+        system.friQueriesValid publicInput proof :=
+  assumptions.friSoundness.friQuerySoundness.evidence
+
+end CryptographicAssumptions
 
 structure SemanticAssumptions (system : VerifierModel) : Prop where
   public_input_binding :
@@ -55,7 +115,7 @@ structure SemanticAssumptions (system : VerifierModel) : Prop where
             system.constraintsSatisfied constraints trace ->
               exists witness, system.witnessMatchesTrace witness trace
 
-structure AssumptionBundle (system : VerifierModel) : Prop where
+structure AssumptionBundle (system : VerifierModel) where
   crypto : CryptographicAssumptions system
   semantic : SemanticAssumptions system
 
