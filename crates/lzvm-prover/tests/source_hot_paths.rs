@@ -1570,6 +1570,54 @@ fn guest_pc_trace_segments_stream_through_bounded_pipeline() {
 }
 
 #[test]
+fn guest_pc_trace_timing_reports_device_source_build_work() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source =
+        std::fs::read_to_string(&cli_path).expect("guest PC CLI timing source should read");
+
+    let timing_fields = function_body(
+        &execution_source,
+        "pub struct ProveWitnessGuestPcTraceTiming",
+        "impl ProveWitnessGuestPcTraceTiming",
+    );
+    assert!(
+        timing_fields.contains("guest_device_source_build_duration"),
+        "guest PC timing should carry a device source build bucket"
+    );
+
+    let accumulator_fields = function_body(
+        &execution_source,
+        "struct ProveWitnessTraceTimingAccumulator",
+        "impl ProveWitnessTraceTimingAccumulator",
+    );
+    assert!(
+        accumulator_fields.contains("device_source_build_duration"),
+        "trace timing accumulation should include preloaded CUDA source build work"
+    );
+
+    let commit_body = function_body(
+        &execution_source,
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
+        "fn merge_backend_unit_values",
+    );
+    assert!(
+        commit_body.contains("device_source_build_duration")
+            && commit_body.contains("build_preloaded_guest_pc_trace_stage_source_devices"),
+        "guest PC segment timing should wrap preloaded CUDA source construction"
+    );
+
+    assert!(
+        cli_source.contains("\"guest_device_source_build\"")
+            && cli_source.contains("guest_device_source_build_duration()"),
+        "CLI timing output should include device source build work"
+    );
+}
+
+#[test]
 fn guest_pc_trace_segments_split_runner_and_lowerer_with_bounded_pending_queue() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

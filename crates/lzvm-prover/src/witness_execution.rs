@@ -337,6 +337,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     segment_count: usize,
     guest_trace_stream_duration: Duration,
     guest_segment_commit_duration: Duration,
+    guest_device_source_build_duration: Duration,
     guest_regular_constraint_duration: Duration,
     guest_regular_hint_duration: Duration,
     guest_stage_commit_duration: Duration,
@@ -363,6 +364,7 @@ impl ProveWitnessGuestPcTraceTiming {
             segment_count,
             guest_trace_stream_duration,
             guest_segment_commit_duration,
+            guest_device_source_build_duration: trace_timing.device_source_build_duration,
             guest_regular_constraint_duration: trace_timing.regular_constraint_duration,
             guest_regular_hint_duration: trace_timing.regular_hint_duration,
             guest_stage_commit_duration: trace_timing.stage_commit_duration,
@@ -389,6 +391,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_segment_commit_duration(&self) -> Duration {
         self.guest_segment_commit_duration
+    }
+
+    pub fn guest_device_source_build_duration(&self) -> Duration {
+        self.guest_device_source_build_duration
     }
 
     pub fn guest_regular_constraint_duration(&self) -> Duration {
@@ -523,6 +529,7 @@ impl ProveWitnessGuestStageTiming {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ProveWitnessTraceTimingAccumulator {
+    device_source_build_duration: Duration,
     regular_constraint_duration: Duration,
     regular_hint_duration: Duration,
     stage_commit_duration: Duration,
@@ -540,6 +547,7 @@ struct ProveWitnessTraceTimingAccumulator {
 
 impl ProveWitnessTraceTimingAccumulator {
     fn accumulate(&mut self, other: Self) {
+        self.device_source_build_duration += other.device_source_build_duration;
         self.regular_constraint_duration += other.regular_constraint_duration;
         self.regular_hint_duration += other.regular_hint_duration;
         self.stage_commit_duration += other.stage_commit_duration;
@@ -2094,12 +2102,23 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             layout.request(&shared_inputs.input[..]),
             |segment_output| {
                 let guest_segment_commit_started = collect_timing.then(Instant::now);
+                let mut segment_trace_timing =
+                    collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
                 let trace_instance_index = segment_output.trace_instance_index();
                 #[cfg(feature = "cuda")]
                 let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
                 #[cfg(feature = "cuda")]
-                let preloaded_stage_source_devices =
-                    build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output)?;
+                let preloaded_stage_source_devices = record_optional_duration(
+                    segment_trace_timing
+                        .as_mut()
+                        .map(|timing| &mut timing.device_source_build_duration),
+                    || {
+                        build_preloaded_guest_pc_trace_stage_source_devices(
+                            &layout,
+                            &segment_output,
+                        )
+                    },
+                )?;
                 #[cfg(feature = "cuda")]
                 let has_preloaded_stage_source_devices = preloaded_stage_source_devices.is_some();
                 #[cfg(feature = "cuda")]
@@ -2117,8 +2136,6 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                     Some(ref mut balance) => WitnessRegularHintMode::Balanced(balance),
                     None => WitnessRegularHintMode::AssignmentsOnly,
                 };
-                let mut segment_trace_timing =
-                    collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
                 #[cfg(feature = "cuda")]
                 let (trace, guest_pc_device_segment_material) = guest_pc_segment_commitment_trace(
                     segment_output,
@@ -2222,12 +2239,18 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         &proof_values,
         |segment_output| {
             let guest_segment_commit_started = collect_timing.then(Instant::now);
+            let mut segment_trace_timing =
+                collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
             let trace_instance_index = segment_output.trace_instance_index();
             #[cfg(feature = "cuda")]
             let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
             #[cfg(feature = "cuda")]
-            let preloaded_stage_source_devices =
-                build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output)?;
+            let preloaded_stage_source_devices = record_optional_duration(
+                segment_trace_timing
+                    .as_mut()
+                    .map(|timing| &mut timing.device_source_build_duration),
+                || build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output),
+            )?;
             #[cfg(feature = "cuda")]
             let has_preloaded_stage_source_devices = preloaded_stage_source_devices.is_some();
             #[cfg(feature = "cuda")]
@@ -2245,8 +2268,6 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 Some(ref mut balance) => WitnessRegularHintMode::Balanced(balance),
                 None => WitnessRegularHintMode::AssignmentsOnly,
             };
-            let mut segment_trace_timing =
-                collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
             #[cfg(feature = "cuda")]
             let (trace, guest_pc_device_segment_material) = guest_pc_segment_commitment_trace(
                 segment_output,
