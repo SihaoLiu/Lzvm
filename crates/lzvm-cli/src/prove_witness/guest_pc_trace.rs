@@ -129,6 +129,22 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_stage_leaf_hash_bytes",
         timing.guest_stage_leaf_hash_byte_count(),
     );
+    timings.record_count(
+        "guest_stage_leaf_hash_arity2_rows",
+        timing.guest_stage_leaf_hash_arity2_row_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_hash_arity2_bytes",
+        timing.guest_stage_leaf_hash_arity2_byte_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_hash_arity4_rows",
+        timing.guest_stage_leaf_hash_arity4_row_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_hash_arity4_bytes",
+        timing.guest_stage_leaf_hash_arity4_byte_count(),
+    );
     timings.record(
         "guest_stage_tree_commit_work",
         timing.guest_stage_tree_commit_work_duration(),
@@ -162,6 +178,22 @@ pub(super) fn record_guest_pc_trace_timing(
         timings.record_dynamic(
             format!("guest_stage_{stage_index}_leaf_hash_work"),
             stage_timing.leaf_hash_work_duration(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_hash_arity2_rows"),
+            stage_timing.leaf_hash_arity2_row_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_hash_arity2_bytes"),
+            stage_timing.leaf_hash_arity2_byte_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_hash_arity4_rows"),
+            stage_timing.leaf_hash_arity4_row_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_hash_arity4_bytes"),
+            stage_timing.leaf_hash_arity4_byte_count(),
         );
         timings.record_dynamic(
             format!("guest_stage_{stage_index}_tree_commit_work"),

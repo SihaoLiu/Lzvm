@@ -84,6 +84,10 @@ pub(crate) struct WitnessStageLeafExtendTiming {
     leaf_hash_duration: Duration,
     leaf_hash_row_count: usize,
     leaf_hash_byte_count: usize,
+    leaf_hash_arity2_row_count: usize,
+    leaf_hash_arity2_byte_count: usize,
+    leaf_hash_arity4_row_count: usize,
+    leaf_hash_arity4_byte_count: usize,
 }
 
 impl WitnessStageLeafExtendTiming {
@@ -96,12 +100,27 @@ impl WitnessStageLeafExtendTiming {
         self.leaf_hash_duration += other.leaf_hash_duration;
         self.leaf_hash_row_count += other.leaf_hash_row_count;
         self.leaf_hash_byte_count += other.leaf_hash_byte_count;
+        self.leaf_hash_arity2_row_count += other.leaf_hash_arity2_row_count;
+        self.leaf_hash_arity2_byte_count += other.leaf_hash_arity2_byte_count;
+        self.leaf_hash_arity4_row_count += other.leaf_hash_arity4_row_count;
+        self.leaf_hash_arity4_byte_count += other.leaf_hash_arity4_byte_count;
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
-    fn record_leaf_hash_work(&mut self, row_count: usize, byte_count: usize) {
+    fn record_leaf_hash_work(&mut self, row_count: usize, byte_count: usize, arity: usize) {
         self.leaf_hash_row_count += row_count;
         self.leaf_hash_byte_count += byte_count;
+        match arity {
+            2 => {
+                self.leaf_hash_arity2_row_count += row_count;
+                self.leaf_hash_arity2_byte_count += byte_count;
+            }
+            4 => {
+                self.leaf_hash_arity4_row_count += row_count;
+                self.leaf_hash_arity4_byte_count += byte_count;
+            }
+            _ => {}
+        }
     }
 
     pub(crate) fn setup_duration(&self) -> Duration {
@@ -134,6 +153,22 @@ impl WitnessStageLeafExtendTiming {
 
     pub(crate) fn leaf_hash_byte_count(&self) -> usize {
         self.leaf_hash_byte_count
+    }
+
+    pub(crate) fn leaf_hash_arity2_row_count(&self) -> usize {
+        self.leaf_hash_arity2_row_count
+    }
+
+    pub(crate) fn leaf_hash_arity2_byte_count(&self) -> usize {
+        self.leaf_hash_arity2_byte_count
+    }
+
+    pub(crate) fn leaf_hash_arity4_row_count(&self) -> usize {
+        self.leaf_hash_arity4_row_count
+    }
+
+    pub(crate) fn leaf_hash_arity4_byte_count(&self) -> usize {
+        self.leaf_hash_arity4_byte_count
     }
 }
 
@@ -483,7 +518,7 @@ fn compact_witness_stage_leaf_hashes_timed(
         )
         .map_err(WitnessStageCommitmentError::from)
     })?;
-    timing.record_leaf_hash_work(extended_rows, out_byte_count);
+    timing.record_leaf_hash_work(extended_rows, out_byte_count, arity);
     Ok(leaf_hashes)
 }
 
@@ -547,7 +582,7 @@ fn compact_witness_stage_leaf_hash_level_timed(
         )
         .map_err(WitnessStageCommitmentError::from)
     })?;
-    timing.record_leaf_hash_work(extended_rows, out_byte_count);
+    timing.record_leaf_hash_work(extended_rows, out_byte_count, arity);
     Ok(PendingCanonicalCudaDigestLevel::new(level, canonical_check))
 }
 
@@ -619,7 +654,7 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
         )
         .map_err(WitnessStageCommitmentError::from)
     })?;
-    timing.record_leaf_hash_work(extended_rows, out_byte_count);
+    timing.record_leaf_hash_work(extended_rows, out_byte_count, arity);
     Ok(PendingCanonicalCudaDigestLevel::new(level, canonical_check))
 }
 

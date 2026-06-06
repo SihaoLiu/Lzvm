@@ -293,6 +293,22 @@ impl WitnessStageCommitTiming {
     pub(crate) fn leaf_hash_byte_count(&self) -> usize {
         self.leaf_extend_timing.leaf_hash_byte_count()
     }
+
+    pub(crate) fn leaf_hash_arity2_row_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_hash_arity2_row_count()
+    }
+
+    pub(crate) fn leaf_hash_arity2_byte_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_hash_arity2_byte_count()
+    }
+
+    pub(crate) fn leaf_hash_arity4_row_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_hash_arity4_row_count()
+    }
+
+    pub(crate) fn leaf_hash_arity4_byte_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_hash_arity4_byte_count()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

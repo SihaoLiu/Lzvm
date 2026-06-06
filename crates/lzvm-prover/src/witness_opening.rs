@@ -843,12 +843,7 @@ fn build_witness_opening_unit_segment_from_trace_output(
                         stage_index,
                         opening_work_timing.leaf_extend,
                     );
-                    timing.add_witness_stage_opening_leaf_hash(
-                        stage_index,
-                        opening_work_timing.leaf_hash,
-                        opening_work_timing.leaf_hash_rows,
-                        opening_work_timing.leaf_hash_bytes,
-                    );
+                    timing.add_witness_stage_opening_leaf_hash(stage_index, &opening_work_timing);
                     timing.add_witness_stage_opening_path(stage_index, opening_work_timing.path);
                     timing.add_witness_stage_opening_row_values(
                         stage_index,

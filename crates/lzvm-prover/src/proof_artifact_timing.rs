@@ -11,6 +11,10 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_leaf_hash: Duration,
     pub witness_opening_leaf_hash_row_count: usize,
     pub witness_opening_leaf_hash_byte_count: usize,
+    pub witness_opening_leaf_hash_arity2_row_count: usize,
+    pub witness_opening_leaf_hash_arity2_byte_count: usize,
+    pub witness_opening_leaf_hash_arity4_row_count: usize,
+    pub witness_opening_leaf_hash_arity4_byte_count: usize,
     pub witness_opening_path: Duration,
     pub witness_opening_row_values: Duration,
     pub witness_stage_external_source: Vec<WitnessProofStageOpeningTiming>,
@@ -99,17 +103,19 @@ impl WitnessProofArtifactTiming {
     pub(crate) fn add_witness_stage_opening_leaf_hash(
         &mut self,
         stage_index: usize,
-        duration: Duration,
-        row_count: usize,
-        byte_count: usize,
+        timing: &crate::witness_commitment::WitnessStageOpeningWorkTiming,
     ) {
-        self.witness_opening_leaf_hash += duration;
-        self.witness_opening_leaf_hash_row_count += row_count;
-        self.witness_opening_leaf_hash_byte_count += byte_count;
+        self.witness_opening_leaf_hash += timing.leaf_hash;
+        self.witness_opening_leaf_hash_row_count += timing.leaf_hash_rows;
+        self.witness_opening_leaf_hash_byte_count += timing.leaf_hash_bytes;
+        self.witness_opening_leaf_hash_arity2_row_count += timing.leaf_hash_arity2_row_count;
+        self.witness_opening_leaf_hash_arity2_byte_count += timing.leaf_hash_arity2_byte_count;
+        self.witness_opening_leaf_hash_arity4_row_count += timing.leaf_hash_arity4_row_count;
+        self.witness_opening_leaf_hash_arity4_byte_count += timing.leaf_hash_arity4_byte_count;
         add_stage_duration(
             &mut self.witness_stage_opening_leaf_hash,
             stage_index,
-            duration,
+            timing.leaf_hash,
         );
     }
 

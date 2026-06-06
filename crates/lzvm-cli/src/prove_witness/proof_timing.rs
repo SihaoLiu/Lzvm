@@ -28,6 +28,22 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_leaf_hash_bytes",
         timing.witness_opening_leaf_hash_byte_count,
     );
+    timings.record_count(
+        "finish_witness_opening_leaf_hash_arity2_rows",
+        timing.witness_opening_leaf_hash_arity2_row_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_leaf_hash_arity2_bytes",
+        timing.witness_opening_leaf_hash_arity2_byte_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_leaf_hash_arity4_rows",
+        timing.witness_opening_leaf_hash_arity4_row_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_leaf_hash_arity4_bytes",
+        timing.witness_opening_leaf_hash_arity4_byte_count,
+    );
     timings.record("finish_witness_opening_path", timing.witness_opening_path);
     timings.record(
         "finish_witness_opening_row_values",

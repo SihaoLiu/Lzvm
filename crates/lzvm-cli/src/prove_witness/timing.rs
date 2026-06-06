@@ -63,10 +63,14 @@ impl TimingRecorder {
         if !self.enabled {
             return;
         }
-        self.count_entries.push(TimingCountEntry {
-            name: name.to_owned(),
-            value,
-        });
+        self.record_count_dynamic(name.to_owned(), value);
+    }
+
+    pub(super) fn record_count_dynamic(&mut self, name: String, value: usize) {
+        if !self.enabled {
+            return;
+        }
+        self.count_entries.push(TimingCountEntry { name, value });
     }
 
     fn total(&self) -> Duration {

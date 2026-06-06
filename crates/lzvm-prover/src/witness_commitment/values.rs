@@ -40,8 +40,36 @@ pub(crate) struct WitnessStageOpeningWorkTiming {
     pub(crate) leaf_hash: Duration,
     pub(crate) leaf_hash_rows: usize,
     pub(crate) leaf_hash_bytes: usize,
+    pub(crate) leaf_hash_arity2_row_count: usize,
+    pub(crate) leaf_hash_arity2_byte_count: usize,
+    pub(crate) leaf_hash_arity4_row_count: usize,
+    pub(crate) leaf_hash_arity4_byte_count: usize,
     pub(crate) path: Duration,
     pub(crate) row_values: Duration,
+}
+
+impl WitnessStageOpeningWorkTiming {
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn record_leaf_hash_work(
+        &mut self,
+        row_count: usize,
+        byte_count: usize,
+        arity: usize,
+    ) {
+        self.leaf_hash_rows += row_count;
+        self.leaf_hash_bytes += byte_count;
+        match arity {
+            2 => {
+                self.leaf_hash_arity2_row_count += row_count;
+                self.leaf_hash_arity2_byte_count += byte_count;
+            }
+            4 => {
+                self.leaf_hash_arity4_row_count += row_count;
+                self.leaf_hash_arity4_byte_count += byte_count;
+            }
+            _ => {}
+        }
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -1002,8 +1030,7 @@ impl WitnessStageCompactTreeStorage {
             },
         )?;
         if let Some(timing) = timing.as_deref_mut() {
-            timing.leaf_hash_rows += self.extended_rows;
-            timing.leaf_hash_bytes += self.raw_leaf_bytes;
+            timing.record_leaf_hash_work(self.extended_rows, self.raw_leaf_bytes, self.arity);
         }
         let path =
             record_opening_duration(timing.as_deref_mut().map(|timing| &mut timing.path), || {

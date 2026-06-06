@@ -1794,6 +1794,15 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
     let proof_timing_path = crate_root.join("../lzvm-cli/src/prove_witness/proof_timing.rs");
     let proof_timing_source =
         std::fs::read_to_string(&proof_timing_path).expect("proof timing source should read");
+    let leaf_extend_path = crate_root.join("src/witness_commitment/extend.rs");
+    let leaf_extend_source =
+        std::fs::read_to_string(&leaf_extend_path).expect("leaf extend source should read");
+    let opening_values_path = crate_root.join("src/witness_commitment/values.rs");
+    let opening_values_source =
+        std::fs::read_to_string(&opening_values_path).expect("opening values source should read");
+    let artifact_timing_path = crate_root.join("src/proof_artifact_timing.rs");
+    let artifact_timing_source =
+        std::fs::read_to_string(&artifact_timing_path).expect("artifact timing source should read");
 
     let timing_fields = function_body(
         &backend_source,
@@ -1849,6 +1858,22 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "\"guest_stage_leaf_hash_bytes\"",
             "guest_stage_leaf_hash_byte_count()",
         ),
+        (
+            "\"guest_stage_leaf_hash_arity2_rows\"",
+            "guest_stage_leaf_hash_arity2_row_count()",
+        ),
+        (
+            "\"guest_stage_leaf_hash_arity2_bytes\"",
+            "guest_stage_leaf_hash_arity2_byte_count()",
+        ),
+        (
+            "\"guest_stage_leaf_hash_arity4_rows\"",
+            "guest_stage_leaf_hash_arity4_row_count()",
+        ),
+        (
+            "\"guest_stage_leaf_hash_arity4_bytes\"",
+            "guest_stage_leaf_hash_arity4_byte_count()",
+        ),
     ] {
         assert!(
             cli_source.contains(line_name) && cli_source.contains(accessor),
@@ -1865,10 +1890,41 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "\"finish_witness_opening_leaf_hash_bytes\"",
             "witness_opening_leaf_hash_byte_count",
         ),
+        (
+            "\"finish_witness_opening_leaf_hash_arity2_rows\"",
+            "witness_opening_leaf_hash_arity2_row_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_hash_arity2_bytes\"",
+            "witness_opening_leaf_hash_arity2_byte_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_hash_arity4_rows\"",
+            "witness_opening_leaf_hash_arity4_row_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_hash_arity4_bytes\"",
+            "witness_opening_leaf_hash_arity4_byte_count",
+        ),
     ] {
         assert!(
             proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
             "CLI timing output should include {line_name}"
+        );
+    }
+
+    for source in [
+        leaf_extend_source.as_str(),
+        opening_values_source.as_str(),
+        execution_source.as_str(),
+        artifact_timing_source.as_str(),
+    ] {
+        assert!(
+            source.contains("leaf_hash_arity2_row_count")
+                && source.contains("leaf_hash_arity2_byte_count")
+                && source.contains("leaf_hash_arity4_row_count")
+                && source.contains("leaf_hash_arity4_byte_count"),
+            "leaf hash timing should split arity2 and arity4 row and byte counts"
         );
     }
 }
