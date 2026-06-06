@@ -274,4 +274,45 @@ theorem runtime_pipeline_binding_checked_acceptance_sound
                           (And.intro pcsOpeningsValid friQueriesValid)))))))))))
       soundWitness
 
+theorem runtime_pipeline_binding_checked_acceptance_core_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  rcases sound.right with
+    ⟨_witness,
+      _trace,
+      _constraints,
+      transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      _traceConsistent,
+      _constraintsSatisfied,
+      _witnessMatchesTrace⟩
+  exact
+    And.intro transcriptBound
+      (And.intro publicInputBound
+        (And.intro pcsOpeningsValid friQueriesValid))
+
 end Lzvm
