@@ -1,0 +1,244 @@
+/-
+Copyright (c) 2026 Sihao Liu. All rights reserved.
+Released under MIT OR Apache-2.0 license.
+Authors: Sihao Liu
+-/
+
+import Lzvm.RuntimeSoundness
+
+/-!
+Runtime PCS and FRI opening validation obligations.
+-/
+
+namespace Lzvm
+
+structure RuntimeOpeningValidation (system : VerifierModel) where
+  runtimeSoundnessValidation : RuntimeSoundnessValidation system
+  openingAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  constantOpeningsBound : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  witnessOpeningsBound : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  friOpeningBound : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  openingAcceptedImpliesRuntimeSoundnessAccepted :
+    forall artifact publicInput proof requiresExternalSource,
+      openingAccepted artifact publicInput proof ->
+        RuntimeSoundnessCheckedAcceptance
+          system
+          runtimeSoundnessValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource
+  openingAcceptedImpliesConstantOpeningsBound :
+    forall artifact publicInput proof,
+      openingAccepted artifact publicInput proof ->
+        constantOpeningsBound artifact publicInput proof
+  openingAcceptedImpliesWitnessOpeningsBound :
+    forall artifact publicInput proof,
+      openingAccepted artifact publicInput proof ->
+        witnessOpeningsBound artifact publicInput proof
+  openingAcceptedImpliesFriOpeningBound :
+    forall artifact publicInput proof,
+      openingAccepted artifact publicInput proof ->
+        friOpeningBound artifact publicInput proof
+  openingChecksImplyPcsOpeningsValid :
+    forall artifact publicInput proof,
+      constantOpeningsBound artifact publicInput proof ->
+        witnessOpeningsBound artifact publicInput proof ->
+          friOpeningBound artifact publicInput proof ->
+            system.pcsOpeningsValid publicInput proof
+  friOpeningImpliesFriQueriesValid :
+    forall artifact publicInput proof,
+      friOpeningBound artifact publicInput proof ->
+        system.friQueriesValid publicInput proof
+
+def RuntimeOpeningEvidence
+    (system : VerifierModel)
+    (validation : RuntimeOpeningValidation system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof)
+    (requiresExternalSource : Prop) : Prop :=
+  RuntimeSoundnessEvidence
+      system
+      validation.runtimeSoundnessValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+    /\ validation.constantOpeningsBound artifact publicInput proof
+    /\ validation.witnessOpeningsBound artifact publicInput proof
+    /\ validation.friOpeningBound artifact publicInput proof
+    /\ system.pcsOpeningsValid publicInput proof
+    /\ system.friQueriesValid publicInput proof
+
+def RuntimeOpeningCheckedAcceptance
+    (_system : VerifierModel)
+    (validation : RuntimeOpeningValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.openingAccepted artifact publicInput proof
+
+theorem runtime_opening_checked_acceptance_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeOpeningEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have runtimeAccepted :=
+    validation.openingAcceptedImpliesRuntimeSoundnessAccepted
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have runtimeEvidence :=
+    runtime_soundness_checked_acceptance_evidence
+      assumptions
+      validation.runtimeSoundnessValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      runtimeAccepted
+  have constantOpenings :=
+    validation.openingAcceptedImpliesConstantOpeningsBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have witnessOpenings :=
+    validation.openingAcceptedImpliesWitnessOpeningsBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have friOpening :=
+    validation.openingAcceptedImpliesFriOpeningBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have pcsOpenings :=
+    validation.openingChecksImplyPcsOpeningsValid
+      artifact
+      publicInput
+      proof
+      constantOpenings
+      witnessOpenings
+      friOpening
+  have friQueries :=
+    validation.friOpeningImpliesFriQueriesValid
+      artifact
+      publicInput
+      proof
+      friOpening
+  exact
+    And.intro runtimeEvidence
+      (And.intro constantOpenings
+        (And.intro witnessOpenings
+          (And.intro friOpening
+            (And.intro pcsOpenings friQueries))))
+
+theorem runtime_opening_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeOpeningEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have runtimeAccepted :=
+    validation.openingAcceptedImpliesRuntimeSoundnessAccepted
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have evidence :=
+    runtime_opening_checked_acceptance_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have runtimeSound :=
+    runtime_soundness_checked_acceptance_sound
+      assumptions
+      validation.runtimeSoundnessValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      runtimeAccepted
+  exact And.intro evidence runtimeSound.right
+
+theorem runtime_opening_required_external_source_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        requiresExternalSource ->
+          RuntimeOpeningEvidence
+              system
+              validation
+              artifact
+              publicInput
+              proof
+              requiresExternalSource
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.runtimeSoundnessValidation.sourceValidation
+              publicInput
+              proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have runtimeAccepted :=
+    validation.openingAcceptedImpliesRuntimeSoundnessAccepted
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have openingSound :=
+    runtime_opening_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have externalSound :=
+    runtime_soundness_required_external_source_sound
+      assumptions
+      validation.runtimeSoundnessValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      runtimeAccepted
+      required
+  exact
+    And.intro openingSound.left
+      (And.intro externalSound.right.left openingSound.right)
+
+end Lzvm

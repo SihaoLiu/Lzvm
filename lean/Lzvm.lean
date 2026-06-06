@@ -5,6 +5,16 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.AuxiliaryChecks
+import Lzvm.Conformance
+import Lzvm.DigestPrefix
+import Lzvm.ExternalSource
+import Lzvm.ProofArtifactBinding
+import Lzvm.OpeningValidation
+import Lzvm.RequiredExternalSource
+import Lzvm.RuntimeExternalSource
+import Lzvm.RuntimeSoundness
+import Lzvm.TranscriptBinding
+import Lzvm.TraceConstraintValidation
 
 /-!
 Top-level module for the Lzvm formal soundness model.
