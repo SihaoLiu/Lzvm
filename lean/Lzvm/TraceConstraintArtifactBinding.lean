@@ -1,0 +1,210 @@
+/-
+Copyright (c) 2026 Sihao Liu. All rights reserved.
+Released under MIT OR Apache-2.0 license.
+Authors: Sihao Liu
+-/
+
+import Lzvm.TraceConstraintValidation
+
+/-!
+Runtime trace constraint artifact binding obligations.
+-/
+
+namespace Lzvm
+
+structure RuntimeTraceConstraintArtifactBindingValidation (system : VerifierModel) where
+  traceConstraintValidation : RuntimeTraceConstraintValidation system
+  traceArtifactBindingAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  traceConstraintSegmentPayloadValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  witnessCommitmentSegmentsMatchTraceEvidence : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  constraintCatalogMatchesTraceEvidence : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  traceArtifactBindingAcceptedImpliesTraceConstraintAccepted :
+    forall artifact publicInput proof,
+      traceArtifactBindingAccepted artifact publicInput proof ->
+        traceConstraintValidation.traceConstraintAccepted artifact publicInput proof
+  traceArtifactBindingAcceptedImpliesPayloadValid :
+    forall artifact publicInput proof,
+      traceArtifactBindingAccepted artifact publicInput proof ->
+        traceConstraintSegmentPayloadValid artifact publicInput proof
+  traceArtifactBindingAcceptedImpliesWitnessCommitmentSegmentsMatch :
+    forall artifact publicInput proof,
+      traceArtifactBindingAccepted artifact publicInput proof ->
+        witnessCommitmentSegmentsMatchTraceEvidence artifact publicInput proof
+  traceArtifactBindingAcceptedImpliesConstraintCatalogMatches :
+    forall artifact publicInput proof,
+      traceArtifactBindingAccepted artifact publicInput proof ->
+        constraintCatalogMatchesTraceEvidence artifact publicInput proof
+  traceArtifactChecksImplyWitnessCommitmentBinding :
+    forall artifact publicInput proof,
+      traceConstraintSegmentPayloadValid artifact publicInput proof ->
+        witnessCommitmentSegmentsMatchTraceEvidence artifact publicInput proof ->
+          traceConstraintValidation.traceEvidenceMatchesWitnessCommitments
+            artifact
+            publicInput
+            proof
+  traceArtifactChecksImplyConstraintCatalogBinding :
+    forall artifact publicInput proof,
+      traceConstraintSegmentPayloadValid artifact publicInput proof ->
+        constraintCatalogMatchesTraceEvidence artifact publicInput proof ->
+          traceConstraintValidation.traceEvidenceMatchesConstraintCatalog
+            artifact
+            publicInput
+            proof
+
+def RuntimeTraceConstraintPreflightBindingEvidence
+    (_system : VerifierModel)
+    (validation : RuntimeTraceConstraintArtifactBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.traceConstraintSegmentPayloadValid artifact publicInput proof
+    /\ validation.witnessCommitmentSegmentsMatchTraceEvidence artifact publicInput proof
+    /\ validation.constraintCatalogMatchesTraceEvidence artifact publicInput proof
+    /\ validation.traceConstraintValidation.traceEvidenceMatchesWitnessCommitments
+      artifact
+      publicInput
+      proof
+    /\ validation.traceConstraintValidation.traceEvidenceMatchesConstraintCatalog
+      artifact
+      publicInput
+      proof
+
+def RuntimeTraceConstraintArtifactBindingCheckedAcceptance
+    (_system : VerifierModel)
+    (validation : RuntimeTraceConstraintArtifactBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.traceArtifactBindingAccepted artifact publicInput proof
+
+theorem runtime_trace_constraint_artifact_binding_checked_acceptance_evidence
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintPreflightBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have payloadValid :=
+    validation.traceArtifactBindingAcceptedImpliesPayloadValid
+      artifact
+      publicInput
+      proof
+      accepted
+  have witnessSegmentsMatch :=
+    validation.traceArtifactBindingAcceptedImpliesWitnessCommitmentSegmentsMatch
+      artifact
+      publicInput
+      proof
+      accepted
+  have constraintCatalogMatches :=
+    validation.traceArtifactBindingAcceptedImpliesConstraintCatalogMatches
+      artifact
+      publicInput
+      proof
+      accepted
+  have witnessCommitmentBinding :=
+    validation.traceArtifactChecksImplyWitnessCommitmentBinding
+      artifact
+      publicInput
+      proof
+      payloadValid
+      witnessSegmentsMatch
+  have constraintCatalogBinding :=
+    validation.traceArtifactChecksImplyConstraintCatalogBinding
+      artifact
+      publicInput
+      proof
+      payloadValid
+      constraintCatalogMatches
+  exact
+    And.intro payloadValid
+      (And.intro witnessSegmentsMatch
+        (And.intro constraintCatalogMatches
+          (And.intro witnessCommitmentBinding constraintCatalogBinding)))
+
+theorem runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation.traceConstraintValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.traceArtifactBindingAcceptedImpliesTraceConstraintAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_trace_constraint_artifact_binding_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintPreflightBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTraceConstraintEvidence
+            system
+            validation.traceConstraintValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have artifactEvidence :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceConstraintAccepted :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceSound :=
+    runtime_trace_constraint_checked_acceptance_sound
+      assumptions
+      validation.traceConstraintValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      traceConstraintAccepted
+  exact And.intro artifactEvidence traceSound
+
+end Lzvm

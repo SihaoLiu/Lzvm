@@ -2356,6 +2356,43 @@ fn trace_constraint_segment_uses_runtime_evidence_flags() {
 }
 
 #[test]
+fn lean_trace_constraint_artifact_binding_tracks_runtime_preflight_checks() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_path = crate_root.join("../../lean/Lzvm/TraceConstraintArtifactBinding.lean");
+    let lean_source = std::fs::read_to_string(&lean_path)
+        .expect("Lean trace artifact binding source should read");
+    let lean_root_path = crate_root.join("../../lean/Lzvm.lean");
+    let lean_root_source =
+        std::fs::read_to_string(&lean_root_path).expect("top-level Lean source should read");
+    let preflight_path = crate_root.join("src/proof_preflight.rs");
+    let preflight_source =
+        std::fs::read_to_string(&preflight_path).expect("proof preflight source should read");
+
+    assert!(
+        lean_root_source.contains("import Lzvm.TraceConstraintArtifactBinding"),
+        "top-level Lean module should include the trace constraint artifact binding model"
+    );
+    assert!(
+        lean_source.contains("structure RuntimeTraceConstraintArtifactBindingValidation")
+            && lean_source
+                .contains("runtime_trace_constraint_artifact_binding_checked_acceptance_sound"),
+        "Lean should expose a checked trace constraint artifact binding soundness theorem"
+    );
+    assert!(
+        lean_source.contains("RuntimeTraceConstraintValidation")
+            && lean_source.contains("runtime_trace_constraint_checked_acceptance_sound"),
+        "Lean trace artifact binding should compose with the trace constraint soundness model"
+    );
+    assert!(
+        preflight_source.contains("validate_trace_constraint_witness_commitments")
+            && preflight_source.contains("contains_witness_commitment_segments")
+            && preflight_source
+                .contains("validate_trace_constraint_witness_commitments_for_unit_count"),
+        "Rust proof preflight should keep trace constraint witness commitment binding checks"
+    );
+}
+
+#[test]
 fn guest_pc_trace_writes_use_direct_trace_builder_helpers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
