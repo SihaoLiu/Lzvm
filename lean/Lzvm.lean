@@ -6,6 +6,7 @@ Authors: Sihao Liu
 
 import Lzvm.AuxiliaryChecks
 import Lzvm.AssumptionAudit
+import Lzvm.ChallengeSegmentBinding
 import Lzvm.Conformance
 import Lzvm.DigestPrefix
 import Lzvm.EthBlockPublicInputBinding
