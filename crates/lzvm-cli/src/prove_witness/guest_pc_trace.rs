@@ -57,6 +57,7 @@ pub(super) fn record_guest_pc_trace_timing(
     timings: &mut TimingRecorder,
     timing: ProveWitnessGuestPcTraceTiming,
 ) {
+    timings.record_count("guest_segment_count", timing.segment_count());
     timings.record("guest_trace_stream", timing.guest_trace_stream_duration());
     timings.record(
         "guest_segment_commit",

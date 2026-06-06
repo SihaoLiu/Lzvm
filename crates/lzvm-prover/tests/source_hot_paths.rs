@@ -1829,6 +1829,7 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
     );
 
     for (line_name, accessor) in [
+        ("\"guest_segment_count\"", "segment_count()"),
         (
             "\"guest_device_source_descriptor_upload_bytes\"",
             "guest_device_source_descriptor_upload_byte_count()",
