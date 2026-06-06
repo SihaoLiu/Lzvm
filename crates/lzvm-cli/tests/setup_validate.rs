@@ -18391,6 +18391,44 @@ fn verify_preflight_verifies_eth_block_input_binding() {
 }
 
 #[test]
+fn verify_preflight_rejects_invalid_trace_constraint_evidence() {
+    let dir = temp_dir("verify-preflight-invalid-trace-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let setup_hash = [9; 32];
+    let public_values = sample_public_values(setup_hash);
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: TRACE_CONSTRAINT_SEGMENT_ID,
+        data: b"bad!".to_vec(),
+    });
+    let (proof_path, public_values_path) = write_preflight_artifacts(&dir, &proof, &public_values);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify preflight failed: invalid trace constraint segment magic\n"
+    );
+}
+
+#[test]
 fn reports_usage_for_missing_verify_proof_inputs() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();

@@ -26,6 +26,9 @@ use lzvm_artifacts::proof::{
 use lzvm_artifacts::public_values::{
     public_values_digest, read_public_values_file, PublicValues, PublicValuesError,
 };
+use lzvm_artifacts::trace_constraint_segment::{
+    parse_trace_constraint_segment, TraceConstraintSegmentError, TRACE_CONSTRAINT_SEGMENT_ID,
+};
 use lzvm_field::{Felt, FieldError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +107,7 @@ pub enum ProofPreflightError {
         word_index: usize,
         source: FieldError,
     },
+    TraceConstraint(TraceConstraintSegmentError),
     EthBlockInput(EthBlockInputError),
     EthBlockPublicValues(EthBlockPublicValuesError),
     MissingEthBlockInput,
@@ -168,6 +172,7 @@ impl fmt::Display for ProofPreflightError {
                 f,
                 "invalid challenge values segment value {value_index} word {word_index}: {source}"
             ),
+            Self::TraceConstraint(error) => write!(f, "{error}"),
             Self::EthBlockInput(error) => write!(f, "{error}"),
             Self::EthBlockPublicValues(error) => write!(f, "{error}"),
             Self::MissingEthBlockInput => write!(f, "missing ETH block input proof segment"),
@@ -203,6 +208,7 @@ impl std::error::Error for ProofPreflightError {
             Self::ProgramImageCacheTreeRootNonCanonical { source, .. } => Some(source),
             Self::ChallengeValues(error) => Some(error),
             Self::ChallengeValueNonCanonical { source, .. } => Some(source),
+            Self::TraceConstraint(error) => Some(error),
             Self::EthBlockInput(error) => Some(error),
             Self::EthBlockPublicValues(error) => Some(error),
             Self::ProofArtifact(error) => Some(error),
@@ -302,6 +308,14 @@ pub fn validate_proof_public_values(
         challenge_values_value_counts.push(challenge_values.values.len());
     }
     let challenge_values_segment_count = challenge_values_value_counts.len();
+    for segment in proof
+        .segments
+        .iter()
+        .filter(|segment| segment.id == TRACE_CONSTRAINT_SEGMENT_ID)
+    {
+        parse_trace_constraint_segment(&segment.data)
+            .map_err(ProofPreflightError::TraceConstraint)?;
+    }
     let mut eth_block_input_hashes = Vec::new();
     let mut eth_block_input_byte_counts = Vec::new();
     let mut eth_block_input_block_rlp_byte_counts = Vec::new();
