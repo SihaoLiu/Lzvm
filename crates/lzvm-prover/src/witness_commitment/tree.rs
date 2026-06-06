@@ -1,10 +1,16 @@
 use lzvm_field::Felt;
 
+#[cfg(feature = "cuda")]
+use super::PendingCanonicalCudaDigestLevel;
 use crate::merkle_hash::{
     linear_hash, linear_hashes_from_row_major_bytes, parent_hash, parent_levels_from_digest_level,
 };
 use crate::witness_layout::WitnessTraceStageValues;
 
+#[cfg(feature = "cuda")]
+use super::WitnessStageOpeningWorkTiming;
+#[cfg(feature = "cuda")]
+use super::{retain_source_device_view, WitnessStageSourceDeviceView};
 use super::{
     WitnessStageCommitment, WitnessStageCommitmentError, WitnessStageCompactTreeParts,
     WitnessStageLeaves, WitnessStageOpening, WitnessStageOpeningError, HASH_WORDS, WORD_BYTES,
@@ -50,7 +56,7 @@ pub(crate) fn commit_witness_stage_leaves_owned(
     )
 }
 
-#[cfg(any(feature = "cuda", test))]
+#[cfg(test)]
 pub(crate) fn commit_witness_stage_leaves_owned_with_leaf_hashes(
     leaves: WitnessStageLeaves,
     arity: usize,
@@ -80,6 +86,7 @@ pub(crate) fn commit_witness_stage_leaves_owned_with_leaf_hashes(
 }
 
 #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+#[cfg_attr(feature = "cuda", allow(dead_code))]
 pub(crate) fn commit_witness_stage_leaves_compact_with_leaf_hashes(
     stage: &WitnessTraceStageValues,
     source_bits: usize,
@@ -143,10 +150,189 @@ pub(crate) fn commit_witness_stage_leaves_compact_with_leaf_hashes(
             columns: column_count,
             source_bits,
             target_bits,
+            arity,
             source_values: stage.values().to_vec(),
             raw_leaf_bytes,
             logical_tree_bytes,
-            digest_tree,
+            digest_tree: Some(digest_tree),
+            external_source_required: false,
+            #[cfg(feature = "cuda")]
+            retained_source_device: None,
+        },
+    ))
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn commit_witness_stage_leaves_compact_with_leaf_hash_level(
+    stage: &WitnessTraceStageValues,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    leaf_level: PendingCanonicalCudaDigestLevel,
+    retained_source_device: Option<WitnessStageSourceDeviceView>,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    validate_witness_commitment_arity(arity)?;
+    let source_rows = checked_domain_rows(source_bits)?;
+    let extended_rows = checked_domain_rows(target_bits)?;
+    if target_bits < source_bits {
+        return Err(WitnessStageCommitmentError::LengthOverflow);
+    }
+    if stage.row_count() != source_rows {
+        return Err(WitnessStageCommitmentError::InvalidLeafDigestCount {
+            expected: source_rows,
+            found: stage.row_count(),
+        });
+    }
+    let column_count = stage.column_count();
+    if column_count == 0 || extended_rows == 0 {
+        return Err(WitnessStageCommitmentError::EmptyStage);
+    }
+    let expected_source_values = source_rows
+        .checked_mul(column_count)
+        .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
+    if stage.values().len() != expected_source_values {
+        return Err(WitnessStageCommitmentError::InvalidLeafByteLength {
+            expected: expected_source_values,
+            found: stage.values().len(),
+        });
+    }
+    if leaf_level.arity() != arity || leaf_level.state_count() != extended_rows {
+        return Err(WitnessStageCommitmentError::InvalidLeafDigestCount {
+            expected: extended_rows,
+            found: leaf_level.state_count(),
+        });
+    }
+    let raw_leaf_bytes = extended_rows
+        .checked_mul(column_count)
+        .and_then(|words| words.checked_mul(WORD_BYTES))
+        .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
+    let logical_tree_bytes =
+        expected_witness_stage_commitment_tree_byte_count(extended_rows, column_count, arity)?;
+    let root = leaf_level.root()?;
+    leaf_level.finish_canonical_check()?;
+    let retained_source_device = retained_source_device
+        .filter(|view| validate_source_device_view(view, source_rows, column_count).is_ok())
+        .and_then(retain_source_device_view);
+    let source_values = if retained_source_device.as_ref().is_some() {
+        Vec::new()
+    } else {
+        stage.values().to_vec()
+    };
+    Ok(WitnessStageCommitment::new_compact(
+        stage.stage_index(),
+        arity,
+        root,
+        WitnessStageCompactTreeParts {
+            source_rows,
+            extended_rows,
+            columns: column_count,
+            source_bits,
+            target_bits,
+            arity,
+            source_values,
+            raw_leaf_bytes,
+            logical_tree_bytes,
+            digest_tree: None,
+            external_source_required: false,
+            retained_source_device,
+        },
+    ))
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WitnessStageDeviceCompactCommitInput {
+    pub(crate) stage_index: usize,
+    pub(crate) source_rows: usize,
+    pub(crate) column_count: usize,
+    pub(crate) source_bits: usize,
+    pub(crate) target_bits: usize,
+    pub(crate) arity: usize,
+    pub(crate) external_source_required: bool,
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+pub(crate) fn commit_witness_stage_device_compact_with_leaf_hash_level(
+    input: WitnessStageDeviceCompactCommitInput,
+    leaf_level: PendingCanonicalCudaDigestLevel,
+    retained_source_device: Option<WitnessStageSourceDeviceView>,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    let WitnessStageDeviceCompactCommitInput {
+        stage_index,
+        source_rows,
+        column_count,
+        source_bits,
+        target_bits,
+        arity,
+        external_source_required,
+    } = input;
+    validate_witness_commitment_arity(arity)?;
+    let expected_source_rows = checked_domain_rows(source_bits)?;
+    let extended_rows = checked_domain_rows(target_bits)?;
+    if target_bits < source_bits {
+        return Err(WitnessStageCommitmentError::LengthOverflow);
+    }
+    if source_rows != expected_source_rows {
+        return Err(WitnessStageCommitmentError::InvalidLeafDigestCount {
+            expected: expected_source_rows,
+            found: source_rows,
+        });
+    }
+    if column_count == 0 || extended_rows == 0 {
+        return Err(WitnessStageCommitmentError::EmptyStage);
+    }
+    let expected_source_values = source_rows
+        .checked_mul(column_count)
+        .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
+    if leaf_level.arity() != arity || leaf_level.state_count() != extended_rows {
+        return Err(WitnessStageCommitmentError::InvalidLeafDigestCount {
+            expected: extended_rows,
+            found: leaf_level.state_count(),
+        });
+    }
+    let raw_leaf_bytes = extended_rows
+        .checked_mul(column_count)
+        .and_then(|words| words.checked_mul(WORD_BYTES))
+        .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
+    let logical_tree_bytes =
+        expected_witness_stage_commitment_tree_byte_count(extended_rows, column_count, arity)?;
+    let root = leaf_level.root()?;
+    leaf_level.finish_canonical_check()?;
+    let expected_source_bytes = expected_source_values
+        .checked_mul(WORD_BYTES)
+        .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
+    let retained_source_device = match retained_source_device {
+        Some(view) => {
+            validate_source_device_view(&view, source_rows, column_count)?;
+            retain_source_device_view(view)
+        }
+        None => None,
+    };
+    if retained_source_device.is_none() && !external_source_required {
+        return Err(
+            WitnessStageCommitmentError::SourceDeviceRetentionUnavailable {
+                bytes: expected_source_bytes,
+            },
+        );
+    }
+    Ok(WitnessStageCommitment::new_compact(
+        stage_index,
+        arity,
+        root,
+        WitnessStageCompactTreeParts {
+            source_rows,
+            extended_rows,
+            columns: column_count,
+            source_bits,
+            target_bits,
+            arity,
+            source_values: Vec::new(),
+            raw_leaf_bytes,
+            logical_tree_bytes,
+            digest_tree: None,
+            external_source_required: retained_source_device.is_none() && external_source_required,
+            retained_source_device,
         },
     ))
 }
@@ -247,11 +433,104 @@ fn checked_domain_rows(bits: usize) -> Result<usize, WitnessStageCommitmentError
         .ok_or(WitnessStageCommitmentError::LengthOverflow)
 }
 
+#[cfg(feature = "cuda")]
+fn validate_source_device_view(
+    view: &WitnessStageSourceDeviceView,
+    row_count: usize,
+    column_count: usize,
+) -> Result<(), WitnessStageCommitmentError> {
+    let expected_source_bytes = row_count
+        .checked_mul(column_count)
+        .and_then(|words| words.checked_mul(WORD_BYTES))
+        .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
+    let required_source_bytes = view
+        .required_byte_len()
+        .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
+    let source_column_end = view
+        .column_offset()
+        .checked_add(column_count)
+        .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
+    if !view.has_matching_shape(row_count, column_count)
+        || view.row_stride() < column_count
+        || source_column_end > view.row_stride()
+    {
+        return Err(WitnessStageCommitmentError::InvalidLeafByteLength {
+            expected: expected_source_bytes,
+            found: view.logical_byte_len().unwrap_or(0),
+        });
+    }
+    if view.buffer().len() < required_source_bytes {
+        return Err(WitnessStageCommitmentError::InvalidLeafByteLength {
+            expected: required_source_bytes,
+            found: view.buffer().len(),
+        });
+    }
+    Ok(())
+}
+
 pub fn open_witness_stage_commitment(
     commitment: &WitnessStageCommitment,
     row_index: u64,
     row_count: u64,
     column_count: usize,
+) -> Result<WitnessStageOpening, WitnessStageOpeningError> {
+    open_witness_stage_commitment_inner(
+        commitment,
+        row_index,
+        row_count,
+        column_count,
+        #[cfg(feature = "cuda")]
+        None,
+        #[cfg(feature = "cuda")]
+        None,
+    )
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+pub(crate) fn open_witness_stage_commitment_with_source_device(
+    commitment: &WitnessStageCommitment,
+    row_index: u64,
+    row_count: u64,
+    column_count: usize,
+    source_device: Option<&WitnessStageSourceDeviceView>,
+) -> Result<WitnessStageOpening, WitnessStageOpeningError> {
+    open_witness_stage_commitment_inner(
+        commitment,
+        row_index,
+        row_count,
+        column_count,
+        source_device,
+        None,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn open_witness_stage_commitment_with_source_device_timing(
+    commitment: &WitnessStageCommitment,
+    row_index: u64,
+    row_count: u64,
+    column_count: usize,
+    source_device: Option<&WitnessStageSourceDeviceView>,
+    timing: &mut WitnessStageOpeningWorkTiming,
+) -> Result<WitnessStageOpening, WitnessStageOpeningError> {
+    open_witness_stage_commitment_inner(
+        commitment,
+        row_index,
+        row_count,
+        column_count,
+        source_device,
+        Some(timing),
+    )
+}
+
+fn open_witness_stage_commitment_inner(
+    commitment: &WitnessStageCommitment,
+    row_index: u64,
+    row_count: u64,
+    column_count: usize,
+    #[cfg(feature = "cuda")] source_device: Option<&WitnessStageSourceDeviceView>,
+    #[cfg(feature = "cuda")] timing: Option<&mut WitnessStageOpeningWorkTiming>,
 ) -> Result<WitnessStageOpening, WitnessStageOpeningError> {
     validate_witness_commitment_arity(commitment.arity())?;
     if row_count == 0 {
@@ -285,6 +564,19 @@ pub fn open_witness_stage_commitment(
     let row_offset = query_row
         .checked_mul(row_byte_count)
         .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+    #[cfg(feature = "cuda")]
+    let compact_opening = commitment.open_compact_on_demand_with_source_device(
+        query_row,
+        rows,
+        column_count,
+        source_device,
+        timing,
+    )?;
+    #[cfg(not(feature = "cuda"))]
+    let compact_opening = commitment.open_compact_on_demand(query_row, rows, column_count)?;
+    if let Some((values, siblings)) = compact_opening {
+        return WitnessStageOpening::new(row_index, values, siblings);
+    }
     let values = commitment.read_opening_values(row_offset, row_byte_count)?;
 
     let mut siblings = Vec::new();
@@ -498,12 +790,20 @@ fn append_digest(out: &mut Vec<u8>, digest: [Felt; HASH_WORDS]) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "cuda")]
+    use super::{
+        commit_witness_stage_device_compact_with_leaf_hash_level,
+        commit_witness_stage_leaves_compact_with_leaf_hash_level,
+        WitnessStageDeviceCompactCommitInput, WitnessStageSourceDeviceView,
+    };
     use super::{
         commit_witness_stage_leaves, commit_witness_stage_leaves_compact_with_leaf_hashes,
         commit_witness_stage_leaves_owned, commit_witness_stage_leaves_owned_with_leaf_hashes,
         open_witness_stage_commitment, verify_witness_stage_opening_root,
         WitnessStageCommitmentError, WitnessStageLeaves, WORD_BYTES,
     };
+    #[cfg(feature = "cuda")]
+    use crate::witness_commitment::compact_witness_stage_leaf_hash_level_from_source_device_view_timing;
     use crate::witness_layout::WitnessTraceStageValues;
     use lzvm_field::{coset_extend_evaluations, Felt, FieldError, MODULUS};
 
@@ -659,6 +959,476 @@ mod tests {
                     .expect("compact opening should verify")
             );
         }
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn compact_device_leaf_hash_level_matches_host_commitment() {
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let column_count = 6;
+        let arity = 4;
+        let source_values = (0..source_rows * column_count)
+            .map(|value| Felt::from_u64(value as u64 + 1))
+            .collect::<Vec<_>>();
+        let mut extended_columns = Vec::new();
+        for column in 0..column_count {
+            let column_values = (0..source_rows)
+                .map(|row| source_values[row * column_count + column])
+                .collect::<Vec<_>>();
+            extended_columns.push(
+                coset_extend_evaluations(&column_values, source_bits, target_bits)
+                    .expect("column should extend"),
+            );
+        }
+        let mut leaf_bytes = Vec::new();
+        for row in 0..extended_rows {
+            for column_values in &extended_columns {
+                leaf_bytes.extend_from_slice(&column_values[row].to_le_bytes());
+            }
+        }
+        let leaves =
+            WitnessStageLeaves::new(1, source_rows, extended_rows, column_count, leaf_bytes);
+        let leaf_hashes = crate::merkle_hash::linear_hashes_from_row_major_bytes(
+            leaves.bytes(),
+            extended_rows,
+            column_count,
+            arity,
+        )
+        .expect("leaf hashes should build");
+        let stage =
+            WitnessTraceStageValues::new_for_test(1, source_rows, column_count, source_values);
+        let host = commit_witness_stage_leaves_compact_with_leaf_hashes(
+            &stage,
+            source_bits,
+            target_bits,
+            arity,
+            leaf_hashes,
+        )
+        .expect("host compact commitment should build");
+        let mut timing = crate::witness_commitment::WitnessStageLeafExtendTiming::default();
+        let leaf_level =
+            crate::witness_commitment::compact_witness_stage_leaf_hash_level_with_source_device_timing(
+                &stage,
+                source_bits,
+                target_bits,
+                arity,
+                None,
+                &mut timing,
+            )
+            .expect("device leaf hash level should build");
+        let device = commit_witness_stage_leaves_compact_with_leaf_hash_level(
+            &stage,
+            source_bits,
+            target_bits,
+            arity,
+            leaf_level,
+            None,
+        )
+        .expect("device compact commitment should build");
+
+        assert_eq!(device.root(), host.root());
+        assert_eq!(device.tree_byte_count(), host.tree_byte_count());
+        for row in [0, 1, 5, 7] {
+            let opening =
+                open_witness_stage_commitment(&device, row, extended_rows as u64, column_count)
+                    .expect("device compact commitment should open");
+            assert!(
+                verify_witness_stage_opening_root(device.root(), arity, &opening)
+                    .expect("device compact opening should verify")
+            );
+        }
+        assert_eq!(device.tree_bytes(), host.tree_bytes());
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn retained_source_compact_device_commitment_materializes_without_host_source_values() {
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let column_count = 6;
+        let arity = 4;
+        let source_values = (0..source_rows * column_count)
+            .map(|value| Felt::from_u64(value as u64 + 1))
+            .collect::<Vec<_>>();
+        let mut extended_columns = Vec::new();
+        for column in 0..column_count {
+            let column_values = (0..source_rows)
+                .map(|row| source_values[row * column_count + column])
+                .collect::<Vec<_>>();
+            extended_columns.push(
+                coset_extend_evaluations(&column_values, source_bits, target_bits)
+                    .expect("column should extend"),
+            );
+        }
+        let mut leaf_bytes = Vec::new();
+        for row in 0..extended_rows {
+            for column_values in &extended_columns {
+                leaf_bytes.extend_from_slice(&column_values[row].to_le_bytes());
+            }
+        }
+        let leaves =
+            WitnessStageLeaves::new(1, source_rows, extended_rows, column_count, leaf_bytes);
+        let leaf_hashes = crate::merkle_hash::linear_hashes_from_row_major_bytes(
+            leaves.bytes(),
+            extended_rows,
+            column_count,
+            arity,
+        )
+        .expect("leaf hashes should build");
+        let stage =
+            WitnessTraceStageValues::new_for_test(1, source_rows, column_count, source_values);
+        let host = commit_witness_stage_leaves_compact_with_leaf_hashes(
+            &stage,
+            source_bits,
+            target_bits,
+            arity,
+            leaf_hashes,
+        )
+        .expect("host compact commitment should build");
+        let source_device = std::sync::Arc::new(
+            lzvm_accel::CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(stage.values()))
+                .expect("source values should upload"),
+        );
+        let mut timing = crate::witness_commitment::WitnessStageLeafExtendTiming::default();
+        let leaf_level =
+            crate::witness_commitment::compact_witness_stage_leaf_hash_level_with_source_device_timing(
+                &stage,
+                source_bits,
+                target_bits,
+                arity,
+                Some(source_device.as_ref()),
+                &mut timing,
+            )
+            .expect("device leaf hash level should build");
+        let device = commit_witness_stage_leaves_compact_with_leaf_hash_level(
+            &stage,
+            source_bits,
+            target_bits,
+            arity,
+            leaf_level,
+            Some(WitnessStageSourceDeviceView::new(
+                source_rows,
+                column_count,
+                column_count,
+                0,
+                source_device,
+            )),
+        )
+        .expect("device compact commitment should build");
+
+        assert_eq!(device.root(), host.root());
+        assert_eq!(device.tree_byte_count(), host.tree_byte_count());
+        for row in [0, 1, 5, 7] {
+            let opening =
+                open_witness_stage_commitment(&device, row, extended_rows as u64, column_count)
+                    .expect("device compact commitment should open");
+            assert!(
+                verify_witness_stage_opening_root(device.root(), arity, &opening)
+                    .expect("device compact opening should verify")
+            );
+        }
+        assert_eq!(device.tree_bytes(), host.tree_bytes());
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn device_source_compact_commitment_materializes_without_stage_values() {
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let column_count = 6;
+        let arity = 4;
+        let source_values = (0..source_rows * column_count)
+            .map(|value| Felt::from_u64(value as u64 + 1))
+            .collect::<Vec<_>>();
+        let mut extended_columns = Vec::new();
+        for column in 0..column_count {
+            let column_values = (0..source_rows)
+                .map(|row| source_values[row * column_count + column])
+                .collect::<Vec<_>>();
+            extended_columns.push(
+                coset_extend_evaluations(&column_values, source_bits, target_bits)
+                    .expect("column should extend"),
+            );
+        }
+        let mut leaf_bytes = Vec::new();
+        for row in 0..extended_rows {
+            for column_values in &extended_columns {
+                leaf_bytes.extend_from_slice(&column_values[row].to_le_bytes());
+            }
+        }
+        let leaves =
+            WitnessStageLeaves::new(1, source_rows, extended_rows, column_count, leaf_bytes);
+        let leaf_hashes = crate::merkle_hash::linear_hashes_from_row_major_bytes(
+            leaves.bytes(),
+            extended_rows,
+            column_count,
+            arity,
+        )
+        .expect("leaf hashes should build");
+        let stage = WitnessTraceStageValues::new_for_test(
+            1,
+            source_rows,
+            column_count,
+            source_values.clone(),
+        );
+        let host = commit_witness_stage_leaves_compact_with_leaf_hashes(
+            &stage,
+            source_bits,
+            target_bits,
+            arity,
+            leaf_hashes,
+        )
+        .expect("host compact commitment should build");
+        let source_device = std::sync::Arc::new(
+            lzvm_accel::CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&source_values))
+                .expect("source values should upload"),
+        );
+        let mut timing = crate::witness_commitment::WitnessStageLeafExtendTiming::default();
+        let leaf_level =
+            crate::witness_commitment::compact_witness_stage_leaf_hash_level_from_source_device_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                source_device.as_ref(),
+                &mut timing,
+            )
+            .expect("device leaf hash level should build");
+        let device = commit_witness_stage_device_compact_with_leaf_hash_level(
+            WitnessStageDeviceCompactCommitInput {
+                stage_index: 1,
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                external_source_required: false,
+            },
+            leaf_level,
+            Some(WitnessStageSourceDeviceView::new(
+                source_rows,
+                column_count,
+                column_count,
+                0,
+                source_device,
+            )),
+        )
+        .expect("device compact commitment should build");
+
+        assert_eq!(device.root(), host.root());
+        assert_eq!(device.tree_byte_count(), host.tree_byte_count());
+        for row in [0, 1, 5, 7] {
+            let opening =
+                open_witness_stage_commitment(&device, row, extended_rows as u64, column_count)
+                    .expect("device compact commitment should open");
+            assert!(
+                verify_witness_stage_opening_root(device.root(), arity, &opening)
+                    .expect("device compact opening should verify")
+            );
+        }
+        assert_eq!(device.tree_bytes(), host.tree_bytes());
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn strided_device_source_compact_commitment_uses_full_trace_view() {
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let full_column_count = 9;
+        let column_offset = 2;
+        let column_count = 4;
+        let arity = 4;
+        let full_trace_values = (0..source_rows * full_column_count)
+            .map(|value| Felt::from_u64(value as u64 + 1))
+            .collect::<Vec<_>>();
+        let source_values = (0..source_rows)
+            .flat_map(|row| {
+                let start = row * full_column_count + column_offset;
+                full_trace_values[start..start + column_count]
+                    .iter()
+                    .copied()
+            })
+            .collect::<Vec<_>>();
+        let mut extended_columns = Vec::new();
+        for column in 0..column_count {
+            let column_values = (0..source_rows)
+                .map(|row| source_values[row * column_count + column])
+                .collect::<Vec<_>>();
+            extended_columns.push(
+                coset_extend_evaluations(&column_values, source_bits, target_bits)
+                    .expect("column should extend"),
+            );
+        }
+        let mut leaf_bytes = Vec::new();
+        for row in 0..extended_rows {
+            for column_values in &extended_columns {
+                leaf_bytes.extend_from_slice(&column_values[row].to_le_bytes());
+            }
+        }
+        let leaves =
+            WitnessStageLeaves::new(1, source_rows, extended_rows, column_count, leaf_bytes);
+        let leaf_hashes = crate::merkle_hash::linear_hashes_from_row_major_bytes(
+            leaves.bytes(),
+            extended_rows,
+            column_count,
+            arity,
+        )
+        .expect("leaf hashes should build");
+        let stage = WitnessTraceStageValues::new_for_test(
+            1,
+            source_rows,
+            column_count,
+            source_values.clone(),
+        );
+        let host = commit_witness_stage_leaves_compact_with_leaf_hashes(
+            &stage,
+            source_bits,
+            target_bits,
+            arity,
+            leaf_hashes,
+        )
+        .expect("host compact commitment should build");
+        let full_trace_device = std::sync::Arc::new(
+            lzvm_accel::CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&full_trace_values))
+                .expect("full trace values should upload"),
+        );
+        let source_view = WitnessStageSourceDeviceView::new(
+            source_rows,
+            column_count,
+            full_column_count,
+            column_offset,
+            full_trace_device,
+        );
+        let mut timing = crate::witness_commitment::WitnessStageLeafExtendTiming::default();
+        let leaf_level = compact_witness_stage_leaf_hash_level_from_source_device_view_timing(
+            source_rows,
+            column_count,
+            source_bits,
+            target_bits,
+            arity,
+            &source_view,
+            &mut timing,
+        )
+        .expect("device leaf hash level should build from full trace view");
+        let device = commit_witness_stage_device_compact_with_leaf_hash_level(
+            WitnessStageDeviceCompactCommitInput {
+                stage_index: 1,
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                external_source_required: false,
+            },
+            leaf_level,
+            Some(source_view),
+        )
+        .expect("device compact commitment should build");
+
+        assert_eq!(device.root(), host.root());
+        assert_eq!(device.tree_byte_count(), host.tree_byte_count());
+        for row in [0, 1, 5, 7] {
+            let opening =
+                open_witness_stage_commitment(&device, row, extended_rows as u64, column_count)
+                    .expect("device compact commitment should open");
+            assert!(
+                verify_witness_stage_opening_root(device.root(), arity, &opening)
+                    .expect("device compact opening should verify")
+            );
+        }
+        assert_eq!(device.tree_bytes(), host.tree_bytes());
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn compact_device_narrow_leaf_hash_level_matches_host_commitment() {
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let column_count = 3;
+        let arity = 4;
+        let source_values = (0..source_rows * column_count)
+            .map(|value| Felt::from_u64(value as u64 + 1))
+            .collect::<Vec<_>>();
+        let mut extended_columns = Vec::new();
+        for column in 0..column_count {
+            let column_values = (0..source_rows)
+                .map(|row| source_values[row * column_count + column])
+                .collect::<Vec<_>>();
+            extended_columns.push(
+                coset_extend_evaluations(&column_values, source_bits, target_bits)
+                    .expect("column should extend"),
+            );
+        }
+        let mut leaf_bytes = Vec::new();
+        for row in 0..extended_rows {
+            for column_values in &extended_columns {
+                leaf_bytes.extend_from_slice(&column_values[row].to_le_bytes());
+            }
+        }
+        let leaves =
+            WitnessStageLeaves::new(1, source_rows, extended_rows, column_count, leaf_bytes);
+        let leaf_hashes = crate::merkle_hash::linear_hashes_from_row_major_bytes(
+            leaves.bytes(),
+            extended_rows,
+            column_count,
+            arity,
+        )
+        .expect("leaf hashes should build");
+        let stage =
+            WitnessTraceStageValues::new_for_test(1, source_rows, column_count, source_values);
+        let host = commit_witness_stage_leaves_compact_with_leaf_hashes(
+            &stage,
+            source_bits,
+            target_bits,
+            arity,
+            leaf_hashes,
+        )
+        .expect("host compact commitment should build");
+        let mut timing = crate::witness_commitment::WitnessStageLeafExtendTiming::default();
+        let leaf_level =
+            crate::witness_commitment::compact_witness_stage_leaf_hash_level_with_source_device_timing(
+                &stage,
+                source_bits,
+                target_bits,
+                arity,
+                None,
+                &mut timing,
+            )
+            .expect("device narrow leaf hash level should build");
+        let device = commit_witness_stage_leaves_compact_with_leaf_hash_level(
+            &stage,
+            source_bits,
+            target_bits,
+            arity,
+            leaf_level,
+            None,
+        )
+        .expect("device compact commitment should build");
+
+        assert_eq!(device.root(), host.root());
+        assert_eq!(device.tree_byte_count(), host.tree_byte_count());
+        for row in [0, 1, 5, 7] {
+            let opening =
+                open_witness_stage_commitment(&device, row, extended_rows as u64, column_count)
+                    .expect("device compact commitment should open");
+            assert!(
+                verify_witness_stage_opening_root(device.root(), arity, &opening)
+                    .expect("device compact opening should verify")
+            );
+        }
+        assert_eq!(device.tree_bytes(), host.tree_bytes());
     }
 
     #[test]

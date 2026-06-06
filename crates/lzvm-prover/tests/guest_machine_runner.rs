@@ -1,11 +1,11 @@
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_prover::guest_instruction::RiscvInstruction;
 use lzvm_prover::guest_machine::{
-    run_guest_machine, run_guest_machine_trace, run_guest_machine_trace_with_fcalls,
-    run_guest_machine_with_fcalls, GuestFcallHandler, GuestFcallParam, GuestFcallRequest,
-    GuestFcallResponse, GuestMachineError, GuestMachineHalt, GuestMachineMemory,
-    GuestMachineRunError, GuestMachineState, GuestMemoryAccess, GuestMemoryAccessKind,
-    GuestRegisterWrite, ZISK_ARCHITECTURE_ID,
+    advance_guest_machine_with_fcalls, run_guest_machine, run_guest_machine_trace,
+    run_guest_machine_trace_with_fcalls, run_guest_machine_with_fcalls, GuestFcallHandler,
+    GuestFcallParam, GuestFcallRequest, GuestFcallResponse, GuestMachineError, GuestMachineHalt,
+    GuestMachineMemory, GuestMachineRunError, GuestMachineState, GuestMemoryAccess,
+    GuestMemoryAccessKind, GuestRegisterWrite, ZISK_ARCHITECTURE_ID,
 };
 use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryImage};
 use lzvm_prover::zisk_fcalls::{
@@ -150,6 +150,14 @@ fn store(funct3: u8, rs1: u8, rs2: u8, offset: i16) -> u32 {
 
 fn sd(rs1: u8, rs2: u8, offset: i16) -> u32 {
     store(3, rs1, rs2, offset)
+}
+
+fn sw(rs1: u8, rs2: u8, offset: i16) -> u32 {
+    store(2, rs1, rs2, offset)
+}
+
+fn jalr(rd: u8, rs1: u8, offset: i16) -> u32 {
+    encode_i(offset, rs1, 0, rd, 0x67)
 }
 
 fn encode_amo(
@@ -669,6 +677,31 @@ fn traces_guest_machine_register_and_memory_effects_until_ecall() {
 }
 
 #[test]
+fn guest_machine_fetch_observes_self_modified_instruction_bytes() {
+    let target_offset = 24;
+    let target_address = ENTRY + target_offset;
+    let replacement = addi(5, 0, 9);
+    let mut code = Vec::new();
+    push_word(&mut code, auipc(1, 0));
+    push_word(&mut code, addi(1, 1, target_offset as i16));
+    push_word(&mut code, lui(2, replacement & 0xffff_f000));
+    push_word(&mut code, addi(2, 2, (replacement & 0x0fff) as i16));
+    push_word(&mut code, sw(1, 2, 0));
+    push_word(&mut code, jalr(0, 1, 0));
+    push_word(&mut code, addi(5, 0, 1));
+    push_word(&mut code, 0x0000_0073);
+    let mut memory = guest_machine_memory_with_bytes(&code);
+    let mut state = GuestMachineState::new(memory.entry_address());
+
+    let trace = run_guest_machine_trace(&mut memory, &mut state, 10).expect("guest should halt");
+
+    assert_eq!(trace.run.executed_instructions, 7);
+    assert_eq!(trace.reports[4].memory_accesses[0].address, target_address);
+    assert_eq!(trace.reports[5].next_pc, target_address);
+    assert_eq!(state.register(5), Some(9));
+}
+
+#[test]
 fn traces_guest_machine_atomic_effects_until_ecall() {
     let data_offset = 64;
     let data_address = ENTRY + data_offset as u64;
@@ -909,6 +942,52 @@ fn zisk_dma_inputcpy_copies_free_call_results_to_guest_memory() {
             params: vec![],
         }]
     );
+}
+
+#[test]
+fn failed_zisk_dma_inputcpy_keeps_free_call_results_for_retry() {
+    let data_offset = 256;
+    let data_address = ENTRY + data_offset as u64;
+    let mut memory = guest_machine_memory_with_words_and_data(
+        &[
+            addi(10, 0, 0),
+            csrwi(0x08c0, 7),
+            csrs(0x0815, 10),
+            addi(11, 10, 8),
+            0x0000_0073,
+        ],
+        data_offset,
+        &[0; 16],
+    );
+    let mut state = GuestMachineState::new(memory.entry_address());
+    let mut handler = RecordingFcallHandler::with_results(vec![0x1122_3344_5566_7788]);
+
+    advance_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler)
+        .expect("destination setup should execute");
+    advance_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler)
+        .expect("free-call invoke should execute");
+    advance_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler)
+        .expect("input-copy prepare should execute");
+    let before_error = state.clone();
+
+    advance_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler)
+        .expect_err("input copy to unmapped memory should fail");
+
+    assert_eq!(state, before_error);
+
+    state
+        .set_register(10, data_address)
+        .expect("retry destination should set");
+    let retry = advance_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler)
+        .expect("input copy retry should execute");
+
+    let mut copied = [0_u8; 8];
+    memory
+        .read_range_into(data_address, &mut copied)
+        .expect("copied result should read");
+    assert_eq!(retry.next_pc, ENTRY + 16);
+    assert_eq!(state.register(11), Some(data_address));
+    assert_eq!(copied, 0x1122_3344_5566_7788_u64.to_le_bytes());
 }
 
 #[test]

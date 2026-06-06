@@ -377,6 +377,14 @@ fn resolves_regular_hint_values_from_row_inputs() {
         stage_index: 2,
         column_count: 3,
         values: &stage_values,
+        #[cfg(feature = "cuda")]
+        values_device: None,
+        #[cfg(feature = "cuda")]
+        values_row_stride: 3,
+        #[cfg(feature = "cuda")]
+        values_column_offset: 0,
+        #[cfg(feature = "cuda")]
+        value_count: stage_values.len(),
     }];
 
     let resolved = resolve_regular_hint_field(

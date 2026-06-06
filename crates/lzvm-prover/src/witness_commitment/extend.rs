@@ -4,9 +4,14 @@ use std::time::Instant;
 
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
+    cuda_goldilocks_begin_validate_canonical_words_device,
     cuda_goldilocks_coset_extend_row_major_columns_device,
+    cuda_goldilocks_coset_extend_row_major_columns_device_unsynced,
     cuda_goldilocks_coset_extend_row_major_columns_output_bytes,
-    cuda_goldilocks_validate_canonical_words_device, CudaDeviceBuffer,
+    cuda_goldilocks_coset_extend_row_major_columns_strided_device,
+    cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced,
+    cuda_goldilocks_validate_canonical_words_device, AccelError, CudaCanonicalCheck,
+    CudaDeviceBuffer, CudaRowMajorColumnView,
 };
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::coset_extend_evaluations;
@@ -15,12 +20,59 @@ use lzvm_field::Felt;
 #[cfg(feature = "cuda")]
 use crate::gpu_setup::prepare_gpu_setup;
 #[cfg(feature = "cuda")]
-use crate::merkle_hash::linear_hashes_from_validated_wide_row_major_device_buffer;
+use crate::merkle_hash::{
+    linear_hash_level_from_validated_row_major_device_buffer,
+    linear_hashes_from_validated_wide_row_major_device_buffer, CudaDigestLevel,
+};
 use crate::witness_layout::WitnessTraceStageValues;
 
 #[cfg(feature = "cuda")]
-use super::{WitnessStageCommitmentError, WitnessTraceCommitmentError, HASH_WORDS};
+use super::{
+    WitnessStageCommitmentError, WitnessStageSourceDeviceView, WitnessTraceCommitmentError,
+    HASH_WORDS,
+};
 use super::{WitnessStageLeafError, WitnessStageLeaves, WORD_BYTES};
+
+#[cfg(feature = "cuda")]
+#[derive(Debug)]
+pub(crate) struct PendingCanonicalCudaDigestLevel {
+    level: CudaDigestLevel,
+    canonical_check: CudaCanonicalCheck,
+}
+
+#[cfg(feature = "cuda")]
+impl PendingCanonicalCudaDigestLevel {
+    fn new(level: CudaDigestLevel, canonical_check: CudaCanonicalCheck) -> Self {
+        Self {
+            level,
+            canonical_check,
+        }
+    }
+
+    pub(crate) fn state_count(&self) -> usize {
+        self.level.state_count()
+    }
+
+    pub(crate) fn arity(&self) -> usize {
+        self.level.arity()
+    }
+
+    pub(crate) fn root(&self) -> Result<[Felt; HASH_WORDS], crate::merkle_hash::MerkleHashError> {
+        self.level.root()
+    }
+
+    pub(crate) fn finish_canonical_check(&self) -> Result<(), WitnessStageLeafError> {
+        if self
+            .canonical_check
+            .is_canonical()
+            .map_err(WitnessStageLeafError::from)?
+        {
+            Ok(())
+        } else {
+            Err(WitnessStageLeafError::NonCanonicalDeviceWord)
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct WitnessStageLeafExtendTiming {
@@ -88,83 +140,187 @@ pub fn extend_witness_stage_leaves(
 }
 
 #[cfg(feature = "cuda")]
-pub(crate) fn extend_witness_stage_leaves_with_leaf_hashes(
-    stage: &WitnessTraceStageValues,
+pub(crate) fn extend_witness_stage_leaves_from_source_device_view(
+    stage_index: usize,
+    row_count: usize,
+    column_count: usize,
     source_bits: usize,
     target_bits: usize,
-    arity: usize,
-) -> Result<(WitnessStageLeaves, Vec<[Felt; HASH_WORDS]>), WitnessTraceCommitmentError> {
-    let columns = stage.column_count();
-    let rows = stage.row_count();
-    let (bytes, leaf_hashes) = extend_witness_stage_row_major_bytes_with_leaf_hashes(
-        stage.values(),
-        columns,
+    source_device: &WitnessStageSourceDeviceView,
+) -> Result<WitnessStageLeaves, WitnessStageLeafError> {
+    if !source_device.has_matching_shape(row_count, column_count) {
+        return Err(WitnessStageLeafError::LengthOverflow);
+    }
+    let required_source_bytes = source_device
+        .required_byte_len()
+        .ok_or(WitnessStageLeafError::LengthOverflow)?;
+    if source_device.buffer().len() < required_source_bytes {
+        return Err(WitnessStageLeafError::Accel(AccelError::LengthMismatch {
+            lhs: source_device.buffer().len(),
+            rhs: required_source_bytes,
+        }));
+    }
+    let value_count = row_count
+        .checked_mul(column_count)
+        .ok_or(WitnessStageLeafError::LengthOverflow)?;
+    let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+        value_count,
+        column_count,
         source_bits,
         target_bits,
-        arity,
-    )?;
-    let extended_rows = extended_row_count_from_bytes(bytes.len(), columns)?;
-
-    Ok((
-        WitnessStageLeaves::new(stage.stage_index(), rows, extended_rows, columns, bytes),
-        leaf_hashes,
-    ))
-}
-
-#[cfg(feature = "cuda")]
-pub(crate) fn extend_witness_stage_leaves_with_leaf_hashes_and_timing(
-    stage: &WitnessTraceStageValues,
-    source_bits: usize,
-    target_bits: usize,
-    arity: usize,
-    timing: &mut WitnessStageLeafExtendTiming,
-) -> Result<(WitnessStageLeaves, Vec<[Felt; HASH_WORDS]>), WitnessTraceCommitmentError> {
-    let columns = stage.column_count();
-    let rows = stage.row_count();
-    let (bytes, leaf_hashes) = extend_witness_stage_row_major_bytes_with_leaf_hashes_timed(
-        stage.values(),
-        columns,
-        source_bits,
-        target_bits,
-        arity,
-        timing,
-    )?;
-    let extended_rows = extended_row_count_from_bytes(bytes.len(), columns)?;
-
-    Ok((
-        WitnessStageLeaves::new(stage.stage_index(), rows, extended_rows, columns, bytes),
-        leaf_hashes,
-    ))
-}
-
-#[cfg(feature = "cuda")]
-pub(crate) fn compact_witness_stage_leaf_hashes(
-    stage: &WitnessTraceStageValues,
-    source_bits: usize,
-    target_bits: usize,
-    arity: usize,
-) -> Result<Vec<[Felt; HASH_WORDS]>, WitnessTraceCommitmentError> {
-    let mut timing = WitnessStageLeafExtendTiming::default();
-    compact_witness_stage_leaf_hashes_and_timing(
-        stage,
-        source_bits,
-        target_bits,
-        arity,
-        &mut timing,
     )
+    .map_err(WitnessStageLeafError::from)?;
+    prepare_gpu_setup(target_bits).map_err(WitnessStageLeafError::from)?;
+    let mut output_buffer =
+        CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from)?;
+    if source_device.row_stride() == column_count && source_device.column_offset() == 0 {
+        cuda_goldilocks_coset_extend_row_major_columns_device(
+            source_device.buffer(),
+            &mut output_buffer,
+            column_count,
+            source_bits,
+            target_bits,
+        )
+    } else {
+        cuda_goldilocks_coset_extend_row_major_columns_strided_device(
+            source_device.buffer(),
+            &mut output_buffer,
+            CudaRowMajorColumnView {
+                source_rows: row_count,
+                source_row_stride: source_device.row_stride(),
+                column_offset: source_device.column_offset(),
+                column_count,
+            },
+            source_bits,
+            target_bits,
+        )
+    }
+    .map_err(WitnessStageLeafError::from)?;
+    validate_row_major_device_words(&output_buffer, out_byte_count)?;
+    let bytes = output_buffer
+        .to_vec()
+        .map_err(WitnessStageLeafError::from)?;
+    let extended_rows = extended_row_count_from_bytes(bytes.len(), column_count)?;
+    Ok(WitnessStageLeaves::new(
+        stage_index,
+        row_count,
+        extended_rows,
+        column_count,
+        bytes,
+    ))
 }
 
 #[cfg(feature = "cuda")]
-pub(crate) fn compact_witness_stage_leaf_hashes_and_timing(
+#[allow(dead_code)]
+pub(crate) fn compact_witness_stage_leaf_hashes_with_source_device_timing(
     stage: &WitnessTraceStageValues,
     source_bits: usize,
     target_bits: usize,
     arity: usize,
+    source_device: Option<&CudaDeviceBuffer>,
     timing: &mut WitnessStageLeafExtendTiming,
 ) -> Result<Vec<[Felt; HASH_WORDS]>, WitnessTraceCommitmentError> {
     compact_witness_stage_leaf_hashes_timed(
         stage.values(),
         stage.column_count(),
+        source_bits,
+        target_bits,
+        arity,
+        source_device,
+        timing,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn compact_witness_stage_leaf_hash_level_with_source_device_timing(
+    stage: &WitnessTraceStageValues,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    source_device: Option<&CudaDeviceBuffer>,
+    timing: &mut WitnessStageLeafExtendTiming,
+) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
+    compact_witness_stage_leaf_hash_level_timed(
+        stage.values(),
+        stage.column_count(),
+        source_bits,
+        target_bits,
+        arity,
+        source_device,
+        timing,
+    )
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+pub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_timing(
+    row_count: usize,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    source_device: &CudaDeviceBuffer,
+    timing: &mut WitnessStageLeafExtendTiming,
+) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
+    let value_count = row_count
+        .checked_mul(column_count)
+        .ok_or(WitnessStageLeafError::LengthOverflow)?;
+    let expected_source_bytes = value_count
+        .checked_mul(WORD_BYTES)
+        .ok_or(WitnessStageLeafError::LengthOverflow)?;
+    if source_device.len() != expected_source_bytes {
+        return Err(WitnessStageLeafError::Accel(AccelError::LengthMismatch {
+            lhs: source_device.len(),
+            rhs: expected_source_bytes,
+        })
+        .into());
+    }
+    compact_witness_stage_leaf_hash_level_from_source_device_timed(
+        source_device,
+        CudaRowMajorColumnView {
+            source_rows: row_count,
+            source_row_stride: column_count,
+            column_offset: 0,
+            column_count,
+        },
+        source_bits,
+        target_bits,
+        arity,
+        timing,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_view_timing(
+    row_count: usize,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    source_device: &WitnessStageSourceDeviceView,
+    timing: &mut WitnessStageLeafExtendTiming,
+) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
+    if !source_device.has_matching_shape(row_count, column_count) {
+        return Err(WitnessStageLeafError::LengthOverflow.into());
+    }
+    let required_source_bytes = source_device
+        .required_byte_len()
+        .ok_or(WitnessStageLeafError::LengthOverflow)?;
+    if source_device.buffer().len() < required_source_bytes {
+        return Err(WitnessStageLeafError::Accel(AccelError::LengthMismatch {
+            lhs: source_device.buffer().len(),
+            rhs: required_source_bytes,
+        })
+        .into());
+    }
+    compact_witness_stage_leaf_hash_level_from_source_device_timed(
+        source_device.buffer(),
+        CudaRowMajorColumnView {
+            source_rows: row_count,
+            source_row_stride: source_device.row_stride(),
+            column_offset: source_device.column_offset(),
+            column_count,
+        },
         source_bits,
         target_bits,
         arity,
@@ -188,6 +344,23 @@ fn extend_witness_stage_row_major_bytes(
     source_bits: usize,
     target_bits: usize,
 ) -> Result<Vec<u8>, WitnessStageLeafError> {
+    extend_witness_stage_row_major_bytes_with_source_device(
+        values,
+        column_count,
+        source_bits,
+        target_bits,
+        None,
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn extend_witness_stage_row_major_bytes_with_source_device(
+    values: &[Felt],
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+    source_device: Option<&CudaDeviceBuffer>,
+) -> Result<Vec<u8>, WitnessStageLeafError> {
     let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
         values.len(),
         column_count,
@@ -197,13 +370,20 @@ fn extend_witness_stage_row_major_bytes(
     .map_err(WitnessStageLeafError::from)?;
     prepare_gpu_setup(target_bits).map_err(WitnessStageLeafError::from)?;
 
-    let source_buffer = CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values))
-        .map_err(WitnessStageLeafError::from)?;
+    let source_buffer_storage;
+    let source_buffer = if let Some(source_device) = source_device {
+        validate_source_device_buffer(source_device, values)?;
+        source_device
+    } else {
+        source_buffer_storage = CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values))
+            .map_err(WitnessStageLeafError::from)?;
+        &source_buffer_storage
+    };
     let mut output_buffer =
         CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from)?;
 
     cuda_goldilocks_coset_extend_row_major_columns_device(
-        &source_buffer,
+        source_buffer,
         &mut output_buffer,
         column_count,
         source_bits,
@@ -218,134 +398,14 @@ fn extend_witness_stage_row_major_bytes(
 }
 
 #[cfg(feature = "cuda")]
-fn extend_witness_stage_row_major_bytes_with_leaf_hashes(
-    values: &[Felt],
-    column_count: usize,
-    source_bits: usize,
-    target_bits: usize,
-    arity: usize,
-) -> Result<(Vec<u8>, Vec<[Felt; HASH_WORDS]>), WitnessTraceCommitmentError> {
-    let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
-        values.len(),
-        column_count,
-        source_bits,
-        target_bits,
-    )
-    .map_err(WitnessStageLeafError::from)?;
-    prepare_gpu_setup(target_bits).map_err(WitnessStageLeafError::from)?;
-
-    let source_buffer = CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values))
-        .map_err(WitnessStageLeafError::from)?;
-    let mut output_buffer =
-        CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from)?;
-
-    cuda_goldilocks_coset_extend_row_major_columns_device(
-        &source_buffer,
-        &mut output_buffer,
-        column_count,
-        source_bits,
-        target_bits,
-    )
-    .map_err(WitnessStageLeafError::from)?;
-    let extended_rows = extended_row_count_from_bytes(out_byte_count, column_count)?;
-    if column_count > HASH_WORDS {
-        validate_row_major_device_words(&output_buffer, out_byte_count)?;
-    }
-    let bytes = output_buffer
-        .to_vec()
-        .map_err(WitnessStageLeafError::from)?;
-    let leaf_hashes = if column_count <= HASH_WORDS {
-        validate_row_major_word_bytes_and_padded_hashes(&bytes, extended_rows, column_count, arity)?
-    } else {
-        linear_hashes_from_validated_wide_row_major_device_buffer(
-            &output_buffer,
-            extended_rows,
-            column_count,
-            arity,
-        )
-        .map_err(WitnessStageCommitmentError::from)?
-    };
-    Ok((bytes, leaf_hashes))
-}
-
-#[cfg(feature = "cuda")]
-fn extend_witness_stage_row_major_bytes_with_leaf_hashes_timed(
-    values: &[Felt],
-    column_count: usize,
-    source_bits: usize,
-    target_bits: usize,
-    arity: usize,
-    timing: &mut WitnessStageLeafExtendTiming,
-) -> Result<(Vec<u8>, Vec<[Felt; HASH_WORDS]>), WitnessTraceCommitmentError> {
-    let out_byte_count = record_duration(&mut timing.setup_duration, || {
-        let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
-            values.len(),
-            column_count,
-            source_bits,
-            target_bits,
-        )
-        .map_err(WitnessStageLeafError::from)?;
-        prepare_gpu_setup(target_bits).map_err(WitnessStageLeafError::from)?;
-        Ok::<_, WitnessStageLeafError>(out_byte_count)
-    })?;
-
-    let source_buffer = record_duration(&mut timing.upload_duration, || {
-        CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values))
-            .map_err(WitnessStageLeafError::from)
-    })?;
-    let mut output_buffer = record_duration(&mut timing.setup_duration, || {
-        CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from)
-    })?;
-
-    record_duration(&mut timing.kernel_duration, || {
-        cuda_goldilocks_coset_extend_row_major_columns_device(
-            &source_buffer,
-            &mut output_buffer,
-            column_count,
-            source_bits,
-            target_bits,
-        )
-        .map_err(WitnessStageLeafError::from)
-    })?;
-    let extended_rows = extended_row_count_from_bytes(out_byte_count, column_count)?;
-    if column_count > HASH_WORDS {
-        record_duration(&mut timing.validate_duration, || {
-            validate_row_major_device_words(&output_buffer, out_byte_count)
-        })?;
-    }
-    let bytes = record_duration(&mut timing.download_duration, || {
-        output_buffer.to_vec().map_err(WitnessStageLeafError::from)
-    })?;
-    let leaf_hashes = if column_count <= HASH_WORDS {
-        record_duration(&mut timing.validate_duration, || {
-            validate_row_major_word_bytes_and_padded_hashes(
-                &bytes,
-                extended_rows,
-                column_count,
-                arity,
-            )
-        })?
-    } else {
-        record_duration(&mut timing.leaf_hash_duration, || {
-            linear_hashes_from_validated_wide_row_major_device_buffer(
-                &output_buffer,
-                extended_rows,
-                column_count,
-                arity,
-            )
-            .map_err(WitnessStageCommitmentError::from)
-        })?
-    };
-    Ok((bytes, leaf_hashes))
-}
-
-#[cfg(feature = "cuda")]
+#[allow(dead_code)]
 fn compact_witness_stage_leaf_hashes_timed(
     values: &[Felt],
     column_count: usize,
     source_bits: usize,
     target_bits: usize,
     arity: usize,
+    source_device: Option<&CudaDeviceBuffer>,
     timing: &mut WitnessStageLeafExtendTiming,
 ) -> Result<Vec<[Felt; HASH_WORDS]>, WitnessTraceCommitmentError> {
     if column_count <= HASH_WORDS {
@@ -363,18 +423,29 @@ fn compact_witness_stage_leaf_hashes_timed(
         Ok::<_, WitnessStageLeafError>(out_byte_count)
     })?;
 
-    let source_buffer = record_duration(&mut timing.upload_duration, || {
-        CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values))
-            .map_err(WitnessStageLeafError::from)
-    })?;
+    let source_buffer_storage;
+    let source_buffer = if let Some(source_device) = source_device {
+        validate_source_device_buffer(source_device, values)?;
+        source_device
+    } else {
+        source_buffer_storage = record_duration(&mut timing.upload_duration, || {
+            CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values))
+                .map_err(WitnessStageLeafError::from)
+        })?;
+        &source_buffer_storage
+    };
     let mut output_buffer = record_duration(&mut timing.setup_duration, || {
+        CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from)
+    })?;
+    let mut extension_workspace = record_duration(&mut timing.setup_duration, || {
         CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from)
     })?;
 
     record_duration(&mut timing.kernel_duration, || {
-        cuda_goldilocks_coset_extend_row_major_columns_device(
-            &source_buffer,
+        cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(
+            source_buffer,
             &mut output_buffer,
+            &mut extension_workspace,
             column_count,
             source_bits,
             target_bits,
@@ -394,6 +465,158 @@ fn compact_witness_stage_leaf_hashes_timed(
         )
         .map_err(WitnessStageCommitmentError::from)
     })
+}
+
+#[cfg(feature = "cuda")]
+fn compact_witness_stage_leaf_hash_level_timed(
+    values: &[Felt],
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    source_device: Option<&CudaDeviceBuffer>,
+    timing: &mut WitnessStageLeafExtendTiming,
+) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
+    let out_byte_count = record_duration(&mut timing.setup_duration, || {
+        let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+            values.len(),
+            column_count,
+            source_bits,
+            target_bits,
+        )
+        .map_err(WitnessStageLeafError::from)?;
+        prepare_gpu_setup(target_bits).map_err(WitnessStageLeafError::from)?;
+        Ok::<_, WitnessStageLeafError>(out_byte_count)
+    })?;
+
+    let source_buffer_storage;
+    let source_buffer = if let Some(source_device) = source_device {
+        validate_source_device_buffer(source_device, values)?;
+        source_device
+    } else {
+        source_buffer_storage = record_duration(&mut timing.upload_duration, || {
+            CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values))
+                .map_err(WitnessStageLeafError::from)
+        })?;
+        &source_buffer_storage
+    };
+    let mut output_buffer = record_duration(&mut timing.setup_duration, || {
+        CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from)
+    })?;
+
+    record_duration(&mut timing.kernel_duration, || {
+        cuda_goldilocks_coset_extend_row_major_columns_device(
+            source_buffer,
+            &mut output_buffer,
+            column_count,
+            source_bits,
+            target_bits,
+        )
+        .map_err(WitnessStageLeafError::from)
+    })?;
+    let extended_rows = extended_row_count_from_bytes(out_byte_count, column_count)?;
+    let canonical_check = record_duration(&mut timing.validate_duration, || {
+        begin_validate_row_major_device_words(&output_buffer, out_byte_count)
+    })?;
+    let level = record_duration(&mut timing.leaf_hash_duration, || {
+        linear_hash_level_from_validated_row_major_device_buffer(
+            &output_buffer,
+            extended_rows,
+            column_count,
+            arity,
+        )
+        .map_err(WitnessStageCommitmentError::from)
+    })?;
+    Ok(PendingCanonicalCudaDigestLevel::new(level, canonical_check))
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
+    source_device: &CudaDeviceBuffer,
+    view: CudaRowMajorColumnView,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    timing: &mut WitnessStageLeafExtendTiming,
+) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
+    let out_byte_count = record_duration(&mut timing.setup_duration, || {
+        let value_count = view
+            .source_rows
+            .checked_mul(view.column_count)
+            .ok_or(WitnessStageLeafError::LengthOverflow)?;
+        let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+            value_count,
+            view.column_count,
+            source_bits,
+            target_bits,
+        )
+        .map_err(WitnessStageLeafError::from)?;
+        prepare_gpu_setup(target_bits).map_err(WitnessStageLeafError::from)?;
+        Ok::<_, WitnessStageLeafError>(out_byte_count)
+    })?;
+
+    let mut output_buffer = record_duration(&mut timing.setup_duration, || {
+        CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from)
+    })?;
+    let mut extension_workspace = record_duration(&mut timing.setup_duration, || {
+        CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from)
+    })?;
+
+    record_duration(&mut timing.kernel_duration, || {
+        if view.source_row_stride == view.column_count && view.column_offset == 0 {
+            cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(
+                source_device,
+                &mut output_buffer,
+                &mut extension_workspace,
+                view.column_count,
+                source_bits,
+                target_bits,
+            )
+        } else {
+            cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced(
+                source_device,
+                &mut output_buffer,
+                &mut extension_workspace,
+                view,
+                source_bits,
+                target_bits,
+            )
+        }
+        .map_err(WitnessStageLeafError::from)
+    })?;
+    let extended_rows = extended_row_count_from_bytes(out_byte_count, view.column_count)?;
+    let canonical_check = record_duration(&mut timing.validate_duration, || {
+        begin_validate_row_major_device_words(&output_buffer, out_byte_count)
+    })?;
+    let level = record_duration(&mut timing.leaf_hash_duration, || {
+        linear_hash_level_from_validated_row_major_device_buffer(
+            &output_buffer,
+            extended_rows,
+            view.column_count,
+            arity,
+        )
+        .map_err(WitnessStageCommitmentError::from)
+    })?;
+    Ok(PendingCanonicalCudaDigestLevel::new(level, canonical_check))
+}
+
+#[cfg(feature = "cuda")]
+fn validate_source_device_buffer(
+    buffer: &CudaDeviceBuffer,
+    values: &[Felt],
+) -> Result<(), WitnessStageLeafError> {
+    let expected = values
+        .len()
+        .checked_mul(WORD_BYTES)
+        .ok_or(WitnessStageLeafError::LengthOverflow)?;
+    if buffer.len() != expected {
+        return Err(WitnessStageLeafError::Accel(AccelError::LengthMismatch {
+            lhs: buffer.len(),
+            rhs: expected,
+        }));
+    }
+    Ok(())
 }
 
 #[cfg(feature = "cuda")]
@@ -443,6 +666,19 @@ fn validate_row_major_device_words(
 }
 
 #[cfg(feature = "cuda")]
+fn begin_validate_row_major_device_words(
+    buffer: &CudaDeviceBuffer,
+    byte_count: usize,
+) -> Result<CudaCanonicalCheck, WitnessStageLeafError> {
+    if !byte_count.is_multiple_of(WORD_BYTES) || buffer.len() != byte_count {
+        return Err(WitnessStageLeafError::LengthOverflow);
+    }
+    let word_count = byte_count / WORD_BYTES;
+    cuda_goldilocks_begin_validate_canonical_words_device(buffer, word_count)
+        .map_err(WitnessStageLeafError::from)
+}
+
+#[cfg(all(test, feature = "cuda"))]
 fn validate_row_major_word_bytes_and_padded_hashes(
     bytes: &[u8],
     row_count: usize,
@@ -484,7 +720,7 @@ fn validate_row_major_word_bytes_and_padded_hashes(
     Ok(out)
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(all(test, feature = "cuda"))]
 fn validate_leaf_hash_arity(arity: usize) -> Result<(), WitnessStageCommitmentError> {
     match arity {
         2 | 4 => Ok(()),

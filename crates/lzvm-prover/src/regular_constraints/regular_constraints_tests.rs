@@ -272,6 +272,14 @@ fn base_only_matrix_pairs_specialize_for_prepared_rows() {
             stage_index: 1,
             column_count: 2,
             values: &row_values,
+            #[cfg(feature = "cuda")]
+            values_device: None,
+            #[cfg(feature = "cuda")]
+            values_row_stride: 2,
+            #[cfg(feature = "cuda")]
+            values_column_offset: 0,
+            #[cfg(feature = "cuda")]
+            value_count: row_values.len(),
         }];
 
         BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
@@ -329,6 +337,14 @@ fn base_only_matrix_pairs_preserve_independent_row_offsets() {
         stage_index: 1,
         column_count: 2,
         values: &row_values,
+        #[cfg(feature = "cuda")]
+        values_device: None,
+        #[cfg(feature = "cuda")]
+        values_row_stride: 2,
+        #[cfg(feature = "cuda")]
+        values_column_offset: 0,
+        #[cfg(feature = "cuda")]
+        value_count: row_values.len(),
     }];
 
     BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
@@ -377,6 +393,14 @@ fn base_only_matrix_zero_offsets_skip_prepared_row_offset() {
         stage_index: 1,
         column_count: 1,
         values: &row_values,
+        #[cfg(feature = "cuda")]
+        values_device: None,
+        #[cfg(feature = "cuda")]
+        values_row_stride: 1,
+        #[cfg(feature = "cuda")]
+        values_column_offset: 0,
+        #[cfg(feature = "cuda")]
+        value_count: row_values.len(),
     }];
 
     BASE_ONLY_PREPARED_ROW_COUNT.with(|count| count.set(0));
@@ -1104,6 +1128,14 @@ fn cuda_base_regular_constraints_match_cpu_results() {
         stage_index: 1,
         column_count: 1,
         values: &stage,
+        #[cfg(feature = "cuda")]
+        values_device: None,
+        #[cfg(feature = "cuda")]
+        values_row_stride: 1,
+        #[cfg(feature = "cuda")]
+        values_column_offset: 0,
+        #[cfg(feature = "cuda")]
+        value_count: stage.len(),
     }];
     let inputs = RegularConstraintInputs {
         domain_size: 4,
@@ -1123,6 +1155,67 @@ fn cuda_base_regular_constraints_match_cpu_results() {
         .expect("program should be supported");
 
     assert_eq!(gpu, cpu);
+}
+
+#[cfg(feature = "cuda")]
+#[test]
+fn cuda_base_regular_constraints_accept_device_only_stage_values() {
+    let program = ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 1,
+            first_row: 0,
+            last_row: 4,
+            temp1_count: 2,
+            temp3_count: 0,
+            ops_count: 2,
+            ops_offset: 0,
+            args_count: 16,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "cuda base device stage values".to_owned(),
+        }],
+        ops: vec![0, 0],
+        args: vec![0, 0, 0, 0, 0, 8, 0, 0, 1, 1, 5, 0, 0, 1, 0, 0],
+        numbers: vec![5],
+    };
+    let fixed = [3, 3, 3, 3].map(Felt::from_u64);
+    let stage = [8, 9, 7, 8].map(Felt::from_u64);
+    let stage_device = lzvm_accel::CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&stage))
+        .expect("stage values should upload");
+    let stage_columns = [RegularStageColumns {
+        stage_index: 1,
+        column_count: 1,
+        values: &[],
+        #[cfg(feature = "cuda")]
+        values_device: Some(&stage_device),
+        #[cfg(feature = "cuda")]
+        values_row_stride: 1,
+        #[cfg(feature = "cuda")]
+        values_column_offset: 0,
+        #[cfg(feature = "cuda")]
+        value_count: stage.len(),
+    }];
+    let inputs = RegularConstraintInputs {
+        domain_size: 4,
+        stage_count: 1,
+        fixed_columns: RegularColumnMatrix {
+            column_count: 1,
+            values: &fixed,
+        },
+        stage_columns: &stage_columns,
+        opening_point_offsets: &[0],
+        ..RegularConstraintInputs::default()
+    };
+
+    let gpu = try_evaluate_regular_constraints_cuda_base(&program, inputs, None)
+        .expect("cuda evaluation should not fail")
+        .expect("program should be supported");
+
+    assert_eq!(gpu.len(), 1);
+    assert_eq!(gpu[0].invalid_rows.len(), 1);
+    assert_eq!(gpu[0].invalid_rows[0].row, 1);
 }
 
 #[test]
@@ -1153,6 +1246,14 @@ fn witness_regular_constraints_keep_first_invalid_row() {
         stage_index: 1,
         column_count: 1,
         values: &stage,
+        #[cfg(feature = "cuda")]
+        values_device: None,
+        #[cfg(feature = "cuda")]
+        values_row_stride: 1,
+        #[cfg(feature = "cuda")]
+        values_column_offset: 0,
+        #[cfg(feature = "cuda")]
+        value_count: stage.len(),
     }];
 
     let inputs = RegularConstraintInputs {

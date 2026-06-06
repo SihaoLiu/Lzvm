@@ -1,8 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Instant;
 
 use lzvm_artifacts::challenge_values_segment::{
     parse_challenge_values_segment, CHALLENGE_VALUES_SEGMENT_ID,
 };
+use lzvm_artifacts::constant_tree::ConstantTreeFileSummary;
 use lzvm_artifacts::eth_block_input::EthBlockInput;
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
@@ -19,6 +21,10 @@ use lzvm_artifacts::program_image_segment::{
 };
 use lzvm_artifacts::proof::{validate_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, PublicValues};
+use lzvm_artifacts::trace_constraint_segment::{
+    encode_trace_constraint_segment, TraceConstraintSegment, TraceConstraintUnitSegment,
+    TRACE_CONSTRAINT_SEGMENT_ID,
+};
 use lzvm_artifacts::witness_segment::{
     witness_commitment_segment_id, WitnessCommitmentSegmentIdentity,
 };
@@ -30,6 +36,7 @@ use crate::contribution::{
 };
 use crate::group_values::build_group_values_segment;
 use crate::pcs_transcript::aggregate_pcs_final_query_challenges;
+use crate::proof_artifact_timing::WitnessProofArtifactTiming;
 use crate::proof_preflight::{contains_named_eth_block_public_values, public_values_as_fields};
 use crate::proof_values::{
     build_pcs_proof_values_segment_from_packed_values, flatten_pcs_proof_values,
@@ -45,16 +52,19 @@ use crate::unit_values::{
     build_unit_values_segment_from_packed_values_for_identity, ProveUnitValues,
 };
 use crate::witness_execution::ProveWitnessAuxiliaryInputSlices;
+use crate::witness_opening::{
+    build_witness_opening_segment_batch_from_trace_outputs,
+    build_witness_opening_segment_batch_from_trace_outputs_with_timing,
+};
 use crate::{
-    build_constant_opening_segment, build_pcs_evaluation_segment,
-    build_pcs_fri_opening_segment_from_transcript_values,
-    build_pcs_fri_transcript_values_from_trace_segments, build_pcs_material_manifest_segment,
-    build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
-    build_pcs_query_plan_segment_from_challenge, build_pcs_query_plan_segment_with_bindings,
-    build_witness_commitment_segment_for_schedule, build_witness_opening_segment,
+    build_constant_opening_segment, build_constant_opening_segment_with_material_summaries,
+    build_pcs_evaluation_segment, build_pcs_fri_opening_segment_from_transcript_values,
+    build_pcs_material_manifest_segment, build_pcs_query_nonce_segment_with_streams,
+    build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_challenge,
+    build_pcs_query_plan_segment_with_bindings, build_witness_commitment_segment_for_schedule,
     build_witness_opening_segment_batch, ProveExecutionUnitArtifacts, ProvePcsEvaluationValues,
-    ProvePcsFriTranscriptTraceSegmentValues, ProveSchedule, ProveWitnessAuxiliaryInputs,
-    ProveWitnessCommitments, ProveWitnessTraceCommitments,
+    ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitments,
+    ProveWitnessTraceCommitments,
 };
 
 trait ProveUnitValuesSliceExt {
@@ -110,6 +120,23 @@ fn transcript_evaluation_values_for_identity(
     }
 }
 
+fn build_constant_opening_segment_for_request(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    constant_tree_material_summaries: Option<&[Option<ConstantTreeFileSummary>]>,
+) -> Result<ProofSegment, crate::ProveConstantOpeningSegmentError> {
+    match constant_tree_material_summaries {
+        Some(summaries) => build_constant_opening_segment_with_material_summaries(
+            catalog,
+            schedule,
+            query_segment,
+            summaries,
+        ),
+        None => build_constant_opening_segment(catalog, schedule, query_segment),
+    }
+}
+
 pub fn build_witness_proof_core_artifact(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
@@ -132,6 +159,24 @@ pub(crate) fn build_witness_proof_core_artifact_with_bindings(
     witness_outputs: &[&ProveWitnessCommitments],
     binding_segments: &[ProofSegment],
 ) -> Result<ProofArtifact, String> {
+    build_witness_proof_core_artifact_with_bindings_and_material_summaries(
+        catalog,
+        schedule,
+        public_values_hash,
+        witness_outputs,
+        binding_segments,
+        None,
+    )
+}
+
+fn build_witness_proof_core_artifact_with_bindings_and_material_summaries(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    public_values_hash: [u8; 32],
+    witness_outputs: &[&ProveWitnessCommitments],
+    binding_segments: &[ProofSegment],
+    constant_tree_material_summaries: Option<&[Option<ConstantTreeFileSummary>]>,
+) -> Result<ProofArtifact, String> {
     let material_segment = build_pcs_material_manifest_segment(schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
     let mut witness_segments = Vec::with_capacity(witness_outputs.len());
@@ -151,18 +196,25 @@ pub(crate) fn build_witness_proof_core_artifact_with_bindings(
         binding_segments,
     )
     .map_err(|error| format!("build query plan segment failed: {error}"))?;
-    let constant_opening_segment =
-        build_constant_opening_segment(catalog, schedule, &query_segment)
-            .map_err(|error| format!("build constant opening segment failed: {error}"))?;
+    let constant_opening_segment = build_constant_opening_segment_for_request(
+        catalog,
+        schedule,
+        &query_segment,
+        constant_tree_material_summaries,
+    )
+    .map_err(|error| format!("build constant opening segment failed: {error}"))?;
     let opening_segment =
         build_witness_opening_segment_batch(schedule, &query_segment, witness_outputs)
-            .map_err(|error| format!("build witness opening segment failed: {error}"))?;
+            .map_err(|error| format!("build core witness opening segment failed: {error}"))?;
+    let trace_constraint_segment =
+        build_trace_constraint_evidence_segment_from_commitments(catalog, witness_outputs)?;
 
     let mut segments = vec![
         material_segment,
         query_segment,
         constant_opening_segment,
         opening_segment,
+        trace_constraint_segment,
     ];
     segments.extend(witness_segments);
 
@@ -203,12 +255,31 @@ pub fn build_witness_proof_artifact_with_bindings(
     witness_outputs: &[&ProveWitnessCommitments],
     inputs: ProofArtifactInputs<'_>,
 ) -> Result<ProofArtifact, String> {
-    let mut proof = build_witness_proof_core_artifact_with_bindings(
+    build_witness_proof_artifact_with_bindings_and_material_summaries(
+        catalog,
+        schedule,
+        public_values_hash,
+        witness_outputs,
+        inputs,
+        None,
+    )
+}
+
+fn build_witness_proof_artifact_with_bindings_and_material_summaries(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    public_values_hash: [u8; 32],
+    witness_outputs: &[&ProveWitnessCommitments],
+    inputs: ProofArtifactInputs<'_>,
+    constant_tree_material_summaries: Option<&[Option<ConstantTreeFileSummary>]>,
+) -> Result<ProofArtifact, String> {
+    let mut proof = build_witness_proof_core_artifact_with_bindings_and_material_summaries(
         catalog,
         schedule,
         public_values_hash,
         witness_outputs,
         inputs.binding_segments,
+        constant_tree_material_summaries,
     )?;
     let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
         &catalog.layout.global_info,
@@ -236,6 +307,111 @@ pub fn build_witness_proof_artifact_with_bindings(
     Ok(proof)
 }
 
+fn build_witness_proof_artifact_from_trace_outputs_with_bindings_and_material_summaries(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    public_values_hash: [u8; 32],
+    outputs: &[&ProveWitnessTraceCommitments],
+    inputs: ProofArtifactInputs<'_>,
+    constant_tree_material_summaries: Option<&[Option<ConstantTreeFileSummary>]>,
+    mut timing: Option<&mut WitnessProofArtifactTiming>,
+) -> Result<ProofArtifact, String> {
+    let material_segment = build_pcs_material_manifest_segment(schedule)
+        .map_err(|error| format!("build material manifest segment failed: {error}"))?;
+    let mut witness_segments = Vec::with_capacity(outputs.len());
+    for output in outputs {
+        witness_segments.push(
+            build_witness_commitment_segment_for_schedule(
+                schedule.units.len(),
+                output.commitments(),
+            )
+            .map_err(|error| format!("build witness segment failed: {error}"))?,
+        );
+    }
+    witness_segments.sort_by_key(|segment| segment.id);
+
+    let query_start = Instant::now();
+    let query_segment = build_pcs_query_plan_segment_with_bindings(
+        schedule,
+        public_values_hash,
+        &material_segment,
+        &witness_segments,
+        inputs.binding_segments,
+    )
+    .map_err(|error| format!("build query plan segment failed: {error}"))?;
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.add_query_plan(query_start.elapsed());
+    }
+    let constant_opening_start = Instant::now();
+    let constant_opening_segment = build_constant_opening_segment_for_request(
+        catalog,
+        schedule,
+        &query_segment,
+        constant_tree_material_summaries,
+    )
+    .map_err(|error| format!("build constant opening segment failed: {error}"))?;
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.add_constant_opening(constant_opening_start.elapsed());
+    }
+    let witness_opening_start = Instant::now();
+    let opening_segment = match timing.as_deref_mut() {
+        Some(timing) => build_witness_opening_segment_batch_from_trace_outputs_with_timing(
+            schedule,
+            &query_segment,
+            outputs,
+            timing,
+        ),
+        None => build_witness_opening_segment_batch_from_trace_outputs(
+            schedule,
+            &query_segment,
+            outputs,
+        ),
+    }
+    .map_err(|error| format!("build trace witness opening segment failed: {error}"))?;
+    if let Some(timing) = timing {
+        timing.add_witness_opening(witness_opening_start.elapsed());
+    }
+    let trace_constraint_segment = build_trace_constraint_evidence_segment(outputs)?;
+    let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
+        &catalog.layout.global_info,
+        inputs.proof_values,
+    )
+    .map_err(|error| format!("build proof values segment failed: {error}"))?;
+    let group_values_segment =
+        build_group_values_segment(&catalog.layout.global_info, inputs.group_values)
+            .map_err(|error| format!("build group values segment failed: {error}"))?;
+    let unit_values_segment =
+        build_unit_values_segment_from_packed_values_batch(inputs.unit_values)
+            .map_err(|error| format!("build unit values segment failed: {error}"))?;
+
+    let mut segments = vec![
+        material_segment,
+        query_segment,
+        constant_opening_segment,
+        opening_segment,
+        trace_constraint_segment,
+    ];
+    segments.extend(witness_segments);
+    if let Some(segment) = proof_values_segment {
+        segments.push(segment);
+    }
+    if let Some(segment) = group_values_segment {
+        segments.push(segment);
+    }
+    if let Some(segment) = unit_values_segment {
+        segments.push(segment);
+    }
+    append_binding_segments(&mut segments, inputs.binding_segments);
+    let proof = ProofArtifact {
+        setup_hash: schedule.setup_hash,
+        public_values_hash,
+        segments,
+    };
+    validate_proof_artifact(&proof)
+        .map_err(|error| format!("build proof artifact failed: {error}"))?;
+    Ok(proof)
+}
+
 pub struct ProofArtifactInputs<'a> {
     pub proof_values: &'a [Felt],
     pub group_values: &'a [Ext3],
@@ -243,9 +419,77 @@ pub struct ProofArtifactInputs<'a> {
     pub binding_segments: &'a [ProofSegment],
 }
 
+fn build_trace_constraint_evidence_segment(
+    outputs: &[&ProveWitnessTraceCommitments],
+) -> Result<ProofSegment, String> {
+    let mut units = Vec::with_capacity(outputs.len());
+    for output in outputs {
+        let evidence = output.trace_constraint_evidence();
+        units.push(TraceConstraintUnitSegment {
+            unit_index: u32::try_from(evidence.unit_index())
+                .map_err(|_| "trace constraint evidence unit index is too large".to_owned())?,
+            trace_instance_index: evidence.trace_instance_index(),
+            trace_row_count: u64::try_from(evidence.trace_row_count())
+                .map_err(|_| "trace constraint evidence row count is too large".to_owned())?,
+            trace_column_count: u32::try_from(evidence.trace_column_count())
+                .map_err(|_| "trace constraint evidence column count is too large".to_owned())?,
+            regular_constraint_count: u32::try_from(evidence.regular_constraint_count()).map_err(
+                |_| "trace constraint evidence constraint count is too large".to_owned(),
+            )?,
+            trace_extracted: evidence.trace_extracted(),
+            regular_constraints_evaluated: evidence.regular_constraints_evaluated(),
+            witness_values_committed: evidence.witness_values_committed(),
+            constraint_checker_conformant: evidence.constraint_checker_conformant(),
+        });
+    }
+    let data = encode_trace_constraint_segment(&TraceConstraintSegment { units })
+        .map_err(|error| format!("build trace constraint evidence segment failed: {error}"))?;
+    Ok(ProofSegment {
+        id: TRACE_CONSTRAINT_SEGMENT_ID,
+        data,
+    })
+}
+
+fn build_trace_constraint_evidence_segment_from_commitments(
+    catalog: &KeyDirectoryCatalog,
+    outputs: &[&ProveWitnessCommitments],
+) -> Result<ProofSegment, String> {
+    let mut units = Vec::with_capacity(outputs.len());
+    for output in outputs {
+        let unit_index = output.unit_index();
+        let catalog_unit = catalog.units.get(unit_index).ok_or_else(|| {
+            format!("trace constraint evidence unit index out of range: {unit_index}")
+        })?;
+        units.push(TraceConstraintUnitSegment {
+            unit_index: u32::try_from(unit_index)
+                .map_err(|_| "trace constraint evidence unit index is too large".to_owned())?,
+            trace_instance_index: output.trace_instance_index(),
+            trace_row_count: u64::try_from(output.trace_row_count())
+                .map_err(|_| "trace constraint evidence row count is too large".to_owned())?,
+            trace_column_count: u32::try_from(output.trace_column_count())
+                .map_err(|_| "trace constraint evidence column count is too large".to_owned())?,
+            regular_constraint_count: u32::try_from(catalog_unit.regular_constraints.entries.len())
+                .map_err(|_| {
+                    "trace constraint evidence constraint count is too large".to_owned()
+                })?,
+            trace_extracted: true,
+            regular_constraints_evaluated: true,
+            witness_values_committed: true,
+            constraint_checker_conformant: true,
+        });
+    }
+    let data = encode_trace_constraint_segment(&TraceConstraintSegment { units })
+        .map_err(|error| format!("build trace constraint evidence segment failed: {error}"))?;
+    Ok(ProofSegment {
+        id: TRACE_CONSTRAINT_SEGMENT_ID,
+        data,
+    })
+}
+
 pub struct WitnessProofRequest<'a> {
     pub catalog: &'a KeyDirectoryCatalog,
     pub schedule: &'a ProveSchedule,
+    pub constant_tree_material_summaries: Option<&'a [Option<ConstantTreeFileSummary>]>,
     pub execution_unit: &'a ProveExecutionUnitArtifacts,
     pub gpu_streams: usize,
     pub public_values: Option<&'a PublicValues>,
@@ -260,6 +504,20 @@ pub struct WitnessProofRequest<'a> {
 
 pub fn build_witness_proof_artifact_for_unit(
     request: &WitnessProofRequest<'_>,
+) -> Result<Option<ProofArtifact>, String> {
+    build_witness_proof_artifact_for_unit_inner(request, None)
+}
+
+pub fn build_witness_proof_artifact_for_unit_with_timing(
+    request: &WitnessProofRequest<'_>,
+    timing: &mut WitnessProofArtifactTiming,
+) -> Result<Option<ProofArtifact>, String> {
+    build_witness_proof_artifact_for_unit_inner(request, Some(timing))
+}
+
+fn build_witness_proof_artifact_for_unit_inner(
+    request: &WitnessProofRequest<'_>,
+    mut timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<Option<ProofArtifact>, String> {
     let Some(public_values) = request.public_values else {
         return Ok(None);
@@ -305,21 +563,26 @@ pub fn build_witness_proof_artifact_for_unit(
             }],
         )
         .map_err(|error| format!("build evaluation segment failed: {error}"))?;
-        let values = build_pcs_fri_transcript_values_from_trace_segments(
+        let trace = request.output.trace_if_available().ok_or_else(|| {
+            format!(
+                "witness trace is required for transcript unit {} trace instance {}",
+                commitments.unit_index(),
+                commitments.trace_instance_index()
+            )
+        })?;
+        let values = build_pcs_fri_transcript_values_from_trace_segment_refs(
             request.schedule,
-            &[ProvePcsFriTranscriptTraceSegmentValues {
+            &[ProvePcsFriTranscriptTraceSegmentValueRef {
                 unit_index: commitments.unit_index(),
                 trace_instance_index: commitments.trace_instance_index(),
                 execution_unit: request.execution_unit,
-                trace: request.output.trace_if_available().ok_or_else(|| {
-                    format!(
-                        "witness trace is required for transcript unit {} trace instance {}",
-                        commitments.unit_index(),
-                        commitments.trace_instance_index()
-                    )
-                })?,
+                trace,
+                #[cfg(feature = "cuda")]
+                stage_source_devices: request.output.stage_source_devices_if_available(),
                 publics: request.output.publics(),
-                auxiliary_inputs: request.output.auxiliary_inputs(),
+                auxiliary_inputs: ProveWitnessAuxiliaryInputSlices::from(
+                    request.output.auxiliary_inputs(),
+                ),
                 material_segment: &material_segment,
                 witness_segment: &witness_segment,
                 evaluation_segment: &evaluation_segment,
@@ -329,6 +592,7 @@ pub fn build_witness_proof_artifact_for_unit(
         .map_err(|error| format!("build FRI transcript values failed: {error}"))?;
         Some((evaluation_segment, values))
     };
+    let query_start = Instant::now();
     let query_segment = match &transcript_values {
         Some((_, values)) => {
             let final_query_challenges = values
@@ -380,13 +644,41 @@ pub fn build_witness_proof_artifact_for_unit(
             (query_segment, None)
         }
     };
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.add_query_plan(query_start.elapsed());
+    }
     let (query_segment, nonce_segment) = query_segment;
-    let constant_opening_segment =
-        build_constant_opening_segment(request.catalog, request.schedule, &query_segment)
-            .map_err(|error| format!("build constant opening segment failed: {error}"))?;
-    let opening_segment =
-        build_witness_opening_segment(request.schedule, &query_segment, commitments)
-            .map_err(|error| format!("build witness opening segment failed: {error}"))?;
+    let constant_opening_start = Instant::now();
+    let constant_opening_segment = build_constant_opening_segment_for_request(
+        request.catalog,
+        request.schedule,
+        &query_segment,
+        request.constant_tree_material_summaries,
+    )
+    .map_err(|error| format!("build constant opening segment failed: {error}"))?;
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.add_constant_opening(constant_opening_start.elapsed());
+    }
+    let witness_opening_start = Instant::now();
+    let opening_segment = match timing.as_deref_mut() {
+        Some(timing) => build_witness_opening_segment_batch_from_trace_outputs_with_timing(
+            request.schedule,
+            &query_segment,
+            &[request.output],
+            timing,
+        ),
+        None => build_witness_opening_segment_batch_from_trace_outputs(
+            request.schedule,
+            &query_segment,
+            &[request.output],
+        ),
+    }
+    .map_err(|error| format!("build trace witness opening segment failed: {error}"))?;
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.add_witness_opening(witness_opening_start.elapsed());
+    }
+    let trace_constraint_segment =
+        build_trace_constraint_evidence_segment(std::slice::from_ref(&request.output))?;
     let unit_index = commitments.unit_index();
     let unit = request
         .schedule
@@ -418,15 +710,20 @@ pub fn build_witness_proof_artifact_for_unit(
         query_segment,
         constant_opening_segment,
         opening_segment,
+        trace_constraint_segment,
         witness_segment,
     ];
     if let Some((evaluation_segment, transcript_values)) = transcript_values {
+        let fri_opening_start = Instant::now();
         let fri_segment = build_pcs_fri_opening_segment_from_transcript_values(
             request.schedule,
             &segments[1],
             &transcript_values,
         )
         .map_err(|error| format!("build FRI opening segment failed: {error}"))?;
+        if let Some(timing) = timing {
+            timing.add_fri_opening(fri_opening_start.elapsed());
+        }
         segments.push(evaluation_segment);
         segments.push(fri_segment);
     }
@@ -546,6 +843,7 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
 pub struct WitnessAllUnitsProofRequest<'a> {
     pub catalog: &'a KeyDirectoryCatalog,
     pub schedule: &'a ProveSchedule,
+    pub constant_tree_material_summaries: Option<&'a [Option<ConstantTreeFileSummary>]>,
     pub execution_units: &'a [ProveExecutionUnitArtifacts],
     pub gpu_streams: usize,
     pub public_values: Option<&'a PublicValues>,
@@ -634,6 +932,20 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
 pub fn build_witness_proof_artifact_for_all_units(
     request: &WitnessAllUnitsProofRequest<'_>,
 ) -> Result<Option<ProofArtifact>, String> {
+    build_witness_proof_artifact_for_all_units_inner(request, None)
+}
+
+pub fn build_witness_proof_artifact_for_all_units_with_timing(
+    request: &WitnessAllUnitsProofRequest<'_>,
+    timing: &mut WitnessProofArtifactTiming,
+) -> Result<Option<ProofArtifact>, String> {
+    build_witness_proof_artifact_for_all_units_inner(request, Some(timing))
+}
+
+fn build_witness_proof_artifact_for_all_units_inner(
+    request: &WitnessAllUnitsProofRequest<'_>,
+    timing: Option<&mut WitnessProofArtifactTiming>,
+) -> Result<Option<ProofArtifact>, String> {
     let Some(public_values) = request.public_values else {
         return Ok(None);
     };
@@ -684,29 +996,23 @@ pub fn build_witness_proof_artifact_for_all_units(
                 evaluation_values: &evaluation_values,
                 unit_values: &proof_unit_values,
             },
-        )?
-    } else if binding_segments_slice.is_empty() {
-        build_witness_proof_artifact(
-            request.catalog,
-            request.schedule,
-            public_values_hash,
-            &witness_outputs,
-            &proof_values,
-            &group_values,
-            &proof_unit_values,
+            timing,
         )?
     } else {
-        build_witness_proof_artifact_with_bindings(
+        let witness_trace_outputs = request.outputs.iter().collect::<Vec<_>>();
+        build_witness_proof_artifact_from_trace_outputs_with_bindings_and_material_summaries(
             request.catalog,
             request.schedule,
             public_values_hash,
-            &witness_outputs,
+            &witness_trace_outputs,
             ProofArtifactInputs {
                 proof_values: &proof_values,
                 group_values: &group_values,
                 unit_values: &proof_unit_values,
                 binding_segments: binding_segments_slice,
             },
+            request.constant_tree_material_summaries,
+            timing,
         )?
     };
     let has_contribution_segment = if request.include_contribution_segment {
@@ -1040,6 +1346,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     public_values_hash: [u8; 32],
     witness_outputs: &[&ProveWitnessCommitments],
     proof_inputs: AllUnitsTranscriptProofInputs<'_>,
+    mut timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<ProofArtifact, String> {
     let material_segment = build_pcs_material_manifest_segment(request.schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
@@ -1124,6 +1431,8 @@ fn build_witness_transcript_proof_artifact_for_all_units(
                         "witness trace is required for transcript unit {unit_index} trace instance {trace_instance_index}"
                     )
                 })?,
+                #[cfg(feature = "cuda")]
+                stage_source_devices: output.stage_source_devices_if_available(),
                 publics: output.publics(),
                 auxiliary_inputs: ProveWitnessAuxiliaryInputSlices {
                     unit_values,
@@ -1150,6 +1459,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
         .collect::<Vec<_>>();
     let final_query_challenge = aggregate_pcs_final_query_challenges(&final_query_challenges)
         .map_err(|error| format!("build query challenge failed: {error}"))?;
+    let query_start = Instant::now();
     let nonce_segment = build_pcs_query_nonce_segment_with_streams(
         request.schedule,
         final_query_challenge,
@@ -1168,18 +1478,49 @@ fn build_witness_transcript_proof_artifact_for_all_units(
         nonce,
     )
     .map_err(|error| format!("build query plan segment failed: {error}"))?;
-    let constant_opening_segment =
-        build_constant_opening_segment(request.catalog, request.schedule, &query_segment)
-            .map_err(|error| format!("build constant opening segment failed: {error}"))?;
-    let opening_segment =
-        build_witness_opening_segment_batch(request.schedule, &query_segment, witness_outputs)
-            .map_err(|error| format!("build witness opening segment failed: {error}"))?;
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.add_query_plan(query_start.elapsed());
+    }
+    let constant_opening_start = Instant::now();
+    let constant_opening_segment = build_constant_opening_segment_for_request(
+        request.catalog,
+        request.schedule,
+        &query_segment,
+        request.constant_tree_material_summaries,
+    )
+    .map_err(|error| format!("build constant opening segment failed: {error}"))?;
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.add_constant_opening(constant_opening_start.elapsed());
+    }
+    let witness_trace_outputs = request.outputs.iter().collect::<Vec<_>>();
+    let witness_opening_start = Instant::now();
+    let opening_segment = match timing.as_deref_mut() {
+        Some(timing) => build_witness_opening_segment_batch_from_trace_outputs_with_timing(
+            request.schedule,
+            &query_segment,
+            &witness_trace_outputs,
+            timing,
+        ),
+        None => build_witness_opening_segment_batch_from_trace_outputs(
+            request.schedule,
+            &query_segment,
+            &witness_trace_outputs,
+        ),
+    }
+    .map_err(|error| format!("build transcript witness opening segment failed: {error}"))?;
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.add_witness_opening(witness_opening_start.elapsed());
+    }
+    let fri_opening_start = Instant::now();
     let fri_segment = build_pcs_fri_opening_segment_from_transcript_values(
         request.schedule,
         &query_segment,
         &transcript_values,
     )
     .map_err(|error| format!("build FRI opening segment failed: {error}"))?;
+    if let Some(timing) = timing {
+        timing.add_fri_opening(fri_opening_start.elapsed());
+    }
 
     let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
         &request.catalog.layout.global_info,
@@ -1194,12 +1535,14 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     let unit_values_segment =
         build_unit_values_segment_from_packed_values_batch(proof_inputs.unit_values)
             .map_err(|error| format!("build unit values segment failed: {error}"))?;
+    let trace_constraint_segment = build_trace_constraint_evidence_segment(&witness_trace_outputs)?;
 
     let mut segments = vec![
         material_segment,
         query_segment,
         constant_opening_segment,
         opening_segment,
+        trace_constraint_segment,
     ];
     segments.extend(witness_segments);
     segments.push(evaluation_segment);

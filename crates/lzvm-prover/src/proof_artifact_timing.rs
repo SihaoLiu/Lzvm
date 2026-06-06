@@ -1,0 +1,149 @@
+use std::time::Duration;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WitnessProofArtifactTiming {
+    pub query_plan: Duration,
+    pub constant_opening: Duration,
+    pub witness_opening: Duration,
+    pub witness_external_source: Duration,
+    pub witness_opening_setup: Duration,
+    pub witness_opening_leaf_extend: Duration,
+    pub witness_opening_leaf_hash: Duration,
+    pub witness_opening_path: Duration,
+    pub witness_opening_row_values: Duration,
+    pub witness_stage_external_source: Vec<WitnessProofStageOpeningTiming>,
+    pub witness_stage_opening: Vec<WitnessProofStageOpeningTiming>,
+    pub witness_stage_opening_setup: Vec<WitnessProofStageOpeningTiming>,
+    pub witness_stage_opening_leaf_extend: Vec<WitnessProofStageOpeningTiming>,
+    pub witness_stage_opening_leaf_hash: Vec<WitnessProofStageOpeningTiming>,
+    pub witness_stage_opening_path: Vec<WitnessProofStageOpeningTiming>,
+    pub witness_stage_opening_row_values: Vec<WitnessProofStageOpeningTiming>,
+    pub fri_opening: Duration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WitnessProofStageOpeningTiming {
+    pub stage_index: usize,
+    pub duration: Duration,
+}
+
+impl WitnessProofArtifactTiming {
+    pub(crate) fn add_query_plan(&mut self, duration: Duration) {
+        self.query_plan += duration;
+    }
+
+    pub(crate) fn add_constant_opening(&mut self, duration: Duration) {
+        self.constant_opening += duration;
+    }
+
+    pub(crate) fn add_witness_opening(&mut self, duration: Duration) {
+        self.witness_opening += duration;
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn add_witness_external_source(&mut self, duration: Duration) {
+        self.witness_external_source += duration;
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn add_witness_stage_external_source(
+        &mut self,
+        stage_index: usize,
+        duration: Duration,
+    ) {
+        add_stage_duration(
+            &mut self.witness_stage_external_source,
+            stage_index,
+            duration,
+        );
+    }
+
+    pub(crate) fn add_witness_stage_opening(&mut self, stage_index: usize, duration: Duration) {
+        add_stage_duration(&mut self.witness_stage_opening, stage_index, duration);
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn add_witness_stage_opening_setup(
+        &mut self,
+        stage_index: usize,
+        duration: Duration,
+    ) {
+        self.witness_opening_setup += duration;
+        add_stage_duration(&mut self.witness_stage_opening_setup, stage_index, duration);
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn add_witness_stage_opening_leaf_extend(
+        &mut self,
+        stage_index: usize,
+        duration: Duration,
+    ) {
+        self.witness_opening_leaf_extend += duration;
+        add_stage_duration(
+            &mut self.witness_stage_opening_leaf_extend,
+            stage_index,
+            duration,
+        );
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn add_witness_stage_opening_leaf_hash(
+        &mut self,
+        stage_index: usize,
+        duration: Duration,
+    ) {
+        self.witness_opening_leaf_hash += duration;
+        add_stage_duration(
+            &mut self.witness_stage_opening_leaf_hash,
+            stage_index,
+            duration,
+        );
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn add_witness_stage_opening_path(
+        &mut self,
+        stage_index: usize,
+        duration: Duration,
+    ) {
+        self.witness_opening_path += duration;
+        add_stage_duration(&mut self.witness_stage_opening_path, stage_index, duration);
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn add_witness_stage_opening_row_values(
+        &mut self,
+        stage_index: usize,
+        duration: Duration,
+    ) {
+        self.witness_opening_row_values += duration;
+        add_stage_duration(
+            &mut self.witness_stage_opening_row_values,
+            stage_index,
+            duration,
+        );
+    }
+
+    pub(crate) fn add_fri_opening(&mut self, duration: Duration) {
+        self.fri_opening += duration;
+    }
+}
+
+fn add_stage_duration(
+    entries: &mut Vec<WitnessProofStageOpeningTiming>,
+    stage_index: usize,
+    duration: Duration,
+) {
+    if let Some(entry) = entries
+        .iter_mut()
+        .find(|entry| entry.stage_index == stage_index)
+    {
+        entry.duration += duration;
+        return;
+    }
+    entries.push(WitnessProofStageOpeningTiming {
+        stage_index,
+        duration,
+    });
+    entries.sort_by_key(|entry| entry.stage_index);
+}

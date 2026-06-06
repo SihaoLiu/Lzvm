@@ -95,11 +95,7 @@ fn generate_key_lowers_source_stage_one_proof_value_constraints() {
     )
     .expect("regular program should parse");
     let stage_values = [7, 8].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let proof_values = [Felt::from_u64(7)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
@@ -192,11 +188,7 @@ fn generate_key_lowers_source_later_stage_proof_value_constraints() {
     )
     .expect("regular program should parse");
     let stage_values = [7, 8].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let proof_values = [3, 7, 0, 0].map(Felt::from_u64);
     let results = evaluate_regular_constraints(
         &regular.constraints,

@@ -2,6 +2,8 @@ use std::fmt;
 use std::num::NonZeroUsize;
 use std::thread;
 
+#[cfg(feature = "cuda")]
+use lzvm_accel::CudaDeviceBuffer;
 use lzvm_artifacts::constraint_program::{ConstraintEntry, ConstraintProgram};
 use lzvm_field::{Ext3, Felt};
 
@@ -24,6 +26,32 @@ pub struct RegularStageColumns<'a> {
     pub stage_index: u16,
     pub column_count: usize,
     pub values: &'a [Felt],
+    #[cfg(feature = "cuda")]
+    pub values_device: Option<&'a CudaDeviceBuffer>,
+    #[cfg(feature = "cuda")]
+    pub values_row_stride: usize,
+    #[cfg(feature = "cuda")]
+    pub values_column_offset: usize,
+    #[cfg(feature = "cuda")]
+    pub value_count: usize,
+}
+
+impl<'a> RegularStageColumns<'a> {
+    pub fn from_host_values(stage_index: u16, column_count: usize, values: &'a [Felt]) -> Self {
+        Self {
+            stage_index,
+            column_count,
+            values,
+            #[cfg(feature = "cuda")]
+            values_device: None,
+            #[cfg(feature = "cuda")]
+            values_row_stride: column_count,
+            #[cfg(feature = "cuda")]
+            values_column_offset: 0,
+            #[cfg(feature = "cuda")]
+            value_count: values.len(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -349,21 +377,82 @@ fn validate_inputs(inputs: RegularConstraintInputs<'_>) -> Result<(), RegularCon
     Ok(())
 }
 
+#[cfg(feature = "cuda")]
+pub(crate) fn validate_inputs_for_cuda_base(
+    inputs: RegularConstraintInputs<'_>,
+) -> Result<(), RegularConstraintEvalError> {
+    validate_matrix("fixed column", inputs.fixed_columns, inputs.domain_size)?;
+    for stage in inputs.stage_columns {
+        if stage.values_device.is_some() && stage.values.is_empty() {
+            validate_matrix_count(
+                "stage column",
+                stage.column_count,
+                stage.value_count,
+                inputs.domain_size,
+            )?;
+        } else {
+            validate_matrix(
+                "stage column",
+                RegularColumnMatrix {
+                    column_count: stage.column_count,
+                    values: stage.values,
+                },
+                inputs.domain_size,
+            )?;
+            if stage.value_count != stage.values.len() {
+                return Err(RegularConstraintEvalError::MatrixLengthMismatch {
+                    buffer: "stage column",
+                    expected: stage.values.len(),
+                    found: stage.value_count,
+                });
+            }
+        }
+    }
+    for matrix in inputs.custom_fixed_columns {
+        validate_matrix("custom fixed column", *matrix, inputs.domain_size)?;
+    }
+    if !inputs.domain_points.is_empty() && inputs.domain_points.len() != inputs.domain_size {
+        return Err(RegularConstraintEvalError::MatrixLengthMismatch {
+            buffer: "domain point",
+            expected: inputs.domain_size,
+            found: inputs.domain_points.len(),
+        });
+    }
+    if inputs.zerofier_values.column_count != 0 || !inputs.zerofier_values.values.is_empty() {
+        validate_matrix("zerofier", inputs.zerofier_values, inputs.domain_size)?;
+    }
+    Ok(())
+}
+
 fn validate_matrix(
     buffer: &'static str,
     matrix: RegularColumnMatrix<'_>,
     domain_size: usize,
 ) -> Result<(), RegularConstraintEvalError> {
+    validate_matrix_count(
+        buffer,
+        matrix.column_count,
+        matrix.values.len(),
+        domain_size,
+    )
+}
+
+fn validate_matrix_count(
+    buffer: &'static str,
+    column_count: usize,
+    value_count: usize,
+    domain_size: usize,
+) -> Result<(), RegularConstraintEvalError> {
     let expected = domain_size
-        .checked_mul(matrix.column_count)
+        .checked_mul(column_count)
         .ok_or(RegularConstraintEvalError::LengthOverflow)?;
-    if matrix.values.len() == expected {
+    if value_count == expected {
         Ok(())
     } else {
         Err(RegularConstraintEvalError::MatrixLengthMismatch {
             buffer,
             expected,
-            found: matrix.values.len(),
+            found: value_count,
         })
     }
 }

@@ -102,11 +102,7 @@ fn generate_key_lowers_source_indexed_witness_constraints() {
     assert!(regular.hints.hints.is_empty());
 
     let stage_values = [4, 5, 6, 7].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 2,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 2, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -121,11 +117,11 @@ fn generate_key_lowers_source_indexed_witness_constraints() {
     assert!(results[0].invalid_rows.is_empty());
 
     let invalid_stage_values = [4, 5, 6, 8].map(Felt::from_u64);
-    let invalid_stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 2,
-        values: &invalid_stage_values,
-    }];
+    let invalid_stage_columns = [RegularStageColumns::from_host_values(
+        1,
+        2,
+        &invalid_stage_values,
+    )];
     let invalid_results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -215,11 +211,7 @@ fn generate_key_lowers_source_boolean_index_witness_constraints() {
     assert!(regular.hints.hints.is_empty());
 
     let stage_values = [4, 5, 6, 7].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 2,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 2, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -234,11 +226,11 @@ fn generate_key_lowers_source_boolean_index_witness_constraints() {
     assert!(results[0].invalid_rows.is_empty());
 
     let invalid_stage_values = [4, 5, 6, 8].map(Felt::from_u64);
-    let invalid_stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 2,
-        values: &invalid_stage_values,
-    }];
+    let invalid_stage_columns = [RegularStageColumns::from_host_values(
+        1,
+        2,
+        &invalid_stage_values,
+    )];
     let invalid_results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {

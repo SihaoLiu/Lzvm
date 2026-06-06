@@ -2,6 +2,8 @@ use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{Ext3, Felt};
 
 use crate::pcs_fri::PcsFriTranscriptCommitments;
+#[cfg(feature = "cuda")]
+use crate::witness_commitment::WitnessStageRetainedSourceDevice;
 use crate::witness_execution::ProveWitnessAuxiliaryInputSlices;
 use crate::witness_trace::WitnessTraceBuffer;
 use crate::{ProveExecutionUnitArtifacts, ProveWitnessAuxiliaryInputs};
@@ -58,6 +60,8 @@ pub(crate) struct ProvePcsFriTranscriptTraceValueRef<'a> {
     pub unit_index: usize,
     pub execution_unit: &'a ProveExecutionUnitArtifacts,
     pub trace: &'a WitnessTraceBuffer,
+    #[cfg(feature = "cuda")]
+    pub(crate) stage_source_devices: Option<&'a [WitnessStageRetainedSourceDevice]>,
     pub publics: &'a [Felt],
     pub auxiliary_inputs: ProveWitnessAuxiliaryInputSlices<'a>,
     pub constant_root: [Felt; 4],
@@ -73,6 +77,8 @@ pub(crate) struct ProvePcsFriTranscriptTraceSegmentValueRef<'a> {
     pub trace_instance_index: u32,
     pub execution_unit: &'a ProveExecutionUnitArtifacts,
     pub trace: &'a WitnessTraceBuffer,
+    #[cfg(feature = "cuda")]
+    pub(crate) stage_source_devices: Option<&'a [WitnessStageRetainedSourceDevice]>,
     pub publics: &'a [Felt],
     pub auxiliary_inputs: ProveWitnessAuxiliaryInputSlices<'a>,
     pub material_segment: &'a ProofSegment,

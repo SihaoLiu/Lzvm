@@ -1,5 +1,6 @@
 pub use crate::constant_opening::{
-    build_constant_opening_segment, ProveConstantOpeningSegmentError,
+    build_constant_opening_segment, build_constant_opening_segment_with_material_summaries,
+    validate_constant_opening_materials, ProveConstantOpeningSegmentError,
 };
 pub use crate::pcs_evaluation::{
     build_pcs_evaluation_segment, ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues,

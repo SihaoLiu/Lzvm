@@ -5,8 +5,9 @@ use super::regular_constraints_support::{
     find_stage_columns, scalar_ext, BufferKind, BufferLayout,
 };
 use super::{
-    entry_args, entry_ops, read_operation_args, validate_inputs, RegularConstraintEvalError,
-    RegularConstraintInputs, RegularConstraintResult, RegularConstraintViolation, SourceRef,
+    entry_args, entry_ops, read_operation_args, validate_inputs_for_cuda_base,
+    RegularConstraintEvalError, RegularConstraintInputs, RegularConstraintResult,
+    RegularConstraintViolation, SourceRef,
 };
 
 pub(crate) fn try_evaluate_regular_constraints_cuda_base(
@@ -14,7 +15,7 @@ pub(crate) fn try_evaluate_regular_constraints_cuda_base(
     inputs: RegularConstraintInputs<'_>,
     fixed_values_device_buffer: Option<&lzvm_accel::CudaDeviceBuffer>,
 ) -> Result<Option<Vec<RegularConstraintResult>>, RegularConstraintEvalError> {
-    validate_inputs(inputs)?;
+    validate_inputs_for_cuda_base(inputs)?;
     if inputs.domain_size == 0 || !inputs.custom_fixed_columns.is_empty() {
         return Ok(None);
     }
@@ -45,8 +46,10 @@ pub(crate) fn try_evaluate_regular_constraints_cuda_base(
                 .checked_mul(8)
                 .ok_or(RegularConstraintEvalError::LengthOverflow)?;
             let operation = read_operation_args(constraint_index, args, cursor)?;
-            if operation.kind > 3
-                || !cuda_base_source_supported(operation.src0, inputs, layout)
+            if operation.kind > 3 {
+                return Ok(None);
+            }
+            if !cuda_base_source_supported(operation.src0, inputs, layout)
                 || !cuda_base_source_supported(operation.src1, inputs, layout)
             {
                 return Ok(None);
@@ -71,7 +74,11 @@ pub(crate) fn try_evaluate_regular_constraints_cuda_base(
         .map(|stage| lzvm_accel::CudaRegularStage {
             stage_index: u32::from(stage.stage_index),
             column_count: stage.column_count,
+            row_stride: stage.values_row_stride,
+            column_offset: stage.values_column_offset,
             values: Felt::as_u64_slice(stage.values),
+            values_device: stage.values_device,
+            value_count: stage.value_count,
         })
         .collect::<Vec<_>>();
     let unit_values = Felt::as_u64_slice(inputs.unit_values);

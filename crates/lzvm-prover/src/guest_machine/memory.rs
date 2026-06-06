@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
 
+use crate::guest_instruction::{
+    FetchedGuestInstruction, GuestInstructionError, RiscvEncodedInstruction,
+};
 use crate::guest_memory::{
     GuestMemoryError, GuestMemoryImage, GuestMemoryReader, GuestMemorySegment,
 };
@@ -43,8 +46,7 @@ impl GuestMachineMemory {
         let byte_len = bytes.len();
         let end_address = checked_address_end(address, byte_len)?;
         for segment in &self.segments {
-            let segment_end = segment.end_address()?;
-            if address >= segment.virtual_address && end_address <= segment_end {
+            if segment.contains_range(address, end_address)? {
                 segment.read_range_into(address, bytes);
                 return Ok(());
             }
@@ -52,17 +54,52 @@ impl GuestMachineMemory {
         Err(GuestMemoryError::AddressNotMapped { address, byte_len })
     }
 
+    pub(crate) fn fetch_instruction(
+        &self,
+        address: u64,
+    ) -> Result<FetchedGuestInstruction, GuestInstructionError> {
+        if !address.is_multiple_of(2) {
+            return Err(GuestInstructionError::MisalignedFetch { address });
+        }
+
+        let low = self.read_halfword(address)?;
+        let encoded = if low & 0b11 == 0b11 {
+            if low & 0b11100 == 0b11100 {
+                RiscvEncodedInstruction::UnsupportedLong(low)
+            } else {
+                let high = self.read_halfword(address + 2)?;
+                RiscvEncodedInstruction::Standard(u32::from(low) | (u32::from(high) << 16))
+            }
+        } else {
+            RiscvEncodedInstruction::Compressed(low)
+        };
+
+        Ok(FetchedGuestInstruction { address, encoded })
+    }
+
     pub fn write_range(&mut self, address: u64, bytes: &[u8]) -> Result<(), GuestMemoryError> {
         let byte_len = bytes.len();
         let end_address = checked_address_end(address, byte_len)?;
         for segment in &mut self.segments {
-            let segment_end = segment.end_address()?;
-            if address >= segment.virtual_address && end_address <= segment_end {
+            if segment.contains_range(address, end_address)? {
                 segment.write_range(address, bytes);
                 return Ok(());
             }
         }
         Err(GuestMemoryError::AddressNotMapped { address, byte_len })
+    }
+
+    fn read_halfword(&self, address: u64) -> Result<u16, GuestMemoryError> {
+        let end_address = checked_address_end(address, 2)?;
+        for segment in &self.segments {
+            if segment.contains_range(address, end_address)? {
+                return Ok(segment.read_halfword(address));
+            }
+        }
+        Err(GuestMemoryError::AddressNotMapped {
+            address,
+            byte_len: 2,
+        })
     }
 
     pub fn map_initialized_range(
@@ -251,6 +288,23 @@ impl GuestMachineMemorySegment {
         }
     }
 
+    fn read_halfword(&self, address: u64) -> u16 {
+        let offset = address - self.virtual_address;
+        u16::from_le_bytes([self.read_byte(offset), self.read_byte(offset + 1)])
+    }
+
+    fn read_byte(&self, offset: u64) -> u8 {
+        let block_index = offset / GUEST_MEMORY_OVERLAY_BLOCK_SIZE;
+        let block_offset = (offset % GUEST_MEMORY_OVERLAY_BLOCK_SIZE) as usize;
+        if let Some(block) = self.written_blocks.get(&block_index) {
+            return block[block_offset];
+        }
+        if offset >= self.initialized_bytes.len() as u64 {
+            return 0;
+        }
+        self.initialized_bytes[offset as usize]
+    }
+
     fn write_range(&mut self, address: u64, bytes: &[u8]) {
         let mut offset = address - self.virtual_address;
         let mut input = bytes;
@@ -301,6 +355,11 @@ impl GuestMachineMemorySegment {
                 memory_size: self.memory_size,
             },
         )
+    }
+
+    fn contains_range(&self, address: u64, end_address: u64) -> Result<bool, GuestMemoryError> {
+        let segment_end = self.end_address()?;
+        Ok(address >= self.virtual_address && end_address <= segment_end)
     }
 }
 

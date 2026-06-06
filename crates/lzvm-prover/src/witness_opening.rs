@@ -1,4 +1,5 @@
 use std::fmt;
+use std::time::Instant;
 
 use lzvm_artifacts::pcs_query_segment::{
     parse_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanSegmentError, PcsQueryPlanUnit,
@@ -15,13 +16,26 @@ use lzvm_artifacts::witness_segment::{
 };
 use lzvm_field::{Felt, FieldError};
 
+#[cfg(feature = "cuda")]
+use crate::guest_pc_trace_backend::{
+    build_guest_pc_trace_stage_source_devices_from_device_descriptors,
+    build_guest_pc_trace_stage_source_devices_from_device_material,
+};
 use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
+use crate::proof_artifact_timing::WitnessProofArtifactTiming;
 use crate::witness_commitment::{
     load_witness_commitment_segments, open_witness_stage_commitment,
     verify_witness_stage_opening_root, LoadWitnessCommitmentSegmentsError, WitnessStageOpening,
     WitnessStageOpeningError,
 };
-use crate::witness_execution::ProveWitnessCommitments;
+#[cfg(feature = "cuda")]
+use crate::witness_commitment::{
+    open_witness_stage_commitment_with_source_device_timing, WitnessStageOpeningWorkTiming,
+    WitnessStageSourceDevice,
+};
+use crate::witness_execution::{ProveWitnessCommitments, ProveWitnessTraceCommitments};
+#[cfg(feature = "cuda")]
+use crate::witness_layout::derive_witness_trace_layout;
 use crate::ProveSchedule;
 use crate::ProveUnitSchedule;
 
@@ -53,6 +67,9 @@ pub enum ProveWitnessOpeningSegmentError {
         stage_count: usize,
     },
     Opening(WitnessStageOpeningError),
+    ExternalSource {
+        message: String,
+    },
     Segment(WitnessOpeningSegmentError),
 }
 
@@ -97,6 +114,9 @@ impl fmt::Display for ProveWitnessOpeningSegmentError {
                 "prove witness opening stage index {stage_index} is outside stage count {stage_count}"
             ),
             Self::Opening(error) => write!(f, "prove witness opening failed: {error}"),
+            Self::ExternalSource { message } => {
+                write!(f, "prove witness opening external source failed: {message}")
+            }
             Self::Segment(error) => write!(f, "prove witness opening segment encode failed: {error}"),
         }
     }
@@ -115,6 +135,7 @@ impl std::error::Error for ProveWitnessOpeningSegmentError {
             | Self::UnitIndexOverflow { .. }
             | Self::UnitIndexOutOfRange { .. }
             | Self::StageIndexOutOfRange { .. } => None,
+            Self::ExternalSource { .. } => None,
         }
     }
 }
@@ -482,6 +503,25 @@ pub fn build_witness_opening_segment_batch(
     build_witness_opening_segment_from_query_plan(schedule, &query_plan, outputs)
 }
 
+pub(crate) fn build_witness_opening_segment_batch_from_trace_outputs(
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    outputs: &[&ProveWitnessTraceCommitments],
+) -> Result<ProofSegment, ProveWitnessOpeningSegmentError> {
+    let query_plan = parse_query_plan_segment(query_segment)?;
+    build_witness_opening_segment_from_trace_outputs(schedule, &query_plan, outputs, None)
+}
+
+pub(crate) fn build_witness_opening_segment_batch_from_trace_outputs_with_timing(
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    outputs: &[&ProveWitnessTraceCommitments],
+    timing: &mut WitnessProofArtifactTiming,
+) -> Result<ProofSegment, ProveWitnessOpeningSegmentError> {
+    let query_plan = parse_query_plan_segment(query_segment)?;
+    build_witness_opening_segment_from_trace_outputs(schedule, &query_plan, outputs, Some(timing))
+}
+
 fn parse_query_plan_segment(
     query_segment: &ProofSegment,
 ) -> Result<PcsQueryPlanSegment, ProveWitnessOpeningSegmentError> {
@@ -529,6 +569,71 @@ fn build_witness_opening_segment_from_query_plan(
             .ok_or(ProveWitnessOpeningSegmentError::MissingOutputUnit { unit_index })?;
         units.push(build_witness_opening_unit_segment(
             schedule, query_unit, output,
+        )?);
+    }
+
+    let segment = WitnessOpeningSegment { units };
+    Ok(ProofSegment {
+        id: WITNESS_OPENING_SEGMENT_ID,
+        data: encode_witness_opening_segment(&segment)?,
+    })
+}
+
+fn build_witness_opening_segment_from_trace_outputs(
+    schedule: &ProveSchedule,
+    query_plan: &PcsQueryPlanSegment,
+    outputs: &[&ProveWitnessTraceCommitments],
+    mut timing: Option<&mut WitnessProofArtifactTiming>,
+) -> Result<ProofSegment, ProveWitnessOpeningSegmentError> {
+    let commitments = outputs
+        .iter()
+        .map(|output| output.commitments())
+        .collect::<Vec<_>>();
+    let mut outputs_by_unit = std::collections::BTreeMap::new();
+    for output in outputs {
+        let commitments = output.commitments();
+        let unit_index_u32 = u32::try_from(commitments.unit_index()).map_err(|_| {
+            ProveWitnessOpeningSegmentError::UnitIndexOverflow {
+                unit_index: commitments.unit_index(),
+            }
+        })?;
+        let identity = (unit_index_u32, commitments.trace_instance_index());
+        if outputs_by_unit.insert(identity, *output).is_some() {
+            return Err(ProveWitnessOpeningSegmentError::DuplicateOutputUnit {
+                unit_index: commitments.unit_index(),
+            });
+        }
+    }
+
+    let query_units = query_plan
+        .units
+        .iter()
+        .map(|unit| (unit.unit_index, unit.trace_instance_index))
+        .collect::<std::collections::BTreeSet<_>>();
+    for output in &commitments {
+        let unit_index_u32 = u32::try_from(output.unit_index()).map_err(|_| {
+            ProveWitnessOpeningSegmentError::UnitIndexOverflow {
+                unit_index: output.unit_index(),
+            }
+        })?;
+        if !query_units.contains(&(unit_index_u32, output.trace_instance_index())) {
+            return Err(ProveWitnessOpeningSegmentError::MissingQueryUnit {
+                unit_index: unit_index_u32 as usize,
+            });
+        }
+    }
+
+    let mut units = Vec::with_capacity(query_plan.units.len());
+    for query_unit in &query_plan.units {
+        let unit_index = query_unit.unit_index as usize;
+        let output = outputs_by_unit
+            .get(&(query_unit.unit_index, query_unit.trace_instance_index))
+            .ok_or(ProveWitnessOpeningSegmentError::MissingOutputUnit { unit_index })?;
+        units.push(build_witness_opening_unit_segment_from_trace_output(
+            schedule,
+            query_unit,
+            output,
+            timing.as_deref_mut(),
         )?);
     }
 
@@ -628,6 +733,242 @@ fn build_witness_opening_unit_segment(
         trace_instance_index: query_unit.trace_instance_index,
         queries,
     })
+}
+
+fn build_witness_opening_unit_segment_from_trace_output(
+    schedule: &ProveSchedule,
+    query_unit: &PcsQueryPlanUnit,
+    output: &ProveWitnessTraceCommitments,
+    mut timing: Option<&mut WitnessProofArtifactTiming>,
+) -> Result<WitnessOpeningUnitSegment, ProveWitnessOpeningSegmentError> {
+    let commitments = output.commitments();
+    let unit_index_u32 = u32::try_from(commitments.unit_index()).map_err(|_| {
+        ProveWitnessOpeningSegmentError::UnitIndexOverflow {
+            unit_index: commitments.unit_index(),
+        }
+    })?;
+    if query_unit.unit_index != unit_index_u32 {
+        return Err(ProveWitnessOpeningSegmentError::MissingQueryUnit {
+            unit_index: commitments.unit_index(),
+        });
+    }
+    if query_unit.trace_instance_index != commitments.trace_instance_index() {
+        return Err(ProveWitnessOpeningSegmentError::MissingQueryUnit {
+            unit_index: commitments.unit_index(),
+        });
+    }
+    let unit = schedule.units.get(commitments.unit_index()).ok_or(
+        ProveWitnessOpeningSegmentError::UnitIndexOutOfRange {
+            unit_index: commitments.unit_index(),
+            unit_count: schedule.units.len(),
+        },
+    )?;
+    #[cfg(feature = "cuda")]
+    let mut guest_pc_external_stage_sources = None;
+    let mut queries = Vec::with_capacity(query_unit.queries.len());
+    for row_index in &query_unit.queries {
+        let mut stages = Vec::with_capacity(commitments.stage_commitments().stage_count());
+        for commitment in commitments.stage_commitments().commitments() {
+            let stage_index = commitment.stage_index();
+            let width = unit
+                .stage_commit_widths
+                .get(stage_index.checked_sub(1).ok_or(
+                    ProveWitnessOpeningSegmentError::StageIndexOutOfRange {
+                        stage_index,
+                        stage_count: unit.stage_commit_widths.len(),
+                    },
+                )?)
+                .ok_or(ProveWitnessOpeningSegmentError::StageIndexOutOfRange {
+                    stage_index,
+                    stage_count: unit.stage_commit_widths.len(),
+                })?;
+            #[cfg(feature = "cuda")]
+            let opening = {
+                let width = usize::try_from(*width).map_err(|_| {
+                    ProveWitnessOpeningSegmentError::StageIndexOutOfRange {
+                        stage_index,
+                        stage_count: unit.stage_commit_widths.len(),
+                    }
+                })?;
+                let stage_opening_start = Instant::now();
+                let retained_source_view = output.stage_source_device_view(stage_index);
+                let external_source_view =
+                    if retained_source_view.is_none() && commitment.requires_external_source() {
+                        let external_source_start = Instant::now();
+                        let source_view = ensure_guest_pc_external_stage_sources(
+                            &mut guest_pc_external_stage_sources,
+                            unit,
+                            output,
+                        )?
+                        .and_then(|source_devices| {
+                            source_devices
+                                .iter()
+                                .find(|source_device| source_device.stage_index() == stage_index)
+                                .map(|source_device| source_device.source_view())
+                        });
+                        if let Some(timing) = timing.as_deref_mut() {
+                            let duration = external_source_start.elapsed();
+                            timing.add_witness_external_source(duration);
+                            timing.add_witness_stage_external_source(stage_index, duration);
+                        }
+                        source_view
+                    } else {
+                        None
+                    };
+                let source_view = retained_source_view.or(external_source_view.as_ref());
+                if commitment.requires_external_source() && source_view.is_none() {
+                    let provider_stage_count =
+                        guest_pc_external_stage_sources.as_ref().map_or(0, Vec::len);
+                    return Err(ProveWitnessOpeningSegmentError::ExternalSource {
+                        message: format!(
+                            "missing provider for unit {} trace {} stage {stage_index}; material={}, provider_stages={provider_stage_count}",
+                            commitments.unit_index(),
+                            commitments.trace_instance_index(),
+                            output.guest_pc_device_segment_material().is_some()
+                        ),
+                    });
+                }
+                let mut opening_work_timing = WitnessStageOpeningWorkTiming::default();
+                let opening = open_witness_stage_commitment_with_source_device_timing(
+                    commitment,
+                    *row_index,
+                    unit.extended_domain_size,
+                    width,
+                    source_view,
+                    &mut opening_work_timing,
+                )?;
+                if let Some(timing) = timing.as_deref_mut() {
+                    timing.add_witness_stage_opening_setup(stage_index, opening_work_timing.setup);
+                    timing.add_witness_stage_opening_leaf_extend(
+                        stage_index,
+                        opening_work_timing.leaf_extend,
+                    );
+                    timing.add_witness_stage_opening_leaf_hash(
+                        stage_index,
+                        opening_work_timing.leaf_hash,
+                    );
+                    timing.add_witness_stage_opening_path(stage_index, opening_work_timing.path);
+                    timing.add_witness_stage_opening_row_values(
+                        stage_index,
+                        opening_work_timing.row_values,
+                    );
+                    timing.add_witness_stage_opening(stage_index, stage_opening_start.elapsed());
+                }
+                opening
+            };
+            #[cfg(not(feature = "cuda"))]
+            let opening = {
+                let stage_opening_start = Instant::now();
+                let opening = open_witness_stage_commitment(
+                    commitment,
+                    *row_index,
+                    unit.extended_domain_size,
+                    usize::try_from(*width).map_err(|_| {
+                        ProveWitnessOpeningSegmentError::StageIndexOutOfRange {
+                            stage_index,
+                            stage_count: unit.stage_commit_widths.len(),
+                        }
+                    })?,
+                )?;
+                if let Some(timing) = timing.as_deref_mut() {
+                    timing.add_witness_stage_opening(stage_index, stage_opening_start.elapsed());
+                }
+                opening
+            };
+            stages.push(WitnessOpeningStageSegment {
+                stage_index: u32::try_from(stage_index).map_err(|_| {
+                    ProveWitnessOpeningSegmentError::StageIndexOutOfRange {
+                        stage_index,
+                        stage_count: unit.stage_commit_widths.len(),
+                    }
+                })?,
+                values: opening
+                    .values()
+                    .iter()
+                    .map(|value| value.to_u64())
+                    .collect(),
+                siblings: opening
+                    .siblings()
+                    .iter()
+                    .map(|level| WitnessOpeningLevelSegment {
+                        siblings: level
+                            .iter()
+                            .map(|digest| digest.map(|value| value.to_u64()))
+                            .collect(),
+                    })
+                    .collect(),
+            });
+        }
+        queries.push(WitnessOpeningQuerySegment {
+            row_index: *row_index,
+            stages,
+        });
+    }
+
+    Ok(WitnessOpeningUnitSegment {
+        unit_index: unit_index_u32,
+        trace_instance_index: query_unit.trace_instance_index,
+        queries,
+    })
+}
+
+#[cfg(feature = "cuda")]
+fn ensure_guest_pc_external_stage_sources<'a>(
+    cached_sources: &'a mut Option<Vec<WitnessStageSourceDevice>>,
+    unit: &ProveUnitSchedule,
+    output: &ProveWitnessTraceCommitments,
+) -> Result<Option<&'a [WitnessStageSourceDevice]>, ProveWitnessOpeningSegmentError> {
+    if output.guest_pc_device_segment_material().is_none() {
+        return Ok(None);
+    }
+    if cached_sources.is_none() {
+        *cached_sources = guest_pc_external_stage_sources(unit, output)?;
+    }
+    Ok(cached_sources.as_deref())
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_external_stage_sources(
+    unit: &ProveUnitSchedule,
+    output: &ProveWitnessTraceCommitments,
+) -> Result<Option<Vec<WitnessStageSourceDevice>>, ProveWitnessOpeningSegmentError> {
+    let Some(material) = output.guest_pc_device_segment_material() else {
+        return Ok(None);
+    };
+    let layout = derive_witness_trace_layout(unit).map_err(|error| {
+        ProveWitnessOpeningSegmentError::ExternalSource {
+            message: error.to_string(),
+        }
+    })?;
+    let builder = if let Some(descriptor_buffer) = output.guest_pc_device_descriptor_buffer() {
+        build_guest_pc_trace_stage_source_devices_from_device_descriptors(
+            &layout,
+            material,
+            descriptor_buffer,
+        )
+    } else {
+        build_guest_pc_trace_stage_source_devices_from_device_material(&layout, material)
+    }
+    .map_err(|error| ProveWitnessOpeningSegmentError::ExternalSource {
+        message: error.to_string(),
+    })?;
+    let trace = builder.trace();
+    Ok(Some(
+        builder
+            .stages()
+            .iter()
+            .map(|stage| {
+                WitnessStageSourceDevice::from_row_major_column_window(
+                    stage.stage_index(),
+                    stage.row_count(),
+                    stage.column_count(),
+                    stage.row_stride(),
+                    stage.column_offset(),
+                    trace,
+                )
+            })
+            .collect(),
+    ))
 }
 
 fn expected_merkle_level_count(

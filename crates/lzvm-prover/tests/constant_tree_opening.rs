@@ -1,8 +1,16 @@
+use std::collections::BTreeMap;
+use std::fs;
+
 use lzvm_artifacts::constant_tree::{ConstantTree, ConstantTreeHashKind};
+use lzvm_artifacts::setup_info::{
+    Boundary, CommitmentColumn, ConstantColumn, EvaluationMapEntry, FriStep, StageValue,
+    StarkStruct, UnitSetupInfo,
+};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_field::{poseidon2_hash_16, Felt};
 use lzvm_prover::constant_tree_opening::{
-    open_constant_tree_row, verify_constant_tree_opening_root, ConstantTreeOpening,
+    open_constant_tree_row, open_constant_tree_row_from_file, verify_constant_tree_opening_root,
+    ConstantTreeOpening,
 };
 
 fn sample_tree() -> (ConstantTree, [Felt; 4]) {
@@ -95,8 +103,78 @@ fn rejects_tampered_constant_tree_opening_values() {
     assert!(!valid);
 }
 
+#[test]
+fn opens_constant_tree_rows_from_file() {
+    let (tree, root) = sample_tree();
+    let path = std::env::temp_dir().join(format!(
+        "lzvm-constant-tree-opening-{}-{}.bin",
+        std::process::id(),
+        "from-file"
+    ));
+    fs::write(&path, &tree.bytes).expect("tree bytes should write");
+
+    let opening = open_constant_tree_row_from_file(&path, &sample_setup(), 2, 4)
+        .expect("row should open from file");
+    fs::remove_file(&path).expect("tree bytes should remove");
+    let expected = open_constant_tree_row(&tree, 2, 4).expect("row should open in memory");
+
+    assert_eq!(opening, expected);
+    assert!(verify_constant_tree_opening_root(root, 4, &opening)
+        .expect("opening should verify without structural errors"));
+}
+
 fn append_digest(out: &mut Vec<u8>, digest: [Felt; 4]) {
     for value in digest {
         out.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+fn sample_setup() -> UnitSetupInfo {
+    UnitSetupInfo {
+        n_stages: 0,
+        n_constants: 2,
+        constant_columns: vec![
+            ConstantColumn {
+                name: "const_0".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 0,
+                stage_id: 0,
+                lengths: Vec::new(),
+            },
+            ConstantColumn {
+                name: "const_1".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 1,
+                stage_id: 1,
+                lengths: Vec::new(),
+            },
+        ],
+        n_publics: None,
+        n_constraints: None,
+        q_degree: 0,
+        opening_points: Vec::new(),
+        section_widths: BTreeMap::new(),
+        challenge_count: 0,
+        eval_count: 0,
+        evaluation_map: vec![EvaluationMapEntry::default()],
+        boundaries: Vec::<Boundary>::new(),
+        commitment_columns: Vec::<CommitmentColumn>::new(),
+        unit_value_map: Vec::<StageValue>::new(),
+        group_value_map: Vec::<StageValue>::new(),
+        stark: StarkStruct {
+            n_bits: 2,
+            n_bits_ext: 2,
+            n_queries: 0,
+            steps: vec![FriStep { n_bits: 2 }],
+            hash_commits: false,
+            last_level_verification: 0,
+            pow_bits: 0,
+            merkle_tree_arity: 4,
+            verification_hash_type: None,
+            transcript_arity: None,
+            merkle_tree_custom: None,
+        },
     }
 }

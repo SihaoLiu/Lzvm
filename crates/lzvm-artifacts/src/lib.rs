@@ -42,6 +42,7 @@ pub mod setup_manifest;
 pub mod source_fixed_file_manifest;
 pub mod source_program;
 pub mod trace_bundle;
+pub mod trace_constraint_segment;
 pub mod unit_values_segment;
 pub mod verification_key;
 pub mod verifier_info;

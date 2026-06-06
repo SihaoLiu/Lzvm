@@ -136,10 +136,23 @@ impl From<lzvm_accel::AccelError> for WitnessStageLeafError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessStageCommitmentError {
     Field(FieldError),
-    InvalidLeafByteLength { expected: usize, found: usize },
-    InvalidLeafDigestCount { expected: usize, found: usize },
-    UnsupportedArity { arity: usize },
+    #[cfg(feature = "cuda")]
+    Leaf(WitnessStageLeafError),
+    InvalidLeafByteLength {
+        expected: usize,
+        found: usize,
+    },
+    InvalidLeafDigestCount {
+        expected: usize,
+        found: usize,
+    },
+    UnsupportedArity {
+        arity: usize,
+    },
     EmptyStage,
+    SourceDeviceRetentionUnavailable {
+        bytes: usize,
+    },
     LengthOverflow,
 }
 
@@ -151,6 +164,7 @@ pub enum WitnessStageOpeningError {
     ZeroRows,
     ZeroColumns,
     EmptyValues,
+    ExternalSourceUnavailable,
     InvalidTreeByteLength { expected: usize, found: usize },
     InvalidSiblingCount { expected: usize, found: usize },
     LengthOverflow,
@@ -160,6 +174,8 @@ impl fmt::Display for WitnessStageCommitmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Field(error) => write!(f, "witness stage commitment field error: {error}"),
+            #[cfg(feature = "cuda")]
+            Self::Leaf(error) => write!(f, "witness stage commitment leaf error: {error}"),
             Self::InvalidLeafByteLength { expected, found } => write!(
                 f,
                 "invalid witness stage leaf byte length: expected {expected}, found {found}"
@@ -172,6 +188,10 @@ impl fmt::Display for WitnessStageCommitmentError {
                 write!(f, "unsupported witness stage commitment arity: {arity}")
             }
             Self::EmptyStage => write!(f, "witness stage commitment has no rows"),
+            Self::SourceDeviceRetentionUnavailable { bytes } => write!(
+                f,
+                "witness stage source device retention unavailable for {bytes} bytes"
+            ),
             Self::LengthOverflow => write!(f, "witness stage commitment length overflow"),
         }
     }
@@ -192,6 +212,10 @@ impl fmt::Display for WitnessStageOpeningError {
             Self::ZeroRows => write!(f, "witness stage opening has no rows"),
             Self::ZeroColumns => write!(f, "witness stage opening has no columns"),
             Self::EmptyValues => write!(f, "witness stage opening has no values"),
+            Self::ExternalSourceUnavailable => write!(
+                f,
+                "witness stage opening requires an external source provider"
+            ),
             Self::InvalidTreeByteLength { expected, found } => write!(
                 f,
                 "invalid witness stage opening tree byte length: expected {expected}, found {found}"
@@ -209,10 +233,13 @@ impl std::error::Error for WitnessStageCommitmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Field(error) => Some(error),
+            #[cfg(feature = "cuda")]
+            Self::Leaf(error) => Some(error),
             Self::InvalidLeafByteLength { .. }
             | Self::InvalidLeafDigestCount { .. }
             | Self::UnsupportedArity { .. }
             | Self::EmptyStage
+            | Self::SourceDeviceRetentionUnavailable { .. }
             | Self::LengthOverflow => None,
         }
     }
@@ -227,6 +254,7 @@ impl std::error::Error for WitnessStageOpeningError {
             | Self::ZeroRows
             | Self::ZeroColumns
             | Self::EmptyValues
+            | Self::ExternalSourceUnavailable
             | Self::InvalidTreeByteLength { .. }
             | Self::InvalidSiblingCount { .. }
             | Self::LengthOverflow => None,
@@ -237,6 +265,13 @@ impl std::error::Error for WitnessStageOpeningError {
 impl From<FieldError> for WitnessStageCommitmentError {
     fn from(error: FieldError) -> Self {
         Self::Field(error)
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl From<WitnessStageLeafError> for WitnessStageCommitmentError {
+    fn from(error: WitnessStageLeafError) -> Self {
+        Self::Leaf(error)
     }
 }
 

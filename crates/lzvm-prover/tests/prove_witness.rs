@@ -7,7 +7,10 @@ use std::process::Command;
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment, CHALLENGE_VALUES_SEGMENT_ID,
 };
-use lzvm_artifacts::constant_tree::{expected_constant_tree_byte_count, read_constant_tree_file};
+use lzvm_artifacts::constant_tree::{
+    expected_constant_tree_byte_count, expected_constant_tree_leaf_node_byte_counts,
+    read_constant_tree_file,
+};
 use lzvm_artifacts::constraint_program::{
     ConstraintEntry, ConstraintProgram, GlobalConstraintProgram,
 };
@@ -66,6 +69,9 @@ use lzvm_artifacts::setup_info::{
     CommitmentColumn, EvaluationMapEntry, FriStep, StageValue, StarkStruct, UnitSetupInfo,
 };
 use lzvm_artifacts::trace_bundle::{TraceBundle, TraceBundleUnit};
+use lzvm_artifacts::trace_constraint_segment::{
+    encode_trace_constraint_segment, parse_trace_constraint_segment, TRACE_CONSTRAINT_SEGMENT_ID,
+};
 use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
@@ -76,7 +82,7 @@ use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, parse_witness_commitment_segment, WitnessCommitmentSegment,
     WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_field::{coset_extend_evaluations, Ext3, Felt};
+use lzvm_field::{coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, Ext3, Felt};
 use lzvm_prover::contribution::build_witness_contribution_input;
 use lzvm_prover::pcs_challenge::{derive_fri_queries, verify_query_nonce};
 use lzvm_prover::pcs_fri::{verify_fri_opening_folds, PcsFriOpeningFoldRequest};
@@ -643,12 +649,16 @@ fn write_fixed_bytes_for_unit(unit: &mut KeyUnitCatalogEntry, bytes: Vec<u8>) {
 }
 
 fn write_constant_tree_bytes_for_unit(unit: &mut KeyUnitCatalogEntry, bytes: Vec<u8>) {
+    let bytes = canonical_constant_tree_bytes(&unit.metadata.setup, bytes);
     fs::write(&unit.paths.constant_tree, &bytes).expect("constant tree should be written");
     let byte_count = u64::try_from(bytes.len()).expect("tree byte count should fit");
     let root = read_constant_tree_file(&unit.paths.constant_tree, &unit.metadata.setup)
         .expect("constant tree should load")
         .root()
         .expect("constant tree root should parse");
+    let (leaf_byte_count, node_byte_count) =
+        expected_constant_tree_leaf_node_byte_counts(&unit.metadata.setup)
+            .expect("constant tree shape should derive");
     let VerificationKeyRoot::FieldElements(root_words) = &root;
     let material_root = root_words
         .clone()
@@ -661,6 +671,173 @@ fn write_constant_tree_bytes_for_unit(unit: &mut KeyUnitCatalogEntry, bytes: Vec
         material.constant_tree_digest = Sha256::digest(&bytes).into();
         material.constant_tree_root = material_root;
         material.constant_tree_byte_count = byte_count;
+        material.leaf_byte_count =
+            u64::try_from(leaf_byte_count).expect("leaf byte count should fit");
+        material.node_byte_count =
+            u64::try_from(node_byte_count).expect("node byte count should fit");
+    }
+}
+
+fn canonical_constant_tree_bytes(setup: &UnitSetupInfo, bytes: Vec<u8>) -> Vec<u8> {
+    let expected = expected_constant_tree_byte_count(setup).expect("tree size should derive");
+    assert_eq!(
+        bytes.len(),
+        expected,
+        "constant tree fixture byte count should match setup"
+    );
+    let (leaf_byte_count, node_byte_count) =
+        expected_constant_tree_leaf_node_byte_counts(setup).expect("tree shape should derive");
+    assert_eq!(
+        leaf_byte_count + node_byte_count,
+        expected,
+        "constant tree fixture shape should match total size"
+    );
+    let arity = usize::try_from(setup.stark.merkle_tree_arity)
+        .expect("constant tree arity should fit usize");
+    let row_count = 1_usize
+        .checked_shl(setup.stark.n_bits_ext)
+        .expect("constant tree row count should fit usize");
+    let column_count = usize::try_from(setup.n_constants).expect("constant count should fit usize");
+    let row_byte_count = column_count
+        .checked_mul(8)
+        .expect("constant row byte count should fit usize");
+    assert_eq!(
+        leaf_byte_count,
+        row_count * row_byte_count,
+        "constant tree leaf bytes should match rows and constants"
+    );
+
+    let mut out = Vec::with_capacity(expected);
+    out.extend_from_slice(&bytes[..leaf_byte_count]);
+
+    let mut level = bytes[..leaf_byte_count]
+        .chunks_exact(row_byte_count)
+        .map(|row| {
+            let values = row
+                .chunks_exact(8)
+                .map(|word| Felt::from_u64(u64::from_le_bytes(word.try_into().unwrap())))
+                .collect::<Vec<_>>();
+            constant_tree_linear_hash(&values, arity)
+        })
+        .collect::<Vec<_>>();
+    while level.len() > 1 {
+        for digest in &level {
+            append_constant_tree_digest(&mut out, *digest);
+        }
+        let padding_count = (arity - (level.len() % arity)) % arity;
+        for _ in 0..padding_count {
+            append_constant_tree_digest(&mut out, [Felt::ZERO; 4]);
+        }
+        level.resize(level.len() + padding_count, [Felt::ZERO; 4]);
+        level = level
+            .chunks_exact(arity)
+            .map(|children| constant_tree_parent_hash(children, arity))
+            .collect();
+    }
+    for digest in &level {
+        append_constant_tree_digest(&mut out, *digest);
+    }
+    assert_eq!(
+        out.len(),
+        expected,
+        "canonical constant tree fixture should have expected size"
+    );
+    out
+}
+
+fn constant_tree_linear_hash(values: &[Felt], arity: usize) -> [Felt; 4] {
+    match arity {
+        2 => constant_tree_linear_hash_arity2(values),
+        4 => constant_tree_linear_hash_arity4(values),
+        _ => panic!("unsupported constant tree arity in fixture"),
+    }
+}
+
+fn constant_tree_linear_hash_arity2(values: &[Felt]) -> [Felt; 4] {
+    if values.len() <= 4 {
+        return constant_tree_padded_digest(values);
+    }
+    let mut state = [Felt::ZERO; 8];
+    let mut offset = 0;
+    while offset < values.len() {
+        let capacity = [state[0], state[1], state[2], state[3]];
+        state[4..].copy_from_slice(&capacity);
+        state[..4].fill(Felt::ZERO);
+        let chunk_len = (values.len() - offset).min(4);
+        state[..chunk_len].copy_from_slice(&values[offset..offset + chunk_len]);
+        state = poseidon2_hash_8(state);
+        offset += chunk_len;
+    }
+    [state[0], state[1], state[2], state[3]]
+}
+
+fn constant_tree_linear_hash_arity4(values: &[Felt]) -> [Felt; 4] {
+    if values.len() <= 4 {
+        return constant_tree_padded_digest(values);
+    }
+    let mut state = [Felt::ZERO; 16];
+    let mut offset = 0;
+    while offset < values.len() {
+        let capacity = [state[0], state[1], state[2], state[3]];
+        state[12..].copy_from_slice(&capacity);
+        state[..12].fill(Felt::ZERO);
+        let chunk_len = (values.len() - offset).min(12);
+        state[..chunk_len].copy_from_slice(&values[offset..offset + chunk_len]);
+        state = poseidon2_hash_16(state);
+        offset += chunk_len;
+    }
+    [state[0], state[1], state[2], state[3]]
+}
+
+fn constant_tree_padded_digest(values: &[Felt]) -> [Felt; 4] {
+    let mut out = [Felt::ZERO; 4];
+    out[..values.len()].copy_from_slice(values);
+    out
+}
+
+fn constant_tree_parent_hash(children: &[[Felt; 4]], arity: usize) -> [Felt; 4] {
+    match arity {
+        2 => {
+            let state = poseidon2_hash_8([
+                children[0][0],
+                children[0][1],
+                children[0][2],
+                children[0][3],
+                children[1][0],
+                children[1][1],
+                children[1][2],
+                children[1][3],
+            ]);
+            [state[0], state[1], state[2], state[3]]
+        }
+        4 => {
+            let state = poseidon2_hash_16([
+                children[0][0],
+                children[0][1],
+                children[0][2],
+                children[0][3],
+                children[1][0],
+                children[1][1],
+                children[1][2],
+                children[1][3],
+                children[2][0],
+                children[2][1],
+                children[2][2],
+                children[2][3],
+                children[3][0],
+                children[3][1],
+                children[3][2],
+                children[3][3],
+            ]);
+            [state[0], state[1], state[2], state[3]]
+        }
+        _ => panic!("unsupported constant tree arity in fixture"),
+    }
+}
+
+fn append_constant_tree_digest(out: &mut Vec<u8>, digest: [Felt; 4]) {
+    for value in digest {
+        out.extend_from_slice(&value.to_le_bytes());
     }
 }
 
@@ -1238,7 +1415,7 @@ fn rejects_constant_opening_tree_root_mismatch_after_digest_match() {
     let error = build_constant_opening_segment(&catalog, &schedule, &query_segment)
         .expect_err("constant tree root mismatch should reject opening build");
 
-    assert!(error.to_string().contains("root mismatch"));
+    assert!(error.to_string().contains("root mismatch"), "{error}");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
@@ -1290,6 +1467,55 @@ fn runs_witness_and_commits_stages_from_execution_plan() {
     assert_eq!(output.trace_row_count(), 16);
     assert_eq!(output.trace_column_count(), 5);
     assert_eq!(output.stage_commitments(), &expected);
+}
+
+#[test]
+fn exposes_trace_constraint_evidence_for_witness_output() {
+    let dir = temp_dir("trace-constraint-evidence");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.fixed_columns = dir.join("unit.const");
+    write_fixed_bytes_for_unit(&mut unit, vec![0_u8; 16 * 2 * 8]);
+    unit.regular_constraints = row_zero_stage_constraint(8);
+    let catalog = sample_catalog(unit);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library.clone()),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let library = load_witness_library(&witness_library).expect("witness library should load");
+    let output = run_prove_witness_commitments_with_trace_backend(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        &library,
+    )
+    .expect("witness commitments should run");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let evidence = output.trace_constraint_evidence();
+    assert_eq!(evidence.unit_index(), 0);
+    assert_eq!(evidence.trace_instance_index(), 0);
+    assert_eq!(evidence.trace_row_count(), 16);
+    assert_eq!(evidence.trace_column_count(), 5);
+    assert_eq!(evidence.regular_constraint_count(), 1);
+    assert!(evidence.trace_extracted());
+    assert!(evidence.regular_constraints_evaluated());
+    assert!(evidence.witness_values_committed());
+    assert!(evidence.constraint_checker_conformant());
 }
 
 #[test]
@@ -1483,6 +1709,7 @@ fn runs_segmented_guest_pc_trace_commitments_without_retaining_traces() {
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_units: &plan.units,
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -1559,6 +1786,7 @@ fn compact_segmented_guest_pc_trace_rejects_single_unit_transcript_without_trace
         lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_unit: &plan.units[0],
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -2181,16 +2409,14 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
     let public_values = PublicValues {
         schema_version: 1,
         setup_hash: plan.run_plan.schedule.setup_hash,
-        values: vec![PublicValueEntry {
-            name: "sample_public".to_owned(),
-            elements: vec![19],
-        }],
+        values: Vec::new(),
     };
 
     let proof =
         lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_unit: &plan.units[0],
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -2221,6 +2447,223 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
         .segments
         .iter()
         .any(|segment| { segment.id == CONTRIBUTION_SEGMENT_ID }));
+}
+
+#[test]
+fn proof_artifact_contains_trace_constraint_evidence_segment() {
+    let dir = temp_dir("proof-artifact-trace-constraint-evidence");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [5_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.fixed_columns = dir.join("unit.const");
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    write_fixed_bytes_for_unit(&mut unit, vec![0_u8; 16 * 2 * 8]);
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
+    unit.regular_constraints = row_zero_stage_constraint(6);
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output =
+        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+            .expect("witness commitments should run");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: plan.run_plan.schedule.setup_hash,
+        values: Vec::new(),
+    };
+
+    let proof =
+        lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
+            execution_unit: &plan.units[0],
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            unit_values: None,
+            output: &output,
+            verify_outputs: true,
+            program_image_cache: None,
+            eth_block_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        })
+        .expect("proof artifact should build")
+        .expect("proof artifact should exist");
+    let mut proof =
+        parse_proof_artifact(&encode_proof_artifact(&proof).expect("proof should encode"))
+            .expect("proof should parse");
+
+    let segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == TRACE_CONSTRAINT_SEGMENT_ID)
+        .expect("trace constraint evidence segment should exist");
+    let evidence = parse_trace_constraint_segment(&segment.data)
+        .expect("trace constraint evidence segment should parse");
+    assert_eq!(evidence.units.len(), 1);
+    let unit = &evidence.units[0];
+    assert_eq!(unit.unit_index, 0);
+    assert_eq!(unit.trace_instance_index, 0);
+    assert_eq!(unit.trace_row_count, 16);
+    assert_eq!(unit.trace_column_count, 5);
+    assert_eq!(unit.regular_constraint_count, 1);
+    assert!(unit.trace_extracted);
+    assert!(unit.regular_constraints_evaluated);
+    assert!(unit.witness_values_committed);
+    assert!(unit.constraint_checker_conformant);
+
+    let mut missing_evidence_proof = proof.clone();
+    missing_evidence_proof
+        .segments
+        .retain(|segment| segment.id != TRACE_CONSTRAINT_SEGMENT_ID);
+    let error = lzvm_prover::setup_preflight::validate_setup_preflight(
+        &catalog,
+        &missing_evidence_proof,
+        &public_values,
+    )
+    .expect_err("missing trace constraint evidence should reject");
+    assert!(
+        error
+            .to_string()
+            .contains("missing trace constraint evidence segment"),
+        "{error}"
+    );
+
+    let mut duplicate_evidence_proof = proof.clone();
+    let duplicate_segment = duplicate_evidence_proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == TRACE_CONSTRAINT_SEGMENT_ID)
+        .expect("trace constraint evidence segment should exist")
+        .clone();
+    duplicate_evidence_proof.segments.push(duplicate_segment);
+    let error = lzvm_prover::setup_preflight::validate_setup_preflight(
+        &catalog,
+        &duplicate_evidence_proof,
+        &public_values,
+    )
+    .expect_err("duplicate trace constraint evidence should reject");
+    assert!(
+        error.to_string().contains("duplicate proof segment id"),
+        "{error}"
+    );
+
+    let mut missing_conformance_flag_proof = proof.clone();
+    let segment = missing_conformance_flag_proof
+        .segments
+        .iter_mut()
+        .find(|segment| segment.id == TRACE_CONSTRAINT_SEGMENT_ID)
+        .expect("trace constraint evidence segment should exist");
+    const FIRST_UNIT_FLAGS_OFFSET: usize = 12 + 4 + 4 + 8 + 4 + 4;
+    let flags = u32::from_le_bytes(
+        segment.data[FIRST_UNIT_FLAGS_OFFSET..FIRST_UNIT_FLAGS_OFFSET + 4]
+            .try_into()
+            .expect("trace constraint flags should exist"),
+    ) & !(1 << 3);
+    segment.data[FIRST_UNIT_FLAGS_OFFSET..FIRST_UNIT_FLAGS_OFFSET + 4]
+        .copy_from_slice(&flags.to_le_bytes());
+    let error = lzvm_prover::setup_preflight::validate_setup_preflight(
+        &catalog,
+        &missing_conformance_flag_proof,
+        &public_values,
+    )
+    .expect_err("missing trace constraint conformance flag should reject");
+    assert!(
+        error
+            .to_string()
+            .contains("missing constraint checker conformance"),
+        "{error}"
+    );
+
+    let mut count_mismatch_proof = proof.clone();
+    let segment = count_mismatch_proof
+        .segments
+        .iter_mut()
+        .find(|segment| segment.id == TRACE_CONSTRAINT_SEGMENT_ID)
+        .expect("trace constraint evidence segment should exist");
+    let mut tampered = parse_trace_constraint_segment(&segment.data)
+        .expect("trace constraint evidence segment should parse");
+    tampered.units[0].regular_constraint_count += 1;
+    segment.data =
+        encode_trace_constraint_segment(&tampered).expect("tampered segment should encode");
+    let error = lzvm_prover::setup_preflight::validate_setup_preflight(
+        &catalog,
+        &count_mismatch_proof,
+        &public_values,
+    )
+    .expect_err("trace constraint evidence constraint count mismatch should reject");
+    assert!(
+        error
+            .to_string()
+            .contains("trace constraint evidence constraint count mismatch"),
+        "{error}"
+    );
+
+    let mut unexpected_identity_proof = proof.clone();
+    let segment = unexpected_identity_proof
+        .segments
+        .iter_mut()
+        .find(|segment| segment.id == TRACE_CONSTRAINT_SEGMENT_ID)
+        .expect("trace constraint evidence segment should exist");
+    let mut tampered = parse_trace_constraint_segment(&segment.data)
+        .expect("trace constraint evidence segment should parse");
+    let mut extra_unit = tampered.units[0].clone();
+    extra_unit.trace_instance_index += 1;
+    tampered.units.push(extra_unit);
+    segment.data =
+        encode_trace_constraint_segment(&tampered).expect("tampered segment should encode");
+    let error = lzvm_prover::setup_preflight::validate_setup_preflight(
+        &catalog,
+        &unexpected_identity_proof,
+        &public_values,
+    )
+    .expect_err("unexpected trace constraint evidence identity should reject");
+    assert!(
+        error
+            .to_string()
+            .contains("trace constraint evidence unexpected witness identity"),
+        "{error}"
+    );
+
+    let segment = proof
+        .segments
+        .iter_mut()
+        .find(|segment| segment.id == TRACE_CONSTRAINT_SEGMENT_ID)
+        .expect("trace constraint evidence segment should exist");
+    let mut tampered = parse_trace_constraint_segment(&segment.data)
+        .expect("trace constraint evidence segment should parse");
+    tampered.units[0].trace_row_count += 1;
+    segment.data =
+        encode_trace_constraint_segment(&tampered).expect("tampered segment should encode");
+    let error =
+        lzvm_prover::setup_preflight::validate_setup_preflight(&catalog, &proof, &public_values)
+            .expect_err("trace constraint evidence shape mismatch should reject");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(
+        error
+            .to_string()
+            .contains("trace constraint evidence shape mismatch"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -2265,6 +2708,7 @@ fn rejects_mismatched_eth_block_public_values_in_prover_unit_request() {
         lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_unit: &plan.units[0],
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -2448,6 +2892,7 @@ fn rejects_unbound_program_image_cache_public_values_in_prover_unit_request() {
         lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_unit: &plan.units[0],
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -2533,6 +2978,7 @@ fn rejects_unit_witness_challenge_mismatch_without_output_verification() {
         lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_unit: &plan.units[0],
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -2611,6 +3057,7 @@ fn rejects_witness_contribution_segment_without_challenge_values() {
         lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_unit: &plan.units[0],
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -2627,6 +3074,7 @@ fn rejects_witness_contribution_segment_without_challenge_values() {
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_units: &plan.units,
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -2765,6 +3213,7 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_units: &plan.units,
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -2895,6 +3344,7 @@ fn builds_all_units_proof_output_with_multiple_trace_instances_for_unit() {
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_units: &plan.units,
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -2982,6 +3432,7 @@ fn rejects_all_units_contribution_proof_with_multiple_trace_instances_for_unit()
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_units: &plan.units,
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -3062,6 +3513,7 @@ fn rejects_partial_explicit_unit_values_for_multiple_trace_instances() {
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_units: &plan.units,
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -3136,6 +3588,7 @@ fn builds_unit_proof_artifact_unit_values_for_trace_identity() {
         lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_unit: &plan.units[0],
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -3242,6 +3695,7 @@ fn builds_all_units_contribution_proof_artifact_from_output_proof_values() {
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_units: &plan.units,
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -3333,6 +3787,7 @@ fn rejects_all_units_contribution_proof_artifact_with_mismatched_challenge_segme
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_units: &plan.units,
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -3419,6 +3874,7 @@ fn rejects_contribution_challenge_mismatch_without_output_verification() {
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_units: &plan.units,
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -3510,6 +3966,7 @@ fn rejects_full_witness_challenge_mismatch_without_output_verification() {
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_units: &plan.units,
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -3636,6 +4093,7 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_units: &plan.units,
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
@@ -3681,6 +4139,7 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
         &lzvm_prover::WitnessAllUnitsProofRequest {
             catalog: &catalog,
             schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
             execution_units: &plan.units,
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),

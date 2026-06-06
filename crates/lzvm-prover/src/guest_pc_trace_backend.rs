@@ -1,16 +1,20 @@
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::mpsc;
+#[cfg(feature = "cuda")]
+use std::sync::Arc;
+use std::thread;
 
 use crate::guest_instruction::{
     RiscvAmoKind, RiscvAmoWidth, RiscvDmaKind, RiscvInstruction, RiscvOpImmKind, RiscvOpKind,
     RiscvPrecompileKind,
 };
 use crate::guest_machine::{
-    advance_guest_machine_with_fcalls, decode_current_guest_instruction,
-    run_guest_machine_trace_with_fcalls, run_guest_machine_with_fcalls, GuestDmaProofValueFlags,
-    GuestMachineHalt, GuestMachineMemory, GuestMachineReport, GuestMachineRunError,
-    GuestMachineState, GuestMachineTraceSliceStatus, GuestMemoryAccess, GuestMemoryAccessKind,
-    GuestRegisterWrite,
+    advance_guest_machine_with_prepared_fcalls, decode_current_guest_instruction,
+    prepare_current_guest_instruction, run_guest_machine_trace_with_fcalls,
+    run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestMachineHalt, GuestMachineMemory,
+    GuestMachineReport, GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus,
+    GuestMemoryAccess, GuestMemoryAccessKind, GuestRegisterWrite,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{ResolvedTraceColumn, WitnessTraceBuildError, WitnessTraceLayout};
@@ -24,6 +28,8 @@ use crate::zisk_main::{
     lower_guest_report, ZiskMainInstruction, ZiskMainLowerError, ZiskMainOp, ZiskMainSource,
     ZiskMainStore, ZISK_EXTRA_PARAMS_ADDRESS,
 };
+#[cfg(feature = "cuda")]
+use lzvm_accel::CudaDeviceBuffer;
 use lzvm_field::{Felt, FieldError};
 
 use crate::zisk_fcalls::{ZiskInputFcallError, ZiskInputFcallHandler, ZISK_INPUT_ADDRESS};
@@ -56,20 +62,86 @@ impl GuestPcTraceBackend {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestPcTraceSegmentRunOutput {
     trace_instance_index: u32,
-    output: WitnessTraceRunOutput,
+    trace_source_prefix_rows: usize,
+    #[cfg(feature = "cuda")]
+    device_segment_material: Option<GuestPcTraceDeviceSegmentMaterial>,
+    trace: Option<WitnessTraceBuffer>,
+    unit_values: Vec<WitnessTraceUnitValue>,
+    proof_values: Vec<WitnessTraceProofValue>,
 }
 
 impl GuestPcTraceSegmentRunOutput {
+    fn from_segment_trace(segment: GuestPcTraceSegmentTrace) -> Self {
+        Self {
+            trace_instance_index: segment.trace_instance_index,
+            trace_source_prefix_rows: segment.trace_source_prefix_rows,
+            #[cfg(feature = "cuda")]
+            device_segment_material: segment.device_segment_material,
+            trace: segment.trace,
+            unit_values: segment.unit_values,
+            proof_values: segment.proof_values,
+        }
+    }
+
     pub fn trace_instance_index(&self) -> u32 {
         self.trace_instance_index
     }
 
-    pub fn output(&self) -> &WitnessTraceRunOutput {
-        &self.output
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn trace_source_prefix_rows(&self) -> usize {
+        self.trace_source_prefix_rows
     }
 
-    pub fn into_output(self) -> WitnessTraceRunOutput {
-        self.output
+    #[cfg(feature = "cuda")]
+    pub(crate) fn device_trace_descriptors(&self) -> Option<&ZiskMainDeviceTraceDescriptors> {
+        self.device_segment_material
+            .as_ref()
+            .map(|material| &material.device_trace_descriptors)
+    }
+
+    #[cfg(feature = "cuda")]
+    pub(crate) fn device_segment_material(&self) -> Option<&GuestPcTraceDeviceSegmentMaterial> {
+        self.device_segment_material.as_ref()
+    }
+
+    #[cfg(feature = "cuda")]
+    pub(crate) fn into_trace_and_device_material(
+        self,
+    ) -> (
+        Option<WitnessTraceBuffer>,
+        Option<GuestPcTraceDeviceSegmentMaterial>,
+    ) {
+        (self.trace, self.device_segment_material)
+    }
+
+    pub fn trace_if_available(&self) -> Option<&WitnessTraceBuffer> {
+        self.trace.as_ref()
+    }
+
+    pub fn trace(&self) -> &WitnessTraceBuffer {
+        self.trace
+            .as_ref()
+            .expect("guest PC segment host trace is not available")
+    }
+
+    pub fn unit_values(&self) -> &[WitnessTraceUnitValue] {
+        &self.unit_values
+    }
+
+    pub fn proof_values(&self) -> &[WitnessTraceProofValue] {
+        &self.proof_values
+    }
+
+    pub fn into_trace(self) -> Option<WitnessTraceBuffer> {
+        self.trace
+    }
+
+    pub fn into_output(self) -> Option<WitnessTraceRunOutput> {
+        Some(WitnessTraceRunOutput::from_parts(
+            self.trace?,
+            self.unit_values,
+            self.proof_values,
+        ))
     }
 }
 
@@ -100,14 +172,7 @@ pub fn run_guest_pc_trace_segments_with_context(
             .map_err(WitnessCallError::from)?;
     let mut out = Vec::with_capacity(segments.len());
     for segment in segments {
-        out.push(GuestPcTraceSegmentRunOutput {
-            trace_instance_index: segment.trace_instance_index,
-            output: WitnessTraceRunOutput::from_parts(
-                segment.trace,
-                segment.unit_values,
-                segment.proof_values,
-            ),
-        });
+        out.push(GuestPcTraceSegmentRunOutput::from_segment_trace(segment));
     }
     Ok(out)
 }
@@ -176,15 +241,8 @@ pub(crate) fn for_each_guest_pc_trace_segment_with_context<E>(
         request.input.as_ref(),
         Some(proof_values),
         |segment| {
-            emit(GuestPcTraceSegmentRunOutput {
-                trace_instance_index: segment.trace_instance_index,
-                output: WitnessTraceRunOutput::from_parts(
-                    segment.trace,
-                    segment.unit_values,
-                    segment.proof_values,
-                ),
-            })
-            .map_err(GuestPcTraceSegmentStreamError::Emit)
+            emit(GuestPcTraceSegmentRunOutput::from_segment_trace(segment))
+                .map_err(GuestPcTraceSegmentStreamError::Emit)
         },
     )
     .map(|_| ())
@@ -224,22 +282,18 @@ pub(crate) fn for_each_guest_pc_trace_segment_collecting_proof_values_with_conte
         request.input.as_ref(),
         None,
         |segment| {
-            emit(GuestPcTraceSegmentRunOutput {
-                trace_instance_index: segment.trace_instance_index,
-                output: WitnessTraceRunOutput::from_parts(
-                    segment.trace,
-                    segment.unit_values,
-                    segment.proof_values,
-                ),
-            })
-            .map_err(GuestPcTraceSegmentStreamError::Emit)
+            emit(GuestPcTraceSegmentRunOutput::from_segment_trace(segment))
+                .map_err(GuestPcTraceSegmentStreamError::Emit)
         },
     )
 }
 
 struct GuestPcTraceSegmentTrace {
     trace_instance_index: u32,
-    trace: WitnessTraceBuffer,
+    trace_source_prefix_rows: usize,
+    #[cfg(feature = "cuda")]
+    device_segment_material: Option<GuestPcTraceDeviceSegmentMaterial>,
+    trace: Option<WitnessTraceBuffer>,
     unit_values: Vec<WitnessTraceUnitValue>,
     proof_values: Vec<WitnessTraceProofValue>,
 }
@@ -251,12 +305,726 @@ struct GuestPcTraceSegmentSlice {
     reports: Vec<GuestMachineReport>,
 }
 
+struct GuestPcTracePendingSegmentSlice {
+    trace_instance_index: u32,
+    reports: Vec<GuestMachineReport>,
+    terminal_pc: u64,
+    lookahead_instruction: Option<RiscvInstruction>,
+    is_last_segment: bool,
+}
+
+#[cfg_attr(feature = "cuda", allow(clippy::large_enum_variant))]
+enum GuestPcTraceSegmentStreamMessage {
+    Segment(GuestPcTraceSegmentTrace),
+    Complete(Vec<WitnessTraceProofValue>),
+    Error(GuestPcTraceBackendError),
+}
+
+enum GuestPcTracePendingSegmentMessage {
+    Segment(GuestPcTracePendingSegmentSlice),
+    Complete(Vec<WitnessTraceProofValue>),
+    Error(GuestPcTraceBackendError),
+}
+
 pub fn is_guest_pc_trace_layout_supported(layout: &WitnessTraceLayout) -> bool {
     layout_trace_capacity(Some(layout)).is_ok()
 }
 
 pub fn is_guest_pc_trace_segmented_layout_supported(layout: &WitnessTraceLayout) -> bool {
     matches!(zisk_main_trace_columns(layout), Ok(Some(_)))
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone)]
+pub(crate) struct GuestPcTraceDeviceTraceBuilder {
+    trace: Arc<CudaDeviceBuffer>,
+    device_trace_descriptor_buffer: Option<Arc<CudaDeviceBuffer>>,
+    stages: Vec<GuestPcTraceDeviceTraceStage>,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ZiskMainDeviceTraceDescriptors {
+    descriptor_words: usize,
+    descriptor_rows: usize,
+    row_count: usize,
+    column_count: usize,
+    terminal_pc: u64,
+    words: Vec<u64>,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct GuestPcTraceDeviceTraceStage {
+    stage_index: usize,
+    row_count: usize,
+    column_count: usize,
+    row_stride: usize,
+    column_offset: usize,
+}
+
+#[cfg(feature = "cuda")]
+impl ZiskMainDeviceTraceDescriptors {
+    fn new(row_count: usize, column_count: usize, terminal_pc: u64) -> Self {
+        let word_capacity = row_count
+            .checked_mul(ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS)
+            .unwrap_or(0);
+        Self {
+            descriptor_words: ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS,
+            descriptor_rows: 0,
+            row_count,
+            column_count,
+            terminal_pc,
+            words: Vec::with_capacity(word_capacity),
+        }
+    }
+
+    pub(crate) fn descriptor_rows(&self) -> usize {
+        self.descriptor_rows
+    }
+
+    pub(crate) fn descriptor_word_count(&self) -> usize {
+        self.descriptor_words
+    }
+
+    pub(crate) fn row_count(&self) -> usize {
+        self.row_count
+    }
+
+    pub(crate) fn column_count(&self) -> usize {
+        self.column_count
+    }
+
+    pub(crate) fn terminal_pc(&self) -> u64 {
+        self.terminal_pc
+    }
+
+    pub(crate) fn words(&self) -> &[u64] {
+        &self.words
+    }
+}
+
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_COLUMNS: usize = 39;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS: usize = 11;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_WIDE_DESCRIPTOR_WORDS: usize = 14;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_SOURCE_MEMORY: u64 = 1;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_SOURCE_IMMEDIATE: u64 = 2;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_SOURCE_REGISTER: u64 = 3;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_SOURCE_INDIRECT: u64 = 4;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_STORE_MEMORY: u64 = 1;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_STORE_REGISTER: u64 = 2;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_STORE_INDIRECT: u64 = 3;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_A_KIND_SHIFT: u64 = 32;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_B_KIND_SHIFT: u64 = 35;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_STORE_KIND_SHIFT: u64 = 38;
+
+#[cfg(feature = "cuda")]
+fn zisk_main_device_trace_descriptors(
+    layout: &WitnessTraceLayout,
+    columns: &ZiskMainTraceColumns<'_>,
+    terminal_pc: u64,
+) -> Option<ZiskMainDeviceTraceDescriptors> {
+    if !guest_pc_device_trace_source_enabled()
+        || !zisk_main_device_trace_layout_supported(layout, columns)
+    {
+        return None;
+    }
+    Some(ZiskMainDeviceTraceDescriptors::new(
+        layout.row_count(),
+        layout.column_count(),
+        terminal_pc,
+    ))
+}
+
+#[cfg(feature = "cuda")]
+fn zisk_main_device_trace_layout_supported(
+    layout: &WitnessTraceLayout,
+    columns: &ZiskMainTraceColumns<'_>,
+) -> bool {
+    layout.column_count() == ZISK_MAIN_DEVICE_TRACE_COLUMNS
+        && trace_target_at(&columns.a, 0)
+        && trace_target_at(&columns.b, 2)
+        && trace_target_at(&columns.c, 4)
+        && trace_target_at(&columns.flag, 6)
+        && trace_target_at(&columns.pc, 7)
+        && optional_trace_target_at(&columns.a_src_imm, 8)
+        && optional_trace_target_at(&columns.a_src_mem, 9)
+        && optional_trace_target_at(&columns.a_offset_imm0, 10)
+        && optional_trace_target_at(&columns.a_imm1, 11)
+        && optional_trace_target_at(&columns.is_precompiled, 12)
+        && optional_trace_target_at(&columns.b_src_imm, 13)
+        && optional_trace_target_at(&columns.b_src_mem, 14)
+        && optional_trace_target_at(&columns.b_offset_imm0, 15)
+        && optional_trace_target_at(&columns.b_imm1, 16)
+        && optional_trace_target_at(&columns.b_src_ind, 17)
+        && optional_trace_target_at(&columns.ind_width, 18)
+        && optional_trace_target_at(&columns.is_external_op, 19)
+        && trace_target_at(&columns.op, 20)
+        && optional_trace_target_at(&columns.store_pc, 21)
+        && optional_trace_target_at(&columns.store_mem, 22)
+        && optional_trace_target_at(&columns.store_ind, 23)
+        && optional_trace_target_at(&columns.store_offset, 24)
+        && optional_trace_target_at(&columns.set_pc, 25)
+        && optional_trace_target_at(&columns.jmp_offset1, 26)
+        && optional_trace_target_at(&columns.jmp_offset2, 27)
+        && optional_trace_target_at(&columns.m32, 28)
+        && optional_trace_target_at(&columns.addr1, 29)
+        && optional_trace_target_at(&columns.a_reg_prev_mem_step, 30)
+        && optional_trace_target_at(&columns.b_reg_prev_mem_step, 31)
+        && optional_trace_target_at(&columns.store_reg_prev_mem_step, 32)
+        && optional_trace_target_at(&columns.store_reg_prev_value, 33)
+        && optional_trace_target_at(&columns.a_src_reg, 35)
+        && optional_trace_target_at(&columns.b_src_reg, 36)
+        && optional_trace_target_at(&columns.store_reg, 37)
+        && columns.addr2.is_none()
+}
+
+#[cfg(feature = "cuda")]
+fn trace_target_at(target: &TraceColumnTarget<'_>, trace_column: usize) -> bool {
+    target.trace_column() == trace_column
+}
+
+#[cfg(feature = "cuda")]
+fn optional_trace_target_at(target: &Option<TraceColumnTarget<'_>>, trace_column: usize) -> bool {
+    target
+        .as_ref()
+        .is_some_and(|target| trace_target_at(target, trace_column))
+}
+
+#[cfg(feature = "cuda")]
+fn append_zisk_main_device_trace_descriptor(
+    descriptors: &mut ZiskMainDeviceTraceDescriptors,
+    values: &ZiskMainReportTraceValues,
+) -> Result<(), GuestPcTraceBackendError> {
+    if descriptors.descriptor_rows >= descriptors.row_count {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk Main device trace descriptor rows exceed layout rows".to_owned(),
+        });
+    }
+    let instruction = &values.instruction;
+    let (a_kind, a_payload) = zisk_main_device_trace_source_descriptor(instruction.a);
+    let (b_kind, b_payload) = zisk_main_device_trace_source_descriptor(instruction.b);
+    let (store_kind, store_payload) = zisk_main_device_trace_store_descriptor(&instruction.store);
+    let control = u64::from(instruction.op.code())
+        | (u64::from(values.flag) << 8)
+        | (u64::from(instruction.store_pc) << 9)
+        | (u64::from(instruction.set_pc) << 10)
+        | (u64::from(instruction.m32) << 11)
+        | (u64::from(instruction.is_external_op) << 12)
+        | (u64::from(instruction.is_precompiled) << 13)
+        | (instruction.ind_width << 16)
+        | (a_kind << ZISK_MAIN_DEVICE_TRACE_A_KIND_SHIFT)
+        | (b_kind << ZISK_MAIN_DEVICE_TRACE_B_KIND_SHIFT)
+        | (store_kind << ZISK_MAIN_DEVICE_TRACE_STORE_KIND_SHIFT);
+    let a_prev_mem_step = values.register_accesses.a_prev_mem_step.unwrap_or(0);
+    let b_prev_mem_step = values.register_accesses.b_prev_mem_step.unwrap_or(0);
+    let store_prev_mem_step = values.register_accesses.store_prev_mem_step.unwrap_or(0);
+    let store_prev_value = values.register_accesses.store_prev_value.unwrap_or(0);
+    if descriptors.descriptor_words == ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS {
+        if let Some(compact_words) = zisk_main_compact_device_trace_descriptor_words(
+            values,
+            a_payload,
+            b_payload,
+            store_payload,
+            control,
+            a_prev_mem_step,
+            b_prev_mem_step,
+            store_prev_mem_step,
+            store_prev_value,
+        ) {
+            descriptors.words.extend_from_slice(&compact_words);
+            descriptors.descriptor_rows = descriptors.descriptor_rows.checked_add(1).ok_or(
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "Zisk Main device trace descriptor row count overflow".to_owned(),
+                },
+            )?;
+            return Ok(());
+        }
+        convert_zisk_main_compact_descriptors_to_wide(descriptors);
+    }
+    descriptors.words.extend_from_slice(&[
+        values.a,
+        values.b,
+        values.c,
+        instruction.pc,
+        a_payload,
+        b_payload,
+        store_payload,
+        control,
+        instruction.jmp_offset1 as u64,
+        instruction.jmp_offset2 as u64,
+        a_prev_mem_step,
+        b_prev_mem_step,
+        store_prev_mem_step,
+        store_prev_value,
+    ]);
+    descriptors.descriptor_rows = descriptors.descriptor_rows.checked_add(1).ok_or(
+        GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk Main device trace descriptor row count overflow".to_owned(),
+        },
+    )?;
+    Ok(())
+}
+
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+fn zisk_main_compact_device_trace_descriptor_words(
+    values: &ZiskMainReportTraceValues,
+    a_payload: u64,
+    b_payload: u64,
+    store_payload: u64,
+    control: u64,
+    a_prev_mem_step: u64,
+    b_prev_mem_step: u64,
+    store_prev_mem_step: u64,
+    store_prev_value: u64,
+) -> Option<[u64; ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS]> {
+    Some([
+        values.a,
+        values.b,
+        values.c,
+        a_payload,
+        b_payload,
+        store_payload,
+        control,
+        zisk_main_pack_u32_pair(values.instruction.pc, store_prev_mem_step)?,
+        zisk_main_pack_i32_pair(
+            values.instruction.jmp_offset1,
+            values.instruction.jmp_offset2,
+        )?,
+        zisk_main_pack_u32_pair(a_prev_mem_step, b_prev_mem_step)?,
+        store_prev_value,
+    ])
+}
+
+#[cfg(feature = "cuda")]
+fn zisk_main_pack_i32_pair(lhs: i64, rhs: i64) -> Option<u64> {
+    let lhs = i32::try_from(lhs).ok()? as u32;
+    let rhs = i32::try_from(rhs).ok()? as u32;
+    Some(u64::from(lhs) | (u64::from(rhs) << 32))
+}
+
+#[cfg(feature = "cuda")]
+fn zisk_main_pack_u32_pair(lhs: u64, rhs: u64) -> Option<u64> {
+    Some(u64::from(zisk_main_pack_u32(lhs)?) | (u64::from(zisk_main_pack_u32(rhs)?) << 32))
+}
+
+#[cfg(feature = "cuda")]
+fn zisk_main_pack_u32(value: u64) -> Option<u32> {
+    u32::try_from(value).ok()
+}
+
+#[cfg(feature = "cuda")]
+fn convert_zisk_main_compact_descriptors_to_wide(descriptors: &mut ZiskMainDeviceTraceDescriptors) {
+    debug_assert_eq!(
+        descriptors.descriptor_words,
+        ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS
+    );
+    let mut wide_words = Vec::with_capacity(
+        descriptors
+            .descriptor_rows
+            .saturating_mul(ZISK_MAIN_DEVICE_TRACE_WIDE_DESCRIPTOR_WORDS),
+    );
+    for compact in descriptors
+        .words
+        .chunks_exact(ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS)
+    {
+        let pc_and_store_step = compact[7];
+        let jump_offsets = compact[8];
+        let register_mem_steps = compact[9];
+        wide_words.extend_from_slice(&[
+            compact[0],
+            compact[1],
+            compact[2],
+            pc_and_store_step & 0xffff_ffff,
+            compact[3],
+            compact[4],
+            compact[5],
+            compact[6],
+            zisk_main_unpack_i32_low(jump_offsets),
+            zisk_main_unpack_i32_high(jump_offsets),
+            register_mem_steps & 0xffff_ffff,
+            register_mem_steps >> 32,
+            pc_and_store_step >> 32,
+            compact[10],
+        ]);
+    }
+    descriptors.words = wide_words;
+    descriptors.descriptor_words = ZISK_MAIN_DEVICE_TRACE_WIDE_DESCRIPTOR_WORDS;
+}
+
+#[cfg(feature = "cuda")]
+fn zisk_main_unpack_i32_low(value: u64) -> u64 {
+    i64::from(value as u32 as i32) as u64
+}
+
+#[cfg(feature = "cuda")]
+fn zisk_main_unpack_i32_high(value: u64) -> u64 {
+    i64::from((value >> 32) as u32 as i32) as u64
+}
+
+#[cfg(feature = "cuda")]
+fn zisk_main_device_trace_source_descriptor(source: ZiskMainSource) -> (u64, u64) {
+    match source {
+        ZiskMainSource::LastC => (0, 0),
+        ZiskMainSource::Memory(value) => (ZISK_MAIN_DEVICE_TRACE_SOURCE_MEMORY, value),
+        ZiskMainSource::Immediate(value) => (ZISK_MAIN_DEVICE_TRACE_SOURCE_IMMEDIATE, value),
+        ZiskMainSource::Register(index) => {
+            (ZISK_MAIN_DEVICE_TRACE_SOURCE_REGISTER, u64::from(index))
+        }
+        ZiskMainSource::Indirect(offset) => (ZISK_MAIN_DEVICE_TRACE_SOURCE_INDIRECT, offset as u64),
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn zisk_main_device_trace_store_descriptor(store: &ZiskMainStore) -> (u64, u64) {
+    match store {
+        ZiskMainStore::None => (0, 0),
+        ZiskMainStore::Memory(address) => (ZISK_MAIN_DEVICE_TRACE_STORE_MEMORY, *address as u64),
+        ZiskMainStore::Register(index) => {
+            (ZISK_MAIN_DEVICE_TRACE_STORE_REGISTER, u64::from(*index))
+        }
+        ZiskMainStore::Indirect(offset) => (ZISK_MAIN_DEVICE_TRACE_STORE_INDIRECT, *offset as u64),
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl GuestPcTraceDeviceTraceBuilder {
+    pub(crate) fn trace(&self) -> &Arc<CudaDeviceBuffer> {
+        &self.trace
+    }
+
+    pub(crate) fn device_trace_descriptor_buffer(&self) -> Option<&Arc<CudaDeviceBuffer>> {
+        self.device_trace_descriptor_buffer.as_ref()
+    }
+
+    pub(crate) fn stages(&self) -> &[GuestPcTraceDeviceTraceStage] {
+        &self.stages
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl GuestPcTraceDeviceTraceStage {
+    pub(crate) fn stage_index(&self) -> usize {
+        self.stage_index
+    }
+
+    pub(crate) fn row_count(&self) -> usize {
+        self.row_count
+    }
+
+    pub(crate) fn column_count(&self) -> usize {
+        self.column_count
+    }
+
+    pub(crate) fn row_stride(&self) -> usize {
+        self.row_stride
+    }
+
+    pub(crate) fn column_offset(&self) -> usize {
+        self.column_offset
+    }
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material(
+    layout: &WitnessTraceLayout,
+    material: &GuestPcTraceDeviceSegmentMaterial,
+) -> Result<GuestPcTraceDeviceTraceBuilder, WitnessTraceRunError> {
+    if !is_guest_pc_trace_segmented_layout_supported(layout) {
+        return Err(guest_pc_device_trace_source_error(
+            "guest PC device material requires a supported segmented layout",
+        ));
+    }
+    let descriptors = &material.device_trace_descriptors;
+    if descriptors.row_count() != layout.row_count()
+        || descriptors.column_count() != layout.column_count()
+        || descriptors.descriptor_rows() != material.trace_source_prefix_rows
+    {
+        return Err(guest_pc_device_trace_source_error(
+            "device material descriptor shape does not match guest PC layout",
+        ));
+    }
+
+    let descriptor_buffer = Arc::new(
+        CudaDeviceBuffer::from_u64_words(descriptors.words()).map_err(|error| {
+            guest_pc_device_trace_source_error(format!(
+                "CUDA trace descriptor upload failed: {error}"
+            ))
+        })?,
+    );
+    let mut builder = build_guest_pc_trace_stage_source_devices_from_device_descriptors(
+        layout,
+        material,
+        descriptor_buffer.as_ref(),
+    )?;
+    builder.device_trace_descriptor_buffer = Some(descriptor_buffer);
+    Ok(builder)
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors(
+    layout: &WitnessTraceLayout,
+    material: &GuestPcTraceDeviceSegmentMaterial,
+    device_trace_descriptor_buffer: &CudaDeviceBuffer,
+) -> Result<GuestPcTraceDeviceTraceBuilder, WitnessTraceRunError> {
+    if !is_guest_pc_trace_segmented_layout_supported(layout) {
+        return Err(guest_pc_device_trace_source_error(
+            "guest PC device descriptors require a supported segmented layout",
+        ));
+    }
+    let descriptors = &material.device_trace_descriptors;
+    if descriptors.row_count() != layout.row_count()
+        || descriptors.column_count() != layout.column_count()
+        || descriptors.descriptor_rows() != material.trace_source_prefix_rows
+    {
+        return Err(guest_pc_device_trace_source_error(
+            "device descriptor shape does not match guest PC layout",
+        ));
+    }
+
+    let trace_device = CudaDeviceBuffer::from_zisk_main_trace_descriptors_device(
+        device_trace_descriptor_buffer,
+        descriptors.descriptor_word_count(),
+        descriptors.descriptor_rows(),
+        descriptors.row_count(),
+        descriptors.column_count(),
+        descriptors.terminal_pc(),
+    )
+    .map_err(|error| {
+        guest_pc_device_trace_source_error(format!(
+            "CUDA trace descriptor expansion failed: {error}"
+        ))
+    })?;
+    let builder =
+        guest_pc_device_trace_builder_from_layout_with_descriptors(layout, trace_device, None);
+    validate_guest_pc_trace_device_source_matches_layout(layout, &builder)?;
+    Ok(builder)
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn build_guest_pc_trace_stage_source_devices(
+    layout: &WitnessTraceLayout,
+    trace: &WitnessTraceBuffer,
+    trace_source_prefix_rows: usize,
+    device_trace_descriptors: Option<&ZiskMainDeviceTraceDescriptors>,
+) -> Result<Option<GuestPcTraceDeviceTraceBuilder>, WitnessTraceRunError> {
+    if !guest_pc_device_trace_source_enabled() {
+        return Ok(None);
+    }
+    if !is_guest_pc_trace_segmented_layout_supported(layout) {
+        return Ok(None);
+    }
+    if trace.row_count() != layout.row_count() || trace.column_count() != layout.column_count() {
+        return Err(guest_pc_device_trace_source_error(
+            "trace shape does not match guest PC layout",
+        ));
+    }
+
+    let row_width = trace.column_count();
+    if let Some(descriptors) = device_trace_descriptors {
+        if descriptors.row_count() != trace.row_count()
+            || descriptors.column_count() != row_width
+            || descriptors.descriptor_rows() != trace_source_prefix_rows
+        {
+            return Err(guest_pc_device_trace_source_error(
+                "device trace descriptor shape does not match guest PC trace",
+            ));
+        }
+        let trace_device = CudaDeviceBuffer::from_zisk_main_trace_descriptors(
+            descriptors.words(),
+            descriptors.descriptor_word_count(),
+            descriptors.descriptor_rows(),
+            descriptors.row_count(),
+            descriptors.column_count(),
+            descriptors.terminal_pc(),
+        )
+        .map_err(|error| {
+            guest_pc_device_trace_source_error(format!(
+                "CUDA trace descriptor expansion failed: {error}"
+            ))
+        })?;
+        let builder = guest_pc_device_trace_builder(layout, trace, trace_device);
+        validate_guest_pc_trace_device_source_matches_trace(layout, trace, &builder)?;
+        return Ok(Some(builder));
+    }
+
+    if trace_source_prefix_rows >= trace.row_count() {
+        return Ok(None);
+    }
+
+    let trace_words = Felt::as_u64_slice(trace.values());
+    let prefix_words = trace_source_prefix_rows
+        .checked_mul(row_width)
+        .ok_or_else(|| guest_pc_device_trace_source_error("trace prefix word count overflow"))?;
+    if prefix_words
+        .checked_add(row_width)
+        .is_none_or(|end| end > trace_words.len())
+    {
+        return Err(guest_pc_device_trace_source_error(
+            "terminal row exceeds trace words",
+        ));
+    }
+    let terminal_row = &trace_words[prefix_words..prefix_words + row_width];
+    for row in trace_words[prefix_words..].chunks_exact(row_width) {
+        if row != terminal_row {
+            return Ok(None);
+        }
+    }
+
+    let trace_device = CudaDeviceBuffer::from_row_major_u64_prefix_and_suffix_row(
+        &trace_words[..prefix_words],
+        terminal_row,
+        trace.row_count(),
+        row_width,
+        trace_source_prefix_rows,
+    )
+    .map_err(|error| {
+        guest_pc_device_trace_source_error(format!("CUDA trace source build failed: {error}"))
+    })?;
+    let builder = guest_pc_device_trace_builder(layout, trace, trace_device);
+    validate_guest_pc_trace_device_source_matches_trace(layout, trace, &builder)?;
+    Ok(Some(builder))
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_device_trace_builder(
+    layout: &WitnessTraceLayout,
+    trace: &WitnessTraceBuffer,
+    trace_device: CudaDeviceBuffer,
+) -> GuestPcTraceDeviceTraceBuilder {
+    debug_assert_eq!(trace.row_count(), layout.row_count());
+    debug_assert_eq!(trace.column_count(), layout.column_count());
+    guest_pc_device_trace_builder_from_layout(layout, trace_device)
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_device_trace_builder_from_layout(
+    layout: &WitnessTraceLayout,
+    trace_device: CudaDeviceBuffer,
+) -> GuestPcTraceDeviceTraceBuilder {
+    guest_pc_device_trace_builder_from_layout_with_descriptors(layout, trace_device, None)
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_device_trace_builder_from_layout_with_descriptors(
+    layout: &WitnessTraceLayout,
+    trace_device: CudaDeviceBuffer,
+    device_trace_descriptor_buffer: Option<Arc<CudaDeviceBuffer>>,
+) -> GuestPcTraceDeviceTraceBuilder {
+    let stages = layout
+        .stages()
+        .iter()
+        .map(|stage| GuestPcTraceDeviceTraceStage {
+            stage_index: stage.stage_index,
+            row_count: layout.row_count(),
+            column_count: stage.width,
+            row_stride: layout.column_count(),
+            column_offset: stage.start_column,
+        })
+        .collect::<Vec<_>>();
+    GuestPcTraceDeviceTraceBuilder {
+        trace: Arc::new(trace_device),
+        device_trace_descriptor_buffer,
+        stages,
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn validate_guest_pc_trace_device_source_matches_layout(
+    layout: &WitnessTraceLayout,
+    builder: &GuestPcTraceDeviceTraceBuilder,
+) -> Result<(), WitnessTraceRunError> {
+    if builder.stages().len() != layout.stages().len() {
+        return Err(guest_pc_device_trace_source_error(
+            "device trace source stage count mismatch",
+        ));
+    }
+    for (stage, source) in layout.stages().iter().zip(builder.stages()) {
+        if source.stage_index() != stage.stage_index
+            || source.row_count() != layout.row_count()
+            || source.column_count() != stage.width
+            || source.row_stride() != layout.column_count()
+            || source.column_offset() != stage.start_column
+        {
+            return Err(guest_pc_device_trace_source_error(
+                "device trace source stage shape mismatch",
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn validate_guest_pc_trace_device_source_matches_trace(
+    layout: &WitnessTraceLayout,
+    trace: &WitnessTraceBuffer,
+    builder: &GuestPcTraceDeviceTraceBuilder,
+) -> Result<(), WitnessTraceRunError> {
+    validate_guest_pc_trace_device_source_matches_layout(layout, builder)?;
+    if trace.row_count() != layout.row_count() || trace.column_count() != layout.column_count() {
+        return Err(guest_pc_device_trace_source_error(
+            "trace shape does not match guest PC layout",
+        ));
+    }
+    if guest_pc_device_trace_source_deep_validation_enabled() {
+        let actual = builder.trace().to_u64_words().map_err(|error| {
+            guest_pc_device_trace_source_error(format!(
+                "CUDA trace source validation download failed: {error}"
+            ))
+        })?;
+        if actual != Felt::as_u64_slice(trace.values()) {
+            return Err(guest_pc_device_trace_source_error(
+                "device trace source values mismatch host trace",
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_device_trace_source_enabled() -> bool {
+    std::env::var("LZVM_CUDA_GUEST_PC_DEVICE_TRACE_SOURCE")
+        .map(|value| {
+            !matches!(
+                value.as_str(),
+                "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF"
+            )
+        })
+        .unwrap_or(true)
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_device_trace_source_deep_validation_enabled() -> bool {
+    std::env::var("LZVM_CUDA_VALIDATE_GUEST_PC_DEVICE_TRACE_SOURCE")
+        .map(|value| {
+            matches!(
+                value.as_str(),
+                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+            )
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_device_trace_source_error(message: impl Into<String>) -> WitnessTraceRunError {
+    WitnessTraceRunError::from(WitnessCallError::Backend {
+        message: format!("guest PC CUDA trace source failed: {}", message.into()),
+    })
 }
 
 impl WitnessBackend for GuestPcTraceBackend {
@@ -578,9 +1346,10 @@ fn run_guest_pc_trace_segment_slice(
     let mut trace_rows = 0_usize;
     loop {
         let pc = state.pc();
-        let current = decode_current_guest_instruction(memory, pc)
+        let prepared = prepare_current_guest_instruction(memory, pc)
             .map_err(GuestMachineRunError::from)
             .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let current = prepared.instruction();
         if current == RiscvInstruction::Ecall {
             return Ok(GuestPcTraceSegmentSlice {
                 executed_instructions,
@@ -618,7 +1387,7 @@ fn run_guest_pc_trace_segment_slice(
                 reports,
             });
         }
-        let report = advance_guest_machine_with_fcalls(memory, state, handler)
+        let report = advance_guest_machine_with_prepared_fcalls(memory, state, handler, prepared)
             .map_err(GuestMachineRunError::from)
             .map_err(GuestPcTraceBackendError::GuestRun)?;
         let report_rows = zisk_main_report_row_count(reports.len(), &report)?;
@@ -771,7 +1540,7 @@ fn compute_guest_pc_trace_segments(
                 message: "Zisk Main trace instance index is too large".to_owned(),
             }
         })?;
-        let written = build_layout_zisk_main_trace_segment(
+        let written = build_layout_zisk_main_trace_segment_for_segment_output(
             layout,
             &slice.reports,
             terminal_pc,
@@ -788,6 +1557,9 @@ fn compute_guest_pc_trace_segments(
         trace_state = written.continuation_state;
         outputs.push(GuestPcTraceSegmentTrace {
             trace_instance_index,
+            trace_source_prefix_rows: written.trace_source_prefix_rows,
+            #[cfg(feature = "cuda")]
+            device_segment_material: written.device_segment_material,
             trace: written.trace,
             unit_values: written.output.unit_values,
             proof_values: Vec::new(),
@@ -830,31 +1602,147 @@ fn for_each_guest_pc_trace_segment<E>(
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
     mut emit: impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceSegmentStreamError<E>>,
 ) -> Result<Vec<WitnessTraceProofValue>, GuestPcTraceSegmentStreamError<E>> {
+    let (sender, receiver) = mpsc::sync_channel(guest_pc_trace_segment_queue_capacity());
+    thread::scope(|scope| {
+        let producer = scope.spawn(move || {
+            let produced = produce_guest_pc_trace_segments(
+                instruction_limit,
+                context,
+                input,
+                expected_proof_values,
+                |segment| {
+                    sender
+                        .send(GuestPcTraceSegmentStreamMessage::Segment(segment))
+                        .map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                            message: "guest PC trace segment consumer stopped".to_owned(),
+                        })
+                },
+            );
+            let message = match produced {
+                Ok(proof_values) => GuestPcTraceSegmentStreamMessage::Complete(proof_values),
+                Err(error) => GuestPcTraceSegmentStreamMessage::Error(error),
+            };
+            let _ = sender.send(message);
+        });
+
+        let mut emit_error = None;
+        let mut stream_result: Option<
+            Result<Vec<WitnessTraceProofValue>, GuestPcTraceSegmentStreamError<E>>,
+        > = None;
+        while let Ok(message) = receiver.recv() {
+            match message {
+                GuestPcTraceSegmentStreamMessage::Segment(segment) => {
+                    if emit_error.is_none() {
+                        if let Err(error) = emit(segment) {
+                            emit_error = Some(error);
+                        }
+                    }
+                }
+                GuestPcTraceSegmentStreamMessage::Complete(proof_values) => {
+                    stream_result = Some(Ok(proof_values));
+                    break;
+                }
+                GuestPcTraceSegmentStreamMessage::Error(error) => {
+                    stream_result = Some(Err(stream_backend_error::<E>(error)));
+                    break;
+                }
+            }
+        }
+        if let Err(payload) = producer.join() {
+            std::panic::resume_unwind(payload);
+        }
+        if let Some(error) = emit_error {
+            return Err(error);
+        }
+        stream_result.unwrap_or_else(|| {
+            Err(stream_backend_error::<E>(
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace segment producer stopped".to_owned(),
+                },
+            ))
+        })
+    })
+}
+
+fn guest_pc_trace_segment_queue_capacity() -> usize {
+    std::env::var("LZVM_GUEST_PC_TRACE_SEGMENT_QUEUE")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(1)
+}
+
+fn produce_guest_pc_trace_segments(
+    instruction_limit: u64,
+    context: WitnessComputeContext<'_>,
+    input: &[u8],
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    mut emit: impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<Vec<WitnessTraceProofValue>, GuestPcTraceBackendError> {
     let layout = context
         .trace_layout
-        .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)
-        .map_err(stream_backend_error)?;
-    if zisk_main_trace_columns(layout)
-        .map_err(stream_backend_error)?
-        .is_none()
-    {
-        return Err(stream_backend_error(
-            GuestPcTraceBackendError::UnmappedTraceLayout,
-        ));
+        .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
+    if zisk_main_trace_columns(layout)?.is_none() {
+        return Err(GuestPcTraceBackendError::UnmappedTraceLayout);
     }
     let row_count = layout.row_count();
     if row_count == 0 {
-        return Err(stream_backend_error(
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "Zisk Main layout has zero rows".to_owned(),
-            },
-        ));
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk Main layout has zero rows".to_owned(),
+        });
     }
 
-    let (mut memory, mut state, mut fcall_handler) =
-        load_guest_pc_trace_machine(context, input).map_err(stream_backend_error)?;
-    let mut trace_state = ZiskMainTraceState::new();
-    let mut previous_c = 0_u64;
+    let (pending_sender, pending_receiver) =
+        mpsc::sync_channel(guest_pc_trace_segment_queue_capacity());
+    thread::scope(|scope| {
+        let runner = scope.spawn(move || {
+            let produced = produce_guest_pc_trace_pending_slices(
+                instruction_limit,
+                context,
+                input,
+                row_count,
+                |pending| {
+                    pending_sender
+                        .send(GuestPcTracePendingSegmentMessage::Segment(pending))
+                        .map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                            message: "guest PC trace pending segment consumer stopped".to_owned(),
+                        })
+                },
+            );
+            let message = match produced {
+                Ok(proof_values) => GuestPcTracePendingSegmentMessage::Complete(proof_values),
+                Err(error) => GuestPcTracePendingSegmentMessage::Error(error),
+            };
+            let _ = pending_sender.send(message);
+        });
+
+        let result = lower_guest_pc_trace_pending_segments(
+            layout,
+            pending_receiver,
+            expected_proof_values,
+            &mut emit,
+        );
+        if let Err(payload) = runner.join() {
+            std::panic::resume_unwind(payload);
+        }
+        let actual_proof_values = result?;
+        if expected_proof_values.is_some_and(|expected| actual_proof_values.as_slice() != expected)
+        {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace runtime proof values changed between passes".to_owned(),
+            });
+        }
+        Ok(actual_proof_values)
+    })
+}
+
+fn produce_guest_pc_trace_pending_slices(
+    instruction_limit: u64,
+    context: WitnessComputeContext<'_>,
+    input: &[u8],
+    row_count: usize,
+    mut emit: impl FnMut(GuestPcTracePendingSegmentSlice) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<Vec<WitnessTraceProofValue>, GuestPcTraceBackendError> {
+    let (mut memory, mut state, mut fcall_handler) = load_guest_pc_trace_machine(context, input)?;
     let mut executed_instructions = 0_u64;
     let mut trace_instance_count = 0_usize;
     loop {
@@ -865,14 +1753,12 @@ fn for_each_guest_pc_trace_segment<E>(
             &mut fcall_handler,
             remaining_limit,
             row_count,
-        )
-        .map_err(stream_backend_error)?;
+        )?;
         executed_instructions = executed_instructions
             .checked_add(slice.executed_instructions)
             .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "guest instruction count overflow".to_owned(),
-            })
-            .map_err(stream_backend_error)?;
+            })?;
         let (halted, terminal_pc, lookahead_instruction) = match slice.status {
             GuestMachineTraceSliceStatus::Halted(halt) => {
                 (true, guest_machine_halt_pc(&halt), None)
@@ -880,53 +1766,36 @@ fn for_each_guest_pc_trace_segment<E>(
             GuestMachineTraceSliceStatus::Paused { pc } => {
                 let instruction = decode_current_guest_instruction(&memory, pc)
                     .map_err(GuestMachineRunError::from)
-                    .map_err(GuestPcTraceBackendError::GuestRun)
-                    .map_err(stream_backend_error)?;
+                    .map_err(GuestPcTraceBackendError::GuestRun)?;
                 (false, pc, Some(instruction))
             }
         };
         let needs_terminal_segment = halted && slice.trace_rows == row_count;
         let is_last_segment = halted && !needs_terminal_segment;
         if !is_last_segment && slice.trace_rows < row_count {
-            return Err(stream_backend_error(GuestPcTraceBackendError::GuestRun(
+            return Err(GuestPcTraceBackendError::GuestRun(
                 GuestMachineRunError::InstructionLimitExceeded {
                     instruction_limit,
                     pc: terminal_pc,
                 },
-            )));
+            ));
         }
         let trace_instance_index = u32::try_from(trace_instance_count).map_err(|_| {
-            stream_backend_error(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "Zisk Main trace instance index is too large".to_owned(),
-            })
+            }
         })?;
-        let written = build_layout_zisk_main_trace_segment(
-            layout,
-            &slice.reports,
-            terminal_pc,
-            &trace_state,
-            lookahead_instruction,
-            ZiskMainTraceSegmentInfo {
-                trace_instance_index,
-                is_last_segment,
-                previous_c,
-            },
-        )
-        .map_err(stream_backend_error)?
-        .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)
-        .map_err(stream_backend_error)?;
-        previous_c = written.final_state.last_c;
-        trace_state = written.continuation_state;
-        emit(GuestPcTraceSegmentTrace {
+        emit(GuestPcTracePendingSegmentSlice {
             trace_instance_index,
-            trace: written.trace,
-            unit_values: written.output.unit_values,
-            proof_values: expected_proof_values.unwrap_or_default().to_vec(),
+            reports: slice.reports,
+            terminal_pc,
+            lookahead_instruction,
+            is_last_segment,
         })?;
         trace_instance_count = trace_instance_count.checked_add(1).ok_or_else(|| {
-            stream_backend_error(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "Zisk Main trace instance count overflow".to_owned(),
-            })
+            }
         })?;
         if is_last_segment {
             break;
@@ -935,28 +1804,64 @@ fn for_each_guest_pc_trace_segment<E>(
             continue;
         }
         if executed_instructions == instruction_limit {
-            return Err(stream_backend_error(GuestPcTraceBackendError::GuestRun(
+            return Err(GuestPcTraceBackendError::GuestRun(
                 GuestMachineRunError::InstructionLimitExceeded {
                     instruction_limit,
                     pc: terminal_pc,
                 },
-            )));
+            ));
         }
     }
 
-    let actual_proof_values = zisk_runtime_proof_values(
+    Ok(zisk_runtime_proof_values(
         executed_instructions != 0,
         fcall_handler.input_data_was_mapped(),
         state.dma_proof_value_flags(),
-    );
-    if expected_proof_values.is_some_and(|expected| actual_proof_values.as_slice() != expected) {
-        return Err(stream_backend_error(
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "guest PC trace runtime proof values changed between passes".to_owned(),
+    ))
+}
+
+fn lower_guest_pc_trace_pending_segments(
+    layout: &WitnessTraceLayout,
+    pending_receiver: mpsc::Receiver<GuestPcTracePendingSegmentMessage>,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    emit: &mut impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<Vec<WitnessTraceProofValue>, GuestPcTraceBackendError> {
+    let mut trace_state = ZiskMainTraceState::new();
+    let mut previous_c = 0_u64;
+    while let Ok(message) = pending_receiver.recv() {
+        let pending = match message {
+            GuestPcTracePendingSegmentMessage::Segment(pending) => pending,
+            GuestPcTracePendingSegmentMessage::Complete(proof_values) => return Ok(proof_values),
+            GuestPcTracePendingSegmentMessage::Error(error) => return Err(error),
+        };
+        let written = build_layout_zisk_main_trace_segment_for_segment_output(
+            layout,
+            &pending.reports,
+            pending.terminal_pc,
+            &trace_state,
+            pending.lookahead_instruction,
+            ZiskMainTraceSegmentInfo {
+                trace_instance_index: pending.trace_instance_index,
+                is_last_segment: pending.is_last_segment,
+                previous_c,
             },
-        ));
+        )?
+        .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
+        previous_c = written.final_state.last_c;
+        trace_state = written.continuation_state;
+        emit(GuestPcTraceSegmentTrace {
+            trace_instance_index: pending.trace_instance_index,
+            trace_source_prefix_rows: written.trace_source_prefix_rows,
+            #[cfg(feature = "cuda")]
+            device_segment_material: written.device_segment_material,
+            trace: written.trace,
+            unit_values: written.output.unit_values,
+            proof_values: expected_proof_values.unwrap_or_default().to_vec(),
+        })?;
     }
-    Ok(actual_proof_values)
+    Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+        message: "guest PC trace pending segment runner stopped".to_owned(),
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1205,8 +2110,22 @@ struct ZiskMainTraceSegmentInfo {
 }
 
 struct ZiskMainTraceSegmentWrite {
-    trace: WitnessTraceBuffer,
+    trace: Option<WitnessTraceBuffer>,
+    trace_source_prefix_rows: usize,
+    #[cfg(feature = "cuda")]
+    device_segment_material: Option<GuestPcTraceDeviceSegmentMaterial>,
     output: WitnessTraceOutput,
+    final_state: ZiskMainTraceState,
+    continuation_state: ZiskMainTraceState,
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GuestPcTraceDeviceSegmentMaterial {
+    trace_source_prefix_rows: usize,
+    device_trace_descriptors: ZiskMainDeviceTraceDescriptors,
+    unit_values: Vec<WitnessTraceUnitValue>,
     final_state: ZiskMainTraceState,
     continuation_state: ZiskMainTraceState,
 }
@@ -2108,8 +3027,189 @@ fn write_layout_zisk_main_trace_segment(
     else {
         return Ok(None);
     };
-    serialize_trace_to_output(&written.trace, written.output.produced_len, output)?;
+    let trace =
+        written
+            .trace
+            .as_ref()
+            .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "host trace is unavailable for output serialization".to_owned(),
+            })?;
+    serialize_trace_to_output(trace, written.output.produced_len, output)?;
     Ok(Some(written))
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+fn build_layout_zisk_main_trace_segment_device_material(
+    layout: &WitnessTraceLayout,
+    reports: &[GuestMachineReport],
+    terminal_pc: u64,
+    initial_state: &ZiskMainTraceState,
+    lookahead_instruction: Option<RiscvInstruction>,
+    segment: ZiskMainTraceSegmentInfo,
+) -> Result<Option<GuestPcTraceDeviceSegmentMaterial>, GuestPcTraceBackendError> {
+    let Some(columns) = zisk_main_trace_columns(layout)? else {
+        return Ok(None);
+    };
+    if reports.len() > layout.row_count() {
+        return Err(GuestPcTraceBackendError::OutputOverflow {
+            produced_len: layout_trace_byte_len(reports.len(), layout.column_count()),
+            output_len: layout_trace_byte_len(layout.row_count(), layout.column_count()),
+        });
+    }
+    let Some(mut device_trace_descriptors) =
+        zisk_main_device_trace_descriptors(layout, &columns, terminal_pc)
+    else {
+        return Ok(None);
+    };
+
+    let mut state = initial_state.clone();
+    let mut output_row = 0_usize;
+    for (report_index, report) in reports.iter().enumerate() {
+        let next_instruction = reports
+            .get(report_index + 1)
+            .map(|next| next.instruction)
+            .or_else(|| {
+                (report_index + 1 == reports.len())
+                    .then_some(lookahead_instruction)
+                    .flatten()
+            });
+        let written_rows = validate_and_apply_zisk_main_report(
+            output_row,
+            report,
+            next_instruction,
+            &mut state,
+            ZiskMainReportValidationContext {
+                columns: Some(&columns),
+                row_count: layout.row_count(),
+                segment,
+            },
+            |_, values| {
+                append_zisk_main_device_trace_descriptor(&mut device_trace_descriptors, &values)
+            },
+        )?;
+        output_row = output_row.checked_add(written_rows).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main row index overflow".to_owned(),
+            }
+        })?;
+    }
+
+    if output_row < layout.row_count() {
+        if !segment.is_last_segment {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "non-final Zisk Main segment does not fill layout rows".to_owned(),
+            });
+        }
+        validate_zisk_main_halt_pc(output_row, &state, terminal_pc)?;
+    }
+
+    let continuation_state = zisk_main_continuation_state(layout.row_count(), &state, segment)?;
+    let unit_values = zisk_main_unit_values(
+        layout.row_count(),
+        output_row,
+        reports,
+        terminal_pc,
+        &state,
+        segment,
+    );
+    Ok(Some(GuestPcTraceDeviceSegmentMaterial {
+        trace_source_prefix_rows: output_row,
+        device_trace_descriptors,
+        unit_values,
+        final_state: state,
+        continuation_state,
+    }))
+}
+
+#[cfg(feature = "cuda")]
+fn build_layout_zisk_main_trace_segment_from_device_material(
+    layout: &WitnessTraceLayout,
+    reports: &[GuestMachineReport],
+    terminal_pc: u64,
+    initial_state: &ZiskMainTraceState,
+    lookahead_instruction: Option<RiscvInstruction>,
+    segment: ZiskMainTraceSegmentInfo,
+) -> Result<Option<ZiskMainTraceSegmentWrite>, GuestPcTraceBackendError> {
+    let Some(material) = build_layout_zisk_main_trace_segment_device_material(
+        layout,
+        reports,
+        terminal_pc,
+        initial_state,
+        lookahead_instruction,
+        segment,
+    )?
+    else {
+        return Ok(None);
+    };
+    let produced_len = layout_trace_byte_len(layout.row_count(), layout.column_count());
+    let GuestPcTraceDeviceSegmentMaterial {
+        trace_source_prefix_rows,
+        device_trace_descriptors,
+        unit_values,
+        final_state,
+        continuation_state,
+    } = material;
+    let device_segment_material = GuestPcTraceDeviceSegmentMaterial {
+        trace_source_prefix_rows,
+        device_trace_descriptors,
+        unit_values: unit_values.clone(),
+        final_state: final_state.clone(),
+        continuation_state: continuation_state.clone(),
+    };
+    Ok(Some(ZiskMainTraceSegmentWrite {
+        trace: None,
+        trace_source_prefix_rows,
+        device_segment_material: Some(device_segment_material),
+        output: WitnessTraceOutput::with_unit_values(produced_len, unit_values),
+        final_state,
+        continuation_state,
+    }))
+}
+
+fn build_layout_zisk_main_trace_segment_for_segment_output(
+    layout: &WitnessTraceLayout,
+    reports: &[GuestMachineReport],
+    terminal_pc: u64,
+    initial_state: &ZiskMainTraceState,
+    lookahead_instruction: Option<RiscvInstruction>,
+    segment: ZiskMainTraceSegmentInfo,
+) -> Result<Option<ZiskMainTraceSegmentWrite>, GuestPcTraceBackendError> {
+    #[cfg(feature = "cuda")]
+    {
+        if guest_pc_trace_less_segment_output_enabled() {
+            if let Some(written) = build_layout_zisk_main_trace_segment_from_device_material(
+                layout,
+                reports,
+                terminal_pc,
+                initial_state,
+                lookahead_instruction,
+                segment,
+            )? {
+                return Ok(Some(written));
+            }
+        }
+    }
+    build_layout_zisk_main_trace_segment(
+        layout,
+        reports,
+        terminal_pc,
+        initial_state,
+        lookahead_instruction,
+        segment,
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_trace_less_segment_output_enabled() -> bool {
+    std::env::var("LZVM_CUDA_GUEST_PC_TRACELESS_SEGMENT_OUTPUT")
+        .map(|value| {
+            !matches!(
+                value.as_str(),
+                "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF"
+            )
+        })
+        .unwrap_or(true)
 }
 
 fn build_layout_zisk_main_trace_segment(
@@ -2133,6 +3233,9 @@ fn build_layout_zisk_main_trace_segment(
     let mut builder = layout
         .trace_builder()
         .map_err(GuestPcTraceBackendError::TraceBuild)?;
+    #[cfg(feature = "cuda")]
+    let mut device_trace_descriptors =
+        zisk_main_device_trace_descriptors(layout, &columns, terminal_pc);
     let mut state = initial_state.clone();
     let mut output_row = 0_usize;
     for (report_index, report) in reports.iter().enumerate() {
@@ -2155,6 +3258,8 @@ fn build_layout_zisk_main_trace_segment(
             &mut state,
             layout.row_count(),
             segment,
+            #[cfg(feature = "cuda")]
+            &mut device_trace_descriptors,
         )?;
         output_row = output_row.checked_add(written_rows).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -2184,19 +3289,30 @@ fn build_layout_zisk_main_trace_segment(
                 output_len: usize::MAX,
             })?;
     let continuation_state = zisk_main_continuation_state(layout.row_count(), &state, segment)?;
+    let unit_values = zisk_main_unit_values(
+        layout.row_count(),
+        output_row,
+        reports,
+        terminal_pc,
+        &state,
+        segment,
+    );
+    #[cfg(feature = "cuda")]
+    let device_segment_material = device_trace_descriptors.map(|device_trace_descriptors| {
+        GuestPcTraceDeviceSegmentMaterial {
+            trace_source_prefix_rows: output_row,
+            device_trace_descriptors,
+            unit_values: unit_values.clone(),
+            final_state: state.clone(),
+            continuation_state: continuation_state.clone(),
+        }
+    });
     Ok(Some(ZiskMainTraceSegmentWrite {
-        trace,
-        output: WitnessTraceOutput::with_unit_values(
-            produced_len,
-            zisk_main_unit_values(
-                layout.row_count(),
-                output_row,
-                reports,
-                terminal_pc,
-                &state,
-                segment,
-            ),
-        ),
+        trace: Some(trace),
+        trace_source_prefix_rows: output_row,
+        #[cfg(feature = "cuda")]
+        device_segment_material,
+        output: WitnessTraceOutput::with_unit_values(produced_len, unit_values),
         final_state: state,
         continuation_state,
     }))
@@ -2323,6 +3439,7 @@ fn proof_value_bool(name: &str, enabled: bool) -> WitnessTraceProofValue {
     WitnessTraceProofValue::new(name, vec![if enabled { Felt::ONE } else { Felt::ZERO }])
 }
 
+#[cfg_attr(feature = "cuda", allow(clippy::too_many_arguments))]
 fn write_zisk_main_report_columns(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
@@ -2331,6 +3448,7 @@ fn write_zisk_main_report_columns(
     state: &mut ZiskMainTraceState,
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
+    #[cfg(feature = "cuda")] device_trace_descriptors: &mut Option<ZiskMainDeviceTraceDescriptors>,
 ) -> Result<usize, GuestPcTraceBackendError> {
     validate_and_apply_zisk_main_report(
         row,
@@ -2342,7 +3460,13 @@ fn write_zisk_main_report_columns(
             row_count,
             segment,
         },
-        |output_row, values| write_zisk_main_row_columns(builder, output_row, values, columns),
+        |output_row, values| {
+            #[cfg(feature = "cuda")]
+            if let Some(descriptors) = device_trace_descriptors.as_mut() {
+                append_zisk_main_device_trace_descriptor(descriptors, &values)?;
+            }
+            write_zisk_main_row_columns(builder, output_row, values, columns)
+        },
     )
 }
 

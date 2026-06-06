@@ -45,24 +45,25 @@ fn builds_zisk_main_segment_trace_without_serialized_roundtrip() {
     .expect("segment trace should build")
     .expect("Zisk Main layout should be supported");
 
-    assert_eq!(written.trace.row_count(), layout.row_count());
-    assert_eq!(written.trace.column_count(), layout.column_count());
+    let trace = written.trace.as_ref().expect("host trace should be built");
+    assert_eq!(trace.row_count(), layout.row_count());
+    assert_eq!(trace.column_count(), layout.column_count());
     assert_eq!(
         written.output.produced_len,
-        written.trace.values().len() * std::mem::size_of::<u64>()
+        trace.values().len() * std::mem::size_of::<u64>()
     );
     let pc_column = layout.column(1, "pc").expect("pc column").trace_column();
     assert_eq!(
-        written.trace.value(0, pc_column),
+        trace.value(0, pc_column),
         Some(Felt::from_canonical(report.address).expect("canonical pc"))
     );
 
     let mut bytes = vec![0; written.output.produced_len];
-    serialize_trace_to_output(&written.trace, written.output.produced_len, &mut bytes)
+    serialize_trace_to_output(trace, written.output.produced_len, &mut bytes)
         .expect("trace should serialize");
     let parsed = parse_witness_trace(&bytes, layout.row_count(), layout.column_count())
         .expect("serialized trace should parse");
-    assert_eq!(parsed, written.trace);
+    assert_eq!(&parsed, trace);
 }
 
 #[test]
@@ -88,9 +89,61 @@ fn zisk_main_trace_build_uses_resolved_column_targets() {
     .expect("segment trace should build")
     .expect("Zisk Main layout should be supported");
 
-    assert_eq!(written.trace.row_count(), layout.row_count());
+    assert_eq!(
+        written
+            .trace
+            .as_ref()
+            .expect("host trace should be built")
+            .row_count(),
+        layout.row_count()
+    );
     assert_eq!(crate::witness_layout::column_lookup_count(), 0);
     assert_eq!(crate::witness_layout::resolved_column_validation_count(), 0);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn zisk_main_device_descriptor_uses_compact_words_when_values_fit() {
+    let mut descriptors = ZiskMainDeviceTraceDescriptors::new(2, 39, 0x2000);
+    let values = zisk_main_descriptor_trace_values(0x1000, 5, 6, 21, 22, 23, 24, 7);
+
+    append_zisk_main_device_trace_descriptor(&mut descriptors, &values)
+        .expect("descriptor row should append");
+
+    assert_eq!(descriptors.descriptor_word_count(), 11);
+    assert_eq!(descriptors.words().len(), 11);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn zisk_main_device_descriptor_falls_back_to_wide_words_when_values_do_not_fit() {
+    let mut descriptors = ZiskMainDeviceTraceDescriptors::new(2, 39, 0x2000);
+    let first = zisk_main_descriptor_trace_values(0x1000, 5, 6, 21, 22, 23, 24, 7);
+    append_zisk_main_device_trace_descriptor(&mut descriptors, &first)
+        .expect("first compact descriptor row should append");
+
+    let second = zisk_main_descriptor_trace_values(
+        0x1004,
+        i64::from(i32::MAX) + 1,
+        6,
+        u64::from(u32::MAX) + 1,
+        22,
+        23,
+        24,
+        7,
+    );
+    append_zisk_main_device_trace_descriptor(&mut descriptors, &second)
+        .expect("wide fallback descriptor row should append");
+
+    assert_eq!(descriptors.descriptor_word_count(), 14);
+    assert_eq!(descriptors.words().len(), 28);
+    assert_eq!(descriptors.words()[8], 5_u64);
+    assert_eq!(descriptors.words()[10], 21_u64);
+    assert_eq!(
+        descriptors.words()[14 + 8],
+        (i64::from(i32::MAX) + 1) as u64
+    );
+    assert_eq!(descriptors.words()[14 + 10], u64::from(u32::MAX) + 1);
 }
 
 #[test]
@@ -233,6 +286,47 @@ fn addi_report() -> GuestMachineReport {
         memory_accesses: Vec::new().into(),
         precompile_memory_accesses: Vec::new(),
         precompile_result: None,
+    }
+}
+
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+fn zisk_main_descriptor_trace_values(
+    pc: u64,
+    jmp_offset1: i64,
+    jmp_offset2: i64,
+    a_prev_mem_step: u64,
+    b_prev_mem_step: u64,
+    store_prev_mem_step: u64,
+    store_prev_value: u64,
+    c: u64,
+) -> ZiskMainReportTraceValues {
+    ZiskMainReportTraceValues {
+        instruction: ZiskMainInstruction {
+            pc,
+            a: ZiskMainSource::Immediate(0x11),
+            b: ZiskMainSource::Register(2),
+            op: ZiskMainOp::Add,
+            store: ZiskMainStore::Register(3),
+            store_pc: false,
+            set_pc: false,
+            jmp_offset1,
+            jmp_offset2,
+            ind_width: 0,
+            m32: false,
+            is_external_op: true,
+            is_precompiled: false,
+        },
+        a: 0x22,
+        b: 0x33,
+        c,
+        flag: true,
+        register_accesses: ZiskMainRegisterAccessValues {
+            a_prev_mem_step: Some(a_prev_mem_step),
+            b_prev_mem_step: Some(b_prev_mem_step),
+            store_prev_mem_step: Some(store_prev_mem_step),
+            store_prev_value: Some(store_prev_value),
+        },
     }
 }
 

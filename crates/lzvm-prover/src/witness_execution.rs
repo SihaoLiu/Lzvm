@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "cuda")]
+use lzvm_accel::CudaDeviceBuffer;
 use lzvm_artifacts::fixed::FixedColumns;
 use lzvm_artifacts::global_info::{GlobalInfo, NamedStageValue};
 use lzvm_artifacts::hint_program::{
@@ -21,11 +23,17 @@ use crate::fri_polynomial::{
     build_fri_domain_points, FriPolynomialError, FriPolynomialZerofierTable,
 };
 use crate::global_constraints::GlobalConstraintInputs;
+#[cfg(feature = "cuda")]
+use crate::guest_pc_trace_backend::{
+    build_guest_pc_trace_stage_source_devices,
+    build_guest_pc_trace_stage_source_devices_from_device_material,
+    GuestPcTraceDeviceSegmentMaterial, GuestPcTraceDeviceTraceBuilder,
+};
 use crate::guest_pc_trace_backend::{
     for_each_guest_pc_trace_segment_collecting_proof_values_with_context,
     for_each_guest_pc_trace_segment_with_context,
     run_guest_pc_trace_runtime_proof_values_with_context, run_guest_pc_trace_segments_with_context,
-    GuestPcTraceBackend, GuestPcTraceSegmentStreamError,
+    GuestPcTraceBackend, GuestPcTraceSegmentRunOutput, GuestPcTraceSegmentStreamError,
 };
 use crate::hint_eval::{
     regular_hint_input_requirements, resolve_global_hint_program,
@@ -35,14 +43,31 @@ use crate::hint_eval::{
 use crate::regular_constraints::evaluate_regular_constraints_first_violations_with_acceleration;
 #[cfg(feature = "cuda")]
 use crate::regular_constraints::evaluate_regular_constraints_first_violations_with_cuda_fixed_values;
+#[cfg(feature = "cuda")]
+use crate::regular_constraints::try_evaluate_regular_constraints_cuda_base;
 use crate::regular_constraints::{
     RegularColumnMatrix, RegularConstraintEvalError, RegularConstraintInputs, RegularStageColumns,
 };
 use crate::source_assignment_hints::validate_source_assignment_hints;
 use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
+#[cfg(feature = "cuda")]
+use crate::witness_commitment::{
+    commit_witness_stage_source_devices_and_indexed_timing,
+    commit_witness_stage_source_devices_and_indexed_timing_external_source,
+    commit_witness_stage_values_with_source_devices_and_indexed_timing,
+    commit_witness_stage_values_with_source_devices_and_workers,
+    commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing,
+    commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_workers,
+    retain_device_buffer, WitnessRetainedDeviceBuffer, WitnessStageCommitmentError,
+    WitnessStageCommitmentReuseCache, WitnessStageLeafError, WitnessStageRetainedSourceDevice,
+    WitnessStageSourceDevice, WitnessStageSourceDeviceView,
+};
+#[cfg(not(feature = "cuda"))]
 use crate::witness_commitment::{
     commit_witness_stage_values_with_workers,
     commit_witness_stage_values_with_workers_and_indexed_timing,
+};
+use crate::witness_commitment::{
     commit_witness_trace_stages_with_workers, WitnessIndexedStageCommitTiming,
     WitnessStageCommitTiming, WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
@@ -125,12 +150,96 @@ impl ProveWitnessCommitments {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ProveWitnessTraceCommitments {
     commitments: ProveWitnessCommitments,
     trace: Option<WitnessTraceBuffer>,
+    trace_constraint_checks: ProveWitnessTraceConstraintChecks,
+    #[cfg(feature = "cuda")]
+    stage_source_devices: Vec<WitnessStageRetainedSourceDevice>,
+    #[cfg(feature = "cuda")]
+    guest_pc_device_descriptor_buffer: Option<WitnessRetainedDeviceBuffer>,
+    #[cfg(feature = "cuda")]
+    guest_pc_device_segment_material: Option<GuestPcTraceDeviceSegmentMaterial>,
     publics: Vec<Felt>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+}
+
+impl PartialEq for ProveWitnessTraceCommitments {
+    fn eq(&self, other: &Self) -> bool {
+        let base_equal = self.commitments == other.commitments
+            && self.trace == other.trace
+            && self.trace_constraint_checks == other.trace_constraint_checks
+            && self.publics == other.publics
+            && self.auxiliary_inputs == other.auxiliary_inputs;
+        #[cfg(feature = "cuda")]
+        {
+            base_equal
+                && self.guest_pc_device_segment_material == other.guest_pc_device_segment_material
+        }
+        #[cfg(not(feature = "cuda"))]
+        {
+            base_equal
+        }
+    }
+}
+
+impl Eq for ProveWitnessTraceCommitments {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProveWitnessTraceConstraintChecks {
+    regular_constraint_count: usize,
+    trace_extracted: bool,
+    regular_constraints_evaluated: bool,
+    witness_values_committed: bool,
+    constraint_checker_conformant: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProveWitnessTraceConstraintEvidence {
+    unit_index: usize,
+    trace_instance_index: u32,
+    trace_row_count: usize,
+    trace_column_count: usize,
+    checks: ProveWitnessTraceConstraintChecks,
+}
+
+impl ProveWitnessTraceConstraintEvidence {
+    pub fn unit_index(&self) -> usize {
+        self.unit_index
+    }
+
+    pub fn trace_instance_index(&self) -> u32 {
+        self.trace_instance_index
+    }
+
+    pub fn trace_row_count(&self) -> usize {
+        self.trace_row_count
+    }
+
+    pub fn trace_column_count(&self) -> usize {
+        self.trace_column_count
+    }
+
+    pub fn regular_constraint_count(&self) -> usize {
+        self.checks.regular_constraint_count
+    }
+
+    pub fn trace_extracted(&self) -> bool {
+        self.checks.trace_extracted
+    }
+
+    pub fn regular_constraints_evaluated(&self) -> bool {
+        self.checks.regular_constraints_evaluated
+    }
+
+    pub fn witness_values_committed(&self) -> bool {
+        self.checks.witness_values_committed
+    }
+
+    pub fn constraint_checker_conformant(&self) -> bool {
+        self.checks.constraint_checker_conformant
+    }
 }
 
 impl ProveWitnessTraceCommitments {
@@ -152,6 +261,48 @@ impl ProveWitnessTraceCommitments {
         self.trace.is_some()
     }
 
+    pub fn trace_constraint_evidence(&self) -> ProveWitnessTraceConstraintEvidence {
+        ProveWitnessTraceConstraintEvidence {
+            unit_index: self.commitments.unit_index(),
+            trace_instance_index: self.commitments.trace_instance_index(),
+            trace_row_count: self.commitments.trace_row_count(),
+            trace_column_count: self.commitments.trace_column_count(),
+            checks: self.trace_constraint_checks,
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    pub(crate) fn stage_source_devices_if_available(
+        &self,
+    ) -> Option<&[WitnessStageRetainedSourceDevice]> {
+        (!self.stage_source_devices.is_empty()).then_some(self.stage_source_devices.as_slice())
+    }
+
+    #[cfg(feature = "cuda")]
+    pub(crate) fn stage_source_device_view(
+        &self,
+        stage_index: usize,
+    ) -> Option<&WitnessStageSourceDeviceView> {
+        self.stage_source_devices
+            .iter()
+            .find(|source| source.stage_index() == stage_index)
+            .map(WitnessStageRetainedSourceDevice::source_view)
+    }
+
+    #[cfg(feature = "cuda")]
+    pub(crate) fn guest_pc_device_descriptor_buffer(&self) -> Option<&CudaDeviceBuffer> {
+        self.guest_pc_device_descriptor_buffer
+            .as_ref()
+            .map(WitnessRetainedDeviceBuffer::buffer)
+    }
+
+    #[cfg(feature = "cuda")]
+    pub(crate) fn guest_pc_device_segment_material(
+        &self,
+    ) -> Option<&GuestPcTraceDeviceSegmentMaterial> {
+        self.guest_pc_device_segment_material.as_ref()
+    }
+
     pub fn publics(&self) -> &[Felt] {
         &self.publics
     }
@@ -166,6 +317,8 @@ impl ProveWitnessTraceCommitments {
 
     fn without_trace(mut self) -> Self {
         self.trace = None;
+        #[cfg(feature = "cuda")]
+        self.stage_source_devices.clear();
         self
     }
 }
@@ -474,15 +627,30 @@ where
     L: FnMut(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult,
 {
     layout: &'a WitnessTraceLayout,
-    trace: &'a WitnessTraceBuffer,
+    trace: Option<&'a WitnessTraceBuffer>,
     fixed_columns: &'a mut WitnessFixedColumnsCache<L>,
     stage_traces: &'a mut WitnessStageTraceCache,
+    #[cfg(feature = "cuda")]
+    stage_source_devices: Option<&'a WitnessStageSourceDeviceCache>,
 }
 
 struct WitnessTraceCommitmentInput<'a> {
     unit: &'a ProveUnitSchedule,
     layout: WitnessTraceLayout,
-    trace: WitnessTraceBuffer,
+    trace: Option<WitnessTraceBuffer>,
+    #[cfg(feature = "cuda")]
+    terminal_trace_source_prefix_rows: Option<usize>,
+    #[cfg(feature = "cuda")]
+    stage_source_devices: Option<WitnessStageSourceDeviceCache>,
+    #[cfg(feature = "cuda")]
+    guest_pc_device_segment_material: Option<GuestPcTraceDeviceSegmentMaterial>,
+}
+
+struct ProveWitnessTraceRunObservers<'a> {
+    fixed_columns_cache: Option<&'a mut WitnessFixedColumnsCache>,
+    #[cfg(feature = "cuda")]
+    stage_commitment_reuse_cache: Option<&'a mut WitnessStageCommitmentReuseCache>,
+    timing: Option<&'a mut ProveWitnessTraceTimingAccumulator>,
 }
 
 type WitnessFixedColumnsLoadResult =
@@ -564,9 +732,396 @@ impl WitnessStageTraceCache {
             .expect("stage traces should be cached after extraction"))
     }
 
+    fn get_or_extract_optional(
+        &mut self,
+        layout: &WitnessTraceLayout,
+        trace: Option<&WitnessTraceBuffer>,
+        consumer: &'static str,
+    ) -> Result<&[WitnessTraceStageValues], ProveWitnessCommitmentError> {
+        let trace = require_host_trace(trace, consumer)?;
+        self.get_or_extract(layout, trace)
+    }
+
     fn is_extracted(&self) -> bool {
         self.stages.is_some()
     }
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Default)]
+struct WitnessStageSourceDeviceCache {
+    trace: Option<Arc<CudaDeviceBuffer>>,
+    guest_pc_device_descriptor_buffer: Option<Arc<CudaDeviceBuffer>>,
+    stages: Vec<(usize, usize, usize, usize, usize)>,
+}
+
+#[cfg(feature = "cuda")]
+impl WitnessStageSourceDeviceCache {
+    fn from_guest_pc_device_trace_builder(builder: GuestPcTraceDeviceTraceBuilder) -> Self {
+        let stages = builder
+            .stages()
+            .iter()
+            .map(|stage| {
+                (
+                    stage.stage_index(),
+                    stage.row_count(),
+                    stage.column_count(),
+                    stage.row_stride(),
+                    stage.column_offset(),
+                )
+            })
+            .collect();
+        Self {
+            trace: Some(Arc::clone(builder.trace())),
+            guest_pc_device_descriptor_buffer: builder.device_trace_descriptor_buffer().cloned(),
+            stages,
+        }
+    }
+
+    fn upload_from_trace_or_preloaded_if_empty(
+        &mut self,
+        layout: &WitnessTraceLayout,
+        trace: Option<&WitnessTraceBuffer>,
+        preloaded: Option<WitnessStageSourceDeviceCache>,
+        terminal_trace_source_prefix_rows: Option<usize>,
+    ) -> Result<(), ProveWitnessCommitmentError> {
+        if let Some(preloaded) = preloaded {
+            preloaded.validate_layout(layout)?;
+            *self = preloaded;
+            return Ok(());
+        }
+        let trace = require_host_trace(trace, "CUDA stage source upload")?;
+        if terminal_sparse_trace_source_enabled() {
+            if let Some(prefix_rows) = terminal_trace_source_prefix_rows {
+                if prefix_rows < layout.row_count() {
+                    return self.upload_from_trace_prefix_and_terminal_fill_if_empty(
+                        layout,
+                        trace,
+                        prefix_rows,
+                    );
+                }
+            }
+        }
+        if sparse_trace_source_enabled()
+            && self.upload_from_trace_sparse_if_profitable_if_empty(layout, trace)?
+        {
+            return Ok(());
+        }
+        self.upload_from_trace_if_empty(layout, trace)
+    }
+
+    fn upload_from_trace_sparse_if_profitable_if_empty(
+        &mut self,
+        layout: &WitnessTraceLayout,
+        trace: &WitnessTraceBuffer,
+    ) -> Result<bool, ProveWitnessCommitmentError> {
+        if self.trace.is_some() {
+            return Ok(true);
+        }
+        validate_trace_shape(layout, trace)?;
+        let trace_words = Felt::as_u64_slice(trace.values());
+        let max_percent = sparse_trace_source_max_percent();
+        let max_nonzero_words = trace_words.len().saturating_mul(max_percent) / 100;
+        let mut nonzero_count = 0_usize;
+        for word in trace_words {
+            if *word != 0 {
+                nonzero_count += 1;
+                if nonzero_count > max_nonzero_words {
+                    return Ok(false);
+                }
+            }
+        }
+
+        let mut indices = Vec::with_capacity(nonzero_count);
+        let mut values = Vec::with_capacity(nonzero_count);
+        for (index, word) in trace_words.iter().copied().enumerate() {
+            if word != 0 {
+                indices.push(u64::try_from(index).map_err(|_| {
+                    ProveWitnessCommitmentError::PreloadedStageSource {
+                        message: "sparse trace word index does not fit u64".to_owned(),
+                    }
+                })?);
+                values.push(word);
+            }
+        }
+        let trace_device = CudaDeviceBuffer::from_sparse_u64_words(
+            trace_words.len(),
+            indices.as_slice(),
+            values.as_slice(),
+        )
+        .map_err(|source| {
+            ProveWitnessCommitmentError::Commit(WitnessTraceCommitmentError::from(
+                WitnessStageLeafError::from(source),
+            ))
+        })?;
+        self.trace = Some(Arc::new(trace_device));
+        self.guest_pc_device_descriptor_buffer = None;
+        self.record_layout_stages(layout);
+        if debug_sparse_trace_source_enabled() {
+            eprintln!(
+                "lzvm_cuda_sparse_trace_source_words={} nonzero={} max_percent={}",
+                trace_words.len(),
+                nonzero_count,
+                max_percent
+            );
+        }
+        Ok(true)
+    }
+
+    fn upload_from_trace_if_empty(
+        &mut self,
+        layout: &WitnessTraceLayout,
+        trace: &WitnessTraceBuffer,
+    ) -> Result<(), ProveWitnessCommitmentError> {
+        if self.trace.is_some() {
+            return Ok(());
+        }
+        validate_trace_shape(layout, trace)?;
+        let trace_words = Felt::as_u64_slice(trace.values());
+        let trace_device = CudaDeviceBuffer::from_u64_words(trace_words).map_err(|source| {
+            ProveWitnessCommitmentError::Commit(WitnessTraceCommitmentError::from(
+                WitnessStageLeafError::from(source),
+            ))
+        })?;
+        self.trace = Some(Arc::new(trace_device));
+        self.guest_pc_device_descriptor_buffer = None;
+        self.record_layout_stages(layout);
+        Ok(())
+    }
+
+    fn upload_from_trace_prefix_and_terminal_fill_if_empty(
+        &mut self,
+        layout: &WitnessTraceLayout,
+        trace: &WitnessTraceBuffer,
+        prefix_rows: usize,
+    ) -> Result<(), ProveWitnessCommitmentError> {
+        if self.trace.is_some() {
+            return Ok(());
+        }
+        validate_trace_shape(layout, trace)?;
+        if prefix_rows > trace.row_count() {
+            return Err(ProveWitnessCommitmentError::PreloadedStageSource {
+                message: format!(
+                    "terminal prefix row count {prefix_rows} exceeds trace rows {}",
+                    trace.row_count()
+                ),
+            });
+        }
+        if prefix_rows == trace.row_count() {
+            return self.upload_from_trace_if_empty(layout, trace);
+        }
+        let row_width = trace.column_count();
+        let trace_words = Felt::as_u64_slice(trace.values());
+        let prefix_words = prefix_rows.checked_mul(row_width).ok_or(
+            ProveWitnessCommitmentError::PreloadedStageSource {
+                message: "terminal prefix word count overflow".to_owned(),
+            },
+        )?;
+        let terminal_row = &trace_words[prefix_words..prefix_words + row_width];
+        for row in trace_words[prefix_words..].chunks_exact(row_width) {
+            if row != terminal_row {
+                return self.upload_from_trace_if_empty(layout, trace);
+            }
+        }
+
+        let trace_device = CudaDeviceBuffer::from_row_major_u64_prefix_and_suffix_row(
+            &trace_words[..prefix_words],
+            terminal_row,
+            trace.row_count(),
+            row_width,
+            prefix_rows,
+        )
+        .map_err(|source| {
+            ProveWitnessCommitmentError::Commit(WitnessTraceCommitmentError::from(
+                WitnessStageLeafError::from(source),
+            ))
+        })?;
+        self.trace = Some(Arc::new(trace_device));
+        self.guest_pc_device_descriptor_buffer = None;
+        self.record_layout_stages(layout);
+        Ok(())
+    }
+
+    fn record_layout_stages(&mut self, layout: &WitnessTraceLayout) {
+        self.stages.clear();
+        self.stages.reserve(layout.stages().len());
+        for stage in layout.stages() {
+            self.stages.push((
+                stage.stage_index,
+                layout.row_count(),
+                stage.width,
+                layout.column_count(),
+                stage.start_column,
+            ));
+        }
+    }
+
+    fn validate_layout(
+        &self,
+        layout: &WitnessTraceLayout,
+    ) -> Result<(), ProveWitnessCommitmentError> {
+        for stage in layout.stages() {
+            let Some((row_count, column_count, row_stride, column_offset, _)) =
+                self.get_stage(stage.stage_index)
+            else {
+                return Err(ProveWitnessCommitmentError::PreloadedStageSource {
+                    message: format!(
+                        "missing preloaded CUDA source for stage {}",
+                        stage.stage_index
+                    ),
+                });
+            };
+            if row_count != layout.row_count()
+                || column_count != stage.width
+                || row_stride != layout.column_count()
+                || column_offset != stage.start_column
+            {
+                return Err(ProveWitnessCommitmentError::PreloadedStageSource {
+                    message: format!(
+                        "preloaded CUDA source shape mismatch for stage {}",
+                        stage.stage_index
+                    ),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn descriptors(&self) -> Vec<WitnessStageSourceDevice> {
+        let Some(trace) = self.trace.as_ref() else {
+            return Vec::new();
+        };
+        self.stages
+            .iter()
+            .map(
+                |(stage_index, row_count, column_count, row_stride, column_offset)| {
+                    WitnessStageSourceDevice::from_row_major_column_window(
+                        *stage_index,
+                        *row_count,
+                        *column_count,
+                        *row_stride,
+                        *column_offset,
+                        trace,
+                    )
+                },
+            )
+            .collect()
+    }
+
+    fn retained_descriptors(&self) -> Vec<WitnessStageRetainedSourceDevice> {
+        let retained = self
+            .descriptors()
+            .into_iter()
+            .filter_map(|source_device| source_device.retain())
+            .collect::<Vec<_>>();
+        if debug_fri_stage_source_devices() {
+            eprintln!("lzvm_cuda_fri_stage_source_retained={}", retained.len());
+        }
+        retained
+    }
+
+    fn retained_guest_pc_device_descriptor_buffer(&self) -> Option<WitnessRetainedDeviceBuffer> {
+        self.guest_pc_device_descriptor_buffer
+            .as_ref()
+            .and_then(retain_device_buffer)
+    }
+
+    fn get(&self, stage_index: usize) -> Option<(usize, usize, usize, &CudaDeviceBuffer)> {
+        let trace = self.trace.as_ref()?;
+        self.stages
+            .iter()
+            .find(|(index, _, _, _, _)| *index == stage_index)
+            .map(|(_, _, column_count, row_stride, column_offset)| {
+                (*column_count, *row_stride, *column_offset, trace.as_ref())
+            })
+    }
+
+    fn get_stage(
+        &self,
+        stage_index: usize,
+    ) -> Option<(usize, usize, usize, usize, &CudaDeviceBuffer)> {
+        let trace = self.trace.as_ref()?;
+        self.stages
+            .iter()
+            .find(|(index, _, _, _, _)| *index == stage_index)
+            .map(|(_, row_count, column_count, row_stride, column_offset)| {
+                (
+                    *row_count,
+                    *column_count,
+                    *row_stride,
+                    *column_offset,
+                    trace.as_ref(),
+                )
+            })
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn validate_trace_shape(
+    layout: &WitnessTraceLayout,
+    trace: &WitnessTraceBuffer,
+) -> Result<(), ProveWitnessCommitmentError> {
+    if trace.row_count() != layout.row_count() || trace.column_count() != layout.column_count() {
+        return Err(ProveWitnessCommitmentError::Layout(
+            WitnessTraceLayoutError::TraceShapeMismatch {
+                expected_rows: layout.row_count(),
+                expected_columns: layout.column_count(),
+                found_rows: trace.row_count(),
+                found_columns: trace.column_count(),
+            },
+        ));
+    }
+    Ok(())
+}
+
+fn require_host_trace<'a>(
+    trace: Option<&'a WitnessTraceBuffer>,
+    consumer: &'static str,
+) -> Result<&'a WitnessTraceBuffer, ProveWitnessCommitmentError> {
+    trace.ok_or_else(|| ProveWitnessCommitmentError::PreloadedStageSource {
+        message: format!("host trace is unavailable for {consumer}"),
+    })
+}
+
+#[cfg(feature = "cuda")]
+fn terminal_sparse_trace_source_enabled() -> bool {
+    std::env::var("LZVM_CUDA_TERMINAL_SPARSE_TRACE_SOURCE")
+        .map(|value| {
+            matches!(
+                value.as_str(),
+                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+            )
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(feature = "cuda")]
+fn sparse_trace_source_enabled() -> bool {
+    std::env::var("LZVM_CUDA_SPARSE_TRACE_SOURCE")
+        .map(|value| {
+            matches!(
+                value.as_str(),
+                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+            )
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(feature = "cuda")]
+fn sparse_trace_source_max_percent() -> usize {
+    std::env::var("LZVM_CUDA_SPARSE_TRACE_SOURCE_MAX_PERCENT")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|percent| (1..50).contains(percent))
+        .unwrap_or(45)
+}
+
+#[cfg(feature = "cuda")]
+fn debug_sparse_trace_source_enabled() -> bool {
+    matches!(
+        std::env::var("LZVM_CUDA_SPARSE_TRACE_SOURCE_DEBUG").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -676,6 +1231,9 @@ pub enum ProveWitnessCommitmentError {
         message: String,
     },
     SourceLookupSet {
+        message: String,
+    },
+    PreloadedStageSource {
         message: String,
     },
     RegularConstraintViolation {
@@ -849,6 +1407,10 @@ impl fmt::Display for ProveWitnessCommitmentError {
                 f,
                 "source lookup validation failed for prove witness commitment set: {message}"
             ),
+            Self::PreloadedStageSource { message } => write!(
+                f,
+                "preloaded CUDA stage source failed for prove witness commitment: {message}"
+            ),
             Self::RegularConstraintViolation {
                 unit_index,
                 constraint_index,
@@ -896,6 +1458,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             | Self::SourceLookup { .. }
             | Self::SourceAssignment { .. }
             | Self::SourceLookupSet { .. }
+            | Self::PreloadedStageSource { .. }
             | Self::RegularConstraintViolation { .. } => None,
         }
     }
@@ -1274,11 +1837,113 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
         WitnessTraceCommitmentInput {
             unit,
             layout,
-            trace,
+            trace: Some(trace),
+            #[cfg(feature = "cuda")]
+            terminal_trace_source_prefix_rows: None,
+            #[cfg(feature = "cuda")]
+            stage_source_devices: None,
+            #[cfg(feature = "cuda")]
+            guest_pc_device_segment_material: None,
         },
         regular_hint_mode,
-        None,
+        ProveWitnessTraceRunObservers {
+            fixed_columns_cache: None,
+            #[cfg(feature = "cuda")]
+            stage_commitment_reuse_cache: None,
+            timing: None,
+        },
     )
+}
+
+#[cfg(feature = "cuda")]
+fn build_preloaded_guest_pc_trace_stage_source_devices(
+    layout: &WitnessTraceLayout,
+    segment_output: &GuestPcTraceSegmentRunOutput,
+) -> Result<Option<WitnessStageSourceDeviceCache>, ProveWitnessCommitmentError> {
+    if let Some(material) = segment_output.device_segment_material() {
+        let builder =
+            build_guest_pc_trace_stage_source_devices_from_device_material(layout, material)?;
+        return Ok(Some(
+            WitnessStageSourceDeviceCache::from_guest_pc_device_trace_builder(builder),
+        ));
+    }
+
+    let trace = segment_output.trace_if_available().ok_or_else(|| {
+        ProveWitnessCommitmentError::PreloadedStageSource {
+            message: "guest PC segment host trace is unavailable for CUDA source fallback"
+                .to_owned(),
+        }
+    })?;
+    build_guest_pc_trace_stage_source_devices(
+        layout,
+        trace,
+        segment_output.trace_source_prefix_rows(),
+        segment_output.device_trace_descriptors(),
+    )
+    .map(|source| source.map(WitnessStageSourceDeviceCache::from_guest_pc_device_trace_builder))
+    .map_err(ProveWitnessCommitmentError::from)
+}
+
+#[cfg(feature = "cuda")]
+fn require_guest_pc_segment_host_trace(
+    trace: Option<WitnessTraceBuffer>,
+) -> Result<WitnessTraceBuffer, ProveWitnessCommitmentError> {
+    trace.ok_or_else(|| ProveWitnessCommitmentError::PreloadedStageSource {
+        message: "guest PC segment host trace is unavailable for commitment input".to_owned(),
+    })
+}
+
+#[cfg(not(feature = "cuda"))]
+fn guest_pc_segment_commitment_trace(
+    segment_output: GuestPcTraceSegmentRunOutput,
+    has_external_device_source_material: bool,
+) -> Result<Option<WitnessTraceBuffer>, ProveWitnessCommitmentError> {
+    if has_external_device_source_material && guest_pc_trace_less_commitment_input_enabled() {
+        return Ok(None);
+    }
+    segment_output
+        .into_trace()
+        .ok_or_else(|| ProveWitnessCommitmentError::PreloadedStageSource {
+            message: "guest PC segment host trace is unavailable for commitment input".to_owned(),
+        })
+        .map(Some)
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_segment_commitment_trace(
+    segment_output: GuestPcTraceSegmentRunOutput,
+    has_external_device_source_material: bool,
+) -> Result<
+    (
+        Option<WitnessTraceBuffer>,
+        Option<GuestPcTraceDeviceSegmentMaterial>,
+    ),
+    ProveWitnessCommitmentError,
+> {
+    let (trace, device_segment_material) = segment_output.into_trace_and_device_material();
+    if has_external_device_source_material && guest_pc_trace_less_commitment_input_enabled() {
+        return Ok((None, device_segment_material));
+    }
+    require_guest_pc_segment_host_trace(trace)
+        .map(Some)
+        .map(|trace| (trace, device_segment_material))
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_trace_less_commitment_input_enabled() -> bool {
+    std::env::var("LZVM_CUDA_GUEST_PC_TRACELESS_COMMITMENT_INPUT")
+        .map(|value| {
+            !matches!(
+                value.as_str(),
+                "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF"
+            )
+        })
+        .unwrap_or(true)
+}
+
+#[cfg(not(feature = "cuda"))]
+fn guest_pc_trace_less_commitment_input_enabled() -> bool {
+    false
 }
 
 fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
@@ -1309,25 +1974,43 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
     )?;
     let mut outputs = Vec::with_capacity(trace_outputs.len());
     let mut source_lookup_balance = source_lookup_balance;
+    let mut fixed_columns_cache = WitnessFixedColumnsCache::new();
     for segment_output in trace_outputs {
         let trace_instance_index = segment_output.trace_instance_index();
-        let trace_output = segment_output.into_output();
+        #[cfg(feature = "cuda")]
+        let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
+        #[cfg(feature = "cuda")]
+        let preloaded_stage_source_devices =
+            build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output)?;
+        #[cfg(feature = "cuda")]
+        let has_preloaded_stage_source_devices = preloaded_stage_source_devices.is_some();
+        #[cfg(feature = "cuda")]
+        let has_external_device_source_material = has_preloaded_stage_source_devices
+            && segment_output.device_segment_material().is_some();
+        #[cfg(not(feature = "cuda"))]
+        let has_external_device_source_material = false;
         let merged_inputs = merge_backend_unit_values(
             unit_index,
             unit,
             Arc::clone(&auxiliary_inputs),
-            trace_output.unit_values(),
+            segment_output.unit_values(),
         )?;
         let merged_inputs = merge_backend_proof_values(
             unit_index,
             &plan.global_info,
             merged_inputs,
-            trace_output.proof_values(),
+            segment_output.proof_values(),
         )?;
         let regular_hint_mode = match source_lookup_balance {
             Some(ref mut balance) => WitnessRegularHintMode::Balanced(balance),
             None => WitnessRegularHintMode::AssignmentsOnly,
         };
+        #[cfg(feature = "cuda")]
+        let (trace, guest_pc_device_segment_material) =
+            guest_pc_segment_commitment_trace(segment_output, has_external_device_source_material)?;
+        #[cfg(not(feature = "cuda"))]
+        let trace =
+            guest_pc_segment_commitment_trace(segment_output, has_external_device_source_material)?;
         let mut output = run_prove_witness_commitments_from_trace_inner(
             plan,
             unit_index,
@@ -1336,10 +2019,21 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
             WitnessTraceCommitmentInput {
                 unit,
                 layout: layout.clone(),
-                trace: trace_output.into_trace(),
+                trace,
+                #[cfg(feature = "cuda")]
+                terminal_trace_source_prefix_rows: Some(trace_source_prefix_rows),
+                #[cfg(feature = "cuda")]
+                stage_source_devices: preloaded_stage_source_devices,
+                #[cfg(feature = "cuda")]
+                guest_pc_device_segment_material,
             },
             regular_hint_mode,
-            None,
+            ProveWitnessTraceRunObservers {
+                fixed_columns_cache: Some(&mut fixed_columns_cache),
+                #[cfg(feature = "cuda")]
+                stage_commitment_reuse_cache: None,
+                timing: None,
+            },
         )?;
         output.commitments.identity.trace_instance_index = trace_instance_index;
         outputs.push(output);
@@ -1390,6 +2084,9 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         let mut guest_segment_commit_duration = Duration::ZERO;
         let mut trace_timing = ProveWitnessTraceTimingAccumulator::default();
         let mut segment_count = 0_usize;
+        let mut fixed_columns_cache = WitnessFixedColumnsCache::new();
+        #[cfg(feature = "cuda")]
+        let mut stage_commitment_reuse_cache = WitnessStageCommitmentReuseCache::default();
         let guest_trace_stream_started = collect_timing.then(Instant::now);
         let proof_values = for_each_guest_pc_trace_segment_collecting_proof_values_with_context(
             &backend,
@@ -1398,12 +2095,23 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             |segment_output| {
                 let guest_segment_commit_started = collect_timing.then(Instant::now);
                 let trace_instance_index = segment_output.trace_instance_index();
-                let trace_output = segment_output.into_output();
+                #[cfg(feature = "cuda")]
+                let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
+                #[cfg(feature = "cuda")]
+                let preloaded_stage_source_devices =
+                    build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output)?;
+                #[cfg(feature = "cuda")]
+                let has_preloaded_stage_source_devices = preloaded_stage_source_devices.is_some();
+                #[cfg(feature = "cuda")]
+                let has_external_device_source_material = has_preloaded_stage_source_devices
+                    && segment_output.device_segment_material().is_some();
+                #[cfg(not(feature = "cuda"))]
+                let has_external_device_source_material = false;
                 let merged_inputs = merge_backend_unit_values(
                     unit_index,
                     unit,
                     Arc::clone(&auxiliary_inputs),
-                    trace_output.unit_values(),
+                    segment_output.unit_values(),
                 )?;
                 let regular_hint_mode = match source_lookup_balance {
                     Some(ref mut balance) => WitnessRegularHintMode::Balanced(balance),
@@ -1411,6 +2119,16 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 };
                 let mut segment_trace_timing =
                     collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
+                #[cfg(feature = "cuda")]
+                let (trace, guest_pc_device_segment_material) = guest_pc_segment_commitment_trace(
+                    segment_output,
+                    has_external_device_source_material,
+                )?;
+                #[cfg(not(feature = "cuda"))]
+                let trace = guest_pc_segment_commitment_trace(
+                    segment_output,
+                    has_external_device_source_material,
+                )?;
                 let mut output = run_prove_witness_commitments_from_trace_inner(
                     plan,
                     unit_index,
@@ -1419,10 +2137,21 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                     WitnessTraceCommitmentInput {
                         unit,
                         layout: layout.clone(),
-                        trace: trace_output.into_trace(),
+                        trace,
+                        #[cfg(feature = "cuda")]
+                        terminal_trace_source_prefix_rows: Some(trace_source_prefix_rows),
+                        #[cfg(feature = "cuda")]
+                        stage_source_devices: preloaded_stage_source_devices,
+                        #[cfg(feature = "cuda")]
+                        guest_pc_device_segment_material,
                     },
                     regular_hint_mode,
-                    segment_trace_timing.as_mut(),
+                    ProveWitnessTraceRunObservers {
+                        fixed_columns_cache: Some(&mut fixed_columns_cache),
+                        #[cfg(feature = "cuda")]
+                        stage_commitment_reuse_cache: Some(&mut stage_commitment_reuse_cache),
+                        timing: segment_trace_timing.as_mut(),
+                    },
                 )?;
                 if let Some(segment_trace_timing) = segment_trace_timing {
                     trace_timing.accumulate(segment_trace_timing);
@@ -1482,6 +2211,9 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
     let mut guest_segment_commit_duration = Duration::ZERO;
     let mut trace_timing = ProveWitnessTraceTimingAccumulator::default();
     let mut segment_count = 0_usize;
+    let mut fixed_columns_cache = WitnessFixedColumnsCache::new();
+    #[cfg(feature = "cuda")]
+    let mut stage_commitment_reuse_cache = WitnessStageCommitmentReuseCache::default();
     let guest_trace_stream_started = collect_timing.then(Instant::now);
     for_each_guest_pc_trace_segment_with_context(
         &backend,
@@ -1491,12 +2223,23 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         |segment_output| {
             let guest_segment_commit_started = collect_timing.then(Instant::now);
             let trace_instance_index = segment_output.trace_instance_index();
-            let trace_output = segment_output.into_output();
+            #[cfg(feature = "cuda")]
+            let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
+            #[cfg(feature = "cuda")]
+            let preloaded_stage_source_devices =
+                build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output)?;
+            #[cfg(feature = "cuda")]
+            let has_preloaded_stage_source_devices = preloaded_stage_source_devices.is_some();
+            #[cfg(feature = "cuda")]
+            let has_external_device_source_material = has_preloaded_stage_source_devices
+                && segment_output.device_segment_material().is_some();
+            #[cfg(not(feature = "cuda"))]
+            let has_external_device_source_material = false;
             let merged_inputs = merge_backend_unit_values(
                 unit_index,
                 unit,
                 Arc::clone(&auxiliary_inputs),
-                trace_output.unit_values(),
+                segment_output.unit_values(),
             )?;
             let regular_hint_mode = match source_lookup_balance {
                 Some(ref mut balance) => WitnessRegularHintMode::Balanced(balance),
@@ -1504,6 +2247,16 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             };
             let mut segment_trace_timing =
                 collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
+            #[cfg(feature = "cuda")]
+            let (trace, guest_pc_device_segment_material) = guest_pc_segment_commitment_trace(
+                segment_output,
+                has_external_device_source_material,
+            )?;
+            #[cfg(not(feature = "cuda"))]
+            let trace = guest_pc_segment_commitment_trace(
+                segment_output,
+                has_external_device_source_material,
+            )?;
             let mut output = run_prove_witness_commitments_from_trace_inner(
                 plan,
                 unit_index,
@@ -1512,10 +2265,21 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 WitnessTraceCommitmentInput {
                     unit,
                     layout: layout.clone(),
-                    trace: trace_output.into_trace(),
+                    trace,
+                    #[cfg(feature = "cuda")]
+                    terminal_trace_source_prefix_rows: Some(trace_source_prefix_rows),
+                    #[cfg(feature = "cuda")]
+                    stage_source_devices: preloaded_stage_source_devices,
+                    #[cfg(feature = "cuda")]
+                    guest_pc_device_segment_material,
                 },
                 regular_hint_mode,
-                segment_trace_timing.as_mut(),
+                ProveWitnessTraceRunObservers {
+                    fixed_columns_cache: Some(&mut fixed_columns_cache),
+                    #[cfg(feature = "cuda")]
+                    stage_commitment_reuse_cache: Some(&mut stage_commitment_reuse_cache),
+                    timing: segment_trace_timing.as_mut(),
+                },
             )?;
             if let Some(segment_trace_timing) = segment_trace_timing {
                 trace_timing.accumulate(segment_trace_timing);
@@ -1758,10 +2522,21 @@ fn run_prove_witness_commitments_with_trace_bytes_inner(
         WitnessTraceCommitmentInput {
             unit,
             layout,
-            trace,
+            trace: Some(trace),
+            #[cfg(feature = "cuda")]
+            terminal_trace_source_prefix_rows: None,
+            #[cfg(feature = "cuda")]
+            stage_source_devices: None,
+            #[cfg(feature = "cuda")]
+            guest_pc_device_segment_material: None,
         },
         regular_hint_mode,
-        None,
+        ProveWitnessTraceRunObservers {
+            fixed_columns_cache: None,
+            #[cfg(feature = "cuda")]
+            stage_commitment_reuse_cache: None,
+            timing: None,
+        },
     )
 }
 
@@ -1772,12 +2547,19 @@ fn run_prove_witness_commitments_from_trace_inner(
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     input: WitnessTraceCommitmentInput<'_>,
     regular_hint_mode: WitnessRegularHintMode<'_>,
-    mut timing: Option<&mut ProveWitnessTraceTimingAccumulator>,
+    mut observers: ProveWitnessTraceRunObservers<'_>,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
+    let mut timing = observers.timing;
     let WitnessTraceCommitmentInput {
         unit,
         layout,
         trace,
+        #[cfg(feature = "cuda")]
+        terminal_trace_source_prefix_rows,
+        #[cfg(feature = "cuda")]
+        stage_source_devices,
+        #[cfg(feature = "cuda")]
+        guest_pc_device_segment_material,
     } = input;
     let input_byte_count = shared_inputs.input.len();
     let execution_unit =
@@ -1787,18 +2569,45 @@ fn run_prove_witness_commitments_from_trace_inner(
                 unit_index,
                 unit_count: plan.units.len(),
             })?;
-    let mut fixed_columns = WitnessFixedColumnsCache::new();
+    let mut local_fixed_columns = WitnessFixedColumnsCache::new();
+    let fixed_columns = observers
+        .fixed_columns_cache
+        .as_deref_mut()
+        .unwrap_or(&mut local_fixed_columns);
     let mut stage_trace_cache = WitnessStageTraceCache::default();
+    #[cfg(feature = "cuda")]
+    let mut stage_source_device_cache = WitnessStageSourceDeviceCache::default();
     let proof_inputs = WitnessProofInputs {
         publics: &shared_inputs.publics,
         auxiliary_inputs: auxiliary_inputs.as_ref(),
     };
+    let trace_ref = trace.as_ref();
+    let regular_constraint_count = execution_unit.regular_constraints.entries.len();
+    #[cfg(feature = "cuda")]
+    let trace_extracted = trace_ref.is_some()
+        || stage_source_devices.is_some()
+        || guest_pc_device_segment_material.is_some();
+    #[cfg(not(feature = "cuda"))]
+    let trace_extracted = trace_ref.is_some();
+    #[cfg(feature = "cuda")]
+    let external_source_commitment_required = guest_pc_device_segment_material.is_some();
+    #[cfg(feature = "cuda")]
+    {
+        stage_source_device_cache.upload_from_trace_or_preloaded_if_empty(
+            &layout,
+            trace_ref,
+            stage_source_devices,
+            terminal_trace_source_prefix_rows,
+        )?;
+    }
     {
         let mut regular_inputs = WitnessRegularTraceInputs {
             layout: &layout,
-            trace: &trace,
-            fixed_columns: &mut fixed_columns,
+            trace: trace_ref,
+            fixed_columns,
             stage_traces: &mut stage_trace_cache,
+            #[cfg(feature = "cuda")]
+            stage_source_devices: Some(&stage_source_device_cache),
         };
         record_optional_duration(
             timing
@@ -1839,23 +2648,110 @@ fn run_prove_witness_commitments_from_trace_inner(
             },
         )?;
     }
-    let trace_rows = trace.row_count();
-    let trace_columns = trace.column_count();
+    let trace_rows = layout.row_count();
+    let trace_columns = layout.column_count();
     let stage_commitments = if let Some(timing) = timing {
         let stage_commit_started = Instant::now();
         let (stage_commitments, stage_timing, stage_timings) = (|| {
-            let stage_traces =
-                record_optional_duration(Some(&mut timing.stage_trace_extract_duration), || {
-                    stage_trace_cache.get_or_extract(&layout, &trace)
-                })?;
             let mut stage_timing = WitnessStageCommitTiming::default();
-            let (stage_commitments, stage_timings) =
+            #[cfg(feature = "cuda")]
+            let source_devices = stage_source_device_cache.descriptors();
+            #[cfg(feature = "cuda")]
+            let (stage_commitments, stage_timings) = if stage_trace_cache.is_extracted() {
+                let stage_traces = record_optional_duration(
+                    Some(&mut timing.stage_trace_extract_duration),
+                    || {
+                        stage_trace_cache.get_or_extract_optional(
+                            &layout,
+                            trace_ref,
+                            "timed extracted CUDA stage commitment",
+                        )
+                    },
+                )?;
+                if let Some(reuse_cache) = observers.stage_commitment_reuse_cache.as_mut() {
+                    commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing(
+                        stage_traces,
+                        unit,
+                        &source_devices,
+                        reuse_cache,
+                        &mut stage_timing,
+                    )?
+                } else {
+                    commit_witness_stage_values_with_source_devices_and_indexed_timing(
+                        stage_traces,
+                        unit,
+                        plan.run_plan.gpu.witness_thread_pools,
+                        &source_devices,
+                        &mut stage_timing,
+                    )?
+                }
+            } else {
+                let source_commit_result = if external_source_commitment_required {
+                    commit_witness_stage_source_devices_and_indexed_timing_external_source(
+                        &source_devices,
+                        unit,
+                        &mut stage_timing,
+                    )
+                } else {
+                    commit_witness_stage_source_devices_and_indexed_timing(
+                        &source_devices,
+                        unit,
+                        &mut stage_timing,
+                    )
+                };
+                match source_commit_result {
+                    Ok(result) => result,
+                    Err(error) if source_device_retention_unavailable(&error) => {
+                        let stage_traces = record_optional_duration(
+                            Some(&mut timing.stage_trace_extract_duration),
+                            || {
+                                stage_trace_cache.get_or_extract_optional(
+                                    &layout,
+                                    trace_ref,
+                                    "timed CUDA source-device retention fallback",
+                                )
+                            },
+                        )?;
+                        if let Some(reuse_cache) = observers.stage_commitment_reuse_cache.as_mut() {
+                            commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing(
+                                stage_traces,
+                                unit,
+                                &source_devices,
+                                reuse_cache,
+                                &mut stage_timing,
+                            )?
+                        } else {
+                            commit_witness_stage_values_with_source_devices_and_indexed_timing(
+                                stage_traces,
+                                unit,
+                                plan.run_plan.gpu.witness_thread_pools,
+                                &source_devices,
+                                &mut stage_timing,
+                            )?
+                        }
+                    }
+                    Err(error) => return Err(ProveWitnessCommitmentError::from(error)),
+                }
+            };
+            #[cfg(not(feature = "cuda"))]
+            let (stage_commitments, stage_timings) = {
+                let stage_traces = record_optional_duration(
+                    Some(&mut timing.stage_trace_extract_duration),
+                    || {
+                        stage_trace_cache.get_or_extract_optional(
+                            &layout,
+                            trace_ref,
+                            "timed CPU stage commitment",
+                        )
+                    },
+                )?;
                 commit_witness_stage_values_with_workers_and_indexed_timing(
                     stage_traces,
                     unit,
                     plan.run_plan.gpu.witness_thread_pools,
                     &mut stage_timing,
-                )?;
+                )?
+            };
             Ok::<_, ProveWitnessCommitmentError>((stage_commitments, stage_timing, stage_timings))
         })()?;
         timing.stage_commit_duration += stage_commit_started.elapsed();
@@ -1872,15 +2768,87 @@ fn run_prove_witness_commitments_from_trace_inner(
         }
         stage_commitments
     } else if stage_trace_cache.is_extracted() {
-        let stage_traces = stage_trace_cache.get_or_extract(&layout, &trace)?;
+        let stage_traces = stage_trace_cache.get_or_extract_optional(
+            &layout,
+            trace_ref,
+            "extracted stage commitment",
+        )?;
+        #[cfg(feature = "cuda")]
+        {
+            let source_devices = stage_source_device_cache.descriptors();
+            if let Some(reuse_cache) = observers.stage_commitment_reuse_cache.as_mut() {
+                commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_workers(
+                    stage_traces,
+                    unit,
+                    &source_devices,
+                    reuse_cache,
+                )?
+            } else {
+                commit_witness_stage_values_with_source_devices_and_workers(
+                    stage_traces,
+                    unit,
+                    plan.run_plan.gpu.witness_thread_pools,
+                    &source_devices,
+                )?
+            }
+        }
+        #[cfg(not(feature = "cuda"))]
         commit_witness_stage_values_with_workers(
             stage_traces,
             unit,
             plan.run_plan.gpu.witness_thread_pools,
         )?
+    } else if cfg!(feature = "cuda") {
+        #[cfg(feature = "cuda")]
+        {
+            let source_devices = stage_source_device_cache.descriptors();
+            let mut stage_timing = WitnessStageCommitTiming::default();
+            let source_commit_result = if external_source_commitment_required {
+                commit_witness_stage_source_devices_and_indexed_timing_external_source(
+                    &source_devices,
+                    unit,
+                    &mut stage_timing,
+                )
+            } else {
+                commit_witness_stage_source_devices_and_indexed_timing(
+                    &source_devices,
+                    unit,
+                    &mut stage_timing,
+                )
+            };
+            match source_commit_result {
+                Ok((commitments, _)) => commitments,
+                Err(error) if source_device_retention_unavailable(&error) => {
+                    let stage_traces = stage_trace_cache.get_or_extract_optional(
+                        &layout,
+                        trace_ref,
+                        "CUDA source-device retention fallback",
+                    )?;
+                    if let Some(reuse_cache) = observers.stage_commitment_reuse_cache.as_mut() {
+                        commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_workers(
+                            stage_traces,
+                            unit,
+                            &source_devices,
+                            reuse_cache,
+                        )?
+                    } else {
+                        commit_witness_stage_values_with_source_devices_and_workers(
+                            stage_traces,
+                            unit,
+                            plan.run_plan.gpu.witness_thread_pools,
+                            &source_devices,
+                        )?
+                    }
+                }
+                Err(error) => return Err(ProveWitnessCommitmentError::from(error)),
+            }
+        }
+        #[cfg(not(feature = "cuda"))]
+        unreachable!()
     } else {
+        let trace = require_host_trace(trace_ref, "CPU witness stage commitment")?;
         commit_witness_trace_stages_with_workers(
-            &trace,
+            trace,
             unit,
             plan.run_plan.gpu.witness_thread_pools,
         )?
@@ -1893,12 +2861,53 @@ fn run_prove_witness_commitments_from_trace_inner(
         stage_commitments,
     };
 
+    #[cfg(feature = "cuda")]
+    let retain_stage_sources = retain_fri_stage_source_devices();
+    #[cfg(feature = "cuda")]
+    let guest_pc_device_descriptor_buffer = if retain_stage_sources {
+        stage_source_device_cache.retained_guest_pc_device_descriptor_buffer()
+    } else {
+        None
+    };
     Ok(ProveWitnessTraceCommitments {
         commitments,
-        trace: Some(trace),
+        trace,
+        trace_constraint_checks: ProveWitnessTraceConstraintChecks {
+            regular_constraint_count,
+            trace_extracted,
+            regular_constraints_evaluated: true,
+            witness_values_committed: true,
+            constraint_checker_conformant: true,
+        },
+        #[cfg(feature = "cuda")]
+        stage_source_devices: if retain_stage_sources {
+            stage_source_device_cache.retained_descriptors()
+        } else {
+            Vec::new()
+        },
+        #[cfg(feature = "cuda")]
+        guest_pc_device_descriptor_buffer,
+        #[cfg(feature = "cuda")]
+        guest_pc_device_segment_material,
         publics: shared_inputs.publics.clone(),
         auxiliary_inputs,
     })
+}
+
+#[cfg(feature = "cuda")]
+fn retain_fri_stage_source_devices() -> bool {
+    !matches!(
+        std::env::var("LZVM_CUDA_RETAIN_FRI_STAGE_SOURCES").as_deref(),
+        Ok("0") | Ok("false") | Ok("no")
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn debug_fri_stage_source_devices() -> bool {
+    matches!(
+        std::env::var("LZVM_CUDA_FRI_STAGE_SOURCE_DEBUG").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
 }
 
 fn record_optional_duration<T>(
@@ -1913,6 +2922,16 @@ fn record_optional_duration<T>(
     } else {
         run()
     }
+}
+
+#[cfg(feature = "cuda")]
+fn source_device_retention_unavailable(error: &WitnessTraceCommitmentError) -> bool {
+    matches!(
+        error,
+        WitnessTraceCommitmentError::StageCommitment(
+            WitnessStageCommitmentError::SourceDeviceRetentionUnavailable { .. }
+        )
+    )
 }
 
 pub fn run_prove_witness_commitments_for_all_units(
@@ -2112,23 +3131,6 @@ where
         .fixed_columns
         .get_or_load(unit_index, plan_unit, inputs.layout)?;
 
-    let stage_traces = inputs
-        .stage_traces
-        .get_or_extract(inputs.layout, inputs.trace)?;
-    let mut stage_columns = Vec::with_capacity(stage_traces.len());
-    for stage in stage_traces {
-        let stage_index = u16::try_from(stage.stage_index()).map_err(|_| {
-            ProveWitnessCommitmentError::StageIndexTooLarge {
-                unit_index,
-                stage_index: stage.stage_index(),
-            }
-        })?;
-        stage_columns.push(RegularStageColumns {
-            stage_index,
-            column_count: stage.column_count(),
-            values: stage.values(),
-        });
-    }
     let domain_points =
         build_fri_domain_points(plan_unit.setup.stark.n_bits).map_err(|source| {
             ProveWitnessCommitmentError::RegularConstraintDomainHelper { unit_index, source }
@@ -2144,6 +3146,128 @@ where
     #[cfg(feature = "cuda")]
     let fixed_columns_device_buffer = material.row_major_device_buffer();
 
+    #[cfg(feature = "cuda")]
+    if let Some(stage_source_devices) = inputs.stage_source_devices {
+        let mut stage_columns = Vec::with_capacity(inputs.layout.stages().len());
+        let mut all_stage_devices_available = true;
+        for stage in inputs.layout.stages() {
+            let stage_index = u16::try_from(stage.stage_index).map_err(|_| {
+                ProveWitnessCommitmentError::StageIndexTooLarge {
+                    unit_index,
+                    stage_index: stage.stage_index,
+                }
+            })?;
+            let Some((row_count, column_count, row_stride, column_offset, values_device)) =
+                stage_source_devices.get_stage(stage.stage_index)
+            else {
+                all_stage_devices_available = false;
+                break;
+            };
+            let value_count = row_count.checked_mul(column_count).ok_or(
+                ProveWitnessCommitmentError::RegularConstraintEval(
+                    RegularConstraintEvalError::LengthOverflow,
+                ),
+            )?;
+            stage_columns.push(RegularStageColumns {
+                stage_index,
+                column_count,
+                values: &[],
+                values_device: Some(values_device),
+                values_row_stride: row_stride,
+                values_column_offset: column_offset,
+                value_count,
+            });
+        }
+        if all_stage_devices_available {
+            let regular_constraint_inputs = RegularConstraintInputs {
+                domain_size: inputs.layout.row_count(),
+                stage_count: plan_unit.stage_count,
+                fixed_columns: RegularColumnMatrix {
+                    column_count: plan_unit.fixed_column_count,
+                    values: &material.row_major_values,
+                },
+                stage_columns: &stage_columns,
+                custom_fixed_columns: &[],
+                opening_point_offsets: &plan_unit.opening_point_offsets,
+                domain_points: &domain_points,
+                zerofier_values: RegularColumnMatrix {
+                    column_count: zerofiers.column_count,
+                    values: &zerofiers.values,
+                },
+                publics: proof_inputs.publics,
+                unit_values: &proof_inputs.auxiliary_inputs.unit_values,
+                proof_values: &proof_inputs.auxiliary_inputs.proof_values,
+                group_values: &proof_inputs.auxiliary_inputs.group_values,
+                challenges: &proof_inputs.auxiliary_inputs.challenges,
+                evaluations: &proof_inputs.auxiliary_inputs.evaluations,
+            };
+            if let Some(results) = try_evaluate_regular_constraints_cuda_base(
+                &plan_unit.regular_constraints,
+                regular_constraint_inputs,
+                fixed_columns_device_buffer,
+            )
+            .map_err(|error| map_regular_constraint_eval_error(unit_index, error))?
+            {
+                for result in results {
+                    if let Some(violation) = result.invalid_rows.first() {
+                        return Err(ProveWitnessCommitmentError::RegularConstraintViolation {
+                            unit_index,
+                            constraint_index: result.constraint_index,
+                            row: violation.row,
+                            value: violation.value.to_u64s(),
+                        });
+                    }
+                }
+                return Ok(());
+            }
+        }
+    }
+
+    let stage_traces = inputs.stage_traces.get_or_extract_optional(
+        inputs.layout,
+        inputs.trace,
+        "regular constraint CPU fallback",
+    )?;
+    let mut stage_columns = Vec::with_capacity(stage_traces.len());
+    for stage in stage_traces {
+        let stage_index = u16::try_from(stage.stage_index()).map_err(|_| {
+            ProveWitnessCommitmentError::StageIndexTooLarge {
+                unit_index,
+                stage_index: stage.stage_index(),
+            }
+        })?;
+        stage_columns.push(RegularStageColumns {
+            stage_index,
+            column_count: stage.column_count(),
+            values: stage.values(),
+            #[cfg(feature = "cuda")]
+            values_device: inputs.stage_source_devices.and_then(|sources| {
+                sources
+                    .get(stage.stage_index())
+                    .map(|(_, _, _, values_device)| values_device)
+            }),
+            #[cfg(feature = "cuda")]
+            values_row_stride: inputs
+                .stage_source_devices
+                .and_then(|sources| {
+                    sources
+                        .get(stage.stage_index())
+                        .map(|(_, row_stride, _, _)| row_stride)
+                })
+                .unwrap_or(stage.column_count()),
+            #[cfg(feature = "cuda")]
+            values_column_offset: inputs
+                .stage_source_devices
+                .and_then(|sources| {
+                    sources
+                        .get(stage.stage_index())
+                        .map(|(_, _, column_offset, _)| column_offset)
+                })
+                .unwrap_or(0),
+            #[cfg(feature = "cuda")]
+            value_count: stage.values().len(),
+        });
+    }
     let regular_constraint_inputs = RegularConstraintInputs {
         domain_size: inputs.layout.row_count(),
         stage_count: plan_unit.stage_count,
@@ -2234,9 +3358,11 @@ fn validate_witness_regular_hints(
     };
     let mut regular_inputs = WitnessRegularTraceInputs {
         layout,
-        trace,
+        trace: Some(trace),
         fixed_columns: &mut fixed_columns,
         stage_traces: &mut stage_trace_cache,
+        #[cfg(feature = "cuda")]
+        stage_source_devices: None,
     };
     accumulate_witness_regular_hints(
         plan_unit,
@@ -2345,9 +3471,11 @@ where
     };
 
     let stage_traces: &[WitnessTraceStageValues] = if requirements.stage_columns {
-        trace_inputs
-            .stage_traces
-            .get_or_extract(trace_inputs.layout, trace_inputs.trace)?
+        trace_inputs.stage_traces.get_or_extract_optional(
+            trace_inputs.layout,
+            trace_inputs.trace,
+            "regular hint stage column input",
+        )?
     } else {
         &[]
     };
@@ -2363,6 +3491,14 @@ where
             stage_index,
             column_count: stage.column_count(),
             values: stage.values(),
+            #[cfg(feature = "cuda")]
+            values_device: None,
+            #[cfg(feature = "cuda")]
+            values_row_stride: stage.column_count(),
+            #[cfg(feature = "cuda")]
+            values_column_offset: 0,
+            #[cfg(feature = "cuda")]
+            value_count: stage.values().len(),
         });
     }
 
@@ -2615,9 +3751,11 @@ mod tests {
         };
         let mut regular_inputs = WitnessRegularTraceInputs {
             layout: &layout,
-            trace: &trace,
+            trace: Some(&trace),
             fixed_columns: &mut cache,
             stage_traces: &mut stage_trace_cache,
+            #[cfg(feature = "cuda")]
+            stage_source_devices: None,
         };
 
         validate_witness_regular_constraints(&plan_unit, 0, &mut regular_inputs, proof_inputs, 1)
@@ -2682,10 +3820,21 @@ mod tests {
             WitnessTraceCommitmentInput {
                 unit: &plan.run_plan.schedule.units[0],
                 layout,
-                trace,
+                trace: Some(trace),
+                #[cfg(feature = "cuda")]
+                terminal_trace_source_prefix_rows: None,
+                #[cfg(feature = "cuda")]
+                stage_source_devices: None,
+                #[cfg(feature = "cuda")]
+                guest_pc_device_segment_material: None,
             },
             WitnessRegularHintMode::AssignmentsOnly,
-            None,
+            ProveWitnessTraceRunObservers {
+                fixed_columns_cache: None,
+                #[cfg(feature = "cuda")]
+                stage_commitment_reuse_cache: None,
+                timing: None,
+            },
         )
         .expect("trace commitments should prove");
 

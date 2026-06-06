@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
@@ -29,9 +30,15 @@ use lzvm_artifacts::setup_manifest::{
     build_setup_directory_manifest, validate_setup_directory_manifest_file,
     SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
 };
+use lzvm_artifacts::trace_constraint_segment::{
+    parse_trace_constraint_segment, TraceConstraintSegmentError, TRACE_CONSTRAINT_SEGMENT_ID,
+};
 use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
-use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
+use lzvm_artifacts::witness_segment::{
+    parse_witness_commitment_segment, witness_commitment_segment_identity,
+    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+};
 use lzvm_field::{Felt, FieldError};
 
 use crate::constant_opening::{
@@ -167,6 +174,10 @@ pub enum SetupPreflightError {
     GroupValues(LoadGroupValuesSegmentError),
     UnitValues(LoadUnitValuesSegmentError),
     UnitValueQueryPlan(LoadPcsQueryPlanSegmentError),
+    TraceConstraint(TraceConstraintSegmentError),
+    TraceConstraintBinding {
+        message: String,
+    },
     MissingContributionChallengeValues,
     ContributionChallengeValuesMismatch,
     UnexpectedProofSegment {
@@ -240,6 +251,8 @@ impl fmt::Display for SetupPreflightError {
             Self::GroupValues(error) => write!(f, "{error}"),
             Self::UnitValues(error) => write!(f, "{error}"),
             Self::UnitValueQueryPlan(error) => write!(f, "{error}"),
+            Self::TraceConstraint(error) => write!(f, "{error}"),
+            Self::TraceConstraintBinding { message } => write!(f, "{message}"),
             Self::MissingContributionChallengeValues => {
                 write!(f, "missing contribution challenge values")
             }
@@ -313,9 +326,11 @@ impl std::error::Error for SetupPreflightError {
             Self::GroupValues(error) => Some(error),
             Self::UnitValues(error) => Some(error),
             Self::UnitValueQueryPlan(error) => Some(error),
+            Self::TraceConstraint(error) => Some(error),
             Self::CatalogHashMismatch
             | Self::ProgramImageCacheSetupHashMismatch
             | Self::SourceLookup { .. }
+            | Self::TraceConstraintBinding { .. }
             | Self::MissingContributionChallengeValues
             | Self::ContributionChallengeValuesMismatch
             | Self::DuplicateChallengeValuesSegment
@@ -630,9 +645,9 @@ pub fn validate_setup_preflight(
 
     validate_pcs_material_manifest_segments(&schedule, &proof.segments)
         .map_err(SetupPreflightError::PcsMaterial)?;
-    load_witness_commitment_segments(&schedule.units, &proof.segments)
-        .map(|_| ())
+    let witness_segments = load_witness_commitment_segments(&schedule.units, &proof.segments)
         .map_err(SetupPreflightError::WitnessCommitment)?;
+    validate_optional_trace_constraint_segment(catalog, &schedule, proof, &witness_segments)?;
     validate_pcs_query_plan_segments(
         &schedule,
         proof.public_values_hash,
@@ -900,6 +915,130 @@ fn validate_setup_proof_segment_ids(segments: &[ProofSegment]) -> Result<(), Set
     Ok(())
 }
 
+fn validate_optional_trace_constraint_segment(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &crate::ProveSchedule,
+    proof: &ProofArtifact,
+    witness_segments: &[ProofSegment],
+) -> Result<(), SetupPreflightError> {
+    let Some(segment) = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == TRACE_CONSTRAINT_SEGMENT_ID)
+    else {
+        if witness_segments.is_empty() {
+            return Ok(());
+        }
+        return Err(SetupPreflightError::TraceConstraintBinding {
+            message: "missing trace constraint evidence segment".to_owned(),
+        });
+    };
+    let evidence = parse_trace_constraint_segment(&segment.data)
+        .map_err(SetupPreflightError::TraceConstraint)?;
+
+    let unit_count = u32::try_from(schedule.units.len()).map_err(|_| {
+        SetupPreflightError::TraceConstraintBinding {
+            message: "trace constraint evidence unit count overflow".to_owned(),
+        }
+    })?;
+    let mut witness_shapes = BTreeMap::new();
+    for witness_segment in witness_segments {
+        let identity = witness_commitment_segment_identity(unit_count, witness_segment.id)
+            .map_err(|error| SetupPreflightError::TraceConstraintBinding {
+                message: format!("trace constraint evidence witness identity failed: {error}"),
+            })?
+            .ok_or_else(|| SetupPreflightError::TraceConstraintBinding {
+                message: format!(
+                    "trace constraint evidence missing witness identity for segment {}",
+                    witness_segment.id
+                ),
+            })?;
+        let parsed = parse_witness_commitment_segment(&witness_segment.data).map_err(|error| {
+            SetupPreflightError::TraceConstraintBinding {
+                message: format!("trace constraint evidence witness segment parse failed: {error}"),
+            }
+        })?;
+        witness_shapes.insert(
+            (identity.unit_index, identity.trace_instance_index),
+            (parsed.trace_rows, parsed.trace_columns),
+        );
+    }
+
+    let mut evidence_units = BTreeMap::new();
+    for unit in evidence.units {
+        evidence_units.insert(
+            (unit.unit_index, unit.trace_instance_index),
+            (
+                (unit.trace_row_count, u64::from(unit.trace_column_count)),
+                unit.regular_constraint_count,
+            ),
+        );
+    }
+    for (&identity, witness_shape) in &witness_shapes {
+        let Some((evidence_shape, evidence_constraint_count)) = evidence_units.get(&identity)
+        else {
+            return Err(SetupPreflightError::TraceConstraintBinding {
+                message: format!(
+                    "trace constraint evidence missing witness identity: unit {}, trace instance {}",
+                    identity.0, identity.1
+                ),
+            });
+        };
+        if *evidence_shape != *witness_shape {
+            return Err(SetupPreflightError::TraceConstraintBinding {
+                message: format!(
+                    "trace constraint evidence shape mismatch for unit {}, trace instance {}",
+                    identity.0, identity.1
+                ),
+            });
+        }
+        let unit_index = usize::try_from(identity.0).map_err(|_| {
+            SetupPreflightError::TraceConstraintBinding {
+                message: format!(
+                    "trace constraint evidence unit index overflow: unit {}, trace instance {}",
+                    identity.0, identity.1
+                ),
+            }
+        })?;
+        let Some(unit) = catalog.units.get(unit_index) else {
+            return Err(SetupPreflightError::TraceConstraintBinding {
+                message: format!(
+                    "trace constraint evidence unknown unit: unit {}, trace instance {}",
+                    identity.0, identity.1
+                ),
+            });
+        };
+        let expected_constraint_count =
+            u32::try_from(unit.regular_constraints.entries.len()).map_err(|_| {
+                SetupPreflightError::TraceConstraintBinding {
+                    message: format!(
+                        "trace constraint evidence constraint count overflow for unit {}, trace instance {}",
+                        identity.0, identity.1
+                    ),
+                }
+            })?;
+        if *evidence_constraint_count != expected_constraint_count {
+            return Err(SetupPreflightError::TraceConstraintBinding {
+                message: format!(
+                    "trace constraint evidence constraint count mismatch for unit {}, trace instance {}",
+                    identity.0, identity.1
+                ),
+            });
+        }
+    }
+    for identity in evidence_units.keys() {
+        if !witness_shapes.contains_key(identity) {
+            return Err(SetupPreflightError::TraceConstraintBinding {
+                message: format!(
+                    "trace constraint evidence unexpected witness identity: unit {}, trace instance {}",
+                    identity.0, identity.1
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn is_setup_proof_segment_id(id: u32) -> bool {
     if (WITNESS_COMMITMENT_SEGMENT_BASE_ID..PCS_MATERIAL_MANIFEST_SEGMENT_ID).contains(&id) {
         return true;
@@ -918,6 +1057,7 @@ pub(crate) fn is_setup_proof_segment_id(id: u32) -> bool {
             | GROUP_VALUES_SEGMENT_ID
             | CHALLENGE_VALUES_SEGMENT_ID
             | UNIT_VALUES_SEGMENT_ID
+            | TRACE_CONSTRAINT_SEGMENT_ID
             | PROGRAM_IMAGE_CACHE_SEGMENT_ID
             | CONTRIBUTION_SEGMENT_ID
             | ETH_BLOCK_INPUT_SEGMENT_ID

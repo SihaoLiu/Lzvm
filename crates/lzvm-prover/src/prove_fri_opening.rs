@@ -30,8 +30,12 @@ use crate::pcs_fri::{
     PcsFriTranscriptCommitmentRequest,
 };
 use crate::pcs_transcript::{derive_pcs_transcript_prefix_challenges, PcsTranscriptPrefixInputs};
+#[cfg(not(feature = "cuda"))]
+use crate::prove_fri_polynomial::build_pcs_fri_polynomial_values_with_slices_and_fixed_cache;
+#[cfg(feature = "cuda")]
+use crate::prove_fri_polynomial::build_pcs_fri_polynomial_values_with_slices_stage_sources_and_fixed_cache;
 use crate::prove_fri_polynomial::{
-    build_pcs_fri_polynomial_values, build_pcs_fri_polynomial_values_with_slices,
+    build_pcs_fri_polynomial_values, PcsFriFixedColumnsCache, ProvePcsFriPolynomialTraceInput,
 };
 use crate::witness_execution::ProveWitnessAuxiliaryInputSlices;
 use crate::ProveSchedule;
@@ -270,6 +274,8 @@ pub fn build_pcs_fri_transcript_values_from_trace(
             unit_index: input.unit_index,
             execution_unit: input.execution_unit,
             trace: input.trace,
+            #[cfg(feature = "cuda")]
+            stage_source_devices: None,
             publics: input.publics,
             auxiliary_inputs: ProveWitnessAuxiliaryInputSlices::from(input.auxiliary_inputs),
             constant_root: input.constant_root,
@@ -286,6 +292,19 @@ fn build_pcs_fri_transcript_values_from_trace_refs(
     schedule: &ProveSchedule,
     values: &[ProvePcsFriTranscriptTraceValueRef<'_>],
 ) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
+    let mut fixed_columns_cache = PcsFriFixedColumnsCache::default();
+    build_pcs_fri_transcript_values_from_trace_refs_with_fixed_cache(
+        schedule,
+        values,
+        &mut fixed_columns_cache,
+    )
+}
+
+fn build_pcs_fri_transcript_values_from_trace_refs_with_fixed_cache(
+    schedule: &ProveSchedule,
+    values: &[ProvePcsFriTranscriptTraceValueRef<'_>],
+    fixed_columns_cache: &mut PcsFriFixedColumnsCache,
+) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
     let mut out = Vec::with_capacity(values.len());
     for input in values {
         let unit = schedule.units.get(input.unit_index).ok_or(
@@ -299,14 +318,36 @@ fn build_pcs_fri_transcript_values_from_trace_refs(
                 unit_index: input.unit_index,
             },
         )? as usize;
-        let polynomial = build_pcs_fri_polynomial_values_with_slices(
-            input.unit_index,
-            unit,
-            input.execution_unit,
-            input.trace,
-            input.publics,
-            input.auxiliary_inputs,
-            input.xi_challenge,
+        #[cfg(feature = "cuda")]
+        let polynomial = build_pcs_fri_polynomial_values_with_slices_stage_sources_and_fixed_cache(
+            ProvePcsFriPolynomialTraceInput {
+                unit_index: input.unit_index,
+                unit,
+                plan_unit: input.execution_unit,
+                trace: input.trace,
+                publics: input.publics,
+                auxiliary_inputs: input.auxiliary_inputs,
+                xi_challenge: input.xi_challenge,
+                stage_source_devices: input.stage_source_devices,
+            },
+            fixed_columns_cache,
+        )
+        .map_err(|source| ProvePcsFriTranscriptTraceValuesError::Polynomial {
+            unit_index: input.unit_index,
+            source: Box::new(source),
+        })?;
+        #[cfg(not(feature = "cuda"))]
+        let polynomial = build_pcs_fri_polynomial_values_with_slices_and_fixed_cache(
+            ProvePcsFriPolynomialTraceInput {
+                unit_index: input.unit_index,
+                unit,
+                plan_unit: input.execution_unit,
+                trace: input.trace,
+                publics: input.publics,
+                auxiliary_inputs: input.auxiliary_inputs,
+                xi_challenge: input.xi_challenge,
+            },
+            fixed_columns_cache,
         )
         .map_err(|source| ProvePcsFriTranscriptTraceValuesError::Polynomial {
             unit_index: input.unit_index,
@@ -354,6 +395,8 @@ pub fn build_pcs_fri_transcript_values_from_trace_segments(
             trace_instance_index: input.trace_instance_index,
             execution_unit: input.execution_unit,
             trace: input.trace,
+            #[cfg(feature = "cuda")]
+            stage_source_devices: None,
             publics: input.publics,
             auxiliary_inputs: ProveWitnessAuxiliaryInputSlices::from(input.auxiliary_inputs),
             material_segment: input.material_segment,
@@ -372,6 +415,7 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs(
     let mut out = Vec::with_capacity(values.len());
     let mut material_cache = MaterialSegmentCache::new();
     let mut evaluation_cache = EvaluationSegmentCache::new();
+    let mut fixed_columns_cache = PcsFriFixedColumnsCache::default();
     for input in values {
         let unit = schedule.units.get(input.unit_index).ok_or(
             ProvePcsFriTranscriptTraceValuesError::UnitIndexOutOfRange {
@@ -514,12 +558,14 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs(
             },
         )?;
 
-        let mut built = build_pcs_fri_transcript_values_from_trace_refs(
+        let mut built = build_pcs_fri_transcript_values_from_trace_refs_with_fixed_cache(
             schedule,
             &[ProvePcsFriTranscriptTraceValueRef {
                 unit_index: input.unit_index,
                 execution_unit: input.execution_unit,
                 trace: input.trace,
+                #[cfg(feature = "cuda")]
+                stage_source_devices: input.stage_source_devices,
                 publics: input.publics,
                 auxiliary_inputs: input.auxiliary_inputs,
                 constant_root,
@@ -528,6 +574,7 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs(
                 xi_challenge,
                 binding_segments: input.binding_segments,
             }],
+            &mut fixed_columns_cache,
         )?;
         for value in &mut built {
             value.trace_instance_index = input.trace_instance_index;

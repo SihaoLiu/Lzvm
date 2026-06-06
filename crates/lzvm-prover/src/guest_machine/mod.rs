@@ -4,10 +4,9 @@ use std::fmt;
 use smallvec::SmallVec;
 
 use crate::guest_instruction::{
-    decode_guest_instruction, fetch_guest_instruction, GuestInstructionError, RiscvAmoKind,
-    RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvDmaKind, RiscvEncodedInstruction,
-    RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind,
-    RiscvStoreKind,
+    decode_guest_instruction, GuestInstructionError, RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind,
+    RiscvCsr, RiscvDmaKind, RiscvEncodedInstruction, RiscvInstruction, RiscvLoadKind,
+    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use crate::guest_memory::GuestMemoryError;
 
@@ -288,6 +287,59 @@ impl GuestMachineState {
     }
 }
 
+struct GuestMachineStateCheckpoint {
+    pc: u64,
+    registers: [u64; GUEST_REGISTER_COUNT],
+    reservation: Option<GuestMemoryReservation>,
+    pending_dma: Option<GuestDmaPrepare>,
+    fcall_params: Option<Vec<GuestFcallParam>>,
+    fcall_results: Option<VecDeque<u64>>,
+    retired_instructions: u64,
+    dma_proof_value_flags: GuestDmaProofValueFlags,
+}
+
+impl GuestMachineStateCheckpoint {
+    fn new(state: &GuestMachineState, instruction: RiscvInstruction) -> Self {
+        let preserves_fcall_params =
+            matches!(instruction, RiscvInstruction::ZiskFcallInvoke { .. });
+        let preserves_fcall_results =
+            matches!(instruction, RiscvInstruction::ZiskFcallResult { .. })
+                || matches!(
+                    state.pending_dma,
+                    Some(GuestDmaPrepare {
+                        kind: RiscvDmaKind::Inputcpy,
+                        ..
+                    })
+                );
+
+        Self {
+            pc: state.pc,
+            registers: state.registers,
+            reservation: state.reservation,
+            pending_dma: state.pending_dma,
+            fcall_params: preserves_fcall_params.then(|| state.fcall_params.clone()),
+            fcall_results: preserves_fcall_results.then(|| state.fcall_results.clone()),
+            retired_instructions: state.retired_instructions,
+            dma_proof_value_flags: state.dma_proof_value_flags,
+        }
+    }
+
+    fn restore(self, state: &mut GuestMachineState) {
+        state.pc = self.pc;
+        state.registers = self.registers;
+        state.reservation = self.reservation;
+        state.pending_dma = self.pending_dma;
+        if let Some(fcall_params) = self.fcall_params {
+            state.fcall_params = fcall_params;
+        }
+        if let Some(fcall_results) = self.fcall_results {
+            state.fcall_results = fcall_results;
+        }
+        state.retired_instructions = self.retired_instructions;
+        state.dma_proof_value_flags = self.dma_proof_value_flags;
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GuestRegisterWrite {
     pub index: u8,
@@ -380,6 +432,19 @@ pub struct GuestMachineReport {
     pub precompile_result: Option<u64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct GuestMachinePreparedInstruction {
+    address: u64,
+    byte_len: usize,
+    instruction: RiscvInstruction,
+}
+
+impl GuestMachinePreparedInstruction {
+    pub(crate) fn instruction(self) -> RiscvInstruction {
+        self.instruction
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestMachineRunReport {
     pub executed_instructions: u64,
@@ -448,6 +513,10 @@ pub enum GuestMachineError {
     ZeroArith256Modulus {
         address: u64,
     },
+    PreparedInstructionPcMismatch {
+        expected: u64,
+        found: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -514,6 +583,10 @@ impl fmt::Display for GuestMachineError {
                 f,
                 "guest machine arith256_mod modulus is zero: address {address}"
             ),
+            Self::PreparedInstructionPcMismatch { expected, found } => write!(
+                f,
+                "guest machine prepared instruction pc mismatch: expected {expected}, found {found}"
+            ),
         }
     }
 }
@@ -548,7 +621,8 @@ impl std::error::Error for GuestMachineError {
             | Self::MissingFcallResult { .. }
             | Self::InvalidFcallResultByteCount { .. }
             | Self::NonInvertibleSecp256k1Scalar { .. }
-            | Self::ZeroArith256Modulus { .. } => None,
+            | Self::ZeroArith256Modulus { .. }
+            | Self::PreparedInstructionPcMismatch { .. } => None,
         }
     }
 }
@@ -681,32 +755,73 @@ pub fn advance_guest_machine_with_fcalls(
     advance_guest_machine_inner(memory, state, Some(handler))
 }
 
+pub(crate) fn prepare_current_guest_instruction(
+    memory: &GuestMachineMemory,
+    address: u64,
+) -> Result<GuestMachinePreparedInstruction, GuestMachineError> {
+    let (byte_len, instruction) = fetch_decode_guest_instruction(memory, address)?;
+    Ok(GuestMachinePreparedInstruction {
+        address,
+        byte_len,
+        instruction,
+    })
+}
+
+pub(crate) fn advance_guest_machine_with_prepared_fcalls(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    prepared: GuestMachinePreparedInstruction,
+) -> Result<GuestMachineReport, GuestMachineError> {
+    advance_guest_machine_prepared_inner(memory, state, Some(handler), prepared)
+}
+
 fn advance_guest_machine_inner(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
     handler: Option<&mut dyn GuestFcallHandler>,
 ) -> Result<GuestMachineReport, GuestMachineError> {
     let address = state.pc();
-    let (byte_len, instruction) = fetch_decode_guest_instruction(memory, address)?;
+    let prepared = prepare_current_guest_instruction(memory, address)?;
+    advance_guest_machine_prepared_inner(memory, state, handler, prepared)
+}
+
+fn advance_guest_machine_prepared_inner(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: Option<&mut dyn GuestFcallHandler>,
+    prepared: GuestMachinePreparedInstruction,
+) -> Result<GuestMachineReport, GuestMachineError> {
+    let address = state.pc();
+    if prepared.address != address {
+        return Err(GuestMachineError::PreparedInstructionPcMismatch {
+            expected: address,
+            found: prepared.address,
+        });
+    }
+    let byte_len = prepared.byte_len;
+    let instruction = prepared.instruction;
     let sequential_pc = address
         .checked_add(byte_len as u64)
         .ok_or(GuestMachineError::ProgramCounterOverflow { address, byte_len })?;
-    let mut next_state = state.clone();
-    next_state.set_pc(sequential_pc);
     let mut effects = GuestInstructionEffects::default();
+    let checkpoint = GuestMachineStateCheckpoint::new(state, instruction);
 
-    execute_guest_instruction(
+    state.set_pc(sequential_pc);
+    if let Err(error) = execute_guest_instruction(
         memory,
         address,
         sequential_pc,
         instruction,
-        &mut next_state,
+        state,
         &mut effects,
         handler,
-    )?;
-    next_state.retire_instruction();
-    let next_pc = next_state.pc();
-    *state = next_state;
+    ) {
+        checkpoint.restore(state);
+        return Err(error);
+    }
+    state.retire_instruction();
+    let next_pc = state.pc();
 
     Ok(GuestMachineReport {
         address,
@@ -724,15 +839,14 @@ pub(crate) fn decode_current_guest_instruction(
     memory: &GuestMachineMemory,
     address: u64,
 ) -> Result<RiscvInstruction, GuestMachineError> {
-    let (_, instruction) = fetch_decode_guest_instruction(memory, address)?;
-    Ok(instruction)
+    Ok(prepare_current_guest_instruction(memory, address)?.instruction)
 }
 
 fn fetch_decode_guest_instruction(
     memory: &GuestMachineMemory,
     address: u64,
 ) -> Result<(usize, RiscvInstruction), GuestMachineError> {
-    let fetched = fetch_guest_instruction(memory, address)?;
+    let fetched = memory.fetch_instruction(address)?;
     let byte_len = match fetched.byte_len() {
         Some(byte_len) => byte_len,
         None => {
@@ -1614,6 +1728,59 @@ fn signed_remainder_word(dividend: i32, divisor: i32) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::guest_memory::load_guest_memory_image;
+    use lzvm_artifacts::guest_image::parse_guest_image;
+
+    const TEST_ENTRY: u64 = 0x8000_0000;
+
+    fn sample_guest_image() -> Vec<u8> {
+        let mut bytes = vec![0_u8; 64];
+        bytes[0..4].copy_from_slice(b"\x7fELF");
+        bytes[4] = 2;
+        bytes[5] = 1;
+        bytes[6] = 1;
+        bytes[16..18].copy_from_slice(&2_u16.to_le_bytes());
+        bytes[18..20].copy_from_slice(&243_u16.to_le_bytes());
+        bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+        bytes[24..32].copy_from_slice(&TEST_ENTRY.to_le_bytes());
+        bytes[32..40].copy_from_slice(&64_u64.to_le_bytes());
+        bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
+        bytes
+    }
+
+    fn guest_machine_memory_with_words(words: &[u32]) -> GuestMachineMemory {
+        let mut code = Vec::with_capacity(words.len() * 4);
+        for word in words {
+            code.extend_from_slice(&word.to_le_bytes());
+        }
+        let mut header = [0_u8; 56];
+        header[0..4].copy_from_slice(&1_u32.to_le_bytes());
+        header[4..8].copy_from_slice(&5_u32.to_le_bytes());
+        header[8..16].copy_from_slice(&120_u64.to_le_bytes());
+        header[16..24].copy_from_slice(&TEST_ENTRY.to_le_bytes());
+        header[24..32].copy_from_slice(&TEST_ENTRY.to_le_bytes());
+        header[32..40].copy_from_slice(&(code.len() as u64).to_le_bytes());
+        header[40..48].copy_from_slice(&(code.len() as u64).to_le_bytes());
+        header[48..56].copy_from_slice(&0x1000_u64.to_le_bytes());
+
+        let mut image = sample_guest_image();
+        image[32..40].copy_from_slice(&64_u64.to_le_bytes());
+        image[54..56].copy_from_slice(&56_u16.to_le_bytes());
+        image[56..58].copy_from_slice(&1_u16.to_le_bytes());
+        image.extend_from_slice(&header);
+        image.extend_from_slice(&code);
+        let info = parse_guest_image(&image).expect("guest image should parse");
+        let memory_image =
+            load_guest_memory_image(&image, &info).expect("guest memory should load");
+        GuestMachineMemory::from_image(&memory_image)
+    }
+
+    fn addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
+        (((immediate as i32 as u32) & 0x0fff) << 20)
+            | (u32::from(rs1) << 15)
+            | (u32::from(rd) << 7)
+            | 0x13
+    }
 
     #[test]
     fn reads_high_counter_csr_halves() {
@@ -1628,5 +1795,48 @@ mod tests {
         ] {
             assert_eq!(read_csr(csr, retired_instructions), 3);
         }
+    }
+
+    #[test]
+    fn prepared_advance_matches_regular_advance() {
+        let mut regular_memory = guest_machine_memory_with_words(&[addi(1, 0, 7), 0x0000_0073]);
+        let mut prepared_memory = regular_memory.clone();
+        let mut regular_state = GuestMachineState::new(regular_memory.entry_address());
+        let mut prepared_state = regular_state.clone();
+
+        let expected = advance_guest_machine(&mut regular_memory, &mut regular_state)
+            .expect("regular advance should succeed");
+        let prepared = prepare_current_guest_instruction(&prepared_memory, prepared_state.pc())
+            .expect("instruction should prepare");
+        let actual = advance_guest_machine_prepared_inner(
+            &mut prepared_memory,
+            &mut prepared_state,
+            None,
+            prepared,
+        )
+        .expect("prepared advance should succeed");
+
+        assert_eq!(actual, expected);
+        assert_eq!(prepared_state, regular_state);
+        assert_eq!(prepared_memory, regular_memory);
+    }
+
+    #[test]
+    fn prepared_advance_rejects_stale_program_counter() {
+        let mut memory = guest_machine_memory_with_words(&[addi(1, 0, 7), addi(2, 0, 9)]);
+        let mut state = GuestMachineState::new(memory.entry_address());
+        let prepared = prepare_current_guest_instruction(&memory, state.pc())
+            .expect("instruction should prepare");
+        state.set_pc(TEST_ENTRY + 4);
+
+        assert_eq!(
+            advance_guest_machine_prepared_inner(&mut memory, &mut state, None, prepared),
+            Err(GuestMachineError::PreparedInstructionPcMismatch {
+                expected: TEST_ENTRY + 4,
+                found: TEST_ENTRY,
+            })
+        );
+        assert_eq!(state.register(1), Some(0));
+        assert_eq!(state.pc(), TEST_ENTRY + 4);
     }
 }

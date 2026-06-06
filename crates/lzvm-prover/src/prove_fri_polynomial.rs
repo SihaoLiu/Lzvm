@@ -22,7 +22,13 @@ use crate::fri_polynomial::{
 };
 #[cfg(feature = "cuda")]
 use crate::gpu_setup::{prepare_gpu_setup, GpuSetupError};
-use crate::witness_commitment::{extend_witness_trace_stage_values, WitnessTraceCommitmentError};
+use crate::witness_commitment::{
+    extend_witness_trace_stage_values, WitnessStageExtendedValues, WitnessTraceCommitmentError,
+};
+#[cfg(feature = "cuda")]
+use crate::witness_commitment::{
+    extend_witness_trace_stage_values_with_source_devices, WitnessStageRetainedSourceDevice,
+};
 use crate::witness_execution::ProveWitnessAuxiliaryInputSlices;
 use crate::witness_trace::WitnessTraceBuffer;
 use crate::{ProveExecutionUnitArtifacts, ProveUnitSchedule, ProveWitnessAuxiliaryInputs};
@@ -105,6 +111,28 @@ pub enum ProvePcsFriPolynomialError {
     LengthOverflow {
         unit_index: usize,
     },
+}
+
+#[derive(Default)]
+pub(crate) struct PcsFriFixedColumnsCache {
+    entries: Vec<PcsFriFixedColumnsCacheEntry>,
+}
+
+struct PcsFriFixedColumnsCacheEntry {
+    key: PcsFriFixedColumnsCacheKey,
+    material: crate::FixedColumnsMaterial,
+    #[cfg(feature = "cuda")]
+    source_device: Option<CudaDeviceBuffer>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct PcsFriFixedColumnsCacheKey {
+    path: PathBuf,
+    fixed_column_count: usize,
+    source_rows: usize,
+    source_bits: usize,
+    target_bits: usize,
+    digest: Option<[u8; 32]>,
 }
 
 impl fmt::Display for ProvePcsFriPolynomialError {
@@ -275,16 +303,93 @@ pub(crate) fn build_pcs_fri_polynomial_values_with_slices(
     auxiliary_inputs: ProveWitnessAuxiliaryInputSlices<'_>,
     xi_challenge: Ext3,
 ) -> Result<Vec<Ext3>, ProvePcsFriPolynomialError> {
+    let mut fixed_columns_cache = PcsFriFixedColumnsCache::default();
+    build_pcs_fri_polynomial_values_with_slices_and_fixed_cache(
+        ProvePcsFriPolynomialTraceInput {
+            unit_index,
+            unit,
+            plan_unit,
+            trace,
+            publics,
+            auxiliary_inputs,
+            xi_challenge,
+            #[cfg(feature = "cuda")]
+            stage_source_devices: None,
+        },
+        &mut fixed_columns_cache,
+    )
+}
+
+pub(crate) struct ProvePcsFriPolynomialTraceInput<'a> {
+    pub(crate) unit_index: usize,
+    pub(crate) unit: &'a ProveUnitSchedule,
+    pub(crate) plan_unit: &'a ProveExecutionUnitArtifacts,
+    pub(crate) trace: &'a WitnessTraceBuffer,
+    pub(crate) publics: &'a [Felt],
+    pub(crate) auxiliary_inputs: ProveWitnessAuxiliaryInputSlices<'a>,
+    pub(crate) xi_challenge: Ext3,
+    #[cfg(feature = "cuda")]
+    pub(crate) stage_source_devices: Option<&'a [WitnessStageRetainedSourceDevice]>,
+}
+
+pub(crate) fn build_pcs_fri_polynomial_values_with_slices_and_fixed_cache(
+    input: ProvePcsFriPolynomialTraceInput<'_>,
+    fixed_columns_cache: &mut PcsFriFixedColumnsCache,
+) -> Result<Vec<Ext3>, ProvePcsFriPolynomialError> {
+    #[cfg(feature = "cuda")]
+    let stage_values = match input.stage_source_devices {
+        Some(source_devices) if !source_devices.is_empty() => {
+            extend_witness_trace_stage_values_with_source_devices(
+                input.trace,
+                input.unit,
+                source_devices,
+            )
+        }
+        _ => extend_witness_trace_stage_values(input.trace, input.unit),
+    }
+    .map_err(|source| ProvePcsFriPolynomialError::StageInput {
+        unit_index: input.unit_index,
+        source,
+    })?;
+    #[cfg(not(feature = "cuda"))]
+    let stage_values =
+        extend_witness_trace_stage_values(input.trace, input.unit).map_err(|source| {
+            ProvePcsFriPolynomialError::StageInput {
+                unit_index: input.unit_index,
+                source,
+            }
+        })?;
+    build_pcs_fri_polynomial_values_from_extended_stages(&input, &stage_values, fixed_columns_cache)
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn build_pcs_fri_polynomial_values_with_slices_stage_sources_and_fixed_cache(
+    input: ProvePcsFriPolynomialTraceInput<'_>,
+    fixed_columns_cache: &mut PcsFriFixedColumnsCache,
+) -> Result<Vec<Ext3>, ProvePcsFriPolynomialError> {
+    build_pcs_fri_polynomial_values_with_slices_and_fixed_cache(input, fixed_columns_cache)
+}
+
+fn build_pcs_fri_polynomial_values_from_extended_stages(
+    input: &ProvePcsFriPolynomialTraceInput<'_>,
+    stage_values: &[WitnessStageExtendedValues],
+    fixed_columns_cache: &mut PcsFriFixedColumnsCache,
+) -> Result<Vec<Ext3>, ProvePcsFriPolynomialError> {
+    let unit_index = input.unit_index;
+    let unit = input.unit;
+    let plan_unit = input.plan_unit;
+    let publics = input.publics;
+    let auxiliary_inputs = input.auxiliary_inputs;
+    let xi_challenge = input.xi_challenge;
     let expression_id = plan_unit
         .fri_expression_id
         .ok_or(ProvePcsFriPolynomialError::MissingFriExpression { unit_index })?;
     let domain_size = usize::try_from(unit.extended_domain_size)
         .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
-    let fixed_values = read_extended_fixed_columns(unit_index, unit, plan_unit)?;
-    let stage_values = extend_witness_trace_stage_values(trace, unit)
-        .map_err(|source| ProvePcsFriPolynomialError::StageInput { unit_index, source })?;
+    let fixed_values =
+        fixed_columns_cache.read_extended_fixed_columns(unit_index, unit, plan_unit)?;
     let mut stage_columns = Vec::with_capacity(stage_values.len());
-    for stage in &stage_values {
+    for stage in stage_values {
         let stage_index = u16::try_from(stage.stage_index()).map_err(|_| {
             ProvePcsFriPolynomialError::StageIndexTooLarge {
                 unit_index,
@@ -335,36 +440,64 @@ pub(crate) fn build_pcs_fri_polynomial_values_with_slices(
     .map_err(|source| fri_error(unit_index, source))
 }
 
-fn read_extended_fixed_columns(
-    unit_index: usize,
-    unit: &ProveUnitSchedule,
-    plan_unit: &ProveExecutionUnitArtifacts,
-) -> Result<Vec<Felt>, ProvePcsFriPolynomialError> {
-    let material = load_plan_fixed_columns_material(plan_unit).map_err(|source| {
-        ProvePcsFriPolynomialError::FixedColumns {
-            unit_index,
+impl PcsFriFixedColumnsCache {
+    fn read_extended_fixed_columns(
+        &mut self,
+        unit_index: usize,
+        unit: &ProveUnitSchedule,
+        plan_unit: &ProveExecutionUnitArtifacts,
+    ) -> Result<Vec<Felt>, ProvePcsFriPolynomialError> {
+        let source_rows = usize::try_from(unit.base_domain_size)
+            .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
+        let source_bits = usize::try_from(unit.base_domain_bits)
+            .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
+        let target_bits = usize::try_from(unit.extended_domain_bits)
+            .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
+        let key = PcsFriFixedColumnsCacheKey {
             path: plan_unit.fixed_columns.clone(),
-            source: Box::new(source),
-        }
-    })?;
-    let source_rows = usize::try_from(unit.base_domain_size)
-        .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
-    validate_fixed_columns_shape(
-        &material.fixed_columns,
-        plan_unit.fixed_column_count,
-        source_rows,
-        unit_index,
-        &plan_unit.fixed_columns,
-    )?;
-    extend_row_major_columns(
-        &material.row_major_values,
-        plan_unit.fixed_column_count,
-        usize::try_from(unit.base_domain_bits)
-            .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?,
-        usize::try_from(unit.extended_domain_bits)
-            .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?,
-        unit_index,
-    )
+            fixed_column_count: plan_unit.fixed_column_count,
+            source_rows,
+            source_bits,
+            target_bits,
+            digest: plan_unit.pcs_material_fixed_column_digest,
+        };
+        let entry_index =
+            if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
+                index
+            } else {
+                let material = load_plan_fixed_columns_material(plan_unit).map_err(|source| {
+                    ProvePcsFriPolynomialError::FixedColumns {
+                        unit_index,
+                        path: plan_unit.fixed_columns.clone(),
+                        source: Box::new(source),
+                    }
+                })?;
+                validate_fixed_columns_shape(
+                    &material.fixed_columns,
+                    plan_unit.fixed_column_count,
+                    source_rows,
+                    unit_index,
+                    &plan_unit.fixed_columns,
+                )?;
+                self.entries.push(PcsFriFixedColumnsCacheEntry {
+                    key,
+                    material,
+                    #[cfg(feature = "cuda")]
+                    source_device: None,
+                });
+                self.entries.len() - 1
+            };
+        let entry = &mut self.entries[entry_index];
+        extend_row_major_columns(
+            &entry.material.row_major_values,
+            plan_unit.fixed_column_count,
+            source_bits,
+            target_bits,
+            unit_index,
+            #[cfg(feature = "cuda")]
+            Some(&mut entry.source_device),
+        )
+    }
 }
 
 fn load_plan_fixed_columns_material(
@@ -412,6 +545,7 @@ fn extend_row_major_columns(
     source_bits: usize,
     target_bits: usize,
     unit_index: usize,
+    #[cfg(feature = "cuda")] source_device: Option<&mut Option<CudaDeviceBuffer>>,
 ) -> Result<Vec<Felt>, ProvePcsFriPolynomialError> {
     if column_count == 0 {
         return Ok(Vec::new());
@@ -441,16 +575,38 @@ fn extend_row_major_columns(
             ProvePcsFriPolynomialError::FixedExtensionGpuSetup { unit_index, source }
         })?;
 
-        let source_buffer =
-            CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values)).map_err(|source| {
-                ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source }
-            })?;
+        let source_buffer_storage;
+        let source_buffer = if let Some(source_device) = source_device {
+            let expected_source_bytes = values
+                .len()
+                .checked_mul(8)
+                .ok_or(ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
+            if source_device.as_ref().map(CudaDeviceBuffer::len) != Some(expected_source_bytes) {
+                *source_device = Some(
+                    CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values)).map_err(
+                        |source| ProvePcsFriPolynomialError::FixedExtensionCuda {
+                            unit_index,
+                            source,
+                        },
+                    )?,
+                );
+            }
+            source_device
+                .as_ref()
+                .expect("fixed source device should be populated")
+        } else {
+            source_buffer_storage =
+                CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(values)).map_err(|source| {
+                    ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source }
+                })?;
+            &source_buffer_storage
+        };
         let mut output_buffer = CudaDeviceBuffer::new(out_byte_count).map_err(|source| {
             ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source }
         })?;
 
         cuda_goldilocks_coset_extend_row_major_columns_device(
-            &source_buffer,
+            source_buffer,
             &mut output_buffer,
             column_count,
             source_bits,
@@ -658,7 +814,14 @@ mod tests {
         target_bits: usize,
         unit_index: usize,
     ) -> Result<Vec<Felt>, ProvePcsFriPolynomialError> {
-        extend_row_major_columns(values, column_count, source_bits, target_bits, unit_index)
+        extend_row_major_columns(
+            values,
+            column_count,
+            source_bits,
+            target_bits,
+            unit_index,
+            None,
+        )
     }
 
     #[test]

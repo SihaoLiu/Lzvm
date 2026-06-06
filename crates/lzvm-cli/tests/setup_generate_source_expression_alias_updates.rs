@@ -124,11 +124,7 @@ fn generate_key_applies_static_while_expr_alias_updates() {
     assert_eq!(regular.constraints.entries.len(), 1);
 
     let stage_values = [1, 1, 2, 4, 3, 5].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 3,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 3, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {

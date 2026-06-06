@@ -230,6 +230,14 @@ fn evaluates_extension_regular_constraints_from_stage_and_challenges() {
         stage_index: 1,
         column_count: 3,
         values: &stage_values,
+        #[cfg(feature = "cuda")]
+        values_device: None,
+        #[cfg(feature = "cuda")]
+        values_row_stride: 3,
+        #[cfg(feature = "cuda")]
+        values_column_offset: 0,
+        #[cfg(feature = "cuda")]
+        value_count: stage_values.len(),
     }];
 
     let results = evaluate_regular_constraints(

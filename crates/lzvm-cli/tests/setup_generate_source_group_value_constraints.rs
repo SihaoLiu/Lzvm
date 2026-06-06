@@ -109,11 +109,7 @@ fn generate_key_lowers_source_air_group_value_constraints() {
     )
     .expect("regular program should parse");
     let stage_values = [7, 8].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let group_values = [Ext3::new(Felt::from_u64(7), Felt::ZERO, Felt::ZERO)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
@@ -215,11 +211,7 @@ fn generate_key_lowers_indexed_source_air_group_value_constraints() {
     )
     .expect("regular program should parse");
     let stage_values = [22, 23].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let group_values = [
         Ext3::new(Felt::from_u64(11), Felt::ZERO, Felt::ZERO),
         Ext3::new(Felt::from_u64(22), Felt::ZERO, Felt::ZERO),
@@ -389,11 +381,7 @@ fn generate_key_lowers_template_parameter_static_if_air_group_values() {
     )
     .expect("regular program should parse");
     let stage_values = [7, 8].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let group_values = [Ext3::new(Felt::from_u64(7), Felt::ZERO, Felt::ZERO)];
     let results = evaluate_regular_constraints(
         &regular.constraints,

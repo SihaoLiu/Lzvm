@@ -85,11 +85,7 @@ fn generate_key_lowers_source_fixed_row_offset_constraints() {
 
     let fixed_values = [5, 7, 11, 13].map(Felt::from_u64);
     let stage_values = [7, 11, 13, 99].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -108,11 +104,11 @@ fn generate_key_lowers_source_fixed_row_offset_constraints() {
     assert!(results[0].invalid_rows.is_empty());
 
     let invalid_stage_values = [7, 12, 13, 99].map(Felt::from_u64);
-    let invalid_stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &invalid_stage_values,
-    }];
+    let invalid_stage_columns = [RegularStageColumns::from_host_values(
+        1,
+        1,
+        &invalid_stage_values,
+    )];
     let invalid_results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {

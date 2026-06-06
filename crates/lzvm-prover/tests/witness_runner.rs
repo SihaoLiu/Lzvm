@@ -8,16 +8,16 @@ use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::setup_info::CommitmentColumn;
 use lzvm_field::{Felt, MODULUS};
 use lzvm_prover::guest_pc_trace_backend::{
-    run_guest_pc_trace_segments_with_context, GuestPcTraceBackend,
+    run_guest_pc_trace_segments_with_context, GuestPcTraceBackend, GuestPcTraceSegmentRunOutput,
 };
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::{
     load_witness_library, WitnessBackend, WitnessCallError, WitnessComputeContext,
-    WitnessTraceBuffers, WitnessTraceOutput,
+    WitnessTraceBuffers, WitnessTraceOutput, WitnessTraceProofValue, WitnessTraceUnitValue,
 };
 use lzvm_prover::witness_runner::{
     run_witness_trace, run_witness_trace_output_with_context, run_witness_trace_with_context,
-    WitnessTraceRequest, WitnessTraceRunError,
+    WitnessTraceRequest, WitnessTraceRunError, WitnessTraceRunOutput,
 };
 use lzvm_prover::witness_trace::WitnessTraceError;
 use lzvm_prover::zisk_fcalls::{
@@ -1044,7 +1044,7 @@ fn guest_pc_trace_segments_account_for_store_conditional_rows() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(segments.len(), 2);
-    let first = segments[0].output().trace();
+    let first = segments[0].trace();
     assert_eq!(
         first.value(6, 7),
         Some(Felt::from_canonical(ENTRY + 21).expect("canonical"))
@@ -1058,11 +1058,11 @@ fn guest_pc_trace_segments_account_for_store_conditional_rows() {
         Some(Felt::from_canonical(12).expect("canonical"))
     );
     assert_eq!(
-        unit_value(segments[0].output(), "segment_next_pc"),
+        unit_value(&segments[0], "segment_next_pc"),
         &[Felt::from_canonical(ENTRY + 24).expect("canonical")]
     );
     assert_eq!(
-        unit_value(segments[1].output(), "segment_initial_pc"),
+        unit_value(&segments[1], "segment_initial_pc"),
         &[Felt::from_canonical(ENTRY + 24).expect("canonical")]
     );
 }
@@ -1311,7 +1311,7 @@ fn guest_pc_trace_segments_keep_zisk_dma_prepare_lookahead() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(segments.len(), 2);
-    let first = segments[0].output().trace();
+    let first = segments[0].trace();
     assert_eq!(
         first.value(5, 2),
         Some(Felt::from_canonical(16).expect("canonical"))
@@ -1329,7 +1329,7 @@ fn guest_pc_trace_segments_keep_zisk_dma_prepare_lookahead() {
         Some(Felt::from_canonical(0xa000_0f00).expect("canonical"))
     );
 
-    let second = segments[1].output().trace();
+    let second = segments[1].trace();
     assert_eq!(
         second.value(0, 2),
         Some(Felt::from_canonical(0xa000_0010).expect("canonical"))
@@ -1343,11 +1343,11 @@ fn guest_pc_trace_segments_keep_zisk_dma_prepare_lookahead() {
         Some(Felt::from_canonical(0xd0).expect("canonical"))
     );
     assert_eq!(
-        unit_value(segments[0].output(), "segment_next_pc"),
+        unit_value(&segments[0], "segment_next_pc"),
         &[Felt::from_canonical(ENTRY + 24).expect("canonical")]
     );
     assert_eq!(
-        unit_value(segments[1].output(), "segment_initial_pc"),
+        unit_value(&segments[1], "segment_initial_pc"),
         &[Felt::from_canonical(ENTRY + 24).expect("canonical")]
     );
 }
@@ -2439,7 +2439,7 @@ fn guest_pc_trace_backend_splits_zisk_main_segments() {
     assert_eq!(segments[0].trace_instance_index(), 0);
     assert_eq!(segments[1].trace_instance_index(), 1);
 
-    let first = segments[0].output();
+    let first = &segments[0];
     assert_eq!(first.trace().row_count(), 2);
     assert_eq!(
         first.trace().value(0, 7),
@@ -2469,7 +2469,7 @@ fn guest_pc_trace_backend_splits_zisk_main_segments() {
     assert_eq!(first_last_reg_mem_step[0], Felt::from_u64(5));
     assert_eq!(first_last_reg_mem_step[1], Felt::from_u64(7));
 
-    let second = segments[1].output();
+    let second = &segments[1];
     assert_eq!(
         second.trace().value(0, 7),
         Some(Felt::from_canonical(ENTRY + 8).expect("canonical"))
@@ -2631,7 +2631,7 @@ fn guest_pc_trace_backend_adds_terminal_segment_when_final_segment_is_full() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(segments.len(), 2);
-    let first = segments[0].output();
+    let first = &segments[0];
     assert_eq!(unit_value(first, "main_last_segment"), &[Felt::ZERO]);
     assert_eq!(
         unit_value(first, "segment_next_pc"),
@@ -2642,7 +2642,7 @@ fn guest_pc_trace_backend_adds_terminal_segment_when_final_segment_is_full() {
         &[Felt::from_u64(15), Felt::ZERO]
     );
 
-    let terminal = segments[1].output();
+    let terminal = &segments[1];
     assert_eq!(segments[1].trace_instance_index(), 1);
     assert_eq!(terminal.proof_values(), first.proof_values());
     assert_eq!(
@@ -2674,10 +2674,32 @@ fn guest_pc_trace_backend_adds_terminal_segment_when_final_segment_is_full() {
     assert_eq!(last_reg_mem_step[2], Felt::from_u64(12));
 }
 
-fn unit_value<'a>(
-    output: &'a lzvm_prover::witness_runner::WitnessTraceRunOutput,
-    name: &str,
-) -> &'a [Felt] {
+trait TraceOutputValues {
+    fn unit_values(&self) -> &[WitnessTraceUnitValue];
+    fn proof_values(&self) -> &[WitnessTraceProofValue];
+}
+
+impl TraceOutputValues for WitnessTraceRunOutput {
+    fn unit_values(&self) -> &[WitnessTraceUnitValue] {
+        self.unit_values()
+    }
+
+    fn proof_values(&self) -> &[WitnessTraceProofValue] {
+        self.proof_values()
+    }
+}
+
+impl TraceOutputValues for GuestPcTraceSegmentRunOutput {
+    fn unit_values(&self) -> &[WitnessTraceUnitValue] {
+        self.unit_values()
+    }
+
+    fn proof_values(&self) -> &[WitnessTraceProofValue] {
+        self.proof_values()
+    }
+}
+
+fn unit_value<'a>(output: &'a impl TraceOutputValues, name: &str) -> &'a [Felt] {
     output
         .unit_values()
         .iter()
@@ -2686,10 +2708,7 @@ fn unit_value<'a>(
         .values()
 }
 
-fn proof_value<'a>(
-    output: &'a lzvm_prover::witness_runner::WitnessTraceRunOutput,
-    name: &str,
-) -> &'a [Felt] {
+fn proof_value<'a>(output: &'a impl TraceOutputValues, name: &str) -> &'a [Felt] {
     output
         .proof_values()
         .iter()

@@ -143,11 +143,11 @@ fn generate_key_lowers_source_bare_expression_constraints() {
     assert!(regular.hints.hints.is_empty());
 
     let valid_stage_values = [0, 1].map(Felt::from_u64);
-    let valid_stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &valid_stage_values,
-    }];
+    let valid_stage_columns = [RegularStageColumns::from_host_values(
+        1,
+        1,
+        &valid_stage_values,
+    )];
     let valid_results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -162,11 +162,11 @@ fn generate_key_lowers_source_bare_expression_constraints() {
     assert!(valid_results[0].invalid_rows.is_empty());
 
     let invalid_stage_values = [0, 2].map(Felt::from_u64);
-    let invalid_stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &invalid_stage_values,
-    }];
+    let invalid_stage_columns = [RegularStageColumns::from_host_values(
+        1,
+        1,
+        &invalid_stage_values,
+    )];
     let invalid_results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -317,11 +317,7 @@ fn generate_key_lowers_source_public_value_constraints() {
     .expect("regular program should parse");
     assert_eq!(regular.constraints.entries.len(), 1);
     let stage_values = [7, 8].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let publics = [Felt::from_u64(7)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
@@ -405,11 +401,7 @@ fn generate_key_lowers_source_public_array_element_constraints() {
     )
     .expect("regular program should parse");
     let stage_values = [7, 8].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let publics = [3, 5, 7, 11].map(Felt::from_u64);
     let results = evaluate_regular_constraints(
         &regular.constraints,
@@ -495,11 +487,7 @@ fn generate_key_lowers_source_public_scalar_after_array_constraints() {
     )
     .expect("regular program should parse");
     let stage_values = [7, 8].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let publics = [3, 5, 7].map(Felt::from_u64);
     let results = evaluate_regular_constraints(
         &regular.constraints,
@@ -590,11 +578,7 @@ fn generate_key_lowers_source_signed_literal_constraints() {
     )
     .expect("regular program should parse");
     let stage_values = [MODULUS - 1, MODULUS - 1].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -676,11 +660,7 @@ fn generate_key_lowers_source_scalar_zero_constraints() {
     .expect("regular program should parse");
     assert_eq!(regular.constraints.entries.len(), 1);
     let stage_values = [0, 1].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -776,11 +756,7 @@ fn generate_key_lowers_source_static_divisor_constraints() {
     assert_eq!(regular.constraints.entries.len(), 1);
     let fixed_values = [3, 5].map(Felt::from_u64);
     let stage_values = [6, 10].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -861,11 +837,7 @@ fn generate_key_lowers_source_static_exponent_constraints() {
     assert_eq!(regular.constraints.entries.len(), 1);
     let fixed_values = [8, 27].map(Felt::from_u64);
     let stage_values = [2, 3].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -958,11 +930,7 @@ fn generate_key_lowers_source_constant_scalar_constraints() {
     )
     .expect("regular program should parse");
     let stage_values = [7, 7].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -1042,11 +1010,7 @@ fn generate_key_lowers_source_template_constant_scalar_constraints() {
     )
     .expect("regular program should parse");
     let stage_values = [7, 7].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -1130,11 +1094,7 @@ fn generate_key_lowers_template_parameter_static_if_constraints() {
     )
     .expect("regular program should parse");
     let stage_values = [11, 11].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -1229,11 +1189,7 @@ fn generate_key_lowers_template_parameter_static_if_opening_points() {
     )
     .expect("regular program should parse");
     let stage_values = [11, 11, 11, 11].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -1323,11 +1279,7 @@ fn generate_key_lowers_source_constraint_expression_aliases() {
     assert_eq!(regular.constraints.entries[0].first_row, 0);
     assert_eq!(regular.constraints.entries[0].last_row, 3);
     let stage_values = [2, 2, 2, 2].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -1436,11 +1388,7 @@ fn generate_key_lowers_source_constraint_expression_array_aliases() {
         .map(Felt::from_u64)
         .collect::<Vec<_>>();
     let stage_values = [9, 2, 3, 4].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -1553,11 +1501,7 @@ fn generate_key_lowers_source_row_offset_expression_alias_targets() {
         .map(Felt::from_u64)
         .collect::<Vec<_>>();
     let stage_values = [9, 2, 3, 4].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -1671,11 +1615,7 @@ fn generate_key_lowers_source_row_offset_expression_targets() {
         .map(Felt::from_u64)
         .collect::<Vec<_>>();
     let stage_values = [9, 2, 3, 4].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -1787,11 +1727,7 @@ fn generate_key_lowers_source_next_row_constraints() {
         .map(Felt::from_u64)
         .collect::<Vec<_>>();
     let stage_values = [9, 2, 3, 4].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -1885,11 +1821,7 @@ fn generate_key_lowers_static_function_row_offset_constraints() {
     .expect("regular program should parse");
     let fixed_values = [2, 3, 4, 8].map(Felt::from_u64);
     let stage_values = [1, 2, 3, 4].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -1981,11 +1913,7 @@ fn generate_key_lowers_boolean_expression_row_offset_constraints() {
     .expect("regular program should parse");
     let fixed_values = [2, 3, 4, 8].map(Felt::from_u64);
     let stage_values = [1, 2, 3, 4].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
@@ -2097,11 +2025,7 @@ fn generate_key_lowers_source_prior_row_constraints() {
         .map(Felt::from_u64)
         .collect::<Vec<_>>();
     let stage_values = [9, 2, 3, 4].map(Felt::from_u64);
-    let stage_columns = [RegularStageColumns {
-        stage_index: 1,
-        column_count: 1,
-        values: &stage_values,
-    }];
+    let stage_columns = [RegularStageColumns::from_host_values(1, 1, &stage_values)];
     let results = evaluate_regular_constraints(
         &regular.constraints,
         RegularConstraintInputs {
