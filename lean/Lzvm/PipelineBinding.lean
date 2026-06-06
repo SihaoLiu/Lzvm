@@ -132,6 +132,41 @@ theorem runtime_pipeline_binding_evidence_implies_public_input_bound
       _friQueriesValid⟩
   exact publicInputBound
 
+theorem runtime_pipeline_binding_evidence_implies_core_obligations
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      system.transcriptBound publicInput proof
+        /\ system.publicInputBound publicInput proof
+        /\ system.pcsOpeningsValid publicInput proof
+        /\ system.friQueriesValid publicInput proof := by
+  intro evidence
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      _traceConstraintEvidence,
+      _queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      _openingEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid⟩
+  exact ⟨transcriptBound, publicInputBound, pcsOpeningsValid, friQueriesValid⟩
+
 def RuntimePipelineBindingCheckedAcceptance
     (_system : VerifierModel)
     (validation : RuntimePipelineBindingValidation _system)
@@ -388,21 +423,7 @@ theorem runtime_pipeline_binding_checked_acceptance_core_obligations
       proof
       False
       accepted
-  rcases sound.right with
-    ⟨_witness,
-      _trace,
-      _constraints,
-      transcriptBound,
-      publicInputBound,
-      pcsOpeningsValid,
-      friQueriesValid,
-      _traceConsistent,
-      _constraintsSatisfied,
-      _witnessMatchesTrace⟩
-  exact
-    And.intro transcriptBound
-      (And.intro publicInputBound
-        (And.intro pcsOpeningsValid friQueriesValid))
+  exact runtime_pipeline_binding_evidence_implies_core_obligations sound.left
 
 theorem runtime_pipeline_binding_checked_acceptance_soundness_obligations
     {system : VerifierModel}
