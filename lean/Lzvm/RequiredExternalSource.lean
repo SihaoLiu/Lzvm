@@ -99,4 +99,34 @@ theorem runtime_guarded_external_source_required_sound
     And.intro artifactEvidence
       (And.intro externalEvidence (And.intro pcsOpenings soundWitness))
 
+theorem runtime_guarded_external_source_required_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeGuardedExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have sound :=
+    runtime_guarded_external_source_required_sound
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  exact sound_witness_implies_verifier_core_contract sound.right.right.right
+
 end Lzvm
