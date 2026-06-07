@@ -258,6 +258,18 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_stage_tree_commit_work",
         timing.guest_stage_tree_commit_work_duration(),
     );
+    timings.record(
+        "guest_stage_tree_commit_checkpoint_work",
+        timing.guest_stage_tree_commit_checkpoint_work_duration(),
+    );
+    timings.record(
+        "guest_stage_tree_commit_root_work",
+        timing.guest_stage_tree_commit_root_work_duration(),
+    );
+    timings.record(
+        "guest_stage_tree_commit_retain_work",
+        timing.guest_stage_tree_commit_retain_work_duration(),
+    );
     for stage_timing in timing.guest_stage_timings() {
         let stage_index = stage_timing.stage_index();
         timings.record_dynamic(
@@ -351,6 +363,18 @@ pub(super) fn record_guest_pc_trace_timing(
         timings.record_dynamic(
             format!("guest_stage_{stage_index}_tree_commit_work"),
             stage_timing.tree_commit_work_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_tree_commit_checkpoint_work"),
+            stage_timing.tree_commit_checkpoint_work_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_tree_commit_root_work"),
+            stage_timing.tree_commit_root_work_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_tree_commit_retain_work"),
+            stage_timing.tree_commit_retain_work_duration(),
         );
     }
 }

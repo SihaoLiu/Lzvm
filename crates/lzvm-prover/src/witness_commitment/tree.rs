@@ -1,6 +1,9 @@
 use lzvm_field::Felt;
 
 #[cfg(feature = "cuda")]
+use std::time::{Duration, Instant};
+
+#[cfg(feature = "cuda")]
 use super::PendingCanonicalCudaDigestLevel;
 use crate::merkle_hash::{
     linear_hash, linear_hashes_from_row_major_bytes, parent_hash, parent_levels_from_digest_level,
@@ -21,6 +24,14 @@ use super::{
 
 #[cfg(feature = "cuda")]
 const RETAINED_PARENT_CHECKPOINT_MAX_STATES: usize = 524288;
+
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct WitnessStageTreeCommitTiming {
+    pub(crate) checkpoint_duration: Duration,
+    pub(crate) root_duration: Duration,
+    pub(crate) retain_duration: Duration,
+}
 
 pub fn commit_witness_stage_leaves(
     leaves: &WitnessStageLeaves,
@@ -181,6 +192,48 @@ pub(crate) fn commit_witness_stage_leaves_compact_with_leaf_hash_level(
     leaf_level: PendingCanonicalCudaDigestLevel,
     retained_source_device: Option<WitnessStageSourceDeviceView>,
 ) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    commit_witness_stage_leaves_compact_with_leaf_hash_level_inner(
+        stage,
+        source_bits,
+        target_bits,
+        arity,
+        leaf_level,
+        retained_source_device,
+        None,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn commit_witness_stage_leaves_compact_with_leaf_hash_level_timing(
+    stage: &WitnessTraceStageValues,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    leaf_level: PendingCanonicalCudaDigestLevel,
+    retained_source_device: Option<WitnessStageSourceDeviceView>,
+    timing: &mut WitnessStageTreeCommitTiming,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    commit_witness_stage_leaves_compact_with_leaf_hash_level_inner(
+        stage,
+        source_bits,
+        target_bits,
+        arity,
+        leaf_level,
+        retained_source_device,
+        Some(timing),
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn commit_witness_stage_leaves_compact_with_leaf_hash_level_inner(
+    stage: &WitnessTraceStageValues,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    leaf_level: PendingCanonicalCudaDigestLevel,
+    retained_source_device: Option<WitnessStageSourceDeviceView>,
+    mut timing: Option<&mut WitnessStageTreeCommitTiming>,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
     validate_witness_commitment_arity(arity)?;
     let source_rows = checked_domain_rows(source_bits)?;
     let extended_rows = checked_domain_rows(target_bits)?;
@@ -218,19 +271,51 @@ pub(crate) fn commit_witness_stage_leaves_compact_with_leaf_hash_level(
         .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
     let logical_tree_bytes =
         expected_witness_stage_commitment_tree_byte_count(extended_rows, column_count, arity)?;
-    let parent_checkpoint =
-        leaf_level.parent_checkpoint_level(RETAINED_PARENT_CHECKPOINT_MAX_STATES)?;
-    let root = match parent_checkpoint.as_ref() {
-        Some(checkpoint) => checkpoint.root()?,
-        None => leaf_level.root()?,
-    };
-    let leaf_level = leaf_level.into_validated_level()?;
-    let retained_parent_checkpoint_level =
-        retain_parent_checkpoint_level(parent_checkpoint, column_count);
-    let retained_leaf_digest_level = retain_leaf_digest_level(leaf_level, column_count);
-    let retained_source_device = retained_source_device
-        .filter(|view| validate_source_device_view(view, source_rows, column_count).is_ok())
-        .and_then(retain_source_device_view);
+    let parent_checkpoint = record_stage_tree_commit_duration(
+        timing
+            .as_deref_mut()
+            .map(|timing| &mut timing.checkpoint_duration),
+        || {
+            leaf_level
+                .parent_checkpoint_level(RETAINED_PARENT_CHECKPOINT_MAX_STATES)
+                .map_err(WitnessStageCommitmentError::from)
+        },
+    )?;
+    let root = record_stage_tree_commit_duration(
+        timing
+            .as_deref_mut()
+            .map(|timing| &mut timing.root_duration),
+        || {
+            match parent_checkpoint.as_ref() {
+                Some(checkpoint) => checkpoint.root(),
+                None => leaf_level.root(),
+            }
+            .map_err(WitnessStageCommitmentError::from)
+        },
+    )?;
+    let (retained_parent_checkpoint_level, retained_leaf_digest_level, retained_source_device) =
+        record_stage_tree_commit_duration(
+            timing
+                .as_deref_mut()
+                .map(|timing| &mut timing.retain_duration),
+            || {
+                let validated_level = leaf_level.into_validated_level();
+                let leaf_level = validated_level.map_err(WitnessStageCommitmentError::from)?;
+                let retained_parent_checkpoint_level =
+                    retain_parent_checkpoint_level(parent_checkpoint, column_count);
+                let retained_leaf_digest_level = retain_leaf_digest_level(leaf_level, column_count);
+                let retained_source_device = retained_source_device
+                    .filter(|view| {
+                        validate_source_device_view(view, source_rows, column_count).is_ok()
+                    })
+                    .and_then(retain_source_device_view);
+                Ok::<_, WitnessStageCommitmentError>((
+                    retained_parent_checkpoint_level,
+                    retained_leaf_digest_level,
+                    retained_source_device,
+                ))
+            },
+        )?;
     let source_values = if retained_source_device.as_ref().is_some() {
         Vec::new()
     } else {
@@ -278,6 +363,36 @@ pub(crate) fn commit_witness_stage_device_compact_with_leaf_hash_level(
     leaf_level: PendingCanonicalCudaDigestLevel,
     retained_source_device: Option<WitnessStageSourceDeviceView>,
 ) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    commit_witness_stage_device_compact_with_leaf_hash_level_inner(
+        input,
+        leaf_level,
+        retained_source_device,
+        None,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn commit_witness_stage_device_compact_with_leaf_hash_level_timing(
+    input: WitnessStageDeviceCompactCommitInput,
+    leaf_level: PendingCanonicalCudaDigestLevel,
+    retained_source_device: Option<WitnessStageSourceDeviceView>,
+    timing: &mut WitnessStageTreeCommitTiming,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    commit_witness_stage_device_compact_with_leaf_hash_level_inner(
+        input,
+        leaf_level,
+        retained_source_device,
+        Some(timing),
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn commit_witness_stage_device_compact_with_leaf_hash_level_inner(
+    input: WitnessStageDeviceCompactCommitInput,
+    leaf_level: PendingCanonicalCudaDigestLevel,
+    retained_source_device: Option<WitnessStageSourceDeviceView>,
+    mut timing: Option<&mut WitnessStageTreeCommitTiming>,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
     let WitnessStageDeviceCompactCommitInput {
         stage_index,
         source_rows,
@@ -317,26 +432,56 @@ pub(crate) fn commit_witness_stage_device_compact_with_leaf_hash_level(
         .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
     let logical_tree_bytes =
         expected_witness_stage_commitment_tree_byte_count(extended_rows, column_count, arity)?;
-    let parent_checkpoint =
-        leaf_level.parent_checkpoint_level(RETAINED_PARENT_CHECKPOINT_MAX_STATES)?;
-    let root = match parent_checkpoint.as_ref() {
-        Some(checkpoint) => checkpoint.root()?,
-        None => leaf_level.root()?,
-    };
-    let leaf_level = leaf_level.into_validated_level()?;
-    let retained_parent_checkpoint_level =
-        retain_parent_checkpoint_level(parent_checkpoint, column_count);
-    let retained_leaf_digest_level = retain_leaf_digest_level(leaf_level, column_count);
     let expected_source_bytes = expected_source_values
         .checked_mul(WORD_BYTES)
         .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
-    let retained_source_device = match retained_source_device {
-        Some(view) => {
-            validate_source_device_view(&view, source_rows, column_count)?;
-            retain_source_device_view(view)
-        }
-        None => None,
-    };
+    let parent_checkpoint = record_stage_tree_commit_duration(
+        timing
+            .as_deref_mut()
+            .map(|timing| &mut timing.checkpoint_duration),
+        || {
+            leaf_level
+                .parent_checkpoint_level(RETAINED_PARENT_CHECKPOINT_MAX_STATES)
+                .map_err(WitnessStageCommitmentError::from)
+        },
+    )?;
+    let root = record_stage_tree_commit_duration(
+        timing
+            .as_deref_mut()
+            .map(|timing| &mut timing.root_duration),
+        || {
+            match parent_checkpoint.as_ref() {
+                Some(checkpoint) => checkpoint.root(),
+                None => leaf_level.root(),
+            }
+            .map_err(WitnessStageCommitmentError::from)
+        },
+    )?;
+    let (retained_parent_checkpoint_level, retained_leaf_digest_level, retained_source_device) =
+        record_stage_tree_commit_duration(
+            timing
+                .as_deref_mut()
+                .map(|timing| &mut timing.retain_duration),
+            || {
+                let validated_level = leaf_level.into_validated_level();
+                let leaf_level = validated_level.map_err(WitnessStageCommitmentError::from)?;
+                let retained_parent_checkpoint_level =
+                    retain_parent_checkpoint_level(parent_checkpoint, column_count);
+                let retained_leaf_digest_level = retain_leaf_digest_level(leaf_level, column_count);
+                let retained_source_device = match retained_source_device {
+                    Some(view) => {
+                        validate_source_device_view(&view, source_rows, column_count)?;
+                        retain_source_device_view(view)
+                    }
+                    None => None,
+                };
+                Ok::<_, WitnessStageCommitmentError>((
+                    retained_parent_checkpoint_level,
+                    retained_leaf_digest_level,
+                    retained_source_device,
+                ))
+            },
+        )?;
     if retained_source_device.is_none() && !external_source_required {
         return Err(
             WitnessStageCommitmentError::SourceDeviceRetentionUnavailable {
@@ -365,6 +510,22 @@ pub(crate) fn commit_witness_stage_device_compact_with_leaf_hash_level(
             retained_parent_checkpoint_level,
         },
     ))
+}
+
+#[cfg(feature = "cuda")]
+fn record_stage_tree_commit_duration<T>(
+    duration: Option<&mut Duration>,
+    run: impl FnOnce() -> Result<T, WitnessStageCommitmentError>,
+) -> Result<T, WitnessStageCommitmentError> {
+    match duration {
+        Some(duration) => {
+            let started = Instant::now();
+            let result = run();
+            *duration += started.elapsed();
+            result
+        }
+        None => run(),
+    }
 }
 
 fn validate_witness_stage_leaves(

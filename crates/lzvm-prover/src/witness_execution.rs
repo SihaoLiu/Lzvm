@@ -391,6 +391,9 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_stage_leaf_coset_extend_pack_launch_count: usize,
     guest_stage_leaf_coset_extend_unpack_launch_count: usize,
     guest_stage_tree_commit_work_duration: Duration,
+    guest_stage_tree_commit_checkpoint_work_duration: Duration,
+    guest_stage_tree_commit_root_work_duration: Duration,
+    guest_stage_tree_commit_retain_work_duration: Duration,
     guest_stage_timings: Vec<ProveWitnessGuestStageTiming>,
 }
 
@@ -487,6 +490,12 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_stage_leaf_coset_extend_unpack_launch_count: trace_timing
                 .stage_leaf_coset_extend_unpack_launch_count,
             guest_stage_tree_commit_work_duration: trace_timing.stage_tree_commit_work_duration,
+            guest_stage_tree_commit_checkpoint_work_duration: trace_timing
+                .stage_tree_commit_checkpoint_work_duration,
+            guest_stage_tree_commit_root_work_duration: trace_timing
+                .stage_tree_commit_root_work_duration,
+            guest_stage_tree_commit_retain_work_duration: trace_timing
+                .stage_tree_commit_retain_work_duration,
             guest_stage_timings: trace_timing.stage_timings,
         }
     }
@@ -719,6 +728,18 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_stage_tree_commit_work_duration
     }
 
+    pub fn guest_stage_tree_commit_checkpoint_work_duration(&self) -> Duration {
+        self.guest_stage_tree_commit_checkpoint_work_duration
+    }
+
+    pub fn guest_stage_tree_commit_root_work_duration(&self) -> Duration {
+        self.guest_stage_tree_commit_root_work_duration
+    }
+
+    pub fn guest_stage_tree_commit_retain_work_duration(&self) -> Duration {
+        self.guest_stage_tree_commit_retain_work_duration
+    }
+
     pub fn guest_stage_timings(&self) -> &[ProveWitnessGuestStageTiming] {
         &self.guest_stage_timings
     }
@@ -752,6 +773,9 @@ pub struct ProveWitnessGuestStageTiming {
     leaf_coset_extend_pack_launch_count: usize,
     leaf_coset_extend_unpack_launch_count: usize,
     tree_commit_work_duration: Duration,
+    tree_commit_checkpoint_duration: Duration,
+    tree_commit_root_duration: Duration,
+    tree_commit_retain_duration: Duration,
 }
 
 impl ProveWitnessGuestStageTiming {
@@ -789,6 +813,9 @@ impl ProveWitnessGuestStageTiming {
             leaf_coset_extend_unpack_launch_count: timing_value
                 .leaf_coset_extend_unpack_launch_count(),
             tree_commit_work_duration: timing_value.tree_commit_duration(),
+            tree_commit_checkpoint_duration: timing_value.tree_commit_checkpoint_duration(),
+            tree_commit_root_duration: timing_value.tree_commit_root_duration(),
+            tree_commit_retain_duration: timing_value.tree_commit_retain_duration(),
         }
     }
 
@@ -824,6 +851,9 @@ impl ProveWitnessGuestStageTiming {
         self.leaf_coset_extend_pack_launch_count += other.leaf_coset_extend_pack_launch_count;
         self.leaf_coset_extend_unpack_launch_count += other.leaf_coset_extend_unpack_launch_count;
         self.tree_commit_work_duration += other.tree_commit_work_duration;
+        self.tree_commit_checkpoint_duration += other.tree_commit_checkpoint_duration;
+        self.tree_commit_root_duration += other.tree_commit_root_duration;
+        self.tree_commit_retain_duration += other.tree_commit_retain_duration;
     }
 
     pub fn stage_index(&self) -> usize {
@@ -929,6 +959,18 @@ impl ProveWitnessGuestStageTiming {
     pub fn tree_commit_work_duration(&self) -> Duration {
         self.tree_commit_work_duration
     }
+
+    pub fn tree_commit_checkpoint_work_duration(&self) -> Duration {
+        self.tree_commit_checkpoint_duration
+    }
+
+    pub fn tree_commit_root_work_duration(&self) -> Duration {
+        self.tree_commit_root_duration
+    }
+
+    pub fn tree_commit_retain_work_duration(&self) -> Duration {
+        self.tree_commit_retain_duration
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -977,6 +1019,9 @@ struct ProveWitnessTraceTimingAccumulator {
     stage_leaf_coset_extend_pack_launch_count: usize,
     stage_leaf_coset_extend_unpack_launch_count: usize,
     stage_tree_commit_work_duration: Duration,
+    stage_tree_commit_checkpoint_work_duration: Duration,
+    stage_tree_commit_root_work_duration: Duration,
+    stage_tree_commit_retain_work_duration: Duration,
     stage_timings: Vec<ProveWitnessGuestStageTiming>,
 }
 
@@ -1047,6 +1092,10 @@ impl ProveWitnessTraceTimingAccumulator {
         self.stage_leaf_coset_extend_unpack_launch_count +=
             other.stage_leaf_coset_extend_unpack_launch_count;
         self.stage_tree_commit_work_duration += other.stage_tree_commit_work_duration;
+        self.stage_tree_commit_checkpoint_work_duration +=
+            other.stage_tree_commit_checkpoint_work_duration;
+        self.stage_tree_commit_root_work_duration += other.stage_tree_commit_root_work_duration;
+        self.stage_tree_commit_retain_work_duration += other.stage_tree_commit_retain_work_duration;
         for stage_timing in other.stage_timings {
             self.accumulate_stage_timing(stage_timing);
         }
@@ -3403,6 +3452,10 @@ fn run_prove_witness_commitments_from_trace_inner(
         timing.stage_leaf_coset_extend_unpack_launch_count +=
             stage_timing.leaf_coset_extend_unpack_launch_count();
         timing.stage_tree_commit_work_duration += stage_timing.tree_commit_duration();
+        timing.stage_tree_commit_checkpoint_work_duration +=
+            stage_timing.tree_commit_checkpoint_duration();
+        timing.stage_tree_commit_root_work_duration += stage_timing.tree_commit_root_duration();
+        timing.stage_tree_commit_retain_work_duration += stage_timing.tree_commit_retain_duration();
         for stage_timing in stage_timings {
             timing.accumulate_indexed_stage_timing(stage_timing);
         }

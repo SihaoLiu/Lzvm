@@ -23,12 +23,14 @@ use super::commit_witness_stage_leaves_owned;
 #[cfg(feature = "cuda")]
 use super::{
     commit_witness_stage_device_compact_with_leaf_hash_level,
+    commit_witness_stage_device_compact_with_leaf_hash_level_timing,
     commit_witness_stage_leaves_compact_with_leaf_hash_level,
+    commit_witness_stage_leaves_compact_with_leaf_hash_level_timing,
     compact_witness_stage_leaf_hash_level_from_source_device_view_timing,
     compact_witness_stage_leaf_hash_level_with_source_device_timing,
     extend_witness_stage_leaves_from_source_device_view, retain_source_device_view,
     RetainedCudaSourceDevice, WitnessStageCommitment, WitnessStageDeviceCompactCommitInput,
-    WitnessStageSourceDeviceView, WORD_BYTES,
+    WitnessStageSourceDeviceView, WitnessStageTreeCommitTiming, WORD_BYTES,
 };
 use super::{
     decode_witness_stage_leaf_values, extend_witness_stage_leaves, WitnessStageExtendedValues,
@@ -43,6 +45,9 @@ pub(crate) struct WitnessStageCommitTiming {
     leaf_extend_duration: Duration,
     leaf_extend_timing: WitnessStageLeafExtendTiming,
     tree_commit_duration: Duration,
+    tree_commit_checkpoint_duration: Duration,
+    tree_commit_root_duration: Duration,
+    tree_commit_retain_duration: Duration,
 }
 
 #[cfg(feature = "cuda")]
@@ -256,14 +261,36 @@ impl WitnessStageCommitTiming {
         self.leaf_extend_duration += other.leaf_extend_duration;
         self.leaf_extend_timing.accumulate(other.leaf_extend_timing);
         self.tree_commit_duration += other.tree_commit_duration;
+        self.tree_commit_checkpoint_duration += other.tree_commit_checkpoint_duration;
+        self.tree_commit_root_duration += other.tree_commit_root_duration;
+        self.tree_commit_retain_duration += other.tree_commit_retain_duration;
     }
 
     pub(crate) fn leaf_extend_duration(&self) -> Duration {
         self.leaf_extend_duration
     }
 
+    #[cfg(feature = "cuda")]
+    pub(crate) fn accumulate_tree_commit_timing(&mut self, timing: WitnessStageTreeCommitTiming) {
+        self.tree_commit_checkpoint_duration += timing.checkpoint_duration;
+        self.tree_commit_root_duration += timing.root_duration;
+        self.tree_commit_retain_duration += timing.retain_duration;
+    }
+
     pub(crate) fn tree_commit_duration(&self) -> Duration {
         self.tree_commit_duration
+    }
+
+    pub(crate) fn tree_commit_checkpoint_duration(&self) -> Duration {
+        self.tree_commit_checkpoint_duration
+    }
+
+    pub(crate) fn tree_commit_root_duration(&self) -> Duration {
+        self.tree_commit_root_duration
+    }
+
+    pub(crate) fn tree_commit_retain_duration(&self) -> Duration {
+        self.tree_commit_retain_duration
     }
 
     pub(crate) fn leaf_setup_duration(&self) -> Duration {
@@ -1050,27 +1077,38 @@ fn commit_extended_witness_stage_source_device(
             &mut leaf_extend_timing,
         )?
     };
-    record_optional_duration(
-        timing
-            .as_mut()
-            .map(|timing| &mut timing.tree_commit_duration),
-        || {
-            commit_witness_stage_device_compact_with_leaf_hash_level(
-                WitnessStageDeviceCompactCommitInput {
-                    stage_index: source_device.stage_index(),
-                    source_rows: source_device.row_count(),
-                    column_count: source_device.column_count(),
-                    source_bits: params.source_bits,
-                    target_bits: params.target_bits,
-                    arity: params.arity,
-                    external_source_required,
-                },
-                leaf_level,
-                retained_source_device,
-            )
-            .map_err(WitnessTraceCommitmentError::from)
-        },
-    )
+    let input = WitnessStageDeviceCompactCommitInput {
+        stage_index: source_device.stage_index(),
+        source_rows: source_device.row_count(),
+        column_count: source_device.column_count(),
+        source_bits: params.source_bits,
+        target_bits: params.target_bits,
+        arity: params.arity,
+        external_source_required,
+    };
+    match timing {
+        Some(timing) => {
+            let mut tree_timing = WitnessStageTreeCommitTiming::default();
+            let commitment =
+                record_optional_duration(Some(&mut timing.tree_commit_duration), || {
+                    commit_witness_stage_device_compact_with_leaf_hash_level_timing(
+                        input,
+                        leaf_level,
+                        retained_source_device,
+                        &mut tree_timing,
+                    )
+                    .map_err(WitnessTraceCommitmentError::from)
+                })?;
+            timing.accumulate_tree_commit_timing(tree_timing);
+            Ok(commitment)
+        }
+        None => commit_witness_stage_device_compact_with_leaf_hash_level(
+            input,
+            leaf_level,
+            retained_source_device,
+        )
+        .map_err(WitnessTraceCommitmentError::from),
+    }
 }
 
 fn commit_extended_witness_stage(
@@ -1132,22 +1170,35 @@ fn commit_extended_witness_stage(
                 )?
             }
         };
-        record_optional_duration(
-            timing
-                .as_mut()
-                .map(|timing| &mut timing.tree_commit_duration),
-            || {
-                commit_witness_stage_leaves_compact_with_leaf_hash_level(
-                    stage,
-                    params.source_bits,
-                    params.target_bits,
-                    params.arity,
-                    leaf_level,
-                    source_device.map(WitnessStageSourceDevice::source_view),
-                )
-                .map_err(WitnessTraceCommitmentError::from)
-            },
-        )
+        match timing {
+            Some(timing) => {
+                let mut tree_timing = WitnessStageTreeCommitTiming::default();
+                let commitment =
+                    record_optional_duration(Some(&mut timing.tree_commit_duration), || {
+                        commit_witness_stage_leaves_compact_with_leaf_hash_level_timing(
+                            stage,
+                            params.source_bits,
+                            params.target_bits,
+                            params.arity,
+                            leaf_level,
+                            source_device.map(WitnessStageSourceDevice::source_view),
+                            &mut tree_timing,
+                        )
+                        .map_err(WitnessTraceCommitmentError::from)
+                    })?;
+                timing.accumulate_tree_commit_timing(tree_timing);
+                Ok(commitment)
+            }
+            None => commit_witness_stage_leaves_compact_with_leaf_hash_level(
+                stage,
+                params.source_bits,
+                params.target_bits,
+                params.arity,
+                leaf_level,
+                source_device.map(WitnessStageSourceDevice::source_view),
+            )
+            .map_err(WitnessTraceCommitmentError::from),
+        }
     }
 
     #[cfg(not(feature = "cuda"))]

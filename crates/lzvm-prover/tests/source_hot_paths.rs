@@ -356,7 +356,7 @@ fn cuda_compact_witness_opening_uses_direct_row_extension() {
     );
 
     assert!(
-        body.contains("cuda_goldilocks_coset_extend_row_major_columns_row_device"),
+        body.contains("cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device"),
         "CUDA compact witness opening should extend only the requested row on device"
     );
     assert!(
@@ -805,7 +805,8 @@ fn cuda_compact_opening_reuses_retained_stage_source_device_buffer() {
         "compact CUDA openings should expose a source device view hook for trace-output retained buffers"
     );
     assert!(
-        values_source.contains("cuda_goldilocks_coset_extend_row_major_columns_strided_row_device"),
+        values_source
+            .contains("cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device"),
         "compact CUDA openings should extend only the requested row from retained strided source buffers"
     );
     assert!(
@@ -999,6 +1000,11 @@ fn cuda_guest_pc_device_material_pipeline_is_default_enabled() {
         "fn guest_pc_trace_less_commitment_input_enabled",
         "#[cfg(not(feature = \"cuda\"))]",
     );
+    let env_flag_body = function_body(
+        &backend_source,
+        "fn env_flag_enabled",
+        "pub(crate) struct GuestPcTraceStreamResult",
+    );
 
     for body in [
         device_source_body,
@@ -1006,11 +1012,16 @@ fn cuda_guest_pc_device_material_pipeline_is_default_enabled() {
         commitment_input_body,
     ] {
         assert!(
-            body.contains(".unwrap_or(true)"),
+            body.contains(".unwrap_or(true)")
+                || (body.contains("env_flag_enabled") && body.contains(", true)")),
             "CUDA guest PC device-material path should be on by default"
         );
         assert!(
-            body.contains("\"0\"") && body.contains("\"false\"") && body.contains("\"no\""),
+            (body.contains("\"0\"") && body.contains("\"false\"") && body.contains("\"no\""))
+                || (body.contains("env_flag_enabled")
+                    && env_flag_body.contains("\"0\"")
+                    && env_flag_body.contains("\"false\"")
+                    && env_flag_body.contains("\"no\"")),
             "CUDA guest PC device-material path should keep explicit off values"
         );
     }
@@ -2416,6 +2427,22 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         "trace timing accumulation should retain descriptor upload byte and row counts"
     );
 
+    let stage_timing_body = function_body(
+        &execution_source,
+        "pub struct ProveWitnessGuestStageTiming",
+        "impl ProveWitnessGuestStageTiming",
+    );
+    for field in [
+        "tree_commit_checkpoint_duration",
+        "tree_commit_root_duration",
+        "tree_commit_retain_duration",
+    ] {
+        assert!(
+            stage_timing_body.contains(field),
+            "guest stage timing should carry {field}"
+        );
+    }
+
     for (line_name, accessor) in [
         ("\"guest_segment_count\"", "segment_count()"),
         (
@@ -2494,6 +2521,18 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "\"guest_stage_leaf_coset_extend_unpack_launches\"",
             "guest_stage_leaf_coset_extend_unpack_launch_count()",
         ),
+        (
+            "\"guest_stage_tree_commit_checkpoint_work\"",
+            "guest_stage_tree_commit_checkpoint_work_duration()",
+        ),
+        (
+            "\"guest_stage_tree_commit_root_work\"",
+            "guest_stage_tree_commit_root_work_duration()",
+        ),
+        (
+            "\"guest_stage_tree_commit_retain_work\"",
+            "guest_stage_tree_commit_retain_work_duration()",
+        ),
     ] {
         assert!(
             cli_source.contains(line_name) && cli_source.contains(accessor),
@@ -2529,6 +2568,18 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "guest_stage_{stage_index}_leaf_coset_extend_unpack_launches",
             "leaf_coset_extend_unpack_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_tree_commit_checkpoint_work",
+            "tree_commit_checkpoint_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_tree_commit_root_work",
+            "tree_commit_root_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_tree_commit_retain_work",
+            "tree_commit_retain_work_duration()",
         ),
     ] {
         assert!(
