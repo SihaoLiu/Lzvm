@@ -70,6 +70,15 @@ pub(crate) struct CudaMerkleOpeningPath {
 }
 
 #[cfg(feature = "cuda")]
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) struct CudaDigestCheckpointLevel {
+    level: CudaDigestLevel,
+    source_state_count: usize,
+    folded_level_count: usize,
+}
+
+#[cfg(feature = "cuda")]
 impl CudaDigestLevel {
     fn new(
         digests: CudaDeviceBuffer,
@@ -144,6 +153,28 @@ impl CudaDigestLevel {
     }
 
     #[allow(dead_code)]
+    pub(crate) fn into_parent_checkpoint_level(
+        self,
+        max_state_count: usize,
+    ) -> Result<CudaDigestCheckpointLevel, MerkleHashError> {
+        if self.state_count == 0 || max_state_count == 0 {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let source_state_count = self.state_count;
+        let mut level = self;
+        let mut folded_level_count = 0;
+        while level.state_count() > max_state_count && level.state_count() > 1 {
+            level = level.parent_level()?;
+            folded_level_count += 1;
+        }
+        Ok(CudaDigestCheckpointLevel {
+            level,
+            source_state_count,
+            folded_level_count,
+        })
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn selected_parent(
         &self,
         parent_index: usize,
@@ -206,6 +237,34 @@ impl CudaDigestLevel {
             return Err(MerkleHashError::LengthOverflow);
         }
         Ok(CudaMerkleOpeningPath { root, siblings })
+    }
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+impl CudaDigestCheckpointLevel {
+    pub(crate) fn source_state_count(&self) -> usize {
+        self.source_state_count
+    }
+
+    pub(crate) fn folded_level_count(&self) -> usize {
+        self.folded_level_count
+    }
+
+    pub(crate) fn state_count(&self) -> usize {
+        self.level.state_count()
+    }
+
+    pub(crate) fn arity(&self) -> usize {
+        self.level.arity()
+    }
+
+    pub(crate) fn to_digests(&self) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+        self.level.to_digests()
+    }
+
+    pub(crate) fn root(&self) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
+        self.level.root()
     }
 }
 
@@ -1459,6 +1518,44 @@ mod tests {
         assert_eq!(arity4_parent.arity(), 4);
         assert_eq!(arity4_parent.to_digests().unwrap(), arity4_expected);
         assert_eq!(arity4_parent.root().unwrap(), arity4_level.root().unwrap());
+    }
+
+    #[test]
+    fn cuda_digest_checkpoint_level_stops_at_parent_threshold() {
+        let level = (0..19)
+            .map(|index| {
+                digest([
+                    100 + index * 4,
+                    101 + index * 4,
+                    102 + index * 4,
+                    103 + index * 4,
+                ])
+            })
+            .collect::<Vec<_>>();
+        let words = digest_words(&level);
+        let buffer = CudaDeviceBuffer::from_u64_words(&words).expect("digests should upload");
+        let digest_level = CudaDigestLevel::new(
+            buffer,
+            level.len(),
+            4,
+            cuda_poseidon2_width16_merkle_digest_root_device,
+        );
+        let expected_levels = parent_levels_from_digest_level_on_cpu(&level, 4)
+            .expect("cpu parent levels should hash");
+
+        let checkpoint = digest_level
+            .into_parent_checkpoint_level(2)
+            .expect("checkpoint level should hash");
+
+        assert_eq!(checkpoint.source_state_count(), level.len());
+        assert_eq!(checkpoint.folded_level_count(), 2);
+        assert_eq!(checkpoint.state_count(), 2);
+        assert_eq!(checkpoint.arity(), 4);
+        assert_eq!(checkpoint.to_digests().unwrap(), expected_levels[1].parents);
+        assert_eq!(
+            checkpoint.root().unwrap(),
+            root_from_digest_level_on_cuda(&level, 4).unwrap()
+        );
     }
 
     #[test]
