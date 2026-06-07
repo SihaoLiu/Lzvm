@@ -24,6 +24,11 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsEvidence")
             && lean_source
                 .contains("runtime_retained_leaf_digest_opening_checked_acceptance_evidence")
+            && lean_source
+                .contains("runtime_retained_leaf_digest_opening_evidence_implies_digest_contract")
+            && lean_source.contains(
+                "runtime_retained_leaf_digest_opening_checked_acceptance_digest_contract"
+            )
             && lean_source.contains("runtime_retained_leaf_digest_opening_checked_acceptance_sound")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean retained leaf digest opening binding should expose source rows, Merkle path, root equality, and soundness evidence"

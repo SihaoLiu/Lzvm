@@ -201,6 +201,39 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_evidence
                 (And.intro retainedPerRow
                   (And.intro witnessSegments witnessOpeningsBound)))))))
 
+theorem runtime_retained_leaf_digest_opening_evidence_implies_digest_contract
+    {system : VerifierModel}
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedLeafDigestOpeningEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        validation.retainedLeafDigestLevelAvailable artifact publicInput proof
+          /\ validation.retainedLeafDigestPathBound artifact publicInput proof
+          /\ validation.retainedLeafDigestRootMatchesExpectedRoot artifact publicInput proof
+          /\ validation.retainedLeafDigestRowsFromSource artifact publicInput proof
+          /\ validation.retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  have levelAvailable :=
+    evidence.right.left
+  have pathBound :=
+    evidence.right.right.left
+  have rootMatches :=
+    evidence.right.right.right.left
+  have rowsFromSource :=
+    evidence.right.right.right.right.left
+  have rowsBoundToQueryPlan :=
+    evidence.right.right.right.right.right.left
+  exact
+    And.intro levelAvailable
+      (And.intro pathBound
+        (And.intro rootMatches
+          (And.intro rowsFromSource rowsBoundToQueryPlan)))
+
 theorem runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_contract
     {system : VerifierModel}
     (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
@@ -290,6 +323,58 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_retained_rows_co
       proof
       False
       evidence
+
+theorem runtime_retained_leaf_digest_opening_checked_acceptance_digest_contract
+    {system : VerifierModel}
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedLeafDigestLevelAvailable artifact publicInput proof
+          /\ validation.retainedLeafDigestPathBound artifact publicInput proof
+          /\ validation.retainedLeafDigestRootMatchesExpectedRoot artifact publicInput proof
+          /\ validation.retainedLeafDigestRowsFromSource artifact publicInput proof
+          /\ validation.retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have levelAvailable :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesLevelAvailable
+      artifact
+      publicInput
+      proof
+      accepted
+  have pathBound :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesPathBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have rootMatches :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRootMatchesExpectedRoot
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsFromSource :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRowsFromSource
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsBoundToQueryPlan :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRowsBoundToQueryPlan
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro levelAvailable
+      (And.intro pathBound
+        (And.intro rootMatches
+          (And.intro rowsFromSource rowsBoundToQueryPlan)))
 
 theorem runtime_retained_leaf_digest_opening_checked_acceptance_sound
     {system : VerifierModel}
