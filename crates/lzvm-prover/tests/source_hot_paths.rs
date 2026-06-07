@@ -3155,6 +3155,9 @@ fn lean_trace_constraint_artifact_binding_tracks_runtime_preflight_checks() {
     let lean_path = crate_root.join("../../lean/Lzvm/TraceConstraintArtifactBinding.lean");
     let lean_source = std::fs::read_to_string(&lean_path)
         .expect("Lean trace artifact binding source should read");
+    let lean_validation_path = crate_root.join("../../lean/Lzvm/TraceConstraintValidation.lean");
+    let lean_validation_source = std::fs::read_to_string(&lean_validation_path)
+        .expect("Lean trace constraint validation source should read");
     let lean_root_path = crate_root.join("../../lean/Lzvm.lean");
     let lean_root_source =
         std::fs::read_to_string(&lean_root_path).expect("top-level Lean source should read");
@@ -3176,6 +3179,15 @@ fn lean_trace_constraint_artifact_binding_tracks_runtime_preflight_checks() {
         lean_source.contains("RuntimeTraceConstraintValidation")
             && lean_source.contains("runtime_trace_constraint_checked_acceptance_sound"),
         "Lean trace artifact binding should compose with the trace constraint soundness model"
+    );
+    assert!(
+        lean_validation_source.contains("def RuntimeTraceConstraintBackendContract")
+            && lean_validation_source.contains("RuntimeTraceConstraintBackendContract")
+            && lean_validation_source
+                .contains("runtime_trace_constraint_evidence_implies_backend_contract")
+            && lean_validation_source
+                .contains("runtime_trace_constraint_checked_acceptance_backend_contract"),
+        "Lean trace constraint validation should expose regular constraint backend conformance as a reusable contract"
     );
     assert!(
         preflight_source.contains("validate_trace_constraint_witness_commitments")
