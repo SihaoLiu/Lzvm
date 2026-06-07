@@ -178,6 +178,79 @@ theorem runtime_batch_witness_opening_rows_evidence_implies_opening_evidence
   intro artifact publicInput proof requiresExternalSource evidence
   exact evidence.right.left
 
+theorem runtime_batch_witness_opening_rows_checked_acceptance_opening_segment_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimeBatchWitnessOpeningRowsCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningSegmentBindingEvidence
+          system
+          validation.openingSegmentValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have evidence :=
+    runtime_batch_witness_opening_rows_checked_acceptance_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    runtime_batch_witness_opening_rows_evidence_implies_opening_segment_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+
+theorem runtime_batch_witness_opening_rows_checked_acceptance_opening_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeBatchWitnessOpeningRowsCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningEvidence
+          system
+          validation.openingSegmentValidation.openingValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have evidence :=
+    runtime_batch_witness_opening_rows_checked_acceptance_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    runtime_batch_witness_opening_rows_evidence_implies_opening_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+
 theorem runtime_batch_witness_opening_rows_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
