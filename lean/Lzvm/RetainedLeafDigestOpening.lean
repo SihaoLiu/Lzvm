@@ -254,6 +254,27 @@ theorem runtime_retained_leaf_digest_opening_evidence_implies_digest_contract
   intro artifact publicInput proof requiresExternalSource evidence
   exact evidence.right.left
 
+theorem runtime_retained_leaf_digest_opening_evidence_implies_batch_rows_evidence
+    {system : VerifierModel}
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedLeafDigestOpeningEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeBatchWitnessOpeningRowsEvidence
+          system
+          validation.batchRowsValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact evidence.left
+
 theorem runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_contract
     {system : VerifierModel}
     (validation : RuntimeRetainedLeafDigestOpeningValidation system) :

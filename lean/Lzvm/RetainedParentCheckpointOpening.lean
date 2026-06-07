@@ -287,6 +287,27 @@ theorem runtime_retained_parent_checkpoint_opening_evidence_implies_digest_contr
   intro artifact publicInput proof requiresExternalSource evidence
   exact evidence.right.left
 
+theorem runtime_retained_parent_checkpoint_opening_evidence_implies_batch_rows_evidence
+    {system : VerifierModel}
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedParentCheckpointOpeningEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeBatchWitnessOpeningRowsEvidence
+          system
+          validation.batchRowsValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact evidence.left
+
 theorem runtime_retained_parent_checkpoint_opening_evidence_implies_retained_rows_contract
     {system : VerifierModel}
     (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
