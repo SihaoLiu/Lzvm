@@ -137,6 +137,47 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_evidence
           (And.intro perRowWitnessOpeningRows
             (And.intro witnessOpeningSegments witnessOpeningsBound))))
 
+theorem runtime_batch_witness_opening_rows_evidence_implies_opening_segment_evidence
+    {system : VerifierModel}
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeBatchWitnessOpeningRowsEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeOpeningSegmentBindingEvidence
+          system
+          validation.openingSegmentValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact evidence.left
+
+theorem runtime_batch_witness_opening_rows_evidence_implies_opening_evidence
+    {system : VerifierModel}
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeBatchWitnessOpeningRowsEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeOpeningEvidence
+          system
+          validation.openingSegmentValidation.openingValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact evidence.right.left
+
 theorem runtime_batch_witness_opening_rows_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
