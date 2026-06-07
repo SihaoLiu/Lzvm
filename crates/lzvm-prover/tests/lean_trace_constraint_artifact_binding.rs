@@ -1,0 +1,36 @@
+use std::path::Path;
+
+#[path = "support/lean_binding.rs"]
+mod lean_binding;
+
+#[test]
+fn lean_trace_constraint_artifact_binding_exports_core_contract_projection() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_path = crate_root.join("../../lean/Lzvm/TraceConstraintArtifactBinding.lean");
+    let lean_source = std::fs::read_to_string(&lean_path)
+        .expect("Lean trace constraint artifact binding source should read");
+    let top_level_path = crate_root.join("../../lean/Lzvm.lean");
+    let top_level_source =
+        std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
+
+    assert!(
+        top_level_source.contains("import Lzvm.TraceConstraintArtifactBinding"),
+        "top-level Lean module should import trace constraint artifact binding"
+    );
+    assert!(
+        lean_source.contains("RuntimeTraceConstraintArtifactBindingValidation")
+            && lean_source.contains("RuntimeTraceConstraintPreflightBindingEvidence")
+            && lean_source.contains("RuntimeTraceConstraintEvidence")
+            && lean_source.contains("RuntimeTraceConstraintCheckedAcceptance")
+            && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
+            && lean_source.contains("SoundWitness system publicInput proof"),
+        "Lean trace constraint artifact binding should expose preflight evidence and verifier core clauses"
+    );
+    lean_binding::assert_theorem_declarations(
+        &lean_source,
+        &[
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_sound",
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract",
+        ],
+    );
+}
