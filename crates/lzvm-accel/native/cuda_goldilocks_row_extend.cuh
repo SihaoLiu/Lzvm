@@ -258,6 +258,17 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_rows_device(
     return lzvm_cuda_synchronize();
 }
 
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device(
+    const uint64_t* values,
+    const uint64_t* weights,
+    uint64_t* out,
+    size_t source_len,
+    size_t column_count,
+    size_t target_row_count) {
+    return lzvm_cuda_goldilocks_coset_extend_row_major_columns_rows_device(
+        values, weights, out, source_len, column_count, target_row_count);
+}
+
 extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_row_device(
     const uint64_t* values,
     const uint64_t* weights,
@@ -291,6 +302,20 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_row_d
         partials.data(), out, chunk_count, column_count);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
     return lzvm_cuda_synchronize();
+}
+
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device(
+    const uint64_t* values,
+    const uint64_t* weights,
+    uint64_t* out,
+    size_t source_len,
+    size_t source_row_stride,
+    size_t column_offset,
+    size_t column_count,
+    size_t target_row_count) {
+    return lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_rows_device(
+        values, weights, out, source_len, source_row_stride, column_offset, column_count,
+        target_row_count);
 }
 
 extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_rows_device(

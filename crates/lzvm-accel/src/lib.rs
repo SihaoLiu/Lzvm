@@ -11,6 +11,8 @@ mod cuda_device;
 #[cfg(feature = "cuda")]
 mod cuda_regular_constraints;
 #[cfg(feature = "cuda")]
+mod cuda_row_selected;
+#[cfg(feature = "cuda")]
 mod cuda_setup;
 #[cfg(feature = "cuda")]
 pub use cuda_buffer::CudaDeviceBuffer;
@@ -25,6 +27,11 @@ pub use cuda_device::{cuda_memory_info, CudaMemoryInfo};
 pub use cuda_regular_constraints::{
     cuda_regular_constraints_base, CudaRegularConstraintEntry, CudaRegularConstraintInputs,
     CudaRegularConstraintResult, CudaRegularStage,
+};
+#[cfg(feature = "cuda")]
+pub use cuda_row_selected::{
+    cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device,
+    cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device,
 };
 #[cfg(feature = "cuda")]
 pub use cuda_setup::cuda_setup_init;
@@ -505,12 +512,12 @@ fn pow_mod(mut base: u64, mut exponent: u64) -> u64 {
 }
 
 #[cfg(feature = "cuda")]
-fn ensure_cuda_setup(max_bits_ext: usize) -> Result<(), AccelError> {
+pub(crate) fn ensure_cuda_setup(max_bits_ext: usize) -> Result<(), AccelError> {
     cuda_setup_init(max_bits_ext)
 }
 
 #[cfg(feature = "cuda")]
-fn cuda_status(code: i32) -> Result<(), AccelError> {
+pub(crate) fn cuda_status(code: i32) -> Result<(), AccelError> {
     if code == 0 {
         Ok(())
     } else {
@@ -527,7 +534,7 @@ fn u64_word_byte_len(word_count: usize) -> Result<usize, AccelError> {
 }
 
 #[cfg(feature = "cuda")]
-fn coset_extend_domain(
+pub(crate) fn coset_extend_domain(
     len: usize,
     source_bits: usize,
     target_bits: usize,
@@ -577,7 +584,7 @@ fn coset_extend_domain(
 }
 
 #[cfg(feature = "cuda")]
-fn coset_extend_row_weights(
+pub(crate) fn coset_extend_row_weights(
     source_len: usize,
     target_len: usize,
     source_root: u64,
