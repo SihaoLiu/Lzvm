@@ -22,8 +22,12 @@ fn lean_batch_opening_binding_tracks_runtime_batch_helpers() {
             && lean_source
                 .contains("runtime_batch_witness_opening_rows_checked_acceptance_evidence")
             && lean_source.contains("runtime_batch_witness_opening_rows_checked_acceptance_sound")
+            && lean_source.contains(
+                "runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract"
+            )
             && lean_source.contains("RuntimeOpeningSegmentBindingEvidence")
             && lean_source.contains("RuntimeOpeningEvidence")
+            && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean batch opening binding should expose per-row batch opening soundness evidence"
     );

@@ -183,4 +183,28 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_sound
       segmentAccepted
   exact And.intro evidence segmentSound.right.right
 
+theorem runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system) :
+    forall artifact publicInput proof,
+      RuntimeBatchWitnessOpeningRowsCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_batch_witness_opening_rows_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  exact sound_witness_implies_verifier_core_contract sound.right
+
 end Lzvm
