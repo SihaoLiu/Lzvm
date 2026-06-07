@@ -1,5 +1,8 @@
 use std::path::Path;
 
+#[path = "support/lean_binding.rs"]
+mod lean_binding;
+
 #[test]
 fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -27,42 +30,34 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let runtime_soundness_source = std::fs::read_to_string(&runtime_soundness_path)
         .expect("Lean runtime soundness source should read");
 
+    lean_binding::assert_theorem_declarations(
+        &lean_source,
+        &[
+            "runtime_pipeline_binding_required_external_source_sound",
+            "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
+            "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
+            "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
+            "runtime_pipeline_binding_checked_acceptance_opening_segment_evidence",
+            "runtime_pipeline_binding_checked_acceptance_opening_segment_bound_contract",
+            "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract",
+            "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
+            "runtime_pipeline_binding_checked_acceptance_trace_conformance_contract",
+            "runtime_pipeline_compact_digest_merkle_observation_eq_full_state",
+            "runtime_pipeline_binding_checked_acceptance_compact_digest_merkle_contract",
+            "runtime_pipeline_binding_checked_acceptance_verifier_sound_witness",
+            "runtime_pipeline_binding_checked_acceptance_verifier_core_contract",
+            "runtime_pipeline_binding_checked_acceptance_execution_obligations",
+        ],
+    );
     assert!(
-        lean_source.contains("runtime_pipeline_binding_required_external_source_sound")
-            && lean_source.contains("runtime_trace_constraint_required_external_source_pcs_sound")
+        lean_source.contains("runtime_trace_constraint_required_external_source_pcs_sound")
             && lean_source.contains("runtime_opening_required_external_source_sound")
-            && lean_source
-                .contains("runtime_pipeline_binding_checked_acceptance_query_opening_evidence")
-            && lean_source
-                .contains("runtime_pipeline_binding_checked_acceptance_query_opening_contract")
-            && lean_source.contains(
-                "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance"
-            )
-            && lean_source
-                .contains("runtime_pipeline_binding_checked_acceptance_opening_segment_evidence")
-            && lean_source.contains(
-                "runtime_pipeline_binding_checked_acceptance_opening_segment_bound_contract"
-            )
             && lean_source.contains("RuntimeOpeningSegmentBindingBoundContract")
-            && lean_source
-                .contains("runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract")
-            && lean_source
-                .contains("runtime_pipeline_binding_checked_acceptance_full_soundness_contract")
-            && lean_source
-                .contains("runtime_pipeline_binding_checked_acceptance_trace_conformance_contract")
-            && lean_source.contains("runtime_pipeline_compact_digest_merkle_observation_eq_full_state")
-            && lean_source
-                .contains("runtime_pipeline_binding_checked_acceptance_compact_digest_merkle_contract")
             && lean_source.contains("RowMajorDigestPrefixEvidence")
             && lean_source.contains("wideLinearDigestsBindRows")
-            && lean_source
-                .contains("runtime_pipeline_binding_checked_acceptance_verifier_sound_witness")
-            && lean_source
-                .contains("runtime_pipeline_binding_checked_acceptance_verifier_core_contract")
             && lean_source.contains("constraintBackendConformant")
             && lean_source.contains("system.accepts publicInput proof")
             && lean_source.contains("RuntimeArtifactSoundnessObligations")
-            && lean_source.contains("runtime_pipeline_binding_checked_acceptance_execution_obligations")
             && lean_source.contains("RuntimeVerifierCoreContract")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean pipeline binding should expose query-plan, opening, execution, and full runtime soundness evidence"

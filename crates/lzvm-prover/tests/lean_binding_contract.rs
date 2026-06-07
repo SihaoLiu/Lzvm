@@ -56,3 +56,16 @@ fn source_hot_paths_does_not_own_lean_binding_theorem_exports() {
         );
     }
 }
+
+#[test]
+fn pipeline_binding_uses_theorem_declaration_export_checks() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let pipeline_binding =
+        std::fs::read_to_string(crate_root.join("tests/lean_pipeline_binding.rs"))
+            .expect("pipeline binding test source should read");
+
+    assert!(
+        pipeline_binding.contains("lean_binding::assert_theorem_declarations"),
+        "pipeline binding should use theorem declaration checks for exported theorem names"
+    );
+}
