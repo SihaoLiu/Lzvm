@@ -219,6 +219,30 @@ theorem runtime_soundness_checked_acceptance_core_obligations
   exact
     ⟨transcriptBound, publicInputBound, pcsOpeningsValid, friQueriesValid⟩
 
+theorem runtime_soundness_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    runtime_soundness_checked_acceptance_core_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+
 theorem runtime_soundness_required_external_source_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
