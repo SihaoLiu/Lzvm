@@ -19,6 +19,7 @@ fn lean_batch_opening_binding_tracks_runtime_batch_helpers() {
     assert!(
         lean_source.contains("RuntimeBatchWitnessOpeningRowsValidation")
             && lean_source.contains("perRowWitnessOpeningRowsBound")
+            && lean_source.contains("def RuntimeBatchWitnessOpeningRowsBoundContract")
             && lean_source
                 .contains("runtime_batch_witness_opening_rows_checked_acceptance_evidence")
             && lean_source.contains(
@@ -26,11 +27,15 @@ fn lean_batch_opening_binding_tracks_runtime_batch_helpers() {
             )
             && lean_source
                 .contains("runtime_batch_witness_opening_rows_evidence_implies_opening_evidence")
+            && lean_source
+                .contains("runtime_batch_witness_opening_rows_evidence_implies_bound_contract")
             && lean_source.contains(
                 "runtime_batch_witness_opening_rows_checked_acceptance_opening_segment_evidence"
             )
             && lean_source
                 .contains("runtime_batch_witness_opening_rows_checked_acceptance_opening_evidence")
+            && lean_source
+                .contains("runtime_batch_witness_opening_rows_checked_acceptance_bound_contract")
             && lean_source.contains("runtime_batch_witness_opening_rows_checked_acceptance_sound")
             && lean_source.contains(
                 "runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract"

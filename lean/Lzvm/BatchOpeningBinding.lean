@@ -42,6 +42,20 @@ def RuntimeBatchWitnessOpeningRowsCheckedAcceptance
     (proof : Proof) : Prop :=
   validation.batchWitnessOpeningRowsAccepted artifact publicInput proof
 
+def RuntimeBatchWitnessOpeningRowsBoundContract
+    (_system : VerifierModel)
+    (validation : RuntimeBatchWitnessOpeningRowsValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.openingSegmentValidation.queryPlanBound artifact publicInput proof
+    /\ validation.perRowWitnessOpeningRowsBound artifact publicInput proof
+    /\ validation.openingSegmentValidation.witnessOpeningSegmentsValid artifact publicInput proof
+    /\ validation.openingSegmentValidation.openingValidation.witnessOpeningsBound
+      artifact
+      publicInput
+      proof
+
 def RuntimeBatchWitnessOpeningRowsEvidence
     (system : VerifierModel)
     (validation : RuntimeBatchWitnessOpeningRowsValidation system)
@@ -178,6 +192,30 @@ theorem runtime_batch_witness_opening_rows_evidence_implies_opening_evidence
   intro artifact publicInput proof requiresExternalSource evidence
   exact evidence.right.left
 
+theorem runtime_batch_witness_opening_rows_evidence_implies_bound_contract
+    {system : VerifierModel}
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeBatchWitnessOpeningRowsEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeBatchWitnessOpeningRowsBoundContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact
+    And.intro evidence.right.right.left
+      (And.intro evidence.right.right.right.left
+        (And.intro evidence.right.right.right.right.left
+          evidence.right.right.right.right.right))
+
 theorem runtime_batch_witness_opening_rows_checked_acceptance_opening_segment_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -249,6 +287,42 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_opening_evidence
       publicInput
       proof
       requiresExternalSource
+      evidence
+
+theorem runtime_batch_witness_opening_rows_checked_acceptance_bound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system) :
+    forall artifact publicInput proof,
+      RuntimeBatchWitnessOpeningRowsCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeBatchWitnessOpeningRowsBoundContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have evidence :=
+    runtime_batch_witness_opening_rows_checked_acceptance_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  exact
+    runtime_batch_witness_opening_rows_evidence_implies_bound_contract
+      validation
+      artifact
+      publicInput
+      proof
+      False
       evidence
 
 theorem runtime_batch_witness_opening_rows_checked_acceptance_sound
