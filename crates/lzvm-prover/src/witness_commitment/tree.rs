@@ -225,9 +225,9 @@ pub(crate) fn commit_witness_stage_leaves_compact_with_leaf_hash_level(
         None => leaf_level.root()?,
     };
     let leaf_level = leaf_level.into_validated_level()?;
-    let retained_leaf_digest_level = retain_leaf_digest_level(leaf_level, column_count);
     let retained_parent_checkpoint_level =
         retain_parent_checkpoint_level(parent_checkpoint, column_count);
+    let retained_leaf_digest_level = retain_leaf_digest_level(leaf_level, column_count);
     let retained_source_device = retained_source_device
         .filter(|view| validate_source_device_view(view, source_rows, column_count).is_ok())
         .and_then(retain_source_device_view);
@@ -324,9 +324,9 @@ pub(crate) fn commit_witness_stage_device_compact_with_leaf_hash_level(
         None => leaf_level.root()?,
     };
     let leaf_level = leaf_level.into_validated_level()?;
-    let retained_leaf_digest_level = retain_leaf_digest_level(leaf_level, column_count);
     let retained_parent_checkpoint_level =
         retain_parent_checkpoint_level(parent_checkpoint, column_count);
+    let retained_leaf_digest_level = retain_leaf_digest_level(leaf_level, column_count);
     let expected_source_bytes = expected_source_values
         .checked_mul(WORD_BYTES)
         .ok_or(WitnessStageCommitmentError::LengthOverflow)?;

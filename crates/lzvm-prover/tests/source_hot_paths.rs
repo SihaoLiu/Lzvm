@@ -570,15 +570,15 @@ fn cuda_compact_witness_commit_retains_parent_checkpoint_level() {
         "device compact commits should derive and retain a compact parent checkpoint during root construction"
     );
 
-    let leaf_retain_index = device_commit_body
-        .find("retain_leaf_digest_level")
-        .expect("device compact commits should try to retain leaf digests");
     let checkpoint_retain_index = device_commit_body
         .find("retain_parent_checkpoint_level")
         .expect("device compact commits should try to retain a parent checkpoint");
+    let leaf_retain_index = device_commit_body
+        .find("retain_leaf_digest_level")
+        .expect("device compact commits should try to retain leaf digests");
     assert!(
-        leaf_retain_index < checkpoint_retain_index,
-        "device compact commits should reserve retained leaf digests before optional parent checkpoints"
+        checkpoint_retain_index < leaf_retain_index,
+        "device compact commits should reserve retained parent checkpoints before optional leaf digests"
     );
 }
 
@@ -604,6 +604,19 @@ fn cuda_compact_witness_opening_uses_retained_parent_checkpoint_after_leaf_diges
         recompute_body.contains("open_batch_with_retained_parent_checkpoint_level_cuda")
             && recompute_body.contains("retained_parent_checkpoint_level"),
         "compact CUDA openings should use retained parent checkpoints when leaf digest retention is unavailable"
+    );
+    assert!(
+        recompute_body.contains("match self.open_batch_with_retained_parent_checkpoint_level_cuda"),
+        "retained parent checkpoint opening should be an optional fast path"
+    );
+    assert!(
+        recompute_body.contains("Err(WitnessStageOpeningError::LengthOverflow)"),
+        "structurally unusable retained parent checkpoints should fall back to full leaf-level openings"
+    );
+    assert!(
+        recompute_body.contains("Err(error) => {")
+            && recompute_body.contains("compact parent checkpoint"),
+        "non-structural retained parent checkpoint errors should remain fatal with context"
     );
     let checkpoint_branch_index = recompute_body
         .find("open_batch_with_retained_parent_checkpoint_level_cuda")
@@ -795,6 +808,12 @@ fn cuda_compact_opening_reuses_retained_stage_source_device_buffer() {
         values_source.contains("cuda_memory_info")
             && values_source.contains("RETAINED_SOURCE_DEVICE_RESERVE_BYTES"),
         "retained source budgeting should size itself from CUDA device memory unless overridden"
+    );
+    assert!(
+        values_source.contains("RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES")
+            && values_source.contains("retained_combined_device_cache_allows(next, leaf_bytes)")
+            && values_source.contains("retained_combined_device_cache_allows(source_bytes, next)"),
+        "retained source and leaf digest caches should keep a shared CUDA memory reserve for openings"
     );
     assert!(
         values_source.contains("RETAINED_SOURCE_DEVICE_REGISTRY")
@@ -1807,6 +1826,60 @@ fn trace_output_opening_batches_stage_query_rows() {
 }
 
 #[test]
+fn trace_output_opening_errors_name_stage_source_context() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let opening_path = crate_root.join("src/witness_opening.rs");
+    let opening_source =
+        std::fs::read_to_string(&opening_path).expect("witness opening source should read");
+    let timing_path = crate_root.join("src/proof_artifact_timing.rs");
+    let timing_source =
+        std::fs::read_to_string(&timing_path).expect("proof artifact timing source should read");
+
+    let error_enum = function_body(
+        &opening_source,
+        "pub enum ProveWitnessOpeningSegmentError",
+        "impl fmt::Display for ProveWitnessOpeningSegmentError",
+    );
+    assert!(
+        error_enum.contains("StageOpening")
+            && error_enum.contains("unit_index: usize")
+            && error_enum.contains("trace_instance_index: u32")
+            && error_enum.contains("stage_index: usize")
+            && error_enum.contains("source_kind: &'static str"),
+        "witness opening errors should carry stage and source context"
+    );
+
+    let display_body = function_body(
+        &opening_source,
+        "impl fmt::Display for ProveWitnessOpeningSegmentError",
+        "impl std::error::Error for ProveWitnessOpeningSegmentError",
+    );
+    assert!(
+        display_body.contains("Self::StageOpening")
+            && display_body.contains("source {source_kind}"),
+        "witness opening errors should print source context"
+    );
+
+    let trace_body = function_body(
+        &opening_source,
+        "fn build_witness_opening_unit_segment_from_trace_output",
+        "fn ensure_guest_pc_external_stage_sources",
+    );
+    assert!(
+        trace_body.contains("map_err(|source| ProveWitnessOpeningSegmentError::StageOpening")
+            && trace_body.contains("unit_index: commitments.unit_index()")
+            && trace_body.contains("trace_instance_index: commitments.trace_instance_index()")
+            && trace_body.contains("stage_index")
+            && trace_body.contains("source_kind: source_kind.as_str()"),
+        "trace-output openings should name the failing unit, trace, stage, and source kind"
+    );
+    assert!(
+        timing_source.contains("pub(crate) fn as_str(self) -> &'static str"),
+        "source kind labels should be shared with opening diagnostics"
+    );
+}
+
+#[test]
 fn compact_opening_reuses_retained_wide_leaf_digest_levels() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let tree_path = crate_root.join("src/witness_commitment/tree.rs");
@@ -1835,6 +1908,115 @@ fn compact_opening_reuses_retained_wide_leaf_digest_levels() {
             && values_source.contains("retained_leaf_digest_level"),
         "compact CUDA opening should try retained leaf digest levels before recomputing them"
     );
+}
+
+#[test]
+fn compact_opening_falls_back_when_retained_leaf_digest_is_structurally_unusable() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source = std::fs::read_to_string(&values_path)
+        .expect("witness commitment values source should read");
+
+    let recompute_body = function_body(
+        &values_source,
+        "fn open_batch_with_recomputed_leaf_level_cuda",
+        "fn open_batch_with_retained_parent_checkpoint_level_cuda",
+    );
+    assert!(
+        recompute_body.contains("match self.open_batch_with_retained_leaf_digest_level_cuda"),
+        "retained leaf digest opening should be an optional fast path"
+    );
+    assert!(
+        recompute_body.contains("Err(WitnessStageOpeningError::LengthOverflow)"),
+        "structurally unusable retained leaf digests should fall back to recomputing the leaf level"
+    );
+    assert!(
+        recompute_body.contains("Err(error) => {")
+            && recompute_body.contains("compact retained leaf digest"),
+        "non-structural retained leaf digest errors should remain fatal with context"
+    );
+}
+
+#[test]
+fn compact_cuda_opening_errors_name_failing_operation() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let errors_path = crate_root.join("src/witness_commitment/errors.rs");
+    let errors_source = std::fs::read_to_string(&errors_path)
+        .expect("witness commitment errors source should read");
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source = std::fs::read_to_string(&values_path)
+        .expect("witness commitment values source should read");
+
+    let error_enum = function_body(
+        &errors_source,
+        "pub enum WitnessStageOpeningError",
+        "impl fmt::Display for WitnessStageCommitmentError",
+    );
+    assert!(
+        error_enum.contains("Context")
+            && error_enum.contains("operation: &'static str")
+            && error_enum.contains("source: Box<WitnessStageOpeningError>"),
+        "witness opening errors should preserve the failing compact CUDA operation"
+    );
+    let display_body = function_body(
+        &errors_source,
+        "impl fmt::Display for WitnessStageOpeningError",
+        "impl std::error::Error for WitnessStageCommitmentError",
+    );
+    assert!(
+        display_body.contains("Self::Context")
+            && display_body.contains("witness stage opening {operation} failed: {source}"),
+        "operation context should be visible in witness opening errors"
+    );
+
+    let recompute_body = function_body(
+        &values_source,
+        "fn open_batch_with_recomputed_leaf_level_cuda",
+        "fn open_batch_with_retained_parent_checkpoint_level_cuda",
+    );
+    for operation in [
+        "compact full leaf allocation",
+        "compact leaf extension",
+        "compact leaf hash",
+        "compact full path",
+        "compact row values",
+    ] {
+        assert!(
+            recompute_body.contains(operation),
+            "compact recomputed openings should label {operation}"
+        );
+    }
+
+    let checkpoint_body = function_body(
+        &values_source,
+        "fn open_batch_with_retained_parent_checkpoint_level_cuda",
+        "fn open_batch_with_retained_leaf_digest_level_cuda",
+    );
+    for operation in [
+        "compact parent checkpoint prefix path",
+        "compact parent checkpoint suffix path",
+        "compact parent checkpoint row values",
+    ] {
+        assert!(
+            checkpoint_body.contains(operation),
+            "retained parent checkpoint openings should label {operation}"
+        );
+    }
+
+    let leaf_digest_body = function_body(
+        &values_source,
+        "fn open_batch_with_retained_leaf_digest_level_cuda",
+        "fn copy_extended_row_values_from_device",
+    );
+    for operation in [
+        "compact retained leaf digest path",
+        "compact retained leaf digest row values",
+    ] {
+        assert!(
+            leaf_digest_body.contains(operation),
+            "retained leaf digest openings should label {operation}"
+        );
+    }
 }
 
 #[test]

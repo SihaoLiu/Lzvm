@@ -110,6 +110,18 @@ pub(crate) enum WitnessOpeningSourceKind {
     Missing,
 }
 
+impl WitnessOpeningSourceKind {
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Retained => "retained",
+            Self::External => "external",
+            Self::Embedded => "embedded",
+            Self::Missing => "missing",
+        }
+    }
+}
+
 impl WitnessProofStageOpeningWork {
     fn add(&mut self, timing: &crate::witness_commitment::WitnessStageOpeningWorkTiming) {
         self.leaf_hash_row_count += timing.leaf_hash_rows;

@@ -208,11 +208,15 @@ const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 16 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
 const RETAINED_SOURCE_DEVICE_RESERVE_BYTES: usize = 11 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
+const RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES: usize = 10 * 1024 * 1024 * 1024;
+#[cfg(feature = "cuda")]
 const MAX_DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 48 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
 static RETAINED_SOURCE_DEVICE_BYTES: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "cuda")]
 static RETAINED_SOURCE_DEVICE_LIMIT: OnceLock<usize> = OnceLock::new();
+#[cfg(feature = "cuda")]
+static RETAINED_COMBINED_DEVICE_CACHE_LIMIT: OnceLock<Option<usize>> = OnceLock::new();
 #[cfg(feature = "cuda")]
 static RETAINED_SOURCE_DEVICE_REGISTRY: OnceLock<Mutex<HashMap<usize, RetainedSourceDeviceEntry>>> =
     OnceLock::new();
@@ -490,6 +494,8 @@ fn reserve_retained_device_bytes(bytes: usize) -> Option<()> {
         if next > limit {
             return None;
         }
+        let leaf_bytes = RETAINED_LEAF_DIGEST_BYTES.load(Ordering::Acquire);
+        retained_combined_device_cache_allows(next, leaf_bytes)?;
         match RETAINED_SOURCE_DEVICE_BYTES.compare_exchange_weak(
             current,
             next,
@@ -522,6 +528,8 @@ fn reserve_retained_leaf_digest_bytes(bytes: usize) -> Option<()> {
         if next > limit {
             return None;
         }
+        let source_bytes = RETAINED_SOURCE_DEVICE_BYTES.load(Ordering::Acquire);
+        retained_combined_device_cache_allows(source_bytes, next)?;
         match RETAINED_LEAF_DIGEST_BYTES.compare_exchange_weak(
             current,
             next,
@@ -583,6 +591,30 @@ fn default_retained_leaf_digest_limit() -> usize {
         })
         .filter(|limit| *limit > 0)
         .unwrap_or(DEFAULT_RETAINED_LEAF_DIGEST_BYTES)
+}
+
+#[cfg(feature = "cuda")]
+fn retained_combined_device_cache_limit() -> Option<usize> {
+    *RETAINED_COMBINED_DEVICE_CACHE_LIMIT.get_or_init(|| {
+        cuda_memory_info()
+            .ok()
+            .map(|info| {
+                info.total_bytes
+                    .saturating_sub(RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES)
+            })
+            .filter(|limit| *limit > 0)
+    })
+}
+
+#[cfg(feature = "cuda")]
+fn retained_combined_device_cache_allows(source_bytes: usize, leaf_bytes: usize) -> Option<()> {
+    if let Some(limit) = retained_combined_device_cache_limit() {
+        let combined = source_bytes.checked_add(leaf_bytes)?;
+        if combined > limit {
+            return None;
+        }
+    }
+    Some(())
 }
 
 #[cfg(feature = "cuda")]
@@ -1496,13 +1528,22 @@ impl WitnessStageCompactTreeStorage {
             }
         }
         if let Some(retained_leaf_digest_level) = &self.retained_leaf_digest_level {
-            return self.open_batch_with_retained_leaf_digest_level_cuda(
+            match self.open_batch_with_retained_leaf_digest_level_cuda(
                 rows,
                 expected_root,
                 source_buffer,
                 retained_leaf_digest_level,
-                timing,
-            );
+                timing.as_deref_mut(),
+            ) {
+                Ok(openings) => return Ok(openings),
+                Err(WitnessStageOpeningError::LengthOverflow) => {}
+                Err(error) => {
+                    return Err(WitnessStageOpeningError::context(
+                        "compact retained leaf digest",
+                        error,
+                    ));
+                }
+            }
         }
 
         let mut output_buffer = record_opening_duration(
@@ -1511,11 +1552,15 @@ impl WitnessStageCompactTreeStorage {
                 CudaDeviceBuffer::new(self.raw_leaf_bytes)
                     .map_err(|_| WitnessStageOpeningError::LengthOverflow)
             },
-        )?;
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context("compact full leaf allocation", source)
+        })?;
         let _extension_workspace = record_opening_duration(
             timing.as_deref_mut().map(|timing| &mut timing.leaf_extend),
             || self.extend_source_device_buffer_cuda_unsynced(source_buffer, &mut output_buffer),
-        )?;
+        )
+        .map_err(|source| WitnessStageOpeningError::context("compact leaf extension", source))?;
         if let Some(timing) = timing.as_deref_mut() {
             timing.record_coset_extend_work(
                 self.raw_leaf_bytes,
@@ -1535,20 +1580,30 @@ impl WitnessStageCompactTreeStorage {
                 )
                 .map_err(WitnessStageOpeningError::from)
             },
-        )?;
+        )
+        .map_err(|source| WitnessStageOpeningError::context("compact leaf hash", source))?;
         if let Some(timing) = timing.as_deref_mut() {
             timing.record_leaf_hash_work(self.extended_rows, self.raw_leaf_bytes, self.arity);
         }
 
         if let Some(retained_parent_checkpoint_level) = &self.retained_parent_checkpoint_level {
-            return self.open_batch_with_retained_parent_checkpoint_level_cuda(
+            match self.open_batch_with_retained_parent_checkpoint_level_cuda(
                 rows,
                 expected_root,
                 &output_buffer,
                 &leaf_level,
                 retained_parent_checkpoint_level,
-                timing,
-            );
+                timing.as_deref_mut(),
+            ) {
+                Ok(openings) => return Ok(openings),
+                Err(WitnessStageOpeningError::LengthOverflow) => {}
+                Err(error) => {
+                    return Err(WitnessStageOpeningError::context(
+                        "compact parent checkpoint",
+                        error,
+                    ));
+                }
+            }
         }
 
         let path_parent_work = if timing.is_some() {
@@ -1568,7 +1623,8 @@ impl WitnessStageCompactTreeStorage {
                         .opening_path(*row)
                         .map_err(WitnessStageOpeningError::from)
                 },
-            )?;
+            )
+            .map_err(|source| WitnessStageOpeningError::context("compact full path", source))?;
             if path.root != expected_root {
                 return Err(WitnessStageOpeningError::InvalidTreeByteLength {
                     expected: self.logical_tree_bytes,
@@ -1583,7 +1639,8 @@ impl WitnessStageCompactTreeStorage {
             let values = record_opening_duration(
                 timing.as_deref_mut().map(|timing| &mut timing.row_values),
                 || self.copy_extended_row_values_from_device(&output_buffer, *row),
-            )?;
+            )
+            .map_err(|source| WitnessStageOpeningError::context("compact row values", source))?;
             openings.push((values, path.siblings));
         }
         Ok(openings)
@@ -1638,6 +1695,9 @@ impl WitnessStageCompactTreeStorage {
                         checkpoint.folded_level_count(),
                     )
                     .map_err(WitnessStageOpeningError::from)
+            })
+            .map_err(|source| {
+                WitnessStageOpeningError::context("compact parent checkpoint prefix path", source)
             })?;
         if let (Some(timing), Some((row_count, byte_count, launch_count))) =
             (timing.as_deref_mut(), lower_prefix_parent_work)
@@ -1656,7 +1716,10 @@ impl WitnessStageCompactTreeStorage {
                         .opening_path_for_source_row(row)
                         .map_err(WitnessStageOpeningError::from)
                 },
-            )?;
+            )
+            .map_err(|source| {
+                WitnessStageOpeningError::context("compact parent checkpoint suffix path", source)
+            })?;
             if upper_suffix.root != expected_root {
                 return Err(WitnessStageOpeningError::InvalidTreeByteLength {
                     expected: self.logical_tree_bytes,
@@ -1671,7 +1734,10 @@ impl WitnessStageCompactTreeStorage {
             let values = record_opening_duration(
                 timing.as_deref_mut().map(|timing| &mut timing.row_values),
                 || self.copy_extended_row_values_from_device(output_buffer, row),
-            )?;
+            )
+            .map_err(|source| {
+                WitnessStageOpeningError::context("compact parent checkpoint row values", source)
+            })?;
             let mut siblings = lower_prefix;
             siblings.extend(upper_suffix.siblings);
             openings.push((values, siblings));
@@ -1711,7 +1777,10 @@ impl WitnessStageCompactTreeStorage {
                         .opening_path(*row)
                         .map_err(WitnessStageOpeningError::from)
                 },
-            )?;
+            )
+            .map_err(|source| {
+                WitnessStageOpeningError::context("compact retained leaf digest path", source)
+            })?;
             if path.root != expected_root {
                 return Err(WitnessStageOpeningError::InvalidTreeByteLength {
                     expected: self.logical_tree_bytes,
@@ -1726,7 +1795,10 @@ impl WitnessStageCompactTreeStorage {
             let values = record_opening_duration(
                 timing.as_deref_mut().map(|timing| &mut timing.row_values),
                 || self.extended_row_values_from_source_cuda(*row, source_buffer),
-            )?;
+            )
+            .map_err(|source| {
+                WitnessStageOpeningError::context("compact retained leaf digest row values", source)
+            })?;
             openings.push((values, path.siblings));
         }
         Ok(openings)

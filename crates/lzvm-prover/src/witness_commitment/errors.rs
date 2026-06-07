@@ -160,13 +160,26 @@ pub enum WitnessStageCommitmentError {
 pub enum WitnessStageOpeningError {
     Field(FieldError),
     Commitment(WitnessStageCommitmentError),
-    RowOutOfRange { row_index: u64, row_count: u64 },
+    RowOutOfRange {
+        row_index: u64,
+        row_count: u64,
+    },
     ZeroRows,
     ZeroColumns,
     EmptyValues,
     ExternalSourceUnavailable,
-    InvalidTreeByteLength { expected: usize, found: usize },
-    InvalidSiblingCount { expected: usize, found: usize },
+    InvalidTreeByteLength {
+        expected: usize,
+        found: usize,
+    },
+    InvalidSiblingCount {
+        expected: usize,
+        found: usize,
+    },
+    Context {
+        operation: &'static str,
+        source: Box<WitnessStageOpeningError>,
+    },
     LengthOverflow,
 }
 
@@ -224,6 +237,9 @@ impl fmt::Display for WitnessStageOpeningError {
                 f,
                 "invalid witness stage opening sibling count: expected {expected}, found {found}"
             ),
+            Self::Context { operation, source } => {
+                write!(f, "witness stage opening {operation} failed: {source}")
+            }
             Self::LengthOverflow => write!(f, "witness stage opening length overflow"),
         }
     }
@@ -250,6 +266,7 @@ impl std::error::Error for WitnessStageOpeningError {
         match self {
             Self::Field(error) => Some(error),
             Self::Commitment(error) => Some(error),
+            Self::Context { source, .. } => Some(source),
             Self::RowOutOfRange { .. }
             | Self::ZeroRows
             | Self::ZeroColumns
@@ -258,6 +275,16 @@ impl std::error::Error for WitnessStageOpeningError {
             | Self::InvalidTreeByteLength { .. }
             | Self::InvalidSiblingCount { .. }
             | Self::LengthOverflow => None,
+        }
+    }
+}
+
+impl WitnessStageOpeningError {
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn context(operation: &'static str, source: Self) -> Self {
+        Self::Context {
+            operation,
+            source: Box::new(source),
         }
     }
 }

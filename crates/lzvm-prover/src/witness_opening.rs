@@ -68,6 +68,13 @@ pub enum ProveWitnessOpeningSegmentError {
         stage_index: usize,
         stage_count: usize,
     },
+    StageOpening {
+        unit_index: usize,
+        trace_instance_index: u32,
+        stage_index: usize,
+        source_kind: &'static str,
+        source: WitnessStageOpeningError,
+    },
     Opening(WitnessStageOpeningError),
     ExternalSource {
         message: String,
@@ -115,6 +122,16 @@ impl fmt::Display for ProveWitnessOpeningSegmentError {
                 f,
                 "prove witness opening stage index {stage_index} is outside stage count {stage_count}"
             ),
+            Self::StageOpening {
+                unit_index,
+                trace_instance_index,
+                stage_index,
+                source_kind,
+                source,
+            } => write!(
+                f,
+                "prove witness opening failed for unit {unit_index} trace {trace_instance_index} stage {stage_index} source {source_kind}: {source}"
+            ),
             Self::Opening(error) => write!(f, "prove witness opening failed: {error}"),
             Self::ExternalSource { message } => {
                 write!(f, "prove witness opening external source failed: {message}")
@@ -128,6 +145,7 @@ impl std::error::Error for ProveWitnessOpeningSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::QueryPlan(error) => Some(error),
+            Self::StageOpening { source, .. } => Some(source),
             Self::Opening(error) => Some(error),
             Self::Segment(error) => Some(error),
             Self::UnsupportedTraceInstance { .. }
@@ -736,7 +754,14 @@ fn build_witness_opening_unit_segment(
             &query_unit.queries,
             unit.extended_domain_size,
             width,
-        )?;
+        )
+        .map_err(|source| ProveWitnessOpeningSegmentError::StageOpening {
+            unit_index: output.unit_index(),
+            trace_instance_index: output.trace_instance_index(),
+            stage_index,
+            source_kind: "host",
+            source,
+        })?;
         for (stages, opening) in query_stages.iter_mut().zip(openings.iter()) {
             stages.push(witness_opening_stage_segment(
                 stage_index,
@@ -861,7 +886,14 @@ fn build_witness_opening_unit_segment_from_trace_output(
                 width,
                 source_view,
                 &mut opening_work_timing,
-            )?;
+            )
+            .map_err(|source| ProveWitnessOpeningSegmentError::StageOpening {
+                unit_index: commitments.unit_index(),
+                trace_instance_index: commitments.trace_instance_index(),
+                stage_index,
+                source_kind: source_kind.as_str(),
+                source,
+            })?;
             if let Some(timing) = timing.as_deref_mut() {
                 timing.add_witness_stage_opening_setup(stage_index, opening_work_timing.setup);
                 timing.add_witness_stage_opening_leaf_extend(
@@ -886,7 +918,14 @@ fn build_witness_opening_unit_segment_from_trace_output(
                 &query_unit.queries,
                 unit.extended_domain_size,
                 width,
-            )?;
+            )
+            .map_err(|source| ProveWitnessOpeningSegmentError::StageOpening {
+                unit_index: commitments.unit_index(),
+                trace_instance_index: commitments.trace_instance_index(),
+                stage_index,
+                source_kind: "host",
+                source,
+            })?;
             if let Some(timing) = timing.as_deref_mut() {
                 timing.add_witness_stage_opening(stage_index, stage_opening_start.elapsed());
             }
