@@ -10,7 +10,7 @@ use crate::witness_layout::WitnessTraceStageValues;
 #[cfg(feature = "cuda")]
 use super::WitnessStageOpeningWorkTiming;
 #[cfg(feature = "cuda")]
-use super::{retain_source_device_view, WitnessStageSourceDeviceView};
+use super::{retain_leaf_digest_level, retain_source_device_view, WitnessStageSourceDeviceView};
 use super::{
     WitnessStageCommitment, WitnessStageCommitmentError, WitnessStageCompactTreeParts,
     WitnessStageLeaves, WitnessStageOpening, WitnessStageOpeningError, HASH_WORDS, WORD_BYTES,
@@ -158,6 +158,8 @@ pub(crate) fn commit_witness_stage_leaves_compact_with_leaf_hashes(
             external_source_required: false,
             #[cfg(feature = "cuda")]
             retained_source_device: None,
+            #[cfg(feature = "cuda")]
+            retained_leaf_digest_level: None,
         },
     ))
 }
@@ -209,7 +211,8 @@ pub(crate) fn commit_witness_stage_leaves_compact_with_leaf_hash_level(
     let logical_tree_bytes =
         expected_witness_stage_commitment_tree_byte_count(extended_rows, column_count, arity)?;
     let root = leaf_level.root()?;
-    leaf_level.finish_canonical_check()?;
+    let leaf_level = leaf_level.into_validated_level()?;
+    let retained_leaf_digest_level = retain_leaf_digest_level(leaf_level, column_count);
     let retained_source_device = retained_source_device
         .filter(|view| validate_source_device_view(view, source_rows, column_count).is_ok())
         .and_then(retain_source_device_view);
@@ -235,6 +238,7 @@ pub(crate) fn commit_witness_stage_leaves_compact_with_leaf_hash_level(
             digest_tree: None,
             external_source_required: false,
             retained_source_device,
+            retained_leaf_digest_level,
         },
     ))
 }
@@ -298,7 +302,8 @@ pub(crate) fn commit_witness_stage_device_compact_with_leaf_hash_level(
     let logical_tree_bytes =
         expected_witness_stage_commitment_tree_byte_count(extended_rows, column_count, arity)?;
     let root = leaf_level.root()?;
-    leaf_level.finish_canonical_check()?;
+    let leaf_level = leaf_level.into_validated_level()?;
+    let retained_leaf_digest_level = retain_leaf_digest_level(leaf_level, column_count);
     let expected_source_bytes = expected_source_values
         .checked_mul(WORD_BYTES)
         .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
@@ -333,6 +338,7 @@ pub(crate) fn commit_witness_stage_device_compact_with_leaf_hash_level(
             digest_tree: None,
             external_source_required: retained_source_device.is_none() && external_source_required,
             retained_source_device,
+            retained_leaf_digest_level,
         },
     ))
 }
@@ -1411,8 +1417,80 @@ mod tests {
                     .expect("batch opening should verify")
             );
         }
-        assert_eq!(batch_timing.leaf_coset_extend_call_count, 1);
-        assert_eq!(batch_timing.leaf_hash_rows, extended_rows);
+        assert_eq!(batch_timing.leaf_coset_extend_call_count, 0);
+        assert_eq!(batch_timing.leaf_hash_rows, 0);
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn compact_device_batch_opening_reuses_retained_leaf_digest_level() {
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let column_count = 6;
+        let arity = 4;
+        let source_values = (0..source_rows * column_count)
+            .map(|value| Felt::from_u64(value as u64 + 1))
+            .collect::<Vec<_>>();
+        let source_device = std::sync::Arc::new(
+            lzvm_accel::CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&source_values))
+                .expect("source values should upload"),
+        );
+        let mut timing = crate::witness_commitment::WitnessStageLeafExtendTiming::default();
+        let leaf_level =
+            crate::witness_commitment::compact_witness_stage_leaf_hash_level_from_source_device_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                source_device.as_ref(),
+                &mut timing,
+            )
+            .expect("device leaf hash level should build");
+        let device = commit_witness_stage_device_compact_with_leaf_hash_level(
+            WitnessStageDeviceCompactCommitInput {
+                stage_index: 1,
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                external_source_required: false,
+            },
+            leaf_level,
+            Some(WitnessStageSourceDeviceView::new(
+                source_rows,
+                column_count,
+                column_count,
+                0,
+                source_device,
+            )),
+        )
+        .expect("device compact commitment should build");
+
+        let rows = [0_u64, 1, 5, 7];
+        let mut batch_timing = WitnessStageOpeningWorkTiming::default();
+        let batch_openings = open_witness_stage_commitments_with_source_device_timing(
+            &device,
+            &rows,
+            extended_rows as u64,
+            column_count,
+            None,
+            &mut batch_timing,
+        )
+        .expect("batch opening should build");
+
+        assert_eq!(batch_openings.len(), rows.len());
+        for batch_opening in &batch_openings {
+            assert!(
+                verify_witness_stage_opening_root(device.root(), arity, batch_opening)
+                    .expect("batch opening should verify")
+            );
+        }
+        assert_eq!(batch_timing.leaf_coset_extend_call_count, 0);
+        assert_eq!(batch_timing.leaf_hash_rows, 0);
     }
 
     #[cfg(feature = "cuda")]

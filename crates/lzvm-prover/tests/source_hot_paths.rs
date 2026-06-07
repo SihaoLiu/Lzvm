@@ -442,6 +442,16 @@ fn cuda_compact_witness_commit_defers_canonical_check_synchronization_until_root
         extend_source.contains("struct PendingCanonicalCudaDigestLevel"),
         "compact CUDA leaf levels should carry a pending canonical check with the digest level"
     );
+    let pending_body = function_body(
+        &extend_source,
+        "impl PendingCanonicalCudaDigestLevel",
+        "#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]",
+    );
+    assert!(
+        pending_body.contains("fn into_validated_level")
+            && pending_body.contains("self.finish_canonical_check()?"),
+        "pending compact CUDA leaf levels should expose a validated handoff that completes canonical checking"
+    );
 
     let source_device_body = function_body(
         &extend_source,
@@ -462,9 +472,14 @@ fn cuda_compact_witness_commit_defers_canonical_check_synchronization_until_root
         "pub(crate) fn commit_witness_stage_device_compact_with_leaf_hash_level",
         "fn validate_witness_stage_leaves",
     );
+    let root_index = device_commit_body
+        .find("leaf_level.root()")
+        .expect("device compact commitment should read the root");
+    let validated_index = device_commit_body
+        .find("leaf_level.into_validated_level()")
+        .expect("device compact commitment should validate the pending leaf level");
     assert!(
-        device_commit_body.contains("leaf_level.root()")
-            && device_commit_body.contains("leaf_level.finish_canonical_check()"),
+        root_index < validated_index,
         "device compact commitment should finish the pending canonical check after the root read synchronization"
     );
 }
@@ -1579,6 +1594,37 @@ fn trace_output_opening_batches_stage_query_rows() {
         values_source.contains("open_compact_batch_on_demand_with_source_device")
             && values_source.contains("open_batch_on_demand_cuda"),
         "compact CUDA storage should open multiple query rows from one leaf extension and hash"
+    );
+}
+
+#[test]
+fn compact_opening_reuses_retained_wide_leaf_digest_levels() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let tree_path = crate_root.join("src/witness_commitment/tree.rs");
+    let tree_source =
+        std::fs::read_to_string(&tree_path).expect("witness commitment tree source should read");
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source = std::fs::read_to_string(&values_path)
+        .expect("witness commitment values source should read");
+
+    assert!(
+        values_source.contains("struct RetainedCudaLeafDigestLevel")
+            && values_source.contains("RETAINED_LEAF_DIGEST_BYTES")
+            && values_source.contains("LZVM_CUDA_RETAINED_LEAF_DIGEST_BYTES"),
+        "compact CUDA opening should retain leaf digest levels under an independent device-memory limit"
+    );
+    assert!(
+        values_source.contains("column_count <= HASH_WORDS"),
+        "compact CUDA opening should avoid retaining narrow leaf digest levels"
+    );
+    assert!(
+        tree_source.contains("retain_leaf_digest_level(leaf_level, column_count)"),
+        "device compact commitments should keep validated leaf digest levels when retention is available"
+    );
+    assert!(
+        values_source.contains("open_batch_with_retained_leaf_digest_level_cuda")
+            && values_source.contains("retained_leaf_digest_level"),
+        "compact CUDA opening should try retained leaf digest levels before recomputing them"
     );
 }
 

@@ -89,6 +89,10 @@ impl CudaDigestLevel {
         self.arity
     }
 
+    pub(crate) fn byte_len(&self) -> usize {
+        self.digests.len()
+    }
+
     pub(crate) fn to_digests(&self) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
         let output = self
             .digests

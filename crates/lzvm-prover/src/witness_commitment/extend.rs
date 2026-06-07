@@ -72,6 +72,11 @@ impl PendingCanonicalCudaDigestLevel {
             Err(WitnessStageLeafError::NonCanonicalDeviceWord)
         }
     }
+
+    pub(crate) fn into_validated_level(self) -> Result<CudaDigestLevel, WitnessStageLeafError> {
+        self.finish_canonical_check()?;
+        Ok(self.level)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

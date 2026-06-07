@@ -27,7 +27,9 @@ use super::{coset_extend_launch_work, errors::WitnessStageOpeningError, HASH_WOR
 #[cfg(feature = "cuda")]
 use crate::gpu_setup::prepare_gpu_setup;
 #[cfg(feature = "cuda")]
-use crate::merkle_hash::linear_hash_level_from_validated_row_major_device_buffer;
+use crate::merkle_hash::{
+    linear_hash_level_from_validated_row_major_device_buffer, CudaDigestLevel,
+};
 use crate::merkle_hash::{linear_hashes_from_row_major_bytes, parent_levels_from_digest_level};
 
 type CompactOnDemandOpening = (Vec<Felt>, Vec<Vec<[Felt; HASH_WORDS]>>);
@@ -120,12 +122,29 @@ static RETAINED_SOURCE_DEVICE_LIMIT: OnceLock<usize> = OnceLock::new();
 #[cfg(feature = "cuda")]
 static RETAINED_SOURCE_DEVICE_REGISTRY: OnceLock<Mutex<HashMap<usize, RetainedSourceDeviceEntry>>> =
     OnceLock::new();
+#[cfg(feature = "cuda")]
+const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 8 * 1024 * 1024 * 1024;
+#[cfg(feature = "cuda")]
+const RETAINED_LEAF_DIGEST_RESERVE_BYTES: usize = 12 * 1024 * 1024 * 1024;
+#[cfg(feature = "cuda")]
+const MAX_DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 24 * 1024 * 1024 * 1024;
+#[cfg(feature = "cuda")]
+static RETAINED_LEAF_DIGEST_BYTES: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "cuda")]
+static RETAINED_LEAF_DIGEST_LIMIT: OnceLock<usize> = OnceLock::new();
 
 #[cfg(feature = "cuda")]
 #[derive(Debug)]
 pub(crate) struct RetainedCudaSourceDevice {
     view: WitnessStageSourceDeviceView,
     key: usize,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug)]
+pub(crate) struct RetainedCudaLeafDigestLevel {
+    level: CudaDigestLevel,
+    bytes: usize,
 }
 
 #[cfg(feature = "cuda")]
@@ -146,6 +165,32 @@ impl RetainedCudaSourceDevice {
 impl Drop for RetainedCudaSourceDevice {
     fn drop(&mut self) {
         release_retained_device_buffer(self.key);
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl RetainedCudaLeafDigestLevel {
+    fn state_count(&self) -> usize {
+        self.level.state_count()
+    }
+
+    fn arity(&self) -> usize {
+        self.level.arity()
+    }
+
+    fn opening_path(
+        &self,
+        query_row: usize,
+    ) -> Result<crate::merkle_hash::CudaMerkleOpeningPath, crate::merkle_hash::MerkleHashError>
+    {
+        self.level.opening_path(query_row)
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl Drop for RetainedCudaLeafDigestLevel {
+    fn drop(&mut self) {
+        release_retained_leaf_digest_bytes(self.bytes);
     }
 }
 
@@ -232,6 +277,19 @@ pub(crate) fn retain_source_device_view(
 }
 
 #[cfg(feature = "cuda")]
+pub(crate) fn retain_leaf_digest_level(
+    level: CudaDigestLevel,
+    column_count: usize,
+) -> Option<Arc<RetainedCudaLeafDigestLevel>> {
+    if column_count <= HASH_WORDS {
+        return None;
+    }
+    let bytes = level.byte_len();
+    reserve_retained_leaf_digest_bytes(bytes)?;
+    Some(Arc::new(RetainedCudaLeafDigestLevel { level, bytes }))
+}
+
+#[cfg(feature = "cuda")]
 fn retained_source_device_registry() -> &'static Mutex<HashMap<usize, RetainedSourceDeviceEntry>> {
     RETAINED_SOURCE_DEVICE_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -299,6 +357,38 @@ fn release_retained_device_bytes(bytes: usize) {
 }
 
 #[cfg(feature = "cuda")]
+fn reserve_retained_leaf_digest_bytes(bytes: usize) -> Option<()> {
+    if bytes == 0 {
+        return Some(());
+    }
+    let limit = retained_leaf_digest_limit();
+    if bytes > limit {
+        return None;
+    }
+    let mut current = RETAINED_LEAF_DIGEST_BYTES.load(Ordering::Acquire);
+    loop {
+        let next = current.checked_add(bytes)?;
+        if next > limit {
+            return None;
+        }
+        match RETAINED_LEAF_DIGEST_BYTES.compare_exchange_weak(
+            current,
+            next,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => return Some(()),
+            Err(observed) => current = observed,
+        }
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn release_retained_leaf_digest_bytes(bytes: usize) {
+    RETAINED_LEAF_DIGEST_BYTES.fetch_sub(bytes, Ordering::AcqRel);
+}
+
+#[cfg(feature = "cuda")]
 fn retained_source_device_limit() -> usize {
     std::env::var("LZVM_CUDA_RETAINED_SOURCE_BYTES")
         .ok()
@@ -319,6 +409,29 @@ fn default_retained_source_device_limit() -> usize {
         })
         .filter(|limit| *limit > 0)
         .unwrap_or(DEFAULT_RETAINED_SOURCE_DEVICE_BYTES)
+}
+
+#[cfg(feature = "cuda")]
+fn retained_leaf_digest_limit() -> usize {
+    std::env::var("LZVM_CUDA_RETAINED_LEAF_DIGEST_BYTES")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or_else(|| {
+            *RETAINED_LEAF_DIGEST_LIMIT.get_or_init(default_retained_leaf_digest_limit)
+        })
+}
+
+#[cfg(feature = "cuda")]
+fn default_retained_leaf_digest_limit() -> usize {
+    cuda_memory_info()
+        .ok()
+        .map(|info| {
+            info.total_bytes
+                .saturating_sub(RETAINED_LEAF_DIGEST_RESERVE_BYTES)
+                .min(MAX_DEFAULT_RETAINED_LEAF_DIGEST_BYTES)
+        })
+        .filter(|limit| *limit > 0)
+        .unwrap_or(DEFAULT_RETAINED_LEAF_DIGEST_BYTES)
 }
 
 #[cfg(feature = "cuda")]
@@ -433,6 +546,8 @@ pub(crate) struct WitnessStageCompactTreeParts {
     pub(crate) external_source_required: bool,
     #[cfg(feature = "cuda")]
     pub(crate) retained_source_device: Option<Arc<RetainedCudaSourceDevice>>,
+    #[cfg(feature = "cuda")]
+    pub(crate) retained_leaf_digest_level: Option<Arc<RetainedCudaLeafDigestLevel>>,
 }
 
 #[derive(Debug, Clone)]
@@ -458,6 +573,8 @@ struct WitnessStageCompactTreeStorage {
     external_source_required: bool,
     #[cfg(feature = "cuda")]
     retained_source_device: Option<Arc<RetainedCudaSourceDevice>>,
+    #[cfg(feature = "cuda")]
+    retained_leaf_digest_level: Option<Arc<RetainedCudaLeafDigestLevel>>,
     materialized_tree: OnceLock<Vec<u8>>,
 }
 
@@ -481,6 +598,8 @@ impl Clone for WitnessStageCompactTreeStorage {
             external_source_required: self.external_source_required,
             #[cfg(feature = "cuda")]
             retained_source_device: self.retained_source_device.clone(),
+            #[cfg(feature = "cuda")]
+            retained_leaf_digest_level: self.retained_leaf_digest_level.clone(),
             materialized_tree,
         }
     }
@@ -526,6 +645,8 @@ impl WitnessStageCommitment {
                 external_source_required: parts.external_source_required,
                 #[cfg(feature = "cuda")]
                 retained_source_device: parts.retained_source_device,
+                #[cfg(feature = "cuda")]
+                retained_leaf_digest_level: parts.retained_leaf_digest_level,
                 materialized_tree: OnceLock::new(),
             })),
         }
@@ -1165,6 +1286,15 @@ impl WitnessStageCompactTreeStorage {
                 return Err(WitnessStageOpeningError::LengthOverflow);
             }
         }
+        if let Some(retained_leaf_digest_level) = &self.retained_leaf_digest_level {
+            return self.open_batch_with_retained_leaf_digest_level_cuda(
+                rows,
+                expected_root,
+                source_buffer,
+                retained_leaf_digest_level,
+                timing,
+            );
+        }
 
         let mut output_buffer = record_opening_duration(
             timing.as_deref_mut().map(|timing| &mut timing.setup),
@@ -1220,6 +1350,43 @@ impl WitnessStageCompactTreeStorage {
             let values = record_opening_duration(
                 timing.as_deref_mut().map(|timing| &mut timing.row_values),
                 || self.copy_extended_row_values_from_device(&output_buffer, *row),
+            )?;
+            openings.push((values, path.siblings));
+        }
+        Ok(openings)
+    }
+
+    #[cfg(feature = "cuda")]
+    fn open_batch_with_retained_leaf_digest_level_cuda(
+        &self,
+        rows: &[usize],
+        expected_root: [Felt; HASH_WORDS],
+        source_buffer: &SourceDeviceBuffer<'_>,
+        leaf_level: &RetainedCudaLeafDigestLevel,
+        mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    ) -> Result<Vec<CompactOnDemandOpening>, WitnessStageOpeningError> {
+        if leaf_level.state_count() != self.extended_rows || leaf_level.arity() != self.arity {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        let mut openings = Vec::with_capacity(rows.len());
+        for row in rows {
+            let path = record_opening_duration(
+                timing.as_deref_mut().map(|timing| &mut timing.path),
+                || {
+                    leaf_level
+                        .opening_path(*row)
+                        .map_err(WitnessStageOpeningError::from)
+                },
+            )?;
+            if path.root != expected_root {
+                return Err(WitnessStageOpeningError::InvalidTreeByteLength {
+                    expected: self.logical_tree_bytes,
+                    found: 0,
+                });
+            }
+            let values = record_opening_duration(
+                timing.as_deref_mut().map(|timing| &mut timing.row_values),
+                || self.extended_row_values_from_source_cuda(*row, source_buffer),
             )?;
             openings.push((values, path.siblings));
         }
