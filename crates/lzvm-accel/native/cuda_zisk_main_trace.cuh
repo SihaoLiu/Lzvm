@@ -277,5 +277,5 @@ extern "C" int lzvm_cuda_expand_zisk_main_trace_descriptors(
     expand_zisk_main_trace_descriptors_kernel<<<static_cast<int>(blocks), kThreads>>>(
         dst, descriptors, descriptor_words, descriptor_count, row_count, terminal_pc);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    return lzvm_cuda_synchronize();
+    return 0;
 }

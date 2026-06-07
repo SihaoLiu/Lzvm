@@ -1043,6 +1043,24 @@ fn zisk_main_descriptor_expansion_writes_rows_without_full_zero_prefill() {
         body.contains("row[38] = 0"),
         "descriptor expansion should still explicitly bind the unused trace column to zero"
     );
+    assert!(
+        !body.contains("lzvm_cuda_synchronize"),
+        "descriptor expansion should leave stream ordering to downstream consumers"
+    );
+    let wrapped_source = format!("{cuda_source}\n__source_end");
+    let wrapper_body = function_body(
+        &wrapped_source,
+        concat!(
+            "extern \"C\" int lzvm_cuda_expand_",
+            "zi",
+            "sk_main_trace_descriptors"
+        ),
+        "__source_end",
+    );
+    assert!(
+        !wrapper_body.contains("lzvm_cuda_synchronize"),
+        "descriptor expansion should not force a device-wide synchronization"
+    );
 }
 
 #[test]
