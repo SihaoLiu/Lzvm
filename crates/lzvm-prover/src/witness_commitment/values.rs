@@ -65,6 +65,10 @@ pub(crate) struct WitnessStageOpeningWorkTiming {
     pub(crate) path_parent_hash_row_count: usize,
     pub(crate) path_parent_hash_byte_count: usize,
     pub(crate) path_parent_hash_launch_count: usize,
+    pub(crate) row_values_device_row_count: usize,
+    pub(crate) row_values_source_row_count: usize,
+    pub(crate) row_values_word_count: usize,
+    pub(crate) row_values_byte_count: usize,
     pub(crate) path: Duration,
     pub(crate) row_values: Duration,
 }
@@ -138,6 +142,25 @@ impl WitnessStageOpeningWorkTiming {
         self.path_parent_hash_row_count += row_count;
         self.path_parent_hash_byte_count += byte_count;
         self.path_parent_hash_launch_count += launch_count;
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn record_device_row_values(&mut self, row_count: usize, column_count: usize) {
+        self.row_values_device_row_count += row_count;
+        self.record_row_values(row_count, column_count);
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn record_source_row_values(&mut self, row_count: usize, column_count: usize) {
+        self.row_values_source_row_count += row_count;
+        self.record_row_values(row_count, column_count);
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    fn record_row_values(&mut self, row_count: usize, column_count: usize) {
+        let word_count = row_count * column_count;
+        self.row_values_word_count += word_count;
+        self.row_values_byte_count += word_count * WORD_BYTES;
     }
 }
 
@@ -1641,6 +1664,9 @@ impl WitnessStageCompactTreeStorage {
                 || self.copy_extended_row_values_from_device(&output_buffer, *row),
             )
             .map_err(|source| WitnessStageOpeningError::context("compact row values", source))?;
+            if let Some(timing) = timing.as_deref_mut() {
+                timing.record_device_row_values(1, self.columns);
+            }
             openings.push((values, path.siblings));
         }
         Ok(openings)
@@ -1738,6 +1764,9 @@ impl WitnessStageCompactTreeStorage {
             .map_err(|source| {
                 WitnessStageOpeningError::context("compact parent checkpoint row values", source)
             })?;
+            if let Some(timing) = timing.as_deref_mut() {
+                timing.record_device_row_values(1, self.columns);
+            }
             let mut siblings = lower_prefix;
             siblings.extend(upper_suffix.siblings);
             openings.push((values, siblings));
@@ -1799,6 +1828,9 @@ impl WitnessStageCompactTreeStorage {
             .map_err(|source| {
                 WitnessStageOpeningError::context("compact retained leaf digest row values", source)
             })?;
+            if let Some(timing) = timing.as_deref_mut() {
+                timing.record_source_row_values(1, self.columns);
+            }
             openings.push((values, path.siblings));
         }
         Ok(openings)

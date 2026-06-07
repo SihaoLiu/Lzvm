@@ -175,6 +175,22 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_row_values",
         timing.witness_opening_row_values,
     );
+    timings.record_count(
+        "finish_witness_opening_row_values_device_rows",
+        timing.witness_opening_row_values_device_row_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_row_values_source_rows",
+        timing.witness_opening_row_values_source_row_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_row_values_words",
+        timing.witness_opening_row_values_word_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_row_values_bytes",
+        timing.witness_opening_row_values_byte_count,
+    );
     for stage_timing in &timing.witness_stage_external_source {
         timings.record_dynamic(
             format!(
@@ -407,6 +423,34 @@ pub(super) fn record_proof_artifact_timing(
                 stage_work.stage_index
             ),
             stage_work.path_parent_hash_launch_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_row_values_device_rows",
+                stage_work.stage_index
+            ),
+            stage_work.row_values_device_row_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_row_values_source_rows",
+                stage_work.stage_index
+            ),
+            stage_work.row_values_source_row_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_row_values_words",
+                stage_work.stage_index
+            ),
+            stage_work.row_values_word_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_row_values_bytes",
+                stage_work.stage_index
+            ),
+            stage_work.row_values_byte_count,
         );
     }
     for stage_timing in &timing.witness_stage_opening_path {

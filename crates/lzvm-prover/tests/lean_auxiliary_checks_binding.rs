@@ -23,6 +23,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuCanonicalLeafCheckedAcceptance")
             && lean_source.contains("TimingObservedAcceptance")
             && lean_source.contains("GuestPcTraceTimingObservedAcceptance")
+            && lean_source.contains("WitnessOpeningRowValueTimingSummary")
+            && lean_source.contains("WitnessOpeningRowValueTimingObservedAcceptance")
             && lean_source.contains("GpuSetupCheckedAcceptance")
             && lean_source.contains("GpuAllocationCheckedAcceptance")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
@@ -42,6 +44,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "timing_observation_acceptance_verifier_core_contract",
             "guest_pc_trace_timing_acceptance_sound",
             "guest_pc_trace_timing_acceptance_verifier_core_contract",
+            "witness_opening_row_value_timing_acceptance_sound",
+            "witness_opening_row_value_timing_acceptance_verifier_core_contract",
             "gpu_setup_checked_acceptance_sound",
             "gpu_setup_checked_acceptance_verifier_core_contract",
             "gpu_allocation_checked_acceptance_sound",

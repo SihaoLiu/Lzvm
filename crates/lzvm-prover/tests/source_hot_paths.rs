@@ -2621,6 +2621,22 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "\"finish_witness_opening_path_parent_hash_launches_per_stage\"",
             "witness_opening_path_parent_hash_launch_count",
         ),
+        (
+            "\"finish_witness_opening_row_values_device_rows\"",
+            "witness_opening_row_values_device_row_count",
+        ),
+        (
+            "\"finish_witness_opening_row_values_source_rows\"",
+            "witness_opening_row_values_source_row_count",
+        ),
+        (
+            "\"finish_witness_opening_row_values_words\"",
+            "witness_opening_row_values_word_count",
+        ),
+        (
+            "\"finish_witness_opening_row_values_bytes\"",
+            "witness_opening_row_values_byte_count",
+        ),
     ] {
         assert!(
             proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
@@ -2732,6 +2748,22 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "finish_witness_stage_{}_opening_path_parent_hash_launches",
             "path_parent_hash_launch_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_row_values_device_rows",
+            "row_values_device_row_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_row_values_source_rows",
+            "row_values_source_row_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_row_values_words",
+            "row_values_word_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_row_values_bytes",
+            "row_values_byte_count",
         ),
     ] {
         assert!(

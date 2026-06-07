@@ -178,6 +178,10 @@ fn proof_artifact_timing_reports_parent_hash_shape_counts() {
 #[test]
 fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
     let timing = lzvm_prover::WitnessProofArtifactTiming {
+        witness_opening_row_values_device_row_count: 34,
+        witness_opening_row_values_source_row_count: 35,
+        witness_opening_row_values_word_count: 36,
+        witness_opening_row_values_byte_count: 37,
         witness_stage_opening_work: vec![lzvm_prover::WitnessProofStageOpeningWork {
             stage_index: 7,
             retained_source_count: 2,
@@ -208,6 +212,10 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
             path_parent_hash_row_count: 23,
             path_parent_hash_byte_count: 24,
             path_parent_hash_launch_count: 25,
+            row_values_device_row_count: 30,
+            row_values_source_row_count: 31,
+            row_values_word_count: 32,
+            row_values_byte_count: 33,
         }],
         ..lzvm_prover::WitnessProofArtifactTiming::default()
     };
@@ -220,6 +228,10 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
     let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
 
     for expected in [
+        "timing_finish_witness_opening_row_values_device_rows=34\n",
+        "timing_finish_witness_opening_row_values_source_rows=35\n",
+        "timing_finish_witness_opening_row_values_words=36\n",
+        "timing_finish_witness_opening_row_values_bytes=37\n",
         "timing_finish_witness_stage_7_opening_retained_source_count=2\n",
         "timing_finish_witness_stage_7_opening_external_source_count=3\n",
         "timing_finish_witness_stage_7_opening_embedded_source_count=4\n",
@@ -248,6 +260,10 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
         "timing_finish_witness_stage_7_opening_path_parent_hash_rows=23\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_bytes=24\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_launches=25\n",
+        "timing_finish_witness_stage_7_opening_row_values_device_rows=30\n",
+        "timing_finish_witness_stage_7_opening_row_values_source_rows=31\n",
+        "timing_finish_witness_stage_7_opening_row_values_words=32\n",
+        "timing_finish_witness_stage_7_opening_row_values_bytes=33\n",
     ] {
         assert!(stdout.contains(expected), "missing {expected} in {stdout}");
     }

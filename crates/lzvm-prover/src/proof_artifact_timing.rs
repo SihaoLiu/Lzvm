@@ -44,6 +44,10 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_path_parent_hash_launch_count: usize,
     pub witness_opening_path: Duration,
     pub witness_opening_row_values: Duration,
+    pub witness_opening_row_values_device_row_count: usize,
+    pub witness_opening_row_values_source_row_count: usize,
+    pub witness_opening_row_values_word_count: usize,
+    pub witness_opening_row_values_byte_count: usize,
     pub witness_stage_external_source: Vec<WitnessProofStageOpeningTiming>,
     pub witness_stage_opening: Vec<WitnessProofStageOpeningTiming>,
     pub witness_stage_opening_setup: Vec<WitnessProofStageOpeningTiming>,
@@ -99,6 +103,10 @@ pub struct WitnessProofStageOpeningWork {
     pub path_parent_hash_row_count: usize,
     pub path_parent_hash_byte_count: usize,
     pub path_parent_hash_launch_count: usize,
+    pub row_values_device_row_count: usize,
+    pub row_values_source_row_count: usize,
+    pub row_values_word_count: usize,
+    pub row_values_byte_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,6 +158,10 @@ impl WitnessProofStageOpeningWork {
         self.path_parent_hash_row_count += timing.path_parent_hash_row_count;
         self.path_parent_hash_byte_count += timing.path_parent_hash_byte_count;
         self.path_parent_hash_launch_count += timing.path_parent_hash_launch_count;
+        self.row_values_device_row_count += timing.row_values_device_row_count;
+        self.row_values_source_row_count += timing.row_values_source_row_count;
+        self.row_values_word_count += timing.row_values_word_count;
+        self.row_values_byte_count += timing.row_values_byte_count;
         self.retained_leaf_digest_opening_count += timing.retained_leaf_digest_opening_count;
         self.retained_leaf_digest_opening_row_count +=
             timing.retained_leaf_digest_opening_row_count;
@@ -292,6 +304,10 @@ impl WitnessProofArtifactTiming {
         self.witness_opening_path_parent_hash_row_count += timing.path_parent_hash_row_count;
         self.witness_opening_path_parent_hash_byte_count += timing.path_parent_hash_byte_count;
         self.witness_opening_path_parent_hash_launch_count += timing.path_parent_hash_launch_count;
+        self.witness_opening_row_values_device_row_count += timing.row_values_device_row_count;
+        self.witness_opening_row_values_source_row_count += timing.row_values_source_row_count;
+        self.witness_opening_row_values_word_count += timing.row_values_word_count;
+        self.witness_opening_row_values_byte_count += timing.row_values_byte_count;
         self.witness_opening_retained_leaf_digest_opening_count +=
             timing.retained_leaf_digest_opening_count;
         self.witness_opening_retained_leaf_digest_opening_row_count +=
