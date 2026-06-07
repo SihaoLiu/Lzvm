@@ -18,6 +18,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
     cuda_poseidon2_width16_merkle_digest_opening_path_device,
     cuda_poseidon2_width16_merkle_digest_root_device,
+    cuda_poseidon2_width16_merkle_digest_selected_parent_device,
     cuda_poseidon2_width16_merkle_opening_path_device, cuda_poseidon2_width16_merkle_parent_device,
     cuda_poseidon2_width16_merkle_root_device, cuda_poseidon2_width4, cuda_poseidon2_width4_device,
     cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8, cuda_poseidon2_width8_device,
@@ -25,6 +26,7 @@ use lzvm_accel::{
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
     cuda_poseidon2_width8_merkle_digest_opening_path_device,
     cuda_poseidon2_width8_merkle_digest_root_device,
+    cuda_poseidon2_width8_merkle_digest_selected_parent_device,
     cuda_poseidon2_width8_merkle_opening_path_device, cuda_poseidon2_width8_merkle_parent_device,
     cuda_poseidon2_width8_merkle_root_device, cuda_setup_init, AccelError, CudaDeviceBuffer,
     CudaRowMajorColumnView,
@@ -1668,6 +1670,23 @@ fn cuda_poseidon2_width8_merkle_digest_root_device_matches_padded_layout() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_poseidon2_width8_merkle_digest_selected_parent_device_matches_padded_layout() {
+    let digests = (0..5_u64)
+        .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
+        .collect::<Vec<_>>();
+    let padded = padded_digest_states(&digests, 8);
+    let expected = cpu_merkle_first_parent_level_width8(&padded)[2];
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests).expect("digest buffer should allocate");
+
+    let actual = cuda_poseidon2_width8_merkle_digest_selected_parent_device(&input_buffer, 2)
+        .expect("cuda compact digest selected parent should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_poseidon2_width8_merkle_digest_opening_path_device_matches_padded_layout() {
     let digests = (0..5_u64)
         .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
@@ -1966,6 +1985,23 @@ fn cuda_poseidon2_width16_merkle_digest_root_device_matches_padded_layout() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_poseidon2_width16_merkle_digest_selected_parent_device_matches_padded_layout() {
+    let digests = (0..7_u64)
+        .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
+        .collect::<Vec<_>>();
+    let padded = padded_digest_states(&digests, 16);
+    let expected = cpu_merkle_first_parent_level_width16(&padded)[1];
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests).expect("digest buffer should allocate");
+
+    let actual = cuda_poseidon2_width16_merkle_digest_selected_parent_device(&input_buffer, 1)
+        .expect("cuda compact digest selected parent should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_poseidon2_width16_merkle_digest_opening_path_device_matches_padded_layout() {
     let digests = (0..7_u64)
         .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
@@ -2012,6 +2048,22 @@ fn cpu_merkle_root_width8(states: &[u64]) -> [u64; 4] {
     }
 
     level[0]
+}
+
+#[cfg(feature = "cuda")]
+fn cpu_merkle_first_parent_level_width8(states: &[u64]) -> Vec<[u64; 4]> {
+    assert!(states.len().is_multiple_of(8));
+    states
+        .chunks(16)
+        .map(|chunk| {
+            let mut state = [0_u64; 8];
+            for (slot, child) in chunk.chunks(8).enumerate() {
+                state[slot * 4..slot * 4 + 4].copy_from_slice(&child[..4]);
+            }
+            poseidon2_hash_8(state.map(Felt::from_u64)).map(Felt::to_u64)
+        })
+        .map(|digest| [digest[0], digest[1], digest[2], digest[3]])
+        .collect()
 }
 
 #[cfg(feature = "cuda")]
@@ -2062,6 +2114,22 @@ fn cpu_merkle_root_width16(states: &[u64]) -> [u64; 4] {
     }
 
     level[0]
+}
+
+#[cfg(feature = "cuda")]
+fn cpu_merkle_first_parent_level_width16(states: &[u64]) -> Vec<[u64; 4]> {
+    assert!(states.len().is_multiple_of(16));
+    states
+        .chunks(64)
+        .map(|chunk| {
+            let mut state = [0_u64; 16];
+            for (slot, child) in chunk.chunks(16).enumerate() {
+                state[slot * 4..slot * 4 + 4].copy_from_slice(&child[..4]);
+            }
+            poseidon2_hash_16(state.map(Felt::from_u64)).map(Felt::to_u64)
+        })
+        .map(|digest| [digest[0], digest[1], digest[2], digest[3]])
+        .collect()
 }
 
 #[cfg(feature = "cuda")]

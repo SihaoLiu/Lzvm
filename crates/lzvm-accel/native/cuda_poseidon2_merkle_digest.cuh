@@ -32,6 +32,39 @@ __global__ void poseidon2_merkle_digest_parent_kernel(
 }
 
 template <size_t Width, size_t Arity>
+__global__ void poseidon2_merkle_digest_selected_parent_kernel(
+    const uint64_t* current_digests,
+    uint64_t* out,
+    size_t child_state_count,
+    size_t parent_index) {
+    if (blockIdx.x != 0 || threadIdx.x != 0) {
+        return;
+    }
+
+    uint64_t state[Width] = {};
+    const size_t first_child = parent_index * Arity;
+    for (size_t slot = 0; slot < Arity; ++slot) {
+        const size_t child_index = first_child + slot;
+        if (child_index < child_state_count) {
+            const size_t child_offset = child_index * kPoseidon2DigestWords;
+            const size_t slot_offset = slot * kPoseidon2DigestWords;
+            for (size_t word = 0; word < kPoseidon2DigestWords; ++word) {
+                state[slot_offset + word] = current_digests[child_offset + word];
+            }
+        }
+    }
+    if constexpr (Width == kPoseidon2Width8) {
+        poseidon2_hash_width8(state);
+    } else {
+        poseidon2_hash_width16(state);
+    }
+
+    for (size_t word = 0; word < kPoseidon2DigestWords; ++word) {
+        out[word] = state[word];
+    }
+}
+
+template <size_t Width, size_t Arity>
 int run_poseidon2_merkle_digest_root_on_device(
     const uint64_t* device_values,
     uint64_t* device_out,
@@ -80,6 +113,31 @@ int run_poseidon2_merkle_digest_root_on_device(
         current,
         kPoseidon2DigestWords * sizeof(uint64_t),
         cudaMemcpyDeviceToDevice);
+}
+
+template <size_t Width, size_t Arity>
+int run_poseidon2_merkle_digest_selected_parent_on_device(
+    const uint64_t* device_values,
+    uint64_t* device_out,
+    size_t child_state_count,
+    size_t parent_index) {
+    if (child_state_count == 0) {
+        return -2;
+    }
+    const size_t parent_state_count = (child_state_count + Arity - 1) / Arity;
+    if (parent_index >= parent_state_count) {
+        return -2;
+    }
+    if (device_values == nullptr || device_out == nullptr) {
+        return -1;
+    }
+
+    poseidon2_merkle_digest_selected_parent_kernel<Width, Arity><<<1, 1>>>(
+        device_values,
+        device_out,
+        child_state_count,
+        parent_index);
+    return lzvm_cuda_check_launch();
 }
 
 template <size_t Width, size_t Arity>
@@ -188,6 +246,24 @@ int run_poseidon2_width16_merkle_digest_root_on_device(
     size_t child_state_count) {
     return run_poseidon2_merkle_digest_root_on_device<kPoseidon2Width16, 4>(
         device_values, device_out, child_state_count);
+}
+
+int run_poseidon2_width8_merkle_digest_selected_parent_on_device(
+    const uint64_t* device_values,
+    uint64_t* device_out,
+    size_t child_state_count,
+    size_t parent_index) {
+    return run_poseidon2_merkle_digest_selected_parent_on_device<kPoseidon2Width8, 2>(
+        device_values, device_out, child_state_count, parent_index);
+}
+
+int run_poseidon2_width16_merkle_digest_selected_parent_on_device(
+    const uint64_t* device_values,
+    uint64_t* device_out,
+    size_t child_state_count,
+    size_t parent_index) {
+    return run_poseidon2_merkle_digest_selected_parent_on_device<kPoseidon2Width16, 4>(
+        device_values, device_out, child_state_count, parent_index);
 }
 
 int run_poseidon2_width8_merkle_digest_opening_path_on_device(

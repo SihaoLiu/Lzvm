@@ -262,6 +262,13 @@ unsafe extern "C" {
         out: *mut u64,
         child_state_count: usize,
     ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width8_merkle_digest_selected_parent_device"]
+    fn lzvm_cuda_poseidon2_width8_merkle_digest_selected_parent_device_raw(
+        values: *const u64,
+        out: *mut u64,
+        child_state_count: usize,
+        parent_index: usize,
+    ) -> i32;
     #[link_name = "lzvm_cuda_poseidon2_width8_merkle_digest_opening_path_device"]
     fn lzvm_cuda_poseidon2_width8_merkle_digest_opening_path_device_raw(
         values: *const u64,
@@ -330,6 +337,13 @@ unsafe extern "C" {
         values: *const u64,
         out: *mut u64,
         child_state_count: usize,
+    ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width16_merkle_digest_selected_parent_device"]
+    fn lzvm_cuda_poseidon2_width16_merkle_digest_selected_parent_device_raw(
+        values: *const u64,
+        out: *mut u64,
+        child_state_count: usize,
+        parent_index: usize,
     ) -> i32;
     #[link_name = "lzvm_cuda_poseidon2_width16_merkle_digest_opening_path_device"]
     fn lzvm_cuda_poseidon2_width16_merkle_digest_opening_path_device_raw(
@@ -1858,6 +1872,10 @@ fn run_cuda_poseidon2_device_op(
 type CudaPoseidon2MerkleParentDeviceOp = unsafe extern "C" fn(*const u64, *mut u64, usize) -> i32;
 
 #[cfg(feature = "cuda")]
+type CudaPoseidon2MerkleSelectedParentDeviceOp =
+    unsafe extern "C" fn(*const u64, *mut u64, usize, usize) -> i32;
+
+#[cfg(feature = "cuda")]
 type CudaPoseidon2MerkleOpeningPathDeviceOp =
     unsafe extern "C" fn(*const u64, *mut u64, *mut u64, usize, usize) -> i32;
 
@@ -2060,6 +2078,53 @@ fn run_cuda_poseidon2_merkle_digest_root_device_op(
 
     let root = out.to_u64_words()?;
     Ok([root[0], root[1], root[2], root[3]])
+}
+
+#[cfg(feature = "cuda")]
+fn run_cuda_poseidon2_merkle_digest_selected_parent_device_op(
+    values: &CudaDeviceBuffer,
+    arity: usize,
+    bits: usize,
+    parent_index: usize,
+    operation: CudaPoseidon2MerkleSelectedParentDeviceOp,
+) -> Result<[u64; 4], AccelError> {
+    if !values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len(),
+            rhs: values.len() / 8 * 8,
+        });
+    }
+
+    let child_word_count = values.len() / 8;
+    if !child_word_count.is_multiple_of(4) {
+        return Err(AccelError::InvalidDomain {
+            bits,
+            len: child_word_count,
+        });
+    }
+
+    let child_state_count = child_word_count / 4;
+    let parent_state_count = child_state_count.div_ceil(arity);
+    if child_state_count == 0 || parent_index >= parent_state_count {
+        return Err(AccelError::InvalidDomain {
+            bits,
+            len: child_state_count,
+        });
+    }
+
+    let out = CudaDeviceBuffer::new(u64_word_byte_len(4)?)?;
+    let code = unsafe {
+        operation(
+            values.as_raw_ptr() as *const u64,
+            out.as_raw_ptr() as *mut u64,
+            child_state_count,
+            parent_index,
+        )
+    };
+    cuda_status(code)?;
+
+    let digest = out.to_u64_words()?;
+    Ok([digest[0], digest[1], digest[2], digest[3]])
 }
 
 #[cfg(feature = "cuda")]
@@ -2433,6 +2498,20 @@ pub fn cuda_poseidon2_width8_merkle_digest_root_device(
 }
 
 #[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width8_merkle_digest_selected_parent_device(
+    values: &CudaDeviceBuffer,
+    parent_index: usize,
+) -> Result<[u64; 4], AccelError> {
+    run_cuda_poseidon2_merkle_digest_selected_parent_device_op(
+        values,
+        2,
+        3,
+        parent_index,
+        lzvm_cuda_poseidon2_width8_merkle_digest_selected_parent_device_raw,
+    )
+}
+
+#[cfg(feature = "cuda")]
 pub fn cuda_poseidon2_width8_merkle_digest_opening_path_device(
     values: &CudaDeviceBuffer,
     query_index: usize,
@@ -2529,6 +2608,20 @@ pub fn cuda_poseidon2_width16_merkle_digest_root_device(
         values,
         4,
         lzvm_cuda_poseidon2_width16_merkle_digest_root_device_raw,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width16_merkle_digest_selected_parent_device(
+    values: &CudaDeviceBuffer,
+    parent_index: usize,
+) -> Result<[u64; 4], AccelError> {
+    run_cuda_poseidon2_merkle_digest_selected_parent_device_op(
+        values,
+        4,
+        4,
+        parent_index,
+        lzvm_cuda_poseidon2_width16_merkle_digest_selected_parent_device_raw,
     )
 }
 
