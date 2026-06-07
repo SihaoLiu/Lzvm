@@ -169,6 +169,22 @@ theorem external_source_opening_checked_acceptance_obligations
         (And.intro publicInputBound
           (And.intro pcsOpenings friQueries)))
 
+theorem external_source_opening_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : ExternalSourceOpeningValidation system) :
+    forall publicInput proof,
+      ExternalSourceOpeningCheckedAcceptance system validation publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof acceptedWithExternalSource
+  exact
+    (external_source_opening_checked_acceptance_obligations
+      assumptions
+      validation
+      publicInput
+      proof
+      acceptedWithExternalSource).right
+
 theorem external_source_opening_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
