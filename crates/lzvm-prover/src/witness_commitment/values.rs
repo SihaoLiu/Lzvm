@@ -266,6 +266,14 @@ impl RetainedCudaParentCheckpointLevel {
     fn arity(&self) -> usize {
         self.level.arity()
     }
+
+    fn opening_path_for_source_row(
+        &self,
+        source_row: usize,
+    ) -> Result<crate::merkle_hash::CudaMerkleOpeningPath, crate::merkle_hash::MerkleHashError>
+    {
+        self.level.opening_path_for_source_row(source_row)
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -805,6 +813,26 @@ impl WitnessStageCommitment {
                         checkpoint.arity(),
                     )
                 }),
+        }
+    }
+
+    #[cfg(all(test, feature = "cuda"))]
+    pub(crate) fn retained_parent_checkpoint_opening_suffix_for_test(
+        &self,
+        source_row: usize,
+    ) -> Result<Vec<Vec<[Felt; HASH_WORDS]>>, WitnessStageOpeningError> {
+        match &self.tree {
+            WitnessStageTreeStorage::Host(_) => Err(WitnessStageOpeningError::LengthOverflow),
+            WitnessStageTreeStorage::Compact(storage) => {
+                let checkpoint = storage
+                    .retained_parent_checkpoint_level
+                    .as_ref()
+                    .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+                let path = checkpoint
+                    .opening_path_for_source_row(source_row)
+                    .map_err(WitnessStageOpeningError::from)?;
+                Ok(path.siblings)
+            }
         }
     }
 

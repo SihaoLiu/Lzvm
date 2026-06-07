@@ -294,6 +294,28 @@ impl CudaDigestCheckpointLevel {
     pub(crate) fn root(&self) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
         self.level.root()
     }
+
+    pub(crate) fn opening_path_for_source_row(
+        &self,
+        source_row: usize,
+    ) -> Result<CudaMerkleOpeningPath, MerkleHashError> {
+        if source_row >= self.source_state_count {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let leaf_span = self.source_leaf_span()?;
+        let checkpoint_row = source_row / leaf_span;
+        self.level.opening_path(checkpoint_row)
+    }
+
+    fn source_leaf_span(&self) -> Result<usize, MerkleHashError> {
+        let mut leaf_span = 1usize;
+        for _ in 0..self.folded_level_count {
+            leaf_span = leaf_span
+                .checked_mul(self.arity())
+                .ok_or(MerkleHashError::LengthOverflow)?;
+        }
+        Ok(leaf_span)
+    }
 }
 
 pub(crate) fn linear_hash(

@@ -1580,6 +1580,66 @@ mod tests {
 
     #[cfg(feature = "cuda")]
     #[test]
+    fn compact_device_parent_checkpoint_opening_matches_full_path_suffix() {
+        let source_bits = 2;
+        let target_bits = 12;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let column_count = 6;
+        let arity = 4;
+        let source_values = (0..source_rows * column_count)
+            .map(|value| Felt::from_u64(value as u64 + 1))
+            .collect::<Vec<_>>();
+        let source_device = std::sync::Arc::new(
+            lzvm_accel::CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&source_values))
+                .expect("source values should upload"),
+        );
+        let mut timing = crate::witness_commitment::WitnessStageLeafExtendTiming::default();
+        let leaf_level =
+            crate::witness_commitment::compact_witness_stage_leaf_hash_level_from_source_device_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                source_device.as_ref(),
+                &mut timing,
+            )
+            .expect("device leaf hash level should build");
+        let device = commit_witness_stage_device_compact_with_leaf_hash_level(
+            WitnessStageDeviceCompactCommitInput {
+                stage_index: 1,
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                external_source_required: false,
+            },
+            leaf_level,
+            Some(WitnessStageSourceDeviceView::new(
+                source_rows,
+                column_count,
+                column_count,
+                0,
+                source_device,
+            )),
+        )
+        .expect("device compact commitment should build");
+        let query_row = 3891_u64;
+        let full_opening =
+            open_witness_stage_commitment(&device, query_row, extended_rows as u64, column_count)
+                .expect("full opening should build");
+
+        let upper_siblings = device
+            .retained_parent_checkpoint_opening_suffix_for_test(query_row as usize)
+            .expect("retained checkpoint opening should build");
+
+        assert_eq!(upper_siblings, full_opening.siblings()[1..]);
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
     fn strided_device_source_compact_commitment_uses_full_trace_view() {
         let source_bits = 2;
         let target_bits = 3;
