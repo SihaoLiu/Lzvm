@@ -245,6 +245,52 @@ theorem runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_cont
         (And.intro perRow
           (And.intro witnessSegments witnessOpeningsBound)))
 
+theorem runtime_retained_leaf_digest_opening_checked_acceptance_retained_rows_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let openingValidation :=
+          validation.batchRowsValidation.openingSegmentValidation.openingValidation
+        validation.retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof
+          /\ validation.retainedLeafDigestRowsFromSource artifact publicInput proof
+          /\ validation.batchRowsValidation.perRowWitnessOpeningRowsBound
+            artifact
+            publicInput
+            proof
+          /\ validation.batchRowsValidation.openingSegmentValidation.witnessOpeningSegmentsValid
+            artifact
+            publicInput
+            proof
+          /\ openingValidation.witnessOpeningsBound
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have evidence :=
+    runtime_retained_leaf_digest_opening_checked_acceptance_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  exact
+    runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_contract
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      evidence
+
 theorem runtime_retained_leaf_digest_opening_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
