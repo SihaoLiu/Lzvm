@@ -166,6 +166,23 @@ theorem source_lookup_auxiliary_acceptance_sound
     And.intro acceptedWithLookupChecks.right
       (abstract_verifier_sound assumptions publicInput proof acceptedWithLookupChecks.left)
 
+theorem source_lookup_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (auxiliary : AuxiliaryValidation system) :
+    forall publicInput proof,
+      SourceLookupCheckedAcceptance system auxiliary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    source_lookup_auxiliary_acceptance_sound
+      assumptions
+      auxiliary
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
+
 theorem witness_leaf_digest_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -178,6 +195,23 @@ theorem witness_leaf_digest_acceptance_sound
   exact
     And.intro acceptedWithLeafDigestChecks.right
       (abstract_verifier_sound assumptions publicInput proof acceptedWithLeafDigestChecks.left)
+
+theorem witness_leaf_digest_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : WitnessLeafDigestValidation system) :
+    forall publicInput proof,
+      WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    witness_leaf_digest_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
 
 theorem gpu_canonical_leaf_checked_acceptance_sound
     {system : VerifierModel}
@@ -195,6 +229,23 @@ theorem gpu_canonical_leaf_checked_acceptance_sound
         proof
         acceptedWithCanonicalFlag.right)
       (abstract_verifier_sound assumptions publicInput proof acceptedWithCanonicalFlag.left)
+
+theorem gpu_canonical_leaf_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuCanonicalLeafValidation system) :
+    forall publicInput proof,
+      GpuCanonicalLeafCheckedAcceptance system validation publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_canonical_leaf_checked_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
 
 def TimingObservedAcceptance
     (system : VerifierModel)
@@ -280,6 +331,25 @@ theorem gpu_setup_checked_acceptance_sound
     And.intro acceptedWithSetup.right
       (abstract_verifier_sound assumptions publicInput proof acceptedWithSetup.left)
 
+theorem gpu_setup_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuSetupCacheValidation)
+    (request : GpuSetupRequest) :
+    forall publicInput proof,
+      GpuSetupCheckedAcceptance system validation request publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_setup_checked_acceptance_sound
+      assumptions
+      validation
+      request
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
+
 theorem gpu_allocation_cache_reuse_preserves_written_contents
     (validation : GpuAllocationCacheValidation)
     (cached fresh : GpuAllocationSource) :
@@ -310,5 +380,24 @@ theorem gpu_allocation_checked_acceptance_sound
   exact
     And.intro acceptedWithAllocation.right
       (abstract_verifier_sound assumptions publicInput proof acceptedWithAllocation.left)
+
+theorem gpu_allocation_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuAllocationCacheValidation)
+    (allocation : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuAllocationCheckedAcceptance system validation allocation publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_allocation_checked_acceptance_sound
+      assumptions
+      validation
+      allocation
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
 
 end Lzvm
