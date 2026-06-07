@@ -201,6 +201,50 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_evidence
                 (And.intro retainedPerRow
                   (And.intro witnessSegments witnessOpeningsBound)))))))
 
+theorem runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_contract
+    {system : VerifierModel}
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedLeafDigestOpeningEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        let openingValidation :=
+          validation.batchRowsValidation.openingSegmentValidation.openingValidation
+        validation.retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof
+          /\ validation.retainedLeafDigestRowsFromSource artifact publicInput proof
+          /\ validation.batchRowsValidation.perRowWitnessOpeningRowsBound
+            artifact
+            publicInput
+            proof
+          /\ validation.batchRowsValidation.openingSegmentValidation.witnessOpeningSegmentsValid
+            artifact
+            publicInput
+            proof
+          /\ openingValidation.witnessOpeningsBound
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  have rowsFromSource :=
+    evidence.right.right.right.right.left
+  have rowsBoundToQueryPlan :=
+    evidence.right.right.right.right.right.left
+  have perRow :=
+    evidence.right.right.right.right.right.right.left
+  have witnessSegments :=
+    evidence.right.right.right.right.right.right.right.left
+  have witnessOpeningsBound :=
+    evidence.right.right.right.right.right.right.right.right
+  exact
+    And.intro rowsBoundToQueryPlan
+      (And.intro rowsFromSource
+        (And.intro perRow
+          (And.intro witnessSegments witnessOpeningsBound)))
+
 theorem runtime_retained_leaf_digest_opening_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
