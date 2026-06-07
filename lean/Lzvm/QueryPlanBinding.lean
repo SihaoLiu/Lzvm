@@ -129,6 +129,27 @@ theorem runtime_query_plan_binding_checked_acceptance_evidence
         (And.intro matchesOpenedArtifacts
           (And.intro transcriptQueryPlanBound openingQueryPlanBound)))
 
+theorem runtime_query_plan_binding_evidence_implies_bound_contract
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanSegmentCanonical artifact publicInput proof
+          /\ validation.queryPlanDerivedFromTranscript artifact publicInput proof
+          /\ validation.queryPlanMatchesOpenedArtifacts artifact publicInput proof
+          /\ validation.challengeValidation.transcriptValidation.queryPlanBound
+            artifact
+            publicInput
+            proof
+          /\ validation.openingValidation.queryPlanBound artifact publicInput proof := by
+  intro artifact publicInput proof evidence
+  exact evidence
+
 theorem runtime_query_plan_binding_checked_acceptance_challenge
     {system : VerifierModel}
     (validation : RuntimeQueryPlanBindingValidation system) :
@@ -176,6 +197,40 @@ theorem runtime_query_plan_binding_checked_acceptance_opening
       publicInput
       proof
       accepted
+
+theorem runtime_query_plan_binding_checked_acceptance_bound_contract
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanSegmentCanonical artifact publicInput proof
+          /\ validation.queryPlanDerivedFromTranscript artifact publicInput proof
+          /\ validation.queryPlanMatchesOpenedArtifacts artifact publicInput proof
+          /\ validation.challengeValidation.transcriptValidation.queryPlanBound
+            artifact
+            publicInput
+            proof
+          /\ validation.openingValidation.queryPlanBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have evidence :=
+    runtime_query_plan_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_evidence_implies_bound_contract
+      validation
+      artifact
+      publicInput
+      proof
+      evidence
 
 theorem runtime_query_plan_binding_checked_acceptance_sound
     {system : VerifierModel}

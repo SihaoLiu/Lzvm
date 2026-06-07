@@ -3043,8 +3043,10 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     );
     assert!(
         lean_source.contains("structure RuntimeQueryPlanBindingValidation")
-            && lean_source.contains("runtime_query_plan_binding_checked_acceptance_sound"),
-        "Lean should expose a checked query plan binding soundness theorem"
+            && lean_source.contains("runtime_query_plan_binding_checked_acceptance_sound")
+            && lean_source.contains("runtime_query_plan_binding_evidence_implies_bound_contract")
+            && lean_source.contains("runtime_query_plan_binding_checked_acceptance_bound_contract"),
+        "Lean should expose checked query plan binding soundness and bound contract theorems"
     );
     assert!(
         lean_source.contains("RuntimeChallengeSegmentBindingValidation")
