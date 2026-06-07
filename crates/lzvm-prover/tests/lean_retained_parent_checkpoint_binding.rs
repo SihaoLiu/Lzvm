@@ -43,6 +43,12 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
                 "runtime_retained_parent_checkpoint_opening_checked_acceptance_batch_rows_evidence"
             )
             && lean_source.contains(
+                "runtime_retained_parent_checkpoint_opening_evidence_implies_opening_evidence"
+            )
+            && lean_source.contains(
+                "runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_evidence"
+            )
+            && lean_source.contains(
                 "runtime_retained_parent_checkpoint_opening_evidence_implies_digest_contract"
             )
             && lean_source.contains(

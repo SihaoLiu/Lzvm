@@ -345,6 +345,79 @@ theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_batch_rows
       requiresExternalSource
       evidence
 
+theorem runtime_retained_parent_checkpoint_opening_evidence_implies_opening_evidence
+    {system : VerifierModel}
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedParentCheckpointOpeningEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeOpeningEvidence
+          system
+          validation.batchRowsValidation.openingSegmentValidation.openingValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  have batchEvidence :=
+    runtime_retained_parent_checkpoint_opening_evidence_implies_batch_rows_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+  exact
+    runtime_batch_witness_opening_rows_evidence_implies_opening_evidence
+      validation.batchRowsValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      batchEvidence
+
+theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningEvidence
+          system
+          validation.batchRowsValidation.openingSegmentValidation.openingValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have evidence :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    runtime_retained_parent_checkpoint_opening_evidence_implies_opening_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+
 theorem runtime_retained_parent_checkpoint_opening_evidence_implies_retained_rows_contract
     {system : VerifierModel}
     (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
