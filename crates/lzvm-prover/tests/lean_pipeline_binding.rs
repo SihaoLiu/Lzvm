@@ -60,6 +60,9 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     );
     assert!(
         model_source.contains("def RuntimeVerifierCoreContract")
+            && model_source.contains("sound_witness_implies_verifier_core_contract")
+            && model_source.contains("SoundWitness system publicInput proof")
+            && model_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && runtime_soundness_source.contains("RuntimeVerifierCoreContract")
             && runtime_soundness_source.contains("runtime_soundness_checked_acceptance_core_obligations"),
         "Lean runtime soundness should name the verifier core obligations shared by pipeline soundness"
