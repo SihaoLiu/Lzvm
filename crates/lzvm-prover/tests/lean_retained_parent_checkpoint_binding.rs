@@ -44,6 +44,10 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             )
             && lean_source
                 .contains("runtime_retained_parent_checkpoint_opening_checked_acceptance_sound")
+            && lean_source.contains(
+                "runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract"
+            )
+            && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean retained parent checkpoint opening binding should expose checkpoint lower-prefix, upper-suffix, stitched-path, root equality, and source-row evidence"
     );
