@@ -769,11 +769,52 @@ theorem runtime_pipeline_binding_checked_acceptance_query_opening_contract
                               (And.intro challengeEvidence
                                 (And.intro openingSegmentEvidence
                                   (And.intro openingEvidence
-                                    (And.intro
-                                      (And.intro transcriptBound
-                                        (And.intro publicInputBound
-                                          (And.intro pcsOpeningsValid friQueriesValid)))
+                                      (And.intro
+                                        (And.intro transcriptBound
+                                          (And.intro publicInputBound
+                                            (And.intro pcsOpeningsValid friQueriesValid)))
                                       sound.right))))
+
+theorem runtime_pipeline_binding_checked_acceptance_opening_segment_bound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningSegmentBindingBoundContract
+          system
+          validation.queryPlanBindingValidation.openingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have contract :=
+    runtime_pipeline_binding_checked_acceptance_query_opening_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  cases contract with
+  | intro _queryPlanEvidence tail =>
+    cases tail with
+    | intro _challengeEvidence tail =>
+      cases tail with
+      | intro openingSegmentEvidence _tail =>
+        exact
+          runtime_opening_segment_binding_evidence_implies_bound_contract
+            validation.queryPlanBindingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            openingSegmentEvidence
 
 theorem runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract
     {system : VerifierModel}
