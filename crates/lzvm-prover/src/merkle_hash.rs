@@ -288,9 +288,57 @@ impl CudaDigestLevel {
             return Err(MerkleHashError::LengthOverflow);
         }
 
-        let mut path = self.opening_path(source_row)?;
-        path.siblings.truncate(folded_level_count);
-        Ok(path.siblings)
+        let mut siblings = Vec::with_capacity(folded_level_count);
+        let mut level_query = source_row;
+        let mut owned_level = None;
+        for level_index in 0..folded_level_count {
+            let next_level = {
+                let current = owned_level.as_ref().unwrap_or(self);
+                let child_slot = level_query % self.arity;
+                let group_start = (level_query / self.arity) * self.arity;
+                let mut level_siblings = Vec::with_capacity(self.arity - 1);
+                for slot in 0..self.arity {
+                    if slot == child_slot {
+                        continue;
+                    }
+                    let child_index = group_start
+                        .checked_add(slot)
+                        .ok_or(MerkleHashError::LengthOverflow)?;
+                    level_siblings.push(current.digest_at_or_zero(child_index)?);
+                }
+                siblings.push(level_siblings);
+                if level_index + 1 < folded_level_count {
+                    Some(current.parent_level()?)
+                } else {
+                    None
+                }
+            };
+            level_query /= self.arity;
+            if let Some(next_level) = next_level {
+                owned_level = Some(next_level);
+            }
+        }
+        Ok(siblings)
+    }
+
+    fn digest_at_or_zero(&self, index: usize) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
+        if index >= self.state_count {
+            return Ok([Felt::ZERO; HASH_WORDS]);
+        }
+        let byte_offset = index
+            .checked_mul(HASH_WORDS)
+            .and_then(|words| words.checked_mul(8))
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        let mut bytes = [0_u8; HASH_WORDS * 8];
+        self.digests
+            .copy_range_to(byte_offset, &mut bytes)
+            .map_err(|_| MerkleHashError::LengthOverflow)?;
+        let mut digest = [Felt::ZERO; HASH_WORDS];
+        for (word, chunk) in digest.iter_mut().zip(bytes.chunks_exact(8)) {
+            let value = u64::from_le_bytes(chunk.try_into().expect("slice length checked"));
+            *word = Felt::from_canonical(value).map_err(MerkleHashError::Field)?;
+        }
+        Ok(digest)
     }
 }
 

@@ -51,6 +51,14 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_retained_leaf_digest_rows",
         timing.witness_opening_retained_leaf_digest_opening_row_count,
     );
+    timings.record_count(
+        "finish_witness_opening_retained_parent_checkpoint_openings",
+        timing.witness_opening_retained_parent_checkpoint_opening_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_retained_parent_checkpoint_rows",
+        timing.witness_opening_retained_parent_checkpoint_opening_row_count,
+    );
     timings.record(
         "finish_witness_external_source",
         timing.witness_external_source,
@@ -245,6 +253,20 @@ pub(super) fn record_proof_artifact_timing(
                 stage_work.stage_index
             ),
             stage_work.retained_leaf_digest_opening_row_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_retained_parent_checkpoint_openings",
+                stage_work.stage_index
+            ),
+            stage_work.retained_parent_checkpoint_opening_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_retained_parent_checkpoint_rows",
+                stage_work.stage_index
+            ),
+            stage_work.retained_parent_checkpoint_opening_row_count,
         );
         timings.record_count_dynamic(
             format!(

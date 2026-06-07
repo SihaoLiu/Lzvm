@@ -16,6 +16,8 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_missing_source_count: usize,
     pub witness_opening_retained_leaf_digest_opening_count: usize,
     pub witness_opening_retained_leaf_digest_opening_row_count: usize,
+    pub witness_opening_retained_parent_checkpoint_opening_count: usize,
+    pub witness_opening_retained_parent_checkpoint_opening_row_count: usize,
     pub witness_external_source: Duration,
     pub witness_opening_setup: Duration,
     pub witness_opening_leaf_extend: Duration,
@@ -75,6 +77,8 @@ pub struct WitnessProofStageOpeningWork {
     pub missing_source_count: usize,
     pub retained_leaf_digest_opening_count: usize,
     pub retained_leaf_digest_opening_row_count: usize,
+    pub retained_parent_checkpoint_opening_count: usize,
+    pub retained_parent_checkpoint_opening_row_count: usize,
     pub leaf_hash_row_count: usize,
     pub leaf_hash_byte_count: usize,
     pub leaf_hash_arity2_row_count: usize,
@@ -137,6 +141,10 @@ impl WitnessProofStageOpeningWork {
         self.retained_leaf_digest_opening_count += timing.retained_leaf_digest_opening_count;
         self.retained_leaf_digest_opening_row_count +=
             timing.retained_leaf_digest_opening_row_count;
+        self.retained_parent_checkpoint_opening_count +=
+            timing.retained_parent_checkpoint_opening_count;
+        self.retained_parent_checkpoint_opening_row_count +=
+            timing.retained_parent_checkpoint_opening_row_count;
     }
 
     fn add_source(&mut self, kind: WitnessOpeningSourceKind) {
@@ -276,6 +284,10 @@ impl WitnessProofArtifactTiming {
             timing.retained_leaf_digest_opening_count;
         self.witness_opening_retained_leaf_digest_opening_row_count +=
             timing.retained_leaf_digest_opening_row_count;
+        self.witness_opening_retained_parent_checkpoint_opening_count +=
+            timing.retained_parent_checkpoint_opening_count;
+        self.witness_opening_retained_parent_checkpoint_opening_row_count +=
+            timing.retained_parent_checkpoint_opening_row_count;
         add_stage_opening_work(&mut self.witness_stage_opening_work, stage_index, timing);
         add_stage_duration(
             &mut self.witness_stage_opening_leaf_hash,

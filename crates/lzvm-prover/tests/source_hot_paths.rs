@@ -583,6 +583,69 @@ fn cuda_compact_witness_commit_retains_parent_checkpoint_level() {
 }
 
 #[test]
+fn cuda_compact_witness_opening_uses_retained_parent_checkpoint_after_leaf_digest_miss() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source =
+        std::fs::read_to_string(&values_path).expect("witness values source should read");
+    let artifact_timing_path = crate_root.join("src/proof_artifact_timing.rs");
+    let artifact_timing_source = std::fs::read_to_string(&artifact_timing_path)
+        .expect("proof artifact timing source should read");
+    let cli_timing_path = crate_root.join("../lzvm-cli/src/prove_witness/proof_timing.rs");
+    let cli_timing_source =
+        std::fs::read_to_string(&cli_timing_path).expect("CLI timing source should read");
+
+    let recompute_body = function_body(
+        &values_source,
+        "fn open_batch_with_recomputed_leaf_level_cuda",
+        "fn open_batch_with_retained_leaf_digest_level_cuda",
+    );
+    assert!(
+        recompute_body.contains("open_batch_with_retained_parent_checkpoint_level_cuda")
+            && recompute_body.contains("retained_parent_checkpoint_level"),
+        "compact CUDA openings should use retained parent checkpoints when leaf digest retention is unavailable"
+    );
+    let checkpoint_branch_index = recompute_body
+        .find("open_batch_with_retained_parent_checkpoint_level_cuda")
+        .expect("recomputed opening should contain retained parent checkpoint branch");
+    let full_path_index = recompute_body
+        .find(".opening_path(*row)")
+        .expect("recomputed opening should keep full path fallback");
+    assert!(
+        checkpoint_branch_index < full_path_index,
+        "checkpoint openings should be attempted before the full leaf-level opening fallback"
+    );
+    assert!(
+        values_source.contains("retained_parent_checkpoint_opening_count")
+            && values_source.contains("record_retained_parent_checkpoint_opening"),
+        "opening work timing should count retained parent checkpoint openings"
+    );
+    for (line_name, field) in [
+        (
+            "\"finish_witness_opening_retained_parent_checkpoint_openings\"",
+            "witness_opening_retained_parent_checkpoint_opening_count",
+        ),
+        (
+            "\"finish_witness_opening_retained_parent_checkpoint_rows\"",
+            "witness_opening_retained_parent_checkpoint_opening_row_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_retained_parent_checkpoint_openings",
+            "retained_parent_checkpoint_opening_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_retained_parent_checkpoint_rows",
+            "retained_parent_checkpoint_opening_row_count",
+        ),
+    ] {
+        assert!(
+            artifact_timing_source.contains(field) && cli_timing_source.contains(line_name),
+            "retained parent checkpoint opening timing should include {line_name}"
+        );
+    }
+}
+
+#[test]
 fn cuda_narrow_witness_commit_uses_compact_device_leaf_level() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let trace_path = crate_root.join("src/witness_commitment/trace.rs");
