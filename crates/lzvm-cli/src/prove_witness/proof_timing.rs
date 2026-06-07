@@ -144,6 +144,24 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_path_parent_hash_launches",
         timing.witness_opening_path_parent_hash_launch_count,
     );
+    record_count_per_unit(
+        timings,
+        "finish_witness_opening_path_parent_hash_rows_per_query",
+        timing.witness_opening_path_parent_hash_row_count,
+        timing.witness_opening_query_count,
+    );
+    record_count_per_unit(
+        timings,
+        "finish_witness_opening_path_parent_hash_rows_per_stage",
+        timing.witness_opening_path_parent_hash_row_count,
+        timing.witness_opening_stage_count,
+    );
+    record_count_per_unit(
+        timings,
+        "finish_witness_opening_path_parent_hash_launches_per_stage",
+        timing.witness_opening_path_parent_hash_launch_count,
+        timing.witness_opening_stage_count,
+    );
     timings.record("finish_witness_opening_path", timing.witness_opening_path);
     timings.record(
         "finish_witness_opening_row_values",
@@ -388,4 +406,16 @@ pub(super) fn record_proof_artifact_timing(
         "finish_fri_opening_query_count",
         timing.fri_opening_query_count,
     );
+}
+
+fn record_count_per_unit(
+    timings: &mut TimingRecorder,
+    name: &'static str,
+    numerator: usize,
+    denominator: usize,
+) {
+    if denominator == 0 {
+        return;
+    }
+    timings.record_count(name, numerator / denominator);
 }

@@ -152,6 +152,30 @@ fn writes_timing_count_summary_lines_without_ms_suffix() {
 }
 
 #[test]
+fn proof_artifact_timing_reports_parent_hash_shape_counts() {
+    let timing = lzvm_prover::WitnessProofArtifactTiming {
+        witness_opening_path_parent_hash_row_count: 120,
+        witness_opening_path_parent_hash_launch_count: 12,
+        witness_opening_query_count: 3,
+        witness_opening_stage_count: 4,
+        ..lzvm_prover::WitnessProofArtifactTiming::default()
+    };
+
+    let mut timings = TimingRecorder::new(true);
+    record_proof_artifact_timing(&mut timings, &timing);
+
+    let mut stdout = Vec::new();
+    write_timing_summary(&mut stdout, &timings);
+    let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+    assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_rows_per_query=40\n"));
+    assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_rows_per_stage=30\n"));
+    assert!(
+        stdout.contains("timing_finish_witness_opening_path_parent_hash_launches_per_stage=3\n")
+    );
+}
+
+#[test]
 fn guest_pc_trace_uses_parallel_witness_threads_by_default() {
     let result = parse_witness_args(&[
         "--guest-pc-trace",

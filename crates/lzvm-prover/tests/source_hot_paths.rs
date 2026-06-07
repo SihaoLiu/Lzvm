@@ -2211,6 +2211,18 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "\"finish_witness_opening_path_parent_hash_launches\"",
             "witness_opening_path_parent_hash_launch_count",
         ),
+        (
+            "\"finish_witness_opening_path_parent_hash_rows_per_query\"",
+            "witness_opening_query_count",
+        ),
+        (
+            "\"finish_witness_opening_path_parent_hash_rows_per_stage\"",
+            "witness_opening_stage_count",
+        ),
+        (
+            "\"finish_witness_opening_path_parent_hash_launches_per_stage\"",
+            "witness_opening_path_parent_hash_launch_count",
+        ),
     ] {
         assert!(
             proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
