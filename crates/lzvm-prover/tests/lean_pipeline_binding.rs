@@ -12,6 +12,9 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let proof_artifact_path = crate_root.join("src/proof_artifact.rs");
     let proof_artifact_source =
         std::fs::read_to_string(&proof_artifact_path).expect("proof artifact source should read");
+    let runtime_soundness_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness.lean");
+    let runtime_soundness_source = std::fs::read_to_string(&runtime_soundness_path)
+        .expect("Lean runtime soundness source should read");
 
     assert!(
         lean_source.contains("runtime_pipeline_binding_required_external_source_sound")
@@ -40,8 +43,15 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             && lean_source.contains("system.accepts publicInput proof")
             && lean_source.contains("RuntimeArtifactSoundnessObligations")
             && lean_source.contains("runtime_pipeline_binding_checked_acceptance_execution_obligations")
+            && lean_source.contains("RuntimeVerifierCoreContract")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean pipeline binding should expose query-plan, opening, execution, and full runtime soundness evidence"
+    );
+    assert!(
+        runtime_soundness_source.contains("def RuntimeVerifierCoreContract")
+            && runtime_soundness_source.contains("RuntimeVerifierCoreContract")
+            && runtime_soundness_source.contains("runtime_soundness_checked_acceptance_core_obligations"),
+        "Lean runtime soundness should name the verifier core obligations shared by pipeline soundness"
     );
     assert!(
         setup_preflight_source.contains("validate_global_source_lookup_hints")

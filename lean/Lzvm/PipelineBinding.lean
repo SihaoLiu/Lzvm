@@ -147,10 +147,7 @@ theorem runtime_pipeline_binding_evidence_implies_core_obligations
         publicInput
         proof
         requiresExternalSource ->
-      system.transcriptBound publicInput proof
-        /\ system.publicInputBound publicInput proof
-        /\ system.pcsOpeningsValid publicInput proof
-        /\ system.friQueriesValid publicInput proof := by
+      RuntimeVerifierCoreContract system publicInput proof := by
   intro evidence
   rcases evidence with
     ⟨_ethEvidence,
@@ -607,10 +604,7 @@ theorem runtime_pipeline_binding_checked_acceptance_core_obligations
           artifact
           publicInput
           proof ->
-        system.transcriptBound publicInput proof
-          /\ system.publicInputBound publicInput proof
-          /\ system.pcsOpeningsValid publicInput proof
-          /\ system.friQueriesValid publicInput proof := by
+        RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
   have sound :=
     runtime_pipeline_binding_checked_acceptance_sound
@@ -1152,10 +1146,7 @@ theorem runtime_pipeline_binding_checked_acceptance_verifier_core_contract
           publicInput
           proof ->
         system.accepts publicInput proof
-          /\ (system.transcriptBound publicInput proof
-            /\ system.publicInputBound publicInput proof
-            /\ system.pcsOpeningsValid publicInput proof
-            /\ system.friQueriesValid publicInput proof) := by
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
   have verifierAccepts :=
     runtime_pipeline_binding_checked_acceptance_verifier_accepts
@@ -1198,10 +1189,7 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
             artifact
             publicInput
             proof
-          /\ (system.transcriptBound publicInput proof
-            /\ system.publicInputBound publicInput proof
-            /\ system.pcsOpeningsValid publicInput proof
-            /\ system.friQueriesValid publicInput proof)
+          /\ RuntimeVerifierCoreContract system publicInput proof
           /\ (exists witness trace constraints,
             system.traceConsistent publicInput proof trace
               /\ system.constraintsSatisfied constraints trace

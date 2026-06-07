@@ -37,6 +37,15 @@ def RuntimeSoundnessCheckedAcceptance
       proof
       requiresExternalSource
 
+def RuntimeVerifierCoreContract
+    (system : VerifierModel)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.transcriptBound publicInput proof
+    /\ system.publicInputBound publicInput proof
+    /\ system.pcsOpeningsValid publicInput proof
+    /\ system.friQueriesValid publicInput proof
+
 def RuntimeSoundnessEvidence
     (system : VerifierModel)
     (validation : RuntimeSoundnessValidation system)
@@ -194,10 +203,7 @@ theorem runtime_soundness_checked_acceptance_core_obligations
           publicInput
           proof
           requiresExternalSource ->
-        system.transcriptBound publicInput proof
-          /\ system.publicInputBound publicInput proof
-          /\ system.pcsOpeningsValid publicInput proof
-          /\ system.friQueriesValid publicInput proof := by
+        RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked
   have sound :=
     runtime_soundness_checked_acceptance_sound
