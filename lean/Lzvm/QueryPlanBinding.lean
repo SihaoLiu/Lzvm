@@ -241,6 +241,70 @@ theorem runtime_query_plan_binding_checked_acceptance_bound_contract
       proof
       evidence
 
+theorem runtime_query_plan_binding_checked_acceptance_opening_segment_evidence
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningSegmentBindingEvidence
+          system
+          validation.openingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have openingAccepted :=
+    runtime_query_plan_binding_checked_acceptance_opening
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_segment_binding_checked_acceptance_evidence
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingAccepted
+
+theorem runtime_query_plan_binding_checked_acceptance_opening_segment_bound_contract
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningSegmentBindingBoundContract
+          system
+          validation.openingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have openingSegmentEvidence :=
+    runtime_query_plan_binding_checked_acceptance_opening_segment_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_segment_binding_evidence_implies_bound_contract
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentEvidence
+
 theorem runtime_query_plan_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
