@@ -1915,6 +1915,46 @@ fn compact_opening_reuses_retained_wide_leaf_digest_levels() {
 }
 
 #[test]
+fn retained_leaf_digest_opening_batches_selected_row_value_extension() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source = std::fs::read_to_string(&values_path)
+        .expect("witness commitment values source should read");
+
+    let leaf_digest_body = function_body(
+        &values_source,
+        "fn open_batch_with_retained_leaf_digest_level_cuda",
+        "fn copy_extended_row_values_from_device",
+    );
+    assert!(
+        leaf_digest_body.contains("extended_selected_row_values_from_source_cuda"),
+        "retained leaf digest openings should batch source-row extension for queried rows"
+    );
+    assert!(
+        !leaf_digest_body.contains("extended_row_values_from_source_cuda(*row"),
+        "retained leaf digest openings should avoid one CUDA row-extension call per queried row"
+    );
+
+    let selected_body = function_body(
+        &values_source,
+        "fn extended_selected_row_values_from_source_cuda",
+        "fn open_with_recomputed_leaf_level_cuda",
+    );
+    assert!(
+        selected_body
+            .contains("cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device")
+            && selected_body.contains(
+                "cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device"
+            ),
+        "selected row-value extension should use dense and strided selected-row CUDA primitives"
+    );
+    assert!(
+        selected_body.contains("to_u64_words()"),
+        "selected row-value extension should copy the selected rows back as one dense row buffer"
+    );
+}
+
+#[test]
 fn compact_opening_falls_back_when_retained_leaf_digest_is_structurally_unusable() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");
