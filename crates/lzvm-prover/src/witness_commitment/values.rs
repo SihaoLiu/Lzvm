@@ -123,11 +123,11 @@ static RETAINED_SOURCE_DEVICE_LIMIT: OnceLock<usize> = OnceLock::new();
 static RETAINED_SOURCE_DEVICE_REGISTRY: OnceLock<Mutex<HashMap<usize, RetainedSourceDeviceEntry>>> =
     OnceLock::new();
 #[cfg(feature = "cuda")]
-const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 8 * 1024 * 1024 * 1024;
+const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
 const RETAINED_LEAF_DIGEST_RESERVE_BYTES: usize = 12 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
-const MAX_DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 24 * 1024 * 1024 * 1024;
+const MAX_DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = DEFAULT_RETAINED_LEAF_DIGEST_BYTES;
 #[cfg(feature = "cuda")]
 static RETAINED_LEAF_DIGEST_BYTES: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "cuda")]
@@ -1620,5 +1620,23 @@ impl WitnessStageExtendedValues {
 
     pub fn values(&self) -> &[Felt] {
         &self.values
+    }
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_retained_leaf_digest_limit_stays_within_static_cache_cap() {
+        assert_eq!(
+            DEFAULT_RETAINED_LEAF_DIGEST_BYTES,
+            1024 * 1024 * 1024,
+            "default retained leaf digest cache should stay conservative unless large proof runs prove a higher cap is safe"
+        );
+        assert!(
+            default_retained_leaf_digest_limit() <= DEFAULT_RETAINED_LEAF_DIGEST_BYTES,
+            "default retained leaf digest cache should not grow until it can share a global device-memory budget"
+        );
     }
 }
