@@ -558,6 +558,10 @@ fn cuda_compact_witness_commit_retains_parent_checkpoint_level() {
         compact_storage_body.contains("retained_parent_checkpoint_level"),
         "compact CUDA storage should retain a parent checkpoint level for sparse openings"
     );
+    assert!(
+        tree_source.contains("const RETAINED_PARENT_CHECKPOINT_MAX_STATES: usize = 524288"),
+        "retained parent checkpoints should keep a wider upper level to shorten lower-prefix opening work"
+    );
 
     let device_commit_body = function_body(
         &tree_source,

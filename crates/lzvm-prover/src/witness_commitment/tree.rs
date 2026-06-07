@@ -20,7 +20,7 @@ use super::{
 };
 
 #[cfg(feature = "cuda")]
-const RETAINED_PARENT_CHECKPOINT_MAX_STATES: usize = 2048;
+const RETAINED_PARENT_CHECKPOINT_MAX_STATES: usize = 524288;
 
 pub fn commit_witness_stage_leaves(
     leaves: &WitnessStageLeaves,
@@ -1526,7 +1526,7 @@ mod tests {
     #[test]
     fn compact_device_commit_retains_parent_checkpoint_level() {
         let source_bits = 2;
-        let target_bits = 12;
+        let target_bits = 20;
         let source_rows = 1_usize << source_bits;
         let extended_rows = 1_usize << target_bits;
         let column_count = 6;
@@ -1582,7 +1582,7 @@ mod tests {
     #[test]
     fn compact_device_parent_checkpoint_opening_matches_full_path_suffix() {
         let source_bits = 2;
-        let target_bits = 12;
+        let target_bits = 20;
         let source_rows = 1_usize << source_bits;
         let extended_rows = 1_usize << target_bits;
         let column_count = 6;
@@ -1642,7 +1642,7 @@ mod tests {
     #[test]
     fn compact_device_batch_opening_uses_retained_parent_checkpoint_after_leaf_digest_drop() {
         let source_bits = 2;
-        let target_bits = 12;
+        let target_bits = 20;
         let source_rows = 1_usize << source_bits;
         let extended_rows = 1_usize << target_bits;
         let column_count = 6;
@@ -1717,7 +1717,7 @@ mod tests {
             batch_timing.retained_parent_checkpoint_opening_row_count,
             rows.len()
         );
-        let checkpoint_parent_rows = 256 + 64 + 16 + 4 + 1;
+        let checkpoint_parent_rows = 65536 + 16384 + 4096 + 1024 + 256 + 64 + 16 + 4 + 1;
         assert_eq!(
             batch_timing.path_parent_hash_row_count,
             rows.len() * checkpoint_parent_rows
