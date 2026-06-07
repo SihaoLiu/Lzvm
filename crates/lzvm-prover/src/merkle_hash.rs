@@ -7,11 +7,13 @@ use lzvm_accel::{
     cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
     cuda_poseidon2_width16_merkle_digest_opening_path_device,
+    cuda_poseidon2_width16_merkle_digest_parent_device,
     cuda_poseidon2_width16_merkle_digest_root_device,
     cuda_poseidon2_width16_merkle_digest_selected_parent_device,
     cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
     cuda_poseidon2_width8_merkle_digest_opening_path_device,
+    cuda_poseidon2_width8_merkle_digest_parent_device,
     cuda_poseidon2_width8_merkle_digest_root_device,
     cuda_poseidon2_width8_merkle_digest_selected_parent_device,
     cuda_poseidon2_width8_merkle_parent_device, CudaDeviceBuffer,
@@ -107,6 +109,38 @@ impl CudaDigestLevel {
         let root_words =
             (self.root_operation)(&self.digests).map_err(|_| MerkleHashError::LengthOverflow)?;
         digest_from_state_words(&root_words)
+    }
+
+    pub(crate) fn parent_level(&self) -> Result<Self, MerkleHashError> {
+        if self.state_count <= 1 {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let parent_count = self.state_count.div_ceil(self.arity);
+        let mut parent_digests = CudaDeviceBuffer::new(
+            parent_count
+                .checked_mul(HASH_WORDS)
+                .and_then(|word_count| word_count.checked_mul(8))
+                .ok_or(MerkleHashError::LengthOverflow)?,
+        )
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+        match self.arity {
+            2 => cuda_poseidon2_width8_merkle_digest_parent_device(
+                &self.digests,
+                &mut parent_digests,
+            ),
+            4 => cuda_poseidon2_width16_merkle_digest_parent_device(
+                &self.digests,
+                &mut parent_digests,
+            ),
+            _ => return Err(MerkleHashError::UnsupportedArity { arity: self.arity }),
+        }
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+        Ok(Self::new(
+            parent_digests,
+            parent_count,
+            self.arity,
+            self.root_operation,
+        ))
     }
 
     #[allow(dead_code)]
@@ -459,46 +493,26 @@ fn parent_levels_from_digest_level_on_cuda(
     level: &[[Felt; HASH_WORDS]],
     arity: usize,
 ) -> Result<Vec<MerkleParentLevel>, MerkleHashError> {
-    let (width, operation): (usize, CudaPoseidon2DeviceOp) = match arity {
-        2 => (8, cuda_poseidon2_width8_merkle_parent_device),
-        4 => (16, cuda_poseidon2_width16_merkle_parent_device),
+    let root_operation: CudaPoseidon2RootOp = match arity {
+        2 => cuda_poseidon2_width8_merkle_digest_root_device,
+        4 => cuda_poseidon2_width16_merkle_digest_root_device,
         _ => unreachable!("arity is validated"),
     };
 
-    let current = state_buffer_from_digest_level(level, width)?;
-    parent_levels_from_device_buffer(current, level.len(), arity, width, operation)
-}
-
-#[cfg(feature = "cuda")]
-fn parent_levels_from_device_buffer(
-    mut current: CudaDeviceBuffer,
-    mut state_count: usize,
-    arity: usize,
-    width: usize,
-    operation: CudaPoseidon2DeviceOp,
-) -> Result<Vec<MerkleParentLevel>, MerkleHashError> {
-    let mut levels = Vec::new();
-    while state_count > 1 {
-        let padding_count = padding_count(state_count, arity)?;
-        let parent_count = state_count.div_ceil(arity);
-        let mut next = CudaDeviceBuffer::new(
-            parent_count
-                .checked_mul(width)
-                .and_then(|word_count| word_count.checked_mul(8))
-                .ok_or(MerkleHashError::LengthOverflow)?,
-        )
+    let input_words = digest_level_as_words(level)?;
+    let input_buffer = CudaDeviceBuffer::from_u64_words(&input_words)
         .map_err(|_| MerkleHashError::LengthOverflow)?;
-        operation(&current, &mut next).map_err(|_| MerkleHashError::LengthOverflow)?;
-        let parent_words = next
-            .to_state_prefix_u64_words(parent_count, width, HASH_WORDS)
-            .map_err(|_| MerkleHashError::LengthOverflow)?;
-        let parents = digests_from_hashed_states(&parent_words, HASH_WORDS)?;
+    let mut current = CudaDigestLevel::new(input_buffer, level.len(), arity, root_operation);
+    let mut levels = Vec::new();
+    while current.state_count() > 1 {
+        let padding_count = padding_count(current.state_count(), arity)?;
+        let next = current.parent_level()?;
+        let parents = next.to_digests()?;
         levels.push(MerkleParentLevel {
             padding_count,
             parents,
         });
         current = next;
-        state_count = parent_count;
     }
     Ok(levels)
 }
@@ -628,26 +642,6 @@ fn compact_digest_buffer_from_state_buffer(
         .copy_from_device_row_major_u64_slice(states, row_count, state_width, 0, HASH_WORDS)
         .map_err(|_| MerkleHashError::LengthOverflow)?;
     Ok(digests)
-}
-
-#[cfg(feature = "cuda")]
-fn state_buffer_from_digest_level(
-    level: &[[Felt; HASH_WORDS]],
-    width: usize,
-) -> Result<CudaDeviceBuffer, MerkleHashError> {
-    let mut words = Vec::with_capacity(
-        level
-            .len()
-            .checked_mul(HASH_WORDS)
-            .ok_or(MerkleHashError::LengthOverflow)?,
-    );
-    for digest in level {
-        for value in digest {
-            words.push(value.to_u64());
-        }
-    }
-    CudaDeviceBuffer::from_state_prefix_u64_words(&words, level.len(), width, HASH_WORDS)
-        .map_err(|_| MerkleHashError::LengthOverflow)
 }
 
 fn validate_arity(arity: usize) -> Result<(), MerkleHashError> {
@@ -1401,6 +1395,70 @@ mod tests {
             .expect("arity-4 selected parent should hash");
 
         assert_eq!(arity4_actual, arity4_expected);
+    }
+
+    #[test]
+    fn cuda_digest_level_parent_level_matches_cpu_reference() {
+        let arity2 = vec![
+            digest([1, 2, 3, 4]),
+            digest([5, 6, 7, 8]),
+            digest([9, 10, 11, 12]),
+        ];
+        let arity2_words = digest_words(&arity2);
+        let arity2_buffer =
+            CudaDeviceBuffer::from_u64_words(&arity2_words).expect("arity-2 digests should upload");
+        let arity2_level = CudaDigestLevel::new(
+            arity2_buffer,
+            arity2.len(),
+            2,
+            cuda_poseidon2_width8_merkle_digest_root_device,
+        );
+        let arity2_expected = vec![
+            parent_hash(&arity2[0..2], 2).expect("first arity-2 parent should hash"),
+            parent_hash(&[arity2[2], [Felt::ZERO; 4]], 2)
+                .expect("padded arity-2 parent should hash"),
+        ];
+
+        let arity2_parent = arity2_level
+            .parent_level()
+            .expect("arity-2 parent level should hash");
+
+        assert_eq!(arity2_parent.state_count(), arity2_expected.len());
+        assert_eq!(arity2_parent.arity(), 2);
+        assert_eq!(arity2_parent.to_digests().unwrap(), arity2_expected);
+        assert_eq!(arity2_parent.root().unwrap(), arity2_level.root().unwrap());
+
+        let arity4 = vec![
+            digest([11, 12, 13, 14]),
+            digest([21, 22, 23, 24]),
+            digest([31, 32, 33, 34]),
+            digest([41, 42, 43, 44]),
+            digest([51, 52, 53, 54]),
+            digest([61, 62, 63, 64]),
+        ];
+        let arity4_words = digest_words(&arity4);
+        let arity4_buffer =
+            CudaDeviceBuffer::from_u64_words(&arity4_words).expect("arity-4 digests should upload");
+        let arity4_level = CudaDigestLevel::new(
+            arity4_buffer,
+            arity4.len(),
+            4,
+            cuda_poseidon2_width16_merkle_digest_root_device,
+        );
+        let arity4_expected = vec![
+            parent_hash(&arity4[0..4], 4).expect("first arity-4 parent should hash"),
+            parent_hash(&[arity4[4], arity4[5], [Felt::ZERO; 4], [Felt::ZERO; 4]], 4)
+                .expect("padded arity-4 parent should hash"),
+        ];
+
+        let arity4_parent = arity4_level
+            .parent_level()
+            .expect("arity-4 parent level should hash");
+
+        assert_eq!(arity4_parent.state_count(), arity4_expected.len());
+        assert_eq!(arity4_parent.arity(), 4);
+        assert_eq!(arity4_parent.to_digests().unwrap(), arity4_expected);
+        assert_eq!(arity4_parent.root().unwrap(), arity4_level.root().unwrap());
     }
 
     #[test]

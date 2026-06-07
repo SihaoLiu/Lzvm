@@ -210,12 +210,16 @@ fn witness_merkle_tree_uses_device_parent_level_pipeline() {
         std::fs::read_to_string(&merkle_source_path).expect("Merkle hash source should read");
     let cuda_body = function_body(
         &merkle_source,
-        "fn parent_levels_from_device_buffer",
+        "fn parent_levels_from_digest_level_on_cuda",
         "pub(crate) fn root_from_digest_level",
     );
     assert!(
-        !cuda_body.contains("from_u64_words"),
-        "CUDA parent-level pipeline should not upload each Merkle level"
+        cuda_body.matches("from_u64_words").count() <= 1,
+        "CUDA parent-level pipeline should upload only the initial digest level"
+    );
+    assert!(
+        cuda_body.contains("current.parent_level()"),
+        "CUDA parent-level pipeline should iterate compact device parent levels"
     );
 }
 
@@ -2594,15 +2598,16 @@ fn cuda_parent_levels_upload_digest_prefixes_without_host_state_expansion() {
     let body = function_body(
         &source,
         "fn parent_levels_from_digest_level_on_cuda",
-        "fn parent_levels_from_device_buffer",
+        "pub(crate) fn root_from_digest_level",
     );
 
     assert!(
-        body.contains("state_buffer_from_digest_level(level, width)"),
-        "CUDA parent levels should upload compact digest prefixes before expanding padded states"
+        body.contains("CudaDigestLevel::new") && body.contains("current.parent_level()"),
+        "CUDA parent levels should keep compact digest levels on device"
     );
     assert!(
-        !body.contains("digest_level_as_state_words(level, width)"),
+        !body.contains("state_buffer_from_digest_level")
+            && !body.contains("digest_level_as_state_words(level, width)"),
         "CUDA parent levels should avoid host-side padded state expansion"
     );
 }
