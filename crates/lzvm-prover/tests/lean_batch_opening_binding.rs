@@ -1,5 +1,8 @@
 use std::path::Path;
 
+#[path = "support/lean_binding.rs"]
+mod lean_binding;
+
 #[test]
 fn lean_batch_opening_binding_tracks_runtime_batch_helpers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -20,31 +23,25 @@ fn lean_batch_opening_binding_tracks_runtime_batch_helpers() {
         lean_source.contains("RuntimeBatchWitnessOpeningRowsValidation")
             && lean_source.contains("perRowWitnessOpeningRowsBound")
             && lean_source.contains("def RuntimeBatchWitnessOpeningRowsBoundContract")
-            && lean_source
-                .contains("runtime_batch_witness_opening_rows_checked_acceptance_evidence")
-            && lean_source.contains(
-                "runtime_batch_witness_opening_rows_evidence_implies_opening_segment_evidence"
-            )
-            && lean_source
-                .contains("runtime_batch_witness_opening_rows_evidence_implies_opening_evidence")
-            && lean_source
-                .contains("runtime_batch_witness_opening_rows_evidence_implies_bound_contract")
-            && lean_source.contains(
-                "runtime_batch_witness_opening_rows_checked_acceptance_opening_segment_evidence"
-            )
-            && lean_source
-                .contains("runtime_batch_witness_opening_rows_checked_acceptance_opening_evidence")
-            && lean_source
-                .contains("runtime_batch_witness_opening_rows_checked_acceptance_bound_contract")
-            && lean_source.contains("runtime_batch_witness_opening_rows_checked_acceptance_sound")
-            && lean_source.contains(
-                "runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract"
-            )
             && lean_source.contains("RuntimeOpeningSegmentBindingEvidence")
             && lean_source.contains("RuntimeOpeningEvidence")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean batch opening binding should expose per-row batch opening soundness evidence"
+    );
+    lean_binding::assert_theorem_declarations(
+        &lean_source,
+        &[
+            "runtime_batch_witness_opening_rows_checked_acceptance_evidence",
+            "runtime_batch_witness_opening_rows_evidence_implies_opening_segment_evidence",
+            "runtime_batch_witness_opening_rows_evidence_implies_opening_evidence",
+            "runtime_batch_witness_opening_rows_evidence_implies_bound_contract",
+            "runtime_batch_witness_opening_rows_checked_acceptance_opening_segment_evidence",
+            "runtime_batch_witness_opening_rows_checked_acceptance_opening_evidence",
+            "runtime_batch_witness_opening_rows_checked_acceptance_bound_contract",
+            "runtime_batch_witness_opening_rows_checked_acceptance_sound",
+            "runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract",
+        ],
     );
     assert!(
         top_level_source.contains("import Lzvm.BatchOpeningBinding"),

@@ -1,5 +1,8 @@
 use std::path::Path;
 
+#[path = "support/lean_binding.rs"]
+mod lean_binding;
+
 #[test]
 fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -27,38 +30,27 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             && lean_source.contains("RuntimeRetainedLeafDigestOpeningRetainedRowsContract")
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsEvidence")
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsBoundContract")
-            && lean_source
-                .contains("runtime_retained_leaf_digest_opening_checked_acceptance_evidence")
-            && lean_source.contains(
-                "runtime_retained_leaf_digest_opening_evidence_implies_batch_rows_evidence"
-            )
-            && lean_source.contains(
-                "runtime_retained_leaf_digest_opening_checked_acceptance_batch_rows_evidence"
-            )
-            && lean_source.contains(
-                "runtime_retained_leaf_digest_opening_evidence_implies_batch_rows_bound_contract"
-            )
-            && lean_source.contains(
-                "runtime_retained_leaf_digest_opening_checked_acceptance_batch_rows_bound_contract"
-            )
-            && lean_source.contains(
-                "runtime_retained_leaf_digest_opening_evidence_implies_opening_evidence"
-            )
-            && lean_source.contains(
-                "runtime_retained_leaf_digest_opening_checked_acceptance_opening_evidence"
-            )
-            && lean_source
-                .contains("runtime_retained_leaf_digest_opening_evidence_implies_digest_contract")
-            && lean_source.contains(
-                "runtime_retained_leaf_digest_opening_checked_acceptance_digest_contract"
-            )
-            && lean_source.contains("runtime_retained_leaf_digest_opening_checked_acceptance_sound")
-            && lean_source.contains(
-                "runtime_retained_leaf_digest_opening_checked_acceptance_verifier_core_contract"
-            )
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean retained leaf digest opening binding should expose source rows, Merkle path, root equality, and soundness evidence"
+    );
+    lean_binding::assert_theorem_declarations(
+        &lean_source,
+        &[
+            "runtime_retained_leaf_digest_opening_checked_acceptance_evidence",
+            "runtime_retained_leaf_digest_opening_evidence_implies_digest_contract",
+            "runtime_retained_leaf_digest_opening_evidence_implies_batch_rows_evidence",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_batch_rows_evidence",
+            "runtime_retained_leaf_digest_opening_evidence_implies_batch_rows_bound_contract",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_batch_rows_bound_contract",
+            "runtime_retained_leaf_digest_opening_evidence_implies_opening_evidence",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_opening_evidence",
+            "runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_contract",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_retained_rows_contract",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_digest_contract",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_sound",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_verifier_core_contract",
+        ],
     );
     assert!(
         top_level_source.contains("import Lzvm.RetainedLeafDigestOpening"),

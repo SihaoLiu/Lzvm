@@ -69,3 +69,22 @@ fn pipeline_binding_uses_theorem_declaration_export_checks() {
         "pipeline binding should use theorem declaration checks for exported theorem names"
     );
 }
+
+#[test]
+fn retained_opening_bindings_use_theorem_declaration_export_checks() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    for test_source in [
+        "lean_batch_opening_binding.rs",
+        "lean_retained_leaf_digest_binding.rs",
+        "lean_retained_parent_checkpoint_binding.rs",
+    ] {
+        let source = std::fs::read_to_string(crate_root.join("tests").join(test_source))
+            .expect("Lean opening binding test source should read");
+
+        assert!(
+            source.contains("lean_binding::assert_theorem_declarations"),
+            "{test_source} should use theorem declaration checks for exported theorem names"
+        );
+    }
+}
