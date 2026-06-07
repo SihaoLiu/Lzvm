@@ -3495,7 +3495,7 @@ fn run_prove_witness_commitments_from_trace_inner(
     let guest_pc_device_descriptor_buffer = if retain_stage_sources
         && retained_stage_source_devices.len() < stage_source_device_cache.stage_count()
     {
-        stage_source_device_cache.retained_guest_pc_device_descriptor_buffer(timing.as_deref_mut())
+        stage_source_device_cache.retained_guest_pc_device_descriptor_buffer(timing)
     } else {
         None
     };

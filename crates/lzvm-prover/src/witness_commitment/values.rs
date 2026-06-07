@@ -13,10 +13,10 @@ use std::time::Instant;
 use lzvm_accel::{
     cuda_goldilocks_coset_extend_row_major_columns_device,
     cuda_goldilocks_coset_extend_row_major_columns_device_unsynced,
-    cuda_goldilocks_coset_extend_row_major_columns_row_device,
+    cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced,
-    cuda_goldilocks_coset_extend_row_major_columns_strided_row_device, cuda_memory_info,
+    cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device, cuda_memory_info,
     CudaDeviceBuffer, CudaRowMajorColumnView,
 };
 #[cfg(not(feature = "cuda"))]
@@ -1508,7 +1508,7 @@ impl WitnessStageCompactTreeStorage {
                 let mut row_buffer = CudaDeviceBuffer::new(row_byte_count)
                     .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
                 if source_buffer.is_compact_for(self.columns) {
-                    cuda_goldilocks_coset_extend_row_major_columns_row_device(
+                    cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device(
                         source_buffer.as_buffer(),
                         &mut row_buffer,
                         self.columns,
@@ -1518,7 +1518,7 @@ impl WitnessStageCompactTreeStorage {
                     )
                     .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
                 } else {
-                    cuda_goldilocks_coset_extend_row_major_columns_strided_row_device(
+                    cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device(
                         source_buffer.as_buffer(),
                         &mut row_buffer,
                         CudaRowMajorColumnView {
@@ -1536,21 +1536,15 @@ impl WitnessStageCompactTreeStorage {
                 Ok(row_buffer)
             },
         )?;
-        record_row_value_duration(
-            timing.as_deref_mut(),
-            RowValueTimingKind::SourceDownload,
-            || {
-                let words = row_buffer
-                    .to_u64_words()
-                    .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
-                words
-                    .into_iter()
-                    .map(|value| {
-                        Felt::from_canonical(value).map_err(WitnessStageOpeningError::Field)
-                    })
-                    .collect()
-            },
-        )
+        record_row_value_duration(timing, RowValueTimingKind::SourceDownload, || {
+            let words = row_buffer
+                .to_u64_words()
+                .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+            words
+                .into_iter()
+                .map(|value| Felt::from_canonical(value).map_err(WitnessStageOpeningError::Field))
+                .collect()
+        })
     }
 
     #[cfg(feature = "cuda")]

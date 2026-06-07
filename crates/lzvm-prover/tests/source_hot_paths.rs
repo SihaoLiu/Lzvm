@@ -1965,6 +1965,30 @@ fn retained_leaf_digest_opening_keeps_single_row_extension_until_queries_batch()
 }
 
 #[test]
+fn source_row_value_extension_uses_shifted_weight_cuda_path() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source = std::fs::read_to_string(&values_path)
+        .expect("witness commitment values source should read");
+
+    let row_value_body = function_body(
+        &values_source,
+        "fn extended_row_values_from_source_cuda",
+        "fn open_with_recomputed_leaf_level_cuda",
+    );
+    assert!(
+        row_value_body
+            .contains("cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device"),
+        "compact source row values should reuse residue weights for compact source buffers"
+    );
+    assert!(
+        row_value_body
+            .contains("cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device"),
+        "compact source row values should reuse residue weights for strided source buffers"
+    );
+}
+
+#[test]
 fn compact_opening_falls_back_when_retained_leaf_digest_is_structurally_unusable() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");
