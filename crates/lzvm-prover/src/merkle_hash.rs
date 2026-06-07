@@ -262,6 +262,36 @@ impl CudaDigestLevel {
         }
         Ok(CudaMerkleOpeningPath { root, siblings })
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn opening_path_prefix_for_source_row(
+        &self,
+        source_row: usize,
+        folded_level_count: usize,
+    ) -> Result<Vec<Vec<[Felt; HASH_WORDS]>>, MerkleHashError> {
+        if source_row >= self.state_count {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        if folded_level_count == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut path_level_count = 0usize;
+        let mut state_count = self.state_count;
+        while state_count > 1 {
+            path_level_count = path_level_count
+                .checked_add(1)
+                .ok_or(MerkleHashError::LengthOverflow)?;
+            state_count = state_count.div_ceil(self.arity);
+        }
+        if folded_level_count > path_level_count {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+
+        let mut path = self.opening_path(source_row)?;
+        path.siblings.truncate(folded_level_count);
+        Ok(path.siblings)
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -1606,6 +1636,56 @@ mod tests {
             checkpoint.root().unwrap(),
             root_from_digest_level_on_cuda(&level, 4).unwrap()
         );
+    }
+
+    #[test]
+    fn cuda_digest_checkpoint_lower_prefix_matches_full_path_for_padded_multi_level_source_row() {
+        let level = (0..70)
+            .map(|index| {
+                digest([
+                    500 + index * 4,
+                    501 + index * 4,
+                    502 + index * 4,
+                    503 + index * 4,
+                ])
+            })
+            .collect::<Vec<_>>();
+        let query_row = 69;
+        let words = digest_words(&level);
+        let buffer = CudaDeviceBuffer::from_u64_words(&words).expect("digests should upload");
+        let digest_level = CudaDigestLevel::new(
+            buffer,
+            level.len(),
+            4,
+            cuda_poseidon2_width16_merkle_digest_root_device,
+        );
+        let checkpoint = digest_level
+            .parent_checkpoint_level(2)
+            .expect("checkpoint level should hash")
+            .expect("checkpoint should fold multiple levels");
+        assert_eq!(checkpoint.folded_level_count(), 3);
+
+        let full_path = digest_level
+            .opening_path(query_row)
+            .expect("full opening path should hash");
+        let lower_prefix = digest_level
+            .opening_path_prefix_for_source_row(query_row, checkpoint.folded_level_count())
+            .expect("lower checkpoint prefix should hash");
+        let upper_suffix = checkpoint
+            .opening_path_for_source_row(query_row)
+            .expect("upper checkpoint suffix should hash");
+
+        assert_eq!(
+            lower_prefix,
+            full_path.siblings[..checkpoint.folded_level_count()]
+        );
+        assert_eq!(
+            upper_suffix.siblings,
+            full_path.siblings[checkpoint.folded_level_count()..]
+        );
+        let mut stitched_path = lower_prefix;
+        stitched_path.extend(upper_suffix.siblings);
+        assert_eq!(stitched_path, full_path.siblings);
     }
 
     #[test]

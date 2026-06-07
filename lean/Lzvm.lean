@@ -18,6 +18,7 @@ import Lzvm.OpeningSegmentBinding
 import Lzvm.PipelineBinding
 import Lzvm.QueryPlanBinding
 import Lzvm.RetainedLeafDigestOpening
+import Lzvm.RetainedParentCheckpointOpening
 import Lzvm.RequiredExternalSource
 import Lzvm.RuntimeExternalSource
 import Lzvm.RuntimeSoundness
