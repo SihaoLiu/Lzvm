@@ -2106,6 +2106,14 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "witness_opening_missing_source_count",
         ),
         (
+            "\"finish_witness_opening_retained_leaf_digest_openings\"",
+            "witness_opening_retained_leaf_digest_opening_count",
+        ),
+        (
+            "\"finish_witness_opening_retained_leaf_digest_rows\"",
+            "witness_opening_retained_leaf_digest_opening_row_count",
+        ),
+        (
             "\"finish_witness_opening_leaf_hash_rows\"",
             "witness_opening_leaf_hash_row_count",
         ),
@@ -2200,6 +2208,14 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "finish_witness_stage_{}_opening_missing_source_count",
             "missing_source_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_retained_leaf_digest_openings",
+            "retained_leaf_digest_opening_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_retained_leaf_digest_rows",
+            "retained_leaf_digest_opening_row_count",
         ),
         (
             "finish_witness_stage_{}_opening_leaf_hash_bytes",

@@ -1489,6 +1489,11 @@ mod tests {
                     .expect("batch opening should verify")
             );
         }
+        assert_eq!(batch_timing.retained_leaf_digest_opening_count, 1);
+        assert_eq!(
+            batch_timing.retained_leaf_digest_opening_row_count,
+            rows.len()
+        );
         assert_eq!(batch_timing.leaf_coset_extend_call_count, 0);
         assert_eq!(batch_timing.leaf_hash_rows, 0);
     }

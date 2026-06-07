@@ -57,6 +57,8 @@ pub(crate) struct WitnessStageOpeningWorkTiming {
     pub(crate) leaf_coset_extend_normalize_launch_count: usize,
     pub(crate) leaf_coset_extend_pack_launch_count: usize,
     pub(crate) leaf_coset_extend_unpack_launch_count: usize,
+    pub(crate) retained_leaf_digest_opening_count: usize,
+    pub(crate) retained_leaf_digest_opening_row_count: usize,
     pub(crate) path: Duration,
     pub(crate) row_values: Duration,
 }
@@ -106,6 +108,12 @@ impl WitnessStageOpeningWorkTiming {
         self.leaf_coset_extend_normalize_launch_count += work.normalize_launch_count;
         self.leaf_coset_extend_pack_launch_count += work.pack_launch_count;
         self.leaf_coset_extend_unpack_launch_count += work.unpack_launch_count;
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn record_retained_leaf_digest_opening(&mut self, row_count: usize) {
+        self.retained_leaf_digest_opening_count += 1;
+        self.retained_leaf_digest_opening_row_count += row_count;
     }
 }
 
@@ -1367,6 +1375,9 @@ impl WitnessStageCompactTreeStorage {
     ) -> Result<Vec<CompactOnDemandOpening>, WitnessStageOpeningError> {
         if leaf_level.state_count() != self.extended_rows || leaf_level.arity() != self.arity {
             return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.record_retained_leaf_digest_opening(rows.len());
         }
         let mut openings = Vec::with_capacity(rows.len());
         for row in rows {
