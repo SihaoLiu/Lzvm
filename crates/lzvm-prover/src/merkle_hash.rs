@@ -7,12 +7,14 @@ use lzvm_accel::{
     cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
     cuda_poseidon2_width16_merkle_digest_opening_path_device,
-    cuda_poseidon2_width16_merkle_digest_root_device, cuda_poseidon2_width16_merkle_parent_device,
-    cuda_poseidon2_width8_linear_round_device,
+    cuda_poseidon2_width16_merkle_digest_root_device,
+    cuda_poseidon2_width16_merkle_digest_selected_parent_device,
+    cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
     cuda_poseidon2_width8_merkle_digest_opening_path_device,
-    cuda_poseidon2_width8_merkle_digest_root_device, cuda_poseidon2_width8_merkle_parent_device,
-    CudaDeviceBuffer,
+    cuda_poseidon2_width8_merkle_digest_root_device,
+    cuda_poseidon2_width8_merkle_digest_selected_parent_device,
+    cuda_poseidon2_width8_merkle_parent_device, CudaDeviceBuffer,
 };
 use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt, FieldError};
 
@@ -105,6 +107,30 @@ impl CudaDigestLevel {
         let root_words =
             (self.root_operation)(&self.digests).map_err(|_| MerkleHashError::LengthOverflow)?;
         digest_from_state_words(&root_words)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn selected_parent(
+        &self,
+        parent_index: usize,
+    ) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
+        let parent_count = self.state_count.div_ceil(self.arity);
+        if self.state_count == 0 || parent_index >= parent_count {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let parent_words = match self.arity {
+            2 => cuda_poseidon2_width8_merkle_digest_selected_parent_device(
+                &self.digests,
+                parent_index,
+            ),
+            4 => cuda_poseidon2_width16_merkle_digest_selected_parent_device(
+                &self.digests,
+                parent_index,
+            ),
+            _ => return Err(MerkleHashError::UnsupportedArity { arity: self.arity }),
+        }
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+        digest_from_state_words(&parent_words)
     }
 
     pub(crate) fn opening_path(
@@ -1179,7 +1205,11 @@ mod tests {
         cuda_poseidon2_width16_device_words, cuda_poseidon2_width8_device_words, linear_hash,
         linear_hashes, linear_hashes_from_row_major_bytes, parent_hash, parent_hashes,
         parent_levels_from_digest_level, parent_levels_from_digest_level_on_cpu,
-        root_from_digest_level_on_cuda,
+        root_from_digest_level_on_cuda, CudaDigestLevel,
+    };
+    use lzvm_accel::{
+        cuda_poseidon2_width16_merkle_digest_root_device,
+        cuda_poseidon2_width8_merkle_digest_root_device, CudaDeviceBuffer,
     };
     use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
 
@@ -1321,6 +1351,59 @@ mod tests {
     }
 
     #[test]
+    fn cuda_digest_level_selected_parent_matches_cpu_reference() {
+        let arity2 = vec![
+            digest([1, 2, 3, 4]),
+            digest([5, 6, 7, 8]),
+            digest([9, 10, 11, 12]),
+        ];
+        let arity2_words = digest_words(&arity2);
+        let arity2_buffer =
+            CudaDeviceBuffer::from_u64_words(&arity2_words).expect("arity-2 digests should upload");
+        let arity2_level = CudaDigestLevel::new(
+            arity2_buffer,
+            arity2.len(),
+            2,
+            cuda_poseidon2_width8_merkle_digest_root_device,
+        );
+        let arity2_expected =
+            parent_hash(&[arity2[2], [Felt::ZERO; 4]], 2).expect("partial parent should hash");
+
+        let arity2_actual = arity2_level
+            .selected_parent(1)
+            .expect("arity-2 selected parent should hash");
+
+        assert_eq!(arity2_actual, arity2_expected);
+
+        let arity4 = vec![
+            digest([11, 12, 13, 14]),
+            digest([21, 22, 23, 24]),
+            digest([31, 32, 33, 34]),
+            digest([41, 42, 43, 44]),
+            digest([51, 52, 53, 54]),
+            digest([61, 62, 63, 64]),
+        ];
+        let arity4_words = digest_words(&arity4);
+        let arity4_buffer =
+            CudaDeviceBuffer::from_u64_words(&arity4_words).expect("arity-4 digests should upload");
+        let arity4_level = CudaDigestLevel::new(
+            arity4_buffer,
+            arity4.len(),
+            4,
+            cuda_poseidon2_width16_merkle_digest_root_device,
+        );
+        let arity4_expected =
+            parent_hash(&[arity4[4], arity4[5], [Felt::ZERO; 4], [Felt::ZERO; 4]], 4)
+                .expect("arity-4 partial parent should hash");
+
+        let arity4_actual = arity4_level
+            .selected_parent(1)
+            .expect("arity-4 selected parent should hash");
+
+        assert_eq!(arity4_actual, arity4_expected);
+    }
+
+    #[test]
     fn cuda_root_from_digest_level_matches_cpu_reference() {
         let level = vec![
             digest([1, 2, 3, 4]),
@@ -1422,6 +1505,13 @@ mod tests {
 
     fn values(values: &[u64]) -> Vec<Felt> {
         values.iter().copied().map(Felt::from_u64).collect()
+    }
+
+    fn digest_words(digests: &[[Felt; 4]]) -> Vec<u64> {
+        digests
+            .iter()
+            .flat_map(|digest| digest.iter().map(|value| value.to_u64()))
+            .collect()
     }
 
     fn felt_array<const WIDTH: usize>(words: &[u64]) -> [Felt; WIDTH] {
