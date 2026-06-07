@@ -2682,6 +2682,46 @@ fn guest_pc_trace_timing_reports_stage_source_retention_budget() {
 }
 
 #[test]
+fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+
+    let cache_body = function_body(
+        &execution_source,
+        "impl WitnessStageSourceDeviceCache",
+        "fn record_optional_duration",
+    );
+    assert!(
+        cache_body.contains("fn stage_count(&self) -> usize"),
+        "source retention should know whether every stage view was retained"
+    );
+
+    let commit_body = function_body(
+        &execution_source,
+        "fn run_prove_witness_commitments_from_trace_inner",
+        "fn retain_fri_stage_source_devices",
+    );
+    let retained_position = commit_body
+        .find("let retained_stage_source_devices = if retain_stage_sources")
+        .expect("trace output should retain stage source views explicitly");
+    let descriptor_position = commit_body
+        .find("let guest_pc_device_descriptor_buffer = if retain_stage_sources")
+        .expect("trace output should retain descriptor buffers explicitly");
+    assert!(
+        retained_position < descriptor_position,
+        "source views should claim retention budget before fallback descriptor buffers"
+    );
+    assert!(
+        commit_body.contains(
+            "retained_stage_source_devices.len() < stage_source_device_cache.stage_count()"
+        ),
+        "descriptor buffers should only be retained when some stage source view is missing"
+    );
+}
+
+#[test]
 fn guest_pc_trace_segments_split_runner_and_lowerer_with_bounded_pending_queue() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

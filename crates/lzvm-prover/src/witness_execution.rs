@@ -1444,6 +1444,10 @@ impl WitnessStageSourceDeviceCache {
         retained
     }
 
+    fn stage_count(&self) -> usize {
+        self.stages.len()
+    }
+
     fn retained_guest_pc_device_descriptor_buffer(&self) -> Option<WitnessRetainedDeviceBuffer> {
         self.guest_pc_device_descriptor_buffer
             .as_ref()
@@ -3356,16 +3360,18 @@ fn run_prove_witness_commitments_from_trace_inner(
     #[cfg(feature = "cuda")]
     let retain_stage_sources = retain_fri_stage_source_devices();
     #[cfg(feature = "cuda")]
-    let guest_pc_device_descriptor_buffer = if retain_stage_sources {
-        stage_source_device_cache.retained_guest_pc_device_descriptor_buffer()
-    } else {
-        None
-    };
-    #[cfg(feature = "cuda")]
     let retained_stage_source_devices = if retain_stage_sources {
         stage_source_device_cache.retained_descriptors(timing)
     } else {
         Vec::new()
+    };
+    #[cfg(feature = "cuda")]
+    let guest_pc_device_descriptor_buffer = if retain_stage_sources
+        && retained_stage_source_devices.len() < stage_source_device_cache.stage_count()
+    {
+        stage_source_device_cache.retained_guest_pc_device_descriptor_buffer()
+    } else {
+        None
     };
     Ok(ProveWitnessTraceCommitments {
         commitments,
