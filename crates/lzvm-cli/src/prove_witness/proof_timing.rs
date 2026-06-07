@@ -132,6 +132,18 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_leaf_coset_extend_unpack_launches",
         timing.witness_opening_leaf_coset_extend_unpack_launch_count,
     );
+    timings.record_count(
+        "finish_witness_opening_path_parent_hash_rows",
+        timing.witness_opening_path_parent_hash_row_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_path_parent_hash_bytes",
+        timing.witness_opening_path_parent_hash_byte_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_path_parent_hash_launches",
+        timing.witness_opening_path_parent_hash_launch_count,
+    );
     timings.record("finish_witness_opening_path", timing.witness_opening_path);
     timings.record(
         "finish_witness_opening_row_values",
@@ -306,6 +318,27 @@ pub(super) fn record_proof_artifact_timing(
                 stage_work.stage_index
             ),
             stage_work.leaf_coset_extend_unpack_launch_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_path_parent_hash_rows",
+                stage_work.stage_index
+            ),
+            stage_work.path_parent_hash_row_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_path_parent_hash_bytes",
+                stage_work.stage_index
+            ),
+            stage_work.path_parent_hash_byte_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_path_parent_hash_launches",
+                stage_work.stage_index
+            ),
+            stage_work.path_parent_hash_launch_count,
         );
     }
     for stage_timing in &timing.witness_stage_opening_path {

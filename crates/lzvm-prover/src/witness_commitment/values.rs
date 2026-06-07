@@ -59,6 +59,9 @@ pub(crate) struct WitnessStageOpeningWorkTiming {
     pub(crate) leaf_coset_extend_unpack_launch_count: usize,
     pub(crate) retained_leaf_digest_opening_count: usize,
     pub(crate) retained_leaf_digest_opening_row_count: usize,
+    pub(crate) path_parent_hash_row_count: usize,
+    pub(crate) path_parent_hash_byte_count: usize,
+    pub(crate) path_parent_hash_launch_count: usize,
     pub(crate) path: Duration,
     pub(crate) row_values: Duration,
 }
@@ -115,6 +118,47 @@ impl WitnessStageOpeningWorkTiming {
         self.retained_leaf_digest_opening_count += 1;
         self.retained_leaf_digest_opening_row_count += row_count;
     }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn record_path_parent_hash_work(
+        &mut self,
+        row_count: usize,
+        byte_count: usize,
+        launch_count: usize,
+    ) {
+        self.path_parent_hash_row_count += row_count;
+        self.path_parent_hash_byte_count += byte_count;
+        self.path_parent_hash_launch_count += launch_count;
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn merkle_opening_path_parent_work(
+    mut state_count: usize,
+    arity: usize,
+) -> Option<(usize, usize, usize)> {
+    if state_count <= 1 {
+        return Some((0, 0, 0));
+    }
+    if arity <= 1 {
+        return None;
+    }
+
+    let mut row_count = 0usize;
+    let mut byte_count = 0usize;
+    let mut launch_count = 0usize;
+    while state_count > 1 {
+        let parent_count = state_count.div_ceil(arity);
+        let level_bytes = parent_count
+            .checked_mul(arity)?
+            .checked_mul(HASH_WORDS)?
+            .checked_mul(WORD_BYTES)?;
+        row_count = row_count.checked_add(parent_count)?;
+        byte_count = byte_count.checked_add(level_bytes)?;
+        launch_count = launch_count.checked_add(1)?;
+        state_count = parent_count;
+    }
+    Some((row_count, byte_count, launch_count))
 }
 
 #[cfg(feature = "cuda")]
@@ -1339,6 +1383,14 @@ impl WitnessStageCompactTreeStorage {
             timing.record_leaf_hash_work(self.extended_rows, self.raw_leaf_bytes, self.arity);
         }
 
+        let path_parent_work = if timing.is_some() {
+            Some(
+                merkle_opening_path_parent_work(self.extended_rows, self.arity)
+                    .ok_or(WitnessStageOpeningError::LengthOverflow)?,
+            )
+        } else {
+            None
+        };
         let mut openings = Vec::with_capacity(rows.len());
         for row in rows {
             let path = record_opening_duration(
@@ -1354,6 +1406,11 @@ impl WitnessStageCompactTreeStorage {
                     expected: self.logical_tree_bytes,
                     found: 0,
                 });
+            }
+            if let (Some(timing), Some((row_count, byte_count, launch_count))) =
+                (timing.as_deref_mut(), path_parent_work)
+            {
+                timing.record_path_parent_hash_work(row_count, byte_count, launch_count);
             }
             let values = record_opening_duration(
                 timing.as_deref_mut().map(|timing| &mut timing.row_values),
@@ -1379,6 +1436,14 @@ impl WitnessStageCompactTreeStorage {
         if let Some(timing) = timing.as_deref_mut() {
             timing.record_retained_leaf_digest_opening(rows.len());
         }
+        let path_parent_work = if timing.is_some() {
+            Some(
+                merkle_opening_path_parent_work(self.extended_rows, self.arity)
+                    .ok_or(WitnessStageOpeningError::LengthOverflow)?,
+            )
+        } else {
+            None
+        };
         let mut openings = Vec::with_capacity(rows.len());
         for row in rows {
             let path = record_opening_duration(
@@ -1394,6 +1459,11 @@ impl WitnessStageCompactTreeStorage {
                     expected: self.logical_tree_bytes,
                     found: 0,
                 });
+            }
+            if let (Some(timing), Some((row_count, byte_count, launch_count))) =
+                (timing.as_deref_mut(), path_parent_work)
+            {
+                timing.record_path_parent_hash_work(row_count, byte_count, launch_count);
             }
             let values = record_opening_duration(
                 timing.as_deref_mut().map(|timing| &mut timing.row_values),

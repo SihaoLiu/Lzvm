@@ -2199,6 +2199,18 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "\"finish_witness_opening_leaf_coset_extend_unpack_launches\"",
             "witness_opening_leaf_coset_extend_unpack_launch_count",
         ),
+        (
+            "\"finish_witness_opening_path_parent_hash_rows\"",
+            "witness_opening_path_parent_hash_row_count",
+        ),
+        (
+            "\"finish_witness_opening_path_parent_hash_bytes\"",
+            "witness_opening_path_parent_hash_byte_count",
+        ),
+        (
+            "\"finish_witness_opening_path_parent_hash_launches\"",
+            "witness_opening_path_parent_hash_launch_count",
+        ),
     ] {
         assert!(
             proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
@@ -2283,6 +2295,18 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "finish_witness_stage_{}_opening_leaf_coset_extend_unpack_launches",
             "leaf_coset_extend_unpack_launch_count",
         ),
+        (
+            "finish_witness_stage_{}_opening_path_parent_hash_rows",
+            "path_parent_hash_row_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_path_parent_hash_bytes",
+            "path_parent_hash_byte_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_path_parent_hash_launches",
+            "path_parent_hash_launch_count",
+        ),
     ] {
         assert!(
             proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
@@ -2331,6 +2355,19 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             && proof_timing_source.contains("witness_stage_opening_work"),
         "opening timing aggregation should expose per-stage work shape"
     );
+
+    for source in [
+        opening_values_source.as_str(),
+        artifact_timing_source.as_str(),
+        proof_timing_source.as_str(),
+    ] {
+        assert!(
+            source.contains("path_parent_hash_row_count")
+                && source.contains("path_parent_hash_byte_count")
+                && source.contains("path_parent_hash_launch_count"),
+            "opening path timing should expose parent hash workload shape"
+        );
+    }
 
     for source in [
         leaf_extend_source.as_str(),
