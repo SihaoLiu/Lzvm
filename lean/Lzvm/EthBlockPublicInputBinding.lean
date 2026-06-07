@@ -156,4 +156,27 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_sound
       artifactAccepted
   exact And.intro ethEvidence artifactSound
 
+theorem runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_eth_block_public_input_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact sound_witness_implies_verifier_core_contract sound.right.right.right
+
 end Lzvm

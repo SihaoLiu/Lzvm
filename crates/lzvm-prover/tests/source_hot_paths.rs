@@ -1320,7 +1320,11 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
     assert!(
         lean_source.contains("structure RuntimeEthBlockPublicInputBindingValidation")
             && lean_source
-                .contains("runtime_eth_block_public_input_binding_checked_acceptance_sound"),
+                .contains("runtime_eth_block_public_input_binding_checked_acceptance_sound")
+            && lean_source.contains(
+                "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract"
+            )
+            && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof"),
         "Lean should expose a checked ETH public-input binding soundness theorem"
     );
     assert!(
