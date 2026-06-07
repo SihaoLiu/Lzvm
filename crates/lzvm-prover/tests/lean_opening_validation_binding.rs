@@ -1,5 +1,8 @@
 use std::path::Path;
 
+#[path = "support/lean_binding.rs"]
+mod lean_binding;
+
 #[test]
 fn lean_opening_validation_binding_exports_core_contract_projection() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -16,14 +19,18 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
     );
     assert!(
         lean_source.contains("RuntimeOpeningValidation")
-            && lean_source.contains("runtime_opening_checked_acceptance_sound")
-            && lean_source.contains("runtime_opening_checked_acceptance_verifier_core_contract")
-            && lean_source.contains("runtime_opening_required_external_source_sound")
-            && lean_source
-                .contains("runtime_opening_required_external_source_verifier_core_contract")
             && lean_source.contains("requiresExternalSource ->")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean opening validation should expose checked and required-source verifier core projections"
+    );
+    lean_binding::assert_theorem_declarations(
+        &lean_source,
+        &[
+            "runtime_opening_checked_acceptance_sound",
+            "runtime_opening_checked_acceptance_verifier_core_contract",
+            "runtime_opening_required_external_source_sound",
+            "runtime_opening_required_external_source_verifier_core_contract",
+        ],
     );
 }

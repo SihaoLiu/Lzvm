@@ -1,5 +1,8 @@
 use std::path::Path;
 
+#[path = "support/lean_binding.rs"]
+mod lean_binding;
+
 #[test]
 fn lean_required_external_source_binding_exports_core_contract_projection() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -17,11 +20,13 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
     assert!(
         lean_source.contains("runtime_guarded_external_source_required_evidence")
             && lean_source.contains("runtime_guarded_external_source_required_sound")
-            && lean_source
-                .contains("runtime_guarded_external_source_required_verifier_core_contract")
             && lean_source.contains("requiresExternalSource ->")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean required external source binding should expose required evidence, soundness, and verifier core projection"
+    );
+    lean_binding::assert_theorem_declarations(
+        &lean_source,
+        &["runtime_guarded_external_source_required_verifier_core_contract"],
     );
 }

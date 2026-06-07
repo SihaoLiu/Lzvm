@@ -1,5 +1,8 @@
 use std::path::Path;
 
+#[path = "support/lean_binding.rs"]
+mod lean_binding;
+
 #[test]
 fn lean_digest_prefix_binding_exports_core_contract_projection() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -16,11 +19,15 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
     assert!(
         lean_source.contains("RowMajorDigestPrefixValidation")
             && lean_source.contains("RowMajorDigestPrefixEvidence")
-            && lean_source.contains("row_major_digest_prefix_checked_acceptance_sound")
-            && lean_source
-                .contains("row_major_digest_prefix_checked_acceptance_verifier_core_contract")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean digest prefix binding should expose checked soundness and verifier core projection"
+    );
+    lean_binding::assert_theorem_declarations(
+        &lean_source,
+        &[
+            "row_major_digest_prefix_checked_acceptance_sound",
+            "row_major_digest_prefix_checked_acceptance_verifier_core_contract",
+        ],
     );
 }
