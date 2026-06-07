@@ -2662,6 +2662,22 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "leaf_hash_byte_count",
         ),
         (
+            "finish_witness_stage_{}_opening_leaf_hash_arity2_rows",
+            "leaf_hash_arity2_row_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_hash_arity2_bytes",
+            "leaf_hash_arity2_byte_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_hash_arity4_rows",
+            "leaf_hash_arity4_row_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_leaf_hash_arity4_bytes",
+            "leaf_hash_arity4_byte_count",
+        ),
+        (
             "finish_witness_stage_{}_opening_leaf_coset_extend_calls",
             "leaf_coset_extend_call_count",
         ),

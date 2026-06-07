@@ -93,7 +93,9 @@ pub use proof_artifact::{
     build_witness_proof_core_artifact, ProofArtifactInputs, WitnessAllUnitsProofRequest,
     WitnessProofRequest,
 };
-pub use proof_artifact_timing::WitnessProofArtifactTiming;
+pub use proof_artifact_timing::{
+    WitnessProofArtifactTiming, WitnessProofStageOpeningTiming, WitnessProofStageOpeningWork,
+};
 pub use prove_fri_opening::{
     build_pcs_fri_opening_segment, build_pcs_fri_opening_segment_from_trace,
     build_pcs_fri_opening_segment_from_trace_segments,

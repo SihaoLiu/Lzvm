@@ -176,6 +176,84 @@ fn proof_artifact_timing_reports_parent_hash_shape_counts() {
 }
 
 #[test]
+fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
+    let timing = lzvm_prover::WitnessProofArtifactTiming {
+        witness_stage_opening_work: vec![lzvm_prover::WitnessProofStageOpeningWork {
+            stage_index: 7,
+            retained_source_count: 2,
+            external_source_count: 3,
+            embedded_source_count: 4,
+            missing_source_count: 5,
+            retained_leaf_digest_opening_count: 6,
+            retained_leaf_digest_opening_row_count: 7,
+            retained_parent_checkpoint_opening_count: 8,
+            retained_parent_checkpoint_opening_row_count: 9,
+            leaf_hash_row_count: 10,
+            leaf_hash_byte_count: 11,
+            leaf_hash_arity2_row_count: 26,
+            leaf_hash_arity2_byte_count: 27,
+            leaf_hash_arity4_row_count: 28,
+            leaf_hash_arity4_byte_count: 29,
+            leaf_coset_extend_call_count: 12,
+            leaf_coset_extend_output_byte_count: 13,
+            leaf_coset_extend_column_count: 14,
+            leaf_coset_extend_max_column_count: 15,
+            leaf_coset_extend_ntt_launch_count: 16,
+            leaf_coset_extend_bit_reverse_launch_count: 17,
+            leaf_coset_extend_ntt_stage_launch_count: 18,
+            leaf_coset_extend_ntt_block_twiddle_launch_count: 19,
+            leaf_coset_extend_normalize_launch_count: 20,
+            leaf_coset_extend_pack_launch_count: 21,
+            leaf_coset_extend_unpack_launch_count: 22,
+            path_parent_hash_row_count: 23,
+            path_parent_hash_byte_count: 24,
+            path_parent_hash_launch_count: 25,
+        }],
+        ..lzvm_prover::WitnessProofArtifactTiming::default()
+    };
+
+    let mut timings = TimingRecorder::new(true);
+    record_proof_artifact_timing(&mut timings, &timing);
+
+    let mut stdout = Vec::new();
+    write_timing_summary(&mut stdout, &timings);
+    let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+    for expected in [
+        "timing_finish_witness_stage_7_opening_retained_source_count=2\n",
+        "timing_finish_witness_stage_7_opening_external_source_count=3\n",
+        "timing_finish_witness_stage_7_opening_embedded_source_count=4\n",
+        "timing_finish_witness_stage_7_opening_missing_source_count=5\n",
+        "timing_finish_witness_stage_7_opening_retained_leaf_digest_openings=6\n",
+        "timing_finish_witness_stage_7_opening_retained_leaf_digest_rows=7\n",
+        "timing_finish_witness_stage_7_opening_retained_parent_checkpoint_openings=8\n",
+        "timing_finish_witness_stage_7_opening_retained_parent_checkpoint_rows=9\n",
+        "timing_finish_witness_stage_7_opening_leaf_hash_rows=10\n",
+        "timing_finish_witness_stage_7_opening_leaf_hash_bytes=11\n",
+        "timing_finish_witness_stage_7_opening_leaf_hash_arity2_rows=26\n",
+        "timing_finish_witness_stage_7_opening_leaf_hash_arity2_bytes=27\n",
+        "timing_finish_witness_stage_7_opening_leaf_hash_arity4_rows=28\n",
+        "timing_finish_witness_stage_7_opening_leaf_hash_arity4_bytes=29\n",
+        "timing_finish_witness_stage_7_opening_leaf_coset_extend_calls=12\n",
+        "timing_finish_witness_stage_7_opening_leaf_coset_extend_output_bytes=13\n",
+        "timing_finish_witness_stage_7_opening_leaf_coset_extend_columns=14\n",
+        "timing_finish_witness_stage_7_opening_leaf_coset_extend_max_columns=15\n",
+        "timing_finish_witness_stage_7_opening_leaf_coset_extend_ntt_launches=16\n",
+        "timing_finish_witness_stage_7_opening_leaf_coset_extend_bit_reverse_launches=17\n",
+        "timing_finish_witness_stage_7_opening_leaf_coset_extend_ntt_stage_launches=18\n",
+        "timing_finish_witness_stage_7_opening_leaf_coset_extend_ntt_block_twiddle_launches=19\n",
+        "timing_finish_witness_stage_7_opening_leaf_coset_extend_normalize_launches=20\n",
+        "timing_finish_witness_stage_7_opening_leaf_coset_extend_pack_launches=21\n",
+        "timing_finish_witness_stage_7_opening_leaf_coset_extend_unpack_launches=22\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_rows=23\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_bytes=24\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_launches=25\n",
+    ] {
+        assert!(stdout.contains(expected), "missing {expected} in {stdout}");
+    }
+}
+
+#[test]
 fn guest_pc_trace_uses_parallel_witness_threads_by_default() {
     let result = parse_witness_args(&[
         "--guest-pc-trace",

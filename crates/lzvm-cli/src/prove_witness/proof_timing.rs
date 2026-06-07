@@ -284,6 +284,34 @@ pub(super) fn record_proof_artifact_timing(
         );
         timings.record_count_dynamic(
             format!(
+                "finish_witness_stage_{}_opening_leaf_hash_arity2_rows",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_hash_arity2_row_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_hash_arity2_bytes",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_hash_arity2_byte_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_hash_arity4_rows",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_hash_arity4_row_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_leaf_hash_arity4_bytes",
+                stage_work.stage_index
+            ),
+            stage_work.leaf_hash_arity4_byte_count,
+        );
+        timings.record_count_dynamic(
+            format!(
                 "finish_witness_stage_{}_opening_leaf_coset_extend_calls",
                 stage_work.stage_index
             ),
