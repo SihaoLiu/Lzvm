@@ -3260,6 +3260,30 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         );
     }
 
+    let device_material_start = concat!(
+        "#[cfg(feature = \"cuda\")]\n#[allow(dead_code)]\nfn build_layout_",
+        "zi",
+        "sk"
+    );
+    let device_material_start =
+        format!("{device_material_start}_main_trace_segment_device_material");
+    let device_material_end = concat!(
+        "#[cfg(feature = \"cuda\")]\nfn build_layout_",
+        "zi",
+        "sk",
+        "_main_trace_segment_from_device_material"
+    );
+    let device_material_body =
+        function_body(&backend_source, &device_material_start, device_material_end);
+    assert!(
+        device_material_body.contains("guest_pc_trace_lower_detail_timing_enabled()"),
+        "guest PC lower detail timing should be explicitly gated"
+    );
+    assert!(
+        device_material_body.contains("let detail_timing ="),
+        "guest PC lower detail timing should compute the gate once per segment"
+    );
+
     for field in [
         "guest_trace_report_duration",
         "guest_trace_emit_duration",

@@ -272,6 +272,16 @@ impl Drop for DurationTimer<'_> {
     }
 }
 
+fn env_flag_enabled(name: &str, default: bool) -> bool {
+    std::env::var(name)
+        .map(|value| match value.as_str() {
+            "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF" => false,
+            "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON" => true,
+            _ => default,
+        })
+        .unwrap_or(default)
+}
+
 pub(crate) struct GuestPcTraceStreamResult {
     pub(crate) proof_values: Vec<WitnessTraceProofValue>,
     pub(crate) timing: GuestPcTraceStreamTiming,
@@ -1180,26 +1190,12 @@ pub(crate) fn validate_guest_pc_trace_device_source_matches_trace(
 
 #[cfg(feature = "cuda")]
 fn guest_pc_device_trace_source_enabled() -> bool {
-    std::env::var("LZVM_CUDA_GUEST_PC_DEVICE_TRACE_SOURCE")
-        .map(|value| {
-            !matches!(
-                value.as_str(),
-                "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF"
-            )
-        })
-        .unwrap_or(true)
+    env_flag_enabled("LZVM_CUDA_GUEST_PC_DEVICE_TRACE_SOURCE", true)
 }
 
 #[cfg(feature = "cuda")]
 fn guest_pc_device_trace_source_deep_validation_enabled() -> bool {
-    std::env::var("LZVM_CUDA_VALIDATE_GUEST_PC_DEVICE_TRACE_SOURCE")
-        .map(|value| {
-            matches!(
-                value.as_str(),
-                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
-            )
-        })
-        .unwrap_or(false)
+    env_flag_enabled("LZVM_CUDA_VALIDATE_GUEST_PC_DEVICE_TRACE_SOURCE", false)
 }
 
 #[cfg(feature = "cuda")]
@@ -3302,6 +3298,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
 
     let mut state = initial_state.clone();
     let mut output_row = 0_usize;
+    let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
     for (report_index, report) in reports.iter().enumerate() {
         let next_instruction = reports
             .get(report_index + 1)
@@ -3311,7 +3308,10 @@ fn build_layout_zisk_main_trace_segment_device_material(
                     .then_some(lookahead_instruction)
                     .flatten()
             });
-        let report_started = timing.as_ref().map(|_| Instant::now());
+        let report_started = timing
+            .as_ref()
+            .filter(|_| detail_timing)
+            .map(|_| Instant::now());
         let written_rows = validate_and_apply_zisk_main_report(
             output_row,
             report,
@@ -3326,6 +3326,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
                 let _descriptor_timer = DurationTimer::new(
                     timing
                         .as_deref_mut()
+                        .filter(|_| detail_timing)
                         .map(|timing| &mut timing.trace_descriptor_duration),
                 );
                 append_zisk_main_device_trace_descriptor(&mut device_trace_descriptors, &values)
@@ -3451,14 +3452,11 @@ fn build_layout_zisk_main_trace_segment_for_segment_output(
 
 #[cfg(feature = "cuda")]
 fn guest_pc_trace_less_segment_output_enabled() -> bool {
-    std::env::var("LZVM_CUDA_GUEST_PC_TRACELESS_SEGMENT_OUTPUT")
-        .map(|value| {
-            !matches!(
-                value.as_str(),
-                "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF"
-            )
-        })
-        .unwrap_or(true)
+    env_flag_enabled("LZVM_CUDA_GUEST_PC_TRACELESS_SEGMENT_OUTPUT", true)
+}
+
+fn guest_pc_trace_lower_detail_timing_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_TRACE_DETAIL_TIMING", false)
 }
 
 fn build_layout_zisk_main_trace_segment(
@@ -3488,6 +3486,7 @@ fn build_layout_zisk_main_trace_segment(
         zisk_main_device_trace_descriptors(layout, &columns, terminal_pc);
     let mut state = initial_state.clone();
     let mut output_row = 0_usize;
+    let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
     for (report_index, report) in reports.iter().enumerate() {
         let next_instruction = reports
             .get(report_index + 1)
@@ -3497,7 +3496,10 @@ fn build_layout_zisk_main_trace_segment(
                     .then_some(lookahead_instruction)
                     .flatten()
             });
-        let report_started = timing.as_ref().map(|_| Instant::now());
+        let report_started = timing
+            .as_ref()
+            .filter(|_| detail_timing)
+            .map(|_| Instant::now());
         let written_rows = write_zisk_main_report_columns(
             &mut builder,
             output_row,
@@ -3511,7 +3513,7 @@ fn build_layout_zisk_main_trace_segment(
             segment,
             #[cfg(feature = "cuda")]
             &mut device_trace_descriptors,
-            timing.as_deref_mut(),
+            timing.as_deref_mut().filter(|_| detail_timing),
         )?;
         if let (Some(timing), Some(started)) = (timing.as_deref_mut(), report_started) {
             timing.trace_report_duration += started.elapsed();
