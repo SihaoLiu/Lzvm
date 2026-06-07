@@ -227,13 +227,13 @@ fn merkle_opening_path_prefix_parent_work(
 }
 
 #[cfg(feature = "cuda")]
-const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 16 * 1024 * 1024 * 1024;
+const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 10_000_000_000;
 #[cfg(feature = "cuda")]
 const RETAINED_SOURCE_DEVICE_RESERVE_BYTES: usize = 11 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
 const RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES: usize = 10 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
-const MAX_DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 48 * 1024 * 1024 * 1024;
+const MAX_DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = DEFAULT_RETAINED_SOURCE_DEVICE_BYTES;
 #[cfg(feature = "cuda")]
 static RETAINED_SOURCE_DEVICE_BYTES: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "cuda")]
@@ -244,7 +244,7 @@ static RETAINED_COMBINED_DEVICE_CACHE_LIMIT: OnceLock<Option<usize>> = OnceLock:
 static RETAINED_SOURCE_DEVICE_REGISTRY: OnceLock<Mutex<HashMap<usize, RetainedSourceDeviceEntry>>> =
     OnceLock::new();
 #[cfg(feature = "cuda")]
-const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 1024 * 1024 * 1024;
+const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 14_000_000_000;
 #[cfg(feature = "cuda")]
 const RETAINED_LEAF_DIGEST_RESERVE_BYTES: usize = 12 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
@@ -2073,13 +2073,12 @@ mod tests {
     #[test]
     fn default_retained_leaf_digest_limit_stays_within_static_cache_cap() {
         assert_eq!(
-            DEFAULT_RETAINED_LEAF_DIGEST_BYTES,
-            1024 * 1024 * 1024,
-            "default retained leaf digest cache should stay conservative unless large proof runs prove a higher cap is safe"
+            DEFAULT_RETAINED_LEAF_DIGEST_BYTES, 14_000_000_000,
+            "default retained leaf digest cache should match the measured source/leaf split"
         );
         assert!(
             default_retained_leaf_digest_limit() <= DEFAULT_RETAINED_LEAF_DIGEST_BYTES,
-            "default retained leaf digest cache should not grow until it can share a global device-memory budget"
+            "default retained leaf digest cache should stay within the measured static cap"
         );
     }
 }

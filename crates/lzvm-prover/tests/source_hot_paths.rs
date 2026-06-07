@@ -1914,6 +1914,35 @@ fn compact_opening_reuses_retained_wide_leaf_digest_levels() {
 }
 
 #[test]
+fn retained_cache_defaults_prefer_leaf_digest_reuse() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source = std::fs::read_to_string(&values_path)
+        .expect("witness commitment values source should read");
+
+    assert!(
+        values_source.contains("const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 10_000_000_000")
+            && values_source.contains(
+                "const MAX_DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = DEFAULT_RETAINED_SOURCE_DEVICE_BYTES"
+            ),
+        "default source-device retention should use the benchmarked 10GB cap instead of filling all available memory"
+    );
+    assert!(
+        values_source.contains("const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 14_000_000_000")
+            && values_source.contains(
+                "const MAX_DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = DEFAULT_RETAINED_LEAF_DIGEST_BYTES"
+            ),
+        "default leaf-digest retention should use the benchmarked 14GB cap for opening reuse"
+    );
+    assert!(
+        values_source.contains("RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES")
+            && values_source.contains("retained_combined_device_cache_allows(next, leaf_bytes)")
+            && values_source.contains("retained_combined_device_cache_allows(source_bytes, next)"),
+        "source and leaf digest defaults should remain bounded by the shared device-memory reserve"
+    );
+}
+
+#[test]
 fn retained_leaf_digest_opening_keeps_single_row_extension_until_queries_batch() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");
