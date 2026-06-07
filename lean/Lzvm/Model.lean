@@ -49,6 +49,15 @@ structure VerifierModel where
   constraintsSatisfied : ConstraintSystem -> Trace -> Prop
   witnessMatchesTrace : Witness -> Trace -> Prop
 
+def RuntimeVerifierCoreContract
+    (system : VerifierModel)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.transcriptBound publicInput proof
+    /\ system.publicInputBound publicInput proof
+    /\ system.pcsOpeningsValid publicInput proof
+    /\ system.friQueriesValid publicInput proof
+
 def SoundWitness
     (system : VerifierModel)
     (publicInput : PublicInput)

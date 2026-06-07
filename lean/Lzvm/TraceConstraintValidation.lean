@@ -138,10 +138,7 @@ def RuntimeTraceConstraintSoundnessObligations
       proof
       requiresExternalSource
     /\ system.accepts publicInput proof
-    /\ system.transcriptBound publicInput proof
-    /\ system.publicInputBound publicInput proof
-    /\ system.pcsOpeningsValid publicInput proof
-    /\ system.friQueriesValid publicInput proof
+    /\ RuntimeVerifierCoreContract system publicInput proof
 
 theorem runtime_trace_constraint_checked_acceptance_artifact_binding_evidence
     {system : VerifierModel}

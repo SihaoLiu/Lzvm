@@ -65,10 +65,7 @@ def RuntimeArtifactSoundnessObligations
     (proof : Proof) : Prop :=
   RuntimeArtifactEvidence system validation artifact publicInput proof
     /\ system.accepts publicInput proof
-    /\ system.transcriptBound publicInput proof
-    /\ system.publicInputBound publicInput proof
-    /\ system.pcsOpeningsValid publicInput proof
-    /\ system.friQueriesValid publicInput proof
+    /\ RuntimeVerifierCoreContract system publicInput proof
 
 theorem runtime_artifact_checked_acceptance_implies_verifier_accepts
     {system : VerifierModel}

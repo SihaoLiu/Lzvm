@@ -12,6 +12,17 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let proof_artifact_path = crate_root.join("src/proof_artifact.rs");
     let proof_artifact_source =
         std::fs::read_to_string(&proof_artifact_path).expect("proof artifact source should read");
+    let model_path = crate_root.join("../../lean/Lzvm/Model.lean");
+    let model_source = std::fs::read_to_string(&model_path).expect("Lean model source should read");
+    let conformance_path = crate_root.join("../../lean/Lzvm/Conformance.lean");
+    let conformance_source =
+        std::fs::read_to_string(&conformance_path).expect("Lean conformance source should read");
+    let external_source_path = crate_root.join("../../lean/Lzvm/ExternalSource.lean");
+    let external_source_source = std::fs::read_to_string(&external_source_path)
+        .expect("Lean external source source should read");
+    let trace_constraint_path = crate_root.join("../../lean/Lzvm/TraceConstraintValidation.lean");
+    let trace_constraint_source = std::fs::read_to_string(&trace_constraint_path)
+        .expect("Lean trace constraint source should read");
     let runtime_soundness_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness.lean");
     let runtime_soundness_source = std::fs::read_to_string(&runtime_soundness_path)
         .expect("Lean runtime soundness source should read");
@@ -48,10 +59,19 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "Lean pipeline binding should expose query-plan, opening, execution, and full runtime soundness evidence"
     );
     assert!(
-        runtime_soundness_source.contains("def RuntimeVerifierCoreContract")
+        model_source.contains("def RuntimeVerifierCoreContract")
             && runtime_soundness_source.contains("RuntimeVerifierCoreContract")
             && runtime_soundness_source.contains("runtime_soundness_checked_acceptance_core_obligations"),
         "Lean runtime soundness should name the verifier core obligations shared by pipeline soundness"
+    );
+    assert!(
+        conformance_source.contains("RuntimeArtifactSoundnessObligations")
+            && conformance_source.contains("RuntimeVerifierCoreContract")
+            && external_source_source.contains("ExternalSourceOpeningSoundnessObligations")
+            && external_source_source.contains("RuntimeVerifierCoreContract")
+            && trace_constraint_source.contains("RuntimeTraceConstraintSoundnessObligations")
+            && trace_constraint_source.contains("RuntimeVerifierCoreContract"),
+        "Lean soundness obligations should share the model-level verifier core contract"
     );
     assert!(
         setup_preflight_source.contains("validate_global_source_lookup_hints")

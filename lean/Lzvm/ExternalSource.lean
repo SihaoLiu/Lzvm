@@ -63,10 +63,7 @@ def ExternalSourceOpeningSoundnessObligations
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
   ExternalSourceOpeningEvidence system validation publicInput proof
-    /\ system.transcriptBound publicInput proof
-    /\ system.publicInputBound publicInput proof
-    /\ system.pcsOpeningsValid publicInput proof
-    /\ system.friQueriesValid publicInput proof
+    /\ RuntimeVerifierCoreContract system publicInput proof
 
 theorem external_source_opening_evidence_implies_pcs_openings
     {system : VerifierModel}
