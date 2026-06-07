@@ -541,6 +541,37 @@ fn cuda_compact_witness_commit_defers_digest_tree_until_opening() {
 }
 
 #[test]
+fn cuda_compact_witness_commit_retains_parent_checkpoint_level() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let tree_path = crate_root.join("src/witness_commitment/tree.rs");
+    let tree_source = std::fs::read_to_string(&tree_path).expect("witness tree source should read");
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source =
+        std::fs::read_to_string(&values_path).expect("witness values source should read");
+
+    let compact_storage_body = function_body(
+        &values_source,
+        "struct WitnessStageCompactTreeStorage",
+        "impl Clone for WitnessStageCompactTreeStorage",
+    );
+    assert!(
+        compact_storage_body.contains("retained_parent_checkpoint_level"),
+        "compact CUDA storage should retain a parent checkpoint level for sparse openings"
+    );
+
+    let device_commit_body = function_body(
+        &tree_source,
+        "pub(crate) fn commit_witness_stage_device_compact_with_leaf_hash_level",
+        "fn validate_witness_stage_leaves",
+    );
+    assert!(
+        device_commit_body.contains("retain_parent_checkpoint_level")
+            && device_commit_body.contains("parent_checkpoint_level"),
+        "device compact commits should derive and retain a compact parent checkpoint during root construction"
+    );
+}
+
+#[test]
 fn cuda_narrow_witness_commit_uses_compact_device_leaf_level() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let trace_path = crate_root.join("src/witness_commitment/trace.rs");

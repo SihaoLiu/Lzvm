@@ -22,7 +22,8 @@ use crate::gpu_setup::prepare_gpu_setup;
 #[cfg(feature = "cuda")]
 use crate::merkle_hash::{
     linear_hash_level_from_validated_row_major_device_buffer,
-    linear_hashes_from_validated_wide_row_major_device_buffer, CudaDigestLevel,
+    linear_hashes_from_validated_wide_row_major_device_buffer, CudaDigestCheckpointLevel,
+    CudaDigestLevel,
 };
 use crate::witness_layout::WitnessTraceStageValues;
 
@@ -59,6 +60,13 @@ impl PendingCanonicalCudaDigestLevel {
 
     pub(crate) fn root(&self) -> Result<[Felt; HASH_WORDS], crate::merkle_hash::MerkleHashError> {
         self.level.root()
+    }
+
+    pub(crate) fn parent_checkpoint_level(
+        &self,
+        max_state_count: usize,
+    ) -> Result<Option<CudaDigestCheckpointLevel>, crate::merkle_hash::MerkleHashError> {
+        self.level.parent_checkpoint_level(max_state_count)
     }
 
     pub(crate) fn finish_canonical_check(&self) -> Result<(), WitnessStageLeafError> {

@@ -28,7 +28,8 @@ use super::{coset_extend_launch_work, errors::WitnessStageOpeningError, HASH_WOR
 use crate::gpu_setup::prepare_gpu_setup;
 #[cfg(feature = "cuda")]
 use crate::merkle_hash::{
-    linear_hash_level_from_validated_row_major_device_buffer, CudaDigestLevel,
+    linear_hash_level_from_validated_row_major_device_buffer, CudaDigestCheckpointLevel,
+    CudaDigestLevel,
 };
 use crate::merkle_hash::{linear_hashes_from_row_major_bytes, parent_levels_from_digest_level};
 
@@ -200,6 +201,14 @@ pub(crate) struct RetainedCudaLeafDigestLevel {
 }
 
 #[cfg(feature = "cuda")]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug)]
+pub(crate) struct RetainedCudaParentCheckpointLevel {
+    level: CudaDigestCheckpointLevel,
+    bytes: usize,
+}
+
+#[cfg(feature = "cuda")]
 #[derive(Debug, Clone, Copy)]
 struct RetainedSourceDeviceEntry {
     bytes: usize,
@@ -240,7 +249,34 @@ impl RetainedCudaLeafDigestLevel {
 }
 
 #[cfg(feature = "cuda")]
+#[cfg_attr(not(test), allow(dead_code))]
+impl RetainedCudaParentCheckpointLevel {
+    fn source_state_count(&self) -> usize {
+        self.level.source_state_count()
+    }
+
+    fn folded_level_count(&self) -> usize {
+        self.level.folded_level_count()
+    }
+
+    fn state_count(&self) -> usize {
+        self.level.state_count()
+    }
+
+    fn arity(&self) -> usize {
+        self.level.arity()
+    }
+}
+
+#[cfg(feature = "cuda")]
 impl Drop for RetainedCudaLeafDigestLevel {
+    fn drop(&mut self) {
+        release_retained_leaf_digest_bytes(self.bytes);
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl Drop for RetainedCudaParentCheckpointLevel {
     fn drop(&mut self) {
         release_retained_leaf_digest_bytes(self.bytes);
     }
@@ -339,6 +375,20 @@ pub(crate) fn retain_leaf_digest_level(
     let bytes = level.byte_len();
     reserve_retained_leaf_digest_bytes(bytes)?;
     Some(Arc::new(RetainedCudaLeafDigestLevel { level, bytes }))
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn retain_parent_checkpoint_level(
+    checkpoint: Option<CudaDigestCheckpointLevel>,
+    column_count: usize,
+) -> Option<Arc<RetainedCudaParentCheckpointLevel>> {
+    if column_count <= HASH_WORDS {
+        return None;
+    }
+    let level = checkpoint?;
+    let bytes = level.byte_len();
+    reserve_retained_leaf_digest_bytes(bytes)?;
+    Some(Arc::new(RetainedCudaParentCheckpointLevel { level, bytes }))
 }
 
 #[cfg(feature = "cuda")]
@@ -600,6 +650,8 @@ pub(crate) struct WitnessStageCompactTreeParts {
     pub(crate) retained_source_device: Option<Arc<RetainedCudaSourceDevice>>,
     #[cfg(feature = "cuda")]
     pub(crate) retained_leaf_digest_level: Option<Arc<RetainedCudaLeafDigestLevel>>,
+    #[cfg(feature = "cuda")]
+    pub(crate) retained_parent_checkpoint_level: Option<Arc<RetainedCudaParentCheckpointLevel>>,
 }
 
 #[derive(Debug, Clone)]
@@ -627,6 +679,8 @@ struct WitnessStageCompactTreeStorage {
     retained_source_device: Option<Arc<RetainedCudaSourceDevice>>,
     #[cfg(feature = "cuda")]
     retained_leaf_digest_level: Option<Arc<RetainedCudaLeafDigestLevel>>,
+    #[cfg(feature = "cuda")]
+    retained_parent_checkpoint_level: Option<Arc<RetainedCudaParentCheckpointLevel>>,
     materialized_tree: OnceLock<Vec<u8>>,
 }
 
@@ -652,6 +706,8 @@ impl Clone for WitnessStageCompactTreeStorage {
             retained_source_device: self.retained_source_device.clone(),
             #[cfg(feature = "cuda")]
             retained_leaf_digest_level: self.retained_leaf_digest_level.clone(),
+            #[cfg(feature = "cuda")]
+            retained_parent_checkpoint_level: self.retained_parent_checkpoint_level.clone(),
             materialized_tree,
         }
     }
@@ -699,6 +755,8 @@ impl WitnessStageCommitment {
                 retained_source_device: parts.retained_source_device,
                 #[cfg(feature = "cuda")]
                 retained_leaf_digest_level: parts.retained_leaf_digest_level,
+                #[cfg(feature = "cuda")]
+                retained_parent_checkpoint_level: parts.retained_parent_checkpoint_level,
                 materialized_tree: OnceLock::new(),
             })),
         }
@@ -727,6 +785,26 @@ impl WitnessStageCommitment {
         match &self.tree {
             WitnessStageTreeStorage::Host(bytes) => bytes.len(),
             WitnessStageTreeStorage::Compact(storage) => storage.logical_tree_bytes,
+        }
+    }
+
+    #[cfg(all(test, feature = "cuda"))]
+    pub(crate) fn retained_parent_checkpoint_shape_for_test(
+        &self,
+    ) -> Option<(usize, usize, usize, usize)> {
+        match &self.tree {
+            WitnessStageTreeStorage::Host(_) => None,
+            WitnessStageTreeStorage::Compact(storage) => storage
+                .retained_parent_checkpoint_level
+                .as_ref()
+                .map(|checkpoint| {
+                    (
+                        checkpoint.source_state_count(),
+                        checkpoint.folded_level_count(),
+                        checkpoint.state_count(),
+                        checkpoint.arity(),
+                    )
+                }),
         }
     }
 

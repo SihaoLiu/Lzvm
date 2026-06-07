@@ -70,7 +70,7 @@ pub(crate) struct CudaMerkleOpeningPath {
 }
 
 #[cfg(feature = "cuda")]
-#[allow(dead_code)]
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug)]
 pub(crate) struct CudaDigestCheckpointLevel {
     level: CudaDigestLevel,
@@ -152,7 +152,7 @@ impl CudaDigestLevel {
         ))
     }
 
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn into_parent_checkpoint_level(
         self,
         max_state_count: usize,
@@ -172,6 +172,30 @@ impl CudaDigestLevel {
             source_state_count,
             folded_level_count,
         })
+    }
+
+    pub(crate) fn parent_checkpoint_level(
+        &self,
+        max_state_count: usize,
+    ) -> Result<Option<CudaDigestCheckpointLevel>, MerkleHashError> {
+        if self.state_count == 0 || max_state_count == 0 {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        if self.state_count <= max_state_count || self.state_count <= 1 {
+            return Ok(None);
+        }
+        let source_state_count = self.state_count;
+        let mut level = self.parent_level()?;
+        let mut folded_level_count = 1;
+        while level.state_count() > max_state_count && level.state_count() > 1 {
+            level = level.parent_level()?;
+            folded_level_count += 1;
+        }
+        Ok(Some(CudaDigestCheckpointLevel {
+            level,
+            source_state_count,
+            folded_level_count,
+        }))
     }
 
     #[allow(dead_code)]
@@ -241,7 +265,7 @@ impl CudaDigestLevel {
 }
 
 #[cfg(feature = "cuda")]
-#[allow(dead_code)]
+#[cfg_attr(not(test), allow(dead_code))]
 impl CudaDigestCheckpointLevel {
     pub(crate) fn source_state_count(&self) -> usize {
         self.source_state_count
@@ -257,6 +281,10 @@ impl CudaDigestCheckpointLevel {
 
     pub(crate) fn arity(&self) -> usize {
         self.level.arity()
+    }
+
+    pub(crate) fn byte_len(&self) -> usize {
+        self.level.byte_len()
     }
 
     pub(crate) fn to_digests(&self) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
