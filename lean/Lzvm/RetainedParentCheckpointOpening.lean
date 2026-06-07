@@ -345,6 +345,77 @@ theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_batch_rows
       requiresExternalSource
       evidence
 
+theorem runtime_retained_parent_checkpoint_opening_evidence_implies_batch_rows_bound_contract
+    {system : VerifierModel}
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedParentCheckpointOpeningEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeBatchWitnessOpeningRowsBoundContract
+          system
+          validation.batchRowsValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  have batchEvidence :=
+    runtime_retained_parent_checkpoint_opening_evidence_implies_batch_rows_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+  exact
+    runtime_batch_witness_opening_rows_evidence_implies_bound_contract
+      validation.batchRowsValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      batchEvidence
+
+theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_batch_rows_bound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeBatchWitnessOpeningRowsBoundContract
+          system
+          validation.batchRowsValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have evidence :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  exact
+    runtime_retained_parent_checkpoint_opening_evidence_implies_batch_rows_bound_contract
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      evidence
+
 theorem runtime_retained_parent_checkpoint_opening_evidence_implies_opening_evidence
     {system : VerifierModel}
     (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
