@@ -35,6 +35,7 @@ use crate::guest_pc_trace_backend::{
     for_each_guest_pc_trace_segment_with_context,
     run_guest_pc_trace_runtime_proof_values_with_context, run_guest_pc_trace_segments_with_context,
     GuestPcTraceBackend, GuestPcTraceSegmentRunOutput, GuestPcTraceSegmentStreamError,
+    GuestPcTraceStreamTiming,
 };
 use crate::hint_eval::{
     regular_hint_input_requirements, resolve_global_hint_program,
@@ -336,6 +337,13 @@ pub struct ProveWitnessGuestPcTraceTiming {
     segment_count: usize,
     guest_trace_stream_duration: Duration,
     guest_segment_commit_duration: Duration,
+    guest_trace_runner_duration: Duration,
+    guest_trace_lowerer_duration: Duration,
+    guest_trace_lower_duration: Duration,
+    guest_trace_pending_send_wait_duration: Duration,
+    guest_trace_pending_receive_wait_duration: Duration,
+    guest_trace_segment_send_wait_duration: Duration,
+    guest_trace_segment_receive_wait_duration: Duration,
     guest_device_source_build_duration: Duration,
     guest_device_source_descriptor_upload_duration: Duration,
     guest_device_source_descriptor_upload_byte_count: usize,
@@ -383,12 +391,22 @@ impl ProveWitnessGuestPcTraceTiming {
         segment_count: usize,
         guest_trace_stream_duration: Duration,
         guest_segment_commit_duration: Duration,
+        stream_timing: GuestPcTraceStreamTiming,
         trace_timing: ProveWitnessTraceTimingAccumulator,
     ) -> Self {
         Self {
             segment_count,
             guest_trace_stream_duration,
             guest_segment_commit_duration,
+            guest_trace_runner_duration: stream_timing.runner_duration(),
+            guest_trace_lowerer_duration: stream_timing.lowerer_duration(),
+            guest_trace_lower_duration: stream_timing.trace_lower_duration(),
+            guest_trace_pending_send_wait_duration: stream_timing.pending_send_wait_duration(),
+            guest_trace_pending_receive_wait_duration: stream_timing
+                .pending_receive_wait_duration(),
+            guest_trace_segment_send_wait_duration: stream_timing.segment_send_wait_duration(),
+            guest_trace_segment_receive_wait_duration: stream_timing
+                .segment_receive_wait_duration(),
             guest_device_source_build_duration: trace_timing.device_source_build_duration,
             guest_device_source_descriptor_upload_duration: trace_timing
                 .device_source_descriptor_upload_duration,
@@ -462,6 +480,34 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_segment_commit_duration(&self) -> Duration {
         self.guest_segment_commit_duration
+    }
+
+    pub fn guest_trace_runner_duration(&self) -> Duration {
+        self.guest_trace_runner_duration
+    }
+
+    pub fn guest_trace_lowerer_duration(&self) -> Duration {
+        self.guest_trace_lowerer_duration
+    }
+
+    pub fn guest_trace_lower_duration(&self) -> Duration {
+        self.guest_trace_lower_duration
+    }
+
+    pub fn guest_trace_pending_send_wait_duration(&self) -> Duration {
+        self.guest_trace_pending_send_wait_duration
+    }
+
+    pub fn guest_trace_pending_receive_wait_duration(&self) -> Duration {
+        self.guest_trace_pending_receive_wait_duration
+    }
+
+    pub fn guest_trace_segment_send_wait_duration(&self) -> Duration {
+        self.guest_trace_segment_send_wait_duration
+    }
+
+    pub fn guest_trace_segment_receive_wait_duration(&self) -> Duration {
+        self.guest_trace_segment_receive_wait_duration
     }
 
     pub fn guest_device_source_build_duration(&self) -> Duration {
@@ -2530,7 +2576,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         #[cfg(feature = "cuda")]
         let mut stage_commitment_reuse_cache = WitnessStageCommitmentReuseCache::default();
         let guest_trace_stream_started = collect_timing.then(Instant::now);
-        let proof_values = for_each_guest_pc_trace_segment_collecting_proof_values_with_context(
+        let stream_result = for_each_guest_pc_trace_segment_collecting_proof_values_with_context(
             &backend,
             context,
             layout.request(&shared_inputs.input[..]),
@@ -2628,6 +2674,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             }
             GuestPcTraceSegmentStreamError::Emit(error) => error,
         })?;
+        let proof_values = stream_result.proof_values;
         if let Some(started) = guest_trace_stream_started {
             let guest_trace_stream_duration = started
                 .elapsed()
@@ -2637,6 +2684,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                     segment_count,
                     guest_trace_stream_duration,
                     guest_segment_commit_duration,
+                    stream_result.timing,
                     trace_timing,
                 ));
             }
@@ -2672,7 +2720,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
     #[cfg(feature = "cuda")]
     let mut stage_commitment_reuse_cache = WitnessStageCommitmentReuseCache::default();
     let guest_trace_stream_started = collect_timing.then(Instant::now);
-    for_each_guest_pc_trace_segment_with_context(
+    let stream_timing = for_each_guest_pc_trace_segment_with_context(
         &backend,
         context,
         layout.request(&shared_inputs.input[..]),
@@ -2774,6 +2822,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 segment_count,
                 guest_trace_stream_duration,
                 guest_segment_commit_duration,
+                stream_timing,
                 trace_timing,
             ));
         }

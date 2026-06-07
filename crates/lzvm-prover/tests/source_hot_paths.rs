@@ -2966,6 +2966,86 @@ fn guest_pc_trace_segments_split_runner_and_lowerer_with_bounded_pending_queue()
 }
 
 #[test]
+fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source = std::fs::read_to_string(&cli_path).expect("guest PC CLI source should read");
+
+    assert!(
+        backend_source.contains("struct GuestPcTraceStreamTiming"),
+        "guest PC trace backend should summarize stream runner and lowerer timing"
+    );
+    for field in [
+        "runner_duration",
+        "lowerer_duration",
+        "trace_lower_duration",
+        "pending_send_wait_duration",
+        "pending_receive_wait_duration",
+        "segment_send_wait_duration",
+        "segment_receive_wait_duration",
+    ] {
+        assert!(
+            backend_source.contains(field),
+            "guest PC trace stream timing should include {field}"
+        );
+    }
+
+    let collect_body = function_body(
+        &backend_source,
+        "pub(crate) fn for_each_guest_pc_trace_segment_collecting_proof_values_with_context",
+        "struct GuestPcTraceSegmentTrace",
+    );
+    assert!(
+        collect_body.contains("GuestPcTraceStreamResult"),
+        "collecting guest PC trace streaming should return proof values with backend stream timing"
+    );
+    let known_body = function_body(
+        &backend_source,
+        "pub(crate) fn for_each_guest_pc_trace_segment_with_context",
+        "pub(crate) fn for_each_guest_pc_trace_segment_collecting_proof_values_with_context",
+    );
+    assert!(
+        known_body.contains(".map(|stream| stream.timing)"),
+        "known-proof guest PC trace streaming should preserve backend stream timing"
+    );
+
+    for field in [
+        "guest_trace_runner_duration",
+        "guest_trace_lowerer_duration",
+        "guest_trace_lower_duration",
+        "guest_trace_pending_send_wait_duration",
+        "guest_trace_pending_receive_wait_duration",
+        "guest_trace_segment_send_wait_duration",
+        "guest_trace_segment_receive_wait_duration",
+    ] {
+        assert!(
+            execution_source.contains(field),
+            "guest PC trace proof timing should expose {field}"
+        );
+    }
+    for line_name in [
+        "\"guest_trace_runner\"",
+        "\"guest_trace_lowerer\"",
+        "\"guest_trace_lower\"",
+        "\"guest_trace_pending_send_wait\"",
+        "\"guest_trace_pending_receive_wait\"",
+        "\"guest_trace_segment_send_wait\"",
+        "\"guest_trace_segment_receive_wait\"",
+    ] {
+        assert!(
+            cli_source.contains(line_name),
+            "guest PC trace CLI timing should record {line_name}"
+        );
+    }
+}
+
+#[test]
 fn guest_pc_trace_segments_reuse_fixed_columns_across_segments() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");

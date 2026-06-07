@@ -4,7 +4,6 @@ use std::sync::mpsc;
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
 use std::thread;
-#[cfg(feature = "cuda")]
 use std::time::{Duration, Instant};
 
 use crate::guest_instruction::{
@@ -184,6 +183,62 @@ pub(crate) enum GuestPcTraceSegmentStreamError<E> {
     Emit(E),
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct GuestPcTraceStreamTiming {
+    runner_duration: Duration,
+    lowerer_duration: Duration,
+    trace_lower_duration: Duration,
+    pending_send_wait_duration: Duration,
+    pending_receive_wait_duration: Duration,
+    segment_send_wait_duration: Duration,
+    segment_receive_wait_duration: Duration,
+}
+
+impl GuestPcTraceStreamTiming {
+    fn add(&mut self, other: Self) {
+        self.runner_duration += other.runner_duration;
+        self.lowerer_duration += other.lowerer_duration;
+        self.trace_lower_duration += other.trace_lower_duration;
+        self.pending_send_wait_duration += other.pending_send_wait_duration;
+        self.pending_receive_wait_duration += other.pending_receive_wait_duration;
+        self.segment_send_wait_duration += other.segment_send_wait_duration;
+        self.segment_receive_wait_duration += other.segment_receive_wait_duration;
+    }
+
+    pub fn runner_duration(&self) -> Duration {
+        self.runner_duration
+    }
+
+    pub fn lowerer_duration(&self) -> Duration {
+        self.lowerer_duration
+    }
+
+    pub fn trace_lower_duration(&self) -> Duration {
+        self.trace_lower_duration
+    }
+
+    pub fn pending_send_wait_duration(&self) -> Duration {
+        self.pending_send_wait_duration
+    }
+
+    pub fn pending_receive_wait_duration(&self) -> Duration {
+        self.pending_receive_wait_duration
+    }
+
+    pub fn segment_send_wait_duration(&self) -> Duration {
+        self.segment_send_wait_duration
+    }
+
+    pub fn segment_receive_wait_duration(&self) -> Duration {
+        self.segment_receive_wait_duration
+    }
+}
+
+pub(crate) struct GuestPcTraceStreamResult {
+    pub(crate) proof_values: Vec<WitnessTraceProofValue>,
+    pub(crate) timing: GuestPcTraceStreamTiming,
+}
+
 pub(crate) fn run_guest_pc_trace_runtime_proof_values_with_context(
     backend: &GuestPcTraceBackend,
     context: WitnessComputeContext<'_>,
@@ -214,7 +269,7 @@ pub(crate) fn for_each_guest_pc_trace_segment_with_context<E>(
     request: WitnessTraceRequest<'_>,
     proof_values: &[WitnessTraceProofValue],
     mut emit: impl FnMut(GuestPcTraceSegmentRunOutput) -> Result<(), E>,
-) -> Result<(), GuestPcTraceSegmentStreamError<E>> {
+) -> Result<GuestPcTraceStreamTiming, GuestPcTraceSegmentStreamError<E>> {
     let layout = context
         .trace_layout
         .ok_or_else(|| WitnessCallError::Backend {
@@ -247,7 +302,7 @@ pub(crate) fn for_each_guest_pc_trace_segment_with_context<E>(
                 .map_err(GuestPcTraceSegmentStreamError::Emit)
         },
     )
-    .map(|_| ())
+    .map(|stream| stream.timing)
 }
 
 pub(crate) fn for_each_guest_pc_trace_segment_collecting_proof_values_with_context<E>(
@@ -255,7 +310,7 @@ pub(crate) fn for_each_guest_pc_trace_segment_collecting_proof_values_with_conte
     context: WitnessComputeContext<'_>,
     request: WitnessTraceRequest<'_>,
     mut emit: impl FnMut(GuestPcTraceSegmentRunOutput) -> Result<(), E>,
-) -> Result<Vec<WitnessTraceProofValue>, GuestPcTraceSegmentStreamError<E>> {
+) -> Result<GuestPcTraceStreamResult, GuestPcTraceSegmentStreamError<E>> {
     let layout = context
         .trace_layout
         .ok_or_else(|| WitnessCallError::Backend {
@@ -318,13 +373,13 @@ struct GuestPcTracePendingSegmentSlice {
 #[cfg_attr(feature = "cuda", allow(clippy::large_enum_variant))]
 enum GuestPcTraceSegmentStreamMessage {
     Segment(GuestPcTraceSegmentTrace),
-    Complete(Vec<WitnessTraceProofValue>),
+    Complete(GuestPcTraceStreamResult),
     Error(GuestPcTraceBackendError),
 }
 
 enum GuestPcTracePendingSegmentMessage {
     Segment(GuestPcTracePendingSegmentSlice),
-    Complete(Vec<WitnessTraceProofValue>),
+    Complete(GuestPcTraceStreamResult),
     Error(GuestPcTraceBackendError),
 }
 
@@ -1689,25 +1744,32 @@ fn for_each_guest_pc_trace_segment<E>(
     input: &[u8],
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
     mut emit: impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceSegmentStreamError<E>>,
-) -> Result<Vec<WitnessTraceProofValue>, GuestPcTraceSegmentStreamError<E>> {
+) -> Result<GuestPcTraceStreamResult, GuestPcTraceSegmentStreamError<E>> {
     let (sender, receiver) = mpsc::sync_channel(guest_pc_trace_segment_queue_capacity());
     thread::scope(|scope| {
         let producer = scope.spawn(move || {
+            let mut segment_send_wait_duration = Duration::ZERO;
             let produced = produce_guest_pc_trace_segments(
                 instruction_limit,
                 context,
                 input,
                 expected_proof_values,
                 |segment| {
+                    let send_started = Instant::now();
                     sender
                         .send(GuestPcTraceSegmentStreamMessage::Segment(segment))
                         .map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
                             message: "guest PC trace segment consumer stopped".to_owned(),
-                        })
+                        })?;
+                    segment_send_wait_duration += send_started.elapsed();
+                    Ok(())
                 },
             );
             let message = match produced {
-                Ok(proof_values) => GuestPcTraceSegmentStreamMessage::Complete(proof_values),
+                Ok(mut stream) => {
+                    stream.timing.segment_send_wait_duration += segment_send_wait_duration;
+                    GuestPcTraceSegmentStreamMessage::Complete(stream)
+                }
                 Err(error) => GuestPcTraceSegmentStreamMessage::Error(error),
             };
             let _ = sender.send(message);
@@ -1715,9 +1777,16 @@ fn for_each_guest_pc_trace_segment<E>(
 
         let mut emit_error = None;
         let mut stream_result: Option<
-            Result<Vec<WitnessTraceProofValue>, GuestPcTraceSegmentStreamError<E>>,
+            Result<GuestPcTraceStreamResult, GuestPcTraceSegmentStreamError<E>>,
         > = None;
-        while let Ok(message) = receiver.recv() {
+        let mut segment_receive_wait_duration = Duration::ZERO;
+        loop {
+            let receive_started = Instant::now();
+            let message = match receiver.recv() {
+                Ok(message) => message,
+                Err(_) => break,
+            };
+            segment_receive_wait_duration += receive_started.elapsed();
             match message {
                 GuestPcTraceSegmentStreamMessage::Segment(segment) => {
                     if emit_error.is_none() {
@@ -1726,8 +1795,9 @@ fn for_each_guest_pc_trace_segment<E>(
                         }
                     }
                 }
-                GuestPcTraceSegmentStreamMessage::Complete(proof_values) => {
-                    stream_result = Some(Ok(proof_values));
+                GuestPcTraceSegmentStreamMessage::Complete(mut stream) => {
+                    stream.timing.segment_receive_wait_duration += segment_receive_wait_duration;
+                    stream_result = Some(Ok(stream));
                     break;
                 }
                 GuestPcTraceSegmentStreamMessage::Error(error) => {
@@ -1765,7 +1835,7 @@ fn produce_guest_pc_trace_segments(
     input: &[u8],
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
     mut emit: impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceBackendError>,
-) -> Result<Vec<WitnessTraceProofValue>, GuestPcTraceBackendError> {
+) -> Result<GuestPcTraceStreamResult, GuestPcTraceBackendError> {
     let layout = context
         .trace_layout
         .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
@@ -1783,43 +1853,63 @@ fn produce_guest_pc_trace_segments(
         mpsc::sync_channel(guest_pc_trace_segment_queue_capacity());
     thread::scope(|scope| {
         let runner = scope.spawn(move || {
+            let runner_started = Instant::now();
+            let mut pending_send_wait_duration = Duration::ZERO;
             let produced = produce_guest_pc_trace_pending_slices(
                 instruction_limit,
                 context,
                 input,
                 row_count,
                 |pending| {
+                    let send_started = Instant::now();
                     pending_sender
                         .send(GuestPcTracePendingSegmentMessage::Segment(pending))
                         .map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
                             message: "guest PC trace pending segment consumer stopped".to_owned(),
-                        })
+                        })?;
+                    pending_send_wait_duration += send_started.elapsed();
+                    Ok(())
                 },
             );
             let message = match produced {
-                Ok(proof_values) => GuestPcTracePendingSegmentMessage::Complete(proof_values),
+                Ok(proof_values) => {
+                    let timing = GuestPcTraceStreamTiming {
+                        runner_duration: runner_started.elapsed(),
+                        pending_send_wait_duration,
+                        ..GuestPcTraceStreamTiming::default()
+                    };
+                    GuestPcTracePendingSegmentMessage::Complete(GuestPcTraceStreamResult {
+                        proof_values,
+                        timing,
+                    })
+                }
                 Err(error) => GuestPcTracePendingSegmentMessage::Error(error),
             };
             let _ = pending_sender.send(message);
         });
 
+        let lowerer_started = Instant::now();
+        let mut timing = GuestPcTraceStreamTiming::default();
         let result = lower_guest_pc_trace_pending_segments(
             layout,
             pending_receiver,
             expected_proof_values,
+            &mut timing,
             &mut emit,
         );
+        timing.lowerer_duration += lowerer_started.elapsed();
         if let Err(payload) = runner.join() {
             std::panic::resume_unwind(payload);
         }
-        let actual_proof_values = result?;
-        if expected_proof_values.is_some_and(|expected| actual_proof_values.as_slice() != expected)
+        let mut stream = result?;
+        stream.timing.add(timing);
+        if expected_proof_values.is_some_and(|expected| stream.proof_values.as_slice() != expected)
         {
             return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "guest PC trace runtime proof values changed between passes".to_owned(),
             });
         }
-        Ok(actual_proof_values)
+        Ok(stream)
     })
 }
 
@@ -1912,16 +2002,24 @@ fn lower_guest_pc_trace_pending_segments(
     layout: &WitnessTraceLayout,
     pending_receiver: mpsc::Receiver<GuestPcTracePendingSegmentMessage>,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    timing: &mut GuestPcTraceStreamTiming,
     emit: &mut impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceBackendError>,
-) -> Result<Vec<WitnessTraceProofValue>, GuestPcTraceBackendError> {
+) -> Result<GuestPcTraceStreamResult, GuestPcTraceBackendError> {
     let mut trace_state = ZiskMainTraceState::new();
     let mut previous_c = 0_u64;
-    while let Ok(message) = pending_receiver.recv() {
+    loop {
+        let receive_started = Instant::now();
+        let message = match pending_receiver.recv() {
+            Ok(message) => message,
+            Err(_) => break,
+        };
+        timing.pending_receive_wait_duration += receive_started.elapsed();
         let pending = match message {
             GuestPcTracePendingSegmentMessage::Segment(pending) => pending,
-            GuestPcTracePendingSegmentMessage::Complete(proof_values) => return Ok(proof_values),
+            GuestPcTracePendingSegmentMessage::Complete(stream) => return Ok(stream),
             GuestPcTracePendingSegmentMessage::Error(error) => return Err(error),
         };
+        let lower_started = Instant::now();
         let written = build_layout_zisk_main_trace_segment_for_segment_output(
             layout,
             &pending.reports,
@@ -1935,6 +2033,7 @@ fn lower_guest_pc_trace_pending_segments(
             },
         )?
         .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
+        timing.trace_lower_duration += lower_started.elapsed();
         previous_c = written.final_state.last_c;
         trace_state = written.continuation_state;
         emit(GuestPcTraceSegmentTrace {

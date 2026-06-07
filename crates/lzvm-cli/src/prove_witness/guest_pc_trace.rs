@@ -63,6 +63,25 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_segment_commit",
         timing.guest_segment_commit_duration(),
     );
+    timings.record("guest_trace_runner", timing.guest_trace_runner_duration());
+    timings.record("guest_trace_lowerer", timing.guest_trace_lowerer_duration());
+    timings.record("guest_trace_lower", timing.guest_trace_lower_duration());
+    timings.record(
+        "guest_trace_pending_send_wait",
+        timing.guest_trace_pending_send_wait_duration(),
+    );
+    timings.record(
+        "guest_trace_pending_receive_wait",
+        timing.guest_trace_pending_receive_wait_duration(),
+    );
+    timings.record(
+        "guest_trace_segment_send_wait",
+        timing.guest_trace_segment_send_wait_duration(),
+    );
+    timings.record(
+        "guest_trace_segment_receive_wait",
+        timing.guest_trace_segment_receive_wait_duration(),
+    );
     timings.record(
         "guest_device_source_build",
         timing.guest_device_source_build_duration(),
