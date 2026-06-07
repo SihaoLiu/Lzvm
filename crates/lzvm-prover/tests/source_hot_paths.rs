@@ -569,6 +569,17 @@ fn cuda_compact_witness_commit_retains_parent_checkpoint_level() {
             && device_commit_body.contains("parent_checkpoint_level"),
         "device compact commits should derive and retain a compact parent checkpoint during root construction"
     );
+
+    let leaf_retain_index = device_commit_body
+        .find("retain_leaf_digest_level")
+        .expect("device compact commits should try to retain leaf digests");
+    let checkpoint_retain_index = device_commit_body
+        .find("retain_parent_checkpoint_level")
+        .expect("device compact commits should try to retain a parent checkpoint");
+    assert!(
+        leaf_retain_index < checkpoint_retain_index,
+        "device compact commits should reserve retained leaf digests before optional parent checkpoints"
+    );
 }
 
 #[test]
