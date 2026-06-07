@@ -3118,7 +3118,8 @@ fn run_prove_witness_commitments_from_trace_inner(
     }
     let trace_rows = layout.row_count();
     let trace_columns = layout.column_count();
-    let stage_commitments = if let Some(timing) = timing.as_deref_mut() {
+    let stage_commitments = if let Some(timing) = timing.as_mut() {
+        let timing = &mut **timing;
         let stage_commit_started = Instant::now();
         let (stage_commitments, stage_timing, stage_timings) = (|| {
             let mut stage_timing = WitnessStageCommitTiming::default();

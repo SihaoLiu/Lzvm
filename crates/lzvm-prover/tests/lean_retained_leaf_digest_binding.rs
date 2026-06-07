@@ -34,6 +34,10 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
                 "runtime_retained_leaf_digest_opening_checked_acceptance_digest_contract"
             )
             && lean_source.contains("runtime_retained_leaf_digest_opening_checked_acceptance_sound")
+            && lean_source.contains(
+                "runtime_retained_leaf_digest_opening_checked_acceptance_verifier_core_contract"
+            )
+            && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean retained leaf digest opening binding should expose source rows, Merkle path, root equality, and soundness evidence"
     );

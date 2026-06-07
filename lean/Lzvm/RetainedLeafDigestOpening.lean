@@ -409,4 +409,28 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_sound
       batchAccepted
   exact And.intro evidence batchSound.right
 
+theorem runtime_retained_leaf_digest_opening_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_retained_leaf_digest_opening_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  exact sound_witness_implies_verifier_core_contract sound.right
+
 end Lzvm
