@@ -165,6 +165,32 @@ theorem runtime_external_source_checked_acceptance_sound
       (And.intro externalEvidence
         (And.intro externalSound.right.left externalSound.right.right))
 
+theorem runtime_external_source_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof checked
+  have sound :=
+    runtime_external_source_checked_acceptance_sound
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right.right.right
+
 theorem runtime_guarded_external_source_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -217,5 +243,33 @@ theorem runtime_guarded_external_source_checked_acceptance_sound
   exact
     And.intro artifactEvidence
       (And.intro sourceRequirement (And.intro pcsOpenings soundWitness))
+
+theorem runtime_guarded_external_source_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeGuardedExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have sound :=
+    runtime_guarded_external_source_checked_acceptance_sound
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right.right.right
 
 end Lzvm
