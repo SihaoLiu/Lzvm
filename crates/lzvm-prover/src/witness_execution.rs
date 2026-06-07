@@ -340,6 +340,9 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_runner_duration: Duration,
     guest_trace_lowerer_duration: Duration,
     guest_trace_lower_duration: Duration,
+    guest_trace_report_duration: Duration,
+    guest_trace_emit_duration: Duration,
+    guest_trace_descriptor_duration: Duration,
     guest_trace_pending_send_wait_duration: Duration,
     guest_trace_pending_receive_wait_duration: Duration,
     guest_trace_segment_send_wait_duration: Duration,
@@ -406,6 +409,9 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_runner_duration: stream_timing.runner_duration(),
             guest_trace_lowerer_duration: stream_timing.lowerer_duration(),
             guest_trace_lower_duration: stream_timing.trace_lower_duration(),
+            guest_trace_report_duration: stream_timing.trace_report_duration(),
+            guest_trace_emit_duration: stream_timing.trace_emit_duration(),
+            guest_trace_descriptor_duration: stream_timing.trace_descriptor_duration(),
             guest_trace_pending_send_wait_duration: stream_timing.pending_send_wait_duration(),
             guest_trace_pending_receive_wait_duration: stream_timing
                 .pending_receive_wait_duration(),
@@ -507,6 +513,18 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_lower_duration(&self) -> Duration {
         self.guest_trace_lower_duration
+    }
+
+    pub fn guest_trace_report_duration(&self) -> Duration {
+        self.guest_trace_report_duration
+    }
+
+    pub fn guest_trace_emit_duration(&self) -> Duration {
+        self.guest_trace_emit_duration
+    }
+
+    pub fn guest_trace_descriptor_duration(&self) -> Duration {
+        self.guest_trace_descriptor_duration
     }
 
     pub fn guest_trace_pending_send_wait_duration(&self) -> Duration {

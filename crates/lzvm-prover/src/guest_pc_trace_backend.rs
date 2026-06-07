@@ -188,6 +188,9 @@ pub(crate) struct GuestPcTraceStreamTiming {
     runner_duration: Duration,
     lowerer_duration: Duration,
     trace_lower_duration: Duration,
+    trace_report_duration: Duration,
+    trace_emit_duration: Duration,
+    trace_descriptor_duration: Duration,
     pending_send_wait_duration: Duration,
     pending_receive_wait_duration: Duration,
     segment_send_wait_duration: Duration,
@@ -199,6 +202,9 @@ impl GuestPcTraceStreamTiming {
         self.runner_duration += other.runner_duration;
         self.lowerer_duration += other.lowerer_duration;
         self.trace_lower_duration += other.trace_lower_duration;
+        self.trace_report_duration += other.trace_report_duration;
+        self.trace_emit_duration += other.trace_emit_duration;
+        self.trace_descriptor_duration += other.trace_descriptor_duration;
         self.pending_send_wait_duration += other.pending_send_wait_duration;
         self.pending_receive_wait_duration += other.pending_receive_wait_duration;
         self.segment_send_wait_duration += other.segment_send_wait_duration;
@@ -217,6 +223,18 @@ impl GuestPcTraceStreamTiming {
         self.trace_lower_duration
     }
 
+    pub fn trace_report_duration(&self) -> Duration {
+        self.trace_report_duration
+    }
+
+    pub fn trace_emit_duration(&self) -> Duration {
+        self.trace_emit_duration
+    }
+
+    pub fn trace_descriptor_duration(&self) -> Duration {
+        self.trace_descriptor_duration
+    }
+
     pub fn pending_send_wait_duration(&self) -> Duration {
         self.pending_send_wait_duration
     }
@@ -231,6 +249,26 @@ impl GuestPcTraceStreamTiming {
 
     pub fn segment_receive_wait_duration(&self) -> Duration {
         self.segment_receive_wait_duration
+    }
+}
+
+struct DurationTimer<'a> {
+    target: Option<&'a mut Duration>,
+    started: Option<Instant>,
+}
+
+impl<'a> DurationTimer<'a> {
+    fn new(target: Option<&'a mut Duration>) -> Self {
+        let started = target.as_ref().map(|_| Instant::now());
+        Self { target, started }
+    }
+}
+
+impl Drop for DurationTimer<'_> {
+    fn drop(&mut self) {
+        if let (Some(target), Some(started)) = (self.target.as_deref_mut(), self.started) {
+            *target += started.elapsed();
+        }
     }
 }
 
@@ -1695,6 +1733,7 @@ fn compute_guest_pc_trace_segments(
                 is_last_segment,
                 previous_c,
             },
+            None,
         )?
         .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
         previous_c = written.final_state.last_c;
@@ -2032,11 +2071,13 @@ fn lower_guest_pc_trace_pending_segments(
                 is_last_segment: pending.is_last_segment,
                 previous_c,
             },
+            Some(timing),
         )?
         .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
         timing.trace_lower_duration += lower_started.elapsed();
         previous_c = written.final_state.last_c;
         trace_state = written.continuation_state;
+        let emit_started = Instant::now();
         emit(GuestPcTraceSegmentTrace {
             trace_instance_index: pending.trace_instance_index,
             trace_source_prefix_rows: written.trace_source_prefix_rows,
@@ -2046,6 +2087,7 @@ fn lower_guest_pc_trace_pending_segments(
             unit_values: written.output.unit_values,
             proof_values: expected_proof_values.unwrap_or_default().to_vec(),
         })?;
+        timing.trace_emit_duration += emit_started.elapsed();
     }
     Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
         message: "guest PC trace pending segment runner stopped".to_owned(),
@@ -3216,6 +3258,7 @@ fn write_layout_zisk_main_trace_segment(
         initial_state,
         lookahead_instruction,
         segment,
+        None,
     )?
     else {
         return Ok(None);
@@ -3240,6 +3283,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
     initial_state: &ZiskMainTraceState,
     lookahead_instruction: Option<RiscvInstruction>,
     segment: ZiskMainTraceSegmentInfo,
+    mut timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<Option<GuestPcTraceDeviceSegmentBuild>, GuestPcTraceBackendError> {
     let Some(columns) = zisk_main_trace_columns(layout)? else {
         return Ok(None);
@@ -3267,6 +3311,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
                     .then_some(lookahead_instruction)
                     .flatten()
             });
+        let report_started = timing.as_ref().map(|_| Instant::now());
         let written_rows = validate_and_apply_zisk_main_report(
             output_row,
             report,
@@ -3278,9 +3323,17 @@ fn build_layout_zisk_main_trace_segment_device_material(
                 segment,
             },
             |_, values| {
+                let _descriptor_timer = DurationTimer::new(
+                    timing
+                        .as_deref_mut()
+                        .map(|timing| &mut timing.trace_descriptor_duration),
+                );
                 append_zisk_main_device_trace_descriptor(&mut device_trace_descriptors, &values)
             },
         )?;
+        if let (Some(timing), Some(started)) = (timing.as_deref_mut(), report_started) {
+            timing.trace_report_duration += started.elapsed();
+        }
         output_row = output_row.checked_add(written_rows).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "Zisk Main row index overflow".to_owned(),
@@ -3325,6 +3378,7 @@ fn build_layout_zisk_main_trace_segment_from_device_material(
     initial_state: &ZiskMainTraceState,
     lookahead_instruction: Option<RiscvInstruction>,
     segment: ZiskMainTraceSegmentInfo,
+    timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<Option<ZiskMainTraceSegmentWrite>, GuestPcTraceBackendError> {
     let Some(material) = build_layout_zisk_main_trace_segment_device_material(
         layout,
@@ -3333,6 +3387,7 @@ fn build_layout_zisk_main_trace_segment_from_device_material(
         initial_state,
         lookahead_instruction,
         segment,
+        timing,
     )?
     else {
         return Ok(None);
@@ -3362,7 +3417,11 @@ fn build_layout_zisk_main_trace_segment_for_segment_output(
     initial_state: &ZiskMainTraceState,
     lookahead_instruction: Option<RiscvInstruction>,
     segment: ZiskMainTraceSegmentInfo,
+    timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<Option<ZiskMainTraceSegmentWrite>, GuestPcTraceBackendError> {
+    #[cfg(feature = "cuda")]
+    let mut timing = timing;
+
     #[cfg(feature = "cuda")]
     {
         if guest_pc_trace_less_segment_output_enabled() {
@@ -3373,6 +3432,7 @@ fn build_layout_zisk_main_trace_segment_for_segment_output(
                 initial_state,
                 lookahead_instruction,
                 segment,
+                timing.as_deref_mut(),
             )? {
                 return Ok(Some(written));
             }
@@ -3385,6 +3445,7 @@ fn build_layout_zisk_main_trace_segment_for_segment_output(
         initial_state,
         lookahead_instruction,
         segment,
+        timing,
     )
 }
 
@@ -3407,6 +3468,7 @@ fn build_layout_zisk_main_trace_segment(
     initial_state: &ZiskMainTraceState,
     lookahead_instruction: Option<RiscvInstruction>,
     segment: ZiskMainTraceSegmentInfo,
+    mut timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<Option<ZiskMainTraceSegmentWrite>, GuestPcTraceBackendError> {
     let Some(columns) = zisk_main_trace_columns(layout)? else {
         return Ok(None);
@@ -3435,6 +3497,7 @@ fn build_layout_zisk_main_trace_segment(
                     .then_some(lookahead_instruction)
                     .flatten()
             });
+        let report_started = timing.as_ref().map(|_| Instant::now());
         let written_rows = write_zisk_main_report_columns(
             &mut builder,
             output_row,
@@ -3448,7 +3511,11 @@ fn build_layout_zisk_main_trace_segment(
             segment,
             #[cfg(feature = "cuda")]
             &mut device_trace_descriptors,
+            timing.as_deref_mut(),
         )?;
+        if let (Some(timing), Some(started)) = (timing.as_deref_mut(), report_started) {
+            timing.trace_report_duration += started.elapsed();
+        }
         output_row = output_row.checked_add(written_rows).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "Zisk Main row index overflow".to_owned(),
@@ -3634,6 +3701,7 @@ fn write_zisk_main_report_columns(
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
     #[cfg(feature = "cuda")] device_trace_descriptors: &mut Option<ZiskMainDeviceTraceDescriptors>,
+    mut timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<usize, GuestPcTraceBackendError> {
     validate_and_apply_zisk_main_report(
         row,
@@ -3648,8 +3716,18 @@ fn write_zisk_main_report_columns(
         |output_row, values| {
             #[cfg(feature = "cuda")]
             if let Some(descriptors) = device_trace_descriptors.as_mut() {
+                let _descriptor_timer = DurationTimer::new(
+                    timing
+                        .as_deref_mut()
+                        .map(|timing| &mut timing.trace_descriptor_duration),
+                );
                 append_zisk_main_device_trace_descriptor(descriptors, &values)?;
             }
+            let _emit_timer = DurationTimer::new(
+                timing
+                    .as_deref_mut()
+                    .map(|timing| &mut timing.trace_emit_duration),
+            );
             write_zisk_main_row_columns(builder, output_row, values, columns)
         },
     )

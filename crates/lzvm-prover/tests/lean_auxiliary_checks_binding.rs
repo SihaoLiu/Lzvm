@@ -47,6 +47,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestTraceRunnerMilliseconds",
         "guestTraceLowererMilliseconds",
         "guestTraceLowerMilliseconds",
+        "guestTraceReportMilliseconds",
+        "guestTraceEmitMilliseconds",
+        "guestTraceDescriptorMilliseconds",
         "guestTracePendingSendWaitMilliseconds",
         "guestTracePendingReceiveWaitMilliseconds",
         "guestTraceSegmentSendWaitMilliseconds",
@@ -76,6 +79,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ("\"guest_trace_runner\"", "guest_trace_runner_duration()"),
         ("\"guest_trace_lowerer\"", "guest_trace_lowerer_duration()"),
         ("\"guest_trace_lower\"", "guest_trace_lower_duration()"),
+        ("\"guest_trace_report\"", "guest_trace_report_duration()"),
+        ("\"guest_trace_emit\"", "guest_trace_emit_duration()"),
+        (
+            "\"guest_trace_descriptor\"",
+            "guest_trace_descriptor_duration()",
+        ),
         (
             "\"guest_trace_pending_send_wait\"",
             "guest_trace_pending_send_wait_duration()",

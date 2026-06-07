@@ -3238,6 +3238,52 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
 }
 
 #[test]
+fn guest_pc_trace_lower_reports_internal_work_timing() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source = std::fs::read_to_string(&cli_path).expect("guest PC CLI source should read");
+
+    for field in [
+        "trace_report_duration",
+        "trace_emit_duration",
+        "trace_descriptor_duration",
+    ] {
+        assert!(
+            backend_source.contains(field),
+            "guest PC trace lower timing should include {field}"
+        );
+    }
+
+    for field in [
+        "guest_trace_report_duration",
+        "guest_trace_emit_duration",
+        "guest_trace_descriptor_duration",
+    ] {
+        assert!(
+            execution_source.contains(field),
+            "guest PC trace proof timing should expose {field}"
+        );
+    }
+
+    for line_name in [
+        "\"guest_trace_report\"",
+        "\"guest_trace_emit\"",
+        "\"guest_trace_descriptor\"",
+    ] {
+        assert!(
+            cli_source.contains(line_name),
+            "guest PC trace CLI timing should record {line_name}"
+        );
+    }
+}
+
+#[test]
 fn guest_pc_trace_segments_reuse_fixed_columns_across_segments() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");

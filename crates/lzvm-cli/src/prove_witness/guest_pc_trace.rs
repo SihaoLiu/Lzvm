@@ -66,6 +66,12 @@ pub(super) fn record_guest_pc_trace_timing(
     timings.record("guest_trace_runner", timing.guest_trace_runner_duration());
     timings.record("guest_trace_lowerer", timing.guest_trace_lowerer_duration());
     timings.record("guest_trace_lower", timing.guest_trace_lower_duration());
+    timings.record("guest_trace_report", timing.guest_trace_report_duration());
+    timings.record("guest_trace_emit", timing.guest_trace_emit_duration());
+    timings.record(
+        "guest_trace_descriptor",
+        timing.guest_trace_descriptor_duration(),
+    );
     timings.record(
         "guest_trace_pending_send_wait",
         timing.guest_trace_pending_send_wait_duration(),

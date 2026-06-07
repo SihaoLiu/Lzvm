@@ -41,6 +41,7 @@ fn builds_zisk_main_segment_trace_without_serialized_roundtrip() {
             is_last_segment: true,
             previous_c: 0,
         },
+        None,
     )
     .expect("segment trace should build")
     .expect("Zisk Main layout should be supported");
@@ -85,6 +86,7 @@ fn zisk_main_trace_build_uses_resolved_column_targets() {
             is_last_segment: true,
             previous_c: 0,
         },
+        None,
     )
     .expect("segment trace should build")
     .expect("Zisk Main layout should be supported");

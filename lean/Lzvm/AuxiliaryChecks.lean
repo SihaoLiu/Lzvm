@@ -42,6 +42,9 @@ structure GuestPcTraceTimingSummary where
   guestTraceRunnerMilliseconds : Nat
   guestTraceLowererMilliseconds : Nat
   guestTraceLowerMilliseconds : Nat
+  guestTraceReportMilliseconds : Nat
+  guestTraceEmitMilliseconds : Nat
+  guestTraceDescriptorMilliseconds : Nat
   guestTracePendingSendWaitMilliseconds : Nat
   guestTracePendingReceiveWaitMilliseconds : Nat
   guestTraceSegmentSendWaitMilliseconds : Nat
