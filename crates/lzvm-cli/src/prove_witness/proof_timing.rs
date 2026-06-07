@@ -63,6 +63,22 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_external_source",
         timing.witness_external_source,
     );
+    timings.record(
+        "finish_witness_external_source_descriptor_upload",
+        timing.witness_external_source_descriptor_upload,
+    );
+    timings.record_count(
+        "finish_witness_external_source_descriptor_upload_bytes",
+        timing.witness_external_source_descriptor_upload_byte_count,
+    );
+    timings.record_count(
+        "finish_witness_external_source_descriptor_upload_rows",
+        timing.witness_external_source_descriptor_upload_row_count,
+    );
+    timings.record(
+        "finish_witness_external_source_trace_expand",
+        timing.witness_external_source_trace_expand,
+    );
     timings.record("finish_witness_opening_setup", timing.witness_opening_setup);
     timings.record(
         "finish_witness_opening_leaf_extend",

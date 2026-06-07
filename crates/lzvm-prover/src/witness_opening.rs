@@ -18,8 +18,9 @@ use lzvm_field::{Felt, FieldError};
 
 #[cfg(feature = "cuda")]
 use crate::guest_pc_trace_backend::{
-    build_guest_pc_trace_stage_source_devices_from_device_descriptors,
-    build_guest_pc_trace_stage_source_devices_from_device_material,
+    build_guest_pc_trace_stage_source_devices_from_device_descriptors_timing,
+    build_guest_pc_trace_stage_source_devices_from_device_material_timing,
+    GuestPcDeviceSourceBuildTiming,
 };
 use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
 #[cfg(feature = "cuda")]
@@ -833,10 +834,13 @@ fn build_witness_opening_unit_segment_from_trace_output(
             let external_source_view =
                 if retained_source_view.is_none() && commitment.requires_external_source() {
                     let external_source_start = Instant::now();
+                    let mut external_source_timing = GuestPcDeviceSourceBuildTiming::default();
+                    let collect_external_source_timing = timing.is_some();
                     let source_view = ensure_guest_pc_external_stage_sources(
                         &mut guest_pc_external_stage_sources,
                         unit,
                         output,
+                        collect_external_source_timing.then_some(&mut external_source_timing),
                     )?
                     .and_then(|source_devices| {
                         source_devices
@@ -848,6 +852,7 @@ fn build_witness_opening_unit_segment_from_trace_output(
                         let duration = external_source_start.elapsed();
                         timing.add_witness_external_source(duration);
                         timing.add_witness_stage_external_source(stage_index, duration);
+                        timing.add_witness_external_source_build_timing(&external_source_timing);
                     }
                     source_view
                 } else {
@@ -960,12 +965,13 @@ fn ensure_guest_pc_external_stage_sources<'a>(
     cached_sources: &'a mut Option<Vec<WitnessStageSourceDevice>>,
     unit: &ProveUnitSchedule,
     output: &ProveWitnessTraceCommitments,
+    timing: Option<&mut GuestPcDeviceSourceBuildTiming>,
 ) -> Result<Option<&'a [WitnessStageSourceDevice]>, ProveWitnessOpeningSegmentError> {
     if output.guest_pc_device_segment_material().is_none() {
         return Ok(None);
     }
     if cached_sources.is_none() {
-        *cached_sources = guest_pc_external_stage_sources(unit, output)?;
+        *cached_sources = guest_pc_external_stage_sources(unit, output, timing)?;
     }
     Ok(cached_sources.as_deref())
 }
@@ -974,6 +980,7 @@ fn ensure_guest_pc_external_stage_sources<'a>(
 fn guest_pc_external_stage_sources(
     unit: &ProveUnitSchedule,
     output: &ProveWitnessTraceCommitments,
+    timing: Option<&mut GuestPcDeviceSourceBuildTiming>,
 ) -> Result<Option<Vec<WitnessStageSourceDevice>>, ProveWitnessOpeningSegmentError> {
     let Some(material) = output.guest_pc_device_segment_material() else {
         return Ok(None);
@@ -984,13 +991,16 @@ fn guest_pc_external_stage_sources(
         }
     })?;
     let builder = if let Some(descriptor_buffer) = output.guest_pc_device_descriptor_buffer() {
-        build_guest_pc_trace_stage_source_devices_from_device_descriptors(
+        build_guest_pc_trace_stage_source_devices_from_device_descriptors_timing(
             &layout,
             material,
             descriptor_buffer,
+            timing,
         )
     } else {
-        build_guest_pc_trace_stage_source_devices_from_device_material(&layout, material)
+        build_guest_pc_trace_stage_source_devices_from_device_material_timing(
+            &layout, material, timing,
+        )
     }
     .map_err(|error| ProveWitnessOpeningSegmentError::ExternalSource {
         message: error.to_string(),

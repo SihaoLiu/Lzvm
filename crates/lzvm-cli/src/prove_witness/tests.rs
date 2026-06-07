@@ -176,6 +176,33 @@ fn proof_artifact_timing_reports_parent_hash_shape_counts() {
 }
 
 #[test]
+fn proof_artifact_timing_reports_external_source_rebuild_shape() {
+    let timing = lzvm_prover::WitnessProofArtifactTiming {
+        witness_external_source_descriptor_upload: std::time::Duration::from_millis(7),
+        witness_external_source_descriptor_upload_byte_count: 88,
+        witness_external_source_descriptor_upload_row_count: 2,
+        witness_external_source_trace_expand: std::time::Duration::from_millis(11),
+        ..lzvm_prover::WitnessProofArtifactTiming::default()
+    };
+
+    let mut timings = TimingRecorder::new(true);
+    record_proof_artifact_timing(&mut timings, &timing);
+
+    let mut stdout = Vec::new();
+    write_timing_summary(&mut stdout, &timings);
+    let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+    for expected in [
+        "timing_finish_witness_external_source_descriptor_upload_ms=7\n",
+        "timing_finish_witness_external_source_descriptor_upload_bytes=88\n",
+        "timing_finish_witness_external_source_descriptor_upload_rows=2\n",
+        "timing_finish_witness_external_source_trace_expand_ms=11\n",
+    ] {
+        assert!(stdout.contains(expected), "missing {expected} in {stdout}");
+    }
+}
+
+#[test]
 fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
     let timing = lzvm_prover::WitnessProofArtifactTiming {
         witness_opening_row_values_device_row_count: 34,

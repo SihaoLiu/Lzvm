@@ -19,6 +19,10 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_retained_parent_checkpoint_opening_count: usize,
     pub witness_opening_retained_parent_checkpoint_opening_row_count: usize,
     pub witness_external_source: Duration,
+    pub witness_external_source_descriptor_upload: Duration,
+    pub witness_external_source_descriptor_upload_byte_count: usize,
+    pub witness_external_source_descriptor_upload_row_count: usize,
+    pub witness_external_source_trace_expand: Duration,
     pub witness_opening_setup: Duration,
     pub witness_opening_leaf_extend: Duration,
     pub witness_opening_leaf_hash: Duration,
@@ -222,6 +226,19 @@ impl WitnessProofArtifactTiming {
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
     pub(crate) fn add_witness_external_source(&mut self, duration: Duration) {
         self.witness_external_source += duration;
+    }
+
+    #[cfg(feature = "cuda")]
+    pub(crate) fn add_witness_external_source_build_timing(
+        &mut self,
+        timing: &crate::guest_pc_trace_backend::GuestPcDeviceSourceBuildTiming,
+    ) {
+        self.witness_external_source_descriptor_upload += timing.descriptor_upload_duration();
+        self.witness_external_source_descriptor_upload_byte_count +=
+            timing.descriptor_upload_byte_count();
+        self.witness_external_source_descriptor_upload_row_count +=
+            timing.descriptor_upload_row_count();
+        self.witness_external_source_trace_expand += timing.trace_expand_duration();
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]

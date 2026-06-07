@@ -900,6 +900,7 @@ fn record_device_source_build_duration<T>(
 }
 
 #[cfg(feature = "cuda")]
+#[allow(dead_code)]
 pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors(
     layout: &WitnessTraceLayout,
     material: &GuestPcTraceDeviceSegmentMaterial,
