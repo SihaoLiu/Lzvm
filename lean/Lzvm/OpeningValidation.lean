@@ -206,6 +206,25 @@ theorem runtime_opening_checked_acceptance_sound
       runtimeAccepted
   exact And.intro evidence runtimeSound.right
 
+theorem runtime_opening_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof _requiresExternalSource accepted
+  have sound :=
+    runtime_opening_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      _requiresExternalSource
+      accepted
+  exact sound_witness_implies_verifier_core_contract sound.right
+
 theorem runtime_opening_required_external_source_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -256,5 +275,26 @@ theorem runtime_opening_required_external_source_sound
   exact
     And.intro openingSound.left
       (And.intro externalSound.right.left openingSound.right)
+
+theorem runtime_opening_required_external_source_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        requiresExternalSource ->
+          RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have sound :=
+    runtime_opening_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  exact sound_witness_implies_verifier_core_contract sound.right.right
 
 end Lzvm
