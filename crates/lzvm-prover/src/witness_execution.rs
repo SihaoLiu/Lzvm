@@ -3534,18 +3534,6 @@ where
         .fixed_columns
         .get_or_load(unit_index, plan_unit, inputs.layout)?;
 
-    let domain_points =
-        build_fri_domain_points(plan_unit.setup.stark.n_bits).map_err(|source| {
-            ProveWitnessCommitmentError::RegularConstraintDomainHelper { unit_index, source }
-        })?;
-    let zerofiers = FriPolynomialZerofierTable::build(
-        plan_unit.setup.stark.n_bits,
-        plan_unit.setup.stark.n_bits,
-        &plan_unit.setup.boundaries,
-    )
-    .map_err(
-        |source| ProveWitnessCommitmentError::RegularConstraintDomainHelper { unit_index, source },
-    )?;
     #[cfg(feature = "cuda")]
     let fixed_columns_device_buffer = material.row_major_device_buffer();
 
@@ -3592,10 +3580,10 @@ where
                 stage_columns: &stage_columns,
                 custom_fixed_columns: &[],
                 opening_point_offsets: &plan_unit.opening_point_offsets,
-                domain_points: &domain_points,
+                domain_points: &[],
                 zerofier_values: RegularColumnMatrix {
-                    column_count: zerofiers.column_count,
-                    values: &zerofiers.values,
+                    column_count: 0,
+                    values: &[],
                 },
                 publics: proof_inputs.publics,
                 unit_values: &proof_inputs.auxiliary_inputs.unit_values,
@@ -3625,6 +3613,19 @@ where
             }
         }
     }
+
+    let domain_points =
+        build_fri_domain_points(plan_unit.setup.stark.n_bits).map_err(|source| {
+            ProveWitnessCommitmentError::RegularConstraintDomainHelper { unit_index, source }
+        })?;
+    let zerofiers = FriPolynomialZerofierTable::build(
+        plan_unit.setup.stark.n_bits,
+        plan_unit.setup.stark.n_bits,
+        &plan_unit.setup.boundaries,
+    )
+    .map_err(
+        |source| ProveWitnessCommitmentError::RegularConstraintDomainHelper { unit_index, source },
+    )?;
 
     let stage_traces = inputs.stage_traces.get_or_extract_optional(
         inputs.layout,
@@ -4175,6 +4176,43 @@ mod tests {
         .expect("regular hints should accumulate");
 
         assert_eq!(loads.get(), 1);
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn cuda_regular_constraints_skip_domain_helper_setup_on_base_fast_path() {
+        let mut plan_unit = source_lookup_plan_unit(HintProgram { hints: Vec::new() });
+        plan_unit.regular_constraints = zero_constraint_program();
+        plan_unit.setup.stark.n_bits = 64;
+        let schedule = source_lookup_schedule();
+        let layout = derive_witness_trace_layout(&schedule).expect("layout should derive");
+        let trace = source_lookup_trace(&[0, 0, 0, 0]);
+        let mut stage_source_devices = WitnessStageSourceDeviceCache::default();
+        stage_source_devices
+            .upload_from_trace_if_empty(&layout, &trace)
+            .expect("stage source should upload");
+        let mut fixed_columns = WitnessFixedColumnsCache::with_loader(|unit_index, _| {
+            assert_eq!(unit_index, 0);
+            Ok(empty_fixed_columns_material(
+                u64::try_from(layout.row_count()).expect("row count should fit u64"),
+            ))
+        });
+        let mut stage_trace_cache = WitnessStageTraceCache::default();
+        let auxiliary_inputs = ProveWitnessAuxiliaryInputs::default();
+        let proof_inputs = WitnessProofInputs {
+            publics: &[],
+            auxiliary_inputs: &auxiliary_inputs,
+        };
+        let mut regular_inputs = WitnessRegularTraceInputs {
+            layout: &layout,
+            trace: None,
+            fixed_columns: &mut fixed_columns,
+            stage_traces: &mut stage_trace_cache,
+            stage_source_devices: Some(&stage_source_devices),
+        };
+
+        validate_witness_regular_constraints(&plan_unit, 0, &mut regular_inputs, proof_inputs, 1)
+            .expect("CUDA base regular checks should not require domain helpers");
     }
 
     #[test]
