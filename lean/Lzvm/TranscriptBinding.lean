@@ -240,4 +240,27 @@ theorem runtime_transcript_binding_checked_acceptance_sound
         (And.intro transcriptBound
           (abstract_verifier_sound assumptions publicInput proof verifierAccepts)))
 
+theorem runtime_transcript_binding_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_transcript_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact sound_witness_implies_verifier_core_contract sound.right.right.right
+
 end Lzvm
