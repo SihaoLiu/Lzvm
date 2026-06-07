@@ -1717,6 +1717,11 @@ mod tests {
             batch_timing.retained_parent_checkpoint_opening_row_count,
             rows.len()
         );
+        let checkpoint_parent_rows = 256 + 64 + 16 + 4 + 1;
+        assert_eq!(
+            batch_timing.path_parent_hash_row_count,
+            rows.len() * checkpoint_parent_rows
+        );
     }
 
     #[cfg(feature = "cuda")]

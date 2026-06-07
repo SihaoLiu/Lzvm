@@ -171,6 +171,39 @@ fn merkle_opening_path_parent_work(
 }
 
 #[cfg(feature = "cuda")]
+fn merkle_opening_path_prefix_parent_work(
+    mut state_count: usize,
+    arity: usize,
+    prefix_level_count: usize,
+) -> Option<(usize, usize, usize)> {
+    if state_count <= 1 || prefix_level_count <= 1 {
+        return Some((0, 0, 0));
+    }
+    if arity <= 1 {
+        return None;
+    }
+
+    let mut row_count = 0usize;
+    let mut byte_count = 0usize;
+    let mut launch_count = 0usize;
+    for _ in 1..prefix_level_count {
+        if state_count <= 1 {
+            break;
+        }
+        let parent_count = state_count.div_ceil(arity);
+        let level_bytes = parent_count
+            .checked_mul(arity)?
+            .checked_mul(HASH_WORDS)?
+            .checked_mul(WORD_BYTES)?;
+        row_count = row_count.checked_add(parent_count)?;
+        byte_count = byte_count.checked_add(level_bytes)?;
+        launch_count = launch_count.checked_add(1)?;
+        state_count = parent_count;
+    }
+    Some((row_count, byte_count, launch_count))
+}
+
+#[cfg(feature = "cuda")]
 const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 16 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
 const RETAINED_SOURCE_DEVICE_RESERVE_BYTES: usize = 11 * 1024 * 1024 * 1024;
@@ -1577,9 +1610,21 @@ impl WitnessStageCompactTreeStorage {
         if let Some(timing) = timing.as_deref_mut() {
             timing.record_retained_parent_checkpoint_opening(rows.len());
         }
-        let path_parent_work = if timing.is_some() {
+        let lower_prefix_parent_work = if timing.is_some() {
             Some(
-                merkle_opening_path_parent_work(self.extended_rows, self.arity)
+                merkle_opening_path_prefix_parent_work(
+                    self.extended_rows,
+                    self.arity,
+                    checkpoint.folded_level_count(),
+                )
+                .ok_or(WitnessStageOpeningError::LengthOverflow)?,
+            )
+        } else {
+            None
+        };
+        let upper_suffix_parent_work = if timing.is_some() {
+            Some(
+                merkle_opening_path_parent_work(checkpoint.state_count(), self.arity)
                     .ok_or(WitnessStageOpeningError::LengthOverflow)?,
             )
         } else {
@@ -1594,6 +1639,11 @@ impl WitnessStageCompactTreeStorage {
                     )
                     .map_err(WitnessStageOpeningError::from)
             })?;
+        if let (Some(timing), Some((row_count, byte_count, launch_count))) =
+            (timing.as_deref_mut(), lower_prefix_parent_work)
+        {
+            timing.record_path_parent_hash_work(row_count, byte_count, launch_count);
+        }
         if lower_prefixes.len() != rows.len() {
             return Err(WitnessStageOpeningError::LengthOverflow);
         }
@@ -1614,7 +1664,7 @@ impl WitnessStageCompactTreeStorage {
                 });
             }
             if let (Some(timing), Some((row_count, byte_count, launch_count))) =
-                (timing.as_deref_mut(), path_parent_work)
+                (timing.as_deref_mut(), upper_suffix_parent_work)
             {
                 timing.record_path_parent_hash_work(row_count, byte_count, launch_count);
             }
