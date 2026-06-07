@@ -273,4 +273,27 @@ theorem runtime_proof_artifact_binding_checked_acceptance_sound
       (And.intro obligations.right.left
         (abstract_verifier_sound assumptions publicInput proof verifierAccepts))
 
+theorem runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have obligations :=
+    runtime_proof_artifact_binding_checked_acceptance_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact obligations.right.right.right
+
 end Lzvm
