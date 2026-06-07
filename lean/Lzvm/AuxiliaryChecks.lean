@@ -264,6 +264,23 @@ theorem timing_observation_acceptance_sound
   intro publicInput proof acceptedWithTimings
   exact abstract_verifier_sound assumptions publicInput proof acceptedWithTimings
 
+theorem timing_observation_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (observations : List TimingObservation) :
+    forall publicInput proof,
+      TimingObservedAcceptance system observations publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (timing_observation_acceptance_sound
+        assumptions
+        observations
+        publicInput
+        proof
+        observed)
+
 def GuestPcTraceTimingObservedAcceptance
     (system : VerifierModel)
     (_summary : Option GuestPcTraceTimingSummary)
@@ -280,6 +297,23 @@ theorem guest_pc_trace_timing_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithGuestPcTraceTimings
   exact abstract_verifier_sound assumptions publicInput proof acceptedWithGuestPcTraceTimings
+
+theorem guest_pc_trace_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option GuestPcTraceTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (guest_pc_trace_timing_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
 
 theorem gpu_setup_cache_reuse_sound
     (validation : GpuSetupCacheValidation)
