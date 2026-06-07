@@ -77,6 +77,9 @@ deriving DecidableEq, Repr
 
 structure WitnessOpeningStageRowValueTimingSummary where
   stageIndex : Nat
+  sourceExtendMilliseconds : Nat
+  sourceDownloadMilliseconds : Nat
+  deviceDownloadMilliseconds : Nat
   deviceRowCount : Nat
   sourceRowCount : Nat
   wordCount : Nat
@@ -84,6 +87,9 @@ structure WitnessOpeningStageRowValueTimingSummary where
 deriving DecidableEq, Repr
 
 structure WitnessOpeningRowValueTimingSummary where
+  rowValueSourceExtendMilliseconds : Nat
+  rowValueSourceDownloadMilliseconds : Nat
+  rowValueDeviceDownloadMilliseconds : Nat
   deviceRowCount : Nat
   sourceRowCount : Nat
   wordCount : Nat

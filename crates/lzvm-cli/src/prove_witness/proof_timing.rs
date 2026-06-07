@@ -191,6 +191,18 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_row_values",
         timing.witness_opening_row_values,
     );
+    timings.record(
+        "finish_witness_opening_row_value_source_extend",
+        timing.witness_opening_row_values_source_extend,
+    );
+    timings.record(
+        "finish_witness_opening_row_value_source_download",
+        timing.witness_opening_row_values_source_download,
+    );
+    timings.record(
+        "finish_witness_opening_row_value_device_download",
+        timing.witness_opening_row_values_device_download,
+    );
     timings.record_count(
         "finish_witness_opening_row_values_device_rows",
         timing.witness_opening_row_values_device_row_count,
@@ -482,6 +494,33 @@ pub(super) fn record_proof_artifact_timing(
         timings.record_dynamic(
             format!(
                 "finish_witness_stage_{}_opening_row_values",
+                stage_timing.stage_index
+            ),
+            stage_timing.duration,
+        );
+    }
+    for stage_timing in &timing.witness_stage_opening_row_value_source_extend {
+        timings.record_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_row_value_source_extend",
+                stage_timing.stage_index
+            ),
+            stage_timing.duration,
+        );
+    }
+    for stage_timing in &timing.witness_stage_opening_row_value_source_download {
+        timings.record_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_row_value_source_download",
+                stage_timing.stage_index
+            ),
+            stage_timing.duration,
+        );
+    }
+    for stage_timing in &timing.witness_stage_opening_row_value_device_download {
+        timings.record_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_row_value_device_download",
                 stage_timing.stage_index
             ),
             stage_timing.duration,

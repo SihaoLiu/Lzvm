@@ -205,10 +205,31 @@ fn proof_artifact_timing_reports_external_source_rebuild_shape() {
 #[test]
 fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
     let timing = lzvm_prover::WitnessProofArtifactTiming {
+        witness_opening_row_values_source_extend: std::time::Duration::from_millis(41),
+        witness_opening_row_values_source_download: std::time::Duration::from_millis(42),
+        witness_opening_row_values_device_download: std::time::Duration::from_millis(43),
         witness_opening_row_values_device_row_count: 34,
         witness_opening_row_values_source_row_count: 35,
         witness_opening_row_values_word_count: 36,
         witness_opening_row_values_byte_count: 37,
+        witness_stage_opening_row_value_source_extend: vec![
+            lzvm_prover::WitnessProofStageOpeningTiming {
+                stage_index: 7,
+                duration: std::time::Duration::from_millis(44),
+            },
+        ],
+        witness_stage_opening_row_value_source_download: vec![
+            lzvm_prover::WitnessProofStageOpeningTiming {
+                stage_index: 7,
+                duration: std::time::Duration::from_millis(45),
+            },
+        ],
+        witness_stage_opening_row_value_device_download: vec![
+            lzvm_prover::WitnessProofStageOpeningTiming {
+                stage_index: 7,
+                duration: std::time::Duration::from_millis(46),
+            },
+        ],
         witness_stage_opening_work: vec![lzvm_prover::WitnessProofStageOpeningWork {
             stage_index: 7,
             retained_source_count: 2,
@@ -255,6 +276,9 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
     let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
 
     for expected in [
+        "timing_finish_witness_opening_row_value_source_extend_ms=41\n",
+        "timing_finish_witness_opening_row_value_source_download_ms=42\n",
+        "timing_finish_witness_opening_row_value_device_download_ms=43\n",
         "timing_finish_witness_opening_row_values_device_rows=34\n",
         "timing_finish_witness_opening_row_values_source_rows=35\n",
         "timing_finish_witness_opening_row_values_words=36\n",
@@ -287,6 +311,9 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
         "timing_finish_witness_stage_7_opening_path_parent_hash_rows=23\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_bytes=24\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_launches=25\n",
+        "timing_finish_witness_stage_7_opening_row_value_source_extend_ms=44\n",
+        "timing_finish_witness_stage_7_opening_row_value_source_download_ms=45\n",
+        "timing_finish_witness_stage_7_opening_row_value_device_download_ms=46\n",
         "timing_finish_witness_stage_7_opening_row_values_device_rows=30\n",
         "timing_finish_witness_stage_7_opening_row_values_source_rows=31\n",
         "timing_finish_witness_stage_7_opening_row_values_words=32\n",

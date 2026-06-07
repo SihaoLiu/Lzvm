@@ -48,6 +48,9 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_path_parent_hash_launch_count: usize,
     pub witness_opening_path: Duration,
     pub witness_opening_row_values: Duration,
+    pub witness_opening_row_values_source_extend: Duration,
+    pub witness_opening_row_values_source_download: Duration,
+    pub witness_opening_row_values_device_download: Duration,
     pub witness_opening_row_values_device_row_count: usize,
     pub witness_opening_row_values_source_row_count: usize,
     pub witness_opening_row_values_word_count: usize,
@@ -60,6 +63,9 @@ pub struct WitnessProofArtifactTiming {
     pub witness_stage_opening_work: Vec<WitnessProofStageOpeningWork>,
     pub witness_stage_opening_path: Vec<WitnessProofStageOpeningTiming>,
     pub witness_stage_opening_row_values: Vec<WitnessProofStageOpeningTiming>,
+    pub witness_stage_opening_row_value_source_extend: Vec<WitnessProofStageOpeningTiming>,
+    pub witness_stage_opening_row_value_source_download: Vec<WitnessProofStageOpeningTiming>,
+    pub witness_stage_opening_row_value_device_download: Vec<WitnessProofStageOpeningTiming>,
     pub fri_opening: Duration,
     pub fri_opening_unit_build: Duration,
     pub fri_opening_layer_tree: Duration,
@@ -321,6 +327,9 @@ impl WitnessProofArtifactTiming {
         self.witness_opening_path_parent_hash_row_count += timing.path_parent_hash_row_count;
         self.witness_opening_path_parent_hash_byte_count += timing.path_parent_hash_byte_count;
         self.witness_opening_path_parent_hash_launch_count += timing.path_parent_hash_launch_count;
+        self.witness_opening_row_values_source_extend += timing.row_values_source_extend;
+        self.witness_opening_row_values_source_download += timing.row_values_source_download;
+        self.witness_opening_row_values_device_download += timing.row_values_device_download;
         self.witness_opening_row_values_device_row_count += timing.row_values_device_row_count;
         self.witness_opening_row_values_source_row_count += timing.row_values_source_row_count;
         self.witness_opening_row_values_word_count += timing.row_values_word_count;
@@ -338,6 +347,21 @@ impl WitnessProofArtifactTiming {
             &mut self.witness_stage_opening_leaf_hash,
             stage_index,
             timing.leaf_hash,
+        );
+        add_stage_duration(
+            &mut self.witness_stage_opening_row_value_source_extend,
+            stage_index,
+            timing.row_values_source_extend,
+        );
+        add_stage_duration(
+            &mut self.witness_stage_opening_row_value_source_download,
+            stage_index,
+            timing.row_values_source_download,
+        );
+        add_stage_duration(
+            &mut self.witness_stage_opening_row_value_device_download,
+            stage_index,
+            timing.row_values_device_download,
         );
     }
 

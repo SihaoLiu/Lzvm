@@ -2655,6 +2655,18 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "witness_opening_row_values_device_row_count",
         ),
         (
+            "\"finish_witness_opening_row_value_source_extend\"",
+            "witness_opening_row_values_source_extend",
+        ),
+        (
+            "\"finish_witness_opening_row_value_source_download\"",
+            "witness_opening_row_values_source_download",
+        ),
+        (
+            "\"finish_witness_opening_row_value_device_download\"",
+            "witness_opening_row_values_device_download",
+        ),
+        (
             "\"finish_witness_opening_row_values_source_rows\"",
             "witness_opening_row_values_source_row_count",
         ),
@@ -2781,6 +2793,18 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "finish_witness_stage_{}_opening_row_values_device_rows",
             "row_values_device_row_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_row_value_source_extend",
+            "witness_stage_opening_row_value_source_extend",
+        ),
+        (
+            "finish_witness_stage_{}_opening_row_value_source_download",
+            "witness_stage_opening_row_value_source_download",
+        ),
+        (
+            "finish_witness_stage_{}_opening_row_value_device_download",
+            "witness_stage_opening_row_value_device_download",
         ),
         (
             "finish_witness_stage_{}_opening_row_values_source_rows",

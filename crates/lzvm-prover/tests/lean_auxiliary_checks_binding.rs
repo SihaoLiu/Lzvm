@@ -15,6 +15,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let guest_pc_timing_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
     let guest_pc_timing_source =
         std::fs::read_to_string(&guest_pc_timing_path).expect("guest PC timing source should read");
+    let proof_timing_path = crate_root.join("../lzvm-cli/src/prove_witness/proof_timing.rs");
+    let proof_timing_source =
+        std::fs::read_to_string(&proof_timing_path).expect("proof timing source should read");
 
     assert!(
         top_level_source.contains("import Lzvm.AuxiliaryChecks"),
@@ -35,6 +38,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean auxiliary checks should expose checked acceptance structures and verifier core clauses"
     );
     for field in [
+        "sourceExtendMilliseconds",
+        "sourceDownloadMilliseconds",
+        "deviceDownloadMilliseconds",
+        "rowValueSourceExtendMilliseconds",
+        "rowValueSourceDownloadMilliseconds",
+        "rowValueDeviceDownloadMilliseconds",
         "guestTraceRunnerMilliseconds",
         "guestTraceLowererMilliseconds",
         "guestTraceLowerMilliseconds",
@@ -147,6 +156,25 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         assert!(
             guest_pc_timing_source.contains(line_name) && guest_pc_timing_source.contains(accessor),
             "CLI guest PC timing output should include {line_name}"
+        );
+    }
+    for (line_name, field) in [
+        (
+            "\"finish_witness_opening_row_value_source_extend\"",
+            "witness_opening_row_values_source_extend",
+        ),
+        (
+            "\"finish_witness_opening_row_value_source_download\"",
+            "witness_opening_row_values_source_download",
+        ),
+        (
+            "\"finish_witness_opening_row_value_device_download\"",
+            "witness_opening_row_values_device_download",
+        ),
+    ] {
+        assert!(
+            proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
+            "CLI proof timing output should include {line_name}"
         );
     }
     lean_binding::assert_theorem_declarations(
