@@ -646,6 +646,29 @@ fn cuda_compact_witness_opening_uses_retained_parent_checkpoint_after_leaf_diges
 }
 
 #[test]
+fn cuda_digest_opening_prefix_uses_device_prefix_primitive() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let merkle_path = crate_root.join("src/merkle_hash.rs");
+    let merkle_source =
+        std::fs::read_to_string(&merkle_path).expect("Merkle hash source should read");
+
+    let prefix_body = function_body(
+        &merkle_source,
+        "pub(crate) fn opening_path_prefix_for_source_row",
+        "impl CudaDigestCheckpointLevel",
+    );
+    assert!(
+        prefix_body.contains("cuda_poseidon2_width8_merkle_digest_opening_prefix_device")
+            && prefix_body.contains("cuda_poseidon2_width16_merkle_digest_opening_prefix_device"),
+        "CUDA digest opening prefixes should collect lower siblings through the device prefix primitive"
+    );
+    assert!(
+        !prefix_body.contains("copy_range_to") && !prefix_body.contains("digest_at_or_zero"),
+        "CUDA digest opening prefixes should avoid per-sibling device-to-host copies"
+    );
+}
+
+#[test]
 fn cuda_narrow_witness_commit_uses_compact_device_leaf_level() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let trace_path = crate_root.join("src/witness_commitment/trace.rs");

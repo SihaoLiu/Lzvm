@@ -7,12 +7,14 @@ use lzvm_accel::{
     cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
     cuda_poseidon2_width16_merkle_digest_opening_path_device,
+    cuda_poseidon2_width16_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width16_merkle_digest_parent_device,
     cuda_poseidon2_width16_merkle_digest_root_device,
     cuda_poseidon2_width16_merkle_digest_selected_parent_device,
     cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
     cuda_poseidon2_width8_merkle_digest_opening_path_device,
+    cuda_poseidon2_width8_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width8_merkle_digest_parent_device,
     cuda_poseidon2_width8_merkle_digest_root_device,
     cuda_poseidon2_width8_merkle_digest_selected_parent_device,
@@ -288,57 +290,45 @@ impl CudaDigestLevel {
             return Err(MerkleHashError::LengthOverflow);
         }
 
+        let sibling_words = match self.arity {
+            2 => cuda_poseidon2_width8_merkle_digest_opening_prefix_device(
+                &self.digests,
+                source_row,
+                folded_level_count,
+            ),
+            4 => cuda_poseidon2_width16_merkle_digest_opening_prefix_device(
+                &self.digests,
+                source_row,
+                folded_level_count,
+            ),
+            _ => return Err(MerkleHashError::UnsupportedArity { arity: self.arity }),
+        }
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+        let expected_words = folded_level_count
+            .checked_mul(self.arity.saturating_sub(1))
+            .and_then(|count| count.checked_mul(HASH_WORDS))
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        if sibling_words.len() != expected_words {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+
+        let mut cursor = 0usize;
         let mut siblings = Vec::with_capacity(folded_level_count);
-        let mut level_query = source_row;
-        let mut owned_level = None;
-        for level_index in 0..folded_level_count {
-            let next_level = {
-                let current = owned_level.as_ref().unwrap_or(self);
-                let child_slot = level_query % self.arity;
-                let group_start = (level_query / self.arity) * self.arity;
-                let mut level_siblings = Vec::with_capacity(self.arity - 1);
-                for slot in 0..self.arity {
-                    if slot == child_slot {
-                        continue;
-                    }
-                    let child_index = group_start
-                        .checked_add(slot)
-                        .ok_or(MerkleHashError::LengthOverflow)?;
-                    level_siblings.push(current.digest_at_or_zero(child_index)?);
-                }
-                siblings.push(level_siblings);
-                if level_index + 1 < folded_level_count {
-                    Some(current.parent_level()?)
-                } else {
-                    None
-                }
-            };
-            level_query /= self.arity;
-            if let Some(next_level) = next_level {
-                owned_level = Some(next_level);
+        for _ in 0..folded_level_count {
+            let mut level_siblings = Vec::with_capacity(self.arity - 1);
+            for _ in 0..self.arity - 1 {
+                let end = cursor
+                    .checked_add(HASH_WORDS)
+                    .ok_or(MerkleHashError::LengthOverflow)?;
+                let words = sibling_words
+                    .get(cursor..end)
+                    .ok_or(MerkleHashError::LengthOverflow)?;
+                level_siblings.push(digest_from_state_words(words)?);
+                cursor = end;
             }
+            siblings.push(level_siblings);
         }
         Ok(siblings)
-    }
-
-    fn digest_at_or_zero(&self, index: usize) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
-        if index >= self.state_count {
-            return Ok([Felt::ZERO; HASH_WORDS]);
-        }
-        let byte_offset = index
-            .checked_mul(HASH_WORDS)
-            .and_then(|words| words.checked_mul(8))
-            .ok_or(MerkleHashError::LengthOverflow)?;
-        let mut bytes = [0_u8; HASH_WORDS * 8];
-        self.digests
-            .copy_range_to(byte_offset, &mut bytes)
-            .map_err(|_| MerkleHashError::LengthOverflow)?;
-        let mut digest = [Felt::ZERO; HASH_WORDS];
-        for (word, chunk) in digest.iter_mut().zip(bytes.chunks_exact(8)) {
-            let value = u64::from_le_bytes(chunk.try_into().expect("slice length checked"));
-            *word = Felt::from_canonical(value).map_err(MerkleHashError::Field)?;
-        }
-        Ok(digest)
     }
 }
 

@@ -253,6 +253,99 @@ int run_poseidon2_merkle_digest_opening_path_on_device(
     return 0;
 }
 
+template <size_t Width, size_t Arity>
+int run_poseidon2_merkle_digest_opening_prefix_on_device(
+    const uint64_t* device_values,
+    uint64_t* siblings_out,
+    size_t child_state_count,
+    size_t query_index,
+    size_t prefix_level_count) {
+    if (child_state_count == 0) {
+        return -2;
+    }
+    if (query_index >= child_state_count) {
+        return -2;
+    }
+    const size_t full_level_count = merkle_opening_level_count(child_state_count, Arity);
+    if (prefix_level_count > full_level_count) {
+        return -2;
+    }
+    if (device_values == nullptr) {
+        return -1;
+    }
+
+    const size_t sibling_word_count = prefix_level_count * (Arity - 1) * kPoseidon2DigestWords;
+    if (sibling_word_count > 0 && siblings_out == nullptr) {
+        return -1;
+    }
+    if (prefix_level_count == 0) {
+        return 0;
+    }
+
+    DeviceBuffer<uint64_t> device_siblings;
+    LZVM_CUDA_RETURN_ON_ERROR(device_siblings.reset(sibling_word_count));
+
+    const size_t first_parent_state_count = (child_state_count + Arity - 1) / Arity;
+    const size_t second_parent_state_count =
+        first_parent_state_count > 1 ? (first_parent_state_count + Arity - 1) / Arity : 0;
+    DeviceBuffer<uint64_t> scratch_a;
+    DeviceBuffer<uint64_t> scratch_b;
+    LZVM_CUDA_RETURN_ON_ERROR(scratch_a.reset(
+        first_parent_state_count * kPoseidon2DigestWords));
+    LZVM_CUDA_RETURN_ON_ERROR(scratch_b.reset(
+        second_parent_state_count * kPoseidon2DigestWords));
+
+    const uint64_t* current = device_values;
+    uint64_t* next = scratch_a.data();
+    size_t state_count = child_state_count;
+    size_t sibling_cursor = 0;
+    size_t level_query = query_index;
+    for (size_t level = 0; level < prefix_level_count; ++level) {
+        const size_t child_slot = level_query % Arity;
+        const size_t group_start = (level_query / Arity) * Arity;
+        for (size_t slot = 0; slot < Arity; ++slot) {
+            if (slot == child_slot) {
+                continue;
+            }
+            const size_t child_index = group_start + slot;
+            uint64_t* sibling_out = device_siblings.data() + sibling_cursor;
+            if (child_index < state_count) {
+                LZVM_CUDA_RETURN_ON_ERROR(cudaMemcpyAsync(
+                    sibling_out,
+                    current + child_index * kPoseidon2DigestWords,
+                    kPoseidon2DigestWords * sizeof(uint64_t),
+                    cudaMemcpyDeviceToDevice));
+            } else {
+                LZVM_CUDA_RETURN_ON_ERROR(cudaMemsetAsync(
+                    sibling_out,
+                    0,
+                    kPoseidon2DigestWords * sizeof(uint64_t)));
+            }
+            sibling_cursor += kPoseidon2DigestWords;
+        }
+
+        if (level + 1 < prefix_level_count) {
+            const size_t parent_state_count = (state_count + Arity - 1) / Arity;
+            const size_t blocks = (parent_state_count + kThreads - 1) / kThreads;
+            poseidon2_merkle_digest_parent_kernel<Width, Arity><<<blocks, kThreads>>>(
+                current, next, state_count);
+            LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+
+            current = next;
+            state_count = parent_state_count;
+            level_query /= Arity;
+            next = next == scratch_a.data() ? scratch_b.data() : scratch_a.data();
+        }
+    }
+
+    LZVM_CUDA_RETURN_ON_ERROR(cudaMemcpy(
+        siblings_out,
+        device_siblings.data(),
+        sibling_word_count * sizeof(uint64_t),
+        cudaMemcpyDeviceToHost));
+    return 0;
+}
+
 int run_poseidon2_width8_merkle_digest_root_on_device(
     const uint64_t* device_values,
     uint64_t* device_out,
@@ -329,4 +422,32 @@ int run_poseidon2_width16_merkle_digest_opening_path_on_device(
         siblings_out,
         child_state_count,
         query_index);
+}
+
+int run_poseidon2_width8_merkle_digest_opening_prefix_on_device(
+    const uint64_t* device_values,
+    uint64_t* siblings_out,
+    size_t child_state_count,
+    size_t query_index,
+    size_t prefix_level_count) {
+    return run_poseidon2_merkle_digest_opening_prefix_on_device<kPoseidon2Width8, 2>(
+        device_values,
+        siblings_out,
+        child_state_count,
+        query_index,
+        prefix_level_count);
+}
+
+int run_poseidon2_width16_merkle_digest_opening_prefix_on_device(
+    const uint64_t* device_values,
+    uint64_t* siblings_out,
+    size_t child_state_count,
+    size_t query_index,
+    size_t prefix_level_count) {
+    return run_poseidon2_merkle_digest_opening_prefix_on_device<kPoseidon2Width16, 4>(
+        device_values,
+        siblings_out,
+        child_state_count,
+        query_index,
+        prefix_level_count);
 }

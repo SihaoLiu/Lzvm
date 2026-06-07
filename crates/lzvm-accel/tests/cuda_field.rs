@@ -17,6 +17,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_linear_round_row_major_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
     cuda_poseidon2_width16_merkle_digest_opening_path_device,
+    cuda_poseidon2_width16_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width16_merkle_digest_parent_device,
     cuda_poseidon2_width16_merkle_digest_root_device,
     cuda_poseidon2_width16_merkle_digest_selected_parent_device,
@@ -26,6 +27,7 @@ use lzvm_accel::{
     cuda_poseidon2_width8_linear_round_device, cuda_poseidon2_width8_linear_round_row_major_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
     cuda_poseidon2_width8_merkle_digest_opening_path_device,
+    cuda_poseidon2_width8_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width8_merkle_digest_parent_device,
     cuda_poseidon2_width8_merkle_digest_root_device,
     cuda_poseidon2_width8_merkle_digest_selected_parent_device,
@@ -1729,6 +1731,32 @@ fn cuda_poseidon2_width8_merkle_digest_opening_path_device_matches_padded_layout
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_poseidon2_width8_merkle_digest_opening_prefix_device_matches_path_prefix() {
+    let digests = (0..9_u64)
+        .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
+        .collect::<Vec<_>>();
+    let padded = padded_digest_states(&digests, 8);
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests).expect("digest buffer should allocate");
+    let expected_path = cpu_merkle_opening_width8(&padded, 8);
+    let folded_level_count = 2;
+    let expected_prefix_words = folded_level_count * 4;
+
+    let actual = cuda_poseidon2_width8_merkle_digest_opening_prefix_device(
+        &input_buffer,
+        8,
+        folded_level_count,
+    )
+    .expect("cuda compact digest opening prefix should run");
+
+    assert_eq!(
+        actual,
+        expected_path.siblings[..expected_prefix_words].to_vec()
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_hashes_poseidon2_width_16_states() {
     let input = (0_u64..32).collect::<Vec<_>>();
     let expected = input
@@ -2062,6 +2090,32 @@ fn cuda_poseidon2_width16_merkle_digest_opening_path_device_matches_padded_layou
 
     assert_eq!(actual.root, expected.root);
     assert_eq!(actual.siblings, expected.siblings);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_width16_merkle_digest_opening_prefix_device_matches_path_prefix() {
+    let digests = (0..70_u64)
+        .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
+        .collect::<Vec<_>>();
+    let padded = padded_digest_states(&digests, 16);
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests).expect("digest buffer should allocate");
+    let expected_path = cpu_merkle_opening_width16(&padded, 69);
+    let folded_level_count = 3;
+    let expected_prefix_words = folded_level_count * (4 - 1) * 4;
+
+    let actual = cuda_poseidon2_width16_merkle_digest_opening_prefix_device(
+        &input_buffer,
+        69,
+        folded_level_count,
+    )
+    .expect("cuda compact digest opening prefix should run");
+
+    assert_eq!(
+        actual,
+        expected_path.siblings[..expected_prefix_words].to_vec()
+    );
 }
 
 #[cfg(feature = "cuda")]
