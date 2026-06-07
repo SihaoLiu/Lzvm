@@ -542,6 +542,30 @@ theorem runtime_trace_constraint_checked_acceptance_obligations
       requiresExternalSource
       accepted
 
+theorem runtime_trace_constraint_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof _requiresExternalSource accepted
+  have obligations :=
+    runtime_trace_constraint_checked_acceptance_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      _requiresExternalSource
+      accepted
+  exact obligations.right.right
+
 theorem runtime_trace_constraint_evidence_implies_opening_evidence
     {system : VerifierModel}
     (validation : RuntimeTraceConstraintValidation system) :
@@ -850,6 +874,32 @@ theorem runtime_trace_constraint_required_external_source_sound
   exact
     And.intro traceSound.left
       (And.intro openingSound.right.left traceSound.right)
+
+theorem runtime_trace_constraint_required_external_source_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have sound :=
+    runtime_trace_constraint_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  exact sound_witness_implies_verifier_core_contract sound.right.right
 
 theorem runtime_trace_constraint_required_external_source_pcs_sound
     {system : VerifierModel}
