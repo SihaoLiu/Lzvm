@@ -39,6 +39,28 @@ structure GuestPcTraceTimingSummary where
   segmentCount : Nat
   guestTraceStreamMilliseconds : Nat
   guestSegmentCommitMilliseconds : Nat
+  guestTraceRunnerMilliseconds : Nat
+  guestTraceLowererMilliseconds : Nat
+  guestTraceLowerMilliseconds : Nat
+  guestTracePendingSendWaitMilliseconds : Nat
+  guestTracePendingReceiveWaitMilliseconds : Nat
+  guestTraceSegmentSendWaitMilliseconds : Nat
+  guestTraceSegmentReceiveWaitMilliseconds : Nat
+  guestDeviceSourceBuildMilliseconds : Nat
+  guestDeviceSourceDescriptorUploadMilliseconds : Nat
+  guestDeviceSourceDescriptorUploadByteCount : Nat
+  guestDeviceSourceDescriptorUploadRowCount : Nat
+  guestDeviceSourceTraceExpandMilliseconds : Nat
+  guestStageSourceRetentionAttemptCount : Nat
+  guestStageSourceRetentionRetainedCount : Nat
+  guestStageSourceRetentionRejectedCount : Nat
+  guestStageSourceRetentionRejectedByteCount : Nat
+  guestStageSourceRetentionLimitByteCount : Nat
+  guestDescriptorBufferRetentionAttemptCount : Nat
+  guestDescriptorBufferRetentionRetainedCount : Nat
+  guestDescriptorBufferRetentionRejectedCount : Nat
+  guestDescriptorBufferRetentionRetainedByteCount : Nat
+  guestDescriptorBufferRetentionRejectedByteCount : Nat
   guestRegularConstraintsMilliseconds : Nat
   guestRegularHintsMilliseconds : Nat
   guestStageCommitMilliseconds : Nat
