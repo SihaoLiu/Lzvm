@@ -20,6 +20,7 @@ struct CachedAllocation {
     void* ptr;
     std::size_t bytes;
     int device;
+    cudaEvent_t ready_event;
 };
 
 constexpr std::size_t kMaxCachedBytes = std::size_t{16} << 30;
@@ -128,21 +129,6 @@ int unregister_host_copy(const RegisteredHostRange& range) {
     return static_cast<int>(cudaHostUnregister(range.base));
 }
 
-int synchronize_allocation_device(int device) {
-    int previous_device = -1;
-    int status = set_allocation_device(device, &previous_device);
-    if (status != 0) {
-        return status;
-    }
-    {
-        std::lock_guard<std::mutex> lock(g_allocator_mutex);
-        ++g_cuda_device_synchronize_calls;
-    }
-    status = static_cast<int>(cudaDeviceSynchronize());
-    const int restore_status = restore_device(previous_device);
-    return first_status(status, restore_status);
-}
-
 int free_allocation_on_device(void* ptr, int device) {
     int previous_device = -1;
     int status = set_allocation_device(device, &previous_device);
@@ -153,11 +139,73 @@ int free_allocation_on_device(void* ptr, int device) {
     return first_status(status, restore_status);
 }
 
+int record_allocation_ready_event(int device, cudaEvent_t* out) {
+    if (out == nullptr) {
+        return -1;
+    }
+    *out = nullptr;
+    int previous_device = -1;
+    int status = set_allocation_device(device, &previous_device);
+    cudaEvent_t event = nullptr;
+    if (status == 0) {
+        status = static_cast<int>(cudaEventCreateWithFlags(&event, cudaEventDisableTiming));
+    }
+    if (status == 0) {
+        status = static_cast<int>(cudaEventRecord(event, 0));
+    }
+    if (status != 0 && event != nullptr) {
+        (void)cudaEventDestroy(event);
+        event = nullptr;
+    }
+    const int restore_status = restore_device(previous_device);
+    status = first_status(status, restore_status);
+    if (status == 0) {
+        *out = event;
+    } else if (event != nullptr) {
+        (void)cudaEventDestroy(event);
+    }
+    return status;
+}
+
+int free_cached_allocation_on_device(const CachedAllocation& allocation) {
+    int previous_device = -1;
+    int status = set_allocation_device(allocation.device, &previous_device);
+    if (status == 0 && allocation.ready_event != nullptr) {
+        status = static_cast<int>(cudaEventSynchronize(allocation.ready_event));
+        const int destroy_status = static_cast<int>(cudaEventDestroy(allocation.ready_event));
+        status = first_status(status, destroy_status);
+    }
+    if (status == 0) {
+        status = static_cast<int>(cudaFree(allocation.ptr));
+    }
+    const int restore_status = restore_device(previous_device);
+    return first_status(status, restore_status);
+}
+
+int reuse_cached_allocation_locked(std::size_t index, void** out) {
+    CachedAllocation allocation = g_cached_allocations[index];
+    const auto inserted = g_active_allocations.emplace(
+        allocation.ptr, AllocationRecord{allocation.bytes, allocation.device});
+    if (!inserted.second) {
+        return -1;
+    }
+    if (allocation.ready_event != nullptr) {
+        const int destroy_status = static_cast<int>(cudaEventDestroy(allocation.ready_event));
+        if (destroy_status != 0) {
+            g_active_allocations.erase(allocation.ptr);
+            return destroy_status;
+        }
+    }
+    g_cached_allocations.erase(g_cached_allocations.begin() + index);
+    *out = allocation.ptr;
+    return 0;
+}
+
 int release_cached_blocks_locked() {
     int first = 0;
     for (std::size_t index = 0; index < g_cached_allocations.size();) {
         const CachedAllocation allocation = g_cached_allocations[index];
-        const int status = free_allocation_on_device(allocation.ptr, allocation.device);
+        const int status = free_cached_allocation_on_device(allocation);
         ++g_cuda_free_calls;
         if (status == 0) {
             g_cached_allocations.erase(g_cached_allocations.begin() + index);
@@ -195,18 +243,35 @@ int alloc_bytes_impl(void** out, std::size_t bytes) {
 
     {
         std::lock_guard<std::mutex> lock(g_allocator_mutex);
-        for (auto it = g_cached_allocations.begin(); it != g_cached_allocations.end(); ++it) {
-            if (it->device == device && it->bytes == bytes) {
-                void* ptr = it->ptr;
-                const auto inserted =
-                    g_active_allocations.emplace(ptr, AllocationRecord{bytes, device});
-                if (!inserted.second) {
-                    return -1;
-                }
-                g_cached_allocations.erase(it);
-                *out = ptr;
-                return 0;
+        std::size_t pending_index = std::numeric_limits<std::size_t>::max();
+        for (std::size_t index = 0; index < g_cached_allocations.size(); ++index) {
+            const CachedAllocation& allocation = g_cached_allocations[index];
+            if (allocation.device != device || allocation.bytes != bytes) {
+                continue;
             }
+            const int status = allocation.ready_event == nullptr
+                                   ? cudaSuccess
+                                   : static_cast<int>(cudaEventQuery(allocation.ready_event));
+            if (status == cudaSuccess) {
+                return reuse_cached_allocation_locked(index, out);
+            }
+            if (status == cudaErrorNotReady) {
+                if (pending_index == std::numeric_limits<std::size_t>::max()) {
+                    pending_index = index;
+                }
+                continue;
+            }
+            return status;
+        }
+        if (pending_index != std::numeric_limits<std::size_t>::max()) {
+            CachedAllocation& allocation = g_cached_allocations[pending_index];
+            if (allocation.ready_event != nullptr) {
+                const int status = static_cast<int>(cudaEventSynchronize(allocation.ready_event));
+                if (status != 0) {
+                    return status;
+                }
+            }
+            return reuse_cached_allocation_locked(pending_index, out);
         }
     }
 
@@ -275,18 +340,26 @@ void free_bytes_impl(void* ptr) {
         return;
     }
 
-    if (cache_candidate && synchronize_allocation_device(record.device) == 0) {
+    cudaEvent_t ready_event = nullptr;
+    if (cache_candidate && record_allocation_ready_event(record.device, &ready_event) == 0) {
         try {
             std::lock_guard<std::mutex> lock(g_allocator_mutex);
             if (should_cache_allocation_locked(record.device, record.bytes)) {
-                g_cached_allocations.push_back(CachedAllocation{ptr, record.bytes, record.device});
+                g_cached_allocations.push_back(
+                    CachedAllocation{ptr, record.bytes, record.device, ready_event});
                 return;
             }
         } catch (...) {
+            if (ready_event != nullptr) {
+                (void)cudaEventDestroy(ready_event);
+            }
             (void)free_allocation_on_device(ptr, record.device);
             std::lock_guard<std::mutex> lock(g_allocator_mutex);
             ++g_cuda_free_calls;
             return;
+        }
+        if (ready_event != nullptr) {
+            (void)cudaEventDestroy(ready_event);
         }
     }
 

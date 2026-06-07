@@ -54,7 +54,7 @@ mod tests {
     }
 
     #[test]
-    fn cuda_device_buffer_reuses_freed_same_size_allocation() {
+    fn cuda_device_buffer_reuses_freed_same_size_allocation_without_device_synchronizing() {
         clear_allocator_cache();
 
         {
@@ -63,7 +63,7 @@ mod tests {
         let after_first = allocator_stats();
         assert_eq!(after_first.cuda_malloc_calls, 1);
         assert_eq!(after_first.cuda_free_calls, 0);
-        assert_eq!(after_first.cuda_device_synchronize_calls, 1);
+        assert_eq!(after_first.cuda_device_synchronize_calls, 0);
         assert_eq!(after_first.cached_blocks, 1);
 
         {
@@ -73,7 +73,7 @@ mod tests {
 
         assert_eq!(after_second.cuda_malloc_calls, 1);
         assert_eq!(after_second.cuda_free_calls, 0);
-        assert_eq!(after_second.cuda_device_synchronize_calls, 2);
+        assert_eq!(after_second.cuda_device_synchronize_calls, 0);
         assert_eq!(after_second.cached_blocks, 1);
 
         clear_allocator_cache();
