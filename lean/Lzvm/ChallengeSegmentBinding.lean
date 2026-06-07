@@ -170,4 +170,27 @@ theorem runtime_challenge_segment_binding_checked_acceptance_sound
       (And.intro transcriptSound.left
         (And.intro transcriptSound.right.right.left transcriptSound.right.right.right))
 
+theorem runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_challenge_segment_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact sound_witness_implies_verifier_core_contract sound.right.right.right
+
 end Lzvm

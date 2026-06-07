@@ -1350,7 +1350,11 @@ fn lean_challenge_segment_binding_tracks_runtime_transcript_checks() {
     );
     assert!(
         lean_source.contains("structure RuntimeChallengeSegmentBindingValidation")
-            && lean_source.contains("runtime_challenge_segment_binding_checked_acceptance_sound"),
+            && lean_source.contains("runtime_challenge_segment_binding_checked_acceptance_sound")
+            && lean_source.contains(
+                "runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract"
+            )
+            && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof"),
         "Lean should expose a checked challenge segment binding soundness theorem"
     );
     assert!(
