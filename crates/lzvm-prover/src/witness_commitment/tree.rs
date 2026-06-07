@@ -486,6 +486,24 @@ pub fn open_witness_stage_commitment(
     )
 }
 
+pub(crate) fn open_witness_stage_commitments(
+    commitment: &WitnessStageCommitment,
+    row_indices: &[u64],
+    row_count: u64,
+    column_count: usize,
+) -> Result<Vec<WitnessStageOpening>, WitnessStageOpeningError> {
+    open_witness_stage_commitments_inner(
+        commitment,
+        row_indices,
+        row_count,
+        column_count,
+        #[cfg(feature = "cuda")]
+        None,
+        #[cfg(feature = "cuda")]
+        None,
+    )
+}
+
 #[cfg(feature = "cuda")]
 #[allow(dead_code)]
 pub(crate) fn open_witness_stage_commitment_with_source_device(
@@ -506,22 +524,103 @@ pub(crate) fn open_witness_stage_commitment_with_source_device(
 }
 
 #[cfg(feature = "cuda")]
-pub(crate) fn open_witness_stage_commitment_with_source_device_timing(
+pub(crate) fn open_witness_stage_commitments_with_source_device_timing(
     commitment: &WitnessStageCommitment,
-    row_index: u64,
+    row_indices: &[u64],
     row_count: u64,
     column_count: usize,
     source_device: Option<&WitnessStageSourceDeviceView>,
     timing: &mut WitnessStageOpeningWorkTiming,
-) -> Result<WitnessStageOpening, WitnessStageOpeningError> {
-    open_witness_stage_commitment_inner(
+) -> Result<Vec<WitnessStageOpening>, WitnessStageOpeningError> {
+    open_witness_stage_commitments_inner(
         commitment,
-        row_index,
+        row_indices,
         row_count,
         column_count,
         source_device,
         Some(timing),
     )
+}
+
+fn open_witness_stage_commitments_inner(
+    commitment: &WitnessStageCommitment,
+    row_indices: &[u64],
+    row_count: u64,
+    column_count: usize,
+    #[cfg(feature = "cuda")] source_device: Option<&WitnessStageSourceDeviceView>,
+    #[cfg(feature = "cuda")] mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+) -> Result<Vec<WitnessStageOpening>, WitnessStageOpeningError> {
+    if row_indices.is_empty() {
+        return Ok(Vec::new());
+    }
+    validate_witness_commitment_arity(commitment.arity())?;
+    if row_count == 0 {
+        return Err(WitnessStageOpeningError::ZeroRows);
+    }
+    if column_count == 0 {
+        return Err(WitnessStageOpeningError::ZeroColumns);
+    }
+
+    let rows = usize::try_from(row_count).map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+    let expected_tree_bytes =
+        expected_witness_stage_opening_tree_byte_count(rows, column_count, commitment.arity())?;
+    if commitment.tree_byte_count() != expected_tree_bytes {
+        return Err(WitnessStageOpeningError::InvalidTreeByteLength {
+            expected: expected_tree_bytes,
+            found: commitment.tree_byte_count(),
+        });
+    }
+
+    let mut query_rows = Vec::with_capacity(row_indices.len());
+    for row_index in row_indices {
+        if *row_index >= row_count {
+            return Err(WitnessStageOpeningError::RowOutOfRange {
+                row_index: *row_index,
+                row_count,
+            });
+        }
+        query_rows.push(
+            usize::try_from(*row_index).map_err(|_| WitnessStageOpeningError::LengthOverflow)?,
+        );
+    }
+
+    #[cfg(feature = "cuda")]
+    let compact_openings = commitment.open_compact_batch_on_demand_with_source_device(
+        &query_rows,
+        rows,
+        column_count,
+        source_device,
+        timing.as_deref_mut(),
+    )?;
+    #[cfg(not(feature = "cuda"))]
+    let compact_openings =
+        commitment.open_compact_batch_on_demand(&query_rows, rows, column_count)?;
+    if let Some(openings) = compact_openings {
+        return row_indices
+            .iter()
+            .copied()
+            .zip(openings)
+            .map(|(row_index, (values, siblings))| {
+                WitnessStageOpening::new(row_index, values, siblings)
+            })
+            .collect();
+    }
+
+    let mut openings = Vec::with_capacity(row_indices.len());
+    for row_index in row_indices {
+        let opening = open_witness_stage_commitment_inner(
+            commitment,
+            *row_index,
+            row_count,
+            column_count,
+            #[cfg(feature = "cuda")]
+            source_device,
+            #[cfg(feature = "cuda")]
+            timing.as_deref_mut(),
+        )?;
+        openings.push(opening);
+    }
+    Ok(openings)
 }
 
 fn open_witness_stage_commitment_inner(
@@ -794,6 +893,7 @@ mod tests {
     use super::{
         commit_witness_stage_device_compact_with_leaf_hash_level,
         commit_witness_stage_leaves_compact_with_leaf_hash_level,
+        open_witness_stage_commitments_with_source_device_timing,
         WitnessStageDeviceCompactCommitInput, WitnessStageSourceDeviceView,
     };
     use super::{
@@ -804,6 +904,8 @@ mod tests {
     };
     #[cfg(feature = "cuda")]
     use crate::witness_commitment::compact_witness_stage_leaf_hash_level_from_source_device_view_timing;
+    #[cfg(feature = "cuda")]
+    use crate::witness_commitment::WitnessStageOpeningWorkTiming;
     use crate::witness_layout::WitnessTraceStageValues;
     use lzvm_field::{coset_extend_evaluations, Felt, FieldError, MODULUS};
 
@@ -1235,6 +1337,82 @@ mod tests {
             );
         }
         assert_eq!(device.tree_bytes(), host.tree_bytes());
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn compact_device_batch_opening_matches_individual_rows() {
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let column_count = 6;
+        let arity = 4;
+        let source_values = (0..source_rows * column_count)
+            .map(|value| Felt::from_u64(value as u64 + 1))
+            .collect::<Vec<_>>();
+        let source_device = std::sync::Arc::new(
+            lzvm_accel::CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&source_values))
+                .expect("source values should upload"),
+        );
+        let mut timing = crate::witness_commitment::WitnessStageLeafExtendTiming::default();
+        let leaf_level =
+            crate::witness_commitment::compact_witness_stage_leaf_hash_level_from_source_device_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                source_device.as_ref(),
+                &mut timing,
+            )
+            .expect("device leaf hash level should build");
+        let device = commit_witness_stage_device_compact_with_leaf_hash_level(
+            WitnessStageDeviceCompactCommitInput {
+                stage_index: 1,
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                external_source_required: false,
+            },
+            leaf_level,
+            Some(WitnessStageSourceDeviceView::new(
+                source_rows,
+                column_count,
+                column_count,
+                0,
+                source_device,
+            )),
+        )
+        .expect("device compact commitment should build");
+
+        let rows = [0_u64, 1, 5, 7];
+        let mut batch_timing = WitnessStageOpeningWorkTiming::default();
+        let batch_openings = open_witness_stage_commitments_with_source_device_timing(
+            &device,
+            &rows,
+            extended_rows as u64,
+            column_count,
+            None,
+            &mut batch_timing,
+        )
+        .expect("batch opening should build");
+
+        assert_eq!(batch_openings.len(), rows.len());
+        for (row, batch_opening) in rows.iter().copied().zip(batch_openings.iter()) {
+            let single_opening =
+                open_witness_stage_commitment(&device, row, extended_rows as u64, column_count)
+                    .expect("single opening should build");
+            assert_eq!(batch_opening, &single_opening);
+            assert!(
+                verify_witness_stage_opening_root(device.root(), arity, batch_opening)
+                    .expect("batch opening should verify")
+            );
+        }
+        assert_eq!(batch_timing.leaf_coset_extend_call_count, 1);
+        assert_eq!(batch_timing.leaf_hash_rows, extended_rows);
     }
 
     #[cfg(feature = "cuda")]

@@ -1546,6 +1546,43 @@ fn trace_output_opening_rebuilds_external_source_only_when_required() {
 }
 
 #[test]
+fn trace_output_opening_batches_stage_query_rows() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let opening_path = crate_root.join("src/witness_opening.rs");
+    let opening_source =
+        std::fs::read_to_string(&opening_path).expect("witness opening source should read");
+    let tree_path = crate_root.join("src/witness_commitment/tree.rs");
+    let tree_source =
+        std::fs::read_to_string(&tree_path).expect("witness commitment tree source should read");
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source = std::fs::read_to_string(&values_path)
+        .expect("witness commitment values source should read");
+
+    let opening_body = function_body(
+        &opening_source,
+        "fn build_witness_opening_unit_segment_from_trace_output",
+        "fn ensure_guest_pc_external_stage_sources",
+    );
+    assert!(
+        opening_body.contains("open_witness_stage_commitments_with_source_device_timing"),
+        "trace-output witness openings should batch same-stage query rows"
+    );
+    assert!(
+        !opening_body.contains("open_witness_stage_commitment_with_source_device_timing"),
+        "trace-output witness openings should not recompute same-stage CUDA work per query row"
+    );
+    assert!(
+        tree_source.contains("open_witness_stage_commitments_with_source_device_timing"),
+        "witness commitment tree should expose a batch opening helper for query rows"
+    );
+    assert!(
+        values_source.contains("open_compact_batch_on_demand_with_source_device")
+            && values_source.contains("open_batch_on_demand_cuda"),
+        "compact CUDA storage should open multiple query rows from one leaf extension and hash"
+    );
+}
+
+#[test]
 fn trace_less_guest_pc_segment_output_can_skip_host_trace_build() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

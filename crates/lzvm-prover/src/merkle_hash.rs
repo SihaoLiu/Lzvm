@@ -103,13 +103,6 @@ impl CudaDigestLevel {
         digest_from_state_words(&root_words)
     }
 
-    pub(crate) fn into_opening_path(
-        self,
-        query_row: usize,
-    ) -> Result<CudaMerkleOpeningPath, MerkleHashError> {
-        self.opening_path(query_row)
-    }
-
     pub(crate) fn opening_path(
         &self,
         query_row: usize,

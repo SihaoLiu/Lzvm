@@ -611,6 +611,25 @@ impl WitnessStageCommitment {
         }
     }
 
+    #[cfg(not(feature = "cuda"))]
+    pub(crate) fn open_compact_batch_on_demand(
+        &self,
+        row_indices: &[usize],
+        row_count: usize,
+        column_count: usize,
+    ) -> Result<Option<Vec<CompactOnDemandOpening>>, WitnessStageOpeningError> {
+        match &self.tree {
+            WitnessStageTreeStorage::Host(_) => Ok(None),
+            WitnessStageTreeStorage::Compact(storage) => storage.open_compact_batch_on_demand(
+                row_indices,
+                row_count,
+                column_count,
+                self.arity,
+                self.root,
+            ),
+        }
+    }
+
     #[cfg(feature = "cuda")]
     pub(crate) fn open_compact_on_demand_with_source_device(
         &self,
@@ -625,6 +644,30 @@ impl WitnessStageCommitment {
             WitnessStageTreeStorage::Compact(storage) => storage
                 .open_compact_on_demand_with_source_device(
                     row_index,
+                    row_count,
+                    column_count,
+                    self.arity,
+                    self.root,
+                    source_device,
+                    timing,
+                ),
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    pub(crate) fn open_compact_batch_on_demand_with_source_device(
+        &self,
+        row_indices: &[usize],
+        row_count: usize,
+        column_count: usize,
+        source_device: Option<&WitnessStageSourceDeviceView>,
+        timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    ) -> Result<Option<Vec<CompactOnDemandOpening>>, WitnessStageOpeningError> {
+        match &self.tree {
+            WitnessStageTreeStorage::Host(_) => Ok(None),
+            WitnessStageTreeStorage::Compact(storage) => storage
+                .open_compact_batch_on_demand_with_source_device(
+                    row_indices,
                     row_count,
                     column_count,
                     self.arity,
@@ -760,6 +803,28 @@ impl WitnessStageCompactTreeStorage {
         )
     }
 
+    #[cfg(not(feature = "cuda"))]
+    fn open_compact_batch_on_demand(
+        &self,
+        row_indices: &[usize],
+        row_count: usize,
+        column_count: usize,
+        arity: usize,
+        expected_root: [Felt; HASH_WORDS],
+    ) -> Result<Option<Vec<CompactOnDemandOpening>>, WitnessStageOpeningError> {
+        self.open_compact_batch_on_demand_with_source_device(
+            row_indices,
+            row_count,
+            column_count,
+            arity,
+            expected_root,
+            #[cfg(feature = "cuda")]
+            None,
+            #[cfg(feature = "cuda")]
+            None,
+        )
+    }
+
     #[cfg_attr(feature = "cuda", allow(clippy::too_many_arguments))]
     fn open_compact_on_demand_with_source_device(
         &self,
@@ -787,6 +852,38 @@ impl WitnessStageCompactTreeStorage {
         #[cfg(not(feature = "cuda"))]
         {
             let _ = row_index;
+            let _ = expected_root;
+            Err(WitnessStageOpeningError::LengthOverflow)
+        }
+    }
+
+    #[cfg_attr(feature = "cuda", allow(clippy::too_many_arguments))]
+    fn open_compact_batch_on_demand_with_source_device(
+        &self,
+        row_indices: &[usize],
+        row_count: usize,
+        column_count: usize,
+        arity: usize,
+        expected_root: [Felt; HASH_WORDS],
+        #[cfg(feature = "cuda")] source_device: Option<&WitnessStageSourceDeviceView>,
+        #[cfg(feature = "cuda")] timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    ) -> Result<Option<Vec<CompactOnDemandOpening>>, WitnessStageOpeningError> {
+        let should_open_on_demand = self.digest_tree.is_none();
+        if !should_open_on_demand {
+            return Ok(None);
+        }
+        if row_count != self.extended_rows || column_count != self.columns || arity != self.arity {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+
+        #[cfg(feature = "cuda")]
+        {
+            self.open_batch_on_demand_cuda(row_indices, expected_root, source_device, timing)
+                .map(Some)
+        }
+        #[cfg(not(feature = "cuda"))]
+        {
+            let _ = row_indices;
             let _ = expected_root;
             Err(WitnessStageOpeningError::LengthOverflow)
         }
@@ -1039,8 +1136,36 @@ impl WitnessStageCompactTreeStorage {
         row: usize,
         expected_root: [Felt; HASH_WORDS],
         source_buffer: &SourceDeviceBuffer<'_>,
-        mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+        timing: Option<&mut WitnessStageOpeningWorkTiming>,
     ) -> Result<CompactOnDemandOpening, WitnessStageOpeningError> {
+        let mut openings = self.open_batch_with_recomputed_leaf_level_cuda(
+            std::slice::from_ref(&row),
+            expected_root,
+            source_buffer,
+            timing,
+        )?;
+        openings
+            .pop()
+            .ok_or(WitnessStageOpeningError::LengthOverflow)
+    }
+
+    #[cfg(feature = "cuda")]
+    fn open_batch_with_recomputed_leaf_level_cuda(
+        &self,
+        rows: &[usize],
+        expected_root: [Felt; HASH_WORDS],
+        source_buffer: &SourceDeviceBuffer<'_>,
+        mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    ) -> Result<Vec<CompactOnDemandOpening>, WitnessStageOpeningError> {
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+        for row in rows {
+            if *row >= self.extended_rows {
+                return Err(WitnessStageOpeningError::LengthOverflow);
+            }
+        }
+
         let mut output_buffer = record_opening_duration(
             timing.as_deref_mut().map(|timing| &mut timing.setup),
             || {
@@ -1075,39 +1200,56 @@ impl WitnessStageCompactTreeStorage {
         if let Some(timing) = timing.as_deref_mut() {
             timing.record_leaf_hash_work(self.extended_rows, self.raw_leaf_bytes, self.arity);
         }
-        let path =
-            record_opening_duration(timing.as_deref_mut().map(|timing| &mut timing.path), || {
-                leaf_level
-                    .into_opening_path(row)
-                    .map_err(WitnessStageOpeningError::from)
-            })?;
-        if path.root != expected_root {
-            return Err(WitnessStageOpeningError::InvalidTreeByteLength {
-                expected: self.logical_tree_bytes,
-                found: 0,
-            });
+
+        let mut openings = Vec::with_capacity(rows.len());
+        for row in rows {
+            let path = record_opening_duration(
+                timing.as_deref_mut().map(|timing| &mut timing.path),
+                || {
+                    leaf_level
+                        .opening_path(*row)
+                        .map_err(WitnessStageOpeningError::from)
+                },
+            )?;
+            if path.root != expected_root {
+                return Err(WitnessStageOpeningError::InvalidTreeByteLength {
+                    expected: self.logical_tree_bytes,
+                    found: 0,
+                });
+            }
+            let values = record_opening_duration(
+                timing.as_deref_mut().map(|timing| &mut timing.row_values),
+                || self.copy_extended_row_values_from_device(&output_buffer, *row),
+            )?;
+            openings.push((values, path.siblings));
         }
-        let values = record_opening_duration(timing.map(|timing| &mut timing.row_values), || {
-            let row_byte_count = self
-                .columns
-                .checked_mul(WORD_BYTES)
-                .ok_or(WitnessStageOpeningError::LengthOverflow)?;
-            let row_offset = row
-                .checked_mul(row_byte_count)
-                .ok_or(WitnessStageOpeningError::LengthOverflow)?;
-            let mut bytes = vec![0_u8; row_byte_count];
-            output_buffer
-                .copy_range_to(row_offset, &mut bytes)
-                .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
-            bytes
-                .chunks_exact(WORD_BYTES)
-                .map(|chunk| {
-                    let value = u64::from_le_bytes(chunk.try_into().expect("slice length checked"));
-                    Felt::from_canonical(value).map_err(WitnessStageOpeningError::Field)
-                })
-                .collect()
-        })?;
-        Ok((values, path.siblings))
+        Ok(openings)
+    }
+
+    #[cfg(feature = "cuda")]
+    fn copy_extended_row_values_from_device(
+        &self,
+        output_buffer: &CudaDeviceBuffer,
+        row: usize,
+    ) -> Result<Vec<Felt>, WitnessStageOpeningError> {
+        let row_byte_count = self
+            .columns
+            .checked_mul(WORD_BYTES)
+            .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+        let row_offset = row
+            .checked_mul(row_byte_count)
+            .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+        let mut bytes = vec![0_u8; row_byte_count];
+        output_buffer
+            .copy_range_to(row_offset, &mut bytes)
+            .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+        bytes
+            .chunks_exact(WORD_BYTES)
+            .map(|chunk| {
+                let value = u64::from_le_bytes(chunk.try_into().expect("slice length checked"));
+                Felt::from_canonical(value).map_err(WitnessStageOpeningError::Field)
+            })
+            .collect()
     }
 
     #[cfg(feature = "cuda")]
@@ -1129,6 +1271,20 @@ impl WitnessStageCompactTreeStorage {
             .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
         let source_buffer = self.source_device_buffer(source_device)?;
         self.open_with_recomputed_leaf_level_cuda(row, expected_root, &source_buffer, timing)
+    }
+
+    #[cfg(feature = "cuda")]
+    fn open_batch_on_demand_cuda(
+        &self,
+        rows: &[usize],
+        expected_root: [Felt; HASH_WORDS],
+        source_device: Option<&WitnessStageSourceDeviceView>,
+        timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    ) -> Result<Vec<CompactOnDemandOpening>, WitnessStageOpeningError> {
+        prepare_gpu_setup(self.target_bits)
+            .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+        let source_buffer = self.source_device_buffer(source_device)?;
+        self.open_batch_with_recomputed_leaf_level_cuda(rows, expected_root, &source_buffer, timing)
     }
 
     #[cfg(feature = "cuda")]
