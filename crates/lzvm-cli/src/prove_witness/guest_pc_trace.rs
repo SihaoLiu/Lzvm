@@ -122,6 +122,26 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_stage_source_retention_limit_bytes",
         timing.guest_stage_source_retention_limit_byte_count(),
     );
+    timings.record_count(
+        "guest_descriptor_buffer_retention_attempts",
+        timing.guest_descriptor_buffer_retention_attempt_count(),
+    );
+    timings.record_count(
+        "guest_descriptor_buffer_retention_retained",
+        timing.guest_descriptor_buffer_retention_retained_count(),
+    );
+    timings.record_count(
+        "guest_descriptor_buffer_retention_rejected",
+        timing.guest_descriptor_buffer_retention_rejected_count(),
+    );
+    timings.record_count(
+        "guest_descriptor_buffer_retention_retained_bytes",
+        timing.guest_descriptor_buffer_retention_retained_byte_count(),
+    );
+    timings.record_count(
+        "guest_descriptor_buffer_retention_rejected_bytes",
+        timing.guest_descriptor_buffer_retention_rejected_byte_count(),
+    );
     timings.record(
         "guest_regular_constraints",
         timing.guest_regular_constraint_duration(),

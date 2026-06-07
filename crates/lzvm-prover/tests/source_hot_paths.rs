@@ -2937,6 +2937,74 @@ fn guest_pc_trace_timing_reports_stage_source_retention_budget() {
 }
 
 #[test]
+fn guest_pc_trace_timing_reports_descriptor_buffer_retention_budget() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source =
+        std::fs::read_to_string(&cli_path).expect("guest PC CLI timing source should read");
+
+    let accumulator_fields = function_body(
+        &execution_source,
+        "struct ProveWitnessTraceTimingAccumulator",
+        "impl ProveWitnessTraceTimingAccumulator",
+    );
+    for field in [
+        "descriptor_buffer_retention_attempt_count",
+        "descriptor_buffer_retention_retained_count",
+        "descriptor_buffer_retention_rejected_count",
+        "descriptor_buffer_retention_retained_byte_count",
+        "descriptor_buffer_retention_rejected_byte_count",
+    ] {
+        assert!(
+            accumulator_fields.contains(field),
+            "trace timing accumulation should carry {field}"
+        );
+    }
+
+    let cache_body = function_body(
+        &execution_source,
+        "fn retained_guest_pc_device_descriptor_buffer",
+        "fn get(&self, stage_index: usize)",
+    );
+    assert!(
+        cache_body.contains("retained_descriptor_buffer_byte_len")
+            && cache_body.contains("add_descriptor_buffer_retention"),
+        "descriptor fallback retention should record retained and rejected bytes"
+    );
+
+    for (line_name, accessor) in [
+        (
+            "\"guest_descriptor_buffer_retention_attempts\"",
+            "guest_descriptor_buffer_retention_attempt_count()",
+        ),
+        (
+            "\"guest_descriptor_buffer_retention_retained\"",
+            "guest_descriptor_buffer_retention_retained_count()",
+        ),
+        (
+            "\"guest_descriptor_buffer_retention_rejected\"",
+            "guest_descriptor_buffer_retention_rejected_count()",
+        ),
+        (
+            "\"guest_descriptor_buffer_retention_retained_bytes\"",
+            "guest_descriptor_buffer_retention_retained_byte_count()",
+        ),
+        (
+            "\"guest_descriptor_buffer_retention_rejected_bytes\"",
+            "guest_descriptor_buffer_retention_rejected_byte_count()",
+        ),
+    ] {
+        assert!(
+            cli_source.contains(line_name) && cli_source.contains(accessor),
+            "CLI timing output should include {line_name}"
+        );
+    }
+}
+
+#[test]
 fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let execution_path = crate_root.join("src/witness_execution.rs");
