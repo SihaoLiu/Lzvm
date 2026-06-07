@@ -34,6 +34,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         &[
             "runtime_pipeline_binding_required_external_source_sound",
+            "runtime_pipeline_binding_checked_acceptance_sound",
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",

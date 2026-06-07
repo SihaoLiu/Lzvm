@@ -49,6 +49,17 @@ fn source_hot_paths_does_not_own_lean_binding_theorem_exports() {
         "runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract",
         "runtime_trace_constraint_artifact_binding_checked_acceptance_sound",
         "runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract",
+        "runtime_trace_constraint_checked_acceptance_sound",
+        "runtime_trace_constraint_evidence_implies_backend_contract",
+        "runtime_trace_constraint_checked_acceptance_backend_contract",
+        "runtime_opening_segment_binding_checked_acceptance_sound",
+        "runtime_opening_segment_binding_evidence_implies_bound_contract",
+        "runtime_opening_segment_binding_checked_acceptance_bound_contract",
+        "runtime_opening_checked_acceptance_sound",
+        "runtime_query_plan_binding_checked_acceptance_sound",
+        "runtime_query_plan_binding_evidence_implies_bound_contract",
+        "runtime_query_plan_binding_checked_acceptance_bound_contract",
+        "runtime_pipeline_binding_checked_acceptance_sound",
     ] {
         assert!(
             !source_hot_paths.contains(theorem),

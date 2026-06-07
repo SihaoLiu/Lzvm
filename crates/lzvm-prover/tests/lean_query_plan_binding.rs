@@ -23,6 +23,13 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     );
     lean_binding::assert_theorem_declarations(
         &lean_source,
-        &["runtime_query_plan_binding_checked_acceptance_verifier_core_contract"],
+        &[
+            "runtime_query_plan_binding_evidence_implies_bound_contract",
+            "runtime_query_plan_binding_checked_acceptance_bound_contract",
+            "runtime_query_plan_binding_checked_acceptance_opening_segment_evidence",
+            "runtime_query_plan_binding_checked_acceptance_opening_segment_bound_contract",
+            "runtime_query_plan_binding_checked_acceptance_sound",
+            "runtime_query_plan_binding_checked_acceptance_verifier_core_contract",
+        ],
     );
 }

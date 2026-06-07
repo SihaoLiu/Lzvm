@@ -3659,17 +3659,12 @@ fn lean_trace_constraint_artifact_binding_tracks_runtime_preflight_checks() {
         "Lean should expose the trace constraint artifact binding model and verifier core contract"
     );
     assert!(
-        lean_source.contains("RuntimeTraceConstraintValidation")
-            && lean_source.contains("runtime_trace_constraint_checked_acceptance_sound"),
+        lean_source.contains("RuntimeTraceConstraintValidation"),
         "Lean trace artifact binding should compose with the trace constraint soundness model"
     );
     assert!(
         lean_validation_source.contains("def RuntimeTraceConstraintBackendContract")
-            && lean_validation_source.contains("RuntimeTraceConstraintBackendContract")
-            && lean_validation_source
-                .contains("runtime_trace_constraint_evidence_implies_backend_contract")
-            && lean_validation_source
-                .contains("runtime_trace_constraint_checked_acceptance_backend_contract"),
+            && lean_validation_source.contains("RuntimeTraceConstraintBackendContract"),
         "Lean trace constraint validation should expose regular constraint backend conformance as a reusable contract"
     );
     assert!(
@@ -3709,18 +3704,12 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
     );
     assert!(
         lean_source.contains("structure RuntimeOpeningSegmentBindingValidation")
-            && lean_source.contains("runtime_opening_segment_binding_checked_acceptance_sound")
             && lean_source.contains("def RuntimeOpeningSegmentBindingBoundContract")
-            && lean_source.contains("RuntimeOpeningSegmentBindingBoundContract")
-            && lean_source
-                .contains("runtime_opening_segment_binding_evidence_implies_bound_contract")
-            && lean_source
-                .contains("runtime_opening_segment_binding_checked_acceptance_bound_contract"),
+            && lean_source.contains("RuntimeOpeningSegmentBindingBoundContract"),
         "Lean should expose checked opening segment binding soundness and bound contract theorems"
     );
     assert!(
-        lean_source.contains("RuntimeOpeningValidation")
-            && lean_source.contains("runtime_opening_checked_acceptance_sound"),
+        lean_source.contains("RuntimeOpeningValidation"),
         "Lean opening segment binding should compose with the opening soundness model"
     );
     assert!(
@@ -3763,19 +3752,15 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     );
     assert!(
         lean_source.contains("structure RuntimeQueryPlanBindingValidation")
-            && lean_source.contains("runtime_query_plan_binding_checked_acceptance_sound")
             && lean_source.contains("def RuntimeQueryPlanBindingBoundContract")
-            && lean_source.contains("RuntimeQueryPlanBindingBoundContract")
-            && lean_source.contains("runtime_query_plan_binding_evidence_implies_bound_contract")
-            && lean_source.contains("runtime_query_plan_binding_checked_acceptance_bound_contract"),
+            && lean_source.contains("RuntimeQueryPlanBindingBoundContract"),
         "Lean should expose checked query plan binding soundness and bound contract theorems"
     );
     assert!(
         lean_source.contains("RuntimeChallengeSegmentBindingValidation")
             && lean_source.contains("RuntimeChallengeSegmentBindingEvidence")
             && lean_source.contains("RuntimeOpeningSegmentBindingValidation")
-            && lean_source.contains("RuntimeOpeningSegmentBindingEvidence")
-            && lean_source.contains("runtime_opening_segment_binding_checked_acceptance_sound"),
+            && lean_source.contains("RuntimeOpeningSegmentBindingEvidence"),
         "Lean query plan binding should compose challenge and opening segment binding models"
     );
     assert!(
@@ -3831,8 +3816,7 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
         "top-level Lean module should include the runtime pipeline binding model"
     );
     assert!(
-        lean_source.contains("structure RuntimePipelineBindingValidation")
-            && lean_source.contains("runtime_pipeline_binding_checked_acceptance_sound"),
+        lean_source.contains("structure RuntimePipelineBindingValidation"),
         "Lean should expose a checked runtime pipeline binding soundness theorem"
     );
     assert!(
@@ -3841,8 +3825,7 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
             && lean_source.contains("RuntimeTraceConstraintArtifactBindingValidation")
             && lean_source.contains("RuntimeTraceConstraintPreflightBindingEvidence")
             && lean_source.contains("RuntimeQueryPlanBindingValidation")
-            && lean_source.contains("RuntimeQueryPlanBindingEvidence")
-            && lean_source.contains("runtime_query_plan_binding_checked_acceptance_sound"),
+            && lean_source.contains("RuntimeQueryPlanBindingEvidence"),
         "Lean runtime pipeline binding should compose public input, trace, and query plan binding models"
     );
     assert!(

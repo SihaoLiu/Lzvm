@@ -27,6 +27,8 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_opening_segment_binding_evidence_implies_bound_contract",
+            "runtime_opening_segment_binding_checked_acceptance_bound_contract",
             "runtime_opening_segment_binding_checked_acceptance_sound",
             "runtime_opening_segment_binding_checked_acceptance_verifier_core_contract",
         ],

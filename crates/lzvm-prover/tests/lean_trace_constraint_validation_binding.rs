@@ -30,6 +30,8 @@ fn lean_trace_constraint_validation_binding_exports_core_contract_projection() {
         &lean_source,
         &[
             "runtime_trace_constraint_checked_acceptance_sound",
+            "runtime_trace_constraint_evidence_implies_backend_contract",
+            "runtime_trace_constraint_checked_acceptance_backend_contract",
             "runtime_trace_constraint_checked_acceptance_verifier_core_contract",
             "runtime_trace_constraint_required_external_source_sound",
             "runtime_trace_constraint_required_external_source_verifier_core_contract",
