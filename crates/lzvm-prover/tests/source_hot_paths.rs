@@ -3609,7 +3609,11 @@ fn lean_trace_constraint_artifact_binding_tracks_runtime_preflight_checks() {
     assert!(
         lean_source.contains("structure RuntimeTraceConstraintArtifactBindingValidation")
             && lean_source
-                .contains("runtime_trace_constraint_artifact_binding_checked_acceptance_sound"),
+                .contains("runtime_trace_constraint_artifact_binding_checked_acceptance_sound")
+            && lean_source.contains(
+                "runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract"
+            )
+            && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof"),
         "Lean should expose a checked trace constraint artifact binding soundness theorem"
     );
     assert!(

@@ -207,4 +207,28 @@ theorem runtime_trace_constraint_artifact_binding_checked_acceptance_sound
       traceConstraintAccepted
   exact And.intro artifactEvidence traceSound
 
+theorem runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  exact sound_witness_implies_verifier_core_contract sound.right.right
+
 end Lzvm
