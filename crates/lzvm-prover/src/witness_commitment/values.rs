@@ -367,7 +367,7 @@ impl WitnessStageSourceDeviceView {
         Arc::as_ptr(&self.buffer) as usize
     }
 
-    fn retained_byte_len(&self) -> usize {
+    pub(crate) fn retained_byte_len(&self) -> usize {
         self.buffer().len()
     }
 
@@ -540,7 +540,7 @@ fn release_retained_leaf_digest_bytes(bytes: usize) {
 }
 
 #[cfg(feature = "cuda")]
-fn retained_source_device_limit() -> usize {
+pub(crate) fn retained_source_device_limit() -> usize {
     std::env::var("LZVM_CUDA_RETAINED_SOURCE_BYTES")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())

@@ -217,6 +217,10 @@ impl WitnessStageSourceDevice {
         )
     }
 
+    pub(crate) fn retained_byte_len(&self) -> usize {
+        self.source_view().retained_byte_len()
+    }
+
     pub(crate) fn retain(&self) -> Option<WitnessStageRetainedSourceDevice> {
         retain_source_device_view(self.source_view()).map(|source_device| {
             WitnessStageRetainedSourceDevice {

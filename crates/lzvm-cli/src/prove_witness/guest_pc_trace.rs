@@ -83,6 +83,26 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_device_source_trace_expand",
         timing.guest_device_source_trace_expand_duration(),
     );
+    timings.record_count(
+        "guest_stage_source_retention_attempts",
+        timing.guest_stage_source_retention_attempt_count(),
+    );
+    timings.record_count(
+        "guest_stage_source_retention_retained",
+        timing.guest_stage_source_retention_retained_count(),
+    );
+    timings.record_count(
+        "guest_stage_source_retention_rejected",
+        timing.guest_stage_source_retention_rejected_count(),
+    );
+    timings.record_count(
+        "guest_stage_source_retention_rejected_bytes",
+        timing.guest_stage_source_retention_rejected_byte_count(),
+    );
+    timings.record_count(
+        "guest_stage_source_retention_limit_bytes",
+        timing.guest_stage_source_retention_limit_byte_count(),
+    );
     timings.record(
         "guest_regular_constraints",
         timing.guest_regular_constraint_duration(),

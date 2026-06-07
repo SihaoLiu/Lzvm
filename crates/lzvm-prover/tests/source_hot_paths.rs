@@ -1729,6 +1729,28 @@ fn trace_less_guest_pc_opening_does_not_rebuild_external_source_when_retained() 
 }
 
 #[test]
+fn trace_less_guest_pc_outputs_keep_budgeted_stage_source_views() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+
+    let without_trace_body = function_body(
+        &execution_source,
+        "fn without_trace",
+        "#[derive(Debug, Clone, Default, PartialEq, Eq)]",
+    );
+    assert!(
+        without_trace_body.contains("self.trace = None"),
+        "trace-less outputs should still drop the host trace buffer"
+    );
+    assert!(
+        !without_trace_body.contains("stage_source_devices.clear()"),
+        "trace-less guest PC outputs should keep budgeted CUDA stage source views for opening"
+    );
+}
+
+#[test]
 fn trace_output_opening_rebuilds_external_source_only_when_required() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let opening_path = crate_root.join("src/witness_opening.rs");
@@ -2568,6 +2590,93 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
                 && source.contains("leaf_coset_extend_pack_launch_count")
                 && source.contains("leaf_coset_extend_unpack_launch_count"),
             "leaf extension timing should expose coset extension workload shape"
+        );
+    }
+}
+
+#[test]
+fn guest_pc_trace_timing_reports_stage_source_retention_budget() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source =
+        std::fs::read_to_string(&values_path).expect("witness commitment values should read");
+    let trace_path = crate_root.join("src/witness_commitment/trace.rs");
+    let trace_source =
+        std::fs::read_to_string(&trace_path).expect("witness commitment trace should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source =
+        std::fs::read_to_string(&cli_path).expect("guest PC CLI timing source should read");
+
+    assert!(
+        values_source.contains("pub(crate) fn retained_source_device_limit")
+            && values_source.contains("pub(crate) fn retained_byte_len(&self) -> usize"),
+        "retained source budget and attempted bytes should be visible to trace timing"
+    );
+
+    assert!(
+        trace_source.contains("pub(crate) fn retained_byte_len(&self) -> usize")
+            && trace_source.contains("self.source_view().retained_byte_len()"),
+        "stage source descriptors should report the retained byte charge used by budgeting"
+    );
+
+    let accumulator_fields = function_body(
+        &execution_source,
+        "struct ProveWitnessTraceTimingAccumulator",
+        "impl ProveWitnessTraceTimingAccumulator",
+    );
+    for field in [
+        "stage_source_retention_attempt_count",
+        "stage_source_retention_retained_count",
+        "stage_source_retention_rejected_count",
+        "stage_source_retention_rejected_byte_count",
+        "stage_source_retention_limit_byte_count",
+    ] {
+        assert!(
+            accumulator_fields.contains(field),
+            "trace timing accumulation should carry {field}"
+        );
+    }
+
+    let cache_body = function_body(
+        &execution_source,
+        "fn retained_descriptors",
+        "fn retained_guest_pc_device_descriptor_buffer",
+    );
+    assert!(
+        cache_body.contains("retained_source_device_limit()")
+            && cache_body.contains("add_stage_source_retention")
+            && cache_body.contains("retained_byte_len()"),
+        "retained descriptor collection should record attempts, rejections, rejected bytes, and limit"
+    );
+
+    for (line_name, accessor) in [
+        (
+            "\"guest_stage_source_retention_attempts\"",
+            "guest_stage_source_retention_attempt_count()",
+        ),
+        (
+            "\"guest_stage_source_retention_retained\"",
+            "guest_stage_source_retention_retained_count()",
+        ),
+        (
+            "\"guest_stage_source_retention_rejected\"",
+            "guest_stage_source_retention_rejected_count()",
+        ),
+        (
+            "\"guest_stage_source_retention_rejected_bytes\"",
+            "guest_stage_source_retention_rejected_byte_count()",
+        ),
+        (
+            "\"guest_stage_source_retention_limit_bytes\"",
+            "guest_stage_source_retention_limit_byte_count()",
+        ),
+    ] {
+        assert!(
+            cli_source.contains(line_name) && cli_source.contains(accessor),
+            "CLI timing output should include {line_name}"
         );
     }
 }

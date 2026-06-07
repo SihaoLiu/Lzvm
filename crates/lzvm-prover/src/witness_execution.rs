@@ -59,9 +59,9 @@ use crate::witness_commitment::{
     commit_witness_stage_values_with_source_devices_and_workers,
     commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing,
     commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_workers,
-    retain_device_buffer, WitnessRetainedDeviceBuffer, WitnessStageCommitmentError,
-    WitnessStageCommitmentReuseCache, WitnessStageLeafError, WitnessStageRetainedSourceDevice,
-    WitnessStageSourceDevice, WitnessStageSourceDeviceView,
+    retain_device_buffer, retained_source_device_limit, WitnessRetainedDeviceBuffer,
+    WitnessStageCommitmentError, WitnessStageCommitmentReuseCache, WitnessStageLeafError,
+    WitnessStageRetainedSourceDevice, WitnessStageSourceDevice, WitnessStageSourceDeviceView,
 };
 #[cfg(not(feature = "cuda"))]
 use crate::witness_commitment::{
@@ -318,8 +318,6 @@ impl ProveWitnessTraceCommitments {
 
     fn without_trace(mut self) -> Self {
         self.trace = None;
-        #[cfg(feature = "cuda")]
-        self.stage_source_devices.clear();
         self
     }
 }
@@ -343,6 +341,11 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_device_source_descriptor_upload_byte_count: usize,
     guest_device_source_descriptor_upload_row_count: usize,
     guest_device_source_trace_expand_duration: Duration,
+    guest_stage_source_retention_attempt_count: usize,
+    guest_stage_source_retention_retained_count: usize,
+    guest_stage_source_retention_rejected_count: usize,
+    guest_stage_source_retention_rejected_byte_count: usize,
+    guest_stage_source_retention_limit_byte_count: usize,
     guest_regular_constraint_duration: Duration,
     guest_regular_hint_duration: Duration,
     guest_stage_commit_duration: Duration,
@@ -395,6 +398,16 @@ impl ProveWitnessGuestPcTraceTiming {
                 .device_source_descriptor_upload_row_count,
             guest_device_source_trace_expand_duration: trace_timing
                 .device_source_trace_expand_duration,
+            guest_stage_source_retention_attempt_count: trace_timing
+                .stage_source_retention_attempt_count,
+            guest_stage_source_retention_retained_count: trace_timing
+                .stage_source_retention_retained_count,
+            guest_stage_source_retention_rejected_count: trace_timing
+                .stage_source_retention_rejected_count,
+            guest_stage_source_retention_rejected_byte_count: trace_timing
+                .stage_source_retention_rejected_byte_count,
+            guest_stage_source_retention_limit_byte_count: trace_timing
+                .stage_source_retention_limit_byte_count,
             guest_regular_constraint_duration: trace_timing.regular_constraint_duration,
             guest_regular_hint_duration: trace_timing.regular_hint_duration,
             guest_stage_commit_duration: trace_timing.stage_commit_duration,
@@ -469,6 +482,26 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_device_source_trace_expand_duration(&self) -> Duration {
         self.guest_device_source_trace_expand_duration
+    }
+
+    pub fn guest_stage_source_retention_attempt_count(&self) -> usize {
+        self.guest_stage_source_retention_attempt_count
+    }
+
+    pub fn guest_stage_source_retention_retained_count(&self) -> usize {
+        self.guest_stage_source_retention_retained_count
+    }
+
+    pub fn guest_stage_source_retention_rejected_count(&self) -> usize {
+        self.guest_stage_source_retention_rejected_count
+    }
+
+    pub fn guest_stage_source_retention_rejected_byte_count(&self) -> usize {
+        self.guest_stage_source_retention_rejected_byte_count
+    }
+
+    pub fn guest_stage_source_retention_limit_byte_count(&self) -> usize {
+        self.guest_stage_source_retention_limit_byte_count
     }
 
     pub fn guest_regular_constraint_duration(&self) -> Duration {
@@ -806,6 +839,11 @@ struct ProveWitnessTraceTimingAccumulator {
     device_source_descriptor_upload_byte_count: usize,
     device_source_descriptor_upload_row_count: usize,
     device_source_trace_expand_duration: Duration,
+    stage_source_retention_attempt_count: usize,
+    stage_source_retention_retained_count: usize,
+    stage_source_retention_rejected_count: usize,
+    stage_source_retention_rejected_byte_count: usize,
+    stage_source_retention_limit_byte_count: usize,
     regular_constraint_duration: Duration,
     regular_hint_duration: Duration,
     stage_commit_duration: Duration,
@@ -848,6 +886,14 @@ impl ProveWitnessTraceTimingAccumulator {
         self.device_source_descriptor_upload_row_count +=
             other.device_source_descriptor_upload_row_count;
         self.device_source_trace_expand_duration += other.device_source_trace_expand_duration;
+        self.stage_source_retention_attempt_count += other.stage_source_retention_attempt_count;
+        self.stage_source_retention_retained_count += other.stage_source_retention_retained_count;
+        self.stage_source_retention_rejected_count += other.stage_source_retention_rejected_count;
+        self.stage_source_retention_rejected_byte_count +=
+            other.stage_source_retention_rejected_byte_count;
+        self.stage_source_retention_limit_byte_count = self
+            .stage_source_retention_limit_byte_count
+            .max(other.stage_source_retention_limit_byte_count);
         self.regular_constraint_duration += other.regular_constraint_duration;
         self.regular_hint_duration += other.regular_hint_duration;
         self.stage_commit_duration += other.stage_commit_duration;
@@ -910,6 +956,24 @@ impl ProveWitnessTraceTimingAccumulator {
         self.stage_timings.push(stage_timing);
         self.stage_timings
             .sort_by_key(|stage_timing| stage_timing.stage_index);
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    fn add_stage_source_retention(
+        &mut self,
+        attempt_count: usize,
+        retained_count: usize,
+        rejected_count: usize,
+        rejected_byte_count: usize,
+        limit_byte_count: usize,
+    ) {
+        self.stage_source_retention_attempt_count += attempt_count;
+        self.stage_source_retention_retained_count += retained_count;
+        self.stage_source_retention_rejected_count += rejected_count;
+        self.stage_source_retention_rejected_byte_count += rejected_byte_count;
+        self.stage_source_retention_limit_byte_count = self
+            .stage_source_retention_limit_byte_count
+            .max(limit_byte_count);
     }
 }
 
@@ -1343,14 +1407,39 @@ impl WitnessStageSourceDeviceCache {
             .collect()
     }
 
-    fn retained_descriptors(&self) -> Vec<WitnessStageRetainedSourceDevice> {
-        let retained = self
-            .descriptors()
-            .into_iter()
-            .filter_map(|source_device| source_device.retain())
-            .collect::<Vec<_>>();
+    fn retained_descriptors(
+        &self,
+        timing: Option<&mut ProveWitnessTraceTimingAccumulator>,
+    ) -> Vec<WitnessStageRetainedSourceDevice> {
+        let retention_limit = retained_source_device_limit();
+        let mut attempt_count = 0usize;
+        let mut rejected_count = 0usize;
+        let mut rejected_byte_count = 0usize;
+        let mut retained = Vec::new();
+        for source_device in self.descriptors() {
+            attempt_count += 1;
+            let retained_byte_len = source_device.retained_byte_len();
+            if let Some(source_device) = source_device.retain() {
+                retained.push(source_device);
+            } else {
+                rejected_count += 1;
+                rejected_byte_count = rejected_byte_count.saturating_add(retained_byte_len);
+            }
+        }
+        if let Some(timing) = timing {
+            timing.add_stage_source_retention(
+                attempt_count,
+                retained.len(),
+                rejected_count,
+                rejected_byte_count,
+                retention_limit,
+            );
+        }
         if debug_fri_stage_source_devices() {
-            eprintln!("lzvm_cuda_fri_stage_source_retained={}", retained.len());
+            eprintln!(
+                "lzvm_cuda_fri_stage_source_retained={} attempts={attempt_count} rejected={rejected_count} rejected_bytes={rejected_byte_count} limit_bytes={retention_limit}",
+                retained.len(),
+            );
         }
         retained
     }
@@ -3025,7 +3114,7 @@ fn run_prove_witness_commitments_from_trace_inner(
     }
     let trace_rows = layout.row_count();
     let trace_columns = layout.column_count();
-    let stage_commitments = if let Some(timing) = timing {
+    let stage_commitments = if let Some(timing) = timing.as_deref_mut() {
         let stage_commit_started = Instant::now();
         let (stage_commitments, stage_timing, stage_timings) = (|| {
             let mut stage_timing = WitnessStageCommitTiming::default();
@@ -3272,6 +3361,12 @@ fn run_prove_witness_commitments_from_trace_inner(
     } else {
         None
     };
+    #[cfg(feature = "cuda")]
+    let retained_stage_source_devices = if retain_stage_sources {
+        stage_source_device_cache.retained_descriptors(timing)
+    } else {
+        Vec::new()
+    };
     Ok(ProveWitnessTraceCommitments {
         commitments,
         trace,
@@ -3283,11 +3378,7 @@ fn run_prove_witness_commitments_from_trace_inner(
             constraint_checker_conformant: true,
         },
         #[cfg(feature = "cuda")]
-        stage_source_devices: if retain_stage_sources {
-            stage_source_device_cache.retained_descriptors()
-        } else {
-            Vec::new()
-        },
+        stage_source_devices: retained_stage_source_devices,
         #[cfg(feature = "cuda")]
         guest_pc_device_descriptor_buffer,
         #[cfg(feature = "cuda")]
