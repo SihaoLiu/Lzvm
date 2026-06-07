@@ -669,6 +669,43 @@ fn cuda_digest_opening_prefix_uses_device_prefix_primitive() {
 }
 
 #[test]
+fn cuda_retained_checkpoint_opening_batches_lower_prefix_work() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source =
+        std::fs::read_to_string(&values_path).expect("witness values source should read");
+    let merkle_path = crate_root.join("src/merkle_hash.rs");
+    let merkle_source =
+        std::fs::read_to_string(&merkle_path).expect("Merkle hash source should read");
+
+    let checkpoint_body = function_body(
+        &values_source,
+        "fn open_batch_with_retained_parent_checkpoint_level_cuda",
+        "fn open_batch_with_retained_leaf_digest_level_cuda",
+    );
+    assert!(
+        checkpoint_body.contains("opening_path_prefix_batch_for_source_rows"),
+        "retained checkpoint batch openings should compute lower-prefix siblings once per batch"
+    );
+    assert!(
+        !checkpoint_body.contains("opening_path_prefix_for_source_row"),
+        "retained checkpoint batch openings should avoid per-row lower-prefix recomputation"
+    );
+
+    let batch_body = function_body(
+        &merkle_source,
+        "pub(crate) fn opening_path_prefix_batch_for_source_rows",
+        "impl CudaDigestCheckpointLevel",
+    );
+    assert!(
+        batch_body.contains("cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device")
+            && batch_body
+                .contains("cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device"),
+        "CUDA digest opening prefix batches should call the native batch prefix primitives"
+    );
+}
+
+#[test]
 fn cuda_narrow_witness_commit_uses_compact_device_leaf_level() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let trace_path = crate_root.join("src/witness_commitment/trace.rs");

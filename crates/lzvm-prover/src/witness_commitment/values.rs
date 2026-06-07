@@ -1585,21 +1585,25 @@ impl WitnessStageCompactTreeStorage {
         } else {
             None
         };
+        let lower_prefixes =
+            record_opening_duration(timing.as_deref_mut().map(|timing| &mut timing.path), || {
+                leaf_level
+                    .opening_path_prefix_batch_for_source_rows(
+                        rows,
+                        checkpoint.folded_level_count(),
+                    )
+                    .map_err(WitnessStageOpeningError::from)
+            })?;
+        if lower_prefixes.len() != rows.len() {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
         let mut openings = Vec::with_capacity(rows.len());
-        for row in rows {
-            let lower_prefix = record_opening_duration(
-                timing.as_deref_mut().map(|timing| &mut timing.path),
-                || {
-                    leaf_level
-                        .opening_path_prefix_for_source_row(*row, checkpoint.folded_level_count())
-                        .map_err(WitnessStageOpeningError::from)
-                },
-            )?;
+        for (row, lower_prefix) in rows.iter().copied().zip(lower_prefixes.into_iter()) {
             let upper_suffix = record_opening_duration(
                 timing.as_deref_mut().map(|timing| &mut timing.path),
                 || {
                     checkpoint
-                        .opening_path_for_source_row(*row)
+                        .opening_path_for_source_row(row)
                         .map_err(WitnessStageOpeningError::from)
                 },
             )?;
@@ -1616,7 +1620,7 @@ impl WitnessStageCompactTreeStorage {
             }
             let values = record_opening_duration(
                 timing.as_deref_mut().map(|timing| &mut timing.row_values),
-                || self.copy_extended_row_values_from_device(output_buffer, *row),
+                || self.copy_extended_row_values_from_device(output_buffer, row),
             )?;
             let mut siblings = lower_prefix;
             siblings.extend(upper_suffix.siblings);

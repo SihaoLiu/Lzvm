@@ -7,6 +7,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
     cuda_poseidon2_width16_merkle_digest_opening_path_device,
+    cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device,
     cuda_poseidon2_width16_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width16_merkle_digest_parent_device,
     cuda_poseidon2_width16_merkle_digest_root_device,
@@ -14,6 +15,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
     cuda_poseidon2_width8_merkle_digest_opening_path_device,
+    cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device,
     cuda_poseidon2_width8_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width8_merkle_digest_parent_device,
     cuda_poseidon2_width8_merkle_digest_root_device,
@@ -329,6 +331,82 @@ impl CudaDigestLevel {
             siblings.push(level_siblings);
         }
         Ok(siblings)
+    }
+
+    pub(crate) fn opening_path_prefix_batch_for_source_rows(
+        &self,
+        source_rows: &[usize],
+        folded_level_count: usize,
+    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, MerkleHashError> {
+        if source_rows
+            .iter()
+            .any(|source_row| *source_row >= self.state_count)
+        {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        if folded_level_count == 0 {
+            return Ok(vec![Vec::new(); source_rows.len()]);
+        }
+
+        let mut path_level_count = 0usize;
+        let mut state_count = self.state_count;
+        while state_count > 1 {
+            path_level_count = path_level_count
+                .checked_add(1)
+                .ok_or(MerkleHashError::LengthOverflow)?;
+            state_count = state_count.div_ceil(self.arity);
+        }
+        if folded_level_count > path_level_count {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+
+        let sibling_words = match self.arity {
+            2 => cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device(
+                &self.digests,
+                source_rows,
+                folded_level_count,
+            ),
+            4 => cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device(
+                &self.digests,
+                source_rows,
+                folded_level_count,
+            ),
+            _ => return Err(MerkleHashError::UnsupportedArity { arity: self.arity }),
+        }
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+        let row_words = folded_level_count
+            .checked_mul(self.arity.saturating_sub(1))
+            .and_then(|count| count.checked_mul(HASH_WORDS))
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        let expected_words = source_rows
+            .len()
+            .checked_mul(row_words)
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        if sibling_words.len() != expected_words {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+
+        let mut batch_siblings = Vec::with_capacity(source_rows.len());
+        for row_words_slice in sibling_words.chunks_exact(row_words) {
+            let mut cursor = 0usize;
+            let mut siblings = Vec::with_capacity(folded_level_count);
+            for _ in 0..folded_level_count {
+                let mut level_siblings = Vec::with_capacity(self.arity - 1);
+                for _ in 0..self.arity - 1 {
+                    let end = cursor
+                        .checked_add(HASH_WORDS)
+                        .ok_or(MerkleHashError::LengthOverflow)?;
+                    let words = row_words_slice
+                        .get(cursor..end)
+                        .ok_or(MerkleHashError::LengthOverflow)?;
+                    level_siblings.push(digest_from_state_words(words)?);
+                    cursor = end;
+                }
+                siblings.push(level_siblings);
+            }
+            batch_siblings.push(siblings);
+        }
+        Ok(batch_siblings)
     }
 }
 

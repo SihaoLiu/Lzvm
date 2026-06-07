@@ -291,6 +291,15 @@ unsafe extern "C" {
         query_index: usize,
         prefix_level_count: usize,
     ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device"]
+    fn lzvm_cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_raw(
+        values: *const u64,
+        query_indices: *const usize,
+        siblings_out: *mut u64,
+        child_state_count: usize,
+        query_count: usize,
+        prefix_level_count: usize,
+    ) -> i32;
     #[link_name = "lzvm_cuda_poseidon2_width8_linear_round_device"]
     fn lzvm_cuda_poseidon2_width8_linear_round_device_raw(
         current_states: *const u64,
@@ -379,6 +388,15 @@ unsafe extern "C" {
         siblings_out: *mut u64,
         child_state_count: usize,
         query_index: usize,
+        prefix_level_count: usize,
+    ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device"]
+    fn lzvm_cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_raw(
+        values: *const u64,
+        query_indices: *const usize,
+        siblings_out: *mut u64,
+        child_state_count: usize,
+        query_count: usize,
         prefix_level_count: usize,
     ) -> i32;
     #[link_name = "lzvm_cuda_poseidon2_width16_linear_round_device"]
@@ -1912,6 +1930,10 @@ type CudaPoseidon2MerkleOpeningPrefixDeviceOp =
     unsafe extern "C" fn(*const u64, *mut u64, usize, usize, usize) -> i32;
 
 #[cfg(feature = "cuda")]
+type CudaPoseidon2MerkleOpeningPrefixBatchDeviceOp =
+    unsafe extern "C" fn(*const u64, *const usize, *mut u64, usize, usize, usize) -> i32;
+
+#[cfg(feature = "cuda")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CudaMerkleOpeningPathWords {
     pub root: [u64; 4],
@@ -2328,6 +2350,74 @@ fn run_cuda_poseidon2_merkle_digest_opening_prefix_device_op(
 }
 
 #[cfg(feature = "cuda")]
+fn run_cuda_poseidon2_merkle_digest_opening_prefix_batch_device_op(
+    values: &CudaDeviceBuffer,
+    arity: usize,
+    bits: usize,
+    query_indices: &[usize],
+    prefix_level_count: usize,
+    operation: CudaPoseidon2MerkleOpeningPrefixBatchDeviceOp,
+) -> Result<Vec<u64>, AccelError> {
+    if !values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len(),
+            rhs: values.len() / 8 * 8,
+        });
+    }
+
+    let child_word_count = values.len() / 8;
+    if !child_word_count.is_multiple_of(4) {
+        return Err(AccelError::InvalidDomain {
+            bits,
+            len: child_word_count,
+        });
+    }
+
+    let child_state_count = child_word_count / 4;
+    if child_state_count == 0
+        || query_indices
+            .iter()
+            .any(|query_index| *query_index >= child_state_count)
+    {
+        return Err(AccelError::InvalidDomain {
+            bits,
+            len: child_state_count,
+        });
+    }
+
+    let level_count = merkle_opening_level_count(child_state_count, arity);
+    if prefix_level_count > level_count {
+        return Err(AccelError::InvalidDomain {
+            bits,
+            len: child_state_count,
+        });
+    }
+    let sibling_word_count = query_indices
+        .len()
+        .checked_mul(prefix_level_count)
+        .and_then(|count| count.checked_mul(arity.saturating_sub(1)))
+        .and_then(|count| count.checked_mul(4))
+        .ok_or(AccelError::InvalidDomain {
+            bits,
+            len: child_state_count,
+        })?;
+    let mut siblings = vec![0_u64; sibling_word_count];
+    let code = unsafe {
+        operation(
+            values.as_raw_ptr() as *const u64,
+            query_indices.as_ptr(),
+            siblings.as_mut_ptr(),
+            child_state_count,
+            query_indices.len(),
+            prefix_level_count,
+        )
+    };
+    cuda_status(code)?;
+
+    Ok(siblings)
+}
+
+#[cfg(feature = "cuda")]
 fn merkle_opening_level_count(mut state_count: usize, arity: usize) -> usize {
     let mut level_count = 0;
     while state_count > 1 {
@@ -2701,6 +2791,22 @@ pub fn cuda_poseidon2_width8_merkle_digest_opening_prefix_device(
 }
 
 #[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device(
+    values: &CudaDeviceBuffer,
+    query_indices: &[usize],
+    prefix_level_count: usize,
+) -> Result<Vec<u64>, AccelError> {
+    run_cuda_poseidon2_merkle_digest_opening_prefix_batch_device_op(
+        values,
+        2,
+        3,
+        query_indices,
+        prefix_level_count,
+        lzvm_cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_raw,
+    )
+}
+
+#[cfg(feature = "cuda")]
 pub fn cuda_poseidon2_width16(values: &[u64]) -> Result<Vec<u64>, AccelError> {
     const WIDTH: usize = 16;
 
@@ -2841,6 +2947,22 @@ pub fn cuda_poseidon2_width16_merkle_digest_opening_prefix_device(
         query_index,
         prefix_level_count,
         lzvm_cuda_poseidon2_width16_merkle_digest_opening_prefix_device_raw,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device(
+    values: &CudaDeviceBuffer,
+    query_indices: &[usize],
+    prefix_level_count: usize,
+) -> Result<Vec<u64>, AccelError> {
+    run_cuda_poseidon2_merkle_digest_opening_prefix_batch_device_op(
+        values,
+        4,
+        4,
+        query_indices,
+        prefix_level_count,
+        lzvm_cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_raw,
     )
 }
 
