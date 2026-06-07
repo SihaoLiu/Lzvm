@@ -401,4 +401,34 @@ theorem runtime_query_plan_binding_checked_acceptance_sound
               (And.intro pcsAndFri.left
                 (And.intro pcsAndFri.right openingSound.right.right))))))
 
+theorem runtime_query_plan_binding_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof _requiresExternalSource accepted
+  have openingAccepted :=
+    runtime_query_plan_binding_checked_acceptance_opening
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_segment_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      _requiresExternalSource
+      openingAccepted
+
 end Lzvm

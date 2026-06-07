@@ -13,8 +13,11 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             && lean_source.contains(
                 "runtime_query_plan_binding_checked_acceptance_opening_segment_bound_contract"
             )
+            && lean_source
+                .contains("runtime_query_plan_binding_checked_acceptance_verifier_core_contract")
             && lean_source.contains("RuntimeOpeningSegmentBindingEvidence")
-            && lean_source.contains("RuntimeOpeningSegmentBindingBoundContract"),
-        "Lean query plan binding should expose direct opening segment evidence and bound contract projections"
+            && lean_source.contains("RuntimeOpeningSegmentBindingBoundContract")
+            && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof"),
+        "Lean query plan binding should expose opening segment and verifier core projections"
     );
 }
