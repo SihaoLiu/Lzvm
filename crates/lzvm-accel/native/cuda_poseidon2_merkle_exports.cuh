@@ -29,6 +29,13 @@ extern "C" int lzvm_cuda_poseidon2_width8_merkle_digest_root_device(
     return run_poseidon2_width8_merkle_digest_root_on_device(values, out, child_state_count);
 }
 
+extern "C" int lzvm_cuda_poseidon2_width8_merkle_digest_parent_device(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t child_state_count) {
+    return run_poseidon2_width8_merkle_digest_parent_on_device(values, out, child_state_count);
+}
+
 extern "C" int lzvm_cuda_poseidon2_width8_merkle_digest_selected_parent_device(
     const uint64_t* values,
     uint64_t* out,
@@ -77,6 +84,13 @@ extern "C" int lzvm_cuda_poseidon2_width16_merkle_digest_root_device(
     uint64_t* out,
     size_t child_state_count) {
     return run_poseidon2_width16_merkle_digest_root_on_device(values, out, child_state_count);
+}
+
+extern "C" int lzvm_cuda_poseidon2_width16_merkle_digest_parent_device(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t child_state_count) {
+    return run_poseidon2_width16_merkle_digest_parent_on_device(values, out, child_state_count);
 }
 
 extern "C" int lzvm_cuda_poseidon2_width16_merkle_digest_selected_parent_device(

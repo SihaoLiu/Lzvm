@@ -17,6 +17,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_linear_round_row_major_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
     cuda_poseidon2_width16_merkle_digest_opening_path_device,
+    cuda_poseidon2_width16_merkle_digest_parent_device,
     cuda_poseidon2_width16_merkle_digest_root_device,
     cuda_poseidon2_width16_merkle_digest_selected_parent_device,
     cuda_poseidon2_width16_merkle_opening_path_device, cuda_poseidon2_width16_merkle_parent_device,
@@ -25,6 +26,7 @@ use lzvm_accel::{
     cuda_poseidon2_width8_linear_round_device, cuda_poseidon2_width8_linear_round_row_major_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
     cuda_poseidon2_width8_merkle_digest_opening_path_device,
+    cuda_poseidon2_width8_merkle_digest_parent_device,
     cuda_poseidon2_width8_merkle_digest_root_device,
     cuda_poseidon2_width8_merkle_digest_selected_parent_device,
     cuda_poseidon2_width8_merkle_opening_path_device, cuda_poseidon2_width8_merkle_parent_device,
@@ -1670,6 +1672,28 @@ fn cuda_poseidon2_width8_merkle_digest_root_device_matches_padded_layout() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_poseidon2_width8_merkle_digest_parent_device_matches_padded_layout() {
+    let digests = (0..5_u64)
+        .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
+        .collect::<Vec<_>>();
+    let padded = padded_digest_states(&digests, 8);
+    let expected = flatten_digests(&cpu_merkle_first_parent_level_width8(&padded));
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests).expect("digest buffer should allocate");
+    let mut output_buffer =
+        CudaDeviceBuffer::new(expected.len() * 8).expect("parent buffer should allocate");
+
+    cuda_poseidon2_width8_merkle_digest_parent_device(&input_buffer, &mut output_buffer)
+        .expect("cuda compact digest parent level should run");
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("parent words should copy back");
+
+    assert_same_words(&actual, &expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_poseidon2_width8_merkle_digest_selected_parent_device_matches_padded_layout() {
     let digests = (0..5_u64)
         .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
@@ -1985,6 +2009,28 @@ fn cuda_poseidon2_width16_merkle_digest_root_device_matches_padded_layout() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_poseidon2_width16_merkle_digest_parent_device_matches_padded_layout() {
+    let digests = (0..7_u64)
+        .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
+        .collect::<Vec<_>>();
+    let padded = padded_digest_states(&digests, 16);
+    let expected = flatten_digests(&cpu_merkle_first_parent_level_width16(&padded));
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests).expect("digest buffer should allocate");
+    let mut output_buffer =
+        CudaDeviceBuffer::new(expected.len() * 8).expect("parent buffer should allocate");
+
+    cuda_poseidon2_width16_merkle_digest_parent_device(&input_buffer, &mut output_buffer)
+        .expect("cuda compact digest parent level should run");
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("parent words should copy back");
+
+    assert_same_words(&actual, &expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_poseidon2_width16_merkle_digest_selected_parent_device_matches_padded_layout() {
     let digests = (0..7_u64)
         .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
@@ -2150,6 +2196,15 @@ fn padded_digest_states(digests: &[u64], width: usize) -> Vec<u64> {
         padded[index * width..index * width + 4].copy_from_slice(digest);
     }
     padded
+}
+
+#[cfg(feature = "cuda")]
+fn flatten_digests(digests: &[[u64; 4]]) -> Vec<u64> {
+    digests
+        .iter()
+        .flat_map(|digest| digest.iter())
+        .copied()
+        .collect()
 }
 
 #[cfg(feature = "cuda")]
