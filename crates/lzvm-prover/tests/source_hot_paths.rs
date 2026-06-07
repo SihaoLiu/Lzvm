@@ -1915,7 +1915,7 @@ fn compact_opening_reuses_retained_wide_leaf_digest_levels() {
 }
 
 #[test]
-fn retained_leaf_digest_opening_batches_selected_row_value_extension() {
+fn retained_leaf_digest_opening_keeps_single_row_extension_until_queries_batch() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");
     let values_source = std::fs::read_to_string(&values_path)
@@ -1927,30 +1927,12 @@ fn retained_leaf_digest_opening_batches_selected_row_value_extension() {
         "fn copy_extended_row_values_from_device",
     );
     assert!(
-        leaf_digest_body.contains("extended_selected_row_values_from_source_cuda"),
-        "retained leaf digest openings should batch source-row extension for queried rows"
+        leaf_digest_body.contains("extended_row_values_from_source_cuda(*row"),
+        "retained leaf digest openings should keep the single-row extension path while proof scheduling opens one row per batch"
     );
     assert!(
-        !leaf_digest_body.contains("extended_row_values_from_source_cuda(*row"),
-        "retained leaf digest openings should avoid one CUDA row-extension call per queried row"
-    );
-
-    let selected_body = function_body(
-        &values_source,
-        "fn extended_selected_row_values_from_source_cuda",
-        "fn open_with_recomputed_leaf_level_cuda",
-    );
-    assert!(
-        selected_body
-            .contains("cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device")
-            && selected_body.contains(
-                "cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device"
-            ),
-        "selected row-value extension should use dense and strided selected-row CUDA primitives"
-    );
-    assert!(
-        selected_body.contains("to_u64_words()"),
-        "selected row-value extension should copy the selected rows back as one dense row buffer"
+        !leaf_digest_body.contains("extended_selected_row_values_from_source_cuda"),
+        "retained leaf digest openings should not route through selected-row extension until query batching can amortize it"
     );
 }
 
