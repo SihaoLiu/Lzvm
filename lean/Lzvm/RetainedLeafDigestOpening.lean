@@ -61,6 +61,41 @@ def RuntimeRetainedLeafDigestOpeningCheckedAcceptance
     (proof : Proof) : Prop :=
   validation.retainedLeafDigestOpeningAccepted artifact publicInput proof
 
+def RuntimeRetainedLeafDigestOpeningDigestContract
+    (_system : VerifierModel)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.retainedLeafDigestLevelAvailable artifact publicInput proof
+    /\ validation.retainedLeafDigestPathBound artifact publicInput proof
+    /\ validation.retainedLeafDigestRootMatchesExpectedRoot artifact publicInput proof
+    /\ validation.retainedLeafDigestRowsFromSource artifact publicInput proof
+    /\ validation.retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof
+
+def RuntimeRetainedLeafDigestOpeningRetainedRowsContract
+    (_system : VerifierModel)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  let openingValidation :=
+    validation.batchRowsValidation.openingSegmentValidation.openingValidation
+  validation.retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof
+    /\ validation.retainedLeafDigestRowsFromSource artifact publicInput proof
+    /\ validation.batchRowsValidation.perRowWitnessOpeningRowsBound
+      artifact
+      publicInput
+      proof
+    /\ validation.batchRowsValidation.openingSegmentValidation.witnessOpeningSegmentsValid
+      artifact
+      publicInput
+      proof
+    /\ openingValidation.witnessOpeningsBound
+      artifact
+      publicInput
+      proof
+
 def RuntimeRetainedLeafDigestOpeningEvidence
     (system : VerifierModel)
     (validation : RuntimeRetainedLeafDigestOpeningValidation system)
@@ -68,8 +103,6 @@ def RuntimeRetainedLeafDigestOpeningEvidence
     (publicInput : PublicInput)
     (proof : Proof)
     (requiresExternalSource : Prop) : Prop :=
-  let openingValidation :=
-    validation.batchRowsValidation.openingSegmentValidation.openingValidation
   RuntimeBatchWitnessOpeningRowsEvidence
       system
       validation.batchRowsValidation
@@ -77,17 +110,15 @@ def RuntimeRetainedLeafDigestOpeningEvidence
       publicInput
       proof
       requiresExternalSource
-    /\ validation.retainedLeafDigestLevelAvailable artifact publicInput proof
-    /\ validation.retainedLeafDigestPathBound artifact publicInput proof
-    /\ validation.retainedLeafDigestRootMatchesExpectedRoot artifact publicInput proof
-    /\ validation.retainedLeafDigestRowsFromSource artifact publicInput proof
-    /\ validation.retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof
-    /\ validation.batchRowsValidation.perRowWitnessOpeningRowsBound artifact publicInput proof
-    /\ validation.batchRowsValidation.openingSegmentValidation.witnessOpeningSegmentsValid
+    /\ RuntimeRetainedLeafDigestOpeningDigestContract
+      system
+      validation
       artifact
       publicInput
       proof
-    /\ openingValidation.witnessOpeningsBound
+    /\ RuntimeRetainedLeafDigestOpeningRetainedRowsContract
+      system
+      validation
       artifact
       publicInput
       proof
@@ -193,13 +224,15 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_evidence
       witnessSegments
   exact
     And.intro batchEvidence
-      (And.intro levelAvailable
-        (And.intro pathBound
-          (And.intro rootMatches
-            (And.intro rowsFromSource
-              (And.intro rowsBoundToQueryPlan
-                (And.intro retainedPerRow
-                  (And.intro witnessSegments witnessOpeningsBound)))))))
+      (And.intro
+        (And.intro levelAvailable
+          (And.intro pathBound
+            (And.intro rootMatches
+              (And.intro rowsFromSource rowsBoundToQueryPlan))))
+        (And.intro rowsBoundToQueryPlan
+          (And.intro rowsFromSource
+            (And.intro retainedPerRow
+              (And.intro witnessSegments witnessOpeningsBound)))))
 
 theorem runtime_retained_leaf_digest_opening_evidence_implies_digest_contract
     {system : VerifierModel}
@@ -212,27 +245,14 @@ theorem runtime_retained_leaf_digest_opening_evidence_implies_digest_contract
           publicInput
           proof
           requiresExternalSource ->
-        validation.retainedLeafDigestLevelAvailable artifact publicInput proof
-          /\ validation.retainedLeafDigestPathBound artifact publicInput proof
-          /\ validation.retainedLeafDigestRootMatchesExpectedRoot artifact publicInput proof
-          /\ validation.retainedLeafDigestRowsFromSource artifact publicInput proof
-          /\ validation.retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof := by
+        RuntimeRetainedLeafDigestOpeningDigestContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
   intro artifact publicInput proof requiresExternalSource evidence
-  have levelAvailable :=
-    evidence.right.left
-  have pathBound :=
-    evidence.right.right.left
-  have rootMatches :=
-    evidence.right.right.right.left
-  have rowsFromSource :=
-    evidence.right.right.right.right.left
-  have rowsBoundToQueryPlan :=
-    evidence.right.right.right.right.right.left
-  exact
-    And.intro levelAvailable
-      (And.intro pathBound
-        (And.intro rootMatches
-          (And.intro rowsFromSource rowsBoundToQueryPlan)))
+  exact evidence.right.left
 
 theorem runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_contract
     {system : VerifierModel}
@@ -245,38 +265,14 @@ theorem runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_cont
           publicInput
           proof
           requiresExternalSource ->
-        let openingValidation :=
-          validation.batchRowsValidation.openingSegmentValidation.openingValidation
-        validation.retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof
-          /\ validation.retainedLeafDigestRowsFromSource artifact publicInput proof
-          /\ validation.batchRowsValidation.perRowWitnessOpeningRowsBound
-            artifact
-            publicInput
-            proof
-          /\ validation.batchRowsValidation.openingSegmentValidation.witnessOpeningSegmentsValid
-            artifact
-            publicInput
-            proof
-          /\ openingValidation.witnessOpeningsBound
-            artifact
-            publicInput
-            proof := by
+        RuntimeRetainedLeafDigestOpeningRetainedRowsContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
   intro artifact publicInput proof requiresExternalSource evidence
-  have rowsFromSource :=
-    evidence.right.right.right.right.left
-  have rowsBoundToQueryPlan :=
-    evidence.right.right.right.right.right.left
-  have perRow :=
-    evidence.right.right.right.right.right.right.left
-  have witnessSegments :=
-    evidence.right.right.right.right.right.right.right.left
-  have witnessOpeningsBound :=
-    evidence.right.right.right.right.right.right.right.right
-  exact
-    And.intro rowsBoundToQueryPlan
-      (And.intro rowsFromSource
-        (And.intro perRow
-          (And.intro witnessSegments witnessOpeningsBound)))
+  exact evidence.right.right
 
 theorem runtime_retained_leaf_digest_opening_checked_acceptance_retained_rows_contract
     {system : VerifierModel}
@@ -289,22 +285,12 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_retained_rows_co
           artifact
           publicInput
           proof ->
-        let openingValidation :=
-          validation.batchRowsValidation.openingSegmentValidation.openingValidation
-        validation.retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof
-          /\ validation.retainedLeafDigestRowsFromSource artifact publicInput proof
-          /\ validation.batchRowsValidation.perRowWitnessOpeningRowsBound
-            artifact
-            publicInput
-            proof
-          /\ validation.batchRowsValidation.openingSegmentValidation.witnessOpeningSegmentsValid
-            artifact
-            publicInput
-            proof
-          /\ openingValidation.witnessOpeningsBound
-            artifact
-            publicInput
-            proof := by
+        RuntimeRetainedLeafDigestOpeningRetainedRowsContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
   intro artifact publicInput proof accepted
   have evidence :=
     runtime_retained_leaf_digest_opening_checked_acceptance_evidence
@@ -334,11 +320,12 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_digest_contract
           artifact
           publicInput
           proof ->
-        validation.retainedLeafDigestLevelAvailable artifact publicInput proof
-          /\ validation.retainedLeafDigestPathBound artifact publicInput proof
-          /\ validation.retainedLeafDigestRootMatchesExpectedRoot artifact publicInput proof
-          /\ validation.retainedLeafDigestRowsFromSource artifact publicInput proof
-          /\ validation.retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof := by
+        RuntimeRetainedLeafDigestOpeningDigestContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
   intro artifact publicInput proof accepted
   have levelAvailable :=
     validation.retainedLeafDigestOpeningAcceptedImpliesLevelAvailable

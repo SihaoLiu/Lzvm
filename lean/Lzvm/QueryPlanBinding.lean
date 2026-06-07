@@ -51,7 +51,7 @@ structure RuntimeQueryPlanBindingValidation (system : VerifierModel) where
         queryPlanMatchesOpenedArtifacts artifact publicInput proof ->
           openingValidation.queryPlanBound artifact publicInput proof
 
-def RuntimeQueryPlanBindingEvidence
+def RuntimeQueryPlanBindingBoundContract
     (_system : VerifierModel)
     (validation : RuntimeQueryPlanBindingValidation _system)
     (artifact : RuntimeArtifact)
@@ -65,6 +65,19 @@ def RuntimeQueryPlanBindingEvidence
       publicInput
       proof
     /\ validation.openingValidation.queryPlanBound artifact publicInput proof
+
+def RuntimeQueryPlanBindingEvidence
+    (_system : VerifierModel)
+    (validation : RuntimeQueryPlanBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  RuntimeQueryPlanBindingBoundContract
+    _system
+    validation
+    artifact
+    publicInput
+    proof
 
 def RuntimeQueryPlanBindingCheckedAcceptance
     (_system : VerifierModel)
@@ -139,14 +152,12 @@ theorem runtime_query_plan_binding_evidence_implies_bound_contract
           artifact
           publicInput
           proof ->
-        validation.queryPlanSegmentCanonical artifact publicInput proof
-          /\ validation.queryPlanDerivedFromTranscript artifact publicInput proof
-          /\ validation.queryPlanMatchesOpenedArtifacts artifact publicInput proof
-          /\ validation.challengeValidation.transcriptValidation.queryPlanBound
-            artifact
-            publicInput
-            proof
-          /\ validation.openingValidation.queryPlanBound artifact publicInput proof := by
+        RuntimeQueryPlanBindingBoundContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
   intro artifact publicInput proof evidence
   exact evidence
 
@@ -208,14 +219,12 @@ theorem runtime_query_plan_binding_checked_acceptance_bound_contract
           artifact
           publicInput
           proof ->
-        validation.queryPlanSegmentCanonical artifact publicInput proof
-          /\ validation.queryPlanDerivedFromTranscript artifact publicInput proof
-          /\ validation.queryPlanMatchesOpenedArtifacts artifact publicInput proof
-          /\ validation.challengeValidation.transcriptValidation.queryPlanBound
-            artifact
-            publicInput
-            proof
-          /\ validation.openingValidation.queryPlanBound artifact publicInput proof := by
+        RuntimeQueryPlanBindingBoundContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
   intro artifact publicInput proof accepted
   have evidence :=
     runtime_query_plan_binding_checked_acceptance_evidence

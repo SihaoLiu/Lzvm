@@ -21,6 +21,10 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             && lean_source.contains("retainedLeafDigestRowsBoundToQueryPlan")
             && lean_source.contains("retainedLeafDigestChecksImplyPerRowWitnessOpeningRowsBound")
             && lean_source.contains("RuntimeRetainedLeafDigestOpeningEvidence")
+            && lean_source.contains("def RuntimeRetainedLeafDigestOpeningDigestContract")
+            && lean_source.contains("def RuntimeRetainedLeafDigestOpeningRetainedRowsContract")
+            && lean_source.contains("RuntimeRetainedLeafDigestOpeningDigestContract")
+            && lean_source.contains("RuntimeRetainedLeafDigestOpeningRetainedRowsContract")
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsEvidence")
             && lean_source
                 .contains("runtime_retained_leaf_digest_opening_checked_acceptance_evidence")
