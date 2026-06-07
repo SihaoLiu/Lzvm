@@ -2995,8 +2995,12 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
     );
     assert!(
         lean_source.contains("structure RuntimeOpeningSegmentBindingValidation")
-            && lean_source.contains("runtime_opening_segment_binding_checked_acceptance_sound"),
-        "Lean should expose a checked opening segment binding soundness theorem"
+            && lean_source.contains("runtime_opening_segment_binding_checked_acceptance_sound")
+            && lean_source
+                .contains("runtime_opening_segment_binding_evidence_implies_bound_contract")
+            && lean_source
+                .contains("runtime_opening_segment_binding_checked_acceptance_bound_contract"),
+        "Lean should expose checked opening segment binding soundness and bound contract theorems"
     );
     assert!(
         lean_source.contains("RuntimeOpeningValidation")
