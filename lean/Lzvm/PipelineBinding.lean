@@ -1246,6 +1246,70 @@ theorem runtime_pipeline_binding_checked_acceptance_compact_digest_merkle_contra
                           (And.intro pcsOpeningsValid
                             (And.intro friQueriesValid soundWitness)))
 
+theorem runtime_pipeline_binding_checked_acceptance_runtime_artifact_soundness_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeArtifactSoundnessObligations
+          system
+          validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have ethAccepted :=
+    runtime_pipeline_binding_checked_acceptance_eth
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactAccepted :=
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
+      validation.ethBindingValidation
+      artifact
+      publicInput
+      proof
+      ethAccepted
+  let proofArtifactValidation :=
+    validation.ethBindingValidation.proofArtifactBindingValidation
+  have runtimeAccepted :=
+    proofArtifactValidation.bindingAcceptedImpliesRuntimeAccepted
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have runtimeArtifactEvidence :=
+    runtime_artifact_checked_acceptance_evidence
+      proofArtifactValidation.runtimeValidation
+      artifact
+      publicInput
+      proof
+      runtimeAccepted
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have coreObligations :=
+    runtime_pipeline_binding_checked_acceptance_core_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact And.intro runtimeArtifactEvidence (And.intro verifierAccepts coreObligations)
+
 theorem runtime_pipeline_binding_checked_acceptance_soundness_obligations
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1264,27 +1328,14 @@ theorem runtime_pipeline_binding_checked_acceptance_soundness_obligations
           publicInput
           proof := by
   intro artifact publicInput proof accepted
-  have sound :=
-    runtime_pipeline_binding_checked_acceptance_sound
+  exact
+    runtime_pipeline_binding_checked_acceptance_runtime_artifact_soundness_obligations
       assumptions
       validation
       artifact
       publicInput
       proof
-      False
       accepted
-  have runtimeArtifactEvidence := sound.left.right.right.left
-  have verifierAccepts :=
-    runtime_pipeline_binding_checked_acceptance_verifier_accepts
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  have coreObligations :=
-    runtime_pipeline_binding_evidence_implies_core_obligations sound.left
-  exact
-    ⟨runtimeArtifactEvidence, verifierAccepts, coreObligations⟩
 
 theorem runtime_pipeline_binding_checked_acceptance_execution_obligations
     {system : VerifierModel}
