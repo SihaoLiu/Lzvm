@@ -195,6 +195,9 @@ pub(crate) struct GuestPcTraceStreamTiming {
     pending_receive_wait_duration: Duration,
     segment_send_wait_duration: Duration,
     segment_receive_wait_duration: Duration,
+    trace_report_count: usize,
+    trace_report_row_count: usize,
+    trace_descriptor_row_count: usize,
 }
 
 impl GuestPcTraceStreamTiming {
@@ -209,6 +212,9 @@ impl GuestPcTraceStreamTiming {
         self.pending_receive_wait_duration += other.pending_receive_wait_duration;
         self.segment_send_wait_duration += other.segment_send_wait_duration;
         self.segment_receive_wait_duration += other.segment_receive_wait_duration;
+        self.trace_report_count += other.trace_report_count;
+        self.trace_report_row_count += other.trace_report_row_count;
+        self.trace_descriptor_row_count += other.trace_descriptor_row_count;
     }
 
     pub fn runner_duration(&self) -> Duration {
@@ -249,6 +255,18 @@ impl GuestPcTraceStreamTiming {
 
     pub fn segment_receive_wait_duration(&self) -> Duration {
         self.segment_receive_wait_duration
+    }
+
+    pub fn trace_report_count(&self) -> usize {
+        self.trace_report_count
+    }
+
+    pub fn trace_report_row_count(&self) -> usize {
+        self.trace_report_row_count
+    }
+
+    pub fn trace_descriptor_row_count(&self) -> usize {
+        self.trace_descriptor_row_count
     }
 }
 
@@ -3312,6 +3330,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
             .as_ref()
             .filter(|_| detail_timing)
             .map(|_| Instant::now());
+        let descriptor_rows_before = device_trace_descriptors.descriptor_rows();
         let written_rows = validate_and_apply_zisk_main_report(
             output_row,
             report,
@@ -3332,8 +3351,15 @@ fn build_layout_zisk_main_trace_segment_device_material(
                 append_zisk_main_device_trace_descriptor(&mut device_trace_descriptors, &values)
             },
         )?;
-        if let (Some(timing), Some(started)) = (timing.as_deref_mut(), report_started) {
-            timing.trace_report_duration += started.elapsed();
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.trace_report_count += 1;
+            timing.trace_report_row_count += written_rows;
+            timing.trace_descriptor_row_count += device_trace_descriptors
+                .descriptor_rows()
+                .saturating_sub(descriptor_rows_before);
+            if let Some(started) = report_started {
+                timing.trace_report_duration += started.elapsed();
+            }
         }
         output_row = output_row.checked_add(written_rows).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -3513,10 +3539,15 @@ fn build_layout_zisk_main_trace_segment(
             segment,
             #[cfg(feature = "cuda")]
             &mut device_trace_descriptors,
-            timing.as_deref_mut().filter(|_| detail_timing),
+            timing.as_deref_mut(),
+            detail_timing,
         )?;
-        if let (Some(timing), Some(started)) = (timing.as_deref_mut(), report_started) {
-            timing.trace_report_duration += started.elapsed();
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.trace_report_count += 1;
+            timing.trace_report_row_count += written_rows;
+            if let Some(started) = report_started {
+                timing.trace_report_duration += started.elapsed();
+            }
         }
         output_row = output_row.checked_add(written_rows).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -3704,7 +3735,13 @@ fn write_zisk_main_report_columns(
     segment: ZiskMainTraceSegmentInfo,
     #[cfg(feature = "cuda")] device_trace_descriptors: &mut Option<ZiskMainDeviceTraceDescriptors>,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
+    _detail_timing: bool,
 ) -> Result<usize, GuestPcTraceBackendError> {
+    #[cfg(feature = "cuda")]
+    let descriptor_rows_before = device_trace_descriptors
+        .as_ref()
+        .map(ZiskMainDeviceTraceDescriptors::descriptor_rows)
+        .unwrap_or(0);
     validate_and_apply_zisk_main_report(
         row,
         reports.current,
@@ -3721,6 +3758,7 @@ fn write_zisk_main_report_columns(
                 let _descriptor_timer = DurationTimer::new(
                     timing
                         .as_deref_mut()
+                        .filter(|_| _detail_timing)
                         .map(|timing| &mut timing.trace_descriptor_duration),
                 );
                 append_zisk_main_device_trace_descriptor(descriptors, &values)?;
@@ -3733,6 +3771,17 @@ fn write_zisk_main_report_columns(
             write_zisk_main_row_columns(builder, output_row, values, columns)
         },
     )
+    .inspect(|_| {
+        #[cfg(feature = "cuda")]
+        if let Some(timing) = timing.as_deref_mut() {
+            let descriptor_rows_after = device_trace_descriptors
+                .as_ref()
+                .map(ZiskMainDeviceTraceDescriptors::descriptor_rows)
+                .unwrap_or(0);
+            timing.trace_descriptor_row_count +=
+                descriptor_rows_after.saturating_sub(descriptor_rows_before);
+        }
+    })
 }
 
 fn write_zisk_main_row_columns(

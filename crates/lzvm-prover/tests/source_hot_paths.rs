@@ -3488,7 +3488,12 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
     let accel_lib_source =
         std::fs::read_to_string(&accel_lib_path).expect("lzvm-accel lib source should read");
     let cli_path = crate_root.join("../lzvm-cli/src/prove_witness.rs");
-    let cli_source = std::fs::read_to_string(&cli_path).expect("prove witness source should read");
+    let cli_root_source =
+        std::fs::read_to_string(&cli_path).expect("prove witness source should read");
+    let cli_timing_path = crate_root.join("../lzvm-cli/src/prove_witness/timing.rs");
+    let cli_timing_source =
+        std::fs::read_to_string(&cli_timing_path).expect("prove witness timing source should read");
+    let cli_source = format!("{cli_root_source}\n{cli_timing_source}");
 
     for field in [
         "cuda_malloc_bytes",
@@ -3588,6 +3593,9 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "trace_report_duration",
         "trace_emit_duration",
         "trace_descriptor_duration",
+        "trace_report_count",
+        "trace_report_row_count",
+        "trace_descriptor_row_count",
     ] {
         assert!(
             backend_source.contains(field),
@@ -3623,6 +3631,9 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest_trace_report_duration",
         "guest_trace_emit_duration",
         "guest_trace_descriptor_duration",
+        "guest_trace_report_count",
+        "guest_trace_report_row_count",
+        "guest_trace_descriptor_row_count",
     ] {
         assert!(
             execution_source.contains(field),
@@ -3634,6 +3645,9 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_report\"",
         "\"guest_trace_emit\"",
         "\"guest_trace_descriptor\"",
+        "\"guest_trace_reports\"",
+        "\"guest_trace_report_rows\"",
+        "\"guest_trace_descriptor_rows\"",
     ] {
         assert!(
             cli_source.contains(line_name),

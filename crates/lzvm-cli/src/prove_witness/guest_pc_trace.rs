@@ -72,6 +72,15 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_descriptor",
         timing.guest_trace_descriptor_duration(),
     );
+    timings.record_count("guest_trace_reports", timing.guest_trace_report_count());
+    timings.record_count(
+        "guest_trace_report_rows",
+        timing.guest_trace_report_row_count(),
+    );
+    timings.record_count(
+        "guest_trace_descriptor_rows",
+        timing.guest_trace_descriptor_row_count(),
+    );
     timings.record(
         "guest_trace_pending_send_wait",
         timing.guest_trace_pending_send_wait_duration(),
