@@ -26,6 +26,7 @@ struct CachedAllocation {
 constexpr std::size_t kMaxCachedBytes = std::size_t{16} << 30;
 constexpr std::size_t kMaxCachedBlocksPerSize = 2;
 constexpr std::size_t kPinnedCopyThreshold = std::size_t{1} << 20;
+constexpr std::size_t kPendingCacheNoWaitBytes = std::size_t{1} << 20;
 
 std::mutex g_allocator_mutex;
 std::unordered_map<void*, AllocationRecord> g_active_allocations;
@@ -262,6 +263,11 @@ int alloc_bytes_impl(void** out, std::size_t bytes) {
                 continue;
             }
             return status;
+        }
+        if (pending_index != std::numeric_limits<std::size_t>::max()) {
+            if (bytes <= kPendingCacheNoWaitBytes) {
+                pending_index = std::numeric_limits<std::size_t>::max();
+            }
         }
         if (pending_index != std::numeric_limits<std::size_t>::max()) {
             CachedAllocation& allocation = g_cached_allocations[pending_index];
