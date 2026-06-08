@@ -64,6 +64,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence",
             "runtime_pipeline_binding_checked_acceptance_runtime_artifact_soundness_obligations",
             "runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract",
+            "runtime_pipeline_binding_required_external_source_verifier_core_contract",
         ],
     );
     assert!(theorem_prefix(
@@ -115,6 +116,19 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("system.accepts publicInput proof"),
         "accepts plus full soundness contract should expose verifier acceptance"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_required_external_source_verifier_core_contract"
+        )
+        .contains("ExternalSourceOpeningEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_verifier_core_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof"),
+        "pipeline required external-source projection should expose external evidence and verifier core contract"
     );
     assert!(
         lean_source.contains("runtime_trace_constraint_required_external_source_pcs_sound")

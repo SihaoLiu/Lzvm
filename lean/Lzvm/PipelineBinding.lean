@@ -887,6 +887,53 @@ theorem runtime_pipeline_binding_required_external_source_sound
       traceRequired.right.left,
       pipelineSound.right⟩
 
+theorem runtime_pipeline_binding_required_external_source_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have requiredSound :=
+    runtime_pipeline_binding_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  cases requiredSound with
+  | intro _pipelineEvidence tail =>
+    cases tail with
+    | intro traceExternalEvidence tail =>
+      cases tail with
+      | intro openingExternalEvidence tail =>
+        cases tail with
+        | intro _pcsOpeningsValid soundWitness =>
+          exact
+            And.intro traceExternalEvidence
+              (And.intro openingExternalEvidence
+                (sound_witness_implies_verifier_core_contract soundWitness))
+
 theorem runtime_pipeline_binding_checked_acceptance_core_obligations
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
