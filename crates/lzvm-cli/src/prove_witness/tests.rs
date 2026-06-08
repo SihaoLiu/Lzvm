@@ -154,6 +154,7 @@ fn writes_timing_count_summary_lines_without_ms_suffix() {
 #[test]
 fn proof_artifact_timing_reports_parent_hash_shape_counts() {
     let timing = lzvm_prover::WitnessProofArtifactTiming {
+        witness_opening_path_parent_hash: std::time::Duration::from_millis(9),
         witness_opening_path_parent_hash_row_count: 120,
         witness_opening_path_parent_hash_launch_count: 12,
         witness_opening_query_count: 3,
@@ -168,6 +169,7 @@ fn proof_artifact_timing_reports_parent_hash_shape_counts() {
     write_timing_summary(&mut stdout, &timings);
     let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
 
+    assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_ms=9\n"));
     assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_rows_per_query=40\n"));
     assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_rows_per_stage=30\n"));
     assert!(
@@ -257,6 +259,7 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
             leaf_coset_extend_normalize_launch_count: 20,
             leaf_coset_extend_pack_launch_count: 21,
             leaf_coset_extend_unpack_launch_count: 22,
+            path_parent_hash: std::time::Duration::from_millis(47),
             path_parent_hash_row_count: 23,
             path_parent_hash_byte_count: 24,
             path_parent_hash_launch_count: 25,
@@ -308,6 +311,7 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
         "timing_finish_witness_stage_7_opening_leaf_coset_extend_normalize_launches=20\n",
         "timing_finish_witness_stage_7_opening_leaf_coset_extend_pack_launches=21\n",
         "timing_finish_witness_stage_7_opening_leaf_coset_extend_unpack_launches=22\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_ms=47\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_rows=23\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_bytes=24\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_launches=25\n",

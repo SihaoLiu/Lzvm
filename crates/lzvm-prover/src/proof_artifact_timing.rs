@@ -43,6 +43,7 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_leaf_coset_extend_normalize_launch_count: usize,
     pub witness_opening_leaf_coset_extend_pack_launch_count: usize,
     pub witness_opening_leaf_coset_extend_unpack_launch_count: usize,
+    pub witness_opening_path_parent_hash: Duration,
     pub witness_opening_path_parent_hash_row_count: usize,
     pub witness_opening_path_parent_hash_byte_count: usize,
     pub witness_opening_path_parent_hash_launch_count: usize,
@@ -115,6 +116,7 @@ pub struct WitnessProofStageOpeningWork {
     pub leaf_coset_extend_normalize_launch_count: usize,
     pub leaf_coset_extend_pack_launch_count: usize,
     pub leaf_coset_extend_unpack_launch_count: usize,
+    pub path_parent_hash: Duration,
     pub path_parent_hash_row_count: usize,
     pub path_parent_hash_byte_count: usize,
     pub path_parent_hash_launch_count: usize,
@@ -170,6 +172,7 @@ impl WitnessProofStageOpeningWork {
             timing.leaf_coset_extend_normalize_launch_count;
         self.leaf_coset_extend_pack_launch_count += timing.leaf_coset_extend_pack_launch_count;
         self.leaf_coset_extend_unpack_launch_count += timing.leaf_coset_extend_unpack_launch_count;
+        self.path_parent_hash += timing.path_parent_hash;
         self.path_parent_hash_row_count += timing.path_parent_hash_row_count;
         self.path_parent_hash_byte_count += timing.path_parent_hash_byte_count;
         self.path_parent_hash_launch_count += timing.path_parent_hash_launch_count;
@@ -329,6 +332,7 @@ impl WitnessProofArtifactTiming {
             timing.leaf_coset_extend_pack_launch_count;
         self.witness_opening_leaf_coset_extend_unpack_launch_count +=
             timing.leaf_coset_extend_unpack_launch_count;
+        self.witness_opening_path_parent_hash += timing.path_parent_hash;
         self.witness_opening_path_parent_hash_row_count += timing.path_parent_hash_row_count;
         self.witness_opening_path_parent_hash_byte_count += timing.path_parent_hash_byte_count;
         self.witness_opening_path_parent_hash_launch_count += timing.path_parent_hash_launch_count;

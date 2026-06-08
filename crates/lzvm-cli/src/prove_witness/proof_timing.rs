@@ -156,6 +156,10 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_leaf_coset_extend_unpack_launches",
         timing.witness_opening_leaf_coset_extend_unpack_launch_count,
     );
+    timings.record(
+        "finish_witness_opening_path_parent_hash",
+        timing.witness_opening_path_parent_hash,
+    );
     timings.record_count(
         "finish_witness_opening_path_parent_hash_rows",
         timing.witness_opening_path_parent_hash_row_count,
@@ -437,6 +441,13 @@ pub(super) fn record_proof_artifact_timing(
                 stage_work.stage_index
             ),
             stage_work.path_parent_hash_row_count,
+        );
+        timings.record_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_path_parent_hash",
+                stage_work.stage_index
+            ),
+            stage_work.path_parent_hash,
         );
         timings.record_count_dynamic(
             format!(
