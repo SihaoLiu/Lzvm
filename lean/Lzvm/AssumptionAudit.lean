@@ -60,4 +60,10 @@ theorem cryptographic_assumptions_carry_required_evidence
                 (And.intro assumptions.friSoundness.friLowDegreeSoundness.evidence
                   assumptions.friSoundness.friQuerySoundness.evidence))))))
 
+theorem assumption_bundle_carries_required_crypto_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    RequiredCryptographicAssumptionStatements assumptions.crypto := by
+  exact cryptographic_assumptions_carry_required_evidence assumptions.crypto
+
 end Lzvm

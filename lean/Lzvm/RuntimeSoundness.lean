@@ -4,6 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
+import Lzvm.AssumptionAudit
 import Lzvm.RequiredExternalSource
 import Lzvm.TranscriptBinding
 
@@ -181,6 +182,41 @@ theorem runtime_soundness_checked_acceptance_sound
       proof
       checked.left
   exact And.intro evidence transcriptSound.right.right.right
+
+theorem runtime_soundness_checked_acceptance_audited_assumptions
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RuntimeSoundnessEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have audited :=
+    assumption_bundle_carries_required_crypto_evidence assumptions
+  have sound :=
+    runtime_soundness_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact And.intro audited sound
 
 theorem runtime_soundness_checked_acceptance_core_obligations
     {system : VerifierModel}
