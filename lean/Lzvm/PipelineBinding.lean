@@ -558,6 +558,36 @@ theorem runtime_pipeline_binding_checked_acceptance_sound
         friQueriesValid⟩,
       soundWitness⟩
 
+theorem runtime_pipeline_binding_checked_acceptance_pipeline_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimePipelineBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact sound.left
+
 theorem runtime_pipeline_binding_checked_acceptance_audited_assumptions
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

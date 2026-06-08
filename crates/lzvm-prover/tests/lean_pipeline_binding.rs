@@ -34,12 +34,16 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         &[
             "runtime_pipeline_binding_required_external_source_sound",
+            "runtime_pipeline_binding_checked_acceptance_pipeline_evidence",
             "runtime_pipeline_binding_checked_acceptance_sound",
             "runtime_pipeline_binding_evidence_implies_transcript_bound",
+            "runtime_pipeline_binding_evidence_implies_public_input_bound",
             "runtime_pipeline_binding_checked_acceptance_transcript_bound",
             "runtime_pipeline_binding_checked_acceptance_public_input_bound",
             "runtime_pipeline_binding_evidence_implies_pcs_and_fri",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri",
+            "runtime_pipeline_binding_evidence_implies_core_obligations",
+            "runtime_pipeline_binding_evidence_implies_execution_obligations",
             "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
@@ -66,6 +70,19 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence"
     )
     .contains("(validation : RuntimePipelineBindingValidation system)"));
+    assert!(theorem_prefix(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_pipeline_evidence"
+    )
+    .contains("(validation : RuntimePipelineBindingValidation system)"));
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_pipeline_evidence"
+        )
+        .contains("(assumptions : AssumptionBundle system)"),
+        "pipeline evidence projection should require the audited assumption bundle"
+    );
     assert!(
         !theorem_prefix(
             &lean_source,
