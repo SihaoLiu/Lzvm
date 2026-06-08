@@ -60,6 +60,14 @@ pub(crate) struct ParsedRunArgs {
 
 pub(crate) const GUEST_PC_TRACE_WITNESS_THREAD_POOLS: usize = 32;
 
+fn cuda_backend_status() -> &'static str {
+    if cfg!(feature = "cuda") {
+        "enabled"
+    } else {
+        "disabled"
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PassSelection {
     Full,
@@ -416,6 +424,7 @@ pub(crate) fn write_run_plan_summary(stdout: &mut dyn Write, plan: &ProveRunPlan
     let _ = writeln!(stdout, "minimal_memory={}", plan.options.minimal_memory);
     let _ = writeln!(stdout, "output={}", plan.options.output_dir.display());
     let _ = writeln!(stdout, "gpu_preallocate={}", plan.gpu.preallocate);
+    let _ = writeln!(stdout, "cuda_backend={}", cuda_backend_status());
     let _ = writeln!(stdout, "gpu_streams={}", plan.gpu.max_streams);
     let _ = writeln!(
         stdout,
@@ -847,6 +856,14 @@ mod tests {
 
         assert!(text.contains("pass=internal\n"));
         assert!(text.contains("contribution_count=3\n"));
+        assert!(text.contains(&format!(
+            "cuda_backend={}\n",
+            if cfg!(feature = "cuda") {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        )));
         assert!(!text.contains("partitions="));
     }
 }
