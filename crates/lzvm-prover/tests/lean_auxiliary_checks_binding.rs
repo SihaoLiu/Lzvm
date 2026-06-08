@@ -21,6 +21,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let fri_fold_path = crate_root.join("src/pcs_fri/fold.rs");
     let fri_fold_source =
         std::fs::read_to_string(&fri_fold_path).expect("FRI fold source should read");
+    let merkle_path = crate_root.join("src/merkle_hash.rs");
+    let merkle_source =
+        std::fs::read_to_string(&merkle_path).expect("Merkle hash source should read");
     let cuda_field_test_path = crate_root.join("../lzvm-accel/tests/cuda_field.rs");
     let cuda_field_test_source =
         std::fs::read_to_string(&cuda_field_test_path).expect("CUDA field tests should read");
@@ -45,6 +48,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuCosetExtensionCheckedAcceptance")
             && lean_source.contains("GpuFriFoldInterpolationValidation")
             && lean_source.contains("GpuFriFoldInterpolationCheckedAcceptance")
+            && lean_source.contains("GpuMerkleDigestPrefixBatchValidation")
+            && lean_source.contains("GpuMerkleDigestPrefixBatchCheckedAcceptance")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean auxiliary checks should expose checked acceptance structures and verifier core clauses"
@@ -63,6 +68,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_source.contains("gpuFriInterpolationMatchesHost")
             && lean_source.contains("gpuFriInterpolationImpliesFriFoldsValid"),
         "Lean auxiliary checks should bind GPU FRI interpolation evidence to FRI fold validity"
+    );
+    assert!(
+        lean_source.contains("gpuMerkleDigestPrefixBatchMatchesSinglePaths")
+            && lean_source.contains("gpuMerkleDigestPrefixBatchImpliesLowerPrefixesBound"),
+        "Lean auxiliary checks should bind GPU Merkle prefix batches to lower-prefix path evidence"
     );
     for field in [
         "sourceExtendMilliseconds",
@@ -233,6 +243,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && cuda_field_test_source.contains("cuda_computes_inverse_ntt"),
         "runtime FRI fold interpolation should use CUDA INTT with CUDA correctness coverage"
     );
+    assert!(
+        merkle_source.contains("opening_path_prefix_batch_for_source_rows")
+            && merkle_source
+                .contains("cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device")
+            && merkle_source
+                .contains("cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device")
+            && cuda_field_test_source.contains(
+                "cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_matches_path_prefixes"
+            )
+            && cuda_field_test_source.contains(
+                "cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_matches_path_prefixes"
+            ),
+        "runtime retained checkpoint lower-prefix openings should use CUDA prefix batches with CUDA correctness coverage"
+    );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
@@ -261,6 +285,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_fri_interpolation_matches_host_implies_fri_folds_valid",
             "gpu_fri_fold_interpolation_checked_acceptance_sound",
             "gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract",
+            "gpu_merkle_digest_prefix_batch_matches_single_paths_implies_lower_prefixes_bound",
+            "gpu_merkle_digest_prefix_batch_checked_acceptance_sound",
+            "gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract",
         ],
     );
 }

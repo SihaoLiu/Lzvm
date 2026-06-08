@@ -46,6 +46,14 @@ structure GpuFriFoldInterpolationValidation (system : VerifierModel) where
       gpuFriInterpolationMatchesHost publicInput proof ->
         friFoldsValid publicInput proof
 
+structure GpuMerkleDigestPrefixBatchValidation (system : VerifierModel) where
+  gpuMerkleDigestPrefixBatchMatchesSinglePaths : PublicInput -> Proof -> Prop
+  lowerPrefixesBound : PublicInput -> Proof -> Prop
+  gpuMerkleDigestPrefixBatchImpliesLowerPrefixesBound :
+    forall publicInput proof,
+      gpuMerkleDigestPrefixBatchMatchesSinglePaths publicInput proof ->
+        lowerPrefixesBound publicInput proof
+
 structure TimingObservation where
   label : Nat
   milliseconds : Nat
@@ -249,6 +257,14 @@ def GpuFriFoldInterpolationCheckedAcceptance
   system.accepts publicInput proof
     /\ validation.gpuFriInterpolationMatchesHost publicInput proof
 
+def GpuMerkleDigestPrefixBatchCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GpuMerkleDigestPrefixBatchValidation system)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.gpuMerkleDigestPrefixBatchMatchesSinglePaths publicInput proof
+
 theorem source_lookup_auxiliary_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -432,6 +448,54 @@ theorem gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract
   intro publicInput proof checked
   have sound :=
     gpu_fri_fold_interpolation_checked_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
+
+theorem gpu_merkle_digest_prefix_batch_matches_single_paths_implies_lower_prefixes_bound
+    {system : VerifierModel}
+    (validation : GpuMerkleDigestPrefixBatchValidation system) :
+    forall publicInput proof,
+      validation.gpuMerkleDigestPrefixBatchMatchesSinglePaths publicInput proof ->
+        validation.lowerPrefixesBound publicInput proof := by
+  intro publicInput proof prefixBatchMatchesSinglePaths
+  exact
+    validation.gpuMerkleDigestPrefixBatchImpliesLowerPrefixesBound
+      publicInput
+      proof
+      prefixBatchMatchesSinglePaths
+
+theorem gpu_merkle_digest_prefix_batch_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuMerkleDigestPrefixBatchValidation system) :
+    forall publicInput proof,
+      GpuMerkleDigestPrefixBatchCheckedAcceptance system validation publicInput proof ->
+        validation.lowerPrefixesBound publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (gpu_merkle_digest_prefix_batch_matches_single_paths_implies_lower_prefixes_bound
+        validation
+        publicInput
+        proof
+        checked.right)
+      (abstract_verifier_sound assumptions publicInput proof checked.left)
+
+theorem gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuMerkleDigestPrefixBatchValidation system) :
+    forall publicInput proof,
+      GpuMerkleDigestPrefixBatchCheckedAcceptance system validation publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_merkle_digest_prefix_batch_checked_acceptance_sound
       assumptions
       validation
       publicInput
