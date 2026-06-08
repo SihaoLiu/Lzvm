@@ -731,6 +731,29 @@ theorem runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence
   intro evidence
   exact evidence.right.right.right.right.right.right.right.right.left.left
 
+theorem runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RuntimeArtifactEvidence
+        system
+        validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+        artifact
+        publicInput
+        proof := by
+  intro evidence
+  exact evidence.right.right.left
+
 theorem runtime_pipeline_binding_required_external_source_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1446,6 +1469,53 @@ theorem runtime_pipeline_binding_checked_acceptance_verifier_core_contract
       proof
       accepted
   exact And.intro verifierAccepts coreObligations
+
+theorem runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeArtifactEvidence
+          system
+          validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have ethAccepted :=
+    runtime_pipeline_binding_checked_acceptance_eth
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactAccepted :=
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
+      validation.ethBindingValidation
+      artifact
+      publicInput
+      proof
+      ethAccepted
+  let proofArtifactValidation :=
+    validation.ethBindingValidation.proofArtifactBindingValidation
+  have runtimeAccepted :=
+    proofArtifactValidation.bindingAcceptedImpliesRuntimeAccepted
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  exact
+    runtime_artifact_checked_acceptance_evidence
+      proofArtifactValidation.runtimeValidation
+      artifact
+      publicInput
+      proof
+      runtimeAccepted
 
 theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_contract
     {system : VerifierModel}

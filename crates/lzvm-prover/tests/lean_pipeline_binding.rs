@@ -41,6 +41,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_implies_pcs_and_fri",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri",
             "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
+            "runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
@@ -56,7 +57,21 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_verifier_core_contract",
             "runtime_pipeline_binding_checked_acceptance_execution_obligations",
             "runtime_pipeline_binding_checked_acceptance_runtime_soundness_contract",
+            "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence",
         ],
+    );
+    assert!(theorem_prefix(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence"
+    )
+    .contains("(validation : RuntimePipelineBindingValidation system)"));
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence"
+        )
+        .contains("AssumptionBundle"),
+        "runtime artifact evidence projection should not require cryptographic assumptions"
     );
     assert!(
         lean_source.contains("runtime_trace_constraint_required_external_source_pcs_sound")
@@ -106,4 +121,14 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 .contains("build_pcs_fri_opening_segment_from_transcript_values"),
         "proof artifact building should keep query-plan, transcript, and opening builders wired together"
     );
+}
+
+fn theorem_prefix(source: &str, name: &str) -> String {
+    let theorem_start = source
+        .find(&format!("theorem {name}"))
+        .unwrap_or_else(|| panic!("Lean source should contain theorem {name}"));
+    let proof_start = source[theorem_start..]
+        .find(" := by")
+        .unwrap_or_else(|| panic!("Lean theorem {name} should have a proof body"));
+    source[theorem_start..theorem_start + proof_start].to_owned()
 }
