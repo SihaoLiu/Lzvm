@@ -20,6 +20,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
     assert!(
         lean_source.contains("RuntimeSoundnessValidation")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
+            && lean_source.contains("system.publicInputBound publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean runtime soundness should expose checked soundness and verifier core projection"
     );
@@ -27,6 +28,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         &lean_source,
         &[
             "runtime_soundness_checked_acceptance_sound",
+            "runtime_soundness_evidence_implies_public_input_bound",
             "runtime_soundness_checked_acceptance_core_obligations",
             "runtime_soundness_checked_acceptance_verifier_core_contract",
             "runtime_soundness_required_external_source_pcs_sound",
