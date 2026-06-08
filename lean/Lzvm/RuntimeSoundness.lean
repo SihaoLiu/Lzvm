@@ -334,6 +334,48 @@ theorem runtime_soundness_required_external_source_sound
       checked
   exact And.intro evidence (And.intro externalEvidence sound.right)
 
+theorem runtime_soundness_required_external_source_pcs_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          ExternalSourceOpeningEvidence
+              system
+              validation.sourceValidation
+              publicInput
+              proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have requiredSound :=
+    runtime_soundness_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  have externalEvidence := requiredSound.right.left
+  have pcsOpenings :=
+    external_source_opening_evidence_implies_pcs_openings
+      validation.sourceValidation
+      publicInput
+      proof
+      externalEvidence
+  exact
+    And.intro externalEvidence
+      (And.intro pcsOpenings requiredSound.right.right)
+
 theorem runtime_soundness_required_external_source_verifier_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

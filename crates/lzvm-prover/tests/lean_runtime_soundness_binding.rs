@@ -29,6 +29,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_sound",
             "runtime_soundness_checked_acceptance_core_obligations",
             "runtime_soundness_checked_acceptance_verifier_core_contract",
+            "runtime_soundness_required_external_source_pcs_sound",
             "runtime_soundness_required_external_source_verifier_core_contract",
         ],
     );
