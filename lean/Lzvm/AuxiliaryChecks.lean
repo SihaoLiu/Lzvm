@@ -134,6 +134,10 @@ structure ProverGpuModeSummary where
   proverGpuModeName : Nat
 deriving DecidableEq, Repr
 
+structure CudaBackendSummary where
+  cudaBackendEnabled : Bool
+deriving DecidableEq, Repr
+
 structure GpuSetupCacheState where
   device : Nat
   initializedBits : Nat
@@ -695,6 +699,40 @@ theorem prover_gpu_mode_acceptance_verifier_core_contract
   exact
     sound_witness_implies_verifier_core_contract
       (prover_gpu_mode_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
+def CudaBackendObservedAcceptance
+    (system : VerifierModel)
+    (_summary : Option CudaBackendSummary)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+
+theorem cuda_backend_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option CudaBackendSummary) :
+    forall publicInput proof,
+      CudaBackendObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithCudaBackend
+  exact abstract_verifier_sound assumptions publicInput proof acceptedWithCudaBackend
+
+theorem cuda_backend_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option CudaBackendSummary) :
+    forall publicInput proof,
+      CudaBackendObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (cuda_backend_acceptance_sound
         assumptions
         summary
         publicInput
