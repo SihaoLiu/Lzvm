@@ -12,6 +12,7 @@ import Lzvm.Conformance
 import Lzvm.DigestPrefix
 import Lzvm.EthBlockPublicInputBinding
 import Lzvm.ExternalSource
+import Lzvm.Model
 import Lzvm.ProofArtifactBinding
 import Lzvm.OpeningValidation
 import Lzvm.OpeningSegmentBinding
