@@ -3437,6 +3437,106 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
 }
 
 #[test]
+fn cuda_allocator_timing_reports_pending_wait_shape() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let native_header_path = crate_root.join("../lzvm-accel/native/cuda_host.hpp");
+    let native_header =
+        std::fs::read_to_string(&native_header_path).expect("CUDA host header should read");
+    let native_source_path = crate_root.join("../lzvm-accel/native/cuda_host.cpp");
+    let native_source =
+        std::fs::read_to_string(&native_source_path).expect("CUDA host source should read");
+    let accel_path = crate_root.join("../lzvm-accel/src/cuda_allocator.rs");
+    let accel_source =
+        std::fs::read_to_string(&accel_path).expect("CUDA allocator source should read");
+    let accel_lib_path = crate_root.join("../lzvm-accel/src/lib.rs");
+    let accel_lib_source =
+        std::fs::read_to_string(&accel_lib_path).expect("lzvm-accel lib source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness.rs");
+    let cli_source = std::fs::read_to_string(&cli_path).expect("prove witness source should read");
+
+    for field in [
+        "cuda_malloc_bytes",
+        "cuda_event_query_calls",
+        "cuda_event_query_ready_count",
+        "cuda_event_query_not_ready_count",
+        "cuda_event_synchronize_calls",
+        "cuda_event_synchronize_bytes",
+        "cuda_event_synchronize_max_bytes",
+        "cached_reuse_count",
+        "pending_reuse_count",
+        "no_wait_bypass_count",
+        "no_wait_bypass_bytes",
+    ] {
+        assert!(
+            native_header.contains(field)
+                && native_source.contains(field)
+                && accel_source.contains(field),
+            "CUDA allocator stats should expose {field}"
+        );
+    }
+
+    let alloc_body = function_body(
+        &native_source,
+        "int alloc_bytes_impl(void** out, std::size_t bytes)",
+        "void free_bytes_impl(void* ptr)",
+    );
+    assert!(
+        alloc_body.contains("cudaEventQuery") && alloc_body.contains("g_cuda_event_query_calls"),
+        "allocator cache probing should count CUDA event queries"
+    );
+    assert!(
+        alloc_body.contains("cudaErrorNotReady")
+            && alloc_body.contains("g_cuda_event_query_not_ready_count"),
+        "allocator cache probing should count pending cache events"
+    );
+    assert!(
+        alloc_body.contains("cudaEventSynchronize")
+            && alloc_body.contains("g_cuda_event_synchronize_calls")
+            && alloc_body.contains("g_cuda_event_synchronize_bytes"),
+        "allocator pending reuse should count event synchronizations and bytes"
+    );
+    assert!(
+        alloc_body.contains("kPendingCacheNoWaitBytes")
+            && alloc_body.contains("g_cuda_no_wait_bypass_count")
+            && alloc_body.contains("g_cuda_no_wait_bypass_bytes"),
+        "allocator no-wait bypass should count bypassed pending cache entries"
+    );
+
+    assert!(
+        accel_source.contains("pub struct CudaAllocatorStats")
+            && accel_source.contains("pub fn cuda_allocator_stats()")
+            && accel_lib_source.contains("pub use cuda_allocator::{"),
+        "lzvm-accel should export CUDA allocator stats for CLI timing"
+    );
+    assert!(
+        cli_source.contains("record_cuda_allocator_timing")
+            && cli_source.contains("cuda_allocator_stats()"),
+        "prove witness should record allocator stats before writing timing summaries"
+    );
+    for line_name in [
+        "\"cuda_allocator_malloc_calls\"",
+        "\"cuda_allocator_malloc_bytes\"",
+        "\"cuda_allocator_cached_blocks\"",
+        "\"cuda_allocator_cached_bytes\"",
+        "\"cuda_allocator_event_query_calls\"",
+        "\"cuda_allocator_event_query_ready\"",
+        "\"cuda_allocator_event_query_not_ready\"",
+        "\"cuda_allocator_event_synchronize_calls\"",
+        "\"cuda_allocator_event_synchronize_bytes\"",
+        "\"cuda_allocator_event_synchronize_max_bytes\"",
+        "\"cuda_allocator_cached_reuse_count\"",
+        "\"cuda_allocator_pending_reuse_count\"",
+        "\"cuda_allocator_no_wait_bypass_count\"",
+        "\"cuda_allocator_no_wait_bypass_bytes\"",
+    ] {
+        assert!(
+            cli_source.contains(line_name),
+            "CLI timing output should include {line_name}"
+        );
+    }
+}
+
+#[test]
 fn guest_pc_trace_lower_reports_internal_work_timing() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

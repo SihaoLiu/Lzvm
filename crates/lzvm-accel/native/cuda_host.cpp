@@ -32,8 +32,19 @@ std::mutex g_allocator_mutex;
 std::unordered_map<void*, AllocationRecord> g_active_allocations;
 std::vector<CachedAllocation> g_cached_allocations;
 std::size_t g_cuda_malloc_calls = 0;
+std::size_t g_cuda_malloc_bytes = 0;
 std::size_t g_cuda_free_calls = 0;
 std::size_t g_cuda_device_synchronize_calls = 0;
+std::size_t g_cuda_event_query_calls = 0;
+std::size_t g_cuda_event_query_ready_count = 0;
+std::size_t g_cuda_event_query_not_ready_count = 0;
+std::size_t g_cuda_event_synchronize_calls = 0;
+std::size_t g_cuda_event_synchronize_bytes = 0;
+std::size_t g_cuda_event_synchronize_max_bytes = 0;
+std::size_t g_cuda_cached_reuse_count = 0;
+std::size_t g_cuda_pending_reuse_count = 0;
+std::size_t g_cuda_no_wait_bypass_count = 0;
+std::size_t g_cuda_no_wait_bypass_bytes = 0;
 
 struct RegisteredHostRange {
     void* base = nullptr;
@@ -172,6 +183,11 @@ int free_cached_allocation_on_device(const CachedAllocation& allocation) {
     int previous_device = -1;
     int status = set_allocation_device(allocation.device, &previous_device);
     if (status == 0 && allocation.ready_event != nullptr) {
+        ++g_cuda_event_synchronize_calls;
+        g_cuda_event_synchronize_bytes += allocation.bytes;
+        if (allocation.bytes > g_cuda_event_synchronize_max_bytes) {
+            g_cuda_event_synchronize_max_bytes = allocation.bytes;
+        }
         status = static_cast<int>(cudaEventSynchronize(allocation.ready_event));
         const int destroy_status = static_cast<int>(cudaEventDestroy(allocation.ready_event));
         status = first_status(status, destroy_status);
@@ -250,11 +266,22 @@ int alloc_bytes_impl(void** out, std::size_t bytes) {
             if (allocation.device != device || allocation.bytes != bytes) {
                 continue;
             }
-            const int status = allocation.ready_event == nullptr
-                                   ? cudaSuccess
-                                   : static_cast<int>(cudaEventQuery(allocation.ready_event));
+            int status = cudaSuccess;
+            if (allocation.ready_event != nullptr) {
+                ++g_cuda_event_query_calls;
+                status = static_cast<int>(cudaEventQuery(allocation.ready_event));
+                if (status == cudaSuccess) {
+                    ++g_cuda_event_query_ready_count;
+                } else if (status == cudaErrorNotReady) {
+                    ++g_cuda_event_query_not_ready_count;
+                }
+            }
             if (status == cudaSuccess) {
-                return reuse_cached_allocation_locked(index, out);
+                const int reuse_status = reuse_cached_allocation_locked(index, out);
+                if (reuse_status == 0) {
+                    ++g_cuda_cached_reuse_count;
+                }
+                return reuse_status;
             }
             if (status == cudaErrorNotReady) {
                 if (pending_index == std::numeric_limits<std::size_t>::max()) {
@@ -266,18 +293,29 @@ int alloc_bytes_impl(void** out, std::size_t bytes) {
         }
         if (pending_index != std::numeric_limits<std::size_t>::max()) {
             if (bytes <= kPendingCacheNoWaitBytes) {
+                ++g_cuda_no_wait_bypass_count;
+                g_cuda_no_wait_bypass_bytes += bytes;
                 pending_index = std::numeric_limits<std::size_t>::max();
             }
         }
         if (pending_index != std::numeric_limits<std::size_t>::max()) {
             CachedAllocation& allocation = g_cached_allocations[pending_index];
             if (allocation.ready_event != nullptr) {
+                ++g_cuda_event_synchronize_calls;
+                g_cuda_event_synchronize_bytes += allocation.bytes;
+                if (allocation.bytes > g_cuda_event_synchronize_max_bytes) {
+                    g_cuda_event_synchronize_max_bytes = allocation.bytes;
+                }
                 const int status = static_cast<int>(cudaEventSynchronize(allocation.ready_event));
                 if (status != 0) {
                     return status;
                 }
             }
-            return reuse_cached_allocation_locked(pending_index, out);
+            const int reuse_status = reuse_cached_allocation_locked(pending_index, out);
+            if (reuse_status == 0) {
+                ++g_cuda_pending_reuse_count;
+            }
+            return reuse_status;
         }
     }
 
@@ -316,6 +354,7 @@ int alloc_bytes_impl(void** out, std::size_t bytes) {
         *out = ptr;
         std::lock_guard<std::mutex> lock(g_allocator_mutex);
         ++g_cuda_malloc_calls;
+        g_cuda_malloc_bytes += bytes;
     }
     return status;
 }
@@ -408,8 +447,19 @@ extern "C" int lzvm_cuda_allocator_clear_cache(void) {
         const int status = release_cached_blocks_locked();
         if (status == 0) {
             g_cuda_malloc_calls = 0;
+            g_cuda_malloc_bytes = 0;
             g_cuda_free_calls = 0;
             g_cuda_device_synchronize_calls = 0;
+            g_cuda_event_query_calls = 0;
+            g_cuda_event_query_ready_count = 0;
+            g_cuda_event_query_not_ready_count = 0;
+            g_cuda_event_synchronize_calls = 0;
+            g_cuda_event_synchronize_bytes = 0;
+            g_cuda_event_synchronize_max_bytes = 0;
+            g_cuda_cached_reuse_count = 0;
+            g_cuda_pending_reuse_count = 0;
+            g_cuda_no_wait_bypass_count = 0;
+            g_cuda_no_wait_bypass_bytes = 0;
         }
         return status;
     } catch (...) {
@@ -424,10 +474,21 @@ extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out) {
         }
         std::lock_guard<std::mutex> lock(g_allocator_mutex);
         out->cuda_malloc_calls = g_cuda_malloc_calls;
+        out->cuda_malloc_bytes = g_cuda_malloc_bytes;
         out->cuda_free_calls = g_cuda_free_calls;
         out->cuda_device_synchronize_calls = g_cuda_device_synchronize_calls;
         out->cached_blocks = g_cached_allocations.size();
         out->cached_bytes = cached_bytes_locked();
+        out->cuda_event_query_calls = g_cuda_event_query_calls;
+        out->cuda_event_query_ready_count = g_cuda_event_query_ready_count;
+        out->cuda_event_query_not_ready_count = g_cuda_event_query_not_ready_count;
+        out->cuda_event_synchronize_calls = g_cuda_event_synchronize_calls;
+        out->cuda_event_synchronize_bytes = g_cuda_event_synchronize_bytes;
+        out->cuda_event_synchronize_max_bytes = g_cuda_event_synchronize_max_bytes;
+        out->cached_reuse_count = g_cuda_cached_reuse_count;
+        out->pending_reuse_count = g_cuda_pending_reuse_count;
+        out->no_wait_bypass_count = g_cuda_no_wait_bypass_count;
+        out->no_wait_bypass_bytes = g_cuda_no_wait_bypass_bytes;
         return 0;
     } catch (...) {
         return -1;

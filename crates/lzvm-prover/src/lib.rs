@@ -32,6 +32,9 @@ use lzvm_field::{Felt, FieldError};
 use crate::proof_preflight::{public_values_as_fields, PublicValueFieldError};
 use crate::setup_preflight::{validate_public_values_metadata, SetupPreflightError};
 
+#[cfg(feature = "cuda")]
+pub use lzvm_accel::{cuda_allocator_stats, CudaAllocatorStats};
+
 pub mod constant_opening;
 pub mod constant_tree_opening;
 pub mod contribution;

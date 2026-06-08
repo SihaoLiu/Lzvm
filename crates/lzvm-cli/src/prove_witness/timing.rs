@@ -73,6 +73,11 @@ impl TimingRecorder {
         self.count_entries.push(TimingCountEntry { name, value });
     }
 
+    #[cfg(feature = "cuda")]
+    pub(super) fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
     fn total(&self) -> Duration {
         self.last_mark.duration_since(self.started)
     }

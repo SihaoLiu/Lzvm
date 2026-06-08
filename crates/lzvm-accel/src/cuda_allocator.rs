@@ -8,8 +8,7 @@ unsafe extern "C" {
     fn lzvm_cuda_free_bytes(ptr: *mut c_void);
     #[cfg(test)]
     fn lzvm_cuda_allocator_clear_cache() -> i32;
-    #[cfg(test)]
-    fn lzvm_cuda_allocator_stats(out: *mut LzvmCudaAllocatorStats) -> i32;
+    fn lzvm_cuda_allocator_stats(out: *mut CudaAllocatorStats) -> i32;
 }
 
 pub(crate) fn alloc_bytes(len: usize) -> Result<*mut c_void, AccelError> {
@@ -25,15 +24,32 @@ pub(crate) fn free_bytes(ptr: *mut c_void) {
     }
 }
 
-#[cfg(test)]
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct LzvmCudaAllocatorStats {
-    cuda_malloc_calls: usize,
-    cuda_free_calls: usize,
-    cuda_device_synchronize_calls: usize,
-    cached_blocks: usize,
-    cached_bytes: usize,
+pub struct CudaAllocatorStats {
+    pub cuda_malloc_calls: usize,
+    pub cuda_malloc_bytes: usize,
+    pub cuda_free_calls: usize,
+    pub cuda_device_synchronize_calls: usize,
+    pub cached_blocks: usize,
+    pub cached_bytes: usize,
+    pub cuda_event_query_calls: usize,
+    pub cuda_event_query_ready_count: usize,
+    pub cuda_event_query_not_ready_count: usize,
+    pub cuda_event_synchronize_calls: usize,
+    pub cuda_event_synchronize_bytes: usize,
+    pub cuda_event_synchronize_max_bytes: usize,
+    pub cached_reuse_count: usize,
+    pub pending_reuse_count: usize,
+    pub no_wait_bypass_count: usize,
+    pub no_wait_bypass_bytes: usize,
+}
+
+pub fn cuda_allocator_stats() -> Result<CudaAllocatorStats, AccelError> {
+    let mut stats = CudaAllocatorStats::default();
+    let code = unsafe { lzvm_cuda_allocator_stats(&mut stats) };
+    cuda_status(code)?;
+    Ok(stats)
 }
 
 #[cfg(test)]
@@ -46,13 +62,6 @@ mod tests {
         cuda_status(code).expect("allocator cache should clear");
     }
 
-    fn allocator_stats() -> LzvmCudaAllocatorStats {
-        let mut stats = LzvmCudaAllocatorStats::default();
-        let code = unsafe { lzvm_cuda_allocator_stats(&mut stats) };
-        cuda_status(code).expect("allocator stats should load");
-        stats
-    }
-
     #[test]
     fn cuda_device_buffer_reuses_freed_same_size_allocation_without_device_synchronizing() {
         clear_allocator_cache();
@@ -60,8 +69,9 @@ mod tests {
         {
             let _buffer = CudaDeviceBuffer::new(4096).expect("first allocation should succeed");
         }
-        let after_first = allocator_stats();
+        let after_first = cuda_allocator_stats().expect("allocator stats should load");
         assert_eq!(after_first.cuda_malloc_calls, 1);
+        assert_eq!(after_first.cuda_malloc_bytes, 4096);
         assert_eq!(after_first.cuda_free_calls, 0);
         assert_eq!(after_first.cuda_device_synchronize_calls, 0);
         assert_eq!(after_first.cached_blocks, 1);
@@ -69,11 +79,13 @@ mod tests {
         {
             let _buffer = CudaDeviceBuffer::new(4096).expect("cached allocation should succeed");
         }
-        let after_second = allocator_stats();
+        let after_second = cuda_allocator_stats().expect("allocator stats should load");
 
         assert_eq!(after_second.cuda_malloc_calls, 1);
+        assert_eq!(after_second.cuda_malloc_bytes, 4096);
         assert_eq!(after_second.cuda_free_calls, 0);
         assert_eq!(after_second.cuda_device_synchronize_calls, 0);
+        assert_eq!(after_second.cached_reuse_count, 1);
         assert_eq!(after_second.cached_blocks, 1);
 
         clear_allocator_cache();
