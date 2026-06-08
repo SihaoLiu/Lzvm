@@ -334,4 +334,31 @@ theorem runtime_soundness_required_external_source_sound
       checked
   exact And.intro evidence (And.intro externalEvidence sound.right)
 
+theorem runtime_soundness_required_external_source_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have sound :=
+    runtime_soundness_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  exact sound_witness_implies_verifier_core_contract sound.right.right
+
 end Lzvm
