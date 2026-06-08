@@ -3693,7 +3693,7 @@ fn proof_value_bool(name: &str, enabled: bool) -> WitnessTraceProofValue {
     WitnessTraceProofValue::new(name, vec![if enabled { Felt::ONE } else { Felt::ZERO }])
 }
 
-#[cfg_attr(feature = "cuda", allow(clippy::too_many_arguments))]
+#[allow(clippy::too_many_arguments)]
 fn write_zisk_main_report_columns(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,

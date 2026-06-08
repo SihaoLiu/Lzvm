@@ -4,7 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
-import Lzvm.Assumptions
+import Lzvm.AssumptionAudit
 
 /-!
 Composition theorem for the abstract Lzvm verifier soundness model.
@@ -50,5 +50,15 @@ theorem abstract_verifier_sound
                       (And.intro friQueriesValid
                         (And.intro traceConsistent
                           (And.intro constraintsSatisfied witnessMatchesTrace))))))))
+
+theorem abstract_verifier_sound_with_audited_assumptions
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    RequiredCryptographicAssumptionStatements assumptions.crypto
+      /\ ProofSystemSound system := by
+  exact
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (abstract_verifier_sound assumptions)
 
 end Lzvm
