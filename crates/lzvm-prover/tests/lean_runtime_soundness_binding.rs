@@ -36,6 +36,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_transcript_bound",
             "runtime_soundness_checked_acceptance_public_input_bound",
             "runtime_soundness_checked_acceptance_pcs_and_fri",
+            "runtime_soundness_checked_acceptance_external_source_requirement",
             "runtime_soundness_checked_acceptance_core_obligations",
             "runtime_soundness_checked_acceptance_verifier_core_contract",
             "runtime_soundness_checked_acceptance_verifier_sound_witness",
@@ -56,6 +57,22 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("AssumptionBundle"),
         "runtime artifact evidence projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_external_source_requirement"
+        )
+        .contains("(validation : RuntimeSoundnessValidation system)"),
+        "external-source requirement projection should be tied to runtime soundness validation"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_external_source_requirement"
+        )
+        .contains("AssumptionBundle"),
+        "external-source requirement projection should not require cryptographic assumptions"
     );
 }
 

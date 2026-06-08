@@ -353,6 +353,26 @@ theorem runtime_soundness_checked_acceptance_pcs_and_fri
       requiresExternalSource
       evidence
 
+theorem runtime_soundness_checked_acceptance_external_source_requirement
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        ExternalSourceOpeningRequirement
+          system
+          validation.sourceValidation
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact checked.right
+
 theorem runtime_soundness_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
