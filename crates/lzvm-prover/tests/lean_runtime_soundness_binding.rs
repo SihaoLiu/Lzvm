@@ -28,9 +28,11 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         &lean_source,
         &[
             "runtime_soundness_checked_acceptance_sound",
+            "runtime_soundness_evidence_implies_runtime_artifact_evidence",
             "runtime_soundness_evidence_implies_transcript_bound",
             "runtime_soundness_evidence_implies_public_input_bound",
             "runtime_soundness_evidence_implies_core_obligations",
+            "runtime_soundness_checked_acceptance_runtime_artifact_evidence",
             "runtime_soundness_checked_acceptance_transcript_bound",
             "runtime_soundness_checked_acceptance_public_input_bound",
             "runtime_soundness_checked_acceptance_pcs_and_fri",
