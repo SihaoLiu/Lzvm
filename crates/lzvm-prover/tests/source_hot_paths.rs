@@ -3032,6 +3032,51 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "leaf extension timing should expose coset extension workload shape"
         );
     }
+
+    for source in [
+        leaf_extend_source.as_str(),
+        execution_source.as_str(),
+        cli_source.as_str(),
+    ] {
+        assert!(
+            source.contains("leaf_setup_prepare_duration")
+                && source.contains("leaf_setup_output_alloc_duration")
+                && source.contains("leaf_setup_workspace_alloc_duration"),
+            "leaf extension timing should split setup into prepare and allocation work"
+        );
+    }
+
+    for (line_name, accessor) in [
+        (
+            "\"guest_stage_leaf_setup_prepare\"",
+            "guest_stage_leaf_setup_prepare_duration()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_output_alloc\"",
+            "guest_stage_leaf_setup_output_alloc_duration()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_workspace_alloc\"",
+            "guest_stage_leaf_setup_workspace_alloc_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_prepare",
+            "leaf_setup_prepare_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_output_alloc",
+            "leaf_setup_output_alloc_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_workspace_alloc",
+            "leaf_setup_workspace_alloc_duration()",
+        ),
+    ] {
+        assert!(
+            cli_source.contains(line_name) && cli_source.contains(accessor),
+            "CLI timing output should include {line_name}"
+        );
+    }
 }
 
 #[test]

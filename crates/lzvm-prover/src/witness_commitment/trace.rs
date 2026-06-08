@@ -311,6 +311,19 @@ impl WitnessStageCommitTiming {
         self.leaf_extend_timing.setup_duration()
     }
 
+    pub(crate) fn leaf_setup_prepare_duration(&self) -> Duration {
+        self.leaf_extend_timing.leaf_setup_prepare_duration()
+    }
+
+    pub(crate) fn leaf_setup_output_alloc_duration(&self) -> Duration {
+        self.leaf_extend_timing.leaf_setup_output_alloc_duration()
+    }
+
+    pub(crate) fn leaf_setup_workspace_alloc_duration(&self) -> Duration {
+        self.leaf_extend_timing
+            .leaf_setup_workspace_alloc_duration()
+    }
+
     pub(crate) fn leaf_upload_duration(&self) -> Duration {
         self.leaf_extend_timing.upload_duration()
     }

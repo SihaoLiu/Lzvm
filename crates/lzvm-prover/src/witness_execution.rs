@@ -368,6 +368,9 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_stage_trace_extract_duration: Duration,
     guest_stage_leaf_extend_work_duration: Duration,
     guest_stage_leaf_setup_work_duration: Duration,
+    guest_stage_leaf_setup_prepare_duration: Duration,
+    guest_stage_leaf_setup_output_alloc_duration: Duration,
+    guest_stage_leaf_setup_workspace_alloc_duration: Duration,
     guest_stage_leaf_upload_work_duration: Duration,
     guest_stage_leaf_kernel_work_duration: Duration,
     guest_stage_leaf_download_work_duration: Duration,
@@ -458,6 +461,11 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_stage_trace_extract_duration: trace_timing.stage_trace_extract_duration,
             guest_stage_leaf_extend_work_duration: trace_timing.stage_leaf_extend_work_duration,
             guest_stage_leaf_setup_work_duration: trace_timing.stage_leaf_setup_work_duration,
+            guest_stage_leaf_setup_prepare_duration: trace_timing.stage_leaf_setup_prepare_duration,
+            guest_stage_leaf_setup_output_alloc_duration: trace_timing
+                .stage_leaf_setup_output_alloc_duration,
+            guest_stage_leaf_setup_workspace_alloc_duration: trace_timing
+                .stage_leaf_setup_workspace_alloc_duration,
             guest_stage_leaf_upload_work_duration: trace_timing.stage_leaf_upload_work_duration,
             guest_stage_leaf_kernel_work_duration: trace_timing.stage_leaf_kernel_work_duration,
             guest_stage_leaf_download_work_duration: trace_timing.stage_leaf_download_work_duration,
@@ -640,6 +648,18 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_stage_leaf_setup_work_duration
     }
 
+    pub fn guest_stage_leaf_setup_prepare_duration(&self) -> Duration {
+        self.guest_stage_leaf_setup_prepare_duration
+    }
+
+    pub fn guest_stage_leaf_setup_output_alloc_duration(&self) -> Duration {
+        self.guest_stage_leaf_setup_output_alloc_duration
+    }
+
+    pub fn guest_stage_leaf_setup_workspace_alloc_duration(&self) -> Duration {
+        self.guest_stage_leaf_setup_workspace_alloc_duration
+    }
+
     pub fn guest_stage_leaf_upload_work_duration(&self) -> Duration {
         self.guest_stage_leaf_upload_work_duration
     }
@@ -762,6 +782,9 @@ pub struct ProveWitnessGuestStageTiming {
     stage_index: usize,
     leaf_extend_work_duration: Duration,
     leaf_setup_work_duration: Duration,
+    leaf_setup_prepare_duration: Duration,
+    leaf_setup_output_alloc_duration: Duration,
+    leaf_setup_workspace_alloc_duration: Duration,
     leaf_upload_work_duration: Duration,
     leaf_kernel_work_duration: Duration,
     leaf_download_work_duration: Duration,
@@ -799,6 +822,9 @@ impl ProveWitnessGuestStageTiming {
             stage_index: timing.stage_index(),
             leaf_extend_work_duration: timing_value.leaf_extend_duration(),
             leaf_setup_work_duration: timing_value.leaf_setup_duration(),
+            leaf_setup_prepare_duration: timing_value.leaf_setup_prepare_duration(),
+            leaf_setup_output_alloc_duration: timing_value.leaf_setup_output_alloc_duration(),
+            leaf_setup_workspace_alloc_duration: timing_value.leaf_setup_workspace_alloc_duration(),
             leaf_upload_work_duration: timing_value.leaf_upload_duration(),
             leaf_kernel_work_duration: timing_value.leaf_kernel_duration(),
             leaf_download_work_duration: timing_value.leaf_download_duration(),
@@ -838,6 +864,9 @@ impl ProveWitnessGuestStageTiming {
     fn accumulate(&mut self, other: Self) {
         self.leaf_extend_work_duration += other.leaf_extend_work_duration;
         self.leaf_setup_work_duration += other.leaf_setup_work_duration;
+        self.leaf_setup_prepare_duration += other.leaf_setup_prepare_duration;
+        self.leaf_setup_output_alloc_duration += other.leaf_setup_output_alloc_duration;
+        self.leaf_setup_workspace_alloc_duration += other.leaf_setup_workspace_alloc_duration;
         self.leaf_upload_work_duration += other.leaf_upload_work_duration;
         self.leaf_kernel_work_duration += other.leaf_kernel_work_duration;
         self.leaf_download_work_duration += other.leaf_download_work_duration;
@@ -884,6 +913,18 @@ impl ProveWitnessGuestStageTiming {
 
     pub fn leaf_setup_work_duration(&self) -> Duration {
         self.leaf_setup_work_duration
+    }
+
+    pub fn leaf_setup_prepare_duration(&self) -> Duration {
+        self.leaf_setup_prepare_duration
+    }
+
+    pub fn leaf_setup_output_alloc_duration(&self) -> Duration {
+        self.leaf_setup_output_alloc_duration
+    }
+
+    pub fn leaf_setup_workspace_alloc_duration(&self) -> Duration {
+        self.leaf_setup_workspace_alloc_duration
     }
 
     pub fn leaf_upload_work_duration(&self) -> Duration {
@@ -1022,6 +1063,9 @@ struct ProveWitnessTraceTimingAccumulator {
     stage_trace_extract_duration: Duration,
     stage_leaf_extend_work_duration: Duration,
     stage_leaf_setup_work_duration: Duration,
+    stage_leaf_setup_prepare_duration: Duration,
+    stage_leaf_setup_output_alloc_duration: Duration,
+    stage_leaf_setup_workspace_alloc_duration: Duration,
     stage_leaf_upload_work_duration: Duration,
     stage_leaf_kernel_work_duration: Duration,
     stage_leaf_download_work_duration: Duration,
@@ -1087,6 +1131,10 @@ impl ProveWitnessTraceTimingAccumulator {
         self.stage_trace_extract_duration += other.stage_trace_extract_duration;
         self.stage_leaf_extend_work_duration += other.stage_leaf_extend_work_duration;
         self.stage_leaf_setup_work_duration += other.stage_leaf_setup_work_duration;
+        self.stage_leaf_setup_prepare_duration += other.stage_leaf_setup_prepare_duration;
+        self.stage_leaf_setup_output_alloc_duration += other.stage_leaf_setup_output_alloc_duration;
+        self.stage_leaf_setup_workspace_alloc_duration +=
+            other.stage_leaf_setup_workspace_alloc_duration;
         self.stage_leaf_upload_work_duration += other.stage_leaf_upload_work_duration;
         self.stage_leaf_kernel_work_duration += other.stage_leaf_kernel_work_duration;
         self.stage_leaf_download_work_duration += other.stage_leaf_download_work_duration;
@@ -3448,6 +3496,11 @@ fn run_prove_witness_commitments_from_trace_inner(
         timing.stage_commit_duration += stage_commit_started.elapsed();
         timing.stage_leaf_extend_work_duration += stage_timing.leaf_extend_duration();
         timing.stage_leaf_setup_work_duration += stage_timing.leaf_setup_duration();
+        timing.stage_leaf_setup_prepare_duration += stage_timing.leaf_setup_prepare_duration();
+        timing.stage_leaf_setup_output_alloc_duration +=
+            stage_timing.leaf_setup_output_alloc_duration();
+        timing.stage_leaf_setup_workspace_alloc_duration +=
+            stage_timing.leaf_setup_workspace_alloc_duration();
         timing.stage_leaf_upload_work_duration += stage_timing.leaf_upload_duration();
         timing.stage_leaf_kernel_work_duration += stage_timing.leaf_kernel_duration();
         timing.stage_leaf_download_work_duration += stage_timing.leaf_download_duration();

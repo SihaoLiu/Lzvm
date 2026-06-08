@@ -6081,6 +6081,18 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
         "{stdout}"
     );
     assert!(
+        stdout.contains("timing_guest_stage_leaf_setup_prepare_ms="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_stage_leaf_setup_output_alloc_ms="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_stage_leaf_setup_workspace_alloc_ms="),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains("timing_guest_stage_leaf_upload_work_ms="),
         "{stdout}"
     );
@@ -6114,6 +6126,24 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
         assert!(
             stdout.contains(&format!(
                 "timing_guest_stage_{stage_index}_leaf_setup_work_ms="
+            )),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "timing_guest_stage_{stage_index}_leaf_setup_prepare_ms="
+            )),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "timing_guest_stage_{stage_index}_leaf_setup_output_alloc_ms="
+            )),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "timing_guest_stage_{stage_index}_leaf_setup_workspace_alloc_ms="
             )),
             "{stdout}"
         );

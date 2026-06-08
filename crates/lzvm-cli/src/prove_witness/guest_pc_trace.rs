@@ -167,6 +167,18 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_stage_leaf_setup_work_duration(),
     );
     timings.record(
+        "guest_stage_leaf_setup_prepare",
+        timing.guest_stage_leaf_setup_prepare_duration(),
+    );
+    timings.record(
+        "guest_stage_leaf_setup_output_alloc",
+        timing.guest_stage_leaf_setup_output_alloc_duration(),
+    );
+    timings.record(
+        "guest_stage_leaf_setup_workspace_alloc",
+        timing.guest_stage_leaf_setup_workspace_alloc_duration(),
+    );
+    timings.record(
         "guest_stage_leaf_upload_work",
         timing.guest_stage_leaf_upload_work_duration(),
     );
@@ -287,6 +299,18 @@ pub(super) fn record_guest_pc_trace_timing(
         timings.record_dynamic(
             format!("guest_stage_{stage_index}_leaf_setup_work"),
             stage_timing.leaf_setup_work_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_leaf_setup_prepare"),
+            stage_timing.leaf_setup_prepare_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_leaf_setup_output_alloc"),
+            stage_timing.leaf_setup_output_alloc_duration(),
+        );
+        timings.record_dynamic(
+            format!("guest_stage_{stage_index}_leaf_setup_workspace_alloc"),
+            stage_timing.leaf_setup_workspace_alloc_duration(),
         );
         timings.record_dynamic(
             format!("guest_stage_{stage_index}_leaf_upload_work"),
