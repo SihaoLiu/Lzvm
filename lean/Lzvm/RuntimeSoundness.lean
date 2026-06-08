@@ -198,6 +198,39 @@ theorem runtime_soundness_checked_acceptance_evidence
             (And.intro sourceRequirement
               (And.intro pcsOpenings friQueries)))))
 
+theorem runtime_soundness_checked_acceptance_pcs_and_fri
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have evidence :=
+    runtime_soundness_checked_acceptance_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact
+    runtime_soundness_evidence_implies_pcs_and_fri
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+
 theorem runtime_soundness_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
