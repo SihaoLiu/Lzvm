@@ -95,6 +95,71 @@ pub(super) fn write_timing_summary(stdout: &mut dyn Write, timings: &TimingRecor
     );
 }
 
+pub(super) fn write_timing_summary_with_allocator(
+    stdout: &mut dyn Write,
+    timings: &mut TimingRecorder,
+) {
+    record_cuda_allocator_timing(timings);
+    write_timing_summary(stdout, timings);
+}
+
+#[cfg(feature = "cuda")]
+fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
+    if !timings.is_enabled() {
+        return;
+    }
+    let Ok(stats) = lzvm_prover::cuda_allocator_stats() else {
+        return;
+    };
+    timings.record_count("cuda_allocator_malloc_calls", stats.cuda_malloc_calls);
+    timings.record_count("cuda_allocator_malloc_bytes", stats.cuda_malloc_bytes);
+    timings.record_count("cuda_allocator_cached_blocks", stats.cached_blocks);
+    timings.record_count("cuda_allocator_cached_bytes", stats.cached_bytes);
+    timings.record_count(
+        "cuda_allocator_event_query_calls",
+        stats.cuda_event_query_calls,
+    );
+    timings.record_count(
+        "cuda_allocator_event_query_ready",
+        stats.cuda_event_query_ready_count,
+    );
+    timings.record_count(
+        "cuda_allocator_event_query_not_ready",
+        stats.cuda_event_query_not_ready_count,
+    );
+    timings.record_count(
+        "cuda_allocator_event_synchronize_calls",
+        stats.cuda_event_synchronize_calls,
+    );
+    timings.record_count(
+        "cuda_allocator_event_synchronize_bytes",
+        stats.cuda_event_synchronize_bytes,
+    );
+    timings.record_count(
+        "cuda_allocator_event_synchronize_max_bytes",
+        stats.cuda_event_synchronize_max_bytes,
+    );
+    timings.record_count(
+        "cuda_allocator_cached_reuse_count",
+        stats.cached_reuse_count,
+    );
+    timings.record_count(
+        "cuda_allocator_pending_reuse_count",
+        stats.pending_reuse_count,
+    );
+    timings.record_count(
+        "cuda_allocator_no_wait_bypass_count",
+        stats.no_wait_bypass_count,
+    );
+    timings.record_count(
+        "cuda_allocator_no_wait_bypass_bytes",
+        stats.no_wait_bypass_bytes,
+    );
+}
+
+#[cfg(not(feature = "cuda"))]
+fn record_cuda_allocator_timing(_timings: &mut TimingRecorder) {}
+
 pub(super) fn write_timing_entries(
     stdout: &mut dyn Write,
     entries: &[TimingEntry],

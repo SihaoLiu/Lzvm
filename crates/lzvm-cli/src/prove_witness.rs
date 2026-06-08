@@ -58,7 +58,7 @@ use eth_inputs::{
 use guest_pc_trace::{record_guest_pc_trace_timing, run_guest_pc_trace_witness};
 use output_file::{write_output_file, write_proof_output};
 use proof_timing::record_proof_artifact_timing;
-use timing::{write_timing_summary, TimingRecorder};
+use timing::{write_timing_summary_with_allocator, TimingRecorder};
 use usage::write_usage;
 use value_inputs::{
     load_batch_unit_values_inputs, read_challenge_values_proof_segment_input,
@@ -66,68 +66,6 @@ use value_inputs::{
     read_group_values_segment_input, read_packed_extension_values,
     read_packed_proof_values_segment, read_packed_unit_values_segment_for_unit, read_packed_values,
 };
-
-fn write_timing_summary_with_allocator(stdout: &mut dyn Write, timings: &mut TimingRecorder) {
-    record_cuda_allocator_timing(timings);
-    write_timing_summary(stdout, timings);
-}
-
-#[cfg(feature = "cuda")]
-fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
-    if !timings.is_enabled() {
-        return;
-    }
-    let Ok(stats) = lzvm_prover::cuda_allocator_stats() else {
-        return;
-    };
-    timings.record_count("cuda_allocator_malloc_calls", stats.cuda_malloc_calls);
-    timings.record_count("cuda_allocator_malloc_bytes", stats.cuda_malloc_bytes);
-    timings.record_count("cuda_allocator_cached_blocks", stats.cached_blocks);
-    timings.record_count("cuda_allocator_cached_bytes", stats.cached_bytes);
-    timings.record_count(
-        "cuda_allocator_event_query_calls",
-        stats.cuda_event_query_calls,
-    );
-    timings.record_count(
-        "cuda_allocator_event_query_ready",
-        stats.cuda_event_query_ready_count,
-    );
-    timings.record_count(
-        "cuda_allocator_event_query_not_ready",
-        stats.cuda_event_query_not_ready_count,
-    );
-    timings.record_count(
-        "cuda_allocator_event_synchronize_calls",
-        stats.cuda_event_synchronize_calls,
-    );
-    timings.record_count(
-        "cuda_allocator_event_synchronize_bytes",
-        stats.cuda_event_synchronize_bytes,
-    );
-    timings.record_count(
-        "cuda_allocator_event_synchronize_max_bytes",
-        stats.cuda_event_synchronize_max_bytes,
-    );
-    timings.record_count(
-        "cuda_allocator_cached_reuse_count",
-        stats.cached_reuse_count,
-    );
-    timings.record_count(
-        "cuda_allocator_pending_reuse_count",
-        stats.pending_reuse_count,
-    );
-    timings.record_count(
-        "cuda_allocator_no_wait_bypass_count",
-        stats.no_wait_bypass_count,
-    );
-    timings.record_count(
-        "cuda_allocator_no_wait_bypass_bytes",
-        stats.no_wait_bypass_bytes,
-    );
-}
-
-#[cfg(not(feature = "cuda"))]
-fn record_cuda_allocator_timing(_timings: &mut TimingRecorder) {}
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     let mut parsed = match parse_witness_args(args) {

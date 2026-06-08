@@ -707,7 +707,31 @@ fn record_path_parent_hash_work_split(
         timings.record_count_dynamic(format!("{prefix}_{suffix}_rows"), rows);
         timings.record_count_dynamic(format!("{prefix}_{suffix}_bytes"), bytes);
         timings.record_count_dynamic(format!("{prefix}_{suffix}_launches"), launches);
+        record_count_per_unit_dynamic(
+            timings,
+            format!("{prefix}_{suffix}_rows_per_launch"),
+            rows,
+            launches,
+        );
+        record_count_per_unit_dynamic(
+            timings,
+            format!("{prefix}_{suffix}_bytes_per_launch"),
+            bytes,
+            launches,
+        );
     }
+}
+
+fn record_count_per_unit_dynamic(
+    timings: &mut TimingRecorder,
+    name: String,
+    numerator: usize,
+    denominator: usize,
+) {
+    if denominator == 0 {
+        return;
+    }
+    timings.record_count_dynamic(name, numerator / denominator);
 }
 
 fn record_count_per_unit(
