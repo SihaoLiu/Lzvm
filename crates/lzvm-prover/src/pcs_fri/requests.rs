@@ -31,9 +31,14 @@ pub struct PcsFriOpeningBuildTiming {
     pub layer_tree: Duration,
     pub query_work: Duration,
     pub fold_work: Duration,
+    pub transcript_unit_build: Duration,
+    pub transcript_layer_tree: Duration,
+    pub transcript_fold_work: Duration,
     pub unit_count: usize,
     pub layer_count: usize,
     pub query_count: usize,
+    pub transcript_unit_count: usize,
+    pub transcript_layer_count: usize,
 }
 
 impl PcsFriOpeningBuildTiming {
@@ -54,6 +59,20 @@ impl PcsFriOpeningBuildTiming {
 
     pub(crate) fn add_fold_work(&mut self, duration: Duration) {
         self.fold_work += duration;
+    }
+
+    pub(crate) fn add_transcript_unit_build(&mut self, duration: Duration) {
+        self.transcript_unit_build += duration;
+        self.transcript_unit_count += 1;
+    }
+
+    pub(crate) fn add_transcript_layer_tree(&mut self, duration: Duration) {
+        self.transcript_layer_tree += duration;
+        self.transcript_layer_count += 1;
+    }
+
+    pub(crate) fn add_transcript_fold_work(&mut self, duration: Duration) {
+        self.transcript_fold_work += duration;
     }
 }
 

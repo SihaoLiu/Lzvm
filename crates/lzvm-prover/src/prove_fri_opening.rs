@@ -27,8 +27,8 @@ use lzvm_field::{Ext3, Felt, FieldError};
 
 use crate::pcs_fri::{
     build_pcs_fri_opening_unit, build_pcs_fri_opening_unit_with_timing,
-    build_pcs_fri_transcript_commitments, PcsFriOpeningBuildRequest, PcsFriOpeningBuildTiming,
-    PcsFriTranscriptCommitmentRequest,
+    build_pcs_fri_transcript_commitments, build_pcs_fri_transcript_commitments_with_timing,
+    PcsFriOpeningBuildRequest, PcsFriOpeningBuildTiming, PcsFriTranscriptCommitmentRequest,
 };
 use crate::pcs_transcript::{derive_pcs_transcript_prefix_challenges, PcsTranscriptPrefixInputs};
 #[cfg(not(feature = "cuda"))]
@@ -315,6 +315,7 @@ fn build_pcs_fri_transcript_values_from_trace_refs(
         schedule,
         values,
         &mut fixed_columns_cache,
+        None,
     )
 }
 
@@ -322,6 +323,7 @@ fn build_pcs_fri_transcript_values_from_trace_refs_with_fixed_cache(
     schedule: &ProveSchedule,
     values: &[ProvePcsFriTranscriptTraceValueRef<'_>],
     fixed_columns_cache: &mut PcsFriFixedColumnsCache,
+    mut timing: Option<&mut PcsFriOpeningBuildTiming>,
 ) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
     let mut out = Vec::with_capacity(values.len());
     for input in values {
@@ -371,23 +373,26 @@ fn build_pcs_fri_transcript_values_from_trace_refs_with_fixed_cache(
             unit_index: input.unit_index,
             source: Box::new(source),
         })?;
-        let commitments = build_pcs_fri_transcript_commitments(
-            unit,
-            PcsFriTranscriptCommitmentRequest {
-                arity,
-                hash_values: unit.hash_commits,
-                constant_root: input.constant_root,
-                public_values: input.publics,
-                witness_roots: input.witness_roots,
-                root_challenge_draws: &unit.transcript_root_challenge_draws,
-                unit_value_map: &unit.unit_value_map,
-                unit_values: input.auxiliary_inputs.unit_values,
-                evaluation_values: input.evaluation_values,
-                evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
-                polynomial: &polynomial,
-                binding_segments: input.binding_segments,
-            },
-        )
+        let request = PcsFriTranscriptCommitmentRequest {
+            arity,
+            hash_values: unit.hash_commits,
+            constant_root: input.constant_root,
+            public_values: input.publics,
+            witness_roots: input.witness_roots,
+            root_challenge_draws: &unit.transcript_root_challenge_draws,
+            unit_value_map: &unit.unit_value_map,
+            unit_values: input.auxiliary_inputs.unit_values,
+            evaluation_values: input.evaluation_values,
+            evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+            polynomial: &polynomial,
+            binding_segments: input.binding_segments,
+        };
+        let commitments = match timing.as_deref_mut() {
+            Some(timing) => {
+                build_pcs_fri_transcript_commitments_with_timing(unit, request, Some(timing))
+            }
+            None => build_pcs_fri_transcript_commitments(unit, request),
+        }
         .map_err(|source| ProvePcsFriTranscriptTraceValuesError::Transcript {
             unit_index: input.unit_index,
             source: Box::new(source),
@@ -429,6 +434,14 @@ pub fn build_pcs_fri_transcript_values_from_trace_segments(
 pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs(
     schedule: &ProveSchedule,
     values: &[ProvePcsFriTranscriptTraceSegmentValueRef<'_>],
+) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
+    build_pcs_fri_transcript_values_from_trace_segment_refs_with_timing(schedule, values, None)
+}
+
+pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs_with_timing(
+    schedule: &ProveSchedule,
+    values: &[ProvePcsFriTranscriptTraceSegmentValueRef<'_>],
+    mut timing: Option<&mut PcsFriOpeningBuildTiming>,
 ) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
     let mut out = Vec::with_capacity(values.len());
     let mut material_cache = MaterialSegmentCache::new();
@@ -593,6 +606,7 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs(
                 binding_segments: input.binding_segments,
             }],
             &mut fixed_columns_cache,
+            timing.as_deref_mut(),
         )?;
         for value in &mut built {
             value.trace_instance_index = input.trace_instance_index;

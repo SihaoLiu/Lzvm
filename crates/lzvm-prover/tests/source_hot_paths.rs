@@ -4471,8 +4471,13 @@ fn fri_opening_timing_reports_unit_tree_query_and_fold_work() {
             && timing_source.contains("fri_opening_fold")
             && timing_source.contains("fri_opening_unit_count")
             && timing_source.contains("fri_opening_layer_count")
-            && timing_source.contains("fri_opening_query_count"),
-        "proof artifact timing should expose FRI opening work shape"
+            && timing_source.contains("fri_opening_query_count")
+            && timing_source.contains("fri_transcript_unit_build")
+            && timing_source.contains("fri_transcript_layer_tree")
+            && timing_source.contains("fri_transcript_fold")
+            && timing_source.contains("fri_transcript_unit_count")
+            && timing_source.contains("fri_transcript_layer_count"),
+        "proof artifact timing should expose FRI transcript and opening work shape"
     );
     assert!(
         cli_source.contains("finish_fri_opening_unit_build")
@@ -4481,8 +4486,13 @@ fn fri_opening_timing_reports_unit_tree_query_and_fold_work() {
             && cli_source.contains("finish_fri_opening_fold")
             && cli_source.contains("finish_fri_opening_unit_count")
             && cli_source.contains("finish_fri_opening_layer_count")
-            && cli_source.contains("finish_fri_opening_query_count"),
-        "CLI timing output should report FRI opening sub-buckets and counts"
+            && cli_source.contains("finish_fri_opening_query_count")
+            && cli_source.contains("finish_fri_transcript_unit_build")
+            && cli_source.contains("finish_fri_transcript_layer_tree")
+            && cli_source.contains("finish_fri_transcript_fold")
+            && cli_source.contains("finish_fri_transcript_unit_count")
+            && cli_source.contains("finish_fri_transcript_layer_count"),
+        "CLI timing output should report FRI transcript and opening sub-buckets and counts"
     );
     assert!(
         opening_source.contains("build_pcs_fri_opening_segment_from_transcript_values_with_timing")
@@ -4493,10 +4503,14 @@ fn fri_opening_timing_reports_unit_tree_query_and_fold_work() {
     assert!(
         fri_build_source.contains("build_pcs_fri_opening_unit_with_timing")
             && fri_build_source.contains("record_fri_opening_duration")
+            && fri_build_source.contains("build_pcs_fri_transcript_commitments_with_timing")
+            && fri_build_source.contains("record_fri_transcript_duration")
+            && fri_build_source.contains("timing.add_transcript_layer_tree")
+            && fri_build_source.contains("timing.add_transcript_fold_work")
             && fri_build_source.contains("timing.add_layer_tree")
             && fri_build_source.contains("timing.add_query_work")
             && fri_build_source.contains("timing.add_fold_work"),
-        "FRI opening unit build should time tree, query, and fold work separately"
+        "FRI transcript and opening unit builds should time tree, query, and fold work separately"
     );
 }
 

@@ -71,9 +71,14 @@ pub struct WitnessProofArtifactTiming {
     pub fri_opening_layer_tree: Duration,
     pub fri_opening_query: Duration,
     pub fri_opening_fold: Duration,
+    pub fri_transcript_unit_build: Duration,
+    pub fri_transcript_layer_tree: Duration,
+    pub fri_transcript_fold: Duration,
     pub fri_opening_unit_count: usize,
     pub fri_opening_layer_count: usize,
     pub fri_opening_query_count: usize,
+    pub fri_transcript_unit_count: usize,
+    pub fri_transcript_layer_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -401,9 +406,14 @@ impl WitnessProofArtifactTiming {
         self.fri_opening_layer_tree += timing.layer_tree;
         self.fri_opening_query += timing.query_work;
         self.fri_opening_fold += timing.fold_work;
+        self.fri_transcript_unit_build += timing.transcript_unit_build;
+        self.fri_transcript_layer_tree += timing.transcript_layer_tree;
+        self.fri_transcript_fold += timing.transcript_fold_work;
         self.fri_opening_unit_count += timing.unit_count;
         self.fri_opening_layer_count += timing.layer_count;
         self.fri_opening_query_count += timing.query_count;
+        self.fri_transcript_unit_count += timing.transcript_unit_count;
+        self.fri_transcript_layer_count += timing.transcript_layer_count;
     }
 }
 

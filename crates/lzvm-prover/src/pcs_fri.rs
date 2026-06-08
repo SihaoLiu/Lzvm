@@ -7,7 +7,7 @@ mod validation;
 
 pub use build::{
     build_pcs_fri_opening_unit, build_pcs_fri_opening_unit_with_timing,
-    build_pcs_fri_transcript_commitments,
+    build_pcs_fri_transcript_commitments, build_pcs_fri_transcript_commitments_with_timing,
 };
 pub use errors::*;
 pub use fold::{verify_fri_fold, verify_fri_opening_folds, PcsFriFoldError};

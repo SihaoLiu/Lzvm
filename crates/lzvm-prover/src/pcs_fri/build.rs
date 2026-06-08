@@ -20,6 +20,15 @@ pub fn build_pcs_fri_transcript_commitments(
     schedule: &ProveUnitSchedule,
     request: PcsFriTranscriptCommitmentRequest<'_>,
 ) -> Result<PcsFriTranscriptCommitments, PcsFriTranscriptCommitmentError> {
+    build_pcs_fri_transcript_commitments_with_timing(schedule, request, None)
+}
+
+pub fn build_pcs_fri_transcript_commitments_with_timing(
+    schedule: &ProveUnitSchedule,
+    request: PcsFriTranscriptCommitmentRequest<'_>,
+    mut timing: Option<&mut PcsFriOpeningBuildTiming>,
+) -> Result<PcsFriTranscriptCommitments, PcsFriTranscriptCommitmentError> {
+    let unit_started = timing.as_ref().map(|_| Instant::now());
     if schedule.fri_layers.is_empty() {
         return Err(PcsFriOpeningBuildError::EmptyFriLayers.into());
     }
@@ -75,28 +84,44 @@ pub fn build_pcs_fri_transcript_commitments(
 
         let grouped_values =
             group_fri_layer_values(layer_index, &current, output_size, folding_factor)?;
-        let tree =
-            merkle::build_fri_layer_tree(&grouped_values, arity, schedule.last_level_verification)?;
+        let tree = record_fri_transcript_duration(
+            timing.as_deref_mut(),
+            |timing, duration| timing.add_transcript_layer_tree(duration),
+            || {
+                merkle::build_fri_layer_tree(
+                    &grouped_values,
+                    arity,
+                    schedule.last_level_verification,
+                )
+            },
+        )?;
         layer_roots.push(tree.root);
         transcript.put(&tree.root);
         let challenge = transcript.get_field();
         challenges.push(challenge);
 
-        let mut next = Vec::with_capacity(output_size);
-        for (row_index, values) in grouped_values.iter().enumerate() {
-            next.push(
-                verify_fri_fold(
-                    schedule.extended_domain_bits,
-                    layer.output_bits,
-                    layer.input_bits,
-                    challenge,
-                    u64::try_from(row_index)
-                        .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?,
-                    values,
-                )
-                .map_err(PcsFriOpeningBuildError::from)?,
-            );
-        }
+        let next = record_fri_transcript_duration(
+            timing.as_deref_mut(),
+            |timing, duration| timing.add_transcript_fold_work(duration),
+            || {
+                let mut next = Vec::with_capacity(output_size);
+                for (row_index, values) in grouped_values.iter().enumerate() {
+                    next.push(
+                        verify_fri_fold(
+                            schedule.extended_domain_bits,
+                            layer.output_bits,
+                            layer.input_bits,
+                            challenge,
+                            u64::try_from(row_index)
+                                .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?,
+                            values,
+                        )
+                        .map_err(PcsFriOpeningBuildError::from)?,
+                    );
+                }
+                Ok::<Vec<Ext3>, PcsFriTranscriptCommitmentError>(next)
+            },
+        )?;
         current = next;
         current_bits = layer.output_bits;
     }
@@ -119,12 +144,29 @@ pub fn build_pcs_fri_transcript_commitments(
     let final_query_challenge = transcript.get_field();
     challenges.push(final_query_challenge);
 
+    if let (Some(timing), Some(started)) = (timing, unit_started) {
+        timing.add_transcript_unit_build(started.elapsed());
+    }
     Ok(PcsFriTranscriptCommitments {
         challenges,
         layer_roots,
         final_polynomial: current,
         final_query_challenge,
     })
+}
+
+fn record_fri_transcript_duration<T, E>(
+    timing: Option<&mut PcsFriOpeningBuildTiming>,
+    record: impl FnOnce(&mut PcsFriOpeningBuildTiming, std::time::Duration),
+    build: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E> {
+    let Some(timing) = timing else {
+        return build();
+    };
+    let started = Instant::now();
+    let result = build();
+    record(timing, started.elapsed());
+    result
 }
 
 pub fn build_pcs_fri_opening_unit(

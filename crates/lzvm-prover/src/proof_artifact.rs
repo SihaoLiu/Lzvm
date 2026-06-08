@@ -45,6 +45,7 @@ use crate::proof_values::{
 use crate::prove_fri_opening::{
     build_pcs_fri_opening_segment_from_transcript_values_with_timing,
     build_pcs_fri_transcript_values_from_trace_segment_refs,
+    build_pcs_fri_transcript_values_from_trace_segment_refs_with_timing,
     ProvePcsFriTranscriptTraceSegmentValueRef,
 };
 use crate::setup_preflight::{validate_setup_preflight, validate_setup_preflight_hashes};
@@ -539,26 +540,38 @@ fn build_witness_proof_artifact_for_unit_inner(
                 commitments.trace_instance_index()
             )
         })?;
-        let values = build_pcs_fri_transcript_values_from_trace_segment_refs(
-            request.schedule,
-            &[ProvePcsFriTranscriptTraceSegmentValueRef {
-                unit_index: commitments.unit_index(),
-                trace_instance_index: commitments.trace_instance_index(),
-                execution_unit: request.execution_unit,
-                trace,
-                #[cfg(feature = "cuda")]
-                stage_source_devices: request.output.stage_source_devices_if_available(),
-                publics: request.output.publics(),
-                auxiliary_inputs: ProveWitnessAuxiliaryInputSlices::from(
-                    request.output.auxiliary_inputs(),
-                ),
-                material_segment: &material_segment,
-                witness_segment: &witness_segment,
-                evaluation_segment: &evaluation_segment,
-                binding_segments: binding_segments_slice,
-            }],
-        )
+        let mut fri_build_timing = crate::pcs_fri::PcsFriOpeningBuildTiming::default();
+        let transcript_inputs = [ProvePcsFriTranscriptTraceSegmentValueRef {
+            unit_index: commitments.unit_index(),
+            trace_instance_index: commitments.trace_instance_index(),
+            execution_unit: request.execution_unit,
+            trace,
+            #[cfg(feature = "cuda")]
+            stage_source_devices: request.output.stage_source_devices_if_available(),
+            publics: request.output.publics(),
+            auxiliary_inputs: ProveWitnessAuxiliaryInputSlices::from(
+                request.output.auxiliary_inputs(),
+            ),
+            material_segment: &material_segment,
+            witness_segment: &witness_segment,
+            evaluation_segment: &evaluation_segment,
+            binding_segments: binding_segments_slice,
+        }];
+        let values = match timing.as_deref_mut() {
+            Some(_) => build_pcs_fri_transcript_values_from_trace_segment_refs_with_timing(
+                request.schedule,
+                &transcript_inputs,
+                Some(&mut fri_build_timing),
+            ),
+            None => build_pcs_fri_transcript_values_from_trace_segment_refs(
+                request.schedule,
+                &transcript_inputs,
+            ),
+        }
         .map_err(|error| format!("build FRI transcript values failed: {error}"))?;
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.add_fri_opening_build_timing(&fri_build_timing);
+        }
         Some((evaluation_segment, values))
     };
     let query_start = Instant::now();
@@ -1425,11 +1438,22 @@ fn build_witness_transcript_proof_artifact_for_all_units(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let transcript_values = build_pcs_fri_transcript_values_from_trace_segment_refs(
-        request.schedule,
-        &transcript_inputs,
-    )
+    let mut fri_build_timing = crate::pcs_fri::PcsFriOpeningBuildTiming::default();
+    let transcript_values = match timing.as_deref_mut() {
+        Some(_) => build_pcs_fri_transcript_values_from_trace_segment_refs_with_timing(
+            request.schedule,
+            &transcript_inputs,
+            Some(&mut fri_build_timing),
+        ),
+        None => build_pcs_fri_transcript_values_from_trace_segment_refs(
+            request.schedule,
+            &transcript_inputs,
+        ),
+    }
     .map_err(|error| format!("build FRI transcript values failed: {error}"))?;
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.add_fri_opening_build_timing(&fri_build_timing);
+    }
     let final_query_challenges = transcript_values
         .iter()
         .map(|value| value.commitments.final_query_challenge)
