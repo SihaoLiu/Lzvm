@@ -640,6 +640,31 @@ theorem runtime_pipeline_binding_checked_acceptance_public_input_bound
       accepted
   exact runtime_pipeline_binding_evidence_implies_public_input_bound sound.left
 
+theorem runtime_pipeline_binding_checked_acceptance_pcs_and_fri
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  exact runtime_pipeline_binding_evidence_implies_pcs_and_fri sound.left
+
 def runtime_pipeline_trace_source_validation
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
