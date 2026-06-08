@@ -22,6 +22,7 @@ import Lzvm.RetainedParentCheckpointOpening
 import Lzvm.RequiredExternalSource
 import Lzvm.RuntimeExternalSource
 import Lzvm.RuntimeSoundness
+import Lzvm.Soundness
 import Lzvm.TranscriptBinding
 import Lzvm.TraceConstraintArtifactBinding
 import Lzvm.TraceConstraintValidation
