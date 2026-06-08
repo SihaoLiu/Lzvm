@@ -266,6 +266,14 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_stage_tree_commit_root_work",
         timing.guest_stage_tree_commit_root_work_duration(),
     );
+    timings.record_count(
+        "guest_stage_tree_commit_root_count",
+        timing.guest_stage_tree_commit_root_count(),
+    );
+    timings.record_count(
+        "guest_stage_tree_commit_root_bytes",
+        timing.guest_stage_tree_commit_root_byte_count(),
+    );
     timings.record(
         "guest_stage_tree_commit_retain_work",
         timing.guest_stage_tree_commit_retain_work_duration(),

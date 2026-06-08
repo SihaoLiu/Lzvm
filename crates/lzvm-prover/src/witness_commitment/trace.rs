@@ -47,6 +47,8 @@ pub(crate) struct WitnessStageCommitTiming {
     tree_commit_duration: Duration,
     tree_commit_checkpoint_duration: Duration,
     tree_commit_root_duration: Duration,
+    tree_commit_root_count: usize,
+    tree_commit_root_byte_count: usize,
     tree_commit_retain_duration: Duration,
 }
 
@@ -263,6 +265,8 @@ impl WitnessStageCommitTiming {
         self.tree_commit_duration += other.tree_commit_duration;
         self.tree_commit_checkpoint_duration += other.tree_commit_checkpoint_duration;
         self.tree_commit_root_duration += other.tree_commit_root_duration;
+        self.tree_commit_root_count += other.tree_commit_root_count;
+        self.tree_commit_root_byte_count += other.tree_commit_root_byte_count;
         self.tree_commit_retain_duration += other.tree_commit_retain_duration;
     }
 
@@ -274,6 +278,8 @@ impl WitnessStageCommitTiming {
     pub(crate) fn accumulate_tree_commit_timing(&mut self, timing: WitnessStageTreeCommitTiming) {
         self.tree_commit_checkpoint_duration += timing.checkpoint_duration;
         self.tree_commit_root_duration += timing.root_duration;
+        self.tree_commit_root_count += timing.root_count;
+        self.tree_commit_root_byte_count += timing.root_byte_count;
         self.tree_commit_retain_duration += timing.retain_duration;
     }
 
@@ -287,6 +293,14 @@ impl WitnessStageCommitTiming {
 
     pub(crate) fn tree_commit_root_duration(&self) -> Duration {
         self.tree_commit_root_duration
+    }
+
+    pub(crate) fn tree_commit_root_count(&self) -> usize {
+        self.tree_commit_root_count
+    }
+
+    pub(crate) fn tree_commit_root_byte_count(&self) -> usize {
+        self.tree_commit_root_byte_count
     }
 
     pub(crate) fn tree_commit_retain_duration(&self) -> Duration {

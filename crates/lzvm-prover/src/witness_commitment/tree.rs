@@ -30,6 +30,8 @@ const RETAINED_PARENT_CHECKPOINT_MAX_STATES: usize = 524288;
 pub(crate) struct WitnessStageTreeCommitTiming {
     pub(crate) checkpoint_duration: Duration,
     pub(crate) root_duration: Duration,
+    pub(crate) root_count: usize,
+    pub(crate) root_byte_count: usize,
     pub(crate) retain_duration: Duration,
 }
 
@@ -293,6 +295,10 @@ fn commit_witness_stage_leaves_compact_with_leaf_hash_level_inner(
             .map_err(WitnessStageCommitmentError::from)
         },
     )?;
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.root_count += 1;
+        timing.root_byte_count += HASH_WORDS * WORD_BYTES;
+    }
     let (retained_parent_checkpoint_level, retained_leaf_digest_level, retained_source_device) =
         record_stage_tree_commit_duration(
             timing
@@ -457,6 +463,10 @@ fn commit_witness_stage_device_compact_with_leaf_hash_level_inner(
             .map_err(WitnessStageCommitmentError::from)
         },
     )?;
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.root_count += 1;
+        timing.root_byte_count += HASH_WORDS * WORD_BYTES;
+    }
     let (retained_parent_checkpoint_level, retained_leaf_digest_level, retained_source_device) =
         record_stage_tree_commit_duration(
             timing

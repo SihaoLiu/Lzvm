@@ -2436,6 +2436,8 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         "tree_commit_checkpoint_duration",
         "tree_commit_root_duration",
         "tree_commit_retain_duration",
+        "tree_commit_root_count",
+        "tree_commit_root_byte_count",
     ] {
         assert!(
             stage_timing_body.contains(field),
@@ -2528,6 +2530,14 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "\"guest_stage_tree_commit_root_work\"",
             "guest_stage_tree_commit_root_work_duration()",
+        ),
+        (
+            "\"guest_stage_tree_commit_root_count\"",
+            "guest_stage_tree_commit_root_count()",
+        ),
+        (
+            "\"guest_stage_tree_commit_root_bytes\"",
+            "guest_stage_tree_commit_root_byte_count()",
         ),
         (
             "\"guest_stage_tree_commit_retain_work\"",
