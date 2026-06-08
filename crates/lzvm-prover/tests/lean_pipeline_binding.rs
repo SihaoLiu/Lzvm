@@ -48,6 +48,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_verifier_sound_witness",
             "runtime_pipeline_binding_checked_acceptance_verifier_core_contract",
             "runtime_pipeline_binding_checked_acceptance_execution_obligations",
+            "runtime_pipeline_binding_checked_acceptance_runtime_soundness_contract",
         ],
     );
     assert!(

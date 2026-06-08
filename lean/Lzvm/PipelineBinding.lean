@@ -542,6 +542,14 @@ def runtime_pipeline_opening_source_validation
     validation.queryPlanBindingValidation.openingValidation.openingValidation
   openingValidation.runtimeSoundnessValidation.sourceValidation
 
+def runtime_pipeline_runtime_soundness_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    RuntimeSoundnessValidation system :=
+  let openingValidation :=
+    validation.queryPlanBindingValidation.openingValidation.openingValidation
+  openingValidation.runtimeSoundnessValidation
+
 def runtime_pipeline_challenge_validation
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
@@ -1269,6 +1277,48 @@ theorem runtime_pipeline_binding_checked_acceptance_verifier_core_contract
       proof
       accepted
   exact And.intro verifierAccepts coreObligations
+
+theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeSoundnessEvidence
+            system
+            (runtime_pipeline_runtime_soundness_validation validation)
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have openingEvidence :=
+    sound.left.right.right.right.right.right.right.right.right.left
+  have coreObligations :=
+    runtime_pipeline_binding_checked_acceptance_core_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact And.intro openingEvidence.left (And.intro coreObligations sound.right)
 
 theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
     {system : VerifierModel}
