@@ -99,6 +99,10 @@ pub(crate) struct WitnessStageLeafExtendTiming {
     leaf_setup_prepare_duration: Duration,
     leaf_setup_output_alloc_duration: Duration,
     leaf_setup_workspace_alloc_duration: Duration,
+    leaf_setup_output_alloc_byte_count: usize,
+    leaf_setup_workspace_alloc_byte_count: usize,
+    leaf_setup_output_alloc_count: usize,
+    leaf_setup_workspace_alloc_count: usize,
     upload_duration: Duration,
     kernel_duration: Duration,
     download_duration: Duration,
@@ -129,6 +133,10 @@ impl WitnessStageLeafExtendTiming {
         self.leaf_setup_prepare_duration += other.leaf_setup_prepare_duration;
         self.leaf_setup_output_alloc_duration += other.leaf_setup_output_alloc_duration;
         self.leaf_setup_workspace_alloc_duration += other.leaf_setup_workspace_alloc_duration;
+        self.leaf_setup_output_alloc_byte_count += other.leaf_setup_output_alloc_byte_count;
+        self.leaf_setup_workspace_alloc_byte_count += other.leaf_setup_workspace_alloc_byte_count;
+        self.leaf_setup_output_alloc_count += other.leaf_setup_output_alloc_count;
+        self.leaf_setup_workspace_alloc_count += other.leaf_setup_workspace_alloc_count;
         self.upload_duration += other.upload_duration;
         self.kernel_duration += other.kernel_duration;
         self.download_duration += other.download_duration;
@@ -200,6 +208,18 @@ impl WitnessStageLeafExtendTiming {
         self.leaf_coset_extend_unpack_launch_count += work.unpack_launch_count;
     }
 
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    fn record_output_alloc(&mut self, byte_count: usize) {
+        self.leaf_setup_output_alloc_byte_count += byte_count;
+        self.leaf_setup_output_alloc_count += 1;
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    fn record_workspace_alloc(&mut self, byte_count: usize) {
+        self.leaf_setup_workspace_alloc_byte_count += byte_count;
+        self.leaf_setup_workspace_alloc_count += 1;
+    }
+
     pub(crate) fn setup_duration(&self) -> Duration {
         self.setup_duration
     }
@@ -214,6 +234,22 @@ impl WitnessStageLeafExtendTiming {
 
     pub(crate) fn leaf_setup_workspace_alloc_duration(&self) -> Duration {
         self.leaf_setup_workspace_alloc_duration
+    }
+
+    pub(crate) fn leaf_setup_output_alloc_byte_count(&self) -> usize {
+        self.leaf_setup_output_alloc_byte_count
+    }
+
+    pub(crate) fn leaf_setup_workspace_alloc_byte_count(&self) -> usize {
+        self.leaf_setup_workspace_alloc_byte_count
+    }
+
+    pub(crate) fn leaf_setup_output_alloc_count(&self) -> usize {
+        self.leaf_setup_output_alloc_count
+    }
+
+    pub(crate) fn leaf_setup_workspace_alloc_count(&self) -> usize {
+        self.leaf_setup_workspace_alloc_count
     }
 
     pub(crate) fn upload_duration(&self) -> Duration {
@@ -629,11 +665,13 @@ fn compact_witness_stage_leaf_hashes_timed(
         &mut timing.leaf_setup_output_alloc_duration,
         || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
     )?;
+    timing.record_output_alloc(out_byte_count);
     let mut extension_workspace = record_setup_duration(
         &mut timing.setup_duration,
         &mut timing.leaf_setup_workspace_alloc_duration,
         || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
     )?;
+    timing.record_workspace_alloc(out_byte_count);
 
     record_duration(&mut timing.kernel_duration, || {
         cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(
@@ -706,6 +744,7 @@ fn compact_witness_stage_leaf_hash_level_timed(
         &mut timing.leaf_setup_output_alloc_duration,
         || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
     )?;
+    timing.record_output_alloc(out_byte_count);
 
     record_duration(&mut timing.kernel_duration, || {
         cuda_goldilocks_coset_extend_row_major_columns_device(
@@ -770,11 +809,13 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
         &mut timing.leaf_setup_output_alloc_duration,
         || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
     )?;
+    timing.record_output_alloc(out_byte_count);
     let mut extension_workspace = record_setup_duration(
         &mut timing.setup_duration,
         &mut timing.leaf_setup_workspace_alloc_duration,
         || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
     )?;
+    timing.record_workspace_alloc(out_byte_count);
 
     record_duration(&mut timing.kernel_duration, || {
         if view.source_row_stride == view.column_count && view.column_offset == 0 {

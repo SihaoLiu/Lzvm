@@ -178,6 +178,22 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_stage_leaf_setup_workspace_alloc",
         timing.guest_stage_leaf_setup_workspace_alloc_duration(),
     );
+    timings.record_count(
+        "guest_stage_leaf_setup_output_alloc_bytes",
+        timing.guest_stage_leaf_setup_output_alloc_byte_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_setup_workspace_alloc_bytes",
+        timing.guest_stage_leaf_setup_workspace_alloc_byte_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_setup_output_alloc_count",
+        timing.guest_stage_leaf_setup_output_alloc_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_setup_workspace_alloc_count",
+        timing.guest_stage_leaf_setup_workspace_alloc_count(),
+    );
     timings.record(
         "guest_stage_leaf_upload_work",
         timing.guest_stage_leaf_upload_work_duration(),
@@ -311,6 +327,22 @@ pub(super) fn record_guest_pc_trace_timing(
         timings.record_dynamic(
             format!("guest_stage_{stage_index}_leaf_setup_workspace_alloc"),
             stage_timing.leaf_setup_workspace_alloc_duration(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_setup_output_alloc_bytes"),
+            stage_timing.leaf_setup_output_alloc_byte_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_setup_workspace_alloc_bytes"),
+            stage_timing.leaf_setup_workspace_alloc_byte_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_setup_output_alloc_count"),
+            stage_timing.leaf_setup_output_alloc_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_setup_workspace_alloc_count"),
+            stage_timing.leaf_setup_workspace_alloc_count(),
         );
         timings.record_dynamic(
             format!("guest_stage_{stage_index}_leaf_upload_work"),

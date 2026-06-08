@@ -324,6 +324,23 @@ impl WitnessStageCommitTiming {
             .leaf_setup_workspace_alloc_duration()
     }
 
+    pub(crate) fn leaf_setup_output_alloc_byte_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_setup_output_alloc_byte_count()
+    }
+
+    pub(crate) fn leaf_setup_workspace_alloc_byte_count(&self) -> usize {
+        self.leaf_extend_timing
+            .leaf_setup_workspace_alloc_byte_count()
+    }
+
+    pub(crate) fn leaf_setup_output_alloc_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_setup_output_alloc_count()
+    }
+
+    pub(crate) fn leaf_setup_workspace_alloc_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_setup_workspace_alloc_count()
+    }
+
     pub(crate) fn leaf_upload_duration(&self) -> Duration {
         self.leaf_extend_timing.upload_duration()
     }

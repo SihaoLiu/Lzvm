@@ -3046,6 +3046,20 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         );
     }
 
+    for source in [
+        leaf_extend_source.as_str(),
+        execution_source.as_str(),
+        cli_source.as_str(),
+    ] {
+        assert!(
+            source.contains("leaf_setup_output_alloc_byte_count")
+                && source.contains("leaf_setup_workspace_alloc_byte_count")
+                && source.contains("leaf_setup_output_alloc_count")
+                && source.contains("leaf_setup_workspace_alloc_count"),
+            "leaf extension timing should expose setup allocation bytes and counts"
+        );
+    }
+
     for (line_name, accessor) in [
         (
             "\"guest_stage_leaf_setup_prepare\"",
@@ -3070,6 +3084,38 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "guest_stage_{stage_index}_leaf_setup_workspace_alloc",
             "leaf_setup_workspace_alloc_duration()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_output_alloc_bytes\"",
+            "guest_stage_leaf_setup_output_alloc_byte_count()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_workspace_alloc_bytes\"",
+            "guest_stage_leaf_setup_workspace_alloc_byte_count()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_output_alloc_count\"",
+            "guest_stage_leaf_setup_output_alloc_count()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_workspace_alloc_count\"",
+            "guest_stage_leaf_setup_workspace_alloc_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_output_alloc_bytes",
+            "leaf_setup_output_alloc_byte_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_workspace_alloc_bytes",
+            "leaf_setup_workspace_alloc_byte_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_output_alloc_count",
+            "leaf_setup_output_alloc_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_workspace_alloc_count",
+            "leaf_setup_workspace_alloc_count()",
         ),
     ] {
         assert!(
