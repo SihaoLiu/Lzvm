@@ -18,6 +18,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let proof_timing_path = crate_root.join("../lzvm-cli/src/prove_witness/proof_timing.rs");
     let proof_timing_source =
         std::fs::read_to_string(&proof_timing_path).expect("proof timing source should read");
+    let cuda_field_test_path = crate_root.join("../lzvm-accel/tests/cuda_field.rs");
+    let cuda_field_test_source =
+        std::fs::read_to_string(&cuda_field_test_path).expect("CUDA field tests should read");
 
     assert!(
         top_level_source.contains("import Lzvm.AuxiliaryChecks"),
@@ -33,9 +36,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("WitnessOpeningRowValueTimingObservedAcceptance")
             && lean_source.contains("GpuSetupCheckedAcceptance")
             && lean_source.contains("GpuAllocationCheckedAcceptance")
+            && lean_source.contains("GpuHostDeviceCopyRoundTripValidation")
+            && lean_source.contains("GpuHostDeviceCopyRoundTripCheckedAcceptance")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean auxiliary checks should expose checked acceptance structures and verifier core clauses"
+    );
+    assert!(
+        lean_source.contains("uploadedBytesRoundTrip")
+            && lean_source.contains("roundTripImpliesWrittenContents"),
+        "Lean auxiliary checks should bind GPU copy roundtrip evidence to written contents"
     );
     for field in [
         "sourceExtendMilliseconds",
@@ -186,6 +196,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "CLI proof timing output should include {line_name}"
         );
     }
+    assert!(
+        cuda_field_test_source.contains("cuda_device_buffer_round_trips_large_bytes")
+            && cuda_field_test_source.contains("large host bytes should copy to device"),
+        "CUDA tests should cover large host-device byte roundtrips"
+    );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
@@ -205,6 +220,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_setup_checked_acceptance_verifier_core_contract",
             "gpu_allocation_checked_acceptance_sound",
             "gpu_allocation_checked_acceptance_verifier_core_contract",
+            "gpu_host_device_copy_round_trip_implies_written_contents",
+            "gpu_host_device_copy_round_trip_checked_acceptance_sound",
+            "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
         ],
     );
 }

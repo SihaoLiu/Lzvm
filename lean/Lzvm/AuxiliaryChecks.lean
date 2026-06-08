@@ -150,6 +150,14 @@ structure GpuAllocationCacheValidation where
         writtenContentsBound fresh publicInput proof ->
           writtenContentsBound cached publicInput proof
 
+structure GpuHostDeviceCopyRoundTripValidation where
+  allocationValidation : GpuAllocationCacheValidation
+  uploadedBytesRoundTrip : GpuAllocationSource -> PublicInput -> Proof -> Prop
+  roundTripImpliesWrittenContents :
+    forall allocation publicInput proof,
+      uploadedBytesRoundTrip allocation publicInput proof ->
+        allocationValidation.writtenContentsBound allocation publicInput proof
+
 def GpuAllocationCheckedAcceptance
     (system : VerifierModel)
     (validation : GpuAllocationCacheValidation)
@@ -158,6 +166,15 @@ def GpuAllocationCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.writtenContentsBound allocation publicInput proof
+
+def GpuHostDeviceCopyRoundTripCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GpuHostDeviceCopyRoundTripValidation)
+    (allocation : GpuAllocationSource)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.uploadedBytesRoundTrip allocation publicInput proof
 
 def SourceLookupAuxiliaryEvidence
     (system : VerifierModel)
@@ -507,6 +524,69 @@ theorem gpu_allocation_checked_acceptance_verifier_core_contract
   intro publicInput proof checked
   have sound :=
     gpu_allocation_checked_acceptance_sound
+      assumptions
+      validation
+      allocation
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
+
+theorem gpu_host_device_copy_round_trip_implies_written_contents
+    (validation : GpuHostDeviceCopyRoundTripValidation)
+    (allocation : GpuAllocationSource) :
+    forall publicInput proof,
+      validation.uploadedBytesRoundTrip allocation publicInput proof ->
+        validation.allocationValidation.writtenContentsBound allocation publicInput proof := by
+  intro publicInput proof roundTrip
+  exact
+    validation.roundTripImpliesWrittenContents
+      allocation
+      publicInput
+      proof
+      roundTrip
+
+theorem gpu_host_device_copy_round_trip_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuHostDeviceCopyRoundTripValidation)
+    (allocation : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuHostDeviceCopyRoundTripCheckedAcceptance
+          system
+          validation
+          allocation
+          publicInput
+          proof ->
+        validation.allocationValidation.writtenContentsBound allocation publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (gpu_host_device_copy_round_trip_implies_written_contents
+        validation
+        allocation
+        publicInput
+        proof
+        checked.right)
+      (abstract_verifier_sound assumptions publicInput proof checked.left)
+
+theorem gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuHostDeviceCopyRoundTripValidation)
+    (allocation : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuHostDeviceCopyRoundTripCheckedAcceptance
+          system
+          validation
+          allocation
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_host_device_copy_round_trip_checked_acceptance_sound
       assumptions
       validation
       allocation
