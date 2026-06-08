@@ -102,6 +102,24 @@ def RuntimePipelineBindingEvidence
     /\ system.pcsOpeningsValid publicInput proof
     /\ system.friQueriesValid publicInput proof
 
+theorem runtime_pipeline_binding_evidence_implies_transcript_bound
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      system.transcriptBound publicInput proof := by
+  intro evidence
+  exact evidence.right.right.right.right.right.right.right.right.right.left
+
 theorem runtime_pipeline_binding_evidence_implies_public_input_bound
     {system : VerifierModel}
     {validation : RuntimePipelineBindingValidation system}
