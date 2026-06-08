@@ -4,6 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
+import Lzvm.AssumptionAudit
 import Lzvm.EthBlockPublicInputBinding
 import Lzvm.TraceConstraintArtifactBinding
 import Lzvm.QueryPlanBinding
@@ -519,6 +520,40 @@ theorem runtime_pipeline_binding_checked_acceptance_sound
         pcsOpeningsValid,
         friQueriesValid⟩,
       soundWitness⟩
+
+theorem runtime_pipeline_binding_checked_acceptance_audited_assumptions
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RuntimePipelineBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have audited :=
+    assumption_bundle_carries_required_crypto_evidence assumptions
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact And.intro audited sound
 
 def runtime_pipeline_trace_source_validation
     {system : VerifierModel}

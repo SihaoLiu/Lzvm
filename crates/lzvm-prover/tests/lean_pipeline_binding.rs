@@ -45,6 +45,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_trace_conformance_contract",
             "runtime_pipeline_compact_digest_merkle_observation_eq_full_state",
             "runtime_pipeline_binding_checked_acceptance_compact_digest_merkle_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_assumptions",
             "runtime_pipeline_binding_checked_acceptance_verifier_sound_witness",
             "runtime_pipeline_binding_checked_acceptance_verifier_core_contract",
             "runtime_pipeline_binding_checked_acceptance_execution_obligations",
@@ -61,6 +62,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             && lean_source.contains("system.accepts publicInput proof")
             && lean_source.contains("RuntimeArtifactSoundnessObligations")
             && lean_source.contains("RuntimeVerifierCoreContract")
+            && lean_source.contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && lean_source.contains("assumption_bundle_carries_required_crypto_evidence")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean pipeline binding should expose query-plan, opening, execution, and full runtime soundness evidence"
     );
