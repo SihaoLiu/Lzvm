@@ -597,6 +597,30 @@ def runtime_pipeline_transcript_validation
     RuntimeTranscriptBindingValidation system :=
   (runtime_pipeline_challenge_validation validation).transcriptValidation
 
+theorem runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RuntimeSoundnessEvidence
+        system
+        (runtime_pipeline_runtime_soundness_validation validation)
+        artifact
+        publicInput
+        proof
+        requiresExternalSource := by
+  intro evidence
+  exact evidence.right.right.right.right.right.right.right.right.left.left
+
 theorem runtime_pipeline_binding_required_external_source_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1343,8 +1367,9 @@ theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_contract
       proof
       requiresExternalSource
       accepted
-  have openingEvidence :=
-    sound.left.right.right.right.right.right.right.right.right.left
+  have runtimeEvidence :=
+    runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence
+      sound.left
   have coreObligations :=
     runtime_pipeline_binding_checked_acceptance_core_obligations
       assumptions
@@ -1353,7 +1378,7 @@ theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_contract
       publicInput
       proof
       accepted
-  exact And.intro openingEvidence.left (And.intro coreObligations sound.right)
+  exact And.intro runtimeEvidence (And.intro coreObligations sound.right)
 
 theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
     {system : VerifierModel}
