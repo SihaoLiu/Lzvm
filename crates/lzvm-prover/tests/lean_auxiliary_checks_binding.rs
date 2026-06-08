@@ -21,12 +21,21 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let fri_fold_path = crate_root.join("src/pcs_fri/fold.rs");
     let fri_fold_source =
         std::fs::read_to_string(&fri_fold_path).expect("FRI fold source should read");
+    let fri_polynomial_path = crate_root.join("src/prove_fri_polynomial.rs");
+    let fri_polynomial_source =
+        std::fs::read_to_string(&fri_polynomial_path).expect("FRI polynomial source should read");
+    let fri_opening_path = crate_root.join("src/prove_fri_opening.rs");
+    let fri_opening_source =
+        std::fs::read_to_string(&fri_opening_path).expect("FRI opening source should read");
     let merkle_path = crate_root.join("src/merkle_hash.rs");
     let merkle_source =
         std::fs::read_to_string(&merkle_path).expect("Merkle hash source should read");
     let cuda_field_test_path = crate_root.join("../lzvm-accel/tests/cuda_field.rs");
     let cuda_field_test_source =
         std::fs::read_to_string(&cuda_field_test_path).expect("CUDA field tests should read");
+    let source_hot_paths_path = crate_root.join("tests/source_hot_paths.rs");
+    let source_hot_paths =
+        std::fs::read_to_string(&source_hot_paths_path).expect("source hot paths should read");
 
     assert!(
         top_level_source.contains("import Lzvm.AuxiliaryChecks"),
@@ -44,6 +53,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuAllocationCheckedAcceptance")
             && lean_source.contains("GpuHostDeviceCopyRoundTripValidation")
             && lean_source.contains("GpuHostDeviceCopyRoundTripCheckedAcceptance")
+            && lean_source.contains("FriFixedColumnCacheValidation")
+            && lean_source.contains("FriFixedColumnCacheCheckedAcceptance")
             && lean_source.contains("GpuCosetExtensionValidation")
             && lean_source.contains("GpuCosetExtensionCheckedAcceptance")
             && lean_source.contains("GpuFriFoldInterpolationValidation")
@@ -244,6 +255,25 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "runtime FRI fold interpolation should use CUDA INTT with CUDA correctness coverage"
     );
     assert!(
+        fri_polynomial_source.contains("struct PcsFriFixedColumnsCache")
+            && fri_polynomial_source.contains("struct PcsFriFixedColumnsCacheKey")
+            && fri_polynomial_source.contains("source_device: Option<CudaDeviceBuffer>")
+            && fri_polynomial_source.contains("entry.key == key")
+            && fri_polynomial_source.contains("Some(&mut entry.source_device)")
+            && fri_polynomial_source.contains("path: plan_unit.fixed_columns.clone()")
+            && fri_polynomial_source.contains("fixed_column_count: plan_unit.fixed_column_count")
+            && fri_polynomial_source.contains("source_rows")
+            && fri_polynomial_source.contains("source_bits")
+            && fri_polynomial_source.contains("target_bits")
+            && fri_polynomial_source.contains("digest: plan_unit.pcs_material_fixed_column_digest")
+            && fri_opening_source
+                .contains("build_pcs_fri_transcript_values_from_trace_refs_with_fixed_cache")
+            && fri_opening_source
+                .contains("let mut fixed_columns_cache = PcsFriFixedColumnsCache::default()")
+            && source_hot_paths.contains("cuda_fri_polynomial_reuses_fixed_source_device_cache"),
+        "runtime FRI fixed-column cache should reuse CUDA source buffers only for matching fixed-column requests"
+    );
+    assert!(
         merkle_source.contains("opening_path_prefix_batch_for_source_rows")
             && merkle_source
                 .contains("cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device")
@@ -279,6 +309,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_host_device_copy_round_trip_implies_written_contents",
             "gpu_host_device_copy_round_trip_checked_acceptance_sound",
             "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
+            "fri_fixed_column_cache_same_request_implies_cached_contents_bound",
+            "fri_fixed_column_cache_checked_acceptance_sound",
+            "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
             "gpu_coset_extension_matches_host_implies_leaf_bytes",
             "gpu_coset_extension_checked_acceptance_sound",
             "gpu_coset_extension_checked_acceptance_verifier_core_contract",

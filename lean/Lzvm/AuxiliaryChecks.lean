@@ -182,6 +182,14 @@ structure GpuHostDeviceCopyRoundTripValidation where
       uploadedBytesRoundTrip allocation publicInput proof ->
         allocationValidation.writtenContentsBound allocation publicInput proof
 
+structure FriFixedColumnCacheValidation where
+  allocationValidation : GpuAllocationCacheValidation
+  fixedColumnCacheRequestBound : GpuAllocationSource -> GpuAllocationSource -> Prop
+  fixedColumnCacheRequestImpliesSameAllocationRequest :
+    forall cached fresh,
+      fixedColumnCacheRequestBound cached fresh ->
+        GpuAllocationSameRequest cached fresh
+
 def GpuAllocationCheckedAcceptance
     (system : VerifierModel)
     (validation : GpuAllocationCacheValidation)
@@ -199,6 +207,16 @@ def GpuHostDeviceCopyRoundTripCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.uploadedBytesRoundTrip allocation publicInput proof
+
+def FriFixedColumnCacheCheckedAcceptance
+    (system : VerifierModel)
+    (validation : FriFixedColumnCacheValidation)
+    (cached fresh : GpuAllocationSource)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.fixedColumnCacheRequestBound cached fresh
+    /\ validation.allocationValidation.writtenContentsBound fresh publicInput proof
 
 def SourceLookupAuxiliaryEvidence
     (system : VerifierModel)
@@ -782,6 +800,85 @@ theorem gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contrac
       assumptions
       validation
       allocation
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
+
+theorem fri_fixed_column_cache_same_request_implies_cached_contents_bound
+    (validation : FriFixedColumnCacheValidation)
+    (cached fresh : GpuAllocationSource) :
+    validation.fixedColumnCacheRequestBound cached fresh ->
+      (forall publicInput proof,
+        validation.allocationValidation.writtenContentsBound fresh publicInput proof ->
+          validation.allocationValidation.writtenContentsBound cached publicInput proof) := by
+  intro requestBound publicInput proof freshBound
+  have sameRequest :=
+    validation.fixedColumnCacheRequestImpliesSameAllocationRequest
+      cached
+      fresh
+      requestBound
+  exact
+    validation.allocationValidation.cachedReusePreservesWrittenContents
+      cached
+      fresh
+      publicInput
+      proof
+      sameRequest
+      freshBound
+
+theorem fri_fixed_column_cache_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : FriFixedColumnCacheValidation)
+    (cached fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      FriFixedColumnCacheCheckedAcceptance
+          system
+          validation
+          cached
+          fresh
+          publicInput
+          proof ->
+        validation.allocationValidation.writtenContentsBound cached publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have requestBound := checked.right.left
+  have freshBound := checked.right.right
+  have cachedBound :=
+    fri_fixed_column_cache_same_request_implies_cached_contents_bound
+      validation
+      cached
+      fresh
+      requestBound
+      publicInput
+      proof
+      freshBound
+  exact
+    And.intro cachedBound
+      (abstract_verifier_sound assumptions publicInput proof checked.left)
+
+theorem fri_fixed_column_cache_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : FriFixedColumnCacheValidation)
+    (cached fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      FriFixedColumnCacheCheckedAcceptance
+          system
+          validation
+          cached
+          fresh
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    fri_fixed_column_cache_checked_acceptance_sound
+      assumptions
+      validation
+      cached
+      fresh
       publicInput
       proof
       checked
