@@ -124,6 +124,12 @@ structure WitnessOpeningRowValueTimingSummary where
   stages : List WitnessOpeningStageRowValueTimingSummary
 deriving DecidableEq, Repr
 
+structure ConstantMaterialValidationTimingSummary where
+  constantMaterialValidationElapsedMilliseconds : Nat
+  constantMaterialValidationUnitCount : Nat
+  constantMaterialValidationByteCount : Nat
+deriving DecidableEq, Repr
+
 structure GpuSetupCacheState where
   device : Nat
   initializedBits : Nat
@@ -617,6 +623,40 @@ theorem witness_opening_row_value_timing_acceptance_verifier_core_contract
   exact
     sound_witness_implies_verifier_core_contract
       (witness_opening_row_value_timing_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
+def ConstantMaterialValidationTimingObservedAcceptance
+    (system : VerifierModel)
+    (_summary : Option ConstantMaterialValidationTimingSummary)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+
+theorem constant_material_validation_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ConstantMaterialValidationTimingSummary) :
+    forall publicInput proof,
+      ConstantMaterialValidationTimingObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithConstantMaterialTimings
+  exact abstract_verifier_sound assumptions publicInput proof acceptedWithConstantMaterialTimings
+
+theorem constant_material_validation_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ConstantMaterialValidationTimingSummary) :
+    forall publicInput proof,
+      ConstantMaterialValidationTimingObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (constant_material_validation_timing_acceptance_sound
         assumptions
         summary
         publicInput

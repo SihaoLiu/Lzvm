@@ -15,6 +15,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let guest_pc_timing_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
     let guest_pc_timing_source =
         std::fs::read_to_string(&guest_pc_timing_path).expect("guest PC timing source should read");
+    let prove_witness_path = crate_root.join("../lzvm-cli/src/prove_witness.rs");
+    let prove_witness_source =
+        std::fs::read_to_string(&prove_witness_path).expect("prove witness source should read");
     let proof_timing_path = crate_root.join("../lzvm-cli/src/prove_witness/proof_timing.rs");
     let proof_timing_source =
         std::fs::read_to_string(&proof_timing_path).expect("proof timing source should read");
@@ -49,6 +52,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GuestPcTraceTimingObservedAcceptance")
             && lean_source.contains("WitnessOpeningRowValueTimingSummary")
             && lean_source.contains("WitnessOpeningRowValueTimingObservedAcceptance")
+            && lean_source.contains("ConstantMaterialValidationTimingSummary")
+            && lean_source.contains("ConstantMaterialValidationTimingObservedAcceptance")
             && lean_source.contains("GpuSetupCheckedAcceptance")
             && lean_source.contains("GpuAllocationCheckedAcceptance")
             && lean_source.contains("GpuHostDeviceCopyRoundTripValidation")
@@ -215,6 +220,26 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "CLI guest PC timing output should include {line_name}"
         );
     }
+    for field in [
+        "constantMaterialValidationElapsedMilliseconds",
+        "constantMaterialValidationUnitCount",
+        "constantMaterialValidationByteCount",
+    ] {
+        assert!(
+            lean_source.contains(field),
+            "Lean constant material validation timing summary should expose {field}"
+        );
+    }
+    for line_name in [
+        "\"constant_material_validation_elapsed\"",
+        "\"constant_material_validation_units\"",
+        "\"constant_material_validation_bytes\"",
+    ] {
+        assert!(
+            prove_witness_source.contains(line_name),
+            "CLI constant material validation timing output should include {line_name}"
+        );
+    }
     for (line_name, field) in [
         (
             "\"finish_witness_opening_row_value_source_extend\"",
@@ -302,6 +327,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_timing_acceptance_verifier_core_contract",
             "witness_opening_row_value_timing_acceptance_sound",
             "witness_opening_row_value_timing_acceptance_verifier_core_contract",
+            "constant_material_validation_timing_acceptance_sound",
+            "constant_material_validation_timing_acceptance_verifier_core_contract",
             "gpu_setup_checked_acceptance_sound",
             "gpu_setup_checked_acceptance_verifier_core_contract",
             "gpu_allocation_checked_acceptance_sound",
