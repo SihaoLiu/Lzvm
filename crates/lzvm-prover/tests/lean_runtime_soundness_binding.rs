@@ -41,6 +41,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_verifier_core_contract",
             "runtime_soundness_checked_acceptance_verifier_sound_witness",
             "runtime_soundness_checked_acceptance_execution_obligations",
+            "runtime_soundness_checked_acceptance_audited_core_contract",
             "runtime_soundness_required_external_source_pcs_sound",
             "runtime_soundness_required_external_source_verifier_core_contract",
         ],
@@ -73,6 +74,32 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("AssumptionBundle"),
         "external-source requirement projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_audited_core_contract"
+        )
+        .contains("(assumptions : AssumptionBundle system)"),
+        "audited runtime core contract should require the audited assumption bundle"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_audited_core_contract"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_core_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_core_contract"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "audited runtime core contract should package crypto evidence, verifier core obligations, and sound witness"
     );
 }
 

@@ -448,6 +448,45 @@ theorem runtime_soundness_checked_acceptance_audited_assumptions
       checked
   exact And.intro audited sound
 
+theorem runtime_soundness_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RuntimeSoundnessEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have audited :=
+    runtime_soundness_checked_acceptance_audited_assumptions
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have coreContract :=
+    sound_witness_implies_verifier_core_contract audited.right.right
+  exact
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro coreContract audited.right.right))
+
 theorem runtime_soundness_checked_acceptance_verifier_sound_witness
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
