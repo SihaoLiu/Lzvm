@@ -292,6 +292,40 @@ fn cli_witness_summary_uses_logical_tree_byte_count() {
 }
 
 #[test]
+fn cli_records_constant_material_validation_work_shape() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("../lzvm-cli/src/prove_witness.rs");
+    let source = std::fs::read_to_string(&source_path).expect("prove witness source should read");
+
+    let body = function_body(
+        &source,
+        "fn join_constant_tree_material_validation",
+        "fn contribution_artifact_requested",
+    );
+
+    assert!(
+        source.contains("started: Instant"),
+        "constant material validation should retain its start time"
+    );
+    assert!(
+        body.contains("constant_material_validation_elapsed"),
+        "constant material validation should report total elapsed time"
+    );
+    assert!(
+        body.contains("constant_material_validation_units"),
+        "constant material validation should report validated units"
+    );
+    assert!(
+        body.contains("constant_material_validation_bytes"),
+        "constant material validation should report validated bytes"
+    );
+    assert!(
+        source.contains("constant_material_wait"),
+        "constant material validation should keep the existing wait marker"
+    );
+}
+
+#[test]
 fn witness_opening_reads_through_commitment_accessors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_commitment/tree.rs");

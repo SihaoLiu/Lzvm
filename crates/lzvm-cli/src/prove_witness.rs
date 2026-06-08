@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::thread::{self, JoinHandle};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use lzvm_artifacts::constant_tree::ConstantTreeFileSummary;
 use lzvm_artifacts::eth_block_input::EthBlockInput;
@@ -267,6 +267,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             timings.mark("witness");
             let constant_tree_material_summaries = match join_constant_tree_material_validation(
                 &mut constant_tree_material_validation,
+                &mut timings,
             ) {
                 Ok(summaries) => summaries,
                 Err(message) => {
@@ -326,6 +327,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             timings.mark("witness");
             let constant_tree_material_summaries = match join_constant_tree_material_validation(
                 &mut constant_tree_material_validation,
+                &mut timings,
             ) {
                 Ok(summaries) => summaries,
                 Err(message) => {
@@ -448,6 +450,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 timings.mark("witness");
                 let constant_tree_material_summaries = match join_constant_tree_material_validation(
                     &mut constant_tree_material_validation,
+                    &mut timings,
                 ) {
                     Ok(summaries) => summaries,
                     Err(message) => {
@@ -547,14 +550,16 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         return 1;
     };
     timings.mark("witness");
-    let constant_tree_material_summaries =
-        match join_constant_tree_material_validation(&mut constant_tree_material_validation) {
-            Ok(summaries) => summaries,
-            Err(message) => {
-                let _ = writeln!(stderr, "prove witness failed: {message}");
-                return 1;
-            }
-        };
+    let constant_tree_material_summaries = match join_constant_tree_material_validation(
+        &mut constant_tree_material_validation,
+        &mut timings,
+    ) {
+        Ok(summaries) => summaries,
+        Err(message) => {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
+            return 1;
+        }
+    };
     timings.mark("constant_material_wait");
     let commitments = output.commitments();
     let output_unit_index = commitments.unit_index();
@@ -663,6 +668,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
 
 struct ConstantTreeMaterialValidationJob {
     handle: JoinHandle<Result<Vec<Option<ConstantTreeFileSummary>>, String>>,
+    started: Instant,
 }
 
 fn start_constant_tree_material_validation(
@@ -676,6 +682,7 @@ fn start_constant_tree_material_validation(
     let catalog = catalog.clone();
     let schedule = schedule.clone();
     Some(ConstantTreeMaterialValidationJob {
+        started: Instant::now(),
         handle: thread::spawn(move || {
             lzvm_prover::validate_constant_opening_materials(&catalog, &schedule)
                 .map_err(|error| error.to_string())
@@ -685,14 +692,42 @@ fn start_constant_tree_material_validation(
 
 fn join_constant_tree_material_validation(
     job: &mut Option<ConstantTreeMaterialValidationJob>,
+    timings: &mut TimingRecorder,
 ) -> Result<Option<Vec<Option<ConstantTreeFileSummary>>>, String> {
     let Some(job) = job.take() else {
         return Ok(None);
     };
-    job.handle
+    let started = job.started;
+    let summaries = job
+        .handle
         .join()
-        .map_err(|_| "constant-tree material validation thread panicked".to_owned())?
-        .map(Some)
+        .map_err(|_| "constant-tree material validation thread panicked".to_owned())?;
+    let summaries = summaries?;
+    record_constant_material_validation_timing(timings, started.elapsed(), &summaries);
+    Ok(Some(summaries))
+}
+
+fn record_constant_material_validation_timing(
+    timings: &mut TimingRecorder,
+    elapsed: Duration,
+    summaries: &[Option<ConstantTreeFileSummary>],
+) {
+    let mut byte_count = 0u64;
+    let mut unit_count = 0usize;
+    for summary in summaries.iter().flatten() {
+        unit_count += 1;
+        byte_count = byte_count.saturating_add(summary.byte_count);
+    }
+    timings.record("constant_material_validation_elapsed", elapsed);
+    timings.record_count("constant_material_validation_units", unit_count);
+    timings.record_count(
+        "constant_material_validation_bytes",
+        saturating_usize_from_u64(byte_count),
+    );
+}
+
+fn saturating_usize_from_u64(value: u64) -> usize {
+    usize::try_from(value).unwrap_or(usize::MAX)
 }
 
 fn contribution_artifact_requested(plan: &ProveExecutionPlan) -> bool {
