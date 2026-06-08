@@ -15,6 +15,9 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
     let values_path = crate_root.join("src/witness_commitment/values.rs");
     let values_source = std::fs::read_to_string(&values_path)
         .expect("witness commitment values source should read");
+    let hot_paths_path = crate_root.join("tests/source_hot_paths.rs");
+    let hot_paths_source =
+        std::fs::read_to_string(&hot_paths_path).expect("source hot-path tests should read");
 
     assert!(
         lean_source.contains("RuntimeRetainedLeafDigestOpeningValidation")
@@ -22,22 +25,32 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             && lean_source.contains("retainedLeafDigestPathBound")
             && lean_source.contains("retainedLeafDigestRootMatchesExpectedRoot")
             && lean_source.contains("retainedLeafDigestRowsBoundToQueryPlan")
+            && lean_source.contains("retainedLeafDigestShiftedRowWeightCacheUsed")
+            && lean_source.contains(
+                "retainedLeafDigestOpeningAcceptedImpliesShiftedRowWeightCacheUsed"
+            )
+            && lean_source.contains("retainedLeafDigestShiftedRowWeightCacheImpliesRowsFromSource")
             && lean_source.contains("retainedLeafDigestChecksImplyPerRowWitnessOpeningRowsBound")
             && lean_source.contains("RuntimeRetainedLeafDigestOpeningEvidence")
             && lean_source.contains("def RuntimeRetainedLeafDigestOpeningDigestContract")
             && lean_source.contains("def RuntimeRetainedLeafDigestOpeningRetainedRowsContract")
+            && lean_source
+                .contains("def RuntimeRetainedLeafDigestOpeningShiftedRowSourceContract")
             && lean_source.contains("RuntimeRetainedLeafDigestOpeningDigestContract")
             && lean_source.contains("RuntimeRetainedLeafDigestOpeningRetainedRowsContract")
+            && lean_source.contains("RuntimeRetainedLeafDigestOpeningShiftedRowSourceContract")
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsEvidence")
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsBoundContract")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
-        "Lean retained leaf digest opening binding should expose source rows, Merkle path, root equality, and soundness evidence"
+        "Lean retained leaf digest opening binding should expose source rows, shifted-row cache evidence, Merkle path, root equality, and soundness evidence"
     );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
             "runtime_retained_leaf_digest_opening_checked_acceptance_evidence",
+            "runtime_retained_leaf_digest_shifted_row_weight_cache_implies_source_rows",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_shifted_row_source_contract",
             "runtime_retained_leaf_digest_opening_evidence_implies_digest_contract",
             "runtime_retained_leaf_digest_opening_evidence_implies_batch_rows_evidence",
             "runtime_retained_leaf_digest_opening_checked_acceptance_batch_rows_evidence",
@@ -60,7 +73,15 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
         values_source.contains("open_batch_with_retained_leaf_digest_level_cuda")
             && values_source.contains("retained_leaf_digest_level")
             && values_source.contains("extended_row_values_from_source_cuda")
-            && values_source.contains("path.root != expected_root"),
-        "runtime retained leaf digest opening should bind retained paths to source-derived rows and expected roots"
+            && values_source
+                .contains("cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device")
+            && values_source.contains(
+                "cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device"
+            )
+            && values_source.contains("path.root != expected_root")
+            && hot_paths_source.contains("retained_leaf_digest_opening_uses_shifted_row_weight_cache")
+            && hot_paths_source.contains("extended_selected_row_values_from_source_cuda")
+            && hot_paths_source.contains("residue weight cache"),
+        "runtime retained leaf digest opening should bind retained paths to source-derived rows, shifted-row cache use, and expected roots"
     );
 }

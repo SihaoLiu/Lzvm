@@ -20,6 +20,7 @@ structure RuntimeRetainedLeafDigestOpeningValidation (system : VerifierModel) wh
   retainedLeafDigestRootMatchesExpectedRoot : RuntimeArtifact -> PublicInput -> Proof -> Prop
   retainedLeafDigestRowsFromSource : RuntimeArtifact -> PublicInput -> Proof -> Prop
   retainedLeafDigestRowsBoundToQueryPlan : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  retainedLeafDigestShiftedRowWeightCacheUsed : RuntimeArtifact -> PublicInput -> Proof -> Prop
   retainedLeafDigestOpeningAcceptedImpliesBatchRowsAccepted :
     forall artifact publicInput proof,
       retainedLeafDigestOpeningAccepted artifact publicInput proof ->
@@ -44,6 +45,14 @@ structure RuntimeRetainedLeafDigestOpeningValidation (system : VerifierModel) wh
     forall artifact publicInput proof,
       retainedLeafDigestOpeningAccepted artifact publicInput proof ->
         retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof
+  retainedLeafDigestOpeningAcceptedImpliesShiftedRowWeightCacheUsed :
+    forall artifact publicInput proof,
+      retainedLeafDigestOpeningAccepted artifact publicInput proof ->
+        retainedLeafDigestShiftedRowWeightCacheUsed artifact publicInput proof
+  retainedLeafDigestShiftedRowWeightCacheImpliesRowsFromSource :
+    forall artifact publicInput proof,
+      retainedLeafDigestShiftedRowWeightCacheUsed artifact publicInput proof ->
+        retainedLeafDigestRowsFromSource artifact publicInput proof
   retainedLeafDigestChecksImplyPerRowWitnessOpeningRowsBound :
     forall artifact publicInput proof,
       batchRowsValidation.openingSegmentValidation.queryPlanBound artifact publicInput proof ->
@@ -95,6 +104,16 @@ def RuntimeRetainedLeafDigestOpeningRetainedRowsContract
       artifact
       publicInput
       proof
+
+def RuntimeRetainedLeafDigestOpeningShiftedRowSourceContract
+    (_system : VerifierModel)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.retainedLeafDigestShiftedRowWeightCacheUsed artifact publicInput proof
+    /\ validation.retainedLeafDigestRowsFromSource artifact publicInput proof
+    /\ validation.retainedLeafDigestRowsBoundToQueryPlan artifact publicInput proof
 
 def RuntimeRetainedLeafDigestOpeningEvidence
     (system : VerifierModel)
@@ -233,6 +252,60 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_evidence
           (And.intro rowsFromSource
             (And.intro retainedPerRow
               (And.intro witnessSegments witnessOpeningsBound)))))
+
+theorem runtime_retained_leaf_digest_shifted_row_weight_cache_implies_source_rows
+    {system : VerifierModel}
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
+    forall artifact publicInput proof,
+      validation.retainedLeafDigestShiftedRowWeightCacheUsed artifact publicInput proof ->
+        validation.retainedLeafDigestRowsFromSource artifact publicInput proof := by
+  intro artifact publicInput proof shiftedRowWeightCacheUsed
+  exact
+    validation.retainedLeafDigestShiftedRowWeightCacheImpliesRowsFromSource
+      artifact
+      publicInput
+      proof
+      shiftedRowWeightCacheUsed
+
+theorem runtime_retained_leaf_digest_opening_checked_acceptance_shifted_row_source_contract
+    {system : VerifierModel}
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedLeafDigestOpeningShiftedRowSourceContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have shiftedRowWeightCacheUsed :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesShiftedRowWeightCacheUsed
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsFromSource :=
+    runtime_retained_leaf_digest_shifted_row_weight_cache_implies_source_rows
+      validation
+      artifact
+      publicInput
+      proof
+      shiftedRowWeightCacheUsed
+  have rowsBoundToQueryPlan :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRowsBoundToQueryPlan
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro shiftedRowWeightCacheUsed
+      (And.intro rowsFromSource rowsBoundToQueryPlan)
 
 theorem runtime_retained_leaf_digest_opening_evidence_implies_digest_contract
     {system : VerifierModel}
