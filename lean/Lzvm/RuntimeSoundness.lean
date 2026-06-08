@@ -431,6 +431,47 @@ theorem runtime_soundness_checked_acceptance_verifier_core_contract
       requiresExternalSource
       checked
 
+theorem runtime_soundness_checked_acceptance_execution_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        exists witness trace constraints,
+          system.traceConsistent publicInput proof trace
+            /\ system.constraintsSatisfied constraints trace
+            /\ system.witnessMatchesTrace witness trace := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have sound :=
+    runtime_soundness_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  cases sound.right with
+  | intro witness tail =>
+    cases tail with
+    | intro trace tail =>
+      cases tail with
+      | intro constraints evidence =>
+        exact
+          Exists.intro witness
+            (Exists.intro trace
+              (Exists.intro constraints
+                (And.intro evidence.right.right.right.right.left
+                  (And.intro
+                    evidence.right.right.right.right.right.left
+                    evidence.right.right.right.right.right.right))))
+
 theorem runtime_soundness_required_external_source_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
