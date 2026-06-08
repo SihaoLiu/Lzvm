@@ -1712,4 +1712,54 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
       executionObligations,
       sound.right⟩
 
+theorem runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RuntimePipelineBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeArtifactSoundnessObligations
+            system
+            validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have fullContract :=
+    runtime_pipeline_binding_checked_acceptance_full_soundness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact And.intro verifierAccepts fullContract
+
 end Lzvm
