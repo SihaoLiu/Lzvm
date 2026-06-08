@@ -22,6 +22,7 @@ structure RuntimeRetainedParentCheckpointOpeningValidation (system : VerifierMod
   retainedParentCheckpointRootMatchesExpectedRoot : RuntimeArtifact -> PublicInput -> Proof -> Prop
   retainedParentCheckpointRowsFromSource : RuntimeArtifact -> PublicInput -> Proof -> Prop
   retainedParentCheckpointRowsBoundToQueryPlan : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  retainedParentCheckpointPrefixBatchUsed : RuntimeArtifact -> PublicInput -> Proof -> Prop
   retainedParentCheckpointOpeningAcceptedImpliesBatchRowsAccepted :
     forall artifact publicInput proof,
       retainedParentCheckpointOpeningAccepted artifact publicInput proof ->
@@ -54,6 +55,14 @@ structure RuntimeRetainedParentCheckpointOpeningValidation (system : VerifierMod
     forall artifact publicInput proof,
       retainedParentCheckpointOpeningAccepted artifact publicInput proof ->
         retainedParentCheckpointRowsBoundToQueryPlan artifact publicInput proof
+  retainedParentCheckpointOpeningAcceptedImpliesPrefixBatchUsed :
+    forall artifact publicInput proof,
+      retainedParentCheckpointOpeningAccepted artifact publicInput proof ->
+        retainedParentCheckpointPrefixBatchUsed artifact publicInput proof
+  retainedParentCheckpointPrefixBatchImpliesLowerPrefixBound :
+    forall artifact publicInput proof,
+      retainedParentCheckpointPrefixBatchUsed artifact publicInput proof ->
+        retainedParentCheckpointLowerPrefixBound artifact publicInput proof
   retainedParentCheckpointChecksImplyPerRowWitnessOpeningRowsBound :
     forall artifact publicInput proof,
       batchRowsValidation.openingSegmentValidation.queryPlanBound artifact publicInput proof ->
@@ -88,6 +97,16 @@ def RuntimeRetainedParentCheckpointOpeningDigestContract
     /\ validation.retainedParentCheckpointStitchedPathBound artifact publicInput proof
     /\ validation.retainedParentCheckpointRootMatchesExpectedRoot artifact publicInput proof
     /\ validation.retainedParentCheckpointRowsFromSource artifact publicInput proof
+    /\ validation.retainedParentCheckpointRowsBoundToQueryPlan artifact publicInput proof
+
+def RuntimeRetainedParentCheckpointOpeningPrefixBatchContract
+    (_system : VerifierModel)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.retainedParentCheckpointPrefixBatchUsed artifact publicInput proof
+    /\ validation.retainedParentCheckpointLowerPrefixBound artifact publicInput proof
     /\ validation.retainedParentCheckpointRowsBoundToQueryPlan artifact publicInput proof
 
 def RuntimeRetainedParentCheckpointOpeningRetainedRowsContract
@@ -266,6 +285,60 @@ theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_evidence
           (And.intro rowsFromSource
             (And.intro retainedPerRow
               (And.intro witnessSegments witnessOpeningsBound)))))
+
+theorem runtime_retained_parent_checkpoint_prefix_batch_implies_lower_prefix_bound
+    {system : VerifierModel}
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof,
+      validation.retainedParentCheckpointPrefixBatchUsed artifact publicInput proof ->
+        validation.retainedParentCheckpointLowerPrefixBound artifact publicInput proof := by
+  intro artifact publicInput proof prefixBatchUsed
+  exact
+    validation.retainedParentCheckpointPrefixBatchImpliesLowerPrefixBound
+      artifact
+      publicInput
+      proof
+      prefixBatchUsed
+
+theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_prefix_batch_contract
+    {system : VerifierModel}
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedParentCheckpointOpeningPrefixBatchContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have prefixBatchUsed :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesPrefixBatchUsed
+      artifact
+      publicInput
+      proof
+      accepted
+  have lowerPrefix :=
+    runtime_retained_parent_checkpoint_prefix_batch_implies_lower_prefix_bound
+      validation
+      artifact
+      publicInput
+      proof
+      prefixBatchUsed
+  have rowsBoundToQueryPlan :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesRowsBoundToQueryPlan
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro prefixBatchUsed
+      (And.intro lowerPrefix rowsBoundToQueryPlan)
 
 theorem runtime_retained_parent_checkpoint_opening_evidence_implies_digest_contract
     {system : VerifierModel}
