@@ -30,6 +30,14 @@ structure GpuCanonicalLeafValidation (system : VerifierModel) where
       gpuCanonicalFlagClear publicInput proof ->
         leafValidation.canonicalExtendedLeafBytes publicInput proof
 
+structure GpuCosetExtensionValidation (system : VerifierModel) where
+  leafValidation : WitnessLeafDigestValidation system
+  cosetExtensionMatchesHost : PublicInput -> Proof -> Prop
+  cosetExtensionImpliesCanonicalLeafBytes :
+    forall publicInput proof,
+      cosetExtensionMatchesHost publicInput proof ->
+        leafValidation.canonicalExtendedLeafBytes publicInput proof
+
 structure TimingObservation where
   label : Nat
   milliseconds : Nat
@@ -217,6 +225,14 @@ def GpuCanonicalLeafCheckedAcceptance
   system.accepts publicInput proof
     /\ validation.gpuCanonicalFlagClear publicInput proof
 
+def GpuCosetExtensionCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GpuCosetExtensionValidation system)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.cosetExtensionMatchesHost publicInput proof
+
 theorem source_lookup_auxiliary_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -304,6 +320,54 @@ theorem gpu_canonical_leaf_checked_acceptance_verifier_core_contract
   intro publicInput proof checked
   have sound :=
     gpu_canonical_leaf_checked_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
+
+theorem gpu_coset_extension_matches_host_implies_leaf_bytes
+    {system : VerifierModel}
+    (validation : GpuCosetExtensionValidation system) :
+    forall publicInput proof,
+      validation.cosetExtensionMatchesHost publicInput proof ->
+        validation.leafValidation.canonicalExtendedLeafBytes publicInput proof := by
+  intro publicInput proof cosetMatchesHost
+  exact
+    validation.cosetExtensionImpliesCanonicalLeafBytes
+      publicInput
+      proof
+      cosetMatchesHost
+
+theorem gpu_coset_extension_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuCosetExtensionValidation system) :
+    forall publicInput proof,
+      GpuCosetExtensionCheckedAcceptance system validation publicInput proof ->
+        validation.leafValidation.canonicalExtendedLeafBytes publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (gpu_coset_extension_matches_host_implies_leaf_bytes
+        validation
+        publicInput
+        proof
+        checked.right)
+      (abstract_verifier_sound assumptions publicInput proof checked.left)
+
+theorem gpu_coset_extension_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuCosetExtensionValidation system) :
+    forall publicInput proof,
+      GpuCosetExtensionCheckedAcceptance system validation publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_coset_extension_checked_acceptance_sound
       assumptions
       validation
       publicInput

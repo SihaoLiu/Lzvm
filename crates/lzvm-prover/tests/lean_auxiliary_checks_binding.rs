@@ -38,6 +38,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuAllocationCheckedAcceptance")
             && lean_source.contains("GpuHostDeviceCopyRoundTripValidation")
             && lean_source.contains("GpuHostDeviceCopyRoundTripCheckedAcceptance")
+            && lean_source.contains("GpuCosetExtensionValidation")
+            && lean_source.contains("GpuCosetExtensionCheckedAcceptance")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean auxiliary checks should expose checked acceptance structures and verifier core clauses"
@@ -46,6 +48,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_source.contains("uploadedBytesRoundTrip")
             && lean_source.contains("roundTripImpliesWrittenContents"),
         "Lean auxiliary checks should bind GPU copy roundtrip evidence to written contents"
+    );
+    assert!(
+        lean_source.contains("cosetExtensionMatchesHost")
+            && lean_source.contains("cosetExtensionImpliesCanonicalLeafBytes"),
+        "Lean auxiliary checks should bind GPU coset extension evidence to canonical leaf bytes"
     );
     for field in [
         "sourceExtendMilliseconds",
@@ -201,6 +208,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && cuda_field_test_source.contains("large host bytes should copy to device"),
         "CUDA tests should cover large host-device byte roundtrips"
     );
+    assert!(
+        cuda_field_test_source.contains("cuda_extends_evaluations_over_shifted_cosets")
+            && cuda_field_test_source.contains("cuda_extends_row_major_columns_from_device_memory")
+            && cuda_field_test_source
+                .contains("cuda_extends_row_major_coset_row_range_from_device_memory")
+            && cuda_field_test_source
+                .contains("cuda_extends_selected_strided_row_major_coset_rows_from_device_memory"),
+        "CUDA tests should cover GPU coset extension outputs and selected row ranges"
+    );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
@@ -223,6 +239,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_host_device_copy_round_trip_implies_written_contents",
             "gpu_host_device_copy_round_trip_checked_acceptance_sound",
             "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
+            "gpu_coset_extension_matches_host_implies_leaf_bytes",
+            "gpu_coset_extension_checked_acceptance_sound",
+            "gpu_coset_extension_checked_acceptance_verifier_core_contract",
         ],
     );
 }
