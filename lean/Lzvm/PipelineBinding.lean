@@ -592,6 +592,30 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_assumptions
       accepted
   exact And.intro audited sound
 
+theorem runtime_pipeline_binding_checked_acceptance_transcript_bound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.transcriptBound publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  exact runtime_pipeline_binding_evidence_implies_transcript_bound sound.left
+
 def runtime_pipeline_trace_source_validation
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
