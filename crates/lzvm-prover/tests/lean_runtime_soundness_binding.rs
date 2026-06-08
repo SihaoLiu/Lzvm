@@ -31,6 +31,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_evidence_implies_transcript_bound",
             "runtime_soundness_evidence_implies_public_input_bound",
             "runtime_soundness_evidence_implies_core_obligations",
+            "runtime_soundness_checked_acceptance_transcript_bound",
             "runtime_soundness_checked_acceptance_pcs_and_fri",
             "runtime_soundness_checked_acceptance_core_obligations",
             "runtime_soundness_checked_acceptance_verifier_core_contract",
