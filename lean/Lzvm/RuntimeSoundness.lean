@@ -370,6 +370,31 @@ theorem runtime_soundness_checked_acceptance_audited_assumptions
       checked
   exact And.intro audited sound
 
+theorem runtime_soundness_checked_acceptance_verifier_sound_witness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have sound :=
+    runtime_soundness_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact sound.right
+
 theorem runtime_soundness_checked_acceptance_core_obligations
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
