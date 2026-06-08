@@ -33,12 +33,14 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_evidence_implies_public_input_bound",
             "runtime_soundness_evidence_implies_core_obligations",
             "runtime_soundness_evidence_implies_external_source_requirement",
+            "runtime_soundness_evidence_implies_runtime_artifact_core_contract",
             "runtime_soundness_checked_acceptance_runtime_artifact_evidence",
             "runtime_soundness_checked_acceptance_transcript_bound",
             "runtime_soundness_checked_acceptance_public_input_bound",
             "runtime_soundness_checked_acceptance_pcs_and_fri",
             "runtime_soundness_checked_acceptance_external_source_requirement",
             "runtime_soundness_checked_acceptance_core_obligations",
+            "runtime_soundness_checked_acceptance_runtime_artifact_core_contract",
             "runtime_soundness_checked_acceptance_verifier_core_contract",
             "runtime_soundness_checked_acceptance_verifier_sound_witness",
             "runtime_soundness_checked_acceptance_execution_obligations",
@@ -104,6 +106,45 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("AssumptionBundle"),
         "runtime soundness evidence external-source projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_evidence_implies_runtime_artifact_core_contract"
+        )
+        .contains("RuntimeArtifactEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_evidence_implies_runtime_artifact_core_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof"),
+        "runtime soundness evidence should package runtime artifact evidence with verifier core obligations"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_evidence_implies_runtime_artifact_core_contract"
+        )
+        .contains("AssumptionBundle"),
+        "runtime soundness evidence artifact-core projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_runtime_artifact_core_contract"
+        )
+        .contains("(assumptions : AssumptionBundle system)")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_runtime_artifact_core_contract"
+            )
+            .contains("RuntimeArtifactEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_runtime_artifact_core_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof"),
+        "checked runtime soundness should expose artifact evidence plus verifier core obligations under audited assumptions"
     );
     assert!(
         theorem_prefix(

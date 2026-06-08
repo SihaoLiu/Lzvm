@@ -174,6 +174,42 @@ theorem runtime_soundness_evidence_implies_core_obligations
           evidence.right.right.right.right.right.left
           evidence.right.right.right.right.right.right))
 
+theorem runtime_soundness_evidence_implies_runtime_artifact_core_contract
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeArtifactEvidence
+          system
+          validation.transcriptValidation.artifactBindingValidation.runtimeValidation
+          artifact
+          publicInput
+          proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact
+    And.intro
+      (runtime_soundness_evidence_implies_runtime_artifact_evidence
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource
+        evidence)
+      (runtime_soundness_evidence_implies_core_obligations
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource
+        evidence)
+
 theorem runtime_soundness_checked_acceptance_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -432,6 +468,44 @@ theorem runtime_soundness_checked_acceptance_sound
       proof
       checked.left
   exact And.intro evidence transcriptSound.right.right.right
+
+theorem runtime_soundness_checked_acceptance_runtime_artifact_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeArtifactEvidence
+          system
+          validation.transcriptValidation.artifactBindingValidation.runtimeValidation
+          artifact
+          publicInput
+          proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have evidence :=
+    runtime_soundness_checked_acceptance_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact
+    runtime_soundness_evidence_implies_runtime_artifact_core_contract
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
 
 theorem runtime_soundness_checked_acceptance_audited_assumptions
     {system : VerifierModel}
