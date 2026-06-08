@@ -44,6 +44,10 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_leaf_coset_extend_pack_launch_count: usize,
     pub witness_opening_leaf_coset_extend_unpack_launch_count: usize,
     pub witness_opening_path_parent_hash: Duration,
+    pub witness_opening_path_parent_hash_recomputed: Duration,
+    pub witness_opening_path_parent_hash_retained_leaf_digest: Duration,
+    pub witness_opening_path_parent_hash_retained_parent_checkpoint_prefix: Duration,
+    pub witness_opening_path_parent_hash_retained_parent_checkpoint_suffix: Duration,
     pub witness_opening_path_parent_hash_row_count: usize,
     pub witness_opening_path_parent_hash_byte_count: usize,
     pub witness_opening_path_parent_hash_launch_count: usize,
@@ -117,6 +121,10 @@ pub struct WitnessProofStageOpeningWork {
     pub leaf_coset_extend_pack_launch_count: usize,
     pub leaf_coset_extend_unpack_launch_count: usize,
     pub path_parent_hash: Duration,
+    pub path_parent_hash_recomputed: Duration,
+    pub path_parent_hash_retained_leaf_digest: Duration,
+    pub path_parent_hash_retained_parent_checkpoint_prefix: Duration,
+    pub path_parent_hash_retained_parent_checkpoint_suffix: Duration,
     pub path_parent_hash_row_count: usize,
     pub path_parent_hash_byte_count: usize,
     pub path_parent_hash_launch_count: usize,
@@ -173,6 +181,12 @@ impl WitnessProofStageOpeningWork {
         self.leaf_coset_extend_pack_launch_count += timing.leaf_coset_extend_pack_launch_count;
         self.leaf_coset_extend_unpack_launch_count += timing.leaf_coset_extend_unpack_launch_count;
         self.path_parent_hash += timing.path_parent_hash;
+        self.path_parent_hash_recomputed += timing.path_parent_hash_recomputed;
+        self.path_parent_hash_retained_leaf_digest += timing.path_parent_hash_retained_leaf_digest;
+        self.path_parent_hash_retained_parent_checkpoint_prefix +=
+            timing.path_parent_hash_retained_parent_checkpoint_prefix;
+        self.path_parent_hash_retained_parent_checkpoint_suffix +=
+            timing.path_parent_hash_retained_parent_checkpoint_suffix;
         self.path_parent_hash_row_count += timing.path_parent_hash_row_count;
         self.path_parent_hash_byte_count += timing.path_parent_hash_byte_count;
         self.path_parent_hash_launch_count += timing.path_parent_hash_launch_count;
@@ -333,6 +347,13 @@ impl WitnessProofArtifactTiming {
         self.witness_opening_leaf_coset_extend_unpack_launch_count +=
             timing.leaf_coset_extend_unpack_launch_count;
         self.witness_opening_path_parent_hash += timing.path_parent_hash;
+        self.witness_opening_path_parent_hash_recomputed += timing.path_parent_hash_recomputed;
+        self.witness_opening_path_parent_hash_retained_leaf_digest +=
+            timing.path_parent_hash_retained_leaf_digest;
+        self.witness_opening_path_parent_hash_retained_parent_checkpoint_prefix +=
+            timing.path_parent_hash_retained_parent_checkpoint_prefix;
+        self.witness_opening_path_parent_hash_retained_parent_checkpoint_suffix +=
+            timing.path_parent_hash_retained_parent_checkpoint_suffix;
         self.witness_opening_path_parent_hash_row_count += timing.path_parent_hash_row_count;
         self.witness_opening_path_parent_hash_byte_count += timing.path_parent_hash_byte_count;
         self.witness_opening_path_parent_hash_launch_count += timing.path_parent_hash_launch_count;

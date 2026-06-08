@@ -160,6 +160,22 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_path_parent_hash",
         timing.witness_opening_path_parent_hash,
     );
+    timings.record(
+        "finish_witness_opening_path_parent_hash_recomputed",
+        timing.witness_opening_path_parent_hash_recomputed,
+    );
+    timings.record(
+        "finish_witness_opening_path_parent_hash_retained_leaf_digest",
+        timing.witness_opening_path_parent_hash_retained_leaf_digest,
+    );
+    timings.record(
+        "finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix",
+        timing.witness_opening_path_parent_hash_retained_parent_checkpoint_prefix,
+    );
+    timings.record(
+        "finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix",
+        timing.witness_opening_path_parent_hash_retained_parent_checkpoint_suffix,
+    );
     timings.record_count(
         "finish_witness_opening_path_parent_hash_rows",
         timing.witness_opening_path_parent_hash_row_count,
@@ -448,6 +464,34 @@ pub(super) fn record_proof_artifact_timing(
                 stage_work.stage_index
             ),
             stage_work.path_parent_hash,
+        );
+        timings.record_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_path_parent_hash_recomputed",
+                stage_work.stage_index
+            ),
+            stage_work.path_parent_hash_recomputed,
+        );
+        timings.record_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_path_parent_hash_retained_leaf_digest",
+                stage_work.stage_index
+            ),
+            stage_work.path_parent_hash_retained_leaf_digest,
+        );
+        timings.record_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_path_parent_hash_retained_parent_checkpoint_prefix",
+                stage_work.stage_index
+            ),
+            stage_work.path_parent_hash_retained_parent_checkpoint_prefix,
+        );
+        timings.record_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_path_parent_hash_retained_parent_checkpoint_suffix",
+                stage_work.stage_index
+            ),
+            stage_work.path_parent_hash_retained_parent_checkpoint_suffix,
         );
         timings.record_count_dynamic(
             format!(

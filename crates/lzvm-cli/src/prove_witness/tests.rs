@@ -155,6 +155,12 @@ fn writes_timing_count_summary_lines_without_ms_suffix() {
 fn proof_artifact_timing_reports_parent_hash_shape_counts() {
     let timing = lzvm_prover::WitnessProofArtifactTiming {
         witness_opening_path_parent_hash: std::time::Duration::from_millis(9),
+        witness_opening_path_parent_hash_recomputed: std::time::Duration::from_millis(2),
+        witness_opening_path_parent_hash_retained_leaf_digest: std::time::Duration::from_millis(3),
+        witness_opening_path_parent_hash_retained_parent_checkpoint_prefix:
+            std::time::Duration::from_millis(4),
+        witness_opening_path_parent_hash_retained_parent_checkpoint_suffix:
+            std::time::Duration::from_millis(5),
         witness_opening_path_parent_hash_row_count: 120,
         witness_opening_path_parent_hash_launch_count: 12,
         witness_opening_query_count: 3,
@@ -170,6 +176,15 @@ fn proof_artifact_timing_reports_parent_hash_shape_counts() {
     let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
 
     assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_ms=9\n"));
+    assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_recomputed_ms=2\n"));
+    assert!(stdout
+        .contains("timing_finish_witness_opening_path_parent_hash_retained_leaf_digest_ms=3\n"));
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_ms=4\n"
+    ));
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms=5\n"
+    ));
     assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_rows_per_query=40\n"));
     assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_rows_per_stage=30\n"));
     assert!(
@@ -206,70 +221,77 @@ fn proof_artifact_timing_reports_external_source_rebuild_shape() {
 
 #[test]
 fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
-    let timing = lzvm_prover::WitnessProofArtifactTiming {
-        witness_opening_row_values_source_extend: std::time::Duration::from_millis(41),
-        witness_opening_row_values_source_download: std::time::Duration::from_millis(42),
-        witness_opening_row_values_device_download: std::time::Duration::from_millis(43),
-        witness_opening_row_values_device_row_count: 34,
-        witness_opening_row_values_source_row_count: 35,
-        witness_opening_row_values_word_count: 36,
-        witness_opening_row_values_byte_count: 37,
-        witness_stage_opening_row_value_source_extend: vec![
-            lzvm_prover::WitnessProofStageOpeningTiming {
+    let timing =
+        lzvm_prover::WitnessProofArtifactTiming {
+            witness_opening_row_values_source_extend: std::time::Duration::from_millis(41),
+            witness_opening_row_values_source_download: std::time::Duration::from_millis(42),
+            witness_opening_row_values_device_download: std::time::Duration::from_millis(43),
+            witness_opening_row_values_device_row_count: 34,
+            witness_opening_row_values_source_row_count: 35,
+            witness_opening_row_values_word_count: 36,
+            witness_opening_row_values_byte_count: 37,
+            witness_stage_opening_row_value_source_extend: vec![
+                lzvm_prover::WitnessProofStageOpeningTiming {
+                    stage_index: 7,
+                    duration: std::time::Duration::from_millis(44),
+                },
+            ],
+            witness_stage_opening_row_value_source_download: vec![
+                lzvm_prover::WitnessProofStageOpeningTiming {
+                    stage_index: 7,
+                    duration: std::time::Duration::from_millis(45),
+                },
+            ],
+            witness_stage_opening_row_value_device_download: vec![
+                lzvm_prover::WitnessProofStageOpeningTiming {
+                    stage_index: 7,
+                    duration: std::time::Duration::from_millis(46),
+                },
+            ],
+            witness_stage_opening_work: vec![lzvm_prover::WitnessProofStageOpeningWork {
                 stage_index: 7,
-                duration: std::time::Duration::from_millis(44),
-            },
-        ],
-        witness_stage_opening_row_value_source_download: vec![
-            lzvm_prover::WitnessProofStageOpeningTiming {
-                stage_index: 7,
-                duration: std::time::Duration::from_millis(45),
-            },
-        ],
-        witness_stage_opening_row_value_device_download: vec![
-            lzvm_prover::WitnessProofStageOpeningTiming {
-                stage_index: 7,
-                duration: std::time::Duration::from_millis(46),
-            },
-        ],
-        witness_stage_opening_work: vec![lzvm_prover::WitnessProofStageOpeningWork {
-            stage_index: 7,
-            retained_source_count: 2,
-            external_source_count: 3,
-            embedded_source_count: 4,
-            missing_source_count: 5,
-            retained_leaf_digest_opening_count: 6,
-            retained_leaf_digest_opening_row_count: 7,
-            retained_parent_checkpoint_opening_count: 8,
-            retained_parent_checkpoint_opening_row_count: 9,
-            leaf_hash_row_count: 10,
-            leaf_hash_byte_count: 11,
-            leaf_hash_arity2_row_count: 26,
-            leaf_hash_arity2_byte_count: 27,
-            leaf_hash_arity4_row_count: 28,
-            leaf_hash_arity4_byte_count: 29,
-            leaf_coset_extend_call_count: 12,
-            leaf_coset_extend_output_byte_count: 13,
-            leaf_coset_extend_column_count: 14,
-            leaf_coset_extend_max_column_count: 15,
-            leaf_coset_extend_ntt_launch_count: 16,
-            leaf_coset_extend_bit_reverse_launch_count: 17,
-            leaf_coset_extend_ntt_stage_launch_count: 18,
-            leaf_coset_extend_ntt_block_twiddle_launch_count: 19,
-            leaf_coset_extend_normalize_launch_count: 20,
-            leaf_coset_extend_pack_launch_count: 21,
-            leaf_coset_extend_unpack_launch_count: 22,
-            path_parent_hash: std::time::Duration::from_millis(47),
-            path_parent_hash_row_count: 23,
-            path_parent_hash_byte_count: 24,
-            path_parent_hash_launch_count: 25,
-            row_values_device_row_count: 30,
-            row_values_source_row_count: 31,
-            row_values_word_count: 32,
-            row_values_byte_count: 33,
-        }],
-        ..lzvm_prover::WitnessProofArtifactTiming::default()
-    };
+                retained_source_count: 2,
+                external_source_count: 3,
+                embedded_source_count: 4,
+                missing_source_count: 5,
+                retained_leaf_digest_opening_count: 6,
+                retained_leaf_digest_opening_row_count: 7,
+                retained_parent_checkpoint_opening_count: 8,
+                retained_parent_checkpoint_opening_row_count: 9,
+                leaf_hash_row_count: 10,
+                leaf_hash_byte_count: 11,
+                leaf_hash_arity2_row_count: 26,
+                leaf_hash_arity2_byte_count: 27,
+                leaf_hash_arity4_row_count: 28,
+                leaf_hash_arity4_byte_count: 29,
+                leaf_coset_extend_call_count: 12,
+                leaf_coset_extend_output_byte_count: 13,
+                leaf_coset_extend_column_count: 14,
+                leaf_coset_extend_max_column_count: 15,
+                leaf_coset_extend_ntt_launch_count: 16,
+                leaf_coset_extend_bit_reverse_launch_count: 17,
+                leaf_coset_extend_ntt_stage_launch_count: 18,
+                leaf_coset_extend_ntt_block_twiddle_launch_count: 19,
+                leaf_coset_extend_normalize_launch_count: 20,
+                leaf_coset_extend_pack_launch_count: 21,
+                leaf_coset_extend_unpack_launch_count: 22,
+                path_parent_hash: std::time::Duration::from_millis(47),
+                path_parent_hash_recomputed: std::time::Duration::from_millis(48),
+                path_parent_hash_retained_leaf_digest: std::time::Duration::from_millis(49),
+                path_parent_hash_retained_parent_checkpoint_prefix:
+                    std::time::Duration::from_millis(50),
+                path_parent_hash_retained_parent_checkpoint_suffix:
+                    std::time::Duration::from_millis(51),
+                path_parent_hash_row_count: 23,
+                path_parent_hash_byte_count: 24,
+                path_parent_hash_launch_count: 25,
+                row_values_device_row_count: 30,
+                row_values_source_row_count: 31,
+                row_values_word_count: 32,
+                row_values_byte_count: 33,
+            }],
+            ..lzvm_prover::WitnessProofArtifactTiming::default()
+        };
 
     let mut timings = TimingRecorder::new(true);
     record_proof_artifact_timing(&mut timings, &timing);
@@ -312,6 +334,10 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
         "timing_finish_witness_stage_7_opening_leaf_coset_extend_pack_launches=21\n",
         "timing_finish_witness_stage_7_opening_leaf_coset_extend_unpack_launches=22\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_ms=47\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_recomputed_ms=48\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_retained_leaf_digest_ms=49\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_retained_parent_checkpoint_prefix_ms=50\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms=51\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_rows=23\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_bytes=24\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_launches=25\n",

@@ -2771,6 +2771,22 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "witness_opening_path_parent_hash_launch_count",
         ),
         (
+            "\"finish_witness_opening_path_parent_hash_recomputed\"",
+            "witness_opening_path_parent_hash_recomputed",
+        ),
+        (
+            "\"finish_witness_opening_path_parent_hash_retained_leaf_digest\"",
+            "witness_opening_path_parent_hash_retained_leaf_digest",
+        ),
+        (
+            "\"finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix\"",
+            "witness_opening_path_parent_hash_retained_parent_checkpoint_prefix",
+        ),
+        (
+            "\"finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix\"",
+            "witness_opening_path_parent_hash_retained_parent_checkpoint_suffix",
+        ),
+        (
             "\"finish_witness_opening_path_parent_hash_rows_per_query\"",
             "witness_opening_query_count",
         ),
@@ -2923,6 +2939,22 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "path_parent_hash_launch_count",
         ),
         (
+            "finish_witness_stage_{}_opening_path_parent_hash_recomputed",
+            "path_parent_hash_recomputed",
+        ),
+        (
+            "finish_witness_stage_{}_opening_path_parent_hash_retained_leaf_digest",
+            "path_parent_hash_retained_leaf_digest",
+        ),
+        (
+            "finish_witness_stage_{}_opening_path_parent_hash_retained_parent_checkpoint_prefix",
+            "path_parent_hash_retained_parent_checkpoint_prefix",
+        ),
+        (
+            "finish_witness_stage_{}_opening_path_parent_hash_retained_parent_checkpoint_suffix",
+            "path_parent_hash_retained_parent_checkpoint_suffix",
+        ),
+        (
             "finish_witness_stage_{}_opening_row_values_device_rows",
             "row_values_device_row_count",
         ),
@@ -3007,7 +3039,11 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         assert!(
             source.contains("path_parent_hash_row_count")
                 && source.contains("path_parent_hash_byte_count")
-                && source.contains("path_parent_hash_launch_count"),
+                && source.contains("path_parent_hash_launch_count")
+                && source.contains("path_parent_hash_recomputed")
+                && source.contains("path_parent_hash_retained_leaf_digest")
+                && source.contains("path_parent_hash_retained_parent_checkpoint_prefix")
+                && source.contains("path_parent_hash_retained_parent_checkpoint_suffix"),
             "opening path timing should expose parent hash workload shape"
         );
     }

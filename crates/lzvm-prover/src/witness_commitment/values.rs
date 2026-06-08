@@ -63,6 +63,10 @@ pub(crate) struct WitnessStageOpeningWorkTiming {
     pub(crate) retained_parent_checkpoint_opening_count: usize,
     pub(crate) retained_parent_checkpoint_opening_row_count: usize,
     pub(crate) path_parent_hash: Duration,
+    pub(crate) path_parent_hash_recomputed: Duration,
+    pub(crate) path_parent_hash_retained_leaf_digest: Duration,
+    pub(crate) path_parent_hash_retained_parent_checkpoint_prefix: Duration,
+    pub(crate) path_parent_hash_retained_parent_checkpoint_suffix: Duration,
     pub(crate) path_parent_hash_row_count: usize,
     pub(crate) path_parent_hash_byte_count: usize,
     pub(crate) path_parent_hash_launch_count: usize,
@@ -176,6 +180,30 @@ impl WitnessStageOpeningWorkTiming {
             RowValueTimingKind::DeviceDownload => self.row_values_device_download += duration,
         }
     }
+
+    #[cfg(feature = "cuda")]
+    fn record_path_parent_hash_duration(
+        &mut self,
+        kind: PathParentHashTimingKind,
+        duration: Duration,
+    ) {
+        self.path += duration;
+        self.path_parent_hash += duration;
+        match kind {
+            PathParentHashTimingKind::Recomputed => {
+                self.path_parent_hash_recomputed += duration;
+            }
+            PathParentHashTimingKind::RetainedLeafDigest => {
+                self.path_parent_hash_retained_leaf_digest += duration;
+            }
+            PathParentHashTimingKind::RetainedParentCheckpointPrefix => {
+                self.path_parent_hash_retained_parent_checkpoint_prefix += duration;
+            }
+            PathParentHashTimingKind::RetainedParentCheckpointSuffix => {
+                self.path_parent_hash_retained_parent_checkpoint_suffix += duration;
+            }
+        }
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -184,6 +212,15 @@ enum RowValueTimingKind {
     SourceExtend,
     SourceDownload,
     DeviceDownload,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, Copy)]
+enum PathParentHashTimingKind {
+    Recomputed,
+    RetainedLeafDigest,
+    RetainedParentCheckpointPrefix,
+    RetainedParentCheckpointSuffix,
 }
 
 #[cfg(feature = "cuda")]
@@ -1672,11 +1709,15 @@ impl WitnessStageCompactTreeStorage {
         };
         let mut openings = Vec::with_capacity(rows.len());
         for row in rows {
-            let path = record_path_parent_hash_duration(timing.as_deref_mut(), || {
-                leaf_level
-                    .opening_path(*row)
-                    .map_err(WitnessStageOpeningError::from)
-            })
+            let path = record_path_parent_hash_duration(
+                timing.as_deref_mut(),
+                PathParentHashTimingKind::Recomputed,
+                || {
+                    leaf_level
+                        .opening_path(*row)
+                        .map_err(WitnessStageOpeningError::from)
+                },
+            )
             .map_err(|source| WitnessStageOpeningError::context("compact full path", source))?;
             if path.root != expected_root {
                 return Err(WitnessStageOpeningError::InvalidTreeByteLength {
@@ -1743,11 +1784,18 @@ impl WitnessStageCompactTreeStorage {
         } else {
             None
         };
-        let lower_prefixes = record_path_parent_hash_duration(timing.as_deref_mut(), || {
-            leaf_level
-                .opening_path_prefix_batch_for_source_rows(rows, checkpoint.folded_level_count())
-                .map_err(WitnessStageOpeningError::from)
-        })
+        let lower_prefixes = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::RetainedParentCheckpointPrefix,
+            || {
+                leaf_level
+                    .opening_path_prefix_batch_for_source_rows(
+                        rows,
+                        checkpoint.folded_level_count(),
+                    )
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
         .map_err(|source| {
             WitnessStageOpeningError::context("compact parent checkpoint prefix path", source)
         })?;
@@ -1761,11 +1809,15 @@ impl WitnessStageCompactTreeStorage {
         }
         let mut openings = Vec::with_capacity(rows.len());
         for (row, lower_prefix) in rows.iter().copied().zip(lower_prefixes.into_iter()) {
-            let upper_suffix = record_path_parent_hash_duration(timing.as_deref_mut(), || {
-                checkpoint
-                    .opening_path_for_source_row(row)
-                    .map_err(WitnessStageOpeningError::from)
-            })
+            let upper_suffix = record_path_parent_hash_duration(
+                timing.as_deref_mut(),
+                PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+                || {
+                    checkpoint
+                        .opening_path_for_source_row(row)
+                        .map_err(WitnessStageOpeningError::from)
+                },
+            )
             .map_err(|source| {
                 WitnessStageOpeningError::context("compact parent checkpoint suffix path", source)
             })?;
@@ -1823,11 +1875,15 @@ impl WitnessStageCompactTreeStorage {
         };
         let mut openings = Vec::with_capacity(rows.len());
         for row in rows {
-            let path = record_path_parent_hash_duration(timing.as_deref_mut(), || {
-                leaf_level
-                    .opening_path(*row)
-                    .map_err(WitnessStageOpeningError::from)
-            })
+            let path = record_path_parent_hash_duration(
+                timing.as_deref_mut(),
+                PathParentHashTimingKind::RetainedLeafDigest,
+                || {
+                    leaf_level
+                        .opening_path(*row)
+                        .map_err(WitnessStageOpeningError::from)
+                },
+            )
             .map_err(|source| {
                 WitnessStageOpeningError::context("compact retained leaf digest path", source)
             })?;
@@ -1992,14 +2048,14 @@ fn record_opening_duration<T>(
 #[cfg(feature = "cuda")]
 fn record_path_parent_hash_duration<T>(
     timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    kind: PathParentHashTimingKind,
     operation: impl FnOnce() -> Result<T, WitnessStageOpeningError>,
 ) -> Result<T, WitnessStageOpeningError> {
     let started = Instant::now();
     let result = operation();
     if let Some(timing) = timing {
         let elapsed = started.elapsed();
-        timing.path += elapsed;
-        timing.path_parent_hash += elapsed;
+        timing.record_path_parent_hash_duration(kind, elapsed);
     }
     result
 }
