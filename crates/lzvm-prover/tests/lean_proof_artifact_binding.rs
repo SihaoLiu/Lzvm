@@ -26,6 +26,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_proof_artifact_binding_checked_acceptance_runtime_accepted",
             "runtime_proof_artifact_binding_checked_acceptance_sound",
             "runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract",
         ],

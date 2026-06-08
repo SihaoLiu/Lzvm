@@ -159,6 +159,25 @@ theorem runtime_proof_artifact_binding_checked_acceptance_runtime_evidence
         proof
         accepted)
 
+theorem runtime_proof_artifact_binding_checked_acceptance_runtime_accepted
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.runtimeValidation.artifactAccepted artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.bindingAcceptedImpliesRuntimeAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+
 theorem runtime_proof_artifact_binding_checked_acceptance_obligations
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
