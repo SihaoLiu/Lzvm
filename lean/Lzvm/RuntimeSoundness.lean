@@ -220,7 +220,6 @@ theorem runtime_soundness_checked_acceptance_evidence
 
 theorem runtime_soundness_checked_acceptance_runtime_artifact_evidence
     {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
     (validation : RuntimeSoundnessValidation system) :
     forall artifact publicInput proof requiresExternalSource,
       RuntimeSoundnessCheckedAcceptance
@@ -237,23 +236,25 @@ theorem runtime_soundness_checked_acceptance_runtime_artifact_evidence
           publicInput
           proof := by
   intro artifact publicInput proof requiresExternalSource checked
-  have evidence :=
-    runtime_soundness_checked_acceptance_evidence
-      assumptions
-      validation
+  have artifactAccepted :=
+    validation.transcriptValidation.transcriptAcceptedImpliesArtifactBindingAccepted
       artifact
       publicInput
       proof
-      requiresExternalSource
-      checked
+      checked.left
+  have runtimeAccepted :=
+    validation.transcriptValidation.artifactBindingValidation.bindingAcceptedImpliesRuntimeAccepted
+      artifact
+      publicInput
+      proof
+      artifactAccepted
   exact
-    runtime_soundness_evidence_implies_runtime_artifact_evidence
-      validation
+    runtime_artifact_checked_acceptance_evidence
+      validation.transcriptValidation.artifactBindingValidation.runtimeValidation
       artifact
       publicInput
       proof
-      requiresExternalSource
-      evidence
+      runtimeAccepted
 
 theorem runtime_soundness_checked_acceptance_transcript_bound
     {system : VerifierModel}

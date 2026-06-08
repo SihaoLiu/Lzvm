@@ -44,4 +44,27 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_required_external_source_verifier_core_contract",
         ],
     );
+    assert!(theorem_prefix(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_runtime_artifact_evidence"
+    )
+    .contains("(validation : RuntimeSoundnessValidation system)"));
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_runtime_artifact_evidence"
+        )
+        .contains("AssumptionBundle"),
+        "runtime artifact evidence projection should not require cryptographic assumptions"
+    );
+}
+
+fn theorem_prefix(source: &str, name: &str) -> String {
+    let theorem_start = source
+        .find(&format!("theorem {name}"))
+        .unwrap_or_else(|| panic!("Lean source should contain theorem {name}"));
+    let proof_start = source[theorem_start..]
+        .find(" := by")
+        .unwrap_or_else(|| panic!("Lean theorem {name} should have a proof body"));
+    source[theorem_start..theorem_start + proof_start].to_owned()
 }
