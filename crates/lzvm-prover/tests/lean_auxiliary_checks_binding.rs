@@ -18,6 +18,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let proof_timing_path = crate_root.join("../lzvm-cli/src/prove_witness/proof_timing.rs");
     let proof_timing_source =
         std::fs::read_to_string(&proof_timing_path).expect("proof timing source should read");
+    let fri_fold_path = crate_root.join("src/pcs_fri/fold.rs");
+    let fri_fold_source =
+        std::fs::read_to_string(&fri_fold_path).expect("FRI fold source should read");
     let cuda_field_test_path = crate_root.join("../lzvm-accel/tests/cuda_field.rs");
     let cuda_field_test_source =
         std::fs::read_to_string(&cuda_field_test_path).expect("CUDA field tests should read");
@@ -40,6 +43,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuHostDeviceCopyRoundTripCheckedAcceptance")
             && lean_source.contains("GpuCosetExtensionValidation")
             && lean_source.contains("GpuCosetExtensionCheckedAcceptance")
+            && lean_source.contains("GpuFriFoldInterpolationValidation")
+            && lean_source.contains("GpuFriFoldInterpolationCheckedAcceptance")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean auxiliary checks should expose checked acceptance structures and verifier core clauses"
@@ -53,6 +58,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_source.contains("cosetExtensionMatchesHost")
             && lean_source.contains("cosetExtensionImpliesCanonicalLeafBytes"),
         "Lean auxiliary checks should bind GPU coset extension evidence to canonical leaf bytes"
+    );
+    assert!(
+        lean_source.contains("gpuFriInterpolationMatchesHost")
+            && lean_source.contains("gpuFriInterpolationImpliesFriFoldsValid"),
+        "Lean auxiliary checks should bind GPU FRI interpolation evidence to FRI fold validity"
     );
     for field in [
         "sourceExtendMilliseconds",
@@ -217,6 +227,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 .contains("cuda_extends_selected_strided_row_major_coset_rows_from_device_memory"),
         "CUDA tests should cover GPU coset extension outputs and selected row ranges"
     );
+    assert!(
+        fri_fold_source.contains("cuda_goldilocks_intt(&raw, bits)")
+            && fri_fold_source.contains("interpolate_fold_column")
+            && cuda_field_test_source.contains("cuda_computes_inverse_ntt"),
+        "runtime FRI fold interpolation should use CUDA INTT with CUDA correctness coverage"
+    );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
@@ -242,6 +258,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_coset_extension_matches_host_implies_leaf_bytes",
             "gpu_coset_extension_checked_acceptance_sound",
             "gpu_coset_extension_checked_acceptance_verifier_core_contract",
+            "gpu_fri_interpolation_matches_host_implies_fri_folds_valid",
+            "gpu_fri_fold_interpolation_checked_acceptance_sound",
+            "gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract",
         ],
     );
 }

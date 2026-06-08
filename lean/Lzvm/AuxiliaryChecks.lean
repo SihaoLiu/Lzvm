@@ -38,6 +38,14 @@ structure GpuCosetExtensionValidation (system : VerifierModel) where
       cosetExtensionMatchesHost publicInput proof ->
         leafValidation.canonicalExtendedLeafBytes publicInput proof
 
+structure GpuFriFoldInterpolationValidation (system : VerifierModel) where
+  gpuFriInterpolationMatchesHost : PublicInput -> Proof -> Prop
+  friFoldsValid : PublicInput -> Proof -> Prop
+  gpuFriInterpolationImpliesFriFoldsValid :
+    forall publicInput proof,
+      gpuFriInterpolationMatchesHost publicInput proof ->
+        friFoldsValid publicInput proof
+
 structure TimingObservation where
   label : Nat
   milliseconds : Nat
@@ -233,6 +241,14 @@ def GpuCosetExtensionCheckedAcceptance
   system.accepts publicInput proof
     /\ validation.cosetExtensionMatchesHost publicInput proof
 
+def GpuFriFoldInterpolationCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GpuFriFoldInterpolationValidation system)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.gpuFriInterpolationMatchesHost publicInput proof
+
 theorem source_lookup_auxiliary_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -368,6 +384,54 @@ theorem gpu_coset_extension_checked_acceptance_verifier_core_contract
   intro publicInput proof checked
   have sound :=
     gpu_coset_extension_checked_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
+
+theorem gpu_fri_interpolation_matches_host_implies_fri_folds_valid
+    {system : VerifierModel}
+    (validation : GpuFriFoldInterpolationValidation system) :
+    forall publicInput proof,
+      validation.gpuFriInterpolationMatchesHost publicInput proof ->
+        validation.friFoldsValid publicInput proof := by
+  intro publicInput proof interpolationMatchesHost
+  exact
+    validation.gpuFriInterpolationImpliesFriFoldsValid
+      publicInput
+      proof
+      interpolationMatchesHost
+
+theorem gpu_fri_fold_interpolation_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuFriFoldInterpolationValidation system) :
+    forall publicInput proof,
+      GpuFriFoldInterpolationCheckedAcceptance system validation publicInput proof ->
+        validation.friFoldsValid publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (gpu_fri_interpolation_matches_host_implies_fri_folds_valid
+        validation
+        publicInput
+        proof
+        checked.right)
+      (abstract_verifier_sound assumptions publicInput proof checked.left)
+
+theorem gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuFriFoldInterpolationValidation system) :
+    forall publicInput proof,
+      GpuFriFoldInterpolationCheckedAcceptance system validation publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_fri_fold_interpolation_checked_acceptance_sound
       assumptions
       validation
       publicInput
