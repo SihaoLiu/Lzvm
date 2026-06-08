@@ -99,3 +99,35 @@ fn retained_opening_bindings_use_theorem_declaration_export_checks() {
         );
     }
 }
+
+#[test]
+fn lean_soundness_sources_stay_modular() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_root = crate_root.join("../../lean/Lzvm");
+    let mut oversized = Vec::new();
+    collect_oversized_lean_sources(&lean_root, &mut oversized);
+
+    assert!(
+        oversized.is_empty(),
+        "Lean soundness sources should stay at or below 1800 lines: {oversized:?}"
+    );
+}
+
+fn collect_oversized_lean_sources(path: &Path, oversized: &mut Vec<(String, usize)>) {
+    for entry in std::fs::read_dir(path).expect("Lean source directory should read") {
+        let entry = entry.expect("Lean source entry should read");
+        let path = entry.path();
+        if path.is_dir() {
+            collect_oversized_lean_sources(&path, oversized);
+            continue;
+        }
+        if path.extension().and_then(|extension| extension.to_str()) != Some("lean") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("Lean source should read");
+        let line_count = source.lines().count();
+        if line_count > 1800 {
+            oversized.push((path.display().to_string(), line_count));
+        }
+    }
+}

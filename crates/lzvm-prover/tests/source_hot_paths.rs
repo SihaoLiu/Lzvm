@@ -4346,8 +4346,12 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
 fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_path = crate_root.join("../../lean/Lzvm/PipelineBinding.lean");
-    let lean_source =
+    let pipeline_source =
         std::fs::read_to_string(&lean_path).expect("Lean pipeline binding source should read");
+    let core_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core.lean");
+    let core_source =
+        std::fs::read_to_string(&core_path).expect("Lean pipeline core binding source should read");
+    let lean_source = format!("{core_source}\n{pipeline_source}");
     let lean_root_path = crate_root.join("../../lean/Lzvm.lean");
     let lean_root_source =
         std::fs::read_to_string(&lean_root_path).expect("top-level Lean source should read");

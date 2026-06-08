@@ -7,8 +7,12 @@ mod lean_binding;
 fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_path = crate_root.join("../../lean/Lzvm/PipelineBinding.lean");
-    let lean_source =
+    let pipeline_source =
         std::fs::read_to_string(&lean_path).expect("Lean pipeline binding source should read");
+    let core_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core.lean");
+    let core_source =
+        std::fs::read_to_string(&core_path).expect("Lean pipeline core binding source should read");
+    let lean_source = format!("{core_source}\n{pipeline_source}");
     let setup_preflight_path = crate_root.join("src/setup_preflight.rs");
     let setup_preflight_source =
         std::fs::read_to_string(&setup_preflight_path).expect("setup preflight source should read");
@@ -66,6 +70,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract",
             "runtime_pipeline_binding_required_external_source_verifier_core_contract",
         ],
+    );
+    assert!(
+        pipeline_source.contains("import Lzvm.PipelineBinding.Core"),
+        "Lean pipeline binding module should import the core pipeline binding module"
     );
     assert!(theorem_prefix(
         &lean_source,
