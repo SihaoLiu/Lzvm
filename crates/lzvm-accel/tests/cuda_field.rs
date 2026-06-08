@@ -461,6 +461,26 @@ fn cuda_device_buffer_round_trips_bytes() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_device_buffer_round_trips_large_bytes() {
+    let len = (1_usize << 20) + 4096;
+    let input = (0..len)
+        .map(|index| {
+            let shifted = index ^ (index >> 7);
+            shifted.wrapping_mul(131) as u8
+        })
+        .collect::<Vec<_>>();
+    let mut buffer = CudaDeviceBuffer::new(input.len()).expect("device buffer should allocate");
+
+    buffer
+        .copy_from(&input)
+        .expect("large host bytes should copy to device");
+    let output = buffer.to_vec().expect("device bytes should copy to host");
+
+    assert_eq!(output, input);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_memory_info_reports_available_device_memory() {
     let info = lzvm_accel::cuda_memory_info().expect("cuda memory info should be available");
 
