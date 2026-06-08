@@ -188,6 +188,42 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_path_parent_hash_launches",
         timing.witness_opening_path_parent_hash_launch_count,
     );
+    record_path_parent_hash_work_split(
+        timings,
+        "finish_witness_opening_path_parent_hash",
+        [
+            (
+                "recomputed",
+                timing.witness_opening_path_parent_hash_recomputed_row_count,
+                timing.witness_opening_path_parent_hash_recomputed_byte_count,
+                timing.witness_opening_path_parent_hash_recomputed_launch_count,
+            ),
+            (
+                "retained_leaf_digest",
+                timing.witness_opening_path_parent_hash_retained_leaf_digest_row_count,
+                timing.witness_opening_path_parent_hash_retained_leaf_digest_byte_count,
+                timing.witness_opening_path_parent_hash_retained_leaf_digest_launch_count,
+            ),
+            (
+                "retained_parent_checkpoint_prefix",
+                timing
+                    .witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_row_count,
+                timing
+                    .witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_byte_count,
+                timing
+                    .witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launch_count,
+            ),
+            (
+                "retained_parent_checkpoint_suffix",
+                timing
+                    .witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_row_count,
+                timing
+                    .witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_byte_count,
+                timing
+                    .witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launch_count,
+            ),
+        ],
+    );
     record_count_per_unit(
         timings,
         "finish_witness_opening_path_parent_hash_rows_per_query",
@@ -507,6 +543,39 @@ pub(super) fn record_proof_artifact_timing(
             ),
             stage_work.path_parent_hash_launch_count,
         );
+        record_path_parent_hash_work_split(
+            timings,
+            &format!(
+                "finish_witness_stage_{}_opening_path_parent_hash",
+                stage_work.stage_index
+            ),
+            [
+                (
+                    "recomputed",
+                    stage_work.path_parent_hash_recomputed_row_count,
+                    stage_work.path_parent_hash_recomputed_byte_count,
+                    stage_work.path_parent_hash_recomputed_launch_count,
+                ),
+                (
+                    "retained_leaf_digest",
+                    stage_work.path_parent_hash_retained_leaf_digest_row_count,
+                    stage_work.path_parent_hash_retained_leaf_digest_byte_count,
+                    stage_work.path_parent_hash_retained_leaf_digest_launch_count,
+                ),
+                (
+                    "retained_parent_checkpoint_prefix",
+                    stage_work.path_parent_hash_retained_parent_checkpoint_prefix_row_count,
+                    stage_work.path_parent_hash_retained_parent_checkpoint_prefix_byte_count,
+                    stage_work.path_parent_hash_retained_parent_checkpoint_prefix_launch_count,
+                ),
+                (
+                    "retained_parent_checkpoint_suffix",
+                    stage_work.path_parent_hash_retained_parent_checkpoint_suffix_row_count,
+                    stage_work.path_parent_hash_retained_parent_checkpoint_suffix_byte_count,
+                    stage_work.path_parent_hash_retained_parent_checkpoint_suffix_launch_count,
+                ),
+            ],
+        );
         timings.record_count_dynamic(
             format!(
                 "finish_witness_stage_{}_opening_row_values_device_rows",
@@ -627,6 +696,18 @@ pub(super) fn record_proof_artifact_timing(
         "finish_fri_transcript_layer_count",
         timing.fri_transcript_layer_count,
     );
+}
+
+fn record_path_parent_hash_work_split(
+    timings: &mut TimingRecorder,
+    prefix: &str,
+    splits: [(&'static str, usize, usize, usize); 4],
+) {
+    for (suffix, rows, bytes, launches) in splits {
+        timings.record_count_dynamic(format!("{prefix}_{suffix}_rows"), rows);
+        timings.record_count_dynamic(format!("{prefix}_{suffix}_bytes"), bytes);
+        timings.record_count_dynamic(format!("{prefix}_{suffix}_launches"), launches);
+    }
 }
 
 fn record_count_per_unit(

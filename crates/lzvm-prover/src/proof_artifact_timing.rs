@@ -51,6 +51,18 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_path_parent_hash_row_count: usize,
     pub witness_opening_path_parent_hash_byte_count: usize,
     pub witness_opening_path_parent_hash_launch_count: usize,
+    pub witness_opening_path_parent_hash_recomputed_row_count: usize,
+    pub witness_opening_path_parent_hash_recomputed_byte_count: usize,
+    pub witness_opening_path_parent_hash_recomputed_launch_count: usize,
+    pub witness_opening_path_parent_hash_retained_leaf_digest_row_count: usize,
+    pub witness_opening_path_parent_hash_retained_leaf_digest_byte_count: usize,
+    pub witness_opening_path_parent_hash_retained_leaf_digest_launch_count: usize,
+    pub witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_row_count: usize,
+    pub witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_byte_count: usize,
+    pub witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launch_count: usize,
+    pub witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_row_count: usize,
+    pub witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_byte_count: usize,
+    pub witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launch_count: usize,
     pub witness_opening_path: Duration,
     pub witness_opening_row_values: Duration,
     pub witness_opening_row_values_source_extend: Duration,
@@ -128,6 +140,18 @@ pub struct WitnessProofStageOpeningWork {
     pub path_parent_hash_row_count: usize,
     pub path_parent_hash_byte_count: usize,
     pub path_parent_hash_launch_count: usize,
+    pub path_parent_hash_recomputed_row_count: usize,
+    pub path_parent_hash_recomputed_byte_count: usize,
+    pub path_parent_hash_recomputed_launch_count: usize,
+    pub path_parent_hash_retained_leaf_digest_row_count: usize,
+    pub path_parent_hash_retained_leaf_digest_byte_count: usize,
+    pub path_parent_hash_retained_leaf_digest_launch_count: usize,
+    pub path_parent_hash_retained_parent_checkpoint_prefix_row_count: usize,
+    pub path_parent_hash_retained_parent_checkpoint_prefix_byte_count: usize,
+    pub path_parent_hash_retained_parent_checkpoint_prefix_launch_count: usize,
+    pub path_parent_hash_retained_parent_checkpoint_suffix_row_count: usize,
+    pub path_parent_hash_retained_parent_checkpoint_suffix_byte_count: usize,
+    pub path_parent_hash_retained_parent_checkpoint_suffix_launch_count: usize,
     pub row_values_device_row_count: usize,
     pub row_values_source_row_count: usize,
     pub row_values_word_count: usize,
@@ -190,6 +214,29 @@ impl WitnessProofStageOpeningWork {
         self.path_parent_hash_row_count += timing.path_parent_hash_row_count;
         self.path_parent_hash_byte_count += timing.path_parent_hash_byte_count;
         self.path_parent_hash_launch_count += timing.path_parent_hash_launch_count;
+        self.path_parent_hash_recomputed_row_count += timing.path_parent_hash_recomputed_row_count;
+        self.path_parent_hash_recomputed_byte_count +=
+            timing.path_parent_hash_recomputed_byte_count;
+        self.path_parent_hash_recomputed_launch_count +=
+            timing.path_parent_hash_recomputed_launch_count;
+        self.path_parent_hash_retained_leaf_digest_row_count +=
+            timing.path_parent_hash_retained_leaf_digest_row_count;
+        self.path_parent_hash_retained_leaf_digest_byte_count +=
+            timing.path_parent_hash_retained_leaf_digest_byte_count;
+        self.path_parent_hash_retained_leaf_digest_launch_count +=
+            timing.path_parent_hash_retained_leaf_digest_launch_count;
+        self.path_parent_hash_retained_parent_checkpoint_prefix_row_count +=
+            timing.path_parent_hash_retained_parent_checkpoint_prefix_row_count;
+        self.path_parent_hash_retained_parent_checkpoint_prefix_byte_count +=
+            timing.path_parent_hash_retained_parent_checkpoint_prefix_byte_count;
+        self.path_parent_hash_retained_parent_checkpoint_prefix_launch_count +=
+            timing.path_parent_hash_retained_parent_checkpoint_prefix_launch_count;
+        self.path_parent_hash_retained_parent_checkpoint_suffix_row_count +=
+            timing.path_parent_hash_retained_parent_checkpoint_suffix_row_count;
+        self.path_parent_hash_retained_parent_checkpoint_suffix_byte_count +=
+            timing.path_parent_hash_retained_parent_checkpoint_suffix_byte_count;
+        self.path_parent_hash_retained_parent_checkpoint_suffix_launch_count +=
+            timing.path_parent_hash_retained_parent_checkpoint_suffix_launch_count;
         self.row_values_device_row_count += timing.row_values_device_row_count;
         self.row_values_source_row_count += timing.row_values_source_row_count;
         self.row_values_word_count += timing.row_values_word_count;
@@ -357,6 +404,30 @@ impl WitnessProofArtifactTiming {
         self.witness_opening_path_parent_hash_row_count += timing.path_parent_hash_row_count;
         self.witness_opening_path_parent_hash_byte_count += timing.path_parent_hash_byte_count;
         self.witness_opening_path_parent_hash_launch_count += timing.path_parent_hash_launch_count;
+        self.witness_opening_path_parent_hash_recomputed_row_count +=
+            timing.path_parent_hash_recomputed_row_count;
+        self.witness_opening_path_parent_hash_recomputed_byte_count +=
+            timing.path_parent_hash_recomputed_byte_count;
+        self.witness_opening_path_parent_hash_recomputed_launch_count +=
+            timing.path_parent_hash_recomputed_launch_count;
+        self.witness_opening_path_parent_hash_retained_leaf_digest_row_count +=
+            timing.path_parent_hash_retained_leaf_digest_row_count;
+        self.witness_opening_path_parent_hash_retained_leaf_digest_byte_count +=
+            timing.path_parent_hash_retained_leaf_digest_byte_count;
+        self.witness_opening_path_parent_hash_retained_leaf_digest_launch_count +=
+            timing.path_parent_hash_retained_leaf_digest_launch_count;
+        self.witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_row_count +=
+            timing.path_parent_hash_retained_parent_checkpoint_prefix_row_count;
+        self.witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_byte_count +=
+            timing.path_parent_hash_retained_parent_checkpoint_prefix_byte_count;
+        self.witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launch_count +=
+            timing.path_parent_hash_retained_parent_checkpoint_prefix_launch_count;
+        self.witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_row_count +=
+            timing.path_parent_hash_retained_parent_checkpoint_suffix_row_count;
+        self.witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_byte_count +=
+            timing.path_parent_hash_retained_parent_checkpoint_suffix_byte_count;
+        self.witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launch_count +=
+            timing.path_parent_hash_retained_parent_checkpoint_suffix_launch_count;
         self.witness_opening_row_values_source_extend += timing.row_values_source_extend;
         self.witness_opening_row_values_source_download += timing.row_values_source_download;
         self.witness_opening_row_values_device_download += timing.row_values_device_download;

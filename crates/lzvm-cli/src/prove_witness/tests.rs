@@ -162,7 +162,20 @@ fn proof_artifact_timing_reports_parent_hash_shape_counts() {
         witness_opening_path_parent_hash_retained_parent_checkpoint_suffix:
             std::time::Duration::from_millis(5),
         witness_opening_path_parent_hash_row_count: 120,
+        witness_opening_path_parent_hash_recomputed_row_count: 21,
+        witness_opening_path_parent_hash_retained_leaf_digest_row_count: 22,
+        witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_row_count: 23,
+        witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_row_count: 24,
         witness_opening_path_parent_hash_launch_count: 12,
+        witness_opening_path_parent_hash_recomputed_launch_count: 31,
+        witness_opening_path_parent_hash_retained_leaf_digest_launch_count: 32,
+        witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launch_count: 33,
+        witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launch_count: 34,
+        witness_opening_path_parent_hash_byte_count: 130,
+        witness_opening_path_parent_hash_recomputed_byte_count: 41,
+        witness_opening_path_parent_hash_retained_leaf_digest_byte_count: 42,
+        witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_byte_count: 43,
+        witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_byte_count: 44,
         witness_opening_query_count: 3,
         witness_opening_stage_count: 4,
         ..lzvm_prover::WitnessProofArtifactTiming::default()
@@ -184,6 +197,37 @@ fn proof_artifact_timing_reports_parent_hash_shape_counts() {
     ));
     assert!(stdout.contains(
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms=5\n"
+    ));
+    assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_recomputed_rows=21\n"));
+    assert!(stdout
+        .contains("timing_finish_witness_opening_path_parent_hash_retained_leaf_digest_rows=22\n"));
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_rows=23\n"
+    ));
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_rows=24\n"
+    ));
+    assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_recomputed_bytes=41\n"));
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_path_parent_hash_retained_leaf_digest_bytes=42\n"
+    ));
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_bytes=43\n"
+    ));
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_bytes=44\n"
+    ));
+    assert!(
+        stdout.contains("timing_finish_witness_opening_path_parent_hash_recomputed_launches=31\n")
+    );
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_path_parent_hash_retained_leaf_digest_launches=32\n"
+    ));
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launches=33\n"
+    ));
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches=34\n"
     ));
     assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_rows_per_query=40\n"));
     assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_rows_per_stage=30\n"));
@@ -283,8 +327,20 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
                 path_parent_hash_retained_parent_checkpoint_suffix:
                     std::time::Duration::from_millis(51),
                 path_parent_hash_row_count: 23,
+                path_parent_hash_recomputed_row_count: 52,
+                path_parent_hash_retained_leaf_digest_row_count: 53,
+                path_parent_hash_retained_parent_checkpoint_prefix_row_count: 54,
+                path_parent_hash_retained_parent_checkpoint_suffix_row_count: 55,
                 path_parent_hash_byte_count: 24,
+                path_parent_hash_recomputed_byte_count: 56,
+                path_parent_hash_retained_leaf_digest_byte_count: 57,
+                path_parent_hash_retained_parent_checkpoint_prefix_byte_count: 58,
+                path_parent_hash_retained_parent_checkpoint_suffix_byte_count: 59,
                 path_parent_hash_launch_count: 25,
+                path_parent_hash_recomputed_launch_count: 60,
+                path_parent_hash_retained_leaf_digest_launch_count: 61,
+                path_parent_hash_retained_parent_checkpoint_prefix_launch_count: 62,
+                path_parent_hash_retained_parent_checkpoint_suffix_launch_count: 63,
                 row_values_device_row_count: 30,
                 row_values_source_row_count: 31,
                 row_values_word_count: 32,
@@ -341,6 +397,18 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
         "timing_finish_witness_stage_7_opening_path_parent_hash_rows=23\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_bytes=24\n",
         "timing_finish_witness_stage_7_opening_path_parent_hash_launches=25\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_recomputed_rows=52\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_retained_leaf_digest_rows=53\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_retained_parent_checkpoint_prefix_rows=54\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_retained_parent_checkpoint_suffix_rows=55\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_recomputed_bytes=56\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_retained_leaf_digest_bytes=57\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_retained_parent_checkpoint_prefix_bytes=58\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_retained_parent_checkpoint_suffix_bytes=59\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_recomputed_launches=60\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_retained_leaf_digest_launches=61\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_retained_parent_checkpoint_prefix_launches=62\n",
+        "timing_finish_witness_stage_7_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches=63\n",
         "timing_finish_witness_stage_7_opening_row_value_source_extend_ms=44\n",
         "timing_finish_witness_stage_7_opening_row_value_source_download_ms=45\n",
         "timing_finish_witness_stage_7_opening_row_value_device_download_ms=46\n",

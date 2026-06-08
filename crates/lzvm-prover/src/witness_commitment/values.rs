@@ -70,6 +70,18 @@ pub(crate) struct WitnessStageOpeningWorkTiming {
     pub(crate) path_parent_hash_row_count: usize,
     pub(crate) path_parent_hash_byte_count: usize,
     pub(crate) path_parent_hash_launch_count: usize,
+    pub(crate) path_parent_hash_recomputed_row_count: usize,
+    pub(crate) path_parent_hash_recomputed_byte_count: usize,
+    pub(crate) path_parent_hash_recomputed_launch_count: usize,
+    pub(crate) path_parent_hash_retained_leaf_digest_row_count: usize,
+    pub(crate) path_parent_hash_retained_leaf_digest_byte_count: usize,
+    pub(crate) path_parent_hash_retained_leaf_digest_launch_count: usize,
+    pub(crate) path_parent_hash_retained_parent_checkpoint_prefix_row_count: usize,
+    pub(crate) path_parent_hash_retained_parent_checkpoint_prefix_byte_count: usize,
+    pub(crate) path_parent_hash_retained_parent_checkpoint_prefix_launch_count: usize,
+    pub(crate) path_parent_hash_retained_parent_checkpoint_suffix_row_count: usize,
+    pub(crate) path_parent_hash_retained_parent_checkpoint_suffix_byte_count: usize,
+    pub(crate) path_parent_hash_retained_parent_checkpoint_suffix_launch_count: usize,
     pub(crate) row_values_device_row_count: usize,
     pub(crate) row_values_source_row_count: usize,
     pub(crate) row_values_word_count: usize,
@@ -143,6 +155,7 @@ impl WitnessStageOpeningWorkTiming {
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
     pub(crate) fn record_path_parent_hash_work(
         &mut self,
+        kind: PathParentHashTimingKind,
         row_count: usize,
         byte_count: usize,
         launch_count: usize,
@@ -150,6 +163,30 @@ impl WitnessStageOpeningWorkTiming {
         self.path_parent_hash_row_count += row_count;
         self.path_parent_hash_byte_count += byte_count;
         self.path_parent_hash_launch_count += launch_count;
+        match kind {
+            PathParentHashTimingKind::Recomputed => {
+                self.path_parent_hash_recomputed_row_count += row_count;
+                self.path_parent_hash_recomputed_byte_count += byte_count;
+                self.path_parent_hash_recomputed_launch_count += launch_count;
+            }
+            PathParentHashTimingKind::RetainedLeafDigest => {
+                self.path_parent_hash_retained_leaf_digest_row_count += row_count;
+                self.path_parent_hash_retained_leaf_digest_byte_count += byte_count;
+                self.path_parent_hash_retained_leaf_digest_launch_count += launch_count;
+            }
+            PathParentHashTimingKind::RetainedParentCheckpointPrefix => {
+                self.path_parent_hash_retained_parent_checkpoint_prefix_row_count += row_count;
+                self.path_parent_hash_retained_parent_checkpoint_prefix_byte_count += byte_count;
+                self.path_parent_hash_retained_parent_checkpoint_prefix_launch_count +=
+                    launch_count;
+            }
+            PathParentHashTimingKind::RetainedParentCheckpointSuffix => {
+                self.path_parent_hash_retained_parent_checkpoint_suffix_row_count += row_count;
+                self.path_parent_hash_retained_parent_checkpoint_suffix_byte_count += byte_count;
+                self.path_parent_hash_retained_parent_checkpoint_suffix_launch_count +=
+                    launch_count;
+            }
+        }
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
@@ -214,9 +251,9 @@ enum RowValueTimingKind {
     DeviceDownload,
 }
 
-#[cfg(feature = "cuda")]
 #[derive(Debug, Clone, Copy)]
-enum PathParentHashTimingKind {
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+pub(crate) enum PathParentHashTimingKind {
     Recomputed,
     RetainedLeafDigest,
     RetainedParentCheckpointPrefix,
@@ -1728,7 +1765,12 @@ impl WitnessStageCompactTreeStorage {
             if let (Some(timing), Some((row_count, byte_count, launch_count))) =
                 (timing.as_deref_mut(), path_parent_work)
             {
-                timing.record_path_parent_hash_work(row_count, byte_count, launch_count);
+                timing.record_path_parent_hash_work(
+                    PathParentHashTimingKind::Recomputed,
+                    row_count,
+                    byte_count,
+                    launch_count,
+                );
             }
             let values = self
                 .copy_extended_row_values_from_device(&output_buffer, *row, timing.as_deref_mut())
@@ -1802,7 +1844,12 @@ impl WitnessStageCompactTreeStorage {
         if let (Some(timing), Some((row_count, byte_count, launch_count))) =
             (timing.as_deref_mut(), lower_prefix_parent_work)
         {
-            timing.record_path_parent_hash_work(row_count, byte_count, launch_count);
+            timing.record_path_parent_hash_work(
+                PathParentHashTimingKind::RetainedParentCheckpointPrefix,
+                row_count,
+                byte_count,
+                launch_count,
+            );
         }
         if lower_prefixes.len() != rows.len() {
             return Err(WitnessStageOpeningError::LengthOverflow);
@@ -1830,7 +1877,12 @@ impl WitnessStageCompactTreeStorage {
             if let (Some(timing), Some((row_count, byte_count, launch_count))) =
                 (timing.as_deref_mut(), upper_suffix_parent_work)
             {
-                timing.record_path_parent_hash_work(row_count, byte_count, launch_count);
+                timing.record_path_parent_hash_work(
+                    PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+                    row_count,
+                    byte_count,
+                    launch_count,
+                );
             }
             let values = self
                 .copy_extended_row_values_from_device(output_buffer, row, timing.as_deref_mut())
@@ -1896,7 +1948,12 @@ impl WitnessStageCompactTreeStorage {
             if let (Some(timing), Some((row_count, byte_count, launch_count))) =
                 (timing.as_deref_mut(), path_parent_work)
             {
-                timing.record_path_parent_hash_work(row_count, byte_count, launch_count);
+                timing.record_path_parent_hash_work(
+                    PathParentHashTimingKind::RetainedLeafDigest,
+                    row_count,
+                    byte_count,
+                    launch_count,
+                );
             }
             let values = self
                 .extended_row_values_from_source_cuda(*row, source_buffer, timing.as_deref_mut())
