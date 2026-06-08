@@ -1954,6 +1954,53 @@ fn retained_cache_defaults_prefer_leaf_digest_reuse() {
 }
 
 #[test]
+fn cuda_source_device_commit_defers_root_downloads_until_batch_end() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let trace_path = crate_root.join("src/witness_commitment/trace.rs");
+    let trace_source =
+        std::fs::read_to_string(&trace_path).expect("witness commitment trace source should read");
+    let tree_path = crate_root.join("src/witness_commitment/tree.rs");
+    let tree_source =
+        std::fs::read_to_string(&tree_path).expect("witness commitment tree source should read");
+    let merkle_path = crate_root.join("src/merkle_hash.rs");
+    let merkle_source =
+        std::fs::read_to_string(&merkle_path).expect("Merkle hash source should read");
+
+    let source_device_body = function_body(
+        &trace_source,
+        "fn commit_witness_stage_source_devices_and_indexed_timing_inner",
+        "#[cfg(feature = \"cuda\")]\nfn commit_witness_stage_values_with_workers_and_timing_inner",
+    );
+    let loop_index = source_device_body
+        .find("for source_device in source_devices")
+        .expect("source-device commitment should iterate stages");
+    let materialize_index = source_device_body
+        .find("materialize_pending_cuda_witness_stage_commitments")
+        .expect("source-device commitment should batch materialize pending root downloads");
+
+    assert!(
+        source_device_body.contains("PendingCudaWitnessStageCommitment")
+            && source_device_body.contains("commit_extended_witness_stage_source_device_pending"),
+        "source-device commitment should collect pending CUDA roots before host materialization"
+    );
+    assert!(
+        materialize_index > loop_index,
+        "source-device commitment should download roots after queueing all stage root kernels"
+    );
+    assert!(
+        tree_source.contains("struct PendingCudaWitnessStageCommitment")
+            && tree_source
+                .contains("commit_witness_stage_device_compact_with_leaf_hash_level_pending")
+            && tree_source.contains("CudaDigestRoot"),
+        "CUDA compact tree commitments should expose a pending-root path"
+    );
+    assert!(
+        merkle_source.contains("struct CudaDigestRoot") && merkle_source.contains("fn root_device"),
+        "Merkle CUDA digest levels should keep root digests on device until materialization"
+    );
+}
+
+#[test]
 fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");

@@ -11,6 +11,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width16_merkle_digest_parent_device,
     cuda_poseidon2_width16_merkle_digest_root_device,
+    cuda_poseidon2_width16_merkle_digest_root_device_buffer,
     cuda_poseidon2_width16_merkle_digest_selected_parent_device,
     cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
@@ -19,6 +20,7 @@ use lzvm_accel::{
     cuda_poseidon2_width8_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width8_merkle_digest_parent_device,
     cuda_poseidon2_width8_merkle_digest_root_device,
+    cuda_poseidon2_width8_merkle_digest_root_device_buffer,
     cuda_poseidon2_width8_merkle_digest_selected_parent_device,
     cuda_poseidon2_width8_merkle_parent_device, CudaDeviceBuffer,
 };
@@ -83,6 +85,27 @@ pub(crate) struct CudaDigestCheckpointLevel {
 }
 
 #[cfg(feature = "cuda")]
+#[derive(Debug)]
+pub(crate) struct CudaDigestRoot {
+    root: CudaDeviceBuffer,
+}
+
+#[cfg(feature = "cuda")]
+impl CudaDigestRoot {
+    fn new(root: CudaDeviceBuffer) -> Self {
+        Self { root }
+    }
+
+    pub(crate) fn materialize(&self) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
+        let root_words = self
+            .root
+            .to_u64_words()
+            .map_err(|_| MerkleHashError::LengthOverflow)?;
+        digest_from_state_words(&root_words)
+    }
+}
+
+#[cfg(feature = "cuda")]
 impl CudaDigestLevel {
     fn new(
         digests: CudaDeviceBuffer,
@@ -122,6 +145,16 @@ impl CudaDigestLevel {
         let root_words =
             (self.root_operation)(&self.digests).map_err(|_| MerkleHashError::LengthOverflow)?;
         digest_from_state_words(&root_words)
+    }
+
+    pub(crate) fn root_device(&self) -> Result<CudaDigestRoot, MerkleHashError> {
+        let root = match self.arity {
+            2 => cuda_poseidon2_width8_merkle_digest_root_device_buffer(&self.digests),
+            4 => cuda_poseidon2_width16_merkle_digest_root_device_buffer(&self.digests),
+            _ => return Err(MerkleHashError::UnsupportedArity { arity: self.arity }),
+        }
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+        Ok(CudaDigestRoot::new(root))
     }
 
     pub(crate) fn parent_level(&self) -> Result<Self, MerkleHashError> {
@@ -439,6 +472,10 @@ impl CudaDigestCheckpointLevel {
 
     pub(crate) fn root(&self) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
         self.level.root()
+    }
+
+    pub(crate) fn root_device(&self) -> Result<CudaDigestRoot, MerkleHashError> {
+        self.level.root_device()
     }
 
     pub(crate) fn opening_path_for_source_row(

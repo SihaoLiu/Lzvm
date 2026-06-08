@@ -25,6 +25,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width16_merkle_digest_parent_device,
     cuda_poseidon2_width16_merkle_digest_root_device,
+    cuda_poseidon2_width16_merkle_digest_root_device_buffer,
     cuda_poseidon2_width16_merkle_digest_selected_parent_device,
     cuda_poseidon2_width16_merkle_opening_path_device, cuda_poseidon2_width16_merkle_parent_device,
     cuda_poseidon2_width16_merkle_root_device, cuda_poseidon2_width4, cuda_poseidon2_width4_device,
@@ -36,6 +37,7 @@ use lzvm_accel::{
     cuda_poseidon2_width8_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width8_merkle_digest_parent_device,
     cuda_poseidon2_width8_merkle_digest_root_device,
+    cuda_poseidon2_width8_merkle_digest_root_device_buffer,
     cuda_poseidon2_width8_merkle_digest_selected_parent_device,
     cuda_poseidon2_width8_merkle_opening_path_device, cuda_poseidon2_width8_merkle_parent_device,
     cuda_poseidon2_width8_merkle_root_device, cuda_setup_init, AccelError, CudaDeviceBuffer,
@@ -1896,6 +1898,24 @@ fn cuda_poseidon2_width8_merkle_digest_root_device_matches_padded_layout() {
         single_root,
         [digests[0], digests[1], digests[2], digests[3]]
     );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_merkle_digest_root_device_buffer_zeroes_empty_roots() {
+    let empty = CudaDeviceBuffer::from_u64_words(&[]).expect("empty digest buffer should allocate");
+
+    let width8_root = cuda_poseidon2_width8_merkle_digest_root_device_buffer(&empty)
+        .expect("width8 empty root buffer should materialize")
+        .to_u64_words()
+        .expect("width8 empty root should download");
+    let width16_root = cuda_poseidon2_width16_merkle_digest_root_device_buffer(&empty)
+        .expect("width16 empty root buffer should materialize")
+        .to_u64_words()
+        .expect("width16 empty root should download");
+
+    assert_eq!(width8_root, [0, 0, 0, 0]);
+    assert_eq!(width16_root, [0, 0, 0, 0]);
 }
 
 #[test]
