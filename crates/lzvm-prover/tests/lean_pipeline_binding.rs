@@ -37,6 +37,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_sound",
             "runtime_pipeline_binding_evidence_implies_transcript_bound",
             "runtime_pipeline_binding_checked_acceptance_transcript_bound",
+            "runtime_pipeline_binding_checked_acceptance_public_input_bound",
             "runtime_pipeline_binding_evidence_implies_pcs_and_fri",
             "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
