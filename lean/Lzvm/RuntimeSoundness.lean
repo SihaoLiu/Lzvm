@@ -134,6 +134,26 @@ theorem runtime_soundness_evidence_implies_public_input_bound
   intro artifact publicInput proof requiresExternalSource evidence
   exact evidence.right.right.right.left
 
+theorem runtime_soundness_evidence_implies_external_source_requirement
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        ExternalSourceOpeningRequirement
+          system
+          validation.sourceValidation
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact evidence.right.right.right.right.left
+
 theorem runtime_soundness_evidence_implies_core_obligations
     {system : VerifierModel}
     (validation : RuntimeSoundnessValidation system) :

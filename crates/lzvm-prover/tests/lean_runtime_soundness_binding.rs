@@ -32,6 +32,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_evidence_implies_transcript_bound",
             "runtime_soundness_evidence_implies_public_input_bound",
             "runtime_soundness_evidence_implies_core_obligations",
+            "runtime_soundness_evidence_implies_external_source_requirement",
             "runtime_soundness_checked_acceptance_runtime_artifact_evidence",
             "runtime_soundness_checked_acceptance_transcript_bound",
             "runtime_soundness_checked_acceptance_public_input_bound",
@@ -74,6 +75,35 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("AssumptionBundle"),
         "external-source requirement projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_evidence_implies_external_source_requirement"
+        )
+        .contains("(validation : RuntimeSoundnessValidation system)"),
+        "runtime soundness evidence projection should be tied to runtime soundness validation"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_evidence_implies_external_source_requirement"
+        )
+        .contains("ExternalSourceOpeningRequirement")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_evidence_implies_external_source_requirement"
+            )
+            .contains("validation.sourceValidation"),
+        "runtime soundness evidence should expose the external-source requirement field"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_evidence_implies_external_source_requirement"
+        )
+        .contains("AssumptionBundle"),
+        "runtime soundness evidence external-source projection should not require cryptographic assumptions"
     );
     assert!(
         theorem_prefix(
