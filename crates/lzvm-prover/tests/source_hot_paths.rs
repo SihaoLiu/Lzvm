@@ -1954,7 +1954,7 @@ fn retained_cache_defaults_prefer_leaf_digest_reuse() {
 }
 
 #[test]
-fn retained_leaf_digest_opening_keeps_single_row_extension_until_queries_batch() {
+fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");
     let values_source = std::fs::read_to_string(&values_path)
@@ -1967,11 +1967,11 @@ fn retained_leaf_digest_opening_keeps_single_row_extension_until_queries_batch()
     );
     assert!(
         leaf_digest_body.contains("extended_row_values_from_source_cuda(*row"),
-        "retained leaf digest openings should keep the single-row extension path while proof scheduling opens one row per batch"
+        "retained leaf digest openings should use the shifted-row source extension helper with its residue weight cache"
     );
     assert!(
         !leaf_digest_body.contains("extended_selected_row_values_from_source_cuda"),
-        "retained leaf digest openings should not route through selected-row extension until query batching can amortize it"
+        "retained leaf digest openings should avoid the selected-row extension API while it recomputes and uploads per-query weights"
     );
 }
 
