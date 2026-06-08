@@ -99,6 +99,26 @@ theorem runtime_soundness_evidence_implies_public_input_bound
   intro artifact publicInput proof requiresExternalSource evidence
   exact evidence.right.right.right.left
 
+theorem runtime_soundness_evidence_implies_core_obligations
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact
+    And.intro evidence.right.right.left
+      (And.intro evidence.right.right.right.left
+        (And.intro
+          evidence.right.right.right.right.right.left
+          evidence.right.right.right.right.right.right))
+
 theorem runtime_soundness_checked_acceptance_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
