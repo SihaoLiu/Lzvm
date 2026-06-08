@@ -21,6 +21,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let proof_timing_path = crate_root.join("../lzvm-cli/src/prove_witness/proof_timing.rs");
     let proof_timing_source =
         std::fs::read_to_string(&proof_timing_path).expect("proof timing source should read");
+    let cli_timing_path = crate_root.join("../lzvm-cli/src/prove_witness/timing.rs");
+    let cli_timing_source =
+        std::fs::read_to_string(&cli_timing_path).expect("CLI timing source should read");
     let fri_fold_path = crate_root.join("src/pcs_fri/fold.rs");
     let fri_fold_source =
         std::fs::read_to_string(&fri_fold_path).expect("FRI fold source should read");
@@ -54,6 +57,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("WitnessOpeningRowValueTimingObservedAcceptance")
             && lean_source.contains("ConstantMaterialValidationTimingSummary")
             && lean_source.contains("ConstantMaterialValidationTimingObservedAcceptance")
+            && lean_source.contains("ProverGpuModeSummary")
+            && lean_source.contains("ProverGpuModeObservedAcceptance")
             && lean_source.contains("GpuSetupCheckedAcceptance")
             && lean_source.contains("GpuAllocationCheckedAcceptance")
             && lean_source.contains("GpuHostDeviceCopyRoundTripValidation")
@@ -240,6 +245,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "CLI constant material validation timing output should include {line_name}"
         );
     }
+    assert!(
+        cli_timing_source.contains("\"prover_gpu_mode={}\"")
+            && cli_timing_source.contains("prover_gpu_mode()"),
+        "CLI timing output should include the prover GPU mode summary"
+    );
+    assert!(
+        lean_source.contains("proverGpuModeName"),
+        "Lean prover GPU mode summary should expose the reported mode name"
+    );
     for (line_name, field) in [
         (
             "\"finish_witness_opening_row_value_source_extend\"",
@@ -329,6 +343,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "witness_opening_row_value_timing_acceptance_verifier_core_contract",
             "constant_material_validation_timing_acceptance_sound",
             "constant_material_validation_timing_acceptance_verifier_core_contract",
+            "prover_gpu_mode_acceptance_sound",
+            "prover_gpu_mode_acceptance_verifier_core_contract",
             "gpu_setup_checked_acceptance_sound",
             "gpu_setup_checked_acceptance_verifier_core_contract",
             "gpu_allocation_checked_acceptance_sound",

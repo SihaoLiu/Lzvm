@@ -130,6 +130,10 @@ structure ConstantMaterialValidationTimingSummary where
   constantMaterialValidationByteCount : Nat
 deriving DecidableEq, Repr
 
+structure ProverGpuModeSummary where
+  proverGpuModeName : Nat
+deriving DecidableEq, Repr
+
 structure GpuSetupCacheState where
   device : Nat
   initializedBits : Nat
@@ -657,6 +661,40 @@ theorem constant_material_validation_timing_acceptance_verifier_core_contract
   exact
     sound_witness_implies_verifier_core_contract
       (constant_material_validation_timing_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
+def ProverGpuModeObservedAcceptance
+    (system : VerifierModel)
+    (_summary : Option ProverGpuModeSummary)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+
+theorem prover_gpu_mode_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ProverGpuModeSummary) :
+    forall publicInput proof,
+      ProverGpuModeObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithGpuMode
+  exact abstract_verifier_sound assumptions publicInput proof acceptedWithGpuMode
+
+theorem prover_gpu_mode_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ProverGpuModeSummary) :
+    forall publicInput proof,
+      ProverGpuModeObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (prover_gpu_mode_acceptance_sound
         assumptions
         summary
         publicInput
