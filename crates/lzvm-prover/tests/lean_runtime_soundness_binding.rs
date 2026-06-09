@@ -56,6 +56,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_required_external_source_accepts_core_sound_witness",
             "runtime_soundness_required_external_source_full_soundness_contract",
             "runtime_soundness_required_external_source_proof_system_full_soundness_contract",
+            "runtime_soundness_required_external_source_audited_proof_system_contract",
         ],
     );
     assert!(theorem_prefix(
@@ -430,6 +431,39 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             )
             .contains("SoundWitness system publicInput proof"),
         "required external-source runtime soundness should package model soundness with the full soundness contract"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_required_external_source_audited_proof_system_contract"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_contract"
+            )
+            .contains("ProofSystemSound system")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_contract"
+            )
+            .contains("system.accepts publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_contract"
+            )
+            .contains("RuntimeSoundnessEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_contract"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "required external-source runtime soundness should package audited crypto assumptions with proof-system soundness"
     );
 }
 
