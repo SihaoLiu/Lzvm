@@ -1500,6 +1500,45 @@ fn source_device_leaf_extension_reuses_workspace_cache() {
 }
 
 #[test]
+fn guest_pc_segment_commitments_reuse_leaf_workspace_cache_across_segments() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+
+    assert!(
+        execution_source.contains("WitnessStageLeafWorkspaceCache"),
+        "guest-PC witness execution should import the leaf workspace cache type"
+    );
+    assert!(
+        execution_source
+            .contains("leaf_workspace_cache: Option<&'a mut WitnessStageLeafWorkspaceCache>"),
+        "guest-PC segment observers should carry the leaf workspace cache"
+    );
+    assert!(
+        execution_source
+            .matches("let mut leaf_workspace_cache = WitnessStageLeafWorkspaceCache::default();")
+            .count()
+            >= 2,
+        "guest-PC streaming paths should create leaf workspace caches outside segment callbacks"
+    );
+    assert!(
+        execution_source
+            .matches("leaf_workspace_cache: Some(&mut leaf_workspace_cache)")
+            .count()
+            >= 2,
+        "guest-PC streaming paths should pass one leaf workspace cache through each segment callback"
+    );
+    assert!(
+        execution_source
+            .matches("observers.leaf_workspace_cache.as_deref_mut()")
+            .count()
+            >= 2,
+        "source-device commits should receive the observer leaf workspace cache"
+    );
+}
+
+#[test]
 fn guest_pc_trace_device_material_builder_does_not_construct_host_trace() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

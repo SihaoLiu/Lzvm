@@ -833,6 +833,7 @@ pub(crate) fn commit_witness_stage_values_with_source_devices_reusing_cached_sta
 }
 
 #[cfg(feature = "cuda")]
+#[allow(dead_code)]
 pub(crate) fn commit_witness_stage_source_devices_and_indexed_timing(
     source_devices: &[WitnessStageSourceDevice],
     unit: &ProveUnitSchedule,
@@ -849,10 +850,34 @@ pub(crate) fn commit_witness_stage_source_devices_and_indexed_timing(
         unit,
         timing,
         false,
+        None,
     )
 }
 
 #[cfg(feature = "cuda")]
+pub(crate) fn commit_witness_stage_source_devices_and_indexed_timing_with_leaf_workspace_cache(
+    source_devices: &[WitnessStageSourceDevice],
+    unit: &ProveUnitSchedule,
+    timing: &mut WitnessStageCommitTiming,
+    leaf_workspace_cache: Option<&mut WitnessStageLeafWorkspaceCache>,
+) -> Result<
+    (
+        WitnessTraceCommitments,
+        Vec<WitnessIndexedStageCommitTiming>,
+    ),
+    WitnessTraceCommitmentError,
+> {
+    commit_witness_stage_source_devices_and_indexed_timing_inner(
+        source_devices,
+        unit,
+        timing,
+        false,
+        leaf_workspace_cache,
+    )
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
 pub(crate) fn commit_witness_stage_source_devices_and_indexed_timing_external_source(
     source_devices: &[WitnessStageSourceDevice],
     unit: &ProveUnitSchedule,
@@ -864,7 +889,35 @@ pub(crate) fn commit_witness_stage_source_devices_and_indexed_timing_external_so
     ),
     WitnessTraceCommitmentError,
 > {
-    commit_witness_stage_source_devices_and_indexed_timing_inner(source_devices, unit, timing, true)
+    commit_witness_stage_source_devices_and_indexed_timing_inner(
+        source_devices,
+        unit,
+        timing,
+        true,
+        None,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn commit_witness_stage_source_devices_and_indexed_timing_external_source_with_leaf_workspace_cache(
+    source_devices: &[WitnessStageSourceDevice],
+    unit: &ProveUnitSchedule,
+    timing: &mut WitnessStageCommitTiming,
+    leaf_workspace_cache: Option<&mut WitnessStageLeafWorkspaceCache>,
+) -> Result<
+    (
+        WitnessTraceCommitments,
+        Vec<WitnessIndexedStageCommitTiming>,
+    ),
+    WitnessTraceCommitmentError,
+> {
+    commit_witness_stage_source_devices_and_indexed_timing_inner(
+        source_devices,
+        unit,
+        timing,
+        true,
+        leaf_workspace_cache,
+    )
 }
 
 #[cfg(feature = "cuda")]
@@ -873,6 +926,7 @@ fn commit_witness_stage_source_devices_and_indexed_timing_inner(
     unit: &ProveUnitSchedule,
     timing: &mut WitnessStageCommitTiming,
     external_source_required: bool,
+    leaf_workspace_cache: Option<&mut WitnessStageLeafWorkspaceCache>,
 ) -> Result<
     (
         WitnessTraceCommitments,
@@ -882,13 +936,18 @@ fn commit_witness_stage_source_devices_and_indexed_timing_inner(
 > {
     let params = WitnessStageCommitParams::from_unit(unit)?;
     let mut pending_commitments = Vec::with_capacity(source_devices.len());
-    let mut leaf_workspace_cache = WitnessStageLeafWorkspaceCache::default();
+    let mut local_leaf_workspace_cache = WitnessStageLeafWorkspaceCache::default();
+    let mut leaf_workspace_cache = if let Some(cache) = leaf_workspace_cache {
+        Some(cache)
+    } else {
+        Some(&mut local_leaf_workspace_cache)
+    };
     for source_device in source_devices {
         let mut stage_timing = WitnessStageCommitTiming::default();
         let commitment = commit_extended_witness_stage_source_device_pending(
             source_device,
             params,
-            Some(&mut leaf_workspace_cache),
+            leaf_workspace_cache.as_deref_mut(),
             &mut stage_timing,
             external_source_required,
         )?;

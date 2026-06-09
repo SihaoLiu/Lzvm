@@ -54,15 +54,16 @@ use crate::source_assignment_hints::validate_source_assignment_hints;
 use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
 #[cfg(feature = "cuda")]
 use crate::witness_commitment::{
-    commit_witness_stage_source_devices_and_indexed_timing,
-    commit_witness_stage_source_devices_and_indexed_timing_external_source,
+    commit_witness_stage_source_devices_and_indexed_timing_external_source_with_leaf_workspace_cache,
+    commit_witness_stage_source_devices_and_indexed_timing_with_leaf_workspace_cache,
     commit_witness_stage_values_with_source_devices_and_indexed_timing,
     commit_witness_stage_values_with_source_devices_and_workers,
     commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing,
     commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_workers,
     retain_device_buffer, retained_source_device_limit, WitnessRetainedDeviceBuffer,
     WitnessStageCommitmentError, WitnessStageCommitmentReuseCache, WitnessStageLeafError,
-    WitnessStageRetainedSourceDevice, WitnessStageSourceDevice, WitnessStageSourceDeviceView,
+    WitnessStageLeafWorkspaceCache, WitnessStageRetainedSourceDevice, WitnessStageSourceDevice,
+    WitnessStageSourceDeviceView,
 };
 #[cfg(not(feature = "cuda"))]
 use crate::witness_commitment::{
@@ -1391,6 +1392,8 @@ struct ProveWitnessTraceRunObservers<'a> {
     fixed_columns_cache: Option<&'a mut WitnessFixedColumnsCache>,
     #[cfg(feature = "cuda")]
     stage_commitment_reuse_cache: Option<&'a mut WitnessStageCommitmentReuseCache>,
+    #[cfg(feature = "cuda")]
+    leaf_workspace_cache: Option<&'a mut WitnessStageLeafWorkspaceCache>,
     timing: Option<&'a mut ProveWitnessTraceTimingAccumulator>,
 }
 
@@ -2630,6 +2633,8 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             fixed_columns_cache: None,
             #[cfg(feature = "cuda")]
             stage_commitment_reuse_cache: None,
+            #[cfg(feature = "cuda")]
+            leaf_workspace_cache: None,
             timing: None,
         },
     )
@@ -2769,6 +2774,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
     let mut outputs = Vec::with_capacity(trace_outputs.len());
     let mut source_lookup_balance = source_lookup_balance;
     let mut fixed_columns_cache = WitnessFixedColumnsCache::new();
+    #[cfg(feature = "cuda")]
+    let mut leaf_workspace_cache = WitnessStageLeafWorkspaceCache::default();
     for segment_output in trace_outputs {
         let trace_instance_index = segment_output.trace_instance_index();
         #[cfg(feature = "cuda")]
@@ -2826,6 +2833,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
                 fixed_columns_cache: Some(&mut fixed_columns_cache),
                 #[cfg(feature = "cuda")]
                 stage_commitment_reuse_cache: None,
+                #[cfg(feature = "cuda")]
+                leaf_workspace_cache: Some(&mut leaf_workspace_cache),
                 timing: None,
             },
         )?;
@@ -2881,6 +2890,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         let mut fixed_columns_cache = WitnessFixedColumnsCache::new();
         #[cfg(feature = "cuda")]
         let mut stage_commitment_reuse_cache = WitnessStageCommitmentReuseCache::default();
+        #[cfg(feature = "cuda")]
+        let mut leaf_workspace_cache = WitnessStageLeafWorkspaceCache::default();
         let guest_trace_stream_started = collect_timing.then(Instant::now);
         let stream_result = for_each_guest_pc_trace_segment_collecting_proof_values_with_context(
             &backend,
@@ -2959,6 +2970,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                         fixed_columns_cache: Some(&mut fixed_columns_cache),
                         #[cfg(feature = "cuda")]
                         stage_commitment_reuse_cache: Some(&mut stage_commitment_reuse_cache),
+                        #[cfg(feature = "cuda")]
+                        leaf_workspace_cache: Some(&mut leaf_workspace_cache),
                         timing: segment_trace_timing.as_mut(),
                     },
                 )?;
@@ -3025,6 +3038,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
     let mut fixed_columns_cache = WitnessFixedColumnsCache::new();
     #[cfg(feature = "cuda")]
     let mut stage_commitment_reuse_cache = WitnessStageCommitmentReuseCache::default();
+    #[cfg(feature = "cuda")]
+    let mut leaf_workspace_cache = WitnessStageLeafWorkspaceCache::default();
     let guest_trace_stream_started = collect_timing.then(Instant::now);
     let stream_timing = for_each_guest_pc_trace_segment_with_context(
         &backend,
@@ -3100,6 +3115,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                     fixed_columns_cache: Some(&mut fixed_columns_cache),
                     #[cfg(feature = "cuda")]
                     stage_commitment_reuse_cache: Some(&mut stage_commitment_reuse_cache),
+                    #[cfg(feature = "cuda")]
+                    leaf_workspace_cache: Some(&mut leaf_workspace_cache),
                     timing: segment_trace_timing.as_mut(),
                 },
             )?;
@@ -3358,6 +3375,8 @@ fn run_prove_witness_commitments_with_trace_bytes_inner(
             fixed_columns_cache: None,
             #[cfg(feature = "cuda")]
             stage_commitment_reuse_cache: None,
+            #[cfg(feature = "cuda")]
+            leaf_workspace_cache: None,
             timing: None,
         },
     )
@@ -3511,16 +3530,18 @@ fn run_prove_witness_commitments_from_trace_inner(
                 }
             } else {
                 let source_commit_result = if external_source_commitment_required {
-                    commit_witness_stage_source_devices_and_indexed_timing_external_source(
+                    commit_witness_stage_source_devices_and_indexed_timing_external_source_with_leaf_workspace_cache(
                         &source_devices,
                         unit,
                         &mut stage_timing,
+                        observers.leaf_workspace_cache.as_deref_mut(),
                     )
                 } else {
-                    commit_witness_stage_source_devices_and_indexed_timing(
+                    commit_witness_stage_source_devices_and_indexed_timing_with_leaf_workspace_cache(
                         &source_devices,
                         unit,
                         &mut stage_timing,
+                        observers.leaf_workspace_cache.as_deref_mut(),
                     )
                 };
                 match source_commit_result {
@@ -3674,16 +3695,18 @@ fn run_prove_witness_commitments_from_trace_inner(
             let source_devices = stage_source_device_cache.descriptors();
             let mut stage_timing = WitnessStageCommitTiming::default();
             let source_commit_result = if external_source_commitment_required {
-                commit_witness_stage_source_devices_and_indexed_timing_external_source(
+                commit_witness_stage_source_devices_and_indexed_timing_external_source_with_leaf_workspace_cache(
                     &source_devices,
                     unit,
                     &mut stage_timing,
+                    observers.leaf_workspace_cache.as_deref_mut(),
                 )
             } else {
-                commit_witness_stage_source_devices_and_indexed_timing(
+                commit_witness_stage_source_devices_and_indexed_timing_with_leaf_workspace_cache(
                     &source_devices,
                     unit,
                     &mut stage_timing,
+                    observers.leaf_workspace_cache.as_deref_mut(),
                 )
             };
             match source_commit_result {
@@ -4745,6 +4768,8 @@ mod tests {
                 fixed_columns_cache: None,
                 #[cfg(feature = "cuda")]
                 stage_commitment_reuse_cache: None,
+                #[cfg(feature = "cuda")]
+                leaf_workspace_cache: None,
                 timing: None,
             },
         )
