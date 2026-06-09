@@ -203,6 +203,11 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_pending_dma_report_count: usize,
     trace_amo_report_count: usize,
     trace_store_conditional_report_count: usize,
+    trace_external_op_row_count: usize,
+    trace_copy_row_count: usize,
+    trace_flag_row_count: usize,
+    trace_precompile_row_count: usize,
+    trace_indirect_memory_row_count: usize,
 }
 
 impl GuestPcTraceStreamTiming {
@@ -225,6 +230,11 @@ impl GuestPcTraceStreamTiming {
         self.trace_pending_dma_report_count += other.trace_pending_dma_report_count;
         self.trace_amo_report_count += other.trace_amo_report_count;
         self.trace_store_conditional_report_count += other.trace_store_conditional_report_count;
+        self.trace_external_op_row_count += other.trace_external_op_row_count;
+        self.trace_copy_row_count += other.trace_copy_row_count;
+        self.trace_flag_row_count += other.trace_flag_row_count;
+        self.trace_precompile_row_count += other.trace_precompile_row_count;
+        self.trace_indirect_memory_row_count += other.trace_indirect_memory_row_count;
     }
 
     pub fn runner_duration(&self) -> Duration {
@@ -297,6 +307,26 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_store_conditional_report_count(&self) -> usize {
         self.trace_store_conditional_report_count
+    }
+
+    pub fn trace_external_op_row_count(&self) -> usize {
+        self.trace_external_op_row_count
+    }
+
+    pub fn trace_copy_row_count(&self) -> usize {
+        self.trace_copy_row_count
+    }
+
+    pub fn trace_flag_row_count(&self) -> usize {
+        self.trace_flag_row_count
+    }
+
+    pub fn trace_precompile_row_count(&self) -> usize {
+        self.trace_precompile_row_count
+    }
+
+    pub fn trace_indirect_memory_row_count(&self) -> usize {
+        self.trace_indirect_memory_row_count
     }
 }
 
@@ -475,7 +505,7 @@ enum GuestPcTraceSegmentStreamMessage {
 
 enum GuestPcTracePendingSegmentMessage {
     Segment(GuestPcTracePendingSegmentSlice),
-    Complete(GuestPcTraceStreamResult),
+    Complete(Box<GuestPcTraceStreamResult>),
     Error(GuestPcTraceBackendError),
 }
 
@@ -1962,10 +1992,12 @@ fn produce_guest_pc_trace_segments(
                         pending_send_wait_duration,
                         ..GuestPcTraceStreamTiming::default()
                     };
-                    GuestPcTracePendingSegmentMessage::Complete(GuestPcTraceStreamResult {
-                        proof_values,
-                        timing,
-                    })
+                    GuestPcTracePendingSegmentMessage::Complete(Box::new(
+                        GuestPcTraceStreamResult {
+                            proof_values,
+                            timing,
+                        },
+                    ))
                 }
                 Err(error) => GuestPcTracePendingSegmentMessage::Error(error),
             };
@@ -2100,7 +2132,7 @@ fn lower_guest_pc_trace_pending_segments(
         timing.pending_receive_wait_duration += receive_started.elapsed();
         let pending = match message {
             GuestPcTracePendingSegmentMessage::Segment(pending) => pending,
-            GuestPcTracePendingSegmentMessage::Complete(stream) => return Ok(stream),
+            GuestPcTracePendingSegmentMessage::Complete(stream) => return Ok(*stream),
             GuestPcTracePendingSegmentMessage::Error(error) => return Err(error),
         };
         let lower_started = Instant::now();
@@ -2680,6 +2712,28 @@ fn record_trace_report_shape(
             timing.trace_store_conditional_report_count += 1;
         }
         _ => {}
+    }
+}
+
+fn record_trace_lowered_row_shape(
+    timing: &mut GuestPcTraceStreamTiming,
+    instruction: &ZiskMainInstruction,
+) {
+    if instruction.is_external_op {
+        timing.trace_external_op_row_count += 1;
+    }
+    match instruction.op {
+        ZiskMainOp::CopyB => timing.trace_copy_row_count += 1,
+        ZiskMainOp::Flag => timing.trace_flag_row_count += 1,
+        _ => {}
+    }
+    if instruction.is_precompiled {
+        timing.trace_precompile_row_count += 1;
+    }
+    if matches!(instruction.b, ZiskMainSource::Indirect(_))
+        || matches!(instruction.store, ZiskMainStore::Indirect(_))
+    {
+        timing.trace_indirect_memory_row_count += 1;
     }
 }
 
@@ -3481,6 +3535,11 @@ fn build_layout_zisk_main_trace_segment_device_material(
                 segment,
             },
             |_, values| {
+                if shape_timing {
+                    if let Some(timing) = timing.as_deref_mut() {
+                        record_trace_lowered_row_shape(timing, &values.instruction);
+                    }
+                }
                 let _descriptor_timer = DurationTimer::new(
                     timing
                         .as_deref_mut()
@@ -3683,6 +3742,7 @@ fn build_layout_zisk_main_trace_segment(
             &mut device_trace_descriptors,
             timing.as_deref_mut(),
             detail_timing,
+            shape_timing,
         )?;
         if let Some(timing) = timing.as_deref_mut() {
             timing.trace_report_count += 1;
@@ -3881,6 +3941,7 @@ fn write_zisk_main_report_columns(
     #[cfg(feature = "cuda")] device_trace_descriptors: &mut Option<ZiskMainDeviceTraceDescriptors>,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
     _detail_timing: bool,
+    shape_timing: bool,
 ) -> Result<usize, GuestPcTraceBackendError> {
     #[cfg(feature = "cuda")]
     let descriptor_rows_before = device_trace_descriptors
@@ -3907,6 +3968,11 @@ fn write_zisk_main_report_columns(
                         .map(|timing| &mut timing.trace_descriptor_duration),
                 );
                 append_zisk_main_device_trace_descriptor(descriptors, &values)?;
+            }
+            if shape_timing {
+                if let Some(timing) = timing.as_deref_mut() {
+                    record_trace_lowered_row_shape(timing, &values.instruction);
+                }
             }
             let _emit_timer = DurationTimer::new(
                 timing

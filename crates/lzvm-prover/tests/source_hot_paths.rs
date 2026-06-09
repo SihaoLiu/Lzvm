@@ -3710,6 +3710,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "trace_pending_dma_report_count",
         "trace_amo_report_count",
         "trace_store_conditional_report_count",
+        "trace_external_op_row_count",
+        "trace_copy_row_count",
+        "trace_flag_row_count",
+        "trace_precompile_row_count",
+        "trace_indirect_memory_row_count",
     ] {
         assert!(
             backend_source.contains(field),
@@ -3789,6 +3794,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest_trace_pending_dma_report_count",
         "guest_trace_amo_report_count",
         "guest_trace_store_conditional_report_count",
+        "guest_trace_external_op_row_count",
+        "guest_trace_copy_row_count",
+        "guest_trace_flag_row_count",
+        "guest_trace_precompile_row_count",
+        "guest_trace_indirect_memory_row_count",
     ] {
         assert!(
             execution_source.contains(field),
@@ -3808,6 +3818,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_pending_dma_reports\"",
         "\"guest_trace_amo_reports\"",
         "\"guest_trace_store_conditional_reports\"",
+        "\"guest_trace_external_op_rows\"",
+        "\"guest_trace_copy_rows\"",
+        "\"guest_trace_flag_rows\"",
+        "\"guest_trace_precompile_rows\"",
+        "\"guest_trace_indirect_memory_rows\"",
     ] {
         assert!(
             cli_source.contains(line_name),

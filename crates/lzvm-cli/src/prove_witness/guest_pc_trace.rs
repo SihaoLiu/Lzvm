@@ -101,6 +101,20 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_store_conditional_reports",
         timing.guest_trace_store_conditional_report_count(),
     );
+    timings.record_count(
+        "guest_trace_external_op_rows",
+        timing.guest_trace_external_op_row_count(),
+    );
+    timings.record_count("guest_trace_copy_rows", timing.guest_trace_copy_row_count());
+    timings.record_count("guest_trace_flag_rows", timing.guest_trace_flag_row_count());
+    timings.record_count(
+        "guest_trace_precompile_rows",
+        timing.guest_trace_precompile_row_count(),
+    );
+    timings.record_count(
+        "guest_trace_indirect_memory_rows",
+        timing.guest_trace_indirect_memory_row_count(),
+    );
     timings.record(
         "guest_trace_pending_send_wait",
         timing.guest_trace_pending_send_wait_duration(),
