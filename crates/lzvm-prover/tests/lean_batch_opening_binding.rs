@@ -41,6 +41,7 @@ fn lean_batch_opening_binding_tracks_runtime_batch_helpers() {
             "runtime_batch_witness_opening_rows_checked_acceptance_bound_contract",
             "runtime_batch_witness_opening_rows_checked_acceptance_sound",
             "runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract",
+            "runtime_batch_witness_opening_rows_checked_acceptance_bound_and_core_contract",
         ],
     );
     assert!(

@@ -395,4 +395,40 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_cont
       accepted
   exact sound_witness_implies_verifier_core_contract sound.right
 
+theorem runtime_batch_witness_opening_rows_checked_acceptance_bound_and_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system) :
+    forall artifact publicInput proof,
+      RuntimeBatchWitnessOpeningRowsCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeBatchWitnessOpeningRowsBoundContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_batch_witness_opening_rows_checked_acceptance_bound_contract
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+
 end Lzvm
