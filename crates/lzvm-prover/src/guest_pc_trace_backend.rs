@@ -2453,10 +2453,9 @@ struct ZiskMainLoweredReportRow<'a> {
     expected_next_pc: u64,
 }
 
-#[derive(Debug, Clone, Copy)]
 struct ZiskMainReportWindow<'a> {
     current: &'a GuestMachineReport,
-    next_instruction: Option<RiscvInstruction>,
+    next_instruction: &'a mut dyn FnMut() -> Option<RiscvInstruction>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2556,7 +2555,7 @@ struct ZiskMainRegisterAccessUpdate {
 fn validate_and_apply_zisk_main_report(
     row: usize,
     report: &GuestMachineReport,
-    next_instruction: Option<RiscvInstruction>,
+    next_instruction: impl FnMut() -> Option<RiscvInstruction>,
     state: &mut ZiskMainTraceState,
     context: ZiskMainReportValidationContext<'_>,
     mut visit: impl FnMut(usize, ZiskMainReportTraceValues) -> Result<(), GuestPcTraceBackendError>,
@@ -2687,7 +2686,7 @@ fn record_trace_report_shape(
 fn lower_stateful_zisk_main_report_rows<'a>(
     row: usize,
     report: &'a GuestMachineReport,
-    next_instruction: Option<RiscvInstruction>,
+    mut next_instruction: impl FnMut() -> Option<RiscvInstruction>,
     state: &ZiskMainTraceState,
 ) -> Result<Vec<ZiskMainLoweredReportRow<'a>>, GuestPcTraceBackendError> {
     if let Some(pending) = state.pending_dma {
@@ -2721,7 +2720,7 @@ fn lower_stateful_zisk_main_report_rows<'a>(
     let instruction = lower_guest_report(report)
         .map_err(|source| GuestPcTraceBackendError::ZiskMainLower { row, source })?;
     let instruction = if let RiscvInstruction::ZiskDmaPrepare { kind, .. } = report.instruction {
-        lower_dma_prepare_report(row, instruction, kind, next_instruction)?
+        lower_dma_prepare_report(row, instruction, kind, next_instruction())?
     } else {
         instruction
     };
@@ -3154,6 +3153,21 @@ fn dma_register_op(kind: RiscvDmaKind) -> ZiskMainOp {
     }
 }
 
+fn guest_report_next_instruction(
+    reports: &[GuestMachineReport],
+    report_index: usize,
+    lookahead_instruction: Option<RiscvInstruction>,
+) -> Option<RiscvInstruction> {
+    reports
+        .get(report_index + 1)
+        .map(|next| next.instruction)
+        .or_else(|| {
+            (report_index + 1 == reports.len())
+                .then_some(lookahead_instruction)
+                .flatten()
+        })
+}
+
 fn zisk_main_pending_dma(report: &GuestMachineReport) -> Option<ZiskMainPendingDma> {
     match report.instruction {
         RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Some(ZiskMainPendingDma {
@@ -3450,14 +3464,6 @@ fn build_layout_zisk_main_trace_segment_device_material(
     let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
     let shape_timing = guest_pc_trace_shape_timing_enabled();
     for (report_index, report) in reports.iter().enumerate() {
-        let next_instruction = reports
-            .get(report_index + 1)
-            .map(|next| next.instruction)
-            .or_else(|| {
-                (report_index + 1 == reports.len())
-                    .then_some(lookahead_instruction)
-                    .flatten()
-            });
         let report_started = timing
             .as_ref()
             .filter(|_| detail_timing)
@@ -3467,7 +3473,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
         let written_rows = validate_and_apply_zisk_main_report(
             output_row,
             report,
-            next_instruction,
+            &mut || guest_report_next_instruction(reports, report_index, lookahead_instruction),
             &mut state,
             ZiskMainReportValidationContext {
                 columns: Some(&columns),
@@ -3655,25 +3661,19 @@ fn build_layout_zisk_main_trace_segment(
     let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
     let shape_timing = guest_pc_trace_shape_timing_enabled();
     for (report_index, report) in reports.iter().enumerate() {
-        let next_instruction = reports
-            .get(report_index + 1)
-            .map(|next| next.instruction)
-            .or_else(|| {
-                (report_index + 1 == reports.len())
-                    .then_some(lookahead_instruction)
-                    .flatten()
-            });
         let report_started = timing
             .as_ref()
             .filter(|_| detail_timing)
             .map(|_| Instant::now());
         let pending_report = shape_timing && state.pending_dma.is_some();
+        let mut next_instruction =
+            || guest_report_next_instruction(reports, report_index, lookahead_instruction);
         let written_rows = write_zisk_main_report_columns(
             &mut builder,
             output_row,
             ZiskMainReportWindow {
                 current: report,
-                next_instruction,
+                next_instruction: &mut next_instruction,
             },
             &columns,
             &mut state,

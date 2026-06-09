@@ -3693,6 +3693,10 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         std::fs::read_to_string(&execution_path).expect("witness execution source should read");
     let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
     let cli_source = std::fs::read_to_string(&cli_path).expect("guest PC CLI source should read");
+    let precompile_memory_path =
+        crate_root.join("src/guest_pc_trace_backend/precompile_memory_trace.rs");
+    let precompile_memory_source = std::fs::read_to_string(&precompile_memory_path)
+        .expect("guest PC precompile memory trace source should read");
 
     for field in [
         "trace_report_duration",
@@ -3739,6 +3743,38 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
     assert!(
         device_material_body.contains("guest_pc_trace_shape_timing_enabled()"),
         "guest PC lower shape timing should be explicitly gated"
+    );
+    assert!(
+        device_material_body.contains("guest_report_next_instruction"),
+        "guest PC device material lowerer should use lazy next-instruction lookup"
+    );
+    assert!(
+        !device_material_body.contains("let next_instruction = reports"),
+        "guest PC device material lowerer should not fetch the next instruction for every report"
+    );
+
+    let host_segment_start = concat!("fn build_layout_", "zi", "sk");
+    let host_segment_start = format!("{host_segment_start}_main_trace_segment");
+    let host_segment_body = function_body(
+        &backend_source,
+        &host_segment_start,
+        "fn serialize_trace_to_output",
+    );
+    assert!(
+        host_segment_body.contains("guest_report_next_instruction"),
+        "guest PC host lowerer should use lazy next-instruction lookup"
+    );
+    assert!(
+        !host_segment_body.contains("let next_instruction = reports"),
+        "guest PC host lowerer should not fetch the next instruction for every report"
+    );
+    assert!(
+        precompile_memory_source.contains("guest_report_next_instruction"),
+        "guest PC precompile memory lowerer should use lazy next-instruction lookup"
+    );
+    assert!(
+        !precompile_memory_source.contains("let next_instruction = reports"),
+        "guest PC precompile memory lowerer should not fetch the next instruction for every report"
     );
 
     for field in [
