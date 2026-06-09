@@ -712,7 +712,7 @@ fn build_witness_proof_artifact_for_unit_inner(
             ),
         }
         .map_err(|error| format!("build FRI opening segment failed: {error}"))?;
-        if let Some(timing) = timing {
+        if let Some(timing) = timing.as_deref_mut() {
             timing.add_fri_opening(fri_opening_start.elapsed());
             timing.add_fri_opening_build_timing(&fri_build_timing);
         }
@@ -736,11 +736,16 @@ fn build_witness_proof_artifact_for_unit_inner(
             output: request.output,
             packed_unit_values: unit_values,
         };
-        if let Some(contribution_segment) = build_witness_contribution_segment(
+        let contribution_start = Instant::now();
+        let contribution_segment = build_witness_contribution_segment(
             request.catalog,
             request.schedule,
             std::slice::from_ref(&contribution_source),
-        )? {
+        )?;
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.add_contribution_segment(contribution_start.elapsed());
+        }
+        if let Some(contribution_segment) = contribution_segment {
             segments.push(contribution_segment);
             true
         } else {
@@ -762,7 +767,17 @@ fn build_witness_proof_artifact_for_unit_inner(
                     .to_owned(),
             );
         }
-        validate_contribution_proof_output(request.catalog, &proof, public_values)?;
+        let verify_start = Instant::now();
+        let result = validate_contribution_proof_output(
+            request.catalog,
+            &proof,
+            public_values,
+            timing.as_deref_mut(),
+        );
+        if let Some(timing) = timing {
+            timing.add_contribution_verify(verify_start.elapsed());
+        }
+        result?;
     }
     if request.verify_outputs {
         validate_setup_preflight(request.catalog, &proof, public_values)
@@ -827,7 +842,7 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
         segments,
     };
     if request.verify_outputs || request.challenge_values_segment.is_some() {
-        validate_contribution_proof_output(request.catalog, &proof, public_values)?;
+        validate_contribution_proof_output(request.catalog, &proof, public_values, None)?;
     }
     Ok(Some(proof))
 }
@@ -916,7 +931,7 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
         segments,
     };
     if request.verify_outputs || request.challenge_values_segment.is_some() {
-        validate_contribution_proof_output(request.catalog, &proof, public_values)?;
+        validate_contribution_proof_output(request.catalog, &proof, public_values, None)?;
     }
     Ok(Some(proof))
 }
@@ -936,7 +951,7 @@ pub fn build_witness_proof_artifact_for_all_units_with_timing(
 
 fn build_witness_proof_artifact_for_all_units_inner(
     request: &WitnessAllUnitsProofRequest<'_>,
-    timing: Option<&mut WitnessProofArtifactTiming>,
+    mut timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<Option<ProofArtifact>, String> {
     let Some(public_values) = request.public_values else {
         return Ok(None);
@@ -984,7 +999,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
                 evaluation_values: &evaluation_values,
                 unit_values: &proof_unit_values,
             },
-            timing,
+            timing.as_deref_mut(),
         )?
     } else {
         build_witness_proof_artifact_from_trace_outputs_with_bindings_and_material_summaries(
@@ -999,7 +1014,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
                 binding_segments: binding_segments_slice,
             },
             request.constant_tree_material_summaries,
-            timing,
+            timing.as_deref_mut(),
         )?
     };
     let has_contribution_segment = if request.include_contribution_segment {
@@ -1020,11 +1035,16 @@ fn build_witness_proof_artifact_for_all_units_inner(
                 }
             })
             .collect::<Vec<_>>();
-        if let Some(contribution_segment) = build_witness_contribution_segment(
+        let contribution_start = Instant::now();
+        let contribution_segment = build_witness_contribution_segment(
             request.catalog,
             request.schedule,
             &contribution_sources,
-        )? {
+        )?;
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.add_contribution_segment(contribution_start.elapsed());
+        }
+        if let Some(contribution_segment) = contribution_segment {
             proof.segments.push(contribution_segment);
             true
         } else {
@@ -1043,7 +1063,17 @@ fn build_witness_proof_artifact_for_all_units_inner(
                     .to_owned(),
             );
         }
-        validate_contribution_proof_output(request.catalog, &proof, public_values)?;
+        let verify_start = Instant::now();
+        let result = validate_contribution_proof_output(
+            request.catalog,
+            &proof,
+            public_values,
+            timing.as_deref_mut(),
+        );
+        if let Some(timing) = timing {
+            timing.add_contribution_verify(verify_start.elapsed());
+        }
+        result?;
     }
     if request.verify_outputs {
         validate_setup_preflight(request.catalog, &proof, public_values)
@@ -1131,6 +1161,7 @@ fn validate_contribution_proof_output(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
     public_values: &PublicValues,
+    timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<(), String> {
     validate_setup_preflight_hashes(catalog, proof, public_values)
         .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
@@ -1139,7 +1170,7 @@ fn validate_contribution_proof_output(
         .iter()
         .any(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
     {
-        validate_contribution_proof_challenge_values(catalog, proof, public_values)?;
+        validate_contribution_proof_challenge_values(catalog, proof, public_values, timing)?;
     }
     Ok(())
 }
@@ -1148,6 +1179,7 @@ fn validate_contribution_proof_challenge_values(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
     public_values: &PublicValues,
+    timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<(), String> {
     let segment = proof
         .segments
@@ -1165,13 +1197,18 @@ fn validate_contribution_proof_challenge_values(
             .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
     let packed_proof_values = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
         .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+    let challenge_start = Instant::now();
     let expected = derive_global_challenge_from_proof_segments(
         &catalog.layout.global_info,
         &public_fields,
         &packed_proof_values,
         &proof.segments,
-    )
-    .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+    );
+    if let Some(timing) = timing {
+        timing.add_contribution_challenge(challenge_start.elapsed());
+    }
+    let expected =
+        expected.map_err(|error| format!("verify contribution proof output failed: {error}"))?;
     if challenge_values.values.as_slice() != [expected.to_u64s()] {
         return Err(
             "verify contribution proof output failed: contribution challenge values mismatch"

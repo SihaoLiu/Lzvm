@@ -293,6 +293,31 @@ fn proof_artifact_timing_reports_external_source_rebuild_shape() {
 }
 
 #[test]
+fn proof_artifact_timing_reports_contribution_work() {
+    let timing = lzvm_prover::WitnessProofArtifactTiming {
+        contribution_segment: std::time::Duration::from_millis(13),
+        contribution_verify: std::time::Duration::from_millis(17),
+        contribution_challenge: std::time::Duration::from_millis(19),
+        ..lzvm_prover::WitnessProofArtifactTiming::default()
+    };
+
+    let mut timings = TimingRecorder::new(true);
+    record_proof_artifact_timing(&mut timings, &timing);
+
+    let mut stdout = Vec::new();
+    write_timing_summary(&mut stdout, &timings);
+    let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+    for expected in [
+        "timing_finish_contribution_segment_ms=13\n",
+        "timing_finish_contribution_verify_ms=17\n",
+        "timing_finish_contribution_challenge_ms=19\n",
+    ] {
+        assert!(stdout.contains(expected), "missing {expected} in {stdout}");
+    }
+}
+
+#[test]
 fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
     let timing =
         lzvm_prover::WitnessProofArtifactTiming {

@@ -676,6 +676,12 @@ pub(super) fn record_proof_artifact_timing(
         timing.fri_transcript_layer_tree,
     );
     timings.record("finish_fri_transcript_fold", timing.fri_transcript_fold);
+    timings.record("finish_contribution_segment", timing.contribution_segment);
+    timings.record("finish_contribution_verify", timing.contribution_verify);
+    timings.record(
+        "finish_contribution_challenge",
+        timing.contribution_challenge,
+    );
     timings.record_count(
         "finish_fri_opening_unit_count",
         timing.fri_opening_unit_count,

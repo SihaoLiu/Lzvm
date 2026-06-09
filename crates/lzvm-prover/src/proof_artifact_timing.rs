@@ -96,6 +96,9 @@ pub struct WitnessProofArtifactTiming {
     pub fri_opening_query_count: usize,
     pub fri_transcript_unit_count: usize,
     pub fri_transcript_layer_count: usize,
+    pub contribution_segment: Duration,
+    pub contribution_verify: Duration,
+    pub contribution_challenge: Duration,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -510,6 +513,18 @@ impl WitnessProofArtifactTiming {
         self.fri_opening_query_count += timing.query_count;
         self.fri_transcript_unit_count += timing.transcript_unit_count;
         self.fri_transcript_layer_count += timing.transcript_layer_count;
+    }
+
+    pub(crate) fn add_contribution_segment(&mut self, duration: Duration) {
+        self.contribution_segment += duration;
+    }
+
+    pub(crate) fn add_contribution_verify(&mut self, duration: Duration) {
+        self.contribution_verify += duration;
+    }
+
+    pub(crate) fn add_contribution_challenge(&mut self, duration: Duration) {
+        self.contribution_challenge += duration;
     }
 }
 

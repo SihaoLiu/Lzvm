@@ -4950,6 +4950,44 @@ fn fri_opening_timing_reports_unit_tree_query_and_fold_work() {
     );
 }
 
+#[test]
+fn contribution_proof_artifact_timing_reports_segment_verify_and_challenge_work() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let timing_path = crate_root.join("src/proof_artifact_timing.rs");
+    let timing_source =
+        std::fs::read_to_string(&timing_path).expect("proof artifact timing source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/proof_timing.rs");
+    let cli_source = std::fs::read_to_string(&cli_path).expect("proof timing source should read");
+    let artifact_path = crate_root.join("src/proof_artifact.rs");
+    let artifact_source =
+        std::fs::read_to_string(&artifact_path).expect("proof artifact source should read");
+
+    assert!(
+        timing_source.contains("contribution_segment")
+            && timing_source.contains("contribution_verify")
+            && timing_source.contains("contribution_challenge")
+            && timing_source.contains("add_contribution_segment")
+            && timing_source.contains("add_contribution_verify")
+            && timing_source.contains("add_contribution_challenge"),
+        "proof artifact timing should expose contribution proof work buckets"
+    );
+    assert!(
+        cli_source.contains("finish_contribution_segment")
+            && cli_source.contains("finish_contribution_verify")
+            && cli_source.contains("finish_contribution_challenge"),
+        "CLI timing output should report contribution proof work buckets"
+    );
+    assert!(
+        artifact_source.contains("add_contribution_segment")
+            && artifact_source.contains("add_contribution_verify")
+            && artifact_source.contains("add_contribution_challenge")
+            && artifact_source.contains("validate_contribution_proof_output")
+            && artifact_source.contains("validate_contribution_proof_challenge_values")
+            && artifact_source.contains("derive_global_challenge_from_proof_segments"),
+        "proof artifact construction should accumulate contribution segment, verification, and challenge timing"
+    );
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)

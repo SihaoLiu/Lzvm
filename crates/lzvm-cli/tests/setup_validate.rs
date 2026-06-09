@@ -18116,6 +18116,7 @@ fn rounds_trip_contribution_challenge_through_witness_run() {
             "witness",
             "--aggregate",
             "--save-outputs",
+            "--timings",
             "--challenge-values-segment",
             challenge_segment_path
                 .to_str()
@@ -18151,6 +18152,10 @@ fn rounds_trip_contribution_challenge_through_witness_run() {
     );
     assert_eq!(full_code, 0, "{}", String::from_utf8_lossy(&full_stderr));
     assert!(full_stderr.is_empty());
+    let full_stdout = String::from_utf8(full_stdout).expect("full stdout should be utf-8");
+    assert!(full_stdout.contains("timing_finish_contribution_segment_ms="));
+    assert!(full_stdout.contains("timing_finish_contribution_verify_ms="));
+    assert!(full_stdout.contains("timing_finish_contribution_challenge_ms="));
     let full_proof = parse_proof_artifact(
         &fs::read(full_output_dir.join("proof.bin")).expect("full proof should read"),
     )
