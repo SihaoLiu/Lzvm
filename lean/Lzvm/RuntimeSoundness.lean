@@ -1485,4 +1485,56 @@ theorem runtime_soundness_required_external_source_audited_accepts_sound_witness
         (And.intro verifierAccepts
           (And.intro requiredSound.right.left requiredSound.right.right)))
 
+theorem runtime_soundness_required_external_source_audited_pcs_accepts_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ ProofSystemSound system
+            /\ system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.sourceValidation
+              publicInput
+              proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_crypto_evidence assumptions
+  have proofSystemSound := abstract_verifier_sound assumptions
+  have verifierAccepts :=
+    runtime_soundness_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have pcsSound :=
+    runtime_soundness_required_external_source_pcs_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  exact
+    And.intro auditedAssumptions
+      (And.intro proofSystemSound
+        (And.intro verifierAccepts
+          (And.intro pcsSound.left
+            (And.intro pcsSound.right.left pcsSound.right.right))))
+
 end Lzvm
