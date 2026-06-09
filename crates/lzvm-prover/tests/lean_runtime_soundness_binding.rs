@@ -49,6 +49,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_accepts_core_sound_witness",
             "runtime_soundness_required_external_source_pcs_sound",
             "runtime_soundness_required_external_source_verifier_core_contract",
+            "runtime_soundness_required_external_source_accepts_core_sound_witness",
         ],
     );
     assert!(theorem_prefix(
@@ -217,6 +218,39 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             )
             .contains("SoundWitness system publicInput proof"),
         "checked runtime soundness should package acceptance, core obligations, and sound witness"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_required_external_source_accepts_core_sound_witness"
+        )
+        .contains("(assumptions : AssumptionBundle system)")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_accepts_core_sound_witness"
+            )
+            .contains("requiresExternalSource ->")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_accepts_core_sound_witness"
+            )
+            .contains("system.accepts publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_accepts_core_sound_witness"
+            )
+            .contains("ExternalSourceOpeningEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_accepts_core_sound_witness"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_accepts_core_sound_witness"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "required external-source runtime soundness should package acceptance, external-source evidence, core obligations, and sound witness"
     );
 }
 

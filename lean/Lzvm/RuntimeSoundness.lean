@@ -909,4 +909,51 @@ theorem runtime_soundness_required_external_source_verifier_core_contract
       required
   exact sound_witness_implies_verifier_core_contract sound.right.right
 
+theorem runtime_soundness_required_external_source_accepts_core_sound_witness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.sourceValidation
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have verifierAccepts :=
+    runtime_soundness_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have requiredSound :=
+    runtime_soundness_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  have coreContract :=
+    sound_witness_implies_verifier_core_contract requiredSound.right.right
+  exact
+    And.intro verifierAccepts
+      (And.intro requiredSound.right.left
+        (And.intro coreContract requiredSound.right.right))
+
 end Lzvm
