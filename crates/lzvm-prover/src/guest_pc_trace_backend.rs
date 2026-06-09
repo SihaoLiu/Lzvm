@@ -2444,10 +2444,83 @@ struct ZiskMainRegisterAccessValues {
     store_prev_value: Option<u64>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct RegisterMemStepUpdates {
+    entries: [(usize, u64); 3],
+    len: usize,
+}
+
+impl RegisterMemStepUpdates {
+    fn position(&self, index: usize) -> Option<usize> {
+        self.entries[..self.len]
+            .iter()
+            .rposition(|(entry_index, _)| *entry_index == index)
+    }
+
+    fn push(&mut self, index: usize, value: u64) {
+        debug_assert!(self.len < self.entries.len());
+        self.entries[self.len] = (index, value);
+        self.len += 1;
+    }
+
+    fn apply(self, register_mem_steps: &mut [u64; 32]) {
+        for (index, value) in &self.entries[..self.len] {
+            register_mem_steps[*index] = *value;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SparseRegisterMemSteps<'a> {
+    base: &'a [u64; 32],
+    updates: RegisterMemStepUpdates,
+}
+
+impl<'a> SparseRegisterMemSteps<'a> {
+    fn new(base: &'a [u64; 32]) -> Self {
+        Self {
+            base,
+            updates: RegisterMemStepUpdates::default(),
+        }
+    }
+
+    fn into_updates(self) -> RegisterMemStepUpdates {
+        self.updates
+    }
+
+    fn ensure_entry(&mut self, index: usize) -> usize {
+        if let Some(position) = self.updates.position(index) {
+            return position;
+        }
+        let position = self.updates.len;
+        self.updates.push(index, self.base[index]);
+        position
+    }
+}
+
+impl std::ops::Index<usize> for SparseRegisterMemSteps<'_> {
+    type Output = u64;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if let Some(position) = self.updates.position(index) {
+            &self.updates.entries[position].1
+        } else {
+            &self.base[index]
+        }
+    }
+}
+
+impl std::ops::IndexMut<usize> for SparseRegisterMemSteps<'_> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        let position = self.ensure_entry(index);
+        &mut self.updates.entries[position].1
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ZiskMainRegisterAccessUpdate {
     values: ZiskMainRegisterAccessValues,
-    next_mem_steps: [u64; 32],
+    next_mem_steps: RegisterMemStepUpdates,
 }
 
 fn validate_and_apply_zisk_main_report(
@@ -2533,7 +2606,9 @@ fn validate_and_apply_zisk_main_report(
             lowered_row.expected_next_pc,
             state,
         )?;
-        state.register_mem_steps = register_accesses.next_mem_steps;
+        register_accesses
+            .next_mem_steps
+            .apply(&mut state.register_mem_steps);
         visit(
             output_row,
             ZiskMainReportTraceValues {
@@ -3098,13 +3173,13 @@ fn zisk_main_register_access_values(
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
 ) -> Result<ZiskMainRegisterAccessUpdate, GuestPcTraceBackendError> {
-    let mut next_mem_steps = state.register_mem_steps;
     let mut values = ZiskMainRegisterAccessValues {
         a_prev_mem_step: None,
         b_prev_mem_step: None,
         store_prev_mem_step: None,
         store_prev_value: None,
     };
+    let mut next_mem_steps = SparseRegisterMemSteps::new(&state.register_mem_steps);
 
     if let Some(index) = zisk_main_source_register_index(row, instruction.a)? {
         values.a_prev_mem_step = Some(next_mem_steps[index]);
@@ -3135,6 +3210,7 @@ fn zisk_main_register_access_values(
         )?;
     }
 
+    let next_mem_steps = next_mem_steps.into_updates();
     Ok(ZiskMainRegisterAccessUpdate {
         values,
         next_mem_steps,

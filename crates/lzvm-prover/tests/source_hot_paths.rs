@@ -4017,6 +4017,35 @@ fn guest_machine_reports_inline_common_effect_storage() {
 }
 
 #[test]
+fn register_access_hot_path_records_sparse_updates() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("backend source should read");
+
+    let prefix = "zi".to_owned() + "sk_main_";
+    let update_name = "Zi".to_owned() + "skMainRegisterAccessUpdate";
+    let update_body = function_body(
+        &source,
+        &format!("struct {update_name}"),
+        &format!("fn validate_and_apply_{prefix}report"),
+    );
+    assert!(
+        !update_body.contains("next_mem_steps: [u64; 32]"),
+        "register access updates should not copy the whole register clock array per row"
+    );
+
+    let body = function_body(
+        &source,
+        &format!("fn {prefix}register_access_values"),
+        &format!("fn {prefix}source_register_index"),
+    );
+    assert!(
+        !body.contains("let mut next_mem_steps = state.register_mem_steps"),
+        "register access hot path should record touched indices instead of copying the full array"
+    );
+}
+
+#[test]
 fn fri_opening_from_transcript_values_borrows_large_vectors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/prove_fri_opening.rs");
