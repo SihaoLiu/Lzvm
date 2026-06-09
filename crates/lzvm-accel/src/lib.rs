@@ -1268,7 +1268,7 @@ pub fn cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(
             rhs: out.len() / 8 * 8,
         });
     }
-    if workspace.len() != out.len() {
+    if workspace.len() < out.len() {
         return Err(AccelError::LengthMismatch {
             lhs: out.len(),
             rhs: workspace.len(),
@@ -1484,7 +1484,7 @@ pub fn cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced(
             rhs: out.len() / 8 * 8,
         });
     }
-    if workspace.len() != out.len() {
+    if workspace.len() < out.len() {
         return Err(AccelError::LengthMismatch {
             lhs: out.len(),
             rhs: workspace.len(),

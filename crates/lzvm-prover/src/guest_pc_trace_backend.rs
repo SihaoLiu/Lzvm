@@ -3773,7 +3773,8 @@ fn write_zisk_main_report_columns(
     )
     .inspect(|_| {
         #[cfg(feature = "cuda")]
-        if let Some(timing) = timing.as_deref_mut() {
+        if let Some(timing) = timing.as_mut() {
+            let timing = &mut **timing;
             let descriptor_rows_after = device_trace_descriptors
                 .as_ref()
                 .map(ZiskMainDeviceTraceDescriptors::descriptor_rows)

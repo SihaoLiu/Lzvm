@@ -1088,8 +1088,9 @@ fn cuda_guest_pc_trace_uses_device_backed_stage_sources() {
         "stage commitments should be able to consume device-backed stage sources"
     );
     assert!(
-        trace_source
-            .contains("compact_witness_stage_leaf_hash_level_from_source_device_view_timing"),
+        trace_source.contains(
+            "compact_witness_stage_leaf_hash_level_from_source_device_view_with_workspace_cache_timing"
+        ),
         "device-backed stage commitment should hash leaves from the retained source view"
     );
 }
@@ -1464,6 +1465,37 @@ fn compact_cuda_opening_uses_unsynced_source_extension_before_checked_gpu_work()
             && extend_body
                 .contains("cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced"),
         "compact opening should defer row-major extension synchronization to the following checked CUDA copy or hash operation"
+    );
+}
+
+#[test]
+fn source_device_leaf_extension_reuses_workspace_cache() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let extend_path = crate_root.join("src/witness_commitment/extend.rs");
+    let extend_source =
+        std::fs::read_to_string(&extend_path).expect("leaf extension source should read");
+    let trace_path = crate_root.join("src/witness_commitment/trace.rs");
+    let trace_source =
+        std::fs::read_to_string(&trace_path).expect("trace commitment source should read");
+    let accel_path = crate_root.join("../lzvm-accel/src/lib.rs");
+    let accel_source =
+        std::fs::read_to_string(&accel_path).expect("accelerator source should read");
+
+    assert!(
+        accel_source.contains("if workspace.len() < out.len()"),
+        "unsynced coset extension should accept workspace buffers larger than the output"
+    );
+    assert!(
+        extend_source.contains("struct WitnessStageLeafWorkspaceCache")
+            && extend_source.contains("fn workspace(")
+            && extend_source.contains("compact_witness_stage_leaf_hash_level_from_source_device_view_with_workspace_cache_timing"),
+        "source-device leaf extension should expose a reusable workspace cache"
+    );
+    assert!(
+        trace_source
+            .contains("let mut leaf_workspace_cache = WitnessStageLeafWorkspaceCache::default()")
+            && trace_source.contains("Some(&mut leaf_workspace_cache)"),
+        "source-device stage commitment workers should reuse one workspace cache per worker"
     );
 }
 

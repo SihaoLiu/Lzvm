@@ -42,6 +42,39 @@ pub(crate) struct PendingCanonicalCudaDigestLevel {
 }
 
 #[cfg(feature = "cuda")]
+#[derive(Default)]
+pub(crate) struct WitnessStageLeafWorkspaceCache {
+    buffer: Option<CudaDeviceBuffer>,
+}
+
+#[cfg(feature = "cuda")]
+impl WitnessStageLeafWorkspaceCache {
+    fn workspace(
+        &mut self,
+        byte_count: usize,
+        timing: &mut WitnessStageLeafExtendTiming,
+    ) -> Result<&mut CudaDeviceBuffer, WitnessTraceCommitmentError> {
+        let needs_alloc = self
+            .buffer
+            .as_ref()
+            .is_none_or(|buffer| buffer.len() < byte_count);
+        if needs_alloc {
+            let buffer = record_setup_duration(
+                &mut timing.setup_duration,
+                &mut timing.leaf_setup_workspace_alloc_duration,
+                || CudaDeviceBuffer::new(byte_count).map_err(WitnessStageLeafError::from),
+            )?;
+            timing.record_workspace_alloc(byte_count);
+            self.buffer = Some(buffer);
+        }
+        Ok(self
+            .buffer
+            .as_mut()
+            .expect("workspace cache should contain an allocated buffer"))
+    }
+}
+
+#[cfg(feature = "cuda")]
 impl PendingCanonicalCudaDigestLevel {
     fn new(level: CudaDigestLevel, canonical_check: CudaCanonicalCheck) -> Self {
         Self {
@@ -508,11 +541,13 @@ pub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_timing(
         source_bits,
         target_bits,
         arity,
+        None,
         timing,
     )
 }
 
 #[cfg(feature = "cuda")]
+#[allow(dead_code)]
 pub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_view_timing(
     row_count: usize,
     column_count: usize,
@@ -520,6 +555,30 @@ pub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_view_timi
     target_bits: usize,
     arity: usize,
     source_device: &WitnessStageSourceDeviceView,
+    timing: &mut WitnessStageLeafExtendTiming,
+) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
+    compact_witness_stage_leaf_hash_level_from_source_device_view_with_workspace_cache_timing(
+        row_count,
+        column_count,
+        source_bits,
+        target_bits,
+        arity,
+        source_device,
+        None,
+        timing,
+    )
+}
+
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_view_with_workspace_cache_timing(
+    row_count: usize,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    source_device: &WitnessStageSourceDeviceView,
+    workspace_cache: Option<&mut WitnessStageLeafWorkspaceCache>,
     timing: &mut WitnessStageLeafExtendTiming,
 ) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
     if !source_device.has_matching_shape(row_count, column_count) {
@@ -546,6 +605,7 @@ pub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_view_timi
         source_bits,
         target_bits,
         arity,
+        workspace_cache,
         timing,
     )
 }
@@ -782,6 +842,7 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
     source_bits: usize,
     target_bits: usize,
     arity: usize,
+    workspace_cache: Option<&mut WitnessStageLeafWorkspaceCache>,
     timing: &mut WitnessStageLeafExtendTiming,
 ) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
     let out_byte_count = record_setup_duration(
@@ -810,19 +871,25 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
         || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
     )?;
     timing.record_output_alloc(out_byte_count);
-    let mut extension_workspace = record_setup_duration(
-        &mut timing.setup_duration,
-        &mut timing.leaf_setup_workspace_alloc_duration,
-        || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
-    )?;
-    timing.record_workspace_alloc(out_byte_count);
+    let mut extension_workspace_storage;
+    let extension_workspace = if let Some(workspace_cache) = workspace_cache {
+        workspace_cache.workspace(out_byte_count, timing)?
+    } else {
+        extension_workspace_storage = record_setup_duration(
+            &mut timing.setup_duration,
+            &mut timing.leaf_setup_workspace_alloc_duration,
+            || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
+        )?;
+        timing.record_workspace_alloc(out_byte_count);
+        &mut extension_workspace_storage
+    };
 
     record_duration(&mut timing.kernel_duration, || {
         if view.source_row_stride == view.column_count && view.column_offset == 0 {
             cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(
                 source_device,
                 &mut output_buffer,
-                &mut extension_workspace,
+                extension_workspace,
                 view.column_count,
                 source_bits,
                 target_bits,
@@ -831,7 +898,7 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
             cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced(
                 source_device,
                 &mut output_buffer,
-                &mut extension_workspace,
+                extension_workspace,
                 view,
                 source_bits,
                 target_bits,

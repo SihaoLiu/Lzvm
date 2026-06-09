@@ -6,12 +6,14 @@ use lzvm_accel::{
     cuda_goldilocks_coset_extend, cuda_goldilocks_coset_extend_device,
     cuda_goldilocks_coset_extend_row_major_columns,
     cuda_goldilocks_coset_extend_row_major_columns_device,
+    cuda_goldilocks_coset_extend_row_major_columns_device_unsynced,
     cuda_goldilocks_coset_extend_row_major_columns_output_bytes,
     cuda_goldilocks_coset_extend_row_major_columns_row_device,
     cuda_goldilocks_coset_extend_row_major_columns_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_device,
+    cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced,
     cuda_goldilocks_coset_extend_row_major_columns_strided_row_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device,
@@ -1040,6 +1042,73 @@ fn cuda_extends_row_major_columns_from_strided_device_memory() {
         .expect("device output should copy back");
 
     assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_extends_row_major_columns_with_oversized_workspace() {
+    let input = vec![5, 9, 2, 1, 9, 4, 3, 7, 6, 8, 11, 10];
+    let source_bits = 2;
+    let target_bits = 4;
+    let column_count = 3;
+    let expected = cuda_goldilocks_coset_extend_row_major_columns(
+        &input,
+        column_count,
+        source_bits,
+        target_bits,
+    )
+    .expect("host row-major extension should run");
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+    let mut output_buffer =
+        CudaDeviceBuffer::new(expected.len() * 8).expect("output device buffer should allocate");
+    let mut workspace = CudaDeviceBuffer::new(output_buffer.len() + 64)
+        .expect("oversized workspace should allocate");
+
+    cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(
+        &input_buffer,
+        &mut output_buffer,
+        &mut workspace,
+        column_count,
+        source_bits,
+        target_bits,
+    )
+    .expect("device row-major extension should accept oversized workspace");
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("device output should copy back");
+
+    assert_eq!(actual, expected);
+
+    let trace = vec![
+        100, 5, 9, 2, 200, 101, 1, 9, 4, 201, 102, 3, 7, 6, 202, 103, 8, 11, 10, 203,
+    ];
+    let trace_buffer =
+        CudaDeviceBuffer::from_u64_words(&trace).expect("trace device buffer should allocate");
+    let mut strided_output_buffer =
+        CudaDeviceBuffer::new(expected.len() * 8).expect("output device buffer should allocate");
+    let mut strided_workspace = CudaDeviceBuffer::new(strided_output_buffer.len() + 64)
+        .expect("oversized workspace should allocate");
+
+    cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced(
+        &trace_buffer,
+        &mut strided_output_buffer,
+        &mut strided_workspace,
+        CudaRowMajorColumnView {
+            source_rows: 4,
+            source_row_stride: 5,
+            column_offset: 1,
+            column_count,
+        },
+        source_bits,
+        target_bits,
+    )
+    .expect("strided device row-major extension should accept oversized workspace");
+    let strided_actual = strided_output_buffer
+        .to_u64_words()
+        .expect("device output should copy back");
+
+    assert_eq!(strided_actual, expected);
 }
 
 #[test]
