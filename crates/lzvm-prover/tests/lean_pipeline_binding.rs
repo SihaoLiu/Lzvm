@@ -67,6 +67,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_runtime_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence",
             "runtime_pipeline_binding_checked_acceptance_runtime_artifact_soundness_obligations",
+            "runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations",
             "runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract",
             "runtime_pipeline_binding_required_external_source_verifier_core_contract",
         ],
@@ -108,6 +109,24 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("(assumptions : AssumptionBundle system)"),
         "runtime artifact soundness obligations should require the audited assumption bundle"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations"
+        )
+        .contains("(assumptions : AssumptionBundle system)")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations"
+            )
+            .contains("requiresExternalSource")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations"
+            )
+            .contains("RuntimeTraceConstraintSoundnessObligations"),
+        "trace artifact soundness obligations should expose the trace contract with audited assumptions"
     );
     assert!(
         theorem_prefix(

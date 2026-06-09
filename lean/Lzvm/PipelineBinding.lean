@@ -705,6 +705,48 @@ theorem runtime_pipeline_binding_checked_acceptance_runtime_artifact_soundness_o
       accepted
   exact And.intro runtimeArtifactEvidence (And.intro verifierAccepts coreObligations)
 
+theorem runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintPreflightBindingEvidence
+            system
+            validation.traceBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTraceConstraintSoundnessObligations
+            system
+            validation.traceBindingValidation.traceConstraintValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have traceAccepted :=
+    runtime_pipeline_binding_checked_acceptance_trace
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_trace_constraint_artifact_binding_checked_acceptance_soundness_obligations
+      assumptions
+      validation.traceBindingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      traceAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_soundness_obligations
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
