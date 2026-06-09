@@ -35,6 +35,55 @@ fn lean_trace_constraint_validation_binding_exports_core_contract_projection() {
             "runtime_trace_constraint_checked_acceptance_verifier_core_contract",
             "runtime_trace_constraint_required_external_source_sound",
             "runtime_trace_constraint_required_external_source_verifier_core_contract",
+            "runtime_trace_constraint_required_external_source_accepts_backend_core_sound_witness",
         ],
     );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_trace_constraint_required_external_source_accepts_backend_core_sound_witness"
+        )
+        .contains("(assumptions : AssumptionBundle system)")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_trace_constraint_required_external_source_accepts_backend_core_sound_witness"
+            )
+            .contains("requiresExternalSource ->")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_trace_constraint_required_external_source_accepts_backend_core_sound_witness"
+            )
+            .contains("system.accepts publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_trace_constraint_required_external_source_accepts_backend_core_sound_witness"
+            )
+            .contains("ExternalSourceOpeningEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_trace_constraint_required_external_source_accepts_backend_core_sound_witness"
+            )
+            .contains("RuntimeTraceConstraintBackendContract")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_trace_constraint_required_external_source_accepts_backend_core_sound_witness"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_trace_constraint_required_external_source_accepts_backend_core_sound_witness"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "required external-source trace constraints should package acceptance, external-source evidence, backend contract, verifier core obligations, and sound witness"
+    );
+}
+
+fn theorem_prefix(source: &str, name: &str) -> String {
+    let theorem_start = source
+        .find(&format!("theorem {name}"))
+        .unwrap_or_else(|| panic!("Lean source should contain theorem {name}"));
+    let proof_start = source[theorem_start..]
+        .find(" := by")
+        .unwrap_or_else(|| panic!("Lean theorem {name} should have a proof body"));
+    source[theorem_start..theorem_start + proof_start].to_owned()
 }

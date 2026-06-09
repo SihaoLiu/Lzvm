@@ -942,4 +942,64 @@ theorem runtime_trace_constraint_required_external_source_pcs_sound
     And.intro externalEvidence
       (And.intro pcsOpenings requiredSound.right.right)
 
+theorem runtime_trace_constraint_required_external_source_accepts_backend_core_sound_witness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.openingValidation.runtimeSoundnessValidation.sourceValidation
+              publicInput
+              proof
+            /\ RuntimeTraceConstraintBackendContract
+              system
+              validation
+              artifact
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have verifierAccepts :=
+    runtime_trace_constraint_checked_acceptance_implies_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have requiredSound :=
+    runtime_trace_constraint_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  have backendContract :=
+    runtime_trace_constraint_evidence_implies_backend_contract
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      requiredSound.left
+  have coreContract :=
+    sound_witness_implies_verifier_core_contract requiredSound.right.right
+  exact
+    And.intro verifierAccepts
+      (And.intro requiredSound.right.left
+        (And.intro backendContract
+          (And.intro coreContract requiredSound.right.right)))
+
 end Lzvm
