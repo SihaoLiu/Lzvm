@@ -73,6 +73,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_proof_system_sound",
             "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
             "runtime_pipeline_binding_required_external_source_verifier_core_contract",
             "runtime_pipeline_binding_required_external_source_full_soundness_contract",
             "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract",
@@ -191,6 +192,37 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             )
             .contains("SoundWitness system publicInput proof"),
         "pipeline checked acceptance should expose model-wide proof-system soundness and the accepted proof witness"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract"
+            )
+            .contains("ProofSystemSound system")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract"
+            )
+            .contains("system.accepts publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "pipeline checked acceptance should expose compact audited acceptance and witness evidence"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract"
+        )
+        .contains("RuntimePipelineBindingEvidence"),
+        "compact audited pipeline acceptance contract should not force callers to unpack full pipeline evidence"
     );
     assert!(
         theorem_prefix(

@@ -1431,6 +1431,35 @@ theorem runtime_pipeline_binding_checked_acceptance_proof_system_sound
       accepted
   exact And.intro proofSystemSound acceptedSound
 
+theorem runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof _requiresExternalSource accepted
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_crypto_evidence assumptions
+  have proofSystemSound :=
+    runtime_pipeline_binding_checked_acceptance_proof_system_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      _requiresExternalSource
+      accepted
+  exact And.intro auditedAssumptions proofSystemSound
+
 theorem runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
