@@ -70,6 +70,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_runtime_artifact_soundness_obligations",
             "runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations",
             "runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract",
+            "runtime_pipeline_binding_checked_acceptance_proof_system_sound",
             "runtime_pipeline_binding_required_external_source_verifier_core_contract",
         ],
     );
@@ -167,6 +168,24 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("system.accepts publicInput proof"),
         "accepts plus full soundness contract should expose verifier acceptance"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_proof_system_sound"
+        )
+        .contains("ProofSystemSound system")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_proof_system_sound"
+            )
+            .contains("system.accepts publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_proof_system_sound"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "pipeline checked acceptance should expose model-wide proof-system soundness and the accepted proof witness"
     );
     assert!(
         theorem_prefix(
