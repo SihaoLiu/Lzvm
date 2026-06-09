@@ -2037,18 +2037,18 @@ fn retained_cache_defaults_prefer_leaf_digest_reuse() {
         .expect("witness commitment values source should read");
 
     assert!(
-        values_source.contains("const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 10_000_000_000")
+        values_source.contains("const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 0")
             && values_source.contains(
                 "const MAX_DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = DEFAULT_RETAINED_SOURCE_DEVICE_BYTES"
             ),
-        "default source-device retention should use the benchmarked 10GB cap instead of filling all available memory"
+        "default source-device retention should leave device cache space for retained leaf digests"
     );
     assert!(
-        values_source.contains("const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 14_000_000_000")
+        values_source.contains("const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 22_000_000_000")
             && values_source.contains(
                 "const MAX_DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = DEFAULT_RETAINED_LEAF_DIGEST_BYTES"
             ),
-        "default leaf-digest retention should use the benchmarked 14GB cap for opening reuse"
+        "default leaf-digest retention should use the measured 22GB cap for opening reuse"
     );
     assert!(
         values_source.contains("RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES")

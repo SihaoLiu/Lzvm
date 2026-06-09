@@ -323,7 +323,7 @@ fn merkle_opening_path_prefix_parent_work(
 }
 
 #[cfg(feature = "cuda")]
-const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 10_000_000_000;
+const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 0;
 #[cfg(feature = "cuda")]
 const RETAINED_SOURCE_DEVICE_RESERVE_BYTES: usize = 11 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
@@ -340,9 +340,9 @@ static RETAINED_COMBINED_DEVICE_CACHE_LIMIT: OnceLock<Option<usize>> = OnceLock:
 static RETAINED_SOURCE_DEVICE_REGISTRY: OnceLock<Mutex<HashMap<usize, RetainedSourceDeviceEntry>>> =
     OnceLock::new();
 #[cfg(feature = "cuda")]
-const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 14_000_000_000;
+const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 22_000_000_000;
 #[cfg(feature = "cuda")]
-const RETAINED_LEAF_DIGEST_RESERVE_BYTES: usize = 12 * 1024 * 1024 * 1024;
+const RETAINED_LEAF_DIGEST_RESERVE_BYTES: usize = 10 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
 const MAX_DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = DEFAULT_RETAINED_LEAF_DIGEST_BYTES;
 #[cfg(feature = "cuda")]
@@ -2240,8 +2240,8 @@ mod tests {
     #[test]
     fn default_retained_leaf_digest_limit_stays_within_static_cache_cap() {
         assert_eq!(
-            DEFAULT_RETAINED_LEAF_DIGEST_BYTES, 14_000_000_000,
-            "default retained leaf digest cache should match the measured source/leaf split"
+            DEFAULT_RETAINED_LEAF_DIGEST_BYTES, 22_000_000_000,
+            "default retained leaf digest cache should match the measured leaf-priority split"
         );
         assert!(
             default_retained_leaf_digest_limit() <= DEFAULT_RETAINED_LEAF_DIGEST_BYTES,
