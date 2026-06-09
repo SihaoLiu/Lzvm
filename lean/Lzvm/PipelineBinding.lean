@@ -1159,6 +1159,86 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
       executionObligations,
       sound.right⟩
 
+theorem runtime_pipeline_binding_required_external_source_full_soundness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ RuntimePipelineBindingEvidence
+              system
+              validation
+              artifact
+              publicInput
+              proof
+              requiresExternalSource
+            /\ RuntimeArtifactSoundnessObligations
+              system
+              validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+              artifact
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ (exists witness trace constraints,
+              system.traceConsistent publicInput proof trace
+                /\ system.constraintsSatisfied constraints trace
+                /\ system.witnessMatchesTrace witness trace)
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have requiredSound :=
+    runtime_pipeline_binding_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  have fullContract :=
+    runtime_pipeline_binding_checked_acceptance_full_soundness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  cases requiredSound with
+  | intro _pipelineEvidence tail =>
+    cases tail with
+    | intro traceExternalEvidence tail =>
+      cases tail with
+      | intro openingExternalEvidence _tail =>
+        exact
+          And.intro verifierAccepts
+            (And.intro traceExternalEvidence
+              (And.intro openingExternalEvidence fullContract))
+
 theorem runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
