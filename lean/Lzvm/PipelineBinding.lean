@@ -1048,6 +1048,46 @@ theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_contract
       accepted
   exact And.intro runtimeEvidence (And.intro coreObligations sound.right)
 
+theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RuntimeSoundnessEvidence
+            system
+            (runtime_pipeline_runtime_soundness_validation validation)
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have runtimeContract :=
+    runtime_pipeline_binding_checked_acceptance_runtime_soundness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact And.intro verifierAccepts runtimeContract
+
 theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

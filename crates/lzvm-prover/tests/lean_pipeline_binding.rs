@@ -65,6 +65,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_verifier_core_contract",
             "runtime_pipeline_binding_checked_acceptance_execution_obligations",
             "runtime_pipeline_binding_checked_acceptance_runtime_soundness_contract",
+            "runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract",
             "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence",
             "runtime_pipeline_binding_checked_acceptance_runtime_artifact_soundness_obligations",
             "runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations",
@@ -101,6 +102,29 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("AssumptionBundle"),
         "runtime artifact evidence projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract"
+        )
+        .contains("system.accepts publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract"
+            )
+            .contains("RuntimeSoundnessEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "runtime soundness accepts contract should expose verifier acceptance and runtime evidence"
     );
     assert!(
         theorem_prefix(
