@@ -3701,6 +3701,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "trace_report_count",
         "trace_report_row_count",
         "trace_descriptor_row_count",
+        "trace_single_row_report_count",
+        "trace_multi_row_report_count",
+        "trace_pending_dma_report_count",
+        "trace_amo_report_count",
+        "trace_store_conditional_report_count",
     ] {
         assert!(
             backend_source.contains(field),
@@ -3731,6 +3736,10 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         device_material_body.contains("let detail_timing ="),
         "guest PC lower detail timing should compute the gate once per segment"
     );
+    assert!(
+        device_material_body.contains("guest_pc_trace_shape_timing_enabled()"),
+        "guest PC lower shape timing should be explicitly gated"
+    );
 
     for field in [
         "guest_trace_report_duration",
@@ -3739,6 +3748,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest_trace_report_count",
         "guest_trace_report_row_count",
         "guest_trace_descriptor_row_count",
+        "guest_trace_single_row_report_count",
+        "guest_trace_multi_row_report_count",
+        "guest_trace_pending_dma_report_count",
+        "guest_trace_amo_report_count",
+        "guest_trace_store_conditional_report_count",
     ] {
         assert!(
             execution_source.contains(field),
@@ -3753,6 +3767,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_reports\"",
         "\"guest_trace_report_rows\"",
         "\"guest_trace_descriptor_rows\"",
+        "\"guest_trace_single_row_reports\"",
+        "\"guest_trace_multi_row_reports\"",
+        "\"guest_trace_pending_dma_reports\"",
+        "\"guest_trace_amo_reports\"",
+        "\"guest_trace_store_conditional_reports\"",
     ] {
         assert!(
             cli_source.contains(line_name),

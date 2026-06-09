@@ -198,6 +198,11 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_report_count: usize,
     trace_report_row_count: usize,
     trace_descriptor_row_count: usize,
+    trace_single_row_report_count: usize,
+    trace_multi_row_report_count: usize,
+    trace_pending_dma_report_count: usize,
+    trace_amo_report_count: usize,
+    trace_store_conditional_report_count: usize,
 }
 
 impl GuestPcTraceStreamTiming {
@@ -215,6 +220,11 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_count += other.trace_report_count;
         self.trace_report_row_count += other.trace_report_row_count;
         self.trace_descriptor_row_count += other.trace_descriptor_row_count;
+        self.trace_single_row_report_count += other.trace_single_row_report_count;
+        self.trace_multi_row_report_count += other.trace_multi_row_report_count;
+        self.trace_pending_dma_report_count += other.trace_pending_dma_report_count;
+        self.trace_amo_report_count += other.trace_amo_report_count;
+        self.trace_store_conditional_report_count += other.trace_store_conditional_report_count;
     }
 
     pub fn runner_duration(&self) -> Duration {
@@ -267,6 +277,26 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_descriptor_row_count(&self) -> usize {
         self.trace_descriptor_row_count
+    }
+
+    pub fn trace_single_row_report_count(&self) -> usize {
+        self.trace_single_row_report_count
+    }
+
+    pub fn trace_multi_row_report_count(&self) -> usize {
+        self.trace_multi_row_report_count
+    }
+
+    pub fn trace_pending_dma_report_count(&self) -> usize {
+        self.trace_pending_dma_report_count
+    }
+
+    pub fn trace_amo_report_count(&self) -> usize {
+        self.trace_amo_report_count
+    }
+
+    pub fn trace_store_conditional_report_count(&self) -> usize {
+        self.trace_store_conditional_report_count
     }
 }
 
@@ -2629,6 +2659,31 @@ fn validate_and_apply_zisk_main_report(
     Ok(produced_rows)
 }
 
+fn record_trace_report_shape(
+    timing: &mut GuestPcTraceStreamTiming,
+    report: &GuestMachineReport,
+    pending_report: bool,
+    written_rows: usize,
+) {
+    if written_rows <= 1 {
+        timing.trace_single_row_report_count += 1;
+    } else {
+        timing.trace_multi_row_report_count += 1;
+    }
+    if pending_report {
+        timing.trace_pending_dma_report_count += 1;
+    }
+    match report.instruction {
+        RiscvInstruction::Amo { .. } => {
+            timing.trace_amo_report_count += 1;
+        }
+        RiscvInstruction::StoreConditional { .. } => {
+            timing.trace_store_conditional_report_count += 1;
+        }
+        _ => {}
+    }
+}
+
 fn lower_stateful_zisk_main_report_rows<'a>(
     row: usize,
     report: &'a GuestMachineReport,
@@ -3393,6 +3448,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
     let mut state = initial_state.clone();
     let mut output_row = 0_usize;
     let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
+    let shape_timing = guest_pc_trace_shape_timing_enabled();
     for (report_index, report) in reports.iter().enumerate() {
         let next_instruction = reports
             .get(report_index + 1)
@@ -3407,6 +3463,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
             .filter(|_| detail_timing)
             .map(|_| Instant::now());
         let descriptor_rows_before = device_trace_descriptors.descriptor_rows();
+        let pending_report = shape_timing && state.pending_dma.is_some();
         let written_rows = validate_and_apply_zisk_main_report(
             output_row,
             report,
@@ -3433,6 +3490,9 @@ fn build_layout_zisk_main_trace_segment_device_material(
             timing.trace_descriptor_row_count += device_trace_descriptors
                 .descriptor_rows()
                 .saturating_sub(descriptor_rows_before);
+            if shape_timing {
+                record_trace_report_shape(timing, report, pending_report, written_rows);
+            }
             if let Some(started) = report_started {
                 timing.trace_report_duration += started.elapsed();
             }
@@ -3561,6 +3621,10 @@ fn guest_pc_trace_lower_detail_timing_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_TRACE_DETAIL_TIMING", false)
 }
 
+fn guest_pc_trace_shape_timing_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_TRACE_SHAPE_TIMING", false)
+}
+
 fn build_layout_zisk_main_trace_segment(
     layout: &WitnessTraceLayout,
     reports: &[GuestMachineReport],
@@ -3589,6 +3653,7 @@ fn build_layout_zisk_main_trace_segment(
     let mut state = initial_state.clone();
     let mut output_row = 0_usize;
     let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
+    let shape_timing = guest_pc_trace_shape_timing_enabled();
     for (report_index, report) in reports.iter().enumerate() {
         let next_instruction = reports
             .get(report_index + 1)
@@ -3602,6 +3667,7 @@ fn build_layout_zisk_main_trace_segment(
             .as_ref()
             .filter(|_| detail_timing)
             .map(|_| Instant::now());
+        let pending_report = shape_timing && state.pending_dma.is_some();
         let written_rows = write_zisk_main_report_columns(
             &mut builder,
             output_row,
@@ -3621,6 +3687,9 @@ fn build_layout_zisk_main_trace_segment(
         if let Some(timing) = timing.as_deref_mut() {
             timing.trace_report_count += 1;
             timing.trace_report_row_count += written_rows;
+            if shape_timing {
+                record_trace_report_shape(timing, report, pending_report, written_rows);
+            }
             if let Some(started) = report_started {
                 timing.trace_report_duration += started.elapsed();
             }

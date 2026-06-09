@@ -81,6 +81,26 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_descriptor_rows",
         timing.guest_trace_descriptor_row_count(),
     );
+    timings.record_count(
+        "guest_trace_single_row_reports",
+        timing.guest_trace_single_row_report_count(),
+    );
+    timings.record_count(
+        "guest_trace_multi_row_reports",
+        timing.guest_trace_multi_row_report_count(),
+    );
+    timings.record_count(
+        "guest_trace_pending_dma_reports",
+        timing.guest_trace_pending_dma_report_count(),
+    );
+    timings.record_count(
+        "guest_trace_amo_reports",
+        timing.guest_trace_amo_report_count(),
+    );
+    timings.record_count(
+        "guest_trace_store_conditional_reports",
+        timing.guest_trace_store_conditional_report_count(),
+    );
     timings.record(
         "guest_trace_pending_send_wait",
         timing.guest_trace_pending_send_wait_duration(),

@@ -351,6 +351,11 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_report_count: usize,
     guest_trace_report_row_count: usize,
     guest_trace_descriptor_row_count: usize,
+    guest_trace_single_row_report_count: usize,
+    guest_trace_multi_row_report_count: usize,
+    guest_trace_pending_dma_report_count: usize,
+    guest_trace_amo_report_count: usize,
+    guest_trace_store_conditional_report_count: usize,
     guest_device_source_build_duration: Duration,
     guest_device_source_descriptor_upload_duration: Duration,
     guest_device_source_descriptor_upload_byte_count: usize,
@@ -437,6 +442,12 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_report_count: stream_timing.trace_report_count(),
             guest_trace_report_row_count: stream_timing.trace_report_row_count(),
             guest_trace_descriptor_row_count: stream_timing.trace_descriptor_row_count(),
+            guest_trace_single_row_report_count: stream_timing.trace_single_row_report_count(),
+            guest_trace_multi_row_report_count: stream_timing.trace_multi_row_report_count(),
+            guest_trace_pending_dma_report_count: stream_timing.trace_pending_dma_report_count(),
+            guest_trace_amo_report_count: stream_timing.trace_amo_report_count(),
+            guest_trace_store_conditional_report_count: stream_timing
+                .trace_store_conditional_report_count(),
             guest_device_source_build_duration: trace_timing.device_source_build_duration,
             guest_device_source_descriptor_upload_duration: trace_timing
                 .device_source_descriptor_upload_duration,
@@ -593,6 +604,26 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_descriptor_row_count(&self) -> usize {
         self.guest_trace_descriptor_row_count
+    }
+
+    pub fn guest_trace_single_row_report_count(&self) -> usize {
+        self.guest_trace_single_row_report_count
+    }
+
+    pub fn guest_trace_multi_row_report_count(&self) -> usize {
+        self.guest_trace_multi_row_report_count
+    }
+
+    pub fn guest_trace_pending_dma_report_count(&self) -> usize {
+        self.guest_trace_pending_dma_report_count
+    }
+
+    pub fn guest_trace_amo_report_count(&self) -> usize {
+        self.guest_trace_amo_report_count
+    }
+
+    pub fn guest_trace_store_conditional_report_count(&self) -> usize {
+        self.guest_trace_store_conditional_report_count
     }
 
     pub fn guest_device_source_build_duration(&self) -> Duration {
