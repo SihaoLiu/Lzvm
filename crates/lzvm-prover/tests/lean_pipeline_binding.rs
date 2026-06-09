@@ -80,6 +80,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_required_external_source_audited_proof_system_contract",
             "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract",
+            "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract",
         ],
     );
     assert!(
@@ -510,6 +511,62 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("RuntimePipelineBindingEvidence"),
         "compact required external-source pipeline PCS contract should not force callers to unpack full pipeline evidence"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
+            )
+            .contains("ProofSystemSound system")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
+            )
+            .contains("system.accepts publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
+            )
+            .contains("ExternalSourceOpeningEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
+            )
+            .contains("runtime_pipeline_trace_source_validation validation")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
+            )
+            .contains("runtime_pipeline_opening_source_validation validation")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
+            )
+            .contains("system.pcsOpeningsValid publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
+            )
+            .contains("system.friQueriesValid publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "pipeline required external-source projection should expose compact audited acceptance, both external-source evidences, PCS openings, FRI queries, and witness evidence"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
+        )
+        .contains("RuntimePipelineBindingEvidence"),
+        "compact required external-source pipeline PCS/FRI contract should not force callers to unpack full pipeline evidence"
     );
     assert!(
         lean_source.contains("runtime_trace_constraint_required_external_source_pcs_sound")
