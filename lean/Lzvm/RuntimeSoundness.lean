@@ -962,6 +962,52 @@ theorem runtime_soundness_checked_acceptance_accepts_full_soundness_contract
       checked
   exact And.intro verifierAccepts fullContract
 
+theorem runtime_soundness_checked_acceptance_proof_system_full_soundness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ RuntimeSoundnessEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeArtifactSoundnessObligations
+            system
+            validation.transcriptValidation.artifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have proofSystemSound := abstract_verifier_sound assumptions
+  have acceptsFullContract :=
+    runtime_soundness_checked_acceptance_accepts_full_soundness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact And.intro proofSystemSound acceptsFullContract
+
 theorem runtime_soundness_required_external_source_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
