@@ -312,6 +312,39 @@ theorem runtime_soundness_checked_acceptance_runtime_artifact_evidence
       proof
       runtimeAccepted
 
+theorem runtime_soundness_checked_acceptance_verifier_accepts
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        system.accepts publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have artifactAccepted :=
+    validation.transcriptValidation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      checked.left
+  have runtimeAccepted :=
+    validation.transcriptValidation.artifactBindingValidation.bindingAcceptedImpliesRuntimeAccepted
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  exact
+    runtime_artifact_checked_acceptance_implies_verifier_accepts
+      validation.transcriptValidation.artifactBindingValidation.runtimeValidation
+      artifact
+      publicInput
+      proof
+      runtimeAccepted
+
 theorem runtime_soundness_checked_acceptance_transcript_bound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -666,6 +699,50 @@ theorem runtime_soundness_checked_acceptance_verifier_core_contract
       proof
       requiresExternalSource
       checked
+
+theorem runtime_soundness_checked_acceptance_accepts_core_sound_witness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        system.accepts publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have verifierAccepts :=
+    runtime_soundness_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have coreContract :=
+    runtime_soundness_checked_acceptance_core_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have soundWitness :=
+    runtime_soundness_checked_acceptance_verifier_sound_witness
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact And.intro verifierAccepts (And.intro coreContract soundWitness)
 
 theorem runtime_soundness_checked_acceptance_execution_obligations
     {system : VerifierModel}
