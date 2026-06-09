@@ -67,8 +67,11 @@ structure GuestPcTraceTimingSummary where
   guestTraceLowererMilliseconds : Nat
   guestTraceLowerMilliseconds : Nat
   guestTraceReportMilliseconds : Nat
+  guestTraceReportCount : Nat
+  guestTraceReportRowCount : Nat
   guestTraceEmitMilliseconds : Nat
   guestTraceDescriptorMilliseconds : Nat
+  guestTraceDescriptorRowCount : Nat
   guestTracePendingSendWaitMilliseconds : Nat
   guestTracePendingReceiveWaitMilliseconds : Nat
   guestTraceSegmentSendWaitMilliseconds : Nat
@@ -94,6 +97,13 @@ structure GuestPcTraceTimingSummary where
   guestStageTraceExtractMilliseconds : Nat
   guestStageLeafExtendWorkMilliseconds : Nat
   guestStageLeafSetupWorkMilliseconds : Nat
+  guestStageLeafSetupPrepareMilliseconds : Nat
+  guestStageLeafSetupOutputAllocMilliseconds : Nat
+  guestStageLeafSetupWorkspaceAllocMilliseconds : Nat
+  guestStageLeafSetupOutputAllocByteCount : Nat
+  guestStageLeafSetupWorkspaceAllocByteCount : Nat
+  guestStageLeafSetupOutputAllocCount : Nat
+  guestStageLeafSetupWorkspaceAllocCount : Nat
   guestStageLeafUploadWorkMilliseconds : Nat
   guestStageLeafKernelWorkMilliseconds : Nat
   guestStageLeafDownloadWorkMilliseconds : Nat

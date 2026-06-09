@@ -111,8 +111,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestTraceLowererMilliseconds",
         "guestTraceLowerMilliseconds",
         "guestTraceReportMilliseconds",
+        "guestTraceReportCount",
+        "guestTraceReportRowCount",
         "guestTraceEmitMilliseconds",
         "guestTraceDescriptorMilliseconds",
+        "guestTraceDescriptorRowCount",
         "guestTracePendingSendWaitMilliseconds",
         "guestTracePendingReceiveWaitMilliseconds",
         "guestTraceSegmentSendWaitMilliseconds",
@@ -132,6 +135,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestDescriptorBufferRetentionRejectedCount",
         "guestDescriptorBufferRetentionRetainedByteCount",
         "guestDescriptorBufferRetentionRejectedByteCount",
+        "guestStageLeafExtendWorkMilliseconds",
+        "guestStageLeafSetupWorkMilliseconds",
+        "guestStageLeafSetupPrepareMilliseconds",
+        "guestStageLeafSetupOutputAllocMilliseconds",
+        "guestStageLeafSetupWorkspaceAllocMilliseconds",
+        "guestStageLeafSetupOutputAllocByteCount",
+        "guestStageLeafSetupWorkspaceAllocByteCount",
+        "guestStageLeafSetupOutputAllocCount",
+        "guestStageLeafSetupWorkspaceAllocCount",
+        "guestStageLeafUploadWorkMilliseconds",
+        "guestStageLeafKernelWorkMilliseconds",
+        "guestStageLeafDownloadWorkMilliseconds",
+        "guestStageLeafValidateWorkMilliseconds",
+        "guestStageLeafHashWorkMilliseconds",
     ] {
         assert!(
             lean_source.contains(field),
@@ -143,10 +160,19 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ("\"guest_trace_lowerer\"", "guest_trace_lowerer_duration()"),
         ("\"guest_trace_lower\"", "guest_trace_lower_duration()"),
         ("\"guest_trace_report\"", "guest_trace_report_duration()"),
+        ("\"guest_trace_reports\"", "guest_trace_report_count()"),
+        (
+            "\"guest_trace_report_rows\"",
+            "guest_trace_report_row_count()",
+        ),
         ("\"guest_trace_emit\"", "guest_trace_emit_duration()"),
         (
             "\"guest_trace_descriptor\"",
             "guest_trace_descriptor_duration()",
+        ),
+        (
+            "\"guest_trace_descriptor_rows\"",
+            "guest_trace_descriptor_row_count()",
         ),
         (
             "\"guest_trace_pending_send_wait\"",
@@ -183,6 +209,34 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_device_source_trace_expand\"",
             "guest_device_source_trace_expand_duration()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_prepare\"",
+            "guest_stage_leaf_setup_prepare_duration()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_output_alloc\"",
+            "guest_stage_leaf_setup_output_alloc_duration()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_workspace_alloc\"",
+            "guest_stage_leaf_setup_workspace_alloc_duration()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_output_alloc_bytes\"",
+            "guest_stage_leaf_setup_output_alloc_byte_count()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_workspace_alloc_bytes\"",
+            "guest_stage_leaf_setup_workspace_alloc_byte_count()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_output_alloc_count\"",
+            "guest_stage_leaf_setup_output_alloc_count()",
+        ),
+        (
+            "\"guest_stage_leaf_setup_workspace_alloc_count\"",
+            "guest_stage_leaf_setup_workspace_alloc_count()",
         ),
         (
             "\"guest_stage_source_retention_attempts\"",
