@@ -207,6 +207,56 @@ theorem runtime_trace_constraint_artifact_binding_checked_acceptance_sound
       traceConstraintAccepted
   exact And.intro artifactEvidence traceSound
 
+theorem runtime_trace_constraint_artifact_binding_checked_acceptance_soundness_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintPreflightBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTraceConstraintSoundnessObligations
+            system
+            validation.traceConstraintValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have artifactEvidence :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceConstraintAccepted :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceObligations :=
+    runtime_trace_constraint_checked_acceptance_obligations
+      assumptions
+      validation.traceConstraintValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      traceConstraintAccepted
+  exact And.intro artifactEvidence traceObligations
+
 theorem runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

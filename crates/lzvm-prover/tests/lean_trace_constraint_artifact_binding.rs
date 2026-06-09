@@ -21,6 +21,7 @@ fn lean_trace_constraint_artifact_binding_exports_core_contract_projection() {
         lean_source.contains("RuntimeTraceConstraintArtifactBindingValidation")
             && lean_source.contains("RuntimeTraceConstraintPreflightBindingEvidence")
             && lean_source.contains("RuntimeTraceConstraintEvidence")
+            && lean_source.contains("RuntimeTraceConstraintSoundnessObligations")
             && lean_source.contains("RuntimeTraceConstraintCheckedAcceptance")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
@@ -30,6 +31,7 @@ fn lean_trace_constraint_artifact_binding_exports_core_contract_projection() {
         &lean_source,
         &[
             "runtime_trace_constraint_artifact_binding_checked_acceptance_sound",
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_soundness_obligations",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract",
         ],
     );
