@@ -755,4 +755,82 @@ theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_c
       accepted
   exact sound_witness_implies_verifier_core_contract sound.right
 
+theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_and_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningEvidence
+            system
+            validation.batchRowsValidation.openingSegmentValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeRetainedParentCheckpointOpeningDigestContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedParentCheckpointOpeningPrefixBatchContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedParentCheckpointOpeningRetainedRowsContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  exact
+    And.intro
+      (runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_evidence
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource
+        accepted)
+      (And.intro
+        (runtime_retained_parent_checkpoint_opening_checked_acceptance_digest_contract
+          validation
+          artifact
+          publicInput
+          proof
+          accepted)
+        (And.intro
+          (runtime_retained_parent_checkpoint_opening_checked_acceptance_prefix_batch_contract
+            validation
+            artifact
+            publicInput
+            proof
+            accepted)
+          (And.intro
+            (runtime_retained_parent_checkpoint_opening_checked_acceptance_retained_rows_contract
+              assumptions
+              validation
+              artifact
+              publicInput
+              proof
+              accepted)
+            (runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract
+              assumptions
+              validation
+              artifact
+              publicInput
+              proof
+              accepted))))
+
 end Lzvm

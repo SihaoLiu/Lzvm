@@ -68,6 +68,7 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_prefix_batch_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_sound",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_and_core_contract",
         ],
     );
     assert!(
