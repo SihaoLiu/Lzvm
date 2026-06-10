@@ -154,6 +154,30 @@ fn writes_timing_count_summary_lines_without_ms_suffix() {
 }
 
 #[test]
+fn records_constant_material_validation_join_wait() {
+    let mut timings = TimingRecorder::new(true);
+    record_constant_material_validation_timing(
+        &mut timings,
+        std::time::Duration::from_millis(12),
+        std::time::Duration::from_millis(3),
+        &[],
+    );
+
+    let mut stdout = Vec::new();
+    write_timing_summary(&mut stdout, &timings);
+    let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+    for expected in [
+        "timing_constant_material_validation_elapsed_ms=12\n",
+        "timing_constant_material_validation_join_wait_ms=3\n",
+        "timing_constant_material_validation_units=0\n",
+        "timing_constant_material_validation_bytes=0\n",
+    ] {
+        assert!(stdout.contains(expected), "missing {expected} in {stdout}");
+    }
+}
+
+#[test]
 fn proof_artifact_timing_reports_parent_hash_shape_counts() {
     let timing = lzvm_prover::WitnessProofArtifactTiming {
         witness_opening_path_parent_hash: std::time::Duration::from_millis(9),

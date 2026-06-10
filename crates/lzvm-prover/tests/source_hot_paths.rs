@@ -312,6 +312,11 @@ fn cli_records_constant_material_validation_work_shape() {
         "constant material validation should report total elapsed time"
     );
     assert!(
+        body.contains("let join_started = Instant::now();")
+            && body.contains("constant_material_validation_join_wait"),
+        "constant material validation should report foreground join wait separately from parallel elapsed time"
+    );
+    assert!(
         body.contains("constant_material_validation_units"),
         "constant material validation should report validated units"
     );

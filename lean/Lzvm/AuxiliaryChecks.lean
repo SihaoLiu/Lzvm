@@ -136,6 +136,7 @@ deriving DecidableEq, Repr
 
 structure ConstantMaterialValidationTimingSummary where
   constantMaterialValidationElapsedMilliseconds : Nat
+  constantMaterialValidationJoinWaitMilliseconds : Nat
   constantMaterialValidationUnitCount : Nat
   constantMaterialValidationByteCount : Nat
 deriving DecidableEq, Repr

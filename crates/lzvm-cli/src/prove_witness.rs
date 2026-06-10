@@ -698,18 +698,21 @@ fn join_constant_tree_material_validation(
         return Ok(None);
     };
     let started = job.started;
+    let join_started = Instant::now();
     let summaries = job
         .handle
         .join()
         .map_err(|_| "constant-tree material validation thread panicked".to_owned())?;
     let summaries = summaries?;
-    record_constant_material_validation_timing(timings, started.elapsed(), &summaries);
+    let join_wait = join_started.elapsed();
+    record_constant_material_validation_timing(timings, started.elapsed(), join_wait, &summaries);
     Ok(Some(summaries))
 }
 
 fn record_constant_material_validation_timing(
     timings: &mut TimingRecorder,
     elapsed: Duration,
+    join_wait: Duration,
     summaries: &[Option<ConstantTreeFileSummary>],
 ) {
     let mut byte_count = 0u64;
@@ -719,6 +722,7 @@ fn record_constant_material_validation_timing(
         byte_count = byte_count.saturating_add(summary.byte_count);
     }
     timings.record("constant_material_validation_elapsed", elapsed);
+    timings.record("constant_material_validation_join_wait", join_wait);
     timings.record_count("constant_material_validation_units", unit_count);
     timings.record_count(
         "constant_material_validation_bytes",

@@ -286,6 +286,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     }
     for field in [
         "constantMaterialValidationElapsedMilliseconds",
+        "constantMaterialValidationJoinWaitMilliseconds",
         "constantMaterialValidationUnitCount",
         "constantMaterialValidationByteCount",
     ] {
@@ -296,6 +297,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     }
     for line_name in [
         "\"constant_material_validation_elapsed\"",
+        "\"constant_material_validation_join_wait\"",
         "\"constant_material_validation_units\"",
         "\"constant_material_validation_bytes\"",
     ] {
