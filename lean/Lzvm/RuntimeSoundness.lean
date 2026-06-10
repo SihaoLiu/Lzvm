@@ -1656,4 +1656,92 @@ theorem runtime_soundness_required_external_source_audited_pcs_fri_core_witness_
                 (And.intro coreContract
                   compactContract.right.right.right.right.right.right))))))
 
+theorem runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_crypto_evidence assumptions
+  have proofSystemSound := abstract_verifier_sound assumptions
+  have verifierAccepts :=
+    runtime_soundness_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have transcriptBound :=
+    runtime_soundness_checked_acceptance_transcript_bound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have publicInputBound :=
+    runtime_soundness_checked_acceptance_public_input_bound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have pcsAndFri :=
+    runtime_soundness_checked_acceptance_pcs_and_fri
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have coreContract :=
+    runtime_soundness_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have soundWitness :=
+    runtime_soundness_checked_acceptance_verifier_sound_witness
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact
+    And.intro auditedAssumptions
+      (And.intro proofSystemSound
+        (And.intro verifierAccepts
+          (And.intro transcriptBound
+            (And.intro publicInputBound
+              (And.intro pcsAndFri.left
+                (And.intro pcsAndFri.right
+                  (And.intro coreContract soundWitness)))))))
+
 end Lzvm

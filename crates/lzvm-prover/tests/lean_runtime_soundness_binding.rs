@@ -63,6 +63,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_required_external_source_audited_pcs_accepts_sound_witness_contract",
             "runtime_soundness_required_external_source_audited_pcs_fri_witness_contract",
             "runtime_soundness_required_external_source_audited_pcs_fri_core_witness_contract",
+            "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
         ],
     );
     assert!(theorem_prefix(
@@ -708,6 +709,62 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("RuntimeSoundnessEvidence"),
         "compact required external-source runtime PCS/FRI core contract should not force callers to unpack full runtime evidence"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
+            )
+            .contains("ProofSystemSound system")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
+            )
+            .contains("system.accepts publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
+            )
+            .contains("system.transcriptBound publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
+            )
+            .contains("system.publicInputBound publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
+            )
+            .contains("system.pcsOpeningsValid publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
+            )
+            .contains("system.friQueriesValid publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "checked runtime soundness should expose compact audited transcript/public-input/PCS/FRI core witness evidence"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
+        )
+        .contains("RuntimeSoundnessEvidence"),
+        "compact checked runtime binding PCS/FRI core contract should not force callers to unpack full runtime evidence"
     );
 }
 
