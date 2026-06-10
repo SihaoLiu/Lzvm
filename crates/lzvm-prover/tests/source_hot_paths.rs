@@ -3613,6 +3613,8 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "cuda_event_synchronize_calls",
         "cuda_event_synchronize_bytes",
         "cuda_event_synchronize_max_bytes",
+        "cuda_event_synchronize_wait_ns",
+        "cuda_event_synchronize_max_wait_ns",
         "cached_reuse_count",
         "pending_reuse_count",
         "no_wait_bypass_count",
@@ -3647,6 +3649,13 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "allocator pending reuse should count event synchronizations and bytes"
     );
     assert!(
+        alloc_body.contains("std::chrono::steady_clock::now()")
+            && alloc_body.contains("record_event_synchronize_wait")
+            && native_source.contains("g_cuda_event_synchronize_wait_ns")
+            && native_source.contains("g_cuda_event_synchronize_max_wait_ns"),
+        "allocator pending reuse should time event synchronization waits"
+    );
+    assert!(
         alloc_body.contains("kPendingCacheNoWaitBytes")
             && alloc_body.contains("g_cuda_no_wait_bypass_count")
             && alloc_body.contains("g_cuda_no_wait_bypass_bytes"),
@@ -3675,6 +3684,8 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "\"cuda_allocator_event_synchronize_calls\"",
         "\"cuda_allocator_event_synchronize_bytes\"",
         "\"cuda_allocator_event_synchronize_max_bytes\"",
+        "\"cuda_allocator_event_synchronize_wait_ns\"",
+        "\"cuda_allocator_event_synchronize_max_wait_ns\"",
         "\"cuda_allocator_cached_reuse_count\"",
         "\"cuda_allocator_pending_reuse_count\"",
         "\"cuda_allocator_no_wait_bypass_count\"",

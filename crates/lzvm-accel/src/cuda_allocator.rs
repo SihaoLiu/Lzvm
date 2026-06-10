@@ -39,6 +39,8 @@ pub struct CudaAllocatorStats {
     pub cuda_event_synchronize_calls: usize,
     pub cuda_event_synchronize_bytes: usize,
     pub cuda_event_synchronize_max_bytes: usize,
+    pub cuda_event_synchronize_wait_ns: usize,
+    pub cuda_event_synchronize_max_wait_ns: usize,
     pub cached_reuse_count: usize,
     pub pending_reuse_count: usize,
     pub no_wait_bypass_count: usize,

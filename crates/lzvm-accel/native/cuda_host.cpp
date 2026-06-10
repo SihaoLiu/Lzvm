@@ -2,6 +2,7 @@
 
 #include <cuda_runtime.h>
 
+#include <chrono>
 #include <cstdint>
 #include <limits>
 #include <mutex>
@@ -41,6 +42,8 @@ std::size_t g_cuda_event_query_not_ready_count = 0;
 std::size_t g_cuda_event_synchronize_calls = 0;
 std::size_t g_cuda_event_synchronize_bytes = 0;
 std::size_t g_cuda_event_synchronize_max_bytes = 0;
+std::size_t g_cuda_event_synchronize_wait_ns = 0;
+std::size_t g_cuda_event_synchronize_max_wait_ns = 0;
 std::size_t g_cuda_cached_reuse_count = 0;
 std::size_t g_cuda_pending_reuse_count = 0;
 std::size_t g_cuda_no_wait_bypass_count = 0;
@@ -72,6 +75,31 @@ std::size_t cached_blocks_for_size_locked(int device, std::size_t bytes) {
 
 int first_status(int primary, int secondary) {
     return primary != 0 ? primary : secondary;
+}
+
+std::size_t saturated_nanoseconds_since(std::chrono::steady_clock::time_point started) {
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
+    if (ns <= 0) {
+        return 0;
+    }
+    const auto max = std::numeric_limits<std::size_t>::max();
+    if (static_cast<unsigned long long>(ns) > max) {
+        return max;
+    }
+    return static_cast<std::size_t>(ns);
+}
+
+void record_event_synchronize_wait(std::size_t elapsed_ns) {
+    const auto max = std::numeric_limits<std::size_t>::max();
+    if (max - g_cuda_event_synchronize_wait_ns < elapsed_ns) {
+        g_cuda_event_synchronize_wait_ns = max;
+    } else {
+        g_cuda_event_synchronize_wait_ns += elapsed_ns;
+    }
+    if (elapsed_ns > g_cuda_event_synchronize_max_wait_ns) {
+        g_cuda_event_synchronize_max_wait_ns = elapsed_ns;
+    }
 }
 
 int set_allocation_device(int device, int* previous_device) {
@@ -188,7 +216,9 @@ int free_cached_allocation_on_device(const CachedAllocation& allocation) {
         if (allocation.bytes > g_cuda_event_synchronize_max_bytes) {
             g_cuda_event_synchronize_max_bytes = allocation.bytes;
         }
+        const auto wait_started = std::chrono::steady_clock::now();
         status = static_cast<int>(cudaEventSynchronize(allocation.ready_event));
+        record_event_synchronize_wait(saturated_nanoseconds_since(wait_started));
         const int destroy_status = static_cast<int>(cudaEventDestroy(allocation.ready_event));
         status = first_status(status, destroy_status);
     }
@@ -306,7 +336,9 @@ int alloc_bytes_impl(void** out, std::size_t bytes) {
                 if (allocation.bytes > g_cuda_event_synchronize_max_bytes) {
                     g_cuda_event_synchronize_max_bytes = allocation.bytes;
                 }
+                const auto wait_started = std::chrono::steady_clock::now();
                 const int status = static_cast<int>(cudaEventSynchronize(allocation.ready_event));
+                record_event_synchronize_wait(saturated_nanoseconds_since(wait_started));
                 if (status != 0) {
                     return status;
                 }
@@ -456,6 +488,8 @@ extern "C" int lzvm_cuda_allocator_clear_cache(void) {
             g_cuda_event_synchronize_calls = 0;
             g_cuda_event_synchronize_bytes = 0;
             g_cuda_event_synchronize_max_bytes = 0;
+            g_cuda_event_synchronize_wait_ns = 0;
+            g_cuda_event_synchronize_max_wait_ns = 0;
             g_cuda_cached_reuse_count = 0;
             g_cuda_pending_reuse_count = 0;
             g_cuda_no_wait_bypass_count = 0;
@@ -485,6 +519,8 @@ extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out) {
         out->cuda_event_synchronize_calls = g_cuda_event_synchronize_calls;
         out->cuda_event_synchronize_bytes = g_cuda_event_synchronize_bytes;
         out->cuda_event_synchronize_max_bytes = g_cuda_event_synchronize_max_bytes;
+        out->cuda_event_synchronize_wait_ns = g_cuda_event_synchronize_wait_ns;
+        out->cuda_event_synchronize_max_wait_ns = g_cuda_event_synchronize_max_wait_ns;
         out->cached_reuse_count = g_cuda_cached_reuse_count;
         out->pending_reuse_count = g_cuda_pending_reuse_count;
         out->no_wait_bypass_count = g_cuda_no_wait_bypass_count;
