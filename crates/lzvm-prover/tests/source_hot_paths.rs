@@ -3716,6 +3716,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
 
     for field in [
         "trace_report_duration",
+        "trace_single_row_report_duration",
+        "trace_multi_row_report_duration",
+        "trace_pending_dma_report_duration",
+        "trace_amo_report_duration",
+        "trace_store_conditional_report_duration",
         "trace_emit_duration",
         "trace_descriptor_duration",
         "trace_report_count",
@@ -3800,6 +3805,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
 
     for field in [
         "guest_trace_report_duration",
+        "guest_trace_single_row_report_duration",
+        "guest_trace_multi_row_report_duration",
+        "guest_trace_pending_dma_report_duration",
+        "guest_trace_amo_report_duration",
+        "guest_trace_store_conditional_report_duration",
         "guest_trace_emit_duration",
         "guest_trace_descriptor_duration",
         "guest_trace_report_count",
@@ -3824,6 +3834,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
 
     for line_name in [
         "\"guest_trace_report\"",
+        "\"guest_trace_single_row_report_lower\"",
+        "\"guest_trace_multi_row_report_lower\"",
+        "\"guest_trace_pending_dma_report_lower\"",
+        "\"guest_trace_amo_report_lower\"",
+        "\"guest_trace_store_conditional_report_lower\"",
         "\"guest_trace_emit\"",
         "\"guest_trace_descriptor\"",
         "\"guest_trace_reports\"",

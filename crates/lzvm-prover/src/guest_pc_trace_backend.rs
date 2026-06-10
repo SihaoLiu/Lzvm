@@ -189,6 +189,11 @@ pub(crate) struct GuestPcTraceStreamTiming {
     lowerer_duration: Duration,
     trace_lower_duration: Duration,
     trace_report_duration: Duration,
+    trace_single_row_report_duration: Duration,
+    trace_multi_row_report_duration: Duration,
+    trace_pending_dma_report_duration: Duration,
+    trace_amo_report_duration: Duration,
+    trace_store_conditional_report_duration: Duration,
     trace_emit_duration: Duration,
     trace_descriptor_duration: Duration,
     pending_send_wait_duration: Duration,
@@ -216,6 +221,12 @@ impl GuestPcTraceStreamTiming {
         self.lowerer_duration += other.lowerer_duration;
         self.trace_lower_duration += other.trace_lower_duration;
         self.trace_report_duration += other.trace_report_duration;
+        self.trace_single_row_report_duration += other.trace_single_row_report_duration;
+        self.trace_multi_row_report_duration += other.trace_multi_row_report_duration;
+        self.trace_pending_dma_report_duration += other.trace_pending_dma_report_duration;
+        self.trace_amo_report_duration += other.trace_amo_report_duration;
+        self.trace_store_conditional_report_duration +=
+            other.trace_store_conditional_report_duration;
         self.trace_emit_duration += other.trace_emit_duration;
         self.trace_descriptor_duration += other.trace_descriptor_duration;
         self.pending_send_wait_duration += other.pending_send_wait_duration;
@@ -251,6 +262,26 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_duration(&self) -> Duration {
         self.trace_report_duration
+    }
+
+    pub fn trace_single_row_report_duration(&self) -> Duration {
+        self.trace_single_row_report_duration
+    }
+
+    pub fn trace_multi_row_report_duration(&self) -> Duration {
+        self.trace_multi_row_report_duration
+    }
+
+    pub fn trace_pending_dma_report_duration(&self) -> Duration {
+        self.trace_pending_dma_report_duration
+    }
+
+    pub fn trace_amo_report_duration(&self) -> Duration {
+        self.trace_amo_report_duration
+    }
+
+    pub fn trace_store_conditional_report_duration(&self) -> Duration {
+        self.trace_store_conditional_report_duration
     }
 
     pub fn trace_emit_duration(&self) -> Duration {
@@ -496,10 +527,9 @@ struct GuestPcTracePendingSegmentSlice {
     is_last_segment: bool,
 }
 
-#[cfg_attr(feature = "cuda", allow(clippy::large_enum_variant))]
 enum GuestPcTraceSegmentStreamMessage {
     Segment(GuestPcTraceSegmentTrace),
-    Complete(GuestPcTraceStreamResult),
+    Complete(Box<GuestPcTraceStreamResult>),
     Error(GuestPcTraceBackendError),
 }
 
@@ -1882,7 +1912,7 @@ fn for_each_guest_pc_trace_segment<E>(
             let message = match produced {
                 Ok(mut stream) => {
                     stream.timing.segment_send_wait_duration += segment_send_wait_duration;
-                    GuestPcTraceSegmentStreamMessage::Complete(stream)
+                    GuestPcTraceSegmentStreamMessage::Complete(Box::new(stream))
                 }
                 Err(error) => GuestPcTraceSegmentStreamMessage::Error(error),
             };
@@ -1911,7 +1941,7 @@ fn for_each_guest_pc_trace_segment<E>(
                 }
                 GuestPcTraceSegmentStreamMessage::Complete(mut stream) => {
                     stream.timing.segment_receive_wait_duration += segment_receive_wait_duration;
-                    stream_result = Some(Ok(stream));
+                    stream_result = Some(Ok(*stream));
                     break;
                 }
                 GuestPcTraceSegmentStreamMessage::Error(error) => {
@@ -2710,6 +2740,32 @@ fn record_trace_report_shape(
         }
         RiscvInstruction::StoreConditional { .. } => {
             timing.trace_store_conditional_report_count += 1;
+        }
+        _ => {}
+    }
+}
+
+fn record_trace_report_duration(
+    timing: &mut GuestPcTraceStreamTiming,
+    report: &GuestMachineReport,
+    pending_report: bool,
+    written_rows: usize,
+    duration: Duration,
+) {
+    if written_rows <= 1 {
+        timing.trace_single_row_report_duration += duration;
+    } else {
+        timing.trace_multi_row_report_duration += duration;
+    }
+    if pending_report {
+        timing.trace_pending_dma_report_duration += duration;
+    }
+    match report.instruction {
+        RiscvInstruction::Amo { .. } => {
+            timing.trace_amo_report_duration += duration;
+        }
+        RiscvInstruction::StoreConditional { .. } => {
+            timing.trace_store_conditional_report_duration += duration;
         }
         _ => {}
     }
@@ -3523,7 +3579,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
             .filter(|_| detail_timing)
             .map(|_| Instant::now());
         let descriptor_rows_before = device_trace_descriptors.descriptor_rows();
-        let pending_report = shape_timing && state.pending_dma.is_some();
+        let pending_report = state.pending_dma.is_some();
         let written_rows = validate_and_apply_zisk_main_report(
             output_row,
             report,
@@ -3559,7 +3615,15 @@ fn build_layout_zisk_main_trace_segment_device_material(
                 record_trace_report_shape(timing, report, pending_report, written_rows);
             }
             if let Some(started) = report_started {
-                timing.trace_report_duration += started.elapsed();
+                let duration = started.elapsed();
+                timing.trace_report_duration += duration;
+                record_trace_report_duration(
+                    timing,
+                    report,
+                    pending_report,
+                    written_rows,
+                    duration,
+                );
             }
         }
         output_row = output_row.checked_add(written_rows).ok_or_else(|| {
@@ -3724,7 +3788,7 @@ fn build_layout_zisk_main_trace_segment(
             .as_ref()
             .filter(|_| detail_timing)
             .map(|_| Instant::now());
-        let pending_report = shape_timing && state.pending_dma.is_some();
+        let pending_report = state.pending_dma.is_some();
         let mut next_instruction =
             || guest_report_next_instruction(reports, report_index, lookahead_instruction);
         let written_rows = write_zisk_main_report_columns(
@@ -3751,7 +3815,15 @@ fn build_layout_zisk_main_trace_segment(
                 record_trace_report_shape(timing, report, pending_report, written_rows);
             }
             if let Some(started) = report_started {
-                timing.trace_report_duration += started.elapsed();
+                let duration = started.elapsed();
+                timing.trace_report_duration += duration;
+                record_trace_report_duration(
+                    timing,
+                    report,
+                    pending_report,
+                    written_rows,
+                    duration,
+                );
             }
         }
         output_row = output_row.checked_add(written_rows).ok_or_else(|| {
