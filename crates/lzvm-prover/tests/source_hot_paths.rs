@@ -4707,7 +4707,7 @@ fn zisk_main_report_writes_stream_trace_values_without_row_value_vector() {
     let validate_body = function_body(
         &source,
         "fn validate_and_apply_zisk_main_report",
-        "fn lower_stateful_zisk_main_report_rows",
+        "fn record_trace_report_shape",
     );
     for allocation in [
         "Result<Vec<ZiskMainReportTraceValues>",
@@ -4720,6 +4720,18 @@ fn zisk_main_report_writes_stream_trace_values_without_row_value_vector() {
             "Zisk Main report validation should not allocate a trace-value vector with {allocation}"
         );
     }
+    assert!(
+        validate_body.contains("apply_zisk_main_lowered_report_row"),
+        "Zisk Main report validation should share per-row validation between fast and multi-row paths"
+    );
+    assert!(
+        validate_body.contains("lower_single_zisk_main_report_row"),
+        "common single-row reports should use a no-allocation fast path"
+    );
+    assert!(
+        !validate_body.contains("let lowered = lower_stateful_zisk_main_report_rows"),
+        "common single-row reports should not allocate a lowered-row vector"
+    );
 }
 
 #[test]

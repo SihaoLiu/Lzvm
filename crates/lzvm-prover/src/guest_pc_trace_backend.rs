@@ -2617,13 +2617,71 @@ struct ZiskMainRegisterAccessUpdate {
 fn validate_and_apply_zisk_main_report(
     row: usize,
     report: &GuestMachineReport,
-    next_instruction: impl FnMut() -> Option<RiscvInstruction>,
+    mut next_instruction: impl FnMut() -> Option<RiscvInstruction>,
     state: &mut ZiskMainTraceState,
     context: ZiskMainReportValidationContext<'_>,
     mut visit: impl FnMut(usize, ZiskMainReportTraceValues) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<usize, GuestPcTraceBackendError> {
-    let consumed_pending_dma = state.pending_dma.is_some();
-    let lowered = lower_stateful_zisk_main_report_rows(row, report, next_instruction, state)?;
+    if let Some(pending) = state.pending_dma {
+        validate_zisk_main_report_row_capacity(row, 1, context.row_count)?;
+        let lowered_row = ZiskMainLoweredReportRow {
+            instruction: lower_pending_dma_report(row, report, pending)?,
+            effects: ZiskMainReportEffects::from_report(report),
+            expected_next_pc: report.next_pc,
+        };
+        apply_zisk_main_lowered_report_row(row, report, lowered_row, state, context, &mut visit)?;
+        state.pending_dma = None;
+        return Ok(1);
+    }
+
+    if let RiscvInstruction::StoreConditional {
+        width,
+        rd,
+        rs1,
+        rs2,
+        ..
+    } = report.instruction
+    {
+        let lowered = lower_store_conditional_report_rows(row, report, width, rd, rs1, rs2)?;
+        let produced_rows = validate_and_apply_zisk_main_lowered_report_rows(
+            row, report, lowered, state, context, visit,
+        )?;
+        state.pending_dma = zisk_main_pending_dma(report);
+        return Ok(produced_rows);
+    }
+
+    if let RiscvInstruction::Amo {
+        kind,
+        width,
+        rd,
+        rs1,
+        rs2,
+        ..
+    } = report.instruction
+    {
+        let lowered = lower_amo_report_rows(row, report, kind, width, rd, rs1, rs2)?;
+        let produced_rows = validate_and_apply_zisk_main_lowered_report_rows(
+            row, report, lowered, state, context, visit,
+        )?;
+        state.pending_dma = zisk_main_pending_dma(report);
+        return Ok(produced_rows);
+    }
+
+    validate_zisk_main_report_row_capacity(row, 1, context.row_count)?;
+    let lowered_row = lower_single_zisk_main_report_row(row, report, &mut next_instruction)?;
+    apply_zisk_main_lowered_report_row(row, report, lowered_row, state, context, &mut visit)?;
+    state.pending_dma = zisk_main_pending_dma(report);
+    Ok(1)
+}
+
+fn validate_and_apply_zisk_main_lowered_report_rows(
+    row: usize,
+    report: &GuestMachineReport,
+    lowered: Vec<ZiskMainLoweredReportRow<'_>>,
+    state: &mut ZiskMainTraceState,
+    context: ZiskMainReportValidationContext<'_>,
+    mut visit: impl FnMut(usize, ZiskMainReportTraceValues) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<usize, GuestPcTraceBackendError> {
     let exclusive_end = row.checked_add(lowered.len()).ok_or_else(|| {
         GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: "Zisk Main row index overflow".to_owned(),
@@ -2641,83 +2699,114 @@ fn validate_and_apply_zisk_main_report(
                 message: "Zisk Main row index overflow".to_owned(),
             }
         })?;
-        let instruction = lowered_row.instruction;
-        if let Some(columns) = context.columns {
-            validate_zisk_main_memory_columns(output_row, &instruction, columns)?;
-        }
-        let (a, a_access) = zisk_main_source_value(
+        apply_zisk_main_lowered_report_row(
             output_row,
-            instruction.a,
-            state,
             report,
-            lowered_row.effects,
-            None,
-            0,
-        )?;
-        let (b, b_access) = zisk_main_source_value(
-            output_row,
-            instruction.b,
+            lowered_row,
             state,
-            report,
-            lowered_row.effects,
-            Some(a),
-            instruction.ind_width,
-        )?;
-        validate_zisk_main_precompile_memory_accesses(output_row, report, lowered_row.effects, b)?;
-        let (c, flag) =
-            zisk_main_instruction_result(output_row, &instruction, a, b, lowered_row.effects)?;
-        validate_zisk_main_next_pc(
-            output_row,
-            &instruction,
-            lowered_row.expected_next_pc,
-            c,
-            flag,
-        )?;
-        let register_accesses = zisk_main_register_access_values(
-            output_row,
-            &instruction,
-            state,
-            context.row_count,
-            context.segment,
-        )?;
-        validate_zisk_main_memory_accesses(
-            output_row,
-            &instruction,
-            lowered_row.effects,
-            a,
-            c,
-            a_access,
-            b_access,
-        )?;
-        apply_zisk_main_store(
-            output_row,
-            &instruction,
-            c,
-            lowered_row.effects,
-            lowered_row.expected_next_pc,
-            state,
-        )?;
-        register_accesses
-            .next_mem_steps
-            .apply(&mut state.register_mem_steps);
-        visit(
-            output_row,
-            ZiskMainReportTraceValues {
-                instruction,
-                a,
-                b,
-                c,
-                flag,
-                register_accesses: register_accesses.values,
-            },
+            context,
+            &mut visit,
         )?;
     }
-    state.pending_dma = if consumed_pending_dma {
-        None
-    } else {
-        zisk_main_pending_dma(report)
-    };
     Ok(produced_rows)
+}
+
+fn validate_zisk_main_report_row_capacity(
+    row: usize,
+    produced_rows: usize,
+    row_count: usize,
+) -> Result<(), GuestPcTraceBackendError> {
+    let exclusive_end = row.checked_add(produced_rows).ok_or_else(|| {
+        GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk Main row index overflow".to_owned(),
+        }
+    })?;
+    if exclusive_end > row_count {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk Main report rows exceed layout rows".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+fn apply_zisk_main_lowered_report_row(
+    output_row: usize,
+    report: &GuestMachineReport,
+    lowered_row: ZiskMainLoweredReportRow<'_>,
+    state: &mut ZiskMainTraceState,
+    context: ZiskMainReportValidationContext<'_>,
+    visit: &mut impl FnMut(usize, ZiskMainReportTraceValues) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<(), GuestPcTraceBackendError> {
+    let instruction = lowered_row.instruction;
+    if let Some(columns) = context.columns {
+        validate_zisk_main_memory_columns(output_row, &instruction, columns)?;
+    }
+    let (a, a_access) = zisk_main_source_value(
+        output_row,
+        instruction.a,
+        state,
+        report,
+        lowered_row.effects,
+        None,
+        0,
+    )?;
+    let (b, b_access) = zisk_main_source_value(
+        output_row,
+        instruction.b,
+        state,
+        report,
+        lowered_row.effects,
+        Some(a),
+        instruction.ind_width,
+    )?;
+    validate_zisk_main_precompile_memory_accesses(output_row, report, lowered_row.effects, b)?;
+    let (c, flag) =
+        zisk_main_instruction_result(output_row, &instruction, a, b, lowered_row.effects)?;
+    validate_zisk_main_next_pc(
+        output_row,
+        &instruction,
+        lowered_row.expected_next_pc,
+        c,
+        flag,
+    )?;
+    let register_accesses = zisk_main_register_access_values(
+        output_row,
+        &instruction,
+        state,
+        context.row_count,
+        context.segment,
+    )?;
+    validate_zisk_main_memory_accesses(
+        output_row,
+        &instruction,
+        lowered_row.effects,
+        a,
+        c,
+        a_access,
+        b_access,
+    )?;
+    apply_zisk_main_store(
+        output_row,
+        &instruction,
+        c,
+        lowered_row.effects,
+        lowered_row.expected_next_pc,
+        state,
+    )?;
+    register_accesses
+        .next_mem_steps
+        .apply(&mut state.register_mem_steps);
+    visit(
+        output_row,
+        ZiskMainReportTraceValues {
+            instruction,
+            a,
+            b,
+            c,
+            flag,
+            register_accesses: register_accesses.values,
+        },
+    )
 }
 
 fn record_trace_report_shape(
@@ -2793,40 +2882,11 @@ fn record_trace_lowered_row_shape(
     }
 }
 
-fn lower_stateful_zisk_main_report_rows<'a>(
+fn lower_single_zisk_main_report_row<'a>(
     row: usize,
     report: &'a GuestMachineReport,
     mut next_instruction: impl FnMut() -> Option<RiscvInstruction>,
-    state: &ZiskMainTraceState,
-) -> Result<Vec<ZiskMainLoweredReportRow<'a>>, GuestPcTraceBackendError> {
-    if let Some(pending) = state.pending_dma {
-        return Ok(vec![ZiskMainLoweredReportRow {
-            instruction: lower_pending_dma_report(row, report, pending)?,
-            effects: ZiskMainReportEffects::from_report(report),
-            expected_next_pc: report.next_pc,
-        }]);
-    }
-    if let RiscvInstruction::StoreConditional {
-        width,
-        rd,
-        rs1,
-        rs2,
-        ..
-    } = report.instruction
-    {
-        return lower_store_conditional_report_rows(row, report, width, rd, rs1, rs2);
-    }
-    if let RiscvInstruction::Amo {
-        kind,
-        width,
-        rd,
-        rs1,
-        rs2,
-        ..
-    } = report.instruction
-    {
-        return lower_amo_report_rows(row, report, kind, width, rd, rs1, rs2);
-    }
+) -> Result<ZiskMainLoweredReportRow<'a>, GuestPcTraceBackendError> {
     let instruction = lower_guest_report(report)
         .map_err(|source| GuestPcTraceBackendError::ZiskMainLower { row, source })?;
     let instruction = if let RiscvInstruction::ZiskDmaPrepare { kind, .. } = report.instruction {
@@ -2834,11 +2894,11 @@ fn lower_stateful_zisk_main_report_rows<'a>(
     } else {
         instruction
     };
-    Ok(vec![ZiskMainLoweredReportRow {
+    Ok(ZiskMainLoweredReportRow {
         instruction,
         effects: ZiskMainReportEffects::from_report(report),
         expected_next_pc: report.next_pc,
-    }])
+    })
 }
 
 fn lower_amo_report_rows(
