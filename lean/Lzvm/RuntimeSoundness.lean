@@ -1600,4 +1600,60 @@ theorem runtime_soundness_required_external_source_audited_pcs_fri_witness_contr
             (And.intro pcsSound.right.left
               (And.intro pcsAndFri.right pcsSound.right.right)))))
 
+theorem runtime_soundness_required_external_source_audited_pcs_fri_core_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ ProofSystemSound system
+            /\ system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.sourceValidation
+              publicInput
+              proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have compactContract :=
+    runtime_soundness_required_external_source_audited_pcs_fri_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  have coreContract :=
+    runtime_soundness_required_external_source_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  exact
+    And.intro compactContract.left
+      (And.intro compactContract.right.left
+        (And.intro compactContract.right.right.left
+          (And.intro compactContract.right.right.right.left
+            (And.intro compactContract.right.right.right.right.left
+              (And.intro compactContract.right.right.right.right.right.left
+                (And.intro coreContract
+                  compactContract.right.right.right.right.right.right))))))
+
 end Lzvm
