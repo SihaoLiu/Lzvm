@@ -123,6 +123,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     assert!(
         lean_source.contains(
+            "source_lookup_checked_acceptance_projects_verifier_acceptance\n          auxiliary\n          publicInput\n          proof\n          acceptedWithLookupChecks"
+        ),
+        "Lean source lookup soundness should reuse the checked-acceptance verifier projector"
+    );
+    assert!(
+        lean_source.contains(
             "gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request\n      validation\n      previous\n      next\n      publicInput\n      proof\n      checked"
         ) && lean_source.contains(
             "gpu_temporary_buffer_reuse_checked_acceptance_projects_pending_reads_complete\n      validation\n      previous\n      next\n      publicInput\n      proof\n      checked"
@@ -1194,6 +1200,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "source_lookup_checked_acceptance_projects_verifier_acceptance",
             "source_lookup_checked_acceptance_projects_auxiliary_evidence",
             "source_lookup_auxiliary_acceptance_sound",
             "source_lookup_checked_acceptance_verifier_core_contract",
