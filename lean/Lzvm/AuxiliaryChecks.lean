@@ -1112,6 +1112,110 @@ theorem runtime_performance_observation_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem runtime_performance_observation_projects_timing_observations
+    {system : VerifierModel}
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        TimingObservedAcceptance
+          system
+          summary.timingObservations
+          publicInput
+          proof := by
+  intro publicInput proof observed
+  exact observed
+
+theorem runtime_performance_observation_projects_guest_pc_trace_timing
+    {system : VerifierModel}
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        GuestPcTraceTimingObservedAcceptance
+          system
+          summary.guestPcTraceTiming
+          publicInput
+          proof := by
+  intro publicInput proof observed
+  exact observed
+
+theorem runtime_performance_observation_projects_witness_opening_row_value_timing
+    {system : VerifierModel}
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        WitnessOpeningRowValueTimingObservedAcceptance
+          system
+          summary.witnessOpeningRowValueTiming
+          publicInput
+          proof := by
+  intro publicInput proof observed
+  exact observed
+
+theorem runtime_performance_observation_projects_constant_material_validation_timing
+    {system : VerifierModel}
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        ConstantMaterialValidationTimingObservedAcceptance
+          system
+          summary.constantMaterialValidationTiming
+          publicInput
+          proof := by
+  intro publicInput proof observed
+  exact observed
+
+theorem runtime_performance_observation_projects_prover_gpu_mode
+    {system : VerifierModel}
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        ProverGpuModeObservedAcceptance
+          system
+          summary.proverGpuMode
+          publicInput
+          proof := by
+  intro publicInput proof observed
+  exact observed
+
+theorem runtime_performance_observation_projects_gpu_run_options
+    {system : VerifierModel}
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        GpuRunOptionsObservedAcceptance
+          system
+          summary.gpuRunOptions
+          publicInput
+          proof := by
+  intro publicInput proof observed
+  exact observed
+
+theorem runtime_performance_observation_projects_cuda_backend
+    {system : VerifierModel}
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        CudaBackendObservedAcceptance
+          system
+          summary.cudaBackend
+          publicInput
+          proof := by
+  intro publicInput proof observed
+  exact observed
+
+theorem runtime_performance_observation_projects_cuda_allocator_timing
+    {system : VerifierModel}
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        CudaAllocatorTimingObservedAcceptance
+          system
+          summary.cudaAllocatorTiming
+          publicInput
+          proof := by
+  intro publicInput proof observed
+  exact observed
+
 theorem runtime_performance_observation_projects_proof_artifact_finish_timing
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
