@@ -910,6 +910,15 @@ theorem gpu_fri_interpolation_matches_host_implies_fri_folds_valid
       proof
       interpolationMatchesHost
 
+theorem gpu_fri_fold_interpolation_checked_acceptance_projects_matches_host
+    {system : VerifierModel}
+    (validation : GpuFriFoldInterpolationValidation system) :
+    forall publicInput proof,
+      GpuFriFoldInterpolationCheckedAcceptance system validation publicInput proof ->
+        validation.gpuFriInterpolationMatchesHost publicInput proof := by
+  intro publicInput proof checked
+  exact checked.right
+
 theorem gpu_fri_fold_interpolation_checked_acceptance_projects_fri_folds_valid
     {system : VerifierModel}
     (validation : GpuFriFoldInterpolationValidation system) :
@@ -922,7 +931,11 @@ theorem gpu_fri_fold_interpolation_checked_acceptance_projects_fri_folds_valid
       validation
       publicInput
       proof
-      checked.right
+      (gpu_fri_fold_interpolation_checked_acceptance_projects_matches_host
+        validation
+        publicInput
+        proof
+        checked)
 
 theorem gpu_fri_fold_interpolation_checked_acceptance_sound
     {system : VerifierModel}
