@@ -2551,6 +2551,43 @@ theorem runtime_performance_observation_projects_gpu_run_options
   intro publicInput proof observed
   exact observed
 
+theorem runtime_performance_observation_gpu_run_options_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    gpu_run_options_acceptance_sound
+      assumptions
+      summary.gpuRunOptions
+      publicInput
+      proof
+      (runtime_performance_observation_projects_gpu_run_options
+        summary
+        publicInput
+        proof
+        observed)
+
+theorem runtime_performance_observation_gpu_run_options_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (runtime_performance_observation_gpu_run_options_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
 theorem runtime_performance_observation_projects_cuda_backend
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
