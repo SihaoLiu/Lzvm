@@ -144,6 +144,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean GPU run options soundness should reuse the observed-acceptance verifier projector"
     );
     assert!(
+        lean_source.contains(
+            "cuda_backend_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithCudaBackend"
+        ),
+        "Lean CUDA backend soundness should reuse the observed-acceptance verifier projector"
+    );
+    assert!(
         lean_source.contains("guestTraceDescriptorCompactRowCount")
             && lean_source.contains("guestTraceDescriptorWideRowCount"),
         "Lean guest PC timing summary should expose descriptor width row counts"
@@ -1184,6 +1190,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_run_options_observed_acceptance_projects_verifier_acceptance",
             "gpu_run_options_acceptance_sound",
             "gpu_run_options_acceptance_verifier_core_contract",
+            "cuda_backend_observed_acceptance_projects_verifier_acceptance",
             "cuda_backend_acceptance_sound",
             "cuda_backend_acceptance_verifier_core_contract",
             "cuda_allocator_timing_acceptance_sound",

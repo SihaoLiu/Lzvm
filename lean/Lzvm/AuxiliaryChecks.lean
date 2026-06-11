@@ -2146,6 +2146,15 @@ def CudaBackendObservedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
 
+theorem cuda_backend_observed_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (summary : Option CudaBackendSummary) :
+    forall publicInput proof,
+      CudaBackendObservedAcceptance system summary publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof observed
+  exact observed
+
 theorem cuda_backend_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -2154,7 +2163,16 @@ theorem cuda_backend_acceptance_sound
       CudaBackendObservedAcceptance system summary publicInput proof ->
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithCudaBackend
-  exact abstract_verifier_sound assumptions publicInput proof acceptedWithCudaBackend
+  exact
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      (cuda_backend_observed_acceptance_projects_verifier_acceptance
+        summary
+        publicInput
+        proof
+        acceptedWithCudaBackend)
 
 theorem cuda_backend_acceptance_verifier_core_contract
     {system : VerifierModel}
