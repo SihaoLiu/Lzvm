@@ -730,6 +730,20 @@ theorem gpu_coset_extension_matches_host_implies_leaf_bytes
       proof
       cosetMatchesHost
 
+theorem gpu_coset_extension_checked_acceptance_projects_leaf_bytes
+    {system : VerifierModel}
+    (validation : GpuCosetExtensionValidation system) :
+    forall publicInput proof,
+      GpuCosetExtensionCheckedAcceptance system validation publicInput proof ->
+        validation.leafValidation.canonicalExtendedLeafBytes publicInput proof := by
+  intro publicInput proof checked
+  exact
+    gpu_coset_extension_matches_host_implies_leaf_bytes
+      validation
+      publicInput
+      proof
+      checked.right
+
 theorem gpu_coset_extension_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -741,11 +755,11 @@ theorem gpu_coset_extension_checked_acceptance_sound
   intro publicInput proof checked
   exact
     And.intro
-      (gpu_coset_extension_matches_host_implies_leaf_bytes
+      (gpu_coset_extension_checked_acceptance_projects_leaf_bytes
         validation
         publicInput
         proof
-        checked.right)
+        checked)
       (abstract_verifier_sound assumptions publicInput proof checked.left)
 
 theorem gpu_coset_extension_checked_acceptance_verifier_core_contract

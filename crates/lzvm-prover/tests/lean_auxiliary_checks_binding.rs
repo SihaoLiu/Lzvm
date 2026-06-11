@@ -1219,6 +1219,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "fri_fixed_column_cache_checked_acceptance_sound",
             "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
             "gpu_coset_extension_matches_host_implies_leaf_bytes",
+            "gpu_coset_extension_checked_acceptance_projects_leaf_bytes",
             "gpu_coset_extension_checked_acceptance_sound",
             "gpu_coset_extension_checked_acceptance_verifier_core_contract",
             "gpu_fri_interpolation_matches_host_implies_fri_folds_valid",
