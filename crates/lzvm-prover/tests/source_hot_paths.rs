@@ -4766,6 +4766,26 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
 }
 
 #[test]
+fn lean_pipeline_contracts_exports_required_external_source_core_contract() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let contracts_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts.lean");
+    let contracts_source = std::fs::read_to_string(&contracts_path)
+        .expect("Lean pipeline contracts source should read");
+
+    assert!(
+        contracts_source
+            .contains("runtime_pipeline_binding_required_external_source_contracts_core_contract"),
+        "Lean pipeline contracts should expose a compact required external-source proof-system core contract"
+    );
+    assert!(
+        contracts_source.contains("ExternalSourceOpeningEvidence")
+            && contracts_source.contains("RuntimeVerifierCoreContract system publicInput proof")
+            && contracts_source.contains("SoundWitness system publicInput proof"),
+        "required external-source pipeline contract should keep source evidence, verifier core, and sound witness together"
+    );
+}
+
+#[test]
 fn guest_pc_trace_writes_use_direct_trace_builder_helpers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
