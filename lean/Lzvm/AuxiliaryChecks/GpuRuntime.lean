@@ -617,6 +617,28 @@ theorem fri_fixed_column_cache_same_request_implies_cached_contents_bound
       sameRequest
       freshBound
 
+theorem fri_fixed_column_cache_checked_acceptance_projects_cached_contents_bound
+    {system : VerifierModel}
+    (validation : FriFixedColumnCacheValidation)
+    (cached fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      FriFixedColumnCacheCheckedAcceptance
+          system
+          validation
+          cached
+          fresh
+          publicInput
+          proof ->
+        validation.allocationValidation.writtenContentsBound cached publicInput proof := by
+  intro publicInput proof checked
+  have cachedBound :=
+    fri_fixed_column_cache_same_request_implies_cached_contents_bound
+      validation
+      cached
+      fresh
+      checked.right.left
+  exact cachedBound publicInput proof checked.right.right
+
 theorem fri_fixed_column_cache_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
