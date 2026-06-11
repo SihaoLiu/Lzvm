@@ -353,6 +353,30 @@ structure GpuAllocatorNoWaitBypassValidation where
       noWaitBypassAllowed pending fresh publicInput proof ->
         freshAllocationIssued fresh publicInput proof
 
+structure GpuRetainedDeviceCacheBudget where
+  sourceBytes : Nat
+  leafDigestBytes : Nat
+  sourceLimit : Nat
+  leafDigestLimit : Nat
+  combinedLimit : Option Nat
+deriving DecidableEq, Repr
+
+def GpuRetainedDeviceCacheBudgetWithinLimits
+    (budget : GpuRetainedDeviceCacheBudget) : Prop :=
+  budget.sourceBytes <= budget.sourceLimit
+    /\ budget.leafDigestBytes <= budget.leafDigestLimit
+    /\ match budget.combinedLimit with
+      | some limit => budget.sourceBytes + budget.leafDigestBytes <= limit
+      | none => True
+
+structure GpuRetainedDeviceCacheBudgetValidation where
+  retainedDeviceCacheBudgetAccepted :
+    GpuRetainedDeviceCacheBudget -> PublicInput -> Proof -> Prop
+  retainedDeviceCacheBudgetImpliesWithinLimits :
+    forall budget publicInput proof,
+      retainedDeviceCacheBudgetAccepted budget publicInput proof ->
+        GpuRetainedDeviceCacheBudgetWithinLimits budget
+
 structure GpuHostDeviceCopyRoundTripValidation where
   allocationValidation : GpuAllocationCacheValidation
   uploadedBytesRoundTrip : GpuAllocationSource -> PublicInput -> Proof -> Prop
@@ -404,6 +428,15 @@ def GpuAllocatorNoWaitBypassCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.noWaitBypassAllowed pending fresh publicInput proof
+
+def GpuRetainedDeviceCacheBudgetCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.retainedDeviceCacheBudgetAccepted budget publicInput proof
 
 def FriFixedColumnCacheCheckedAcceptance
     (system : VerifierModel)
@@ -1385,6 +1418,54 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract
       proof
       checked
   exact sound_witness_implies_verifier_core_contract sound.right.right.right
+
+theorem gpu_retained_device_cache_budget_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget) :
+    forall publicInput proof,
+      GpuRetainedDeviceCacheBudgetCheckedAcceptance
+          system
+          validation
+          budget
+          publicInput
+          proof ->
+        GpuRetainedDeviceCacheBudgetWithinLimits budget
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (validation.retainedDeviceCacheBudgetImpliesWithinLimits
+        budget
+        publicInput
+        proof
+        checked.right)
+      (abstract_verifier_sound assumptions publicInput proof checked.left)
+
+theorem gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget) :
+    forall publicInput proof,
+      GpuRetainedDeviceCacheBudgetCheckedAcceptance
+          system
+          validation
+          budget
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_retained_device_cache_budget_checked_acceptance_sound
+      assumptions
+      validation
+      budget
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
 
 theorem fri_fixed_column_cache_same_request_implies_cached_contents_bound
     (validation : FriFixedColumnCacheValidation)

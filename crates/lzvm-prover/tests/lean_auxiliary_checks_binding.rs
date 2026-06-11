@@ -45,6 +45,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let source_hot_paths_path = crate_root.join("tests/source_hot_paths.rs");
     let source_hot_paths =
         std::fs::read_to_string(&source_hot_paths_path).expect("source hot paths should read");
+    let witness_values_path = crate_root.join("src/witness_commitment/values.rs");
+    let witness_values_source =
+        std::fs::read_to_string(&witness_values_path).expect("witness values source should read");
 
     assert!(
         top_level_source.contains("import Lzvm.AuxiliaryChecks"),
@@ -76,6 +79,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuTemporaryBufferReuseCheckedAcceptance")
             && lean_source.contains("GpuAllocatorNoWaitBypassValidation")
             && lean_source.contains("GpuAllocatorNoWaitBypassCheckedAcceptance")
+            && lean_source.contains("GpuRetainedDeviceCacheBudgetValidation")
+            && lean_source.contains("GpuRetainedDeviceCacheBudgetCheckedAcceptance")
             && lean_source.contains("FriFixedColumnCacheValidation")
             && lean_source.contains("FriFixedColumnCacheCheckedAcceptance")
             && lean_source.contains("GpuCosetExtensionValidation")
@@ -108,6 +113,21 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("noWaitBypassImpliesPendingNotReused")
             && lean_source.contains("noWaitBypassImpliesFreshAllocation"),
         "Lean auxiliary checks should bind allocator no-wait bypass to skipped pending allocations and fresh requests"
+    );
+    assert!(
+        lean_source.contains("GpuRetainedDeviceCacheBudget")
+            && lean_source.contains("sourceBytes")
+            && lean_source.contains("leafDigestBytes")
+            && lean_source.contains("sourceLimit")
+            && lean_source.contains("leafDigestLimit")
+            && lean_source.contains("combinedLimit")
+            && lean_source.contains("GpuRetainedDeviceCacheBudgetWithinLimits")
+            && lean_source.contains("retainedDeviceCacheBudgetAccepted")
+            && lean_source.contains("retainedDeviceCacheBudgetImpliesWithinLimits")
+            && witness_values_source.contains("retained_combined_device_cache_allows")
+            && witness_values_source.contains("reserve_retained_device_bytes")
+            && witness_values_source.contains("reserve_retained_leaf_digest_bytes"),
+        "Lean auxiliary checks should bind retained source and leaf digest cache retention to runtime budget limits"
     );
     assert!(
         lean_source.contains("cosetExtensionMatchesHost")
@@ -966,6 +986,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_allocator_no_wait_bypass_implies_fresh_allocation",
             "gpu_allocator_no_wait_bypass_checked_acceptance_sound",
             "gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract",
+            "gpu_retained_device_cache_budget_checked_acceptance_sound",
+            "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
             "fri_fixed_column_cache_same_request_implies_cached_contents_bound",
             "fri_fixed_column_cache_checked_acceptance_sound",
             "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
