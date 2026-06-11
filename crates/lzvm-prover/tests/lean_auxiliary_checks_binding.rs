@@ -129,6 +129,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     assert!(
         lean_source.contains(
+            "witness_leaf_digest_checked_acceptance_projects_verifier_acceptance\n          validation\n          publicInput\n          proof\n          acceptedWithLeafDigestChecks"
+        ),
+        "Lean witness leaf digest soundness should reuse the checked-acceptance verifier projector"
+    );
+    assert!(
+        lean_source.contains(
             "gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request\n      validation\n      previous\n      next\n      publicInput\n      proof\n      checked"
         ) && lean_source.contains(
             "gpu_temporary_buffer_reuse_checked_acceptance_projects_pending_reads_complete\n      validation\n      previous\n      next\n      publicInput\n      proof\n      checked"
@@ -1204,6 +1210,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "source_lookup_checked_acceptance_projects_auxiliary_evidence",
             "source_lookup_auxiliary_acceptance_sound",
             "source_lookup_checked_acceptance_verifier_core_contract",
+            "witness_leaf_digest_checked_acceptance_projects_verifier_acceptance",
             "witness_leaf_digest_checked_acceptance_projects_evidence",
             "witness_leaf_digest_checked_acceptance_projects_canonical_leaf_bytes",
             "witness_leaf_digest_checked_acceptance_projects_narrow_padded_digest_rows",
