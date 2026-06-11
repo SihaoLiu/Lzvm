@@ -1520,6 +1520,10 @@ fn source_device_leaf_extension_reuses_only_narrow_output_cache() {
         cache_body.contains("fn output_buffer("),
         "leaf extension cache should expose a reusable narrow output buffer"
     );
+    assert!(
+        cache_body.contains("if buffer.len() == byte_count"),
+        "leaf output cache reuse should require an exact output length so validation covers the full reused buffer"
+    );
 
     let source_device_body = function_body(
         &extend_source,

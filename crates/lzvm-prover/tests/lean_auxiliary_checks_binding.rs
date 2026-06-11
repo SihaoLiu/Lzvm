@@ -142,10 +142,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     assert!(
         lean_source.contains("leafOutputBufferFullyOverwritten")
+            && lean_source.contains("leafOutputBufferLengthMatches")
             && lean_source.contains("leafOutputBufferReuseImpliesCanonicalLeafBytes")
+            && lean_source.contains(
+                "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_length_match"
+            )
             && source_hot_paths.contains("source_device_leaf_extension_reuses_only_narrow_output_cache")
             && source_hot_paths.contains("should_cache_leaf_output(view.column_count)"),
-        "Lean auxiliary checks should bind leaf output buffer reuse to fully overwritten canonical leaf bytes"
+        "Lean auxiliary checks should bind leaf output buffer reuse to exact-size fully overwritten canonical leaf bytes"
     );
     assert!(
         lean_source.contains("noWaitBypassAllowed")

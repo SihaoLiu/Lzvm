@@ -32,9 +32,11 @@ structure GpuCanonicalLeafValidation (system : VerifierModel) where
 
 structure GpuLeafOutputBufferReuseValidation (system : VerifierModel) where
   leafValidation : WitnessLeafDigestValidation system
+  leafOutputBufferLengthMatches : PublicInput -> Proof -> Prop
   leafOutputBufferFullyOverwritten : PublicInput -> Proof -> Prop
   leafOutputBufferReuseImpliesCanonicalLeafBytes :
     forall publicInput proof,
+      leafOutputBufferLengthMatches publicInput proof ->
       leafOutputBufferFullyOverwritten publicInput proof ->
         leafValidation.canonicalExtendedLeafBytes publicInput proof
 
@@ -527,6 +529,7 @@ def GpuLeafOutputBufferReuseCheckedAcceptance
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
+    /\ validation.leafOutputBufferLengthMatches publicInput proof
     /\ validation.leafOutputBufferFullyOverwritten publicInput proof
 
 def GpuCosetExtensionCheckedAcceptance
@@ -651,14 +654,25 @@ theorem gpu_leaf_output_buffer_reuse_implies_canonical_leaf_bytes
     {system : VerifierModel}
     (validation : GpuLeafOutputBufferReuseValidation system) :
     forall publicInput proof,
+      validation.leafOutputBufferLengthMatches publicInput proof ->
       validation.leafOutputBufferFullyOverwritten publicInput proof ->
         validation.leafValidation.canonicalExtendedLeafBytes publicInput proof := by
-  intro publicInput proof outputFullyOverwritten
+  intro publicInput proof outputLengthMatches outputFullyOverwritten
   exact
     validation.leafOutputBufferReuseImpliesCanonicalLeafBytes
       publicInput
       proof
+      outputLengthMatches
       outputFullyOverwritten
+
+theorem gpu_leaf_output_buffer_reuse_checked_acceptance_projects_length_match
+    {system : VerifierModel}
+    (validation : GpuLeafOutputBufferReuseValidation system) :
+    forall publicInput proof,
+      GpuLeafOutputBufferReuseCheckedAcceptance system validation publicInput proof ->
+        validation.leafOutputBufferLengthMatches publicInput proof := by
+  intro publicInput proof checked
+  exact checked.right.left
 
 theorem gpu_leaf_output_buffer_reuse_checked_acceptance_sound
     {system : VerifierModel}
@@ -675,7 +689,8 @@ theorem gpu_leaf_output_buffer_reuse_checked_acceptance_sound
         validation
         publicInput
         proof
-        checked.right)
+        checked.right.left
+        checked.right.right)
       (abstract_verifier_sound assumptions publicInput proof checked.left)
 
 theorem gpu_leaf_output_buffer_reuse_checked_acceptance_verifier_core_contract

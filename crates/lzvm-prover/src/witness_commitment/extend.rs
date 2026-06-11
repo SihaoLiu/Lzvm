@@ -56,7 +56,7 @@ impl WitnessStageLeafWorkspaceCache {
         timing: &mut WitnessStageLeafExtendTiming,
     ) -> Result<CudaDeviceBuffer, WitnessTraceCommitmentError> {
         if let Some(buffer) = self.output.take() {
-            if buffer.len() >= byte_count {
+            if buffer.len() == byte_count {
                 return Ok(buffer);
             }
         }
