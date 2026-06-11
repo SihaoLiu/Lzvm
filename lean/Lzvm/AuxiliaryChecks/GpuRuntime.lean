@@ -527,6 +527,26 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract
       checked
   exact sound_witness_implies_verifier_core_contract sound.right.right.right
 
+theorem gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
+    {system : VerifierModel}
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget) :
+    forall publicInput proof,
+      GpuRetainedDeviceCacheBudgetCheckedAcceptance
+          system
+          validation
+          budget
+          publicInput
+          proof ->
+        GpuRetainedDeviceCacheBudgetWithinLimits budget := by
+  intro publicInput proof checked
+  exact
+    validation.retainedDeviceCacheBudgetImpliesWithinLimits
+      budget
+      publicInput
+      proof
+      checked.right
+
 theorem gpu_retained_device_cache_budget_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
