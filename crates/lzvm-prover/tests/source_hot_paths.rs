@@ -5258,6 +5258,24 @@ fn guest_pc_trace_slice_reuses_prepared_instruction_for_advance() {
 }
 
 #[test]
+fn guest_pc_trace_segments_report_buffer_capacity_shape() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    assert!(
+        source.contains("report_capacity: reports.capacity()"),
+        "guest PC trace slices should capture final report buffer capacity"
+    );
+    assert!(
+        source.contains("trace_report_buffer_capacity")
+            && source.contains("trace_report_buffer_max_capacity")
+            && source.contains("trace_report_buffer_excess_capacity"),
+        "guest PC trace timing should aggregate report buffer capacity shape"
+    );
+}
+
+#[test]
 fn fri_opening_timing_reports_unit_tree_query_and_fold_work() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let timing_path = crate_root.join("src/proof_artifact_timing.rs");

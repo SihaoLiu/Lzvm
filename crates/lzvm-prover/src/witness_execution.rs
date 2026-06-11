@@ -365,6 +365,9 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_segment_receive_wait_duration: Duration,
     guest_trace_report_count: usize,
     guest_trace_report_row_count: usize,
+    guest_trace_report_buffer_capacity: usize,
+    guest_trace_report_buffer_max_capacity: usize,
+    guest_trace_report_buffer_excess_capacity: usize,
     guest_trace_descriptor_row_count: usize,
     guest_trace_descriptor_compact_row_count: usize,
     guest_trace_descriptor_wide_row_count: usize,
@@ -495,6 +498,11 @@ impl ProveWitnessGuestPcTraceTiming {
                 .segment_receive_wait_duration(),
             guest_trace_report_count: stream_timing.trace_report_count(),
             guest_trace_report_row_count: stream_timing.trace_report_row_count(),
+            guest_trace_report_buffer_capacity: stream_timing.trace_report_buffer_capacity(),
+            guest_trace_report_buffer_max_capacity: stream_timing
+                .trace_report_buffer_max_capacity(),
+            guest_trace_report_buffer_excess_capacity: stream_timing
+                .trace_report_buffer_excess_capacity(),
             guest_trace_descriptor_row_count: stream_timing.trace_descriptor_row_count(),
             guest_trace_descriptor_compact_row_count: stream_timing
                 .trace_descriptor_compact_row_count(),
@@ -737,6 +745,18 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_report_row_count(&self) -> usize {
         self.guest_trace_report_row_count
+    }
+
+    pub fn guest_trace_report_buffer_capacity(&self) -> usize {
+        self.guest_trace_report_buffer_capacity
+    }
+
+    pub fn guest_trace_report_buffer_max_capacity(&self) -> usize {
+        self.guest_trace_report_buffer_max_capacity
+    }
+
+    pub fn guest_trace_report_buffer_excess_capacity(&self) -> usize {
+        self.guest_trace_report_buffer_excess_capacity
     }
 
     pub fn guest_trace_descriptor_row_count(&self) -> usize {

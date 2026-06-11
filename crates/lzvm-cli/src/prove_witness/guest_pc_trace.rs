@@ -142,6 +142,18 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_report_row_count(),
     );
     timings.record_count(
+        "guest_trace_report_buffer_capacity",
+        timing.guest_trace_report_buffer_capacity(),
+    );
+    timings.record_count(
+        "guest_trace_report_buffer_max_capacity",
+        timing.guest_trace_report_buffer_max_capacity(),
+    );
+    timings.record_count(
+        "guest_trace_report_buffer_excess_capacity",
+        timing.guest_trace_report_buffer_excess_capacity(),
+    );
+    timings.record_count(
         "guest_trace_descriptor_rows",
         timing.guest_trace_descriptor_row_count(),
     );

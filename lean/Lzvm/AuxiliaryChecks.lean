@@ -136,6 +136,9 @@ structure GuestPcTraceTimingSummary where
   guestTraceStoreConditionalReportLowerMilliseconds : Nat
   guestTraceReportCount : Nat
   guestTraceReportRowCount : Nat
+  guestTraceReportBufferCapacity : Nat
+  guestTraceReportBufferMaxCapacity : Nat
+  guestTraceReportBufferExcessCapacity : Nat
   guestTraceSingleRowReportCount : Nat
   guestTraceMultiRowReportCount : Nat
   guestTracePendingDmaReportCount : Nat
@@ -1036,6 +1039,64 @@ theorem guest_pc_trace_report_timing_acceptance_verifier_core_contract
         validationMilliseconds
         reportCount
         reportRows
+        publicInput
+        proof
+        observed)
+
+theorem guest_pc_trace_report_buffer_capacity_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (capacity maxCapacity excessCapacity : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceReportBufferCapacity := capacity
+            guestTraceReportBufferMaxCapacity := maxCapacity
+            guestTraceReportBufferExcessCapacity := excessCapacity })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          guestTraceReportBufferCapacity := capacity
+          guestTraceReportBufferMaxCapacity := maxCapacity
+          guestTraceReportBufferExcessCapacity := excessCapacity })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_report_buffer_capacity_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (capacity maxCapacity excessCapacity : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceReportBufferCapacity := capacity
+            guestTraceReportBufferMaxCapacity := maxCapacity
+            guestTraceReportBufferExcessCapacity := excessCapacity })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (guest_pc_trace_report_buffer_capacity_acceptance_sound
+        assumptions
+        summary
+        capacity
+        maxCapacity
+        excessCapacity
         publicInput
         proof
         observed)

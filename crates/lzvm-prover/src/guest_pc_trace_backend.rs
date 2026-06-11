@@ -212,6 +212,9 @@ pub(crate) struct GuestPcTraceStreamTiming {
     segment_receive_wait_duration: Duration,
     trace_report_count: usize,
     trace_report_row_count: usize,
+    trace_report_buffer_capacity: usize,
+    trace_report_buffer_max_capacity: usize,
+    trace_report_buffer_excess_capacity: usize,
     trace_descriptor_row_count: usize,
     trace_descriptor_compact_row_count: usize,
     trace_descriptor_wide_row_count: usize,
@@ -264,6 +267,11 @@ impl GuestPcTraceStreamTiming {
         self.segment_receive_wait_duration += other.segment_receive_wait_duration;
         self.trace_report_count += other.trace_report_count;
         self.trace_report_row_count += other.trace_report_row_count;
+        self.trace_report_buffer_capacity += other.trace_report_buffer_capacity;
+        self.trace_report_buffer_max_capacity = self
+            .trace_report_buffer_max_capacity
+            .max(other.trace_report_buffer_max_capacity);
+        self.trace_report_buffer_excess_capacity += other.trace_report_buffer_excess_capacity;
         self.trace_descriptor_row_count += other.trace_descriptor_row_count;
         self.trace_descriptor_compact_row_count += other.trace_descriptor_compact_row_count;
         self.trace_descriptor_wide_row_count += other.trace_descriptor_wide_row_count;
@@ -390,6 +398,18 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_row_count(&self) -> usize {
         self.trace_report_row_count
+    }
+
+    pub fn trace_report_buffer_capacity(&self) -> usize {
+        self.trace_report_buffer_capacity
+    }
+
+    pub fn trace_report_buffer_max_capacity(&self) -> usize {
+        self.trace_report_buffer_max_capacity
+    }
+
+    pub fn trace_report_buffer_excess_capacity(&self) -> usize {
+        self.trace_report_buffer_excess_capacity
     }
 
     pub fn trace_descriptor_row_count(&self) -> usize {
@@ -649,11 +669,13 @@ struct GuestPcTraceSegmentSlice {
     executed_instructions: u64,
     trace_rows: usize,
     status: GuestMachineTraceSliceStatus,
+    report_capacity: usize,
     reports: Vec<GuestMachineReport>,
 }
 
 struct GuestPcTracePendingSegmentSlice {
     trace_instance_index: u32,
+    report_capacity: usize,
     reports: Vec<GuestMachineReport>,
     terminal_pc: u64,
     lookahead_instruction: Option<RiscvInstruction>,
@@ -1831,6 +1853,7 @@ fn run_guest_pc_trace_segment_slice(
                 status: GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall {
                     address: pc,
                 }),
+                report_capacity: reports.capacity(),
                 reports,
             });
         }
@@ -1839,6 +1862,7 @@ fn run_guest_pc_trace_segment_slice(
                 executed_instructions,
                 trace_rows,
                 status: GuestMachineTraceSliceStatus::Paused { pc },
+                report_capacity: reports.capacity(),
                 reports,
             });
         }
@@ -1858,6 +1882,7 @@ fn run_guest_pc_trace_segment_slice(
                 executed_instructions,
                 trace_rows,
                 status: GuestMachineTraceSliceStatus::Paused { pc },
+                report_capacity: reports.capacity(),
                 reports,
             });
         }
@@ -1892,6 +1917,7 @@ fn run_guest_pc_trace_segment_slice(
                 executed_instructions,
                 trace_rows,
                 status,
+                report_capacity: reports.capacity(),
                 reports,
             });
         }
@@ -2297,8 +2323,10 @@ fn produce_guest_pc_trace_pending_slices(
                 message: "Zisk Main trace instance index is too large".to_owned(),
             }
         })?;
+        let report_capacity = slice.report_capacity;
         emit(GuestPcTracePendingSegmentSlice {
             trace_instance_index,
+            report_capacity,
             reports: slice.reports,
             terminal_pc,
             lookahead_instruction,
@@ -2353,6 +2381,13 @@ fn lower_guest_pc_trace_pending_segments(
             GuestPcTracePendingSegmentMessage::Complete(stream) => return Ok(*stream),
             GuestPcTracePendingSegmentMessage::Error(error) => return Err(error),
         };
+        timing.trace_report_buffer_capacity += pending.report_capacity;
+        timing.trace_report_buffer_max_capacity = timing
+            .trace_report_buffer_max_capacity
+            .max(pending.report_capacity);
+        timing.trace_report_buffer_excess_capacity += pending
+            .report_capacity
+            .saturating_sub(pending.reports.len());
         let lower_started = Instant::now();
         let written = build_layout_zisk_main_trace_segment_for_segment_output(
             layout,

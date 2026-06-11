@@ -259,6 +259,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestTraceStoreConditionalReportLowerMilliseconds",
         "guestTraceReportCount",
         "guestTraceReportRowCount",
+        "guestTraceReportBufferCapacity",
+        "guestTraceReportBufferMaxCapacity",
+        "guestTraceReportBufferExcessCapacity",
         "guestTraceSingleRowReportCount",
         "guestTraceMultiRowReportCount",
         "guestTracePendingDmaReportCount",
@@ -414,6 +417,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_trace_report_rows\"",
             "guest_trace_report_row_count()",
+        ),
+        (
+            "\"guest_trace_report_buffer_capacity\"",
+            "guest_trace_report_buffer_capacity()",
+        ),
+        (
+            "\"guest_trace_report_buffer_max_capacity\"",
+            "guest_trace_report_buffer_max_capacity()",
+        ),
+        (
+            "\"guest_trace_report_buffer_excess_capacity\"",
+            "guest_trace_report_buffer_excess_capacity()",
         ),
         (
             "\"guest_trace_single_row_reports\"",
@@ -1099,6 +1114,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "timing_observation_acceptance_verifier_core_contract",
             "guest_pc_trace_timing_acceptance_sound",
             "guest_pc_trace_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_report_buffer_capacity_acceptance_sound",
+            "guest_pc_trace_report_buffer_capacity_acceptance_verifier_core_contract",
             "witness_opening_row_value_timing_acceptance_sound",
             "witness_opening_row_value_timing_acceptance_verifier_core_contract",
             "constant_material_validation_timing_acceptance_sound",
