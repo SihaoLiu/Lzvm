@@ -1595,6 +1595,91 @@ theorem runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_w
                   (And.intro coreContract.right.right
                     compactContract.right.right.right.right.right.right.right)))))))
 
+theorem runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ ProofSystemSound system
+            /\ system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ system.transcriptBound publicInput proof
+            /\ system.publicInputBound publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ (exists witness trace constraints,
+              system.traceConsistent publicInput proof trace
+                /\ system.constraintsSatisfied constraints trace
+                /\ system.witnessMatchesTrace witness trace)
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have compactContract :=
+    runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  have transcriptBound :=
+    runtime_pipeline_binding_checked_acceptance_transcript_bound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have publicInputBound :=
+    runtime_pipeline_binding_checked_acceptance_public_input_bound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have executionObligations :=
+    runtime_pipeline_binding_checked_acceptance_execution_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro compactContract.left
+      (And.intro compactContract.right.left
+        (And.intro compactContract.right.right.left
+          (And.intro compactContract.right.right.right.left
+            (And.intro compactContract.right.right.right.right.left
+              (And.intro transcriptBound
+                (And.intro publicInputBound
+                  (And.intro compactContract.right.right.right.right.right.left
+                    (And.intro compactContract.right.right.right.right.right.right.left
+                      (And.intro
+                        compactContract.right.right.right.right.right.right.right.left
+                        (And.intro executionObligations
+                          compactContract.right.right.right.right.right.right.right.right))))))))))
+
 theorem runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
