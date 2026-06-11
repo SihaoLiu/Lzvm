@@ -45,10 +45,34 @@ pub(crate) struct PendingCanonicalCudaDigestLevel {
 #[derive(Default)]
 pub(crate) struct WitnessStageLeafWorkspaceCache {
     buffer: Option<CudaDeviceBuffer>,
+    output: Option<CudaDeviceBuffer>,
 }
 
 #[cfg(feature = "cuda")]
 impl WitnessStageLeafWorkspaceCache {
+    fn output_buffer(
+        &mut self,
+        byte_count: usize,
+        timing: &mut WitnessStageLeafExtendTiming,
+    ) -> Result<CudaDeviceBuffer, WitnessTraceCommitmentError> {
+        if let Some(buffer) = self.output.take() {
+            if buffer.len() >= byte_count {
+                return Ok(buffer);
+            }
+        }
+        let buffer = record_setup_duration(
+            &mut timing.setup_duration,
+            &mut timing.leaf_setup_output_alloc_duration,
+            || CudaDeviceBuffer::new(byte_count).map_err(WitnessStageLeafError::from),
+        )?;
+        timing.record_output_alloc(byte_count);
+        Ok(buffer)
+    }
+
+    fn store_output_buffer(&mut self, buffer: CudaDeviceBuffer) {
+        self.output = Some(buffer);
+    }
+
     fn workspace(
         &mut self,
         byte_count: usize,
@@ -763,6 +787,11 @@ fn compact_witness_stage_leaf_hashes_timed(
 }
 
 #[cfg(feature = "cuda")]
+fn should_cache_leaf_output(column_count: usize) -> bool {
+    column_count <= HASH_WORDS
+}
+
+#[cfg(feature = "cuda")]
 fn compact_witness_stage_leaf_hash_level_timed(
     values: &[Felt],
     column_count: usize,
@@ -842,7 +871,7 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
     source_bits: usize,
     target_bits: usize,
     arity: usize,
-    workspace_cache: Option<&mut WitnessStageLeafWorkspaceCache>,
+    mut workspace_cache: Option<&mut WitnessStageLeafWorkspaceCache>,
     timing: &mut WitnessStageLeafExtendTiming,
 ) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
     let out_byte_count = record_setup_duration(
@@ -865,14 +894,30 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
         },
     )?;
 
-    let mut output_buffer = record_setup_duration(
-        &mut timing.setup_duration,
-        &mut timing.leaf_setup_output_alloc_duration,
-        || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
-    )?;
-    timing.record_output_alloc(out_byte_count);
+    let use_output_cache = should_cache_leaf_output(view.column_count);
+    let mut output_buffer = if use_output_cache {
+        if let Some(workspace_cache) = workspace_cache.as_deref_mut() {
+            workspace_cache.output_buffer(out_byte_count, timing)?
+        } else {
+            let buffer = record_setup_duration(
+                &mut timing.setup_duration,
+                &mut timing.leaf_setup_output_alloc_duration,
+                || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
+            )?;
+            timing.record_output_alloc(out_byte_count);
+            buffer
+        }
+    } else {
+        let buffer = record_setup_duration(
+            &mut timing.setup_duration,
+            &mut timing.leaf_setup_output_alloc_duration,
+            || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
+        )?;
+        timing.record_output_alloc(out_byte_count);
+        buffer
+    };
     let mut extension_workspace_storage;
-    let extension_workspace = if let Some(workspace_cache) = workspace_cache {
+    let extension_workspace = if let Some(workspace_cache) = workspace_cache.as_deref_mut() {
         workspace_cache.workspace(out_byte_count, timing)?
     } else {
         extension_workspace_storage = record_setup_duration(
@@ -921,6 +966,11 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
         .map_err(WitnessStageCommitmentError::from)
     })?;
     timing.record_leaf_hash_work(extended_rows, out_byte_count, arity);
+    if use_output_cache {
+        if let Some(workspace_cache) = workspace_cache {
+            workspace_cache.store_output_buffer(output_buffer);
+        }
+    }
     Ok(PendingCanonicalCudaDigestLevel::new(level, canonical_check))
 }
 

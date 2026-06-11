@@ -1505,6 +1505,37 @@ fn source_device_leaf_extension_reuses_workspace_cache() {
 }
 
 #[test]
+fn source_device_leaf_extension_reuses_only_narrow_output_cache() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let extend_path = crate_root.join("src/witness_commitment/extend.rs");
+    let extend_source =
+        std::fs::read_to_string(&extend_path).expect("leaf extension source should read");
+
+    let cache_body = function_body(
+        &extend_source,
+        "impl WitnessStageLeafWorkspaceCache",
+        "impl PendingCanonicalCudaDigestLevel",
+    );
+    assert!(
+        cache_body.contains("fn output_buffer("),
+        "leaf extension cache should expose a reusable narrow output buffer"
+    );
+
+    let source_device_body = function_body(
+        &extend_source,
+        "fn compact_witness_stage_leaf_hash_level_from_source_device_timed",
+        "fn validate_source_device_buffer",
+    );
+    assert!(
+        extend_source.contains("fn should_cache_leaf_output(column_count: usize) -> bool")
+            && extend_source.contains("column_count <= HASH_WORDS")
+            && source_device_body.contains("should_cache_leaf_output(view.column_count)")
+            && source_device_body.contains("workspace_cache.output_buffer("),
+        "source-device leaf extension should reuse output allocation only for narrow stages"
+    );
+}
+
+#[test]
 fn guest_pc_segment_commitments_reuse_leaf_workspace_cache_across_segments() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let execution_path = crate_root.join("src/witness_execution.rs");
