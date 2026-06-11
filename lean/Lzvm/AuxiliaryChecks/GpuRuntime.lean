@@ -12,6 +12,16 @@ GPU auxiliary runtime cache and reuse contracts.
 
 namespace Lzvm
 
+theorem gpu_setup_checked_acceptance_projects_constants_sound
+    {system : VerifierModel}
+    (validation : GpuSetupCacheValidation)
+    (request : GpuSetupRequest) :
+    forall publicInput proof,
+      GpuSetupCheckedAcceptance system validation request publicInput proof ->
+        validation.constantsSoundFor request.device request.requiredBits := by
+  intro publicInput proof checked
+  exact checked.right
+
 theorem gpu_setup_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
