@@ -1148,6 +1148,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "cuda_allocator_timing_acceptance_verifier_core_contract",
             "proof_artifact_finish_timing_acceptance_sound",
             "proof_artifact_finish_timing_acceptance_verifier_core_contract",
+            "proof_artifact_finish_aggregate_timing_acceptance_sound",
+            "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
             "runtime_performance_observation_acceptance_sound",
             "runtime_performance_observation_acceptance_verifier_core_contract",
             "runtime_performance_observation_projects_timing_observations",
