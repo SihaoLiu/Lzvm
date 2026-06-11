@@ -129,6 +129,27 @@ theorem gpu_host_device_copy_round_trip_implies_written_contents
       proof
       roundTrip
 
+theorem gpu_host_device_copy_round_trip_checked_acceptance_projects_written_contents
+    {system : VerifierModel}
+    (validation : GpuHostDeviceCopyRoundTripValidation)
+    (allocation : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuHostDeviceCopyRoundTripCheckedAcceptance
+          system
+          validation
+          allocation
+          publicInput
+          proof ->
+        validation.allocationValidation.writtenContentsBound allocation publicInput proof := by
+  intro publicInput proof checked
+  exact
+    gpu_host_device_copy_round_trip_implies_written_contents
+      validation
+      allocation
+      publicInput
+      proof
+      checked.right
+
 theorem gpu_host_device_copy_round_trip_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
