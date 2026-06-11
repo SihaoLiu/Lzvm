@@ -190,6 +190,8 @@ structure GuestPcTraceTimingSummary where
   guestStageLeafSetupOutputAllocByteCount : Nat
   guestStageLeafSetupWorkspaceAllocByteCount : Nat
   guestStageLeafSetupOutputAllocCount : Nat
+  guestStageLeafOutputCacheHitCount : Nat
+  guestStageLeafOutputCacheMissCount : Nat
   guestStageLeafSetupWorkspaceAllocCount : Nat
   guestStageLeafUploadWorkMilliseconds : Nat
   guestStageLeafKernelWorkMilliseconds : Nat
@@ -1209,6 +1211,66 @@ theorem guest_pc_trace_report_buffer_capacity_acceptance_verifier_core_contract
         capacity
         maxCapacity
         excessCapacity
+        publicInput
+        proof
+        observed)
+
+theorem guest_pc_trace_leaf_output_cache_counts_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (hitCount missCount : Nat)
+    (stageTimings : List GuestPcTraceStageTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageLeafOutputCacheHitCount := hitCount
+            guestStageLeafOutputCacheMissCount := missCount
+            stageTimings := stageTimings })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          guestStageLeafOutputCacheHitCount := hitCount
+          guestStageLeafOutputCacheMissCount := missCount
+          stageTimings := stageTimings })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_leaf_output_cache_counts_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (hitCount missCount : Nat)
+    (stageTimings : List GuestPcTraceStageTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageLeafOutputCacheHitCount := hitCount
+            guestStageLeafOutputCacheMissCount := missCount
+            stageTimings := stageTimings })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (guest_pc_trace_leaf_output_cache_counts_acceptance_sound
+        assumptions
+        summary
+        hitCount
+        missCount
+        stageTimings
         publicInput
         proof
         observed)
