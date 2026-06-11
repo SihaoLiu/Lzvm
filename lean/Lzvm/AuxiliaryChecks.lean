@@ -335,6 +335,24 @@ structure GpuTemporaryBufferReuseValidation where
       temporaryBufferReuseAllowed previous next publicInput proof ->
         pendingDeviceReadsComplete previous publicInput proof
 
+structure GpuAllocatorNoWaitBypassValidation where
+  noWaitBypassAllowed :
+    GpuAllocationSource -> GpuAllocationSource -> PublicInput -> Proof -> Prop
+  pendingAllocationNotReused : GpuAllocationSource -> PublicInput -> Proof -> Prop
+  freshAllocationIssued : GpuAllocationSource -> PublicInput -> Proof -> Prop
+  noWaitBypassImpliesSameRequest :
+    forall pending fresh publicInput proof,
+      noWaitBypassAllowed pending fresh publicInput proof ->
+        GpuAllocationSameRequest pending fresh
+  noWaitBypassImpliesPendingNotReused :
+    forall pending fresh publicInput proof,
+      noWaitBypassAllowed pending fresh publicInput proof ->
+        pendingAllocationNotReused pending publicInput proof
+  noWaitBypassImpliesFreshAllocation :
+    forall pending fresh publicInput proof,
+      noWaitBypassAllowed pending fresh publicInput proof ->
+        freshAllocationIssued fresh publicInput proof
+
 structure GpuHostDeviceCopyRoundTripValidation where
   allocationValidation : GpuAllocationCacheValidation
   uploadedBytesRoundTrip : GpuAllocationSource -> PublicInput -> Proof -> Prop
@@ -377,6 +395,15 @@ def GpuTemporaryBufferReuseCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.temporaryBufferReuseAllowed previous next publicInput proof
+
+def GpuAllocatorNoWaitBypassCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GpuAllocatorNoWaitBypassValidation)
+    (pending fresh : GpuAllocationSource)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.noWaitBypassAllowed pending fresh publicInput proof
 
 def FriFixedColumnCacheCheckedAcceptance
     (system : VerifierModel)
@@ -1239,6 +1266,125 @@ theorem gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract
       proof
       checked
   exact sound_witness_implies_verifier_core_contract sound.right.right
+
+theorem gpu_allocator_no_wait_bypass_implies_same_request
+    (validation : GpuAllocatorNoWaitBypassValidation)
+    (pending fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      validation.noWaitBypassAllowed pending fresh publicInput proof ->
+        GpuAllocationSameRequest pending fresh := by
+  intro publicInput proof bypassAllowed
+  exact
+    validation.noWaitBypassImpliesSameRequest
+      pending
+      fresh
+      publicInput
+      proof
+      bypassAllowed
+
+theorem gpu_allocator_no_wait_bypass_implies_pending_not_reused
+    (validation : GpuAllocatorNoWaitBypassValidation)
+    (pending fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      validation.noWaitBypassAllowed pending fresh publicInput proof ->
+        validation.pendingAllocationNotReused pending publicInput proof := by
+  intro publicInput proof bypassAllowed
+  exact
+    validation.noWaitBypassImpliesPendingNotReused
+      pending
+      fresh
+      publicInput
+      proof
+      bypassAllowed
+
+theorem gpu_allocator_no_wait_bypass_implies_fresh_allocation
+    (validation : GpuAllocatorNoWaitBypassValidation)
+    (pending fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      validation.noWaitBypassAllowed pending fresh publicInput proof ->
+        validation.freshAllocationIssued fresh publicInput proof := by
+  intro publicInput proof bypassAllowed
+  exact
+    validation.noWaitBypassImpliesFreshAllocation
+      pending
+      fresh
+      publicInput
+      proof
+      bypassAllowed
+
+theorem gpu_allocator_no_wait_bypass_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuAllocatorNoWaitBypassValidation)
+    (pending fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuAllocatorNoWaitBypassCheckedAcceptance
+          system
+          validation
+          pending
+          fresh
+          publicInput
+          proof ->
+        GpuAllocationSameRequest pending fresh
+          /\ validation.pendingAllocationNotReused pending publicInput proof
+          /\ validation.freshAllocationIssued fresh publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sameRequest :=
+    gpu_allocator_no_wait_bypass_implies_same_request
+      validation
+      pending
+      fresh
+      publicInput
+      proof
+      checked.right
+  have pendingNotReused :=
+    gpu_allocator_no_wait_bypass_implies_pending_not_reused
+      validation
+      pending
+      fresh
+      publicInput
+      proof
+      checked.right
+  have freshIssued :=
+    gpu_allocator_no_wait_bypass_implies_fresh_allocation
+      validation
+      pending
+      fresh
+      publicInput
+      proof
+      checked.right
+  exact
+    And.intro sameRequest
+      (And.intro pendingNotReused
+        (And.intro freshIssued
+          (abstract_verifier_sound assumptions publicInput proof checked.left)))
+
+theorem gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuAllocatorNoWaitBypassValidation)
+    (pending fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuAllocatorNoWaitBypassCheckedAcceptance
+          system
+          validation
+          pending
+          fresh
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_allocator_no_wait_bypass_checked_acceptance_sound
+      assumptions
+      validation
+      pending
+      fresh
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right.right.right
 
 theorem fri_fixed_column_cache_same_request_implies_cached_contents_bound
     (validation : FriFixedColumnCacheValidation)

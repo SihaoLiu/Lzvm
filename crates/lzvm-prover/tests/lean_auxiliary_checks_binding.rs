@@ -74,6 +74,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuHostDeviceCopyRoundTripCheckedAcceptance")
             && lean_source.contains("GpuTemporaryBufferReuseValidation")
             && lean_source.contains("GpuTemporaryBufferReuseCheckedAcceptance")
+            && lean_source.contains("GpuAllocatorNoWaitBypassValidation")
+            && lean_source.contains("GpuAllocatorNoWaitBypassCheckedAcceptance")
             && lean_source.contains("FriFixedColumnCacheValidation")
             && lean_source.contains("FriFixedColumnCacheCheckedAcceptance")
             && lean_source.contains("GpuCosetExtensionValidation")
@@ -97,6 +99,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("temporaryBufferReuseImpliesSameRequest")
             && lean_source.contains("temporaryBufferReuseImpliesPendingReadsComplete"),
         "Lean auxiliary checks should bind temporary GPU buffer reuse to same requests and completed pending reads"
+    );
+    assert!(
+        lean_source.contains("noWaitBypassAllowed")
+            && lean_source.contains("pendingAllocationNotReused")
+            && lean_source.contains("freshAllocationIssued")
+            && lean_source.contains("noWaitBypassImpliesSameRequest")
+            && lean_source.contains("noWaitBypassImpliesPendingNotReused")
+            && lean_source.contains("noWaitBypassImpliesFreshAllocation"),
+        "Lean auxiliary checks should bind allocator no-wait bypass to skipped pending allocations and fresh requests"
     );
     assert!(
         lean_source.contains("cosetExtensionMatchesHost")
@@ -950,6 +961,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_temporary_buffer_reuse_implies_pending_reads_complete",
             "gpu_temporary_buffer_reuse_checked_acceptance_sound",
             "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
+            "gpu_allocator_no_wait_bypass_implies_same_request",
+            "gpu_allocator_no_wait_bypass_implies_pending_not_reused",
+            "gpu_allocator_no_wait_bypass_implies_fresh_allocation",
+            "gpu_allocator_no_wait_bypass_checked_acceptance_sound",
+            "gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract",
             "fri_fixed_column_cache_same_request_implies_cached_contents_bound",
             "fri_fixed_column_cache_checked_acceptance_sound",
             "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
