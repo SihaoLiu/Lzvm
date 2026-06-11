@@ -252,6 +252,29 @@ theorem gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request
       proof
       checked.right
 
+theorem gpu_temporary_buffer_reuse_checked_acceptance_projects_pending_reads_complete
+    {system : VerifierModel}
+    (validation : GpuTemporaryBufferReuseValidation)
+    (previous next : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuTemporaryBufferReuseCheckedAcceptance
+          system
+          validation
+          previous
+          next
+          publicInput
+          proof ->
+        validation.pendingDeviceReadsComplete previous publicInput proof := by
+  intro publicInput proof checked
+  exact
+    gpu_temporary_buffer_reuse_implies_pending_reads_complete
+      validation
+      previous
+      next
+      publicInput
+      proof
+      checked.right
+
 theorem gpu_temporary_buffer_reuse_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
