@@ -3971,6 +3971,62 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
 }
 
 #[test]
+fn guest_pc_trace_lower_records_aggregate_report_timing_without_detail_timers() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+
+    assert!(
+        backend_source.contains("fn record_aggregate_trace_report_duration"),
+        "guest PC trace lowerer should have a segment-level report-loop timing helper"
+    );
+
+    let device_material_start = concat!(
+        "#[cfg(feature = \"cuda\")]\n#[allow(dead_code)]\nfn build_layout_",
+        "zi",
+        "sk"
+    );
+    let device_material_start =
+        format!("{device_material_start}_main_trace_segment_device_material");
+    let device_material_end = concat!(
+        "#[cfg(feature = \"cuda\")]\nfn build_layout_",
+        "zi",
+        "sk",
+        "_main_trace_segment_from_device_material"
+    );
+    let device_material_body =
+        function_body(&backend_source, &device_material_start, device_material_end);
+    let host_segment_start = concat!("fn build_layout_", "zi", "sk");
+    let host_segment_start = format!("{host_segment_start}_main_trace_segment");
+    let host_segment_body = function_body(
+        &backend_source,
+        &host_segment_start,
+        "fn serialize_trace_to_output",
+    );
+
+    for (label, body) in [
+        ("device material", device_material_body),
+        ("host segment", host_segment_body),
+    ] {
+        assert!(
+            body.contains("let aggregate_report_started")
+                && body.contains("filter(|_| !detail_timing)")
+                && body.contains("Instant::now()"),
+            "guest PC {label} lowerer should start one aggregate report-loop timer when detail timing is off"
+        );
+        assert!(
+            body.contains("record_aggregate_trace_report_duration(")
+                && body.contains(
+                    "record_aggregate_trace_report_duration(timing, aggregate_report_started);"
+                )
+                && body.contains("aggregate_report_started"),
+            "guest PC {label} lowerer should add the aggregate report-loop duration after the loop"
+        );
+    }
+}
+
+#[test]
 fn guest_pc_trace_segments_reuse_fixed_columns_across_segments() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");

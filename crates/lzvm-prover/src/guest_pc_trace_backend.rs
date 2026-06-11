@@ -3093,6 +3093,15 @@ fn record_trace_report_duration(
     }
 }
 
+fn record_aggregate_trace_report_duration(
+    timing: Option<&mut GuestPcTraceStreamTiming>,
+    started: Option<Instant>,
+) {
+    if let (Some(timing), Some(started)) = (timing, started) {
+        timing.trace_report_duration += started.elapsed();
+    }
+}
+
 fn record_trace_lowered_row_shape(
     timing: &mut GuestPcTraceStreamTiming,
     instruction: &ZiskMainInstruction,
@@ -3886,6 +3895,10 @@ fn build_layout_zisk_main_trace_segment_device_material(
     let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
     let shape_timing = guest_pc_trace_shape_timing_enabled();
     let row_timing_enabled = detail_timing || shape_timing;
+    let aggregate_report_started = timing
+        .as_ref()
+        .filter(|_| !detail_timing)
+        .map(|_| Instant::now());
     for (report_index, report) in reports.iter().enumerate() {
         let report_started = timing
             .as_ref()
@@ -3952,6 +3965,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
             }
         })?;
     }
+    record_aggregate_trace_report_duration(timing, aggregate_report_started);
 
     if output_row < layout.row_count() {
         if !segment.is_last_segment {
@@ -4103,6 +4117,10 @@ fn build_layout_zisk_main_trace_segment(
     let mut output_row = 0_usize;
     let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
     let shape_timing = guest_pc_trace_shape_timing_enabled();
+    let aggregate_report_started = timing
+        .as_ref()
+        .filter(|_| !detail_timing)
+        .map(|_| Instant::now());
     for (report_index, report) in reports.iter().enumerate() {
         let report_started = timing
             .as_ref()
@@ -4152,6 +4170,7 @@ fn build_layout_zisk_main_trace_segment(
             }
         })?;
     }
+    record_aggregate_trace_report_duration(timing, aggregate_report_started);
     if output_row < layout.row_count() {
         if !segment.is_last_segment {
             return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
