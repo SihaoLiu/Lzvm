@@ -3615,6 +3615,9 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "cuda_event_synchronize_max_bytes",
         "cuda_event_synchronize_wait_ns",
         "cuda_event_synchronize_max_wait_ns",
+        "cuda_event_synchronize_hot_bytes",
+        "cuda_event_synchronize_hot_count",
+        "cuda_event_synchronize_hot_wait_ns",
         "cached_reuse_count",
         "pending_reuse_count",
         "no_wait_bypass_count",
@@ -3656,6 +3659,13 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "allocator pending reuse should time event synchronization waits"
     );
     assert!(
+        native_source.contains("g_cuda_event_synchronize_by_size")
+            && native_source.contains("cuda_event_synchronize_hot_bytes")
+            && native_source.contains("cuda_event_synchronize_hot_count")
+            && native_source.contains("cuda_event_synchronize_hot_wait_ns"),
+        "allocator wait timing should expose the dominant synchronized allocation size"
+    );
+    assert!(
         alloc_body.contains("kPendingCacheNoWaitBytes")
             && alloc_body.contains("g_cuda_no_wait_bypass_count")
             && alloc_body.contains("g_cuda_no_wait_bypass_bytes"),
@@ -3686,6 +3696,9 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "\"cuda_allocator_event_synchronize_max_bytes\"",
         "\"cuda_allocator_event_synchronize_wait_ns\"",
         "\"cuda_allocator_event_synchronize_max_wait_ns\"",
+        "\"cuda_allocator_event_synchronize_hot_bytes\"",
+        "\"cuda_allocator_event_synchronize_hot_count\"",
+        "\"cuda_allocator_event_synchronize_hot_wait_ns\"",
         "\"cuda_allocator_cached_reuse_count\"",
         "\"cuda_allocator_pending_reuse_count\"",
         "\"cuda_allocator_no_wait_bypass_count\"",

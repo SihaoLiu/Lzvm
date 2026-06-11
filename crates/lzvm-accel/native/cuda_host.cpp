@@ -24,10 +24,17 @@ struct CachedAllocation {
     cudaEvent_t ready_event;
 };
 
+struct EventSynchronizeSizeStats {
+    std::size_t bytes = 0;
+    std::size_t count = 0;
+    std::size_t wait_ns = 0;
+};
+
 constexpr std::size_t kMaxCachedBytes = std::size_t{16} << 30;
 constexpr std::size_t kMaxCachedBlocksPerSize = 2;
 constexpr std::size_t kPinnedCopyThreshold = std::size_t{1} << 20;
 constexpr std::size_t kPendingCacheNoWaitBytes = std::size_t{1} << 20;
+constexpr std::size_t kEventSynchronizeSizeStatsSlots = 64;
 
 std::mutex g_allocator_mutex;
 std::unordered_map<void*, AllocationRecord> g_active_allocations;
@@ -44,6 +51,8 @@ std::size_t g_cuda_event_synchronize_bytes = 0;
 std::size_t g_cuda_event_synchronize_max_bytes = 0;
 std::size_t g_cuda_event_synchronize_wait_ns = 0;
 std::size_t g_cuda_event_synchronize_max_wait_ns = 0;
+EventSynchronizeSizeStats
+    g_cuda_event_synchronize_by_size[kEventSynchronizeSizeStatsSlots] = {};
 std::size_t g_cuda_cached_reuse_count = 0;
 std::size_t g_cuda_pending_reuse_count = 0;
 std::size_t g_cuda_no_wait_bypass_count = 0;
@@ -90,15 +99,30 @@ std::size_t saturated_nanoseconds_since(std::chrono::steady_clock::time_point st
     return static_cast<std::size_t>(ns);
 }
 
-void record_event_synchronize_wait(std::size_t elapsed_ns) {
+std::size_t saturated_add(std::size_t left, std::size_t right) {
     const auto max = std::numeric_limits<std::size_t>::max();
-    if (max - g_cuda_event_synchronize_wait_ns < elapsed_ns) {
-        g_cuda_event_synchronize_wait_ns = max;
-    } else {
-        g_cuda_event_synchronize_wait_ns += elapsed_ns;
+    if (max - left < right) {
+        return max;
     }
+    return left + right;
+}
+
+void record_event_synchronize_wait(std::size_t bytes, std::size_t elapsed_ns) {
+    g_cuda_event_synchronize_wait_ns =
+        saturated_add(g_cuda_event_synchronize_wait_ns, elapsed_ns);
     if (elapsed_ns > g_cuda_event_synchronize_max_wait_ns) {
         g_cuda_event_synchronize_max_wait_ns = elapsed_ns;
+    }
+    for (EventSynchronizeSizeStats& size_stats : g_cuda_event_synchronize_by_size) {
+        if (size_stats.count != 0 && size_stats.bytes != bytes) {
+            continue;
+        }
+        if (size_stats.count == 0) {
+            size_stats.bytes = bytes;
+        }
+        size_stats.count = saturated_add(size_stats.count, 1);
+        size_stats.wait_ns = saturated_add(size_stats.wait_ns, elapsed_ns);
+        return;
     }
 }
 
@@ -218,7 +242,8 @@ int free_cached_allocation_on_device(const CachedAllocation& allocation) {
         }
         const auto wait_started = std::chrono::steady_clock::now();
         status = static_cast<int>(cudaEventSynchronize(allocation.ready_event));
-        record_event_synchronize_wait(saturated_nanoseconds_since(wait_started));
+        record_event_synchronize_wait(
+            allocation.bytes, saturated_nanoseconds_since(wait_started));
         const int destroy_status = static_cast<int>(cudaEventDestroy(allocation.ready_event));
         status = first_status(status, destroy_status);
     }
@@ -338,7 +363,8 @@ int alloc_bytes_impl(void** out, std::size_t bytes) {
                 }
                 const auto wait_started = std::chrono::steady_clock::now();
                 const int status = static_cast<int>(cudaEventSynchronize(allocation.ready_event));
-                record_event_synchronize_wait(saturated_nanoseconds_since(wait_started));
+                record_event_synchronize_wait(
+                    allocation.bytes, saturated_nanoseconds_since(wait_started));
                 if (status != 0) {
                     return status;
                 }
@@ -490,6 +516,9 @@ extern "C" int lzvm_cuda_allocator_clear_cache(void) {
             g_cuda_event_synchronize_max_bytes = 0;
             g_cuda_event_synchronize_wait_ns = 0;
             g_cuda_event_synchronize_max_wait_ns = 0;
+            for (EventSynchronizeSizeStats& size_stats : g_cuda_event_synchronize_by_size) {
+                size_stats = EventSynchronizeSizeStats{};
+            }
             g_cuda_cached_reuse_count = 0;
             g_cuda_pending_reuse_count = 0;
             g_cuda_no_wait_bypass_count = 0;
@@ -521,6 +550,19 @@ extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out) {
         out->cuda_event_synchronize_max_bytes = g_cuda_event_synchronize_max_bytes;
         out->cuda_event_synchronize_wait_ns = g_cuda_event_synchronize_wait_ns;
         out->cuda_event_synchronize_max_wait_ns = g_cuda_event_synchronize_max_wait_ns;
+        out->cuda_event_synchronize_hot_bytes = 0;
+        out->cuda_event_synchronize_hot_count = 0;
+        out->cuda_event_synchronize_hot_wait_ns = 0;
+        for (const EventSynchronizeSizeStats& size_stats : g_cuda_event_synchronize_by_size) {
+            const std::size_t bytes = size_stats.bytes;
+            if (size_stats.wait_ns > out->cuda_event_synchronize_hot_wait_ns
+                || (size_stats.wait_ns == out->cuda_event_synchronize_hot_wait_ns
+                    && bytes > out->cuda_event_synchronize_hot_bytes)) {
+                out->cuda_event_synchronize_hot_bytes = bytes;
+                out->cuda_event_synchronize_hot_count = size_stats.count;
+                out->cuda_event_synchronize_hot_wait_ns = size_stats.wait_ns;
+            }
+        }
         out->cached_reuse_count = g_cuda_cached_reuse_count;
         out->pending_reuse_count = g_cuda_pending_reuse_count;
         out->no_wait_bypass_count = g_cuda_no_wait_bypass_count;

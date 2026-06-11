@@ -45,6 +45,9 @@ struct LzvmCudaAllocatorStats {
     std::size_t cuda_event_synchronize_max_bytes;
     std::size_t cuda_event_synchronize_wait_ns;
     std::size_t cuda_event_synchronize_max_wait_ns;
+    std::size_t cuda_event_synchronize_hot_bytes;
+    std::size_t cuda_event_synchronize_hot_count;
+    std::size_t cuda_event_synchronize_hot_wait_ns;
     std::size_t cached_reuse_count;
     std::size_t pending_reuse_count;
     std::size_t no_wait_bypass_count;

@@ -148,6 +148,18 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
         stats.cuda_event_synchronize_max_wait_ns,
     );
     timings.record_count(
+        "cuda_allocator_event_synchronize_hot_bytes",
+        stats.cuda_event_synchronize_hot_bytes,
+    );
+    timings.record_count(
+        "cuda_allocator_event_synchronize_hot_count",
+        stats.cuda_event_synchronize_hot_count,
+    );
+    timings.record_count(
+        "cuda_allocator_event_synchronize_hot_wait_ns",
+        stats.cuda_event_synchronize_hot_wait_ns,
+    );
+    timings.record_count(
         "cuda_allocator_cached_reuse_count",
         stats.cached_reuse_count,
     );
