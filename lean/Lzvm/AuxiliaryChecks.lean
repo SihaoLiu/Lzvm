@@ -2000,6 +2000,15 @@ def ConstantMaterialValidationTimingObservedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
 
+theorem constant_material_validation_timing_observed_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (summary : Option ConstantMaterialValidationTimingSummary) :
+    forall publicInput proof,
+      ConstantMaterialValidationTimingObservedAcceptance system summary publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof observed
+  exact observed
+
 theorem constant_material_validation_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -2008,7 +2017,16 @@ theorem constant_material_validation_timing_acceptance_sound
       ConstantMaterialValidationTimingObservedAcceptance system summary publicInput proof ->
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithConstantMaterialTimings
-  exact abstract_verifier_sound assumptions publicInput proof acceptedWithConstantMaterialTimings
+  exact
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      (constant_material_validation_timing_observed_acceptance_projects_verifier_acceptance
+        summary
+        publicInput
+        proof
+        acceptedWithConstantMaterialTimings)
 
 theorem constant_material_validation_timing_acceptance_verifier_core_contract
     {system : VerifierModel}

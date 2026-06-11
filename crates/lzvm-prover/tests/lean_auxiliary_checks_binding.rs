@@ -151,6 +151,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     assert!(
         lean_source.contains(
+            "constant_material_validation_timing_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithConstantMaterialTimings"
+        ),
+        "Lean constant material timing soundness should reuse the observed-acceptance verifier projector"
+    );
+    assert!(
+        lean_source.contains(
             "prover_gpu_mode_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithGpuMode"
         ),
         "Lean prover GPU mode soundness should reuse the observed-acceptance verifier projector"
@@ -1201,6 +1207,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "witness_opening_row_value_timing_acceptance_verifier_core_contract",
             "witness_opening_row_value_aggregate_timing_acceptance_sound",
             "witness_opening_row_value_aggregate_timing_acceptance_verifier_core_contract",
+            "constant_material_validation_timing_observed_acceptance_projects_verifier_acceptance",
             "constant_material_validation_timing_acceptance_sound",
             "constant_material_validation_timing_acceptance_verifier_core_contract",
             "constant_material_validation_aggregate_timing_acceptance_sound",
