@@ -66,6 +66,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("CudaBackendObservedAcceptance")
             && lean_source.contains("CudaAllocatorTimingSummary")
             && lean_source.contains("CudaAllocatorTimingObservedAcceptance")
+            && lean_source.contains("RuntimePerformanceObservationSummary")
+            && lean_source.contains("RuntimePerformanceObservedAcceptance")
             && lean_source.contains("GpuSetupCheckedAcceptance")
             && lean_source.contains("GpuAllocationCheckedAcceptance")
             && lean_source.contains("GpuHostDeviceCopyRoundTripValidation")
@@ -791,6 +793,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "Lean CUDA allocator timing summary should expose {field}"
         );
     }
+    for field in [
+        "timingObservations : List TimingObservation",
+        "guestPcTraceTiming : Option GuestPcTraceTimingSummary",
+        "witnessOpeningRowValueTiming : Option WitnessOpeningRowValueTimingSummary",
+        "constantMaterialValidationTiming : Option ConstantMaterialValidationTimingSummary",
+        "proverGpuMode : Option ProverGpuModeSummary",
+        "cudaBackend : Option CudaBackendSummary",
+        "cudaAllocatorTiming : Option CudaAllocatorTimingSummary",
+    ] {
+        assert!(
+            lean_source.contains(field),
+            "Lean runtime performance observation summary should expose {field}"
+        );
+    }
     for line_name in [
         "\"cuda_allocator_malloc_calls\"",
         "\"cuda_allocator_malloc_bytes\"",
@@ -912,6 +928,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "cuda_backend_acceptance_verifier_core_contract",
             "cuda_allocator_timing_acceptance_sound",
             "cuda_allocator_timing_acceptance_verifier_core_contract",
+            "runtime_performance_observation_acceptance_sound",
+            "runtime_performance_observation_acceptance_verifier_core_contract",
             "gpu_setup_checked_acceptance_sound",
             "gpu_setup_checked_acceptance_verifier_core_contract",
             "gpu_allocation_checked_acceptance_sound",

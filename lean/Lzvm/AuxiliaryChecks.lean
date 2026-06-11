@@ -262,6 +262,16 @@ structure CudaAllocatorTimingSummary where
   cudaAllocatorNoWaitBypassByteCount : Nat
 deriving DecidableEq, Repr
 
+structure RuntimePerformanceObservationSummary where
+  timingObservations : List TimingObservation
+  guestPcTraceTiming : Option GuestPcTraceTimingSummary
+  witnessOpeningRowValueTiming : Option WitnessOpeningRowValueTimingSummary
+  constantMaterialValidationTiming : Option ConstantMaterialValidationTimingSummary
+  proverGpuMode : Option ProverGpuModeSummary
+  cudaBackend : Option CudaBackendSummary
+  cudaAllocatorTiming : Option CudaAllocatorTimingSummary
+deriving DecidableEq, Repr
+
 structure GpuSetupCacheState where
   device : Nat
   initializedBits : Nat
@@ -891,6 +901,41 @@ theorem cuda_allocator_timing_acceptance_verifier_core_contract
   exact
     sound_witness_implies_verifier_core_contract
       (cuda_allocator_timing_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
+def RuntimePerformanceObservedAcceptance
+    (system : VerifierModel)
+    (_summary : RuntimePerformanceObservationSummary)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+
+theorem runtime_performance_observation_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithPerformanceObservations
+  exact abstract_verifier_sound assumptions publicInput proof
+    acceptedWithPerformanceObservations
+
+theorem runtime_performance_observation_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (runtime_performance_observation_acceptance_sound
         assumptions
         summary
         publicInput
