@@ -1035,6 +1035,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_timing_acceptance_verifier_core_contract",
             "runtime_performance_observation_acceptance_sound",
             "runtime_performance_observation_acceptance_verifier_core_contract",
+            "runtime_performance_observation_projects_proof_artifact_finish_timing",
             "gpu_setup_checked_acceptance_sound",
             "gpu_setup_checked_acceptance_verifier_core_contract",
             "gpu_allocation_checked_acceptance_sound",

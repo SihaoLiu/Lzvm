@@ -1112,6 +1112,19 @@ theorem runtime_performance_observation_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem runtime_performance_observation_projects_proof_artifact_finish_timing
+    {system : VerifierModel}
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        ProofArtifactFinishTimingObservedAcceptance
+          system
+          summary.proofArtifactFinishTiming
+          publicInput
+          proof := by
+  intro publicInput proof observed
+  exact observed
+
 theorem gpu_setup_cache_reuse_sound
     (validation : GpuSetupCacheValidation)
     (state : GpuSetupCacheState)
