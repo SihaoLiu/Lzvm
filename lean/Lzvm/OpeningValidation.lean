@@ -164,6 +164,33 @@ theorem runtime_opening_evidence_implies_pcs_and_fri
   intro artifact publicInput proof requiresExternalSource evidence
   exact evidence.right.right.right.right
 
+theorem runtime_opening_evidence_implies_external_source_requirement
+    {system : VerifierModel}
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        ExternalSourceOpeningRequirement
+          system
+          validation.runtimeSoundnessValidation.sourceValidation
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact
+    runtime_soundness_evidence_implies_external_source_requirement
+      validation.runtimeSoundnessValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence.left
+
 theorem runtime_opening_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

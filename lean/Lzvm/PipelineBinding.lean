@@ -13,48 +13,6 @@ Runtime proof pipeline binding contracts.
 
 namespace Lzvm
 
-def runtime_pipeline_trace_source_validation
-    {system : VerifierModel}
-    (validation : RuntimePipelineBindingValidation system) :
-    ExternalSourceOpeningValidation system :=
-  let openingValidation :=
-    validation.traceBindingValidation.traceConstraintValidation.openingValidation
-  openingValidation.runtimeSoundnessValidation.sourceValidation
-
-def runtime_pipeline_trace_validation
-    {system : VerifierModel}
-    (validation : RuntimePipelineBindingValidation system) :
-    RuntimeTraceConstraintValidation system :=
-  validation.traceBindingValidation.traceConstraintValidation
-
-def runtime_pipeline_opening_source_validation
-    {system : VerifierModel}
-    (validation : RuntimePipelineBindingValidation system) :
-    ExternalSourceOpeningValidation system :=
-  let openingValidation :=
-    validation.queryPlanBindingValidation.openingValidation.openingValidation
-  openingValidation.runtimeSoundnessValidation.sourceValidation
-
-def runtime_pipeline_runtime_soundness_validation
-    {system : VerifierModel}
-    (validation : RuntimePipelineBindingValidation system) :
-    RuntimeSoundnessValidation system :=
-  let openingValidation :=
-    validation.queryPlanBindingValidation.openingValidation.openingValidation
-  openingValidation.runtimeSoundnessValidation
-
-def runtime_pipeline_challenge_validation
-    {system : VerifierModel}
-    (validation : RuntimePipelineBindingValidation system) :
-    RuntimeChallengeSegmentBindingValidation system :=
-  validation.queryPlanBindingValidation.challengeValidation
-
-def runtime_pipeline_transcript_validation
-    {system : VerifierModel}
-    (validation : RuntimePipelineBindingValidation system) :
-    RuntimeTranscriptBindingValidation system :=
-  (runtime_pipeline_challenge_validation validation).transcriptValidation
-
 theorem runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence
     {system : VerifierModel}
     {validation : RuntimePipelineBindingValidation system}

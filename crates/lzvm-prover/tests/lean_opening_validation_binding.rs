@@ -27,10 +27,39 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_opening_evidence_implies_external_source_requirement",
             "runtime_opening_checked_acceptance_sound",
             "runtime_opening_checked_acceptance_verifier_core_contract",
             "runtime_opening_required_external_source_sound",
             "runtime_opening_required_external_source_verifier_core_contract",
         ],
     );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_opening_evidence_implies_external_source_requirement"
+        )
+        .contains("RuntimeOpeningEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_opening_evidence_implies_external_source_requirement"
+            )
+            .contains("ExternalSourceOpeningRequirement")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_opening_evidence_implies_external_source_requirement"
+            )
+            .contains("validation.runtimeSoundnessValidation.sourceValidation"),
+        "opening evidence should expose the external-source requirement carried by runtime soundness evidence"
+    );
+}
+
+fn theorem_prefix(source: &str, name: &str) -> String {
+    let theorem_start = source
+        .find(&format!("theorem {name}"))
+        .unwrap_or_else(|| panic!("Lean source should contain theorem {name}"));
+    let proof_start = source[theorem_start..]
+        .find(" := by")
+        .unwrap_or_else(|| panic!("Lean theorem {name} should have a proof body"));
+    source[theorem_start..theorem_start + proof_start].to_owned()
 }

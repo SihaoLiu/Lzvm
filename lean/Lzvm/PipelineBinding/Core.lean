@@ -33,6 +33,48 @@ structure RuntimePipelineBindingValidation (system : VerifierModel) where
       pipelineBindingAccepted artifact publicInput proof ->
         queryPlanBindingValidation.queryPlanBindingAccepted artifact publicInput proof
 
+def runtime_pipeline_trace_source_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    ExternalSourceOpeningValidation system :=
+  let openingValidation :=
+    validation.traceBindingValidation.traceConstraintValidation.openingValidation
+  openingValidation.runtimeSoundnessValidation.sourceValidation
+
+def runtime_pipeline_trace_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    RuntimeTraceConstraintValidation system :=
+  validation.traceBindingValidation.traceConstraintValidation
+
+def runtime_pipeline_opening_source_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    ExternalSourceOpeningValidation system :=
+  let openingValidation :=
+    validation.queryPlanBindingValidation.openingValidation.openingValidation
+  openingValidation.runtimeSoundnessValidation.sourceValidation
+
+def runtime_pipeline_runtime_soundness_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    RuntimeSoundnessValidation system :=
+  let openingValidation :=
+    validation.queryPlanBindingValidation.openingValidation.openingValidation
+  openingValidation.runtimeSoundnessValidation
+
+def runtime_pipeline_challenge_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    RuntimeChallengeSegmentBindingValidation system :=
+  validation.queryPlanBindingValidation.challengeValidation
+
+def runtime_pipeline_transcript_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    RuntimeTranscriptBindingValidation system :=
+  (runtime_pipeline_challenge_validation validation).transcriptValidation
+
 def RuntimePipelineBindingEvidence
     (system : VerifierModel)
     (validation : RuntimePipelineBindingValidation system)
@@ -205,6 +247,56 @@ theorem runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract
     And.intro
       evidence.right.right.left
       (runtime_pipeline_binding_evidence_implies_core_obligations evidence)
+
+theorem runtime_pipeline_binding_evidence_implies_external_source_requirements
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      ExternalSourceOpeningRequirement
+          system
+          (runtime_pipeline_trace_source_validation validation)
+          publicInput
+          proof
+          requiresExternalSource
+        /\ ExternalSourceOpeningRequirement
+          system
+          (runtime_pipeline_opening_source_validation validation)
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro evidence
+  exact
+    And.intro
+      (runtime_opening_evidence_implies_external_source_requirement
+        validation.traceBindingValidation.traceConstraintValidation.openingValidation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource
+        (runtime_trace_constraint_evidence_implies_opening_evidence
+          validation.traceBindingValidation.traceConstraintValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource
+          evidence.right.right.right.right.left))
+      (runtime_opening_evidence_implies_external_source_requirement
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource
+        evidence.right.right.right.right.right.right.right.right.left)
 
 theorem runtime_pipeline_binding_evidence_implies_execution_obligations
     {system : VerifierModel}

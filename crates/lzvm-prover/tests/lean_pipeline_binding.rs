@@ -57,6 +57,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence",
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract",
+            "runtime_pipeline_binding_evidence_implies_external_source_requirements",
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
@@ -148,6 +149,37 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("AssumptionBundle"),
         "pipeline evidence artifact-core projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_evidence_implies_external_source_requirements"
+        )
+        .contains("RuntimePipelineBindingEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_evidence_implies_external_source_requirements"
+            )
+            .contains("ExternalSourceOpeningRequirement")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_evidence_implies_external_source_requirements"
+            )
+            .contains("runtime_pipeline_trace_source_validation validation")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_evidence_implies_external_source_requirements"
+            )
+            .contains("runtime_pipeline_opening_source_validation validation"),
+        "pipeline evidence should expose both trace and opening external-source requirements"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_evidence_implies_external_source_requirements"
+        )
+        .contains("AssumptionBundle"),
+        "pipeline external-source requirement projection should not require cryptographic assumptions"
     );
     assert!(
         theorem_prefix(
