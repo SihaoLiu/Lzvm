@@ -193,12 +193,12 @@ theorem gpu_host_device_copy_round_trip_checked_acceptance_sound
   intro publicInput proof checked
   exact
     And.intro
-      (gpu_host_device_copy_round_trip_implies_written_contents
+      (gpu_host_device_copy_round_trip_checked_acceptance_projects_written_contents
         validation
         allocation
         publicInput
         proof
-        checked.right)
+        checked)
       (abstract_verifier_sound assumptions publicInput proof checked.left)
 
 theorem gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract
