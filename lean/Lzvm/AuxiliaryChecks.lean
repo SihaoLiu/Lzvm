@@ -678,6 +678,15 @@ theorem witness_leaf_digest_checked_acceptance_verifier_core_contract
       checked
   exact sound_witness_implies_verifier_core_contract sound.right
 
+theorem gpu_canonical_leaf_checked_acceptance_projects_flag_clear
+    {system : VerifierModel}
+    (validation : GpuCanonicalLeafValidation system) :
+    forall publicInput proof,
+      GpuCanonicalLeafCheckedAcceptance system validation publicInput proof ->
+        validation.gpuCanonicalFlagClear publicInput proof := by
+  intro publicInput proof checked
+  exact checked.right
+
 theorem gpu_canonical_leaf_checked_acceptance_projects_leaf_bytes
     {system : VerifierModel}
     (validation : GpuCanonicalLeafValidation system) :
@@ -689,7 +698,11 @@ theorem gpu_canonical_leaf_checked_acceptance_projects_leaf_bytes
     validation.flagClearImpliesCanonicalExtendedLeafBytes
       publicInput
       proof
-      checked.right
+      (gpu_canonical_leaf_checked_acceptance_projects_flag_clear
+        validation
+        publicInput
+        proof
+        checked)
 
 theorem gpu_canonical_leaf_checked_acceptance_sound
     {system : VerifierModel}
