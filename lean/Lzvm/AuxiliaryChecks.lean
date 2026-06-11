@@ -133,6 +133,23 @@ structure GuestPcTraceTimingSummary where
   guestStageLeafDownloadWorkMilliseconds : Nat
   guestStageLeafValidateWorkMilliseconds : Nat
   guestStageLeafHashWorkMilliseconds : Nat
+  guestStageLeafHashRowCount : Nat
+  guestStageLeafHashByteCount : Nat
+  guestStageLeafHashArity2RowCount : Nat
+  guestStageLeafHashArity2ByteCount : Nat
+  guestStageLeafHashArity4RowCount : Nat
+  guestStageLeafHashArity4ByteCount : Nat
+  guestStageLeafCosetExtendCallCount : Nat
+  guestStageLeafCosetExtendOutputByteCount : Nat
+  guestStageLeafCosetExtendColumnCount : Nat
+  guestStageLeafCosetExtendMaxColumnCount : Nat
+  guestStageLeafCosetExtendNttLaunchCount : Nat
+  guestStageLeafCosetExtendBitReverseLaunchCount : Nat
+  guestStageLeafCosetExtendNttStageLaunchCount : Nat
+  guestStageLeafCosetExtendNttBlockTwiddleLaunchCount : Nat
+  guestStageLeafCosetExtendNormalizeLaunchCount : Nat
+  guestStageLeafCosetExtendPackLaunchCount : Nat
+  guestStageLeafCosetExtendUnpackLaunchCount : Nat
   guestStageTreeCommitWorkMilliseconds : Nat
   guestStageTreeCommitCheckpointWorkMilliseconds : Nat
   guestStageTreeCommitRootWorkMilliseconds : Nat

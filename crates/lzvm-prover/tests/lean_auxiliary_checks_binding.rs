@@ -173,6 +173,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestStageLeafDownloadWorkMilliseconds",
         "guestStageLeafValidateWorkMilliseconds",
         "guestStageLeafHashWorkMilliseconds",
+        "guestStageLeafHashRowCount",
+        "guestStageLeafHashByteCount",
+        "guestStageLeafHashArity2RowCount",
+        "guestStageLeafHashArity2ByteCount",
+        "guestStageLeafHashArity4RowCount",
+        "guestStageLeafHashArity4ByteCount",
+        "guestStageLeafCosetExtendCallCount",
+        "guestStageLeafCosetExtendOutputByteCount",
+        "guestStageLeafCosetExtendColumnCount",
+        "guestStageLeafCosetExtendMaxColumnCount",
+        "guestStageLeafCosetExtendNttLaunchCount",
+        "guestStageLeafCosetExtendBitReverseLaunchCount",
+        "guestStageLeafCosetExtendNttStageLaunchCount",
+        "guestStageLeafCosetExtendNttBlockTwiddleLaunchCount",
+        "guestStageLeafCosetExtendNormalizeLaunchCount",
+        "guestStageLeafCosetExtendPackLaunchCount",
+        "guestStageLeafCosetExtendUnpackLaunchCount",
         "guestStageTreeCommitWorkMilliseconds",
         "guestStageTreeCommitCheckpointWorkMilliseconds",
         "guestStageTreeCommitRootWorkMilliseconds",
@@ -357,6 +374,74 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_stage_leaf_setup_workspace_alloc_count\"",
             "guest_stage_leaf_setup_workspace_alloc_count()",
+        ),
+        (
+            "\"guest_stage_leaf_hash_rows\"",
+            "guest_stage_leaf_hash_row_count()",
+        ),
+        (
+            "\"guest_stage_leaf_hash_bytes\"",
+            "guest_stage_leaf_hash_byte_count()",
+        ),
+        (
+            "\"guest_stage_leaf_hash_arity2_rows\"",
+            "guest_stage_leaf_hash_arity2_row_count()",
+        ),
+        (
+            "\"guest_stage_leaf_hash_arity2_bytes\"",
+            "guest_stage_leaf_hash_arity2_byte_count()",
+        ),
+        (
+            "\"guest_stage_leaf_hash_arity4_rows\"",
+            "guest_stage_leaf_hash_arity4_row_count()",
+        ),
+        (
+            "\"guest_stage_leaf_hash_arity4_bytes\"",
+            "guest_stage_leaf_hash_arity4_byte_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_calls\"",
+            "guest_stage_leaf_coset_extend_call_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_output_bytes\"",
+            "guest_stage_leaf_coset_extend_output_byte_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_columns\"",
+            "guest_stage_leaf_coset_extend_column_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_max_columns\"",
+            "guest_stage_leaf_coset_extend_max_column_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_ntt_launches\"",
+            "guest_stage_leaf_coset_extend_ntt_launch_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_bit_reverse_launches\"",
+            "guest_stage_leaf_coset_extend_bit_reverse_launch_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_ntt_stage_launches\"",
+            "guest_stage_leaf_coset_extend_ntt_stage_launch_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_ntt_block_twiddle_launches\"",
+            "guest_stage_leaf_coset_extend_ntt_block_twiddle_launch_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_normalize_launches\"",
+            "guest_stage_leaf_coset_extend_normalize_launch_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_pack_launches\"",
+            "guest_stage_leaf_coset_extend_pack_launch_count()",
+        ),
+        (
+            "\"guest_stage_leaf_coset_extend_unpack_launches\"",
+            "guest_stage_leaf_coset_extend_unpack_launch_count()",
         ),
         (
             "\"guest_stage_source_retention_attempts\"",
