@@ -109,7 +109,7 @@ fn zisk_main_device_descriptor_uses_compact_words_when_values_fit() {
     let mut descriptors = ZiskMainDeviceTraceDescriptors::new(2, 39, 0x2000);
     let values = zisk_main_descriptor_trace_values(0x1000, 5, 6, 21, 22, 23, 24, 7);
 
-    append_zisk_main_device_trace_descriptor(&mut descriptors, &values)
+    append_main_device_trace_descriptor(&mut descriptors, &values)
         .expect("descriptor row should append");
 
     assert_eq!(descriptors.descriptor_word_count(), 11);
@@ -121,7 +121,7 @@ fn zisk_main_device_descriptor_uses_compact_words_when_values_fit() {
 fn zisk_main_device_descriptor_falls_back_to_wide_words_when_values_do_not_fit() {
     let mut descriptors = ZiskMainDeviceTraceDescriptors::new(2, 39, 0x2000);
     let first = zisk_main_descriptor_trace_values(0x1000, 5, 6, 21, 22, 23, 24, 7);
-    append_zisk_main_device_trace_descriptor(&mut descriptors, &first)
+    append_main_device_trace_descriptor(&mut descriptors, &first)
         .expect("first compact descriptor row should append");
 
     let second = zisk_main_descriptor_trace_values(
@@ -134,7 +134,7 @@ fn zisk_main_device_descriptor_falls_back_to_wide_words_when_values_do_not_fit()
         24,
         7,
     );
-    append_zisk_main_device_trace_descriptor(&mut descriptors, &second)
+    append_main_device_trace_descriptor(&mut descriptors, &second)
         .expect("wide fallback descriptor row should append");
 
     assert_eq!(descriptors.descriptor_word_count(), 14);

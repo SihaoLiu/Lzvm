@@ -867,7 +867,7 @@ fn optional_trace_target_at(target: &Option<TraceColumnTarget<'_>>, trace_column
 }
 
 #[cfg(feature = "cuda")]
-fn append_zisk_main_device_trace_descriptor(
+fn append_main_device_trace_descriptor(
     descriptors: &mut ZiskMainDeviceTraceDescriptors,
     values: &ZiskMainReportTraceValues,
 ) -> Result<(), GuestPcTraceBackendError> {
@@ -3929,13 +3929,16 @@ fn build_layout_zisk_main_trace_segment_device_material(
                         record_trace_lowered_row_shape(timing, &values.instruction);
                     }
                 }
-                let _descriptor_timer = DurationTimer::new(
-                    visit_timing
-                        .as_deref_mut()
-                        .filter(|_| detail_timing)
-                        .map(|timing| &mut timing.trace_descriptor_duration),
-                );
-                append_zisk_main_device_trace_descriptor(&mut device_trace_descriptors, &values)
+                if detail_timing {
+                    let _descriptor_timer = DurationTimer::new(
+                        visit_timing
+                            .as_deref_mut()
+                            .map(|timing| &mut timing.trace_descriptor_duration),
+                    );
+                    append_main_device_trace_descriptor(&mut device_trace_descriptors, &values)
+                } else {
+                    append_main_device_trace_descriptor(&mut device_trace_descriptors, &values)
+                }
             },
         )?;
         if let Some(timing) = timing.as_deref_mut() {
@@ -4380,7 +4383,7 @@ fn write_zisk_main_report_columns(
                         .filter(|_| _detail_timing)
                         .map(|timing| &mut timing.trace_descriptor_duration),
                 );
-                append_zisk_main_device_trace_descriptor(descriptors, &values)?;
+                append_main_device_trace_descriptor(descriptors, &values)?;
             }
             if shape_timing {
                 if let Some(timing) = visit_timing.as_deref_mut() {

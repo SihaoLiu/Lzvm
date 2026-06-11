@@ -1209,7 +1209,7 @@ fn guest_pc_trace_segments_build_device_trace_from_compact_descriptors() {
         "guest PC trace lowering should expose compact CUDA trace descriptors"
     );
     assert!(
-        backend_source.contains("append_zisk_main_device_trace_descriptor"),
+        backend_source.contains("append_main_device_trace_descriptor"),
         "guest PC trace lowering should produce descriptors while applying each report"
     );
     assert!(
@@ -1244,7 +1244,7 @@ fn guest_pc_trace_device_descriptors_pack_kind_fields_into_control_word() {
     );
     let append_body = function_body(
         &backend_source,
-        "fn append_zisk_main_device_trace_descriptor",
+        "fn append_main_device_trace_descriptor",
         "fn zisk_main_device_trace_source_descriptor",
     );
     assert!(
@@ -1564,7 +1564,7 @@ fn guest_pc_trace_device_material_builder_does_not_construct_host_trace() {
         "device material should keep the same Zisk Main validation and state transition path"
     );
     assert!(
-        body.contains("append_zisk_main_device_trace_descriptor"),
+        body.contains("append_main_device_trace_descriptor"),
         "device material should build compact CUDA descriptors while validating reports"
     );
     assert!(
@@ -2359,7 +2359,7 @@ fn guest_pc_trace_device_descriptors_preallocate_rows_once() {
 
     let append_body = function_body(
         &backend_source,
-        "fn append_zisk_main_device_trace_descriptor",
+        "fn append_main_device_trace_descriptor",
         "fn zisk_main_device_trace_source_descriptor",
     );
     assert!(
@@ -3807,6 +3807,16 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
             && device_material_body.contains("timing.as_deref_mut()")
             && device_material_body.contains("} else {\n            None\n        };"),
         "guest PC device material lowerer should gate per-row timing before validation"
+    );
+    let descriptor_timer_index = device_material_body
+        .find("let _descriptor_timer = DurationTimer::new")
+        .expect("guest PC device material lowerer should retain descriptor detail timing");
+    let descriptor_detail_branch_index = device_material_body[..descriptor_timer_index]
+        .rfind("if detail_timing {")
+        .expect("guest PC device material lowerer should branch before descriptor timing");
+    assert!(
+        descriptor_detail_branch_index < descriptor_timer_index,
+        "guest PC device material lowerer should not construct descriptor timers when detail timing is disabled"
     );
     assert!(
         device_material_body.contains("guest_report_next_instruction"),
