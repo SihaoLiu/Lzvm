@@ -3799,6 +3799,16 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest PC lower shape timing should be explicitly gated"
     );
     assert!(
+        device_material_body.contains("let row_timing_enabled = detail_timing || shape_timing;"),
+        "guest PC device material lowerer should skip per-row timing plumbing unless row timing is enabled"
+    );
+    assert!(
+        device_material_body.contains("let row_timing = if row_timing_enabled")
+            && device_material_body.contains("timing.as_deref_mut()")
+            && device_material_body.contains("} else {\n            None\n        };"),
+        "guest PC device material lowerer should gate per-row timing before validation"
+    );
+    assert!(
         device_material_body.contains("guest_report_next_instruction"),
         "guest PC device material lowerer should use lazy next-instruction lookup"
     );

@@ -3885,6 +3885,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
     let mut output_row = 0_usize;
     let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
     let shape_timing = guest_pc_trace_shape_timing_enabled();
+    let row_timing_enabled = detail_timing || shape_timing;
     for (report_index, report) in reports.iter().enumerate() {
         let report_started = timing
             .as_ref()
@@ -3892,6 +3893,11 @@ fn build_layout_zisk_main_trace_segment_device_material(
             .map(|_| Instant::now());
         let descriptor_rows_before = device_trace_descriptors.descriptor_rows();
         let pending_report = state.pending_dma.is_some();
+        let row_timing = if row_timing_enabled {
+            timing.as_deref_mut()
+        } else {
+            None
+        };
         let written_rows = validate_and_apply_zisk_main_report(
             output_row,
             report,
@@ -3902,7 +3908,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
                 row_count: layout.row_count(),
                 segment,
             },
-            timing.as_deref_mut(),
+            row_timing,
             detail_timing,
             |_, values, mut visit_timing| {
                 if shape_timing {
