@@ -2601,6 +2601,43 @@ theorem runtime_performance_observation_projects_cuda_backend
   intro publicInput proof observed
   exact observed
 
+theorem runtime_performance_observation_cuda_backend_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    cuda_backend_acceptance_sound
+      assumptions
+      summary.cudaBackend
+      publicInput
+      proof
+      (runtime_performance_observation_projects_cuda_backend
+        summary
+        publicInput
+        proof
+        observed)
+
+theorem runtime_performance_observation_cuda_backend_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (runtime_performance_observation_cuda_backend_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
 theorem runtime_performance_observation_projects_cuda_allocator_timing
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
