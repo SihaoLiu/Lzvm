@@ -1187,6 +1187,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_setup_checked_acceptance_projects_constants_sound",
             "gpu_setup_checked_acceptance_sound",
             "gpu_setup_checked_acceptance_verifier_core_contract",
+            "gpu_allocation_checked_acceptance_projects_written_contents",
             "gpu_allocation_checked_acceptance_sound",
             "gpu_allocation_checked_acceptance_verifier_core_contract",
             "gpu_host_device_copy_round_trip_implies_written_contents",

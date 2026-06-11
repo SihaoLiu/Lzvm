@@ -72,6 +72,16 @@ theorem gpu_allocation_cache_reuse_preserves_written_contents
       sameRequest
       freshBound
 
+theorem gpu_allocation_checked_acceptance_projects_written_contents
+    {system : VerifierModel}
+    (validation : GpuAllocationCacheValidation)
+    (allocation : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuAllocationCheckedAcceptance system validation allocation publicInput proof ->
+        validation.writtenContentsBound allocation publicInput proof := by
+  intro publicInput proof checked
+  exact checked.right
+
 theorem gpu_allocation_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
