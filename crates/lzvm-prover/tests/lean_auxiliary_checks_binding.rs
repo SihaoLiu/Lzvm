@@ -117,6 +117,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestTraceReportVisitMilliseconds",
         "guestTraceReportCount",
         "guestTraceReportRowCount",
+        "guestTraceExternalOpRowCount",
+        "guestTraceCopyRowCount",
+        "guestTraceFlagRowCount",
+        "guestTracePrecompileRowCount",
+        "guestTraceIndirectMemoryRowCount",
         "guestTraceRegisterSourceReadCount",
         "guestTraceMemorySourceReadCount",
         "guestTraceRegisterStoreRowCount",
@@ -189,6 +194,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_trace_report_rows\"",
             "guest_trace_report_row_count()",
+        ),
+        (
+            "\"guest_trace_external_op_rows\"",
+            "guest_trace_external_op_row_count()",
+        ),
+        ("\"guest_trace_copy_rows\"", "guest_trace_copy_row_count()"),
+        ("\"guest_trace_flag_rows\"", "guest_trace_flag_row_count()"),
+        (
+            "\"guest_trace_precompile_rows\"",
+            "guest_trace_precompile_row_count()",
+        ),
+        (
+            "\"guest_trace_indirect_memory_rows\"",
+            "guest_trace_indirect_memory_row_count()",
         ),
         (
             "\"guest_trace_register_source_reads\"",

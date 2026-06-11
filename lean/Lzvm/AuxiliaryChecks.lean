@@ -73,6 +73,11 @@ structure GuestPcTraceTimingSummary where
   guestTraceReportVisitMilliseconds : Nat
   guestTraceReportCount : Nat
   guestTraceReportRowCount : Nat
+  guestTraceExternalOpRowCount : Nat
+  guestTraceCopyRowCount : Nat
+  guestTraceFlagRowCount : Nat
+  guestTracePrecompileRowCount : Nat
+  guestTraceIndirectMemoryRowCount : Nat
   guestTraceRegisterSourceReadCount : Nat
   guestTraceMemorySourceReadCount : Nat
   guestTraceRegisterStoreRowCount : Nat
