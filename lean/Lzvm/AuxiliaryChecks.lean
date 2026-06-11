@@ -1043,6 +1043,118 @@ theorem guest_pc_trace_report_timing_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem guest_pc_trace_shape_counts_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (singleRowReports multiRowReports pendingDmaReports amoReports
+      storeConditionalReports externalOpRows copyRows flagRows precompileRows
+      indirectMemoryRows registerSourceReads memorySourceReads registerStoreRows
+      memoryStoreRows noStoreRows : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceSingleRowReportCount := singleRowReports
+            guestTraceMultiRowReportCount := multiRowReports
+            guestTracePendingDmaReportCount := pendingDmaReports
+            guestTraceAmoReportCount := amoReports
+            guestTraceStoreConditionalReportCount := storeConditionalReports
+            guestTraceExternalOpRowCount := externalOpRows
+            guestTraceCopyRowCount := copyRows
+            guestTraceFlagRowCount := flagRows
+            guestTracePrecompileRowCount := precompileRows
+            guestTraceIndirectMemoryRowCount := indirectMemoryRows
+            guestTraceRegisterSourceReadCount := registerSourceReads
+            guestTraceMemorySourceReadCount := memorySourceReads
+            guestTraceRegisterStoreRowCount := registerStoreRows
+            guestTraceMemoryStoreRowCount := memoryStoreRows
+            guestTraceNoStoreRowCount := noStoreRows })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          guestTraceSingleRowReportCount := singleRowReports
+          guestTraceMultiRowReportCount := multiRowReports
+          guestTracePendingDmaReportCount := pendingDmaReports
+          guestTraceAmoReportCount := amoReports
+          guestTraceStoreConditionalReportCount := storeConditionalReports
+          guestTraceExternalOpRowCount := externalOpRows
+          guestTraceCopyRowCount := copyRows
+          guestTraceFlagRowCount := flagRows
+          guestTracePrecompileRowCount := precompileRows
+          guestTraceIndirectMemoryRowCount := indirectMemoryRows
+          guestTraceRegisterSourceReadCount := registerSourceReads
+          guestTraceMemorySourceReadCount := memorySourceReads
+          guestTraceRegisterStoreRowCount := registerStoreRows
+          guestTraceMemoryStoreRowCount := memoryStoreRows
+          guestTraceNoStoreRowCount := noStoreRows })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_shape_counts_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (singleRowReports multiRowReports pendingDmaReports amoReports
+      storeConditionalReports externalOpRows copyRows flagRows precompileRows
+      indirectMemoryRows registerSourceReads memorySourceReads registerStoreRows
+      memoryStoreRows noStoreRows : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceSingleRowReportCount := singleRowReports
+            guestTraceMultiRowReportCount := multiRowReports
+            guestTracePendingDmaReportCount := pendingDmaReports
+            guestTraceAmoReportCount := amoReports
+            guestTraceStoreConditionalReportCount := storeConditionalReports
+            guestTraceExternalOpRowCount := externalOpRows
+            guestTraceCopyRowCount := copyRows
+            guestTraceFlagRowCount := flagRows
+            guestTracePrecompileRowCount := precompileRows
+            guestTraceIndirectMemoryRowCount := indirectMemoryRows
+            guestTraceRegisterSourceReadCount := registerSourceReads
+            guestTraceMemorySourceReadCount := memorySourceReads
+            guestTraceRegisterStoreRowCount := registerStoreRows
+            guestTraceMemoryStoreRowCount := memoryStoreRows
+            guestTraceNoStoreRowCount := noStoreRows })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (guest_pc_trace_shape_counts_acceptance_sound
+        assumptions
+        summary
+        singleRowReports
+        multiRowReports
+        pendingDmaReports
+        amoReports
+        storeConditionalReports
+        externalOpRows
+        copyRows
+        flagRows
+        precompileRows
+        indirectMemoryRows
+        registerSourceReads
+        memorySourceReads
+        registerStoreRows
+        memoryStoreRows
+        noStoreRows
+        publicInput
+        proof
+        observed)
+
 theorem guest_pc_trace_report_buffer_capacity_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
