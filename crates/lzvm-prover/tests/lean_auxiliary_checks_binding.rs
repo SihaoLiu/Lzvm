@@ -130,6 +130,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean temporary buffer reuse soundness should reuse checked-acceptance projectors"
     );
     assert!(
+        lean_source.contains(
+            "fri_fixed_column_cache_checked_acceptance_projects_request_bound\n        validation\n        cached\n        fresh\n        publicInput\n        proof\n        checked"
+        ) && lean_source.contains(
+            "fri_fixed_column_cache_checked_acceptance_projects_fresh_contents_bound\n        validation\n        cached\n        fresh\n        publicInput\n        proof\n        checked"
+        ),
+        "Lean fixed-column cache cached-contents projector should reuse checked-acceptance projectors"
+    );
+    assert!(
         lean_source.contains("guestTraceDescriptorCompactRowCount")
             && lean_source.contains("guestTraceDescriptorWideRowCount"),
         "Lean guest PC timing summary should expose descriptor width row counts"
