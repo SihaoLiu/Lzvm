@@ -1167,6 +1167,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_constant_material_timing_acceptance_sound",
             "runtime_performance_observation_constant_material_timing_acceptance_verifier_core_contract",
             "runtime_performance_observation_projects_prover_gpu_mode",
+            "runtime_performance_observation_prover_gpu_mode_acceptance_sound",
+            "runtime_performance_observation_prover_gpu_mode_acceptance_verifier_core_contract",
             "runtime_performance_observation_projects_gpu_run_options",
             "runtime_performance_observation_projects_cuda_backend",
             "runtime_performance_observation_projects_cuda_allocator_timing",

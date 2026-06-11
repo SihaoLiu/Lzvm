@@ -2501,6 +2501,43 @@ theorem runtime_performance_observation_projects_prover_gpu_mode
   intro publicInput proof observed
   exact observed
 
+theorem runtime_performance_observation_prover_gpu_mode_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    prover_gpu_mode_acceptance_sound
+      assumptions
+      summary.proverGpuMode
+      publicInput
+      proof
+      (runtime_performance_observation_projects_prover_gpu_mode
+        summary
+        publicInput
+        proof
+        observed)
+
+theorem runtime_performance_observation_prover_gpu_mode_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (runtime_performance_observation_prover_gpu_mode_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
 theorem runtime_performance_observation_projects_gpu_run_options
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
