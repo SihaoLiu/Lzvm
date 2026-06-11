@@ -7,8 +7,12 @@ mod lean_binding;
 fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks.lean");
-    let lean_source =
+    let auxiliary_source =
         std::fs::read_to_string(&lean_path).expect("Lean auxiliary checks should read");
+    let gpu_runtime_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean");
+    let gpu_runtime_source =
+        std::fs::read_to_string(&gpu_runtime_path).expect("Lean GPU runtime checks should read");
+    let lean_source = format!("{auxiliary_source}\n{gpu_runtime_source}");
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
@@ -50,7 +54,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         std::fs::read_to_string(&witness_values_path).expect("witness values source should read");
 
     assert!(
-        top_level_source.contains("import Lzvm.AuxiliaryChecks"),
+        top_level_source.contains("import Lzvm.AuxiliaryChecks")
+            && top_level_source.contains("import Lzvm.AuxiliaryChecks.GpuRuntime"),
         "top-level Lean module should import auxiliary checks"
     );
     assert!(
@@ -81,6 +86,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuHostDeviceCopyRoundTripCheckedAcceptance")
             && lean_source.contains("GpuTemporaryBufferReuseValidation")
             && lean_source.contains("GpuTemporaryBufferReuseCheckedAcceptance")
+            && lean_source.contains("GpuLeafOutputBufferReuseValidation")
+            && lean_source.contains("GpuLeafOutputBufferReuseCheckedAcceptance")
             && lean_source.contains("GpuAllocatorNoWaitBypassValidation")
             && lean_source.contains("GpuAllocatorNoWaitBypassCheckedAcceptance")
             && lean_source.contains("GpuRetainedDeviceCacheBudgetValidation")
@@ -132,6 +139,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("temporaryBufferReuseImpliesSameRequest")
             && lean_source.contains("temporaryBufferReuseImpliesPendingReadsComplete"),
         "Lean auxiliary checks should bind temporary GPU buffer reuse to same requests and completed pending reads"
+    );
+    assert!(
+        lean_source.contains("leafOutputBufferFullyOverwritten")
+            && lean_source.contains("leafOutputBufferReuseImpliesCanonicalLeafBytes")
+            && source_hot_paths.contains("source_device_leaf_extension_reuses_only_narrow_output_cache")
+            && source_hot_paths.contains("should_cache_leaf_output(view.column_count)"),
+        "Lean auxiliary checks should bind leaf output buffer reuse to fully overwritten canonical leaf bytes"
     );
     assert!(
         lean_source.contains("noWaitBypassAllowed")
@@ -1099,6 +1113,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_temporary_buffer_reuse_implies_pending_reads_complete",
             "gpu_temporary_buffer_reuse_checked_acceptance_sound",
             "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
+            "gpu_leaf_output_buffer_reuse_implies_canonical_leaf_bytes",
+            "gpu_leaf_output_buffer_reuse_checked_acceptance_sound",
+            "gpu_leaf_output_buffer_reuse_checked_acceptance_verifier_core_contract",
             "gpu_allocator_no_wait_bypass_implies_same_request",
             "gpu_allocator_no_wait_bypass_implies_pending_not_reused",
             "gpu_allocator_no_wait_bypass_implies_fresh_allocation",
