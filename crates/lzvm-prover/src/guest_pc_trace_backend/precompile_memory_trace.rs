@@ -57,7 +57,9 @@ pub(super) fn write_layout_precompile_memory_trace(
                 row_count: usize::MAX,
                 segment,
             },
-            |_, _| Ok(()),
+            None,
+            false,
+            |_, _, _| Ok(()),
         )?;
         for access in &report.precompile_memory_accesses {
             write_precompile_memory_access(

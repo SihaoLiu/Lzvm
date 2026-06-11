@@ -194,6 +194,9 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_pending_dma_report_duration: Duration,
     trace_amo_report_duration: Duration,
     trace_store_conditional_report_duration: Duration,
+    trace_report_lowering_duration: Duration,
+    trace_report_row_validation_duration: Duration,
+    trace_report_visit_duration: Duration,
     trace_emit_duration: Duration,
     trace_descriptor_duration: Duration,
     pending_send_wait_duration: Duration,
@@ -227,6 +230,9 @@ impl GuestPcTraceStreamTiming {
         self.trace_amo_report_duration += other.trace_amo_report_duration;
         self.trace_store_conditional_report_duration +=
             other.trace_store_conditional_report_duration;
+        self.trace_report_lowering_duration += other.trace_report_lowering_duration;
+        self.trace_report_row_validation_duration += other.trace_report_row_validation_duration;
+        self.trace_report_visit_duration += other.trace_report_visit_duration;
         self.trace_emit_duration += other.trace_emit_duration;
         self.trace_descriptor_duration += other.trace_descriptor_duration;
         self.pending_send_wait_duration += other.pending_send_wait_duration;
@@ -282,6 +288,18 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_store_conditional_report_duration(&self) -> Duration {
         self.trace_store_conditional_report_duration
+    }
+
+    pub fn trace_report_lowering_duration(&self) -> Duration {
+        self.trace_report_lowering_duration
+    }
+
+    pub fn trace_report_row_validation_duration(&self) -> Duration {
+        self.trace_report_row_validation_duration
+    }
+
+    pub fn trace_report_visit_duration(&self) -> Duration {
+        self.trace_report_visit_duration
     }
 
     pub fn trace_emit_duration(&self) -> Duration {
@@ -378,6 +396,35 @@ impl Drop for DurationTimer<'_> {
         if let (Some(target), Some(started)) = (self.target.as_deref_mut(), self.started) {
             *target += started.elapsed();
         }
+    }
+}
+
+fn reborrow_trace_timing<'a>(
+    timing: &'a mut Option<&mut GuestPcTraceStreamTiming>,
+) -> Option<&'a mut GuestPcTraceStreamTiming> {
+    match timing {
+        Some(timing) => Some(&mut **timing),
+        None => None,
+    }
+}
+
+fn detail_duration_started(
+    timing: &Option<&mut GuestPcTraceStreamTiming>,
+    detail_timing: bool,
+) -> Option<Instant> {
+    timing
+        .as_ref()
+        .filter(|_| detail_timing)
+        .map(|_| Instant::now())
+}
+
+fn record_detail_duration(
+    started: Option<Instant>,
+    timing: &mut Option<&mut GuestPcTraceStreamTiming>,
+    target: fn(&mut GuestPcTraceStreamTiming) -> &mut Duration,
+) {
+    if let (Some(started), Some(timing)) = (started, timing.as_mut()) {
+        *target(timing) += started.elapsed();
     }
 }
 
@@ -2614,22 +2661,42 @@ struct ZiskMainRegisterAccessUpdate {
     next_mem_steps: RegisterMemStepUpdates,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_and_apply_zisk_main_report(
     row: usize,
     report: &GuestMachineReport,
     mut next_instruction: impl FnMut() -> Option<RiscvInstruction>,
     state: &mut ZiskMainTraceState,
     context: ZiskMainReportValidationContext<'_>,
-    mut visit: impl FnMut(usize, ZiskMainReportTraceValues) -> Result<(), GuestPcTraceBackendError>,
+    mut timing: Option<&mut GuestPcTraceStreamTiming>,
+    detail_timing: bool,
+    mut visit: impl FnMut(
+        usize,
+        ZiskMainReportTraceValues,
+        Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<usize, GuestPcTraceBackendError> {
     if let Some(pending) = state.pending_dma {
         validate_zisk_main_report_row_capacity(row, 1, context.row_count)?;
+        let lowering_started = detail_duration_started(&timing, detail_timing);
         let lowered_row = ZiskMainLoweredReportRow {
             instruction: lower_pending_dma_report(row, report, pending)?,
             effects: ZiskMainReportEffects::from_report(report),
             expected_next_pc: report.next_pc,
         };
-        apply_zisk_main_lowered_report_row(row, report, lowered_row, state, context, &mut visit)?;
+        record_detail_duration(lowering_started, &mut timing, |timing| {
+            &mut timing.trace_report_lowering_duration
+        });
+        apply_zisk_main_lowered_report_row(
+            row,
+            report,
+            lowered_row,
+            state,
+            context,
+            timing,
+            detail_timing,
+            &mut visit,
+        )?;
         state.pending_dma = None;
         return Ok(1);
     }
@@ -2642,9 +2709,20 @@ fn validate_and_apply_zisk_main_report(
         ..
     } = report.instruction
     {
+        let lowering_started = detail_duration_started(&timing, detail_timing);
         let lowered = lower_store_conditional_report_rows(row, report, width, rd, rs1, rs2)?;
+        record_detail_duration(lowering_started, &mut timing, |timing| {
+            &mut timing.trace_report_lowering_duration
+        });
         let produced_rows = validate_and_apply_zisk_main_lowered_report_rows(
-            row, report, lowered, state, context, visit,
+            row,
+            report,
+            lowered,
+            state,
+            context,
+            timing,
+            detail_timing,
+            visit,
         )?;
         state.pending_dma = zisk_main_pending_dma(report);
         return Ok(produced_rows);
@@ -2659,28 +2737,59 @@ fn validate_and_apply_zisk_main_report(
         ..
     } = report.instruction
     {
+        let lowering_started = detail_duration_started(&timing, detail_timing);
         let lowered = lower_amo_report_rows(row, report, kind, width, rd, rs1, rs2)?;
+        record_detail_duration(lowering_started, &mut timing, |timing| {
+            &mut timing.trace_report_lowering_duration
+        });
         let produced_rows = validate_and_apply_zisk_main_lowered_report_rows(
-            row, report, lowered, state, context, visit,
+            row,
+            report,
+            lowered,
+            state,
+            context,
+            timing,
+            detail_timing,
+            visit,
         )?;
         state.pending_dma = zisk_main_pending_dma(report);
         return Ok(produced_rows);
     }
 
     validate_zisk_main_report_row_capacity(row, 1, context.row_count)?;
+    let lowering_started = detail_duration_started(&timing, detail_timing);
     let lowered_row = lower_single_zisk_main_report_row(row, report, &mut next_instruction)?;
-    apply_zisk_main_lowered_report_row(row, report, lowered_row, state, context, &mut visit)?;
+    record_detail_duration(lowering_started, &mut timing, |timing| {
+        &mut timing.trace_report_lowering_duration
+    });
+    apply_zisk_main_lowered_report_row(
+        row,
+        report,
+        lowered_row,
+        state,
+        context,
+        timing,
+        detail_timing,
+        &mut visit,
+    )?;
     state.pending_dma = zisk_main_pending_dma(report);
     Ok(1)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_and_apply_zisk_main_lowered_report_rows(
     row: usize,
     report: &GuestMachineReport,
     lowered: Vec<ZiskMainLoweredReportRow<'_>>,
     state: &mut ZiskMainTraceState,
     context: ZiskMainReportValidationContext<'_>,
-    mut visit: impl FnMut(usize, ZiskMainReportTraceValues) -> Result<(), GuestPcTraceBackendError>,
+    mut timing: Option<&mut GuestPcTraceStreamTiming>,
+    detail_timing: bool,
+    mut visit: impl FnMut(
+        usize,
+        ZiskMainReportTraceValues,
+        Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<usize, GuestPcTraceBackendError> {
     let exclusive_end = row.checked_add(lowered.len()).ok_or_else(|| {
         GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -2705,6 +2814,8 @@ fn validate_and_apply_zisk_main_lowered_report_rows(
             lowered_row,
             state,
             context,
+            reborrow_trace_timing(&mut timing),
+            detail_timing,
             &mut visit,
         )?;
     }
@@ -2729,14 +2840,22 @@ fn validate_zisk_main_report_row_capacity(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_zisk_main_lowered_report_row(
     output_row: usize,
     report: &GuestMachineReport,
     lowered_row: ZiskMainLoweredReportRow<'_>,
     state: &mut ZiskMainTraceState,
     context: ZiskMainReportValidationContext<'_>,
-    visit: &mut impl FnMut(usize, ZiskMainReportTraceValues) -> Result<(), GuestPcTraceBackendError>,
+    mut timing: Option<&mut GuestPcTraceStreamTiming>,
+    detail_timing: bool,
+    visit: &mut impl FnMut(
+        usize,
+        ZiskMainReportTraceValues,
+        Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<(), GuestPcTraceBackendError> {
+    let validation_started = detail_duration_started(&timing, detail_timing);
     let instruction = lowered_row.instruction;
     if let Some(columns) = context.columns {
         validate_zisk_main_memory_columns(output_row, &instruction, columns)?;
@@ -2796,17 +2915,23 @@ fn apply_zisk_main_lowered_report_row(
     register_accesses
         .next_mem_steps
         .apply(&mut state.register_mem_steps);
-    visit(
-        output_row,
-        ZiskMainReportTraceValues {
-            instruction,
-            a,
-            b,
-            c,
-            flag,
-            register_accesses: register_accesses.values,
-        },
-    )
+    record_detail_duration(validation_started, &mut timing, |timing| {
+        &mut timing.trace_report_row_validation_duration
+    });
+    let values = ZiskMainReportTraceValues {
+        instruction,
+        a,
+        b,
+        c,
+        flag,
+        register_accesses: register_accesses.values,
+    };
+    let visit_started = detail_duration_started(&timing, detail_timing);
+    let result = visit(output_row, values, timing.as_deref_mut());
+    record_detail_duration(visit_started, &mut timing, |timing| {
+        &mut timing.trace_report_visit_duration
+    });
+    result
 }
 
 fn record_trace_report_shape(
@@ -3650,14 +3775,16 @@ fn build_layout_zisk_main_trace_segment_device_material(
                 row_count: layout.row_count(),
                 segment,
             },
-            |_, values| {
+            timing.as_deref_mut(),
+            detail_timing,
+            |_, values, mut visit_timing| {
                 if shape_timing {
-                    if let Some(timing) = timing.as_deref_mut() {
+                    if let Some(timing) = visit_timing.as_deref_mut() {
                         record_trace_lowered_row_shape(timing, &values.instruction);
                     }
                 }
                 let _descriptor_timer = DurationTimer::new(
-                    timing
+                    visit_timing
                         .as_deref_mut()
                         .filter(|_| detail_timing)
                         .map(|timing| &mut timing.trace_descriptor_duration),
@@ -4090,11 +4217,13 @@ fn write_zisk_main_report_columns(
             row_count,
             segment,
         },
-        |output_row, values| {
+        reborrow_trace_timing(&mut timing),
+        _detail_timing,
+        |output_row, values, mut visit_timing| {
             #[cfg(feature = "cuda")]
             if let Some(descriptors) = device_trace_descriptors.as_mut() {
                 let _descriptor_timer = DurationTimer::new(
-                    timing
+                    visit_timing
                         .as_deref_mut()
                         .filter(|_| _detail_timing)
                         .map(|timing| &mut timing.trace_descriptor_duration),
@@ -4102,12 +4231,12 @@ fn write_zisk_main_report_columns(
                 append_zisk_main_device_trace_descriptor(descriptors, &values)?;
             }
             if shape_timing {
-                if let Some(timing) = timing.as_deref_mut() {
+                if let Some(timing) = visit_timing.as_deref_mut() {
                     record_trace_lowered_row_shape(timing, &values.instruction);
                 }
             }
             let _emit_timer = DurationTimer::new(
-                timing
+                visit_timing
                     .as_deref_mut()
                     .map(|timing| &mut timing.trace_emit_duration),
             );

@@ -91,6 +91,18 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_store_conditional_report_lower",
         timing.guest_trace_store_conditional_report_duration(),
     );
+    timings.record(
+        "guest_trace_report_lowering",
+        timing.guest_trace_report_lowering_duration(),
+    );
+    timings.record(
+        "guest_trace_report_row_validation",
+        timing.guest_trace_report_row_validation_duration(),
+    );
+    timings.record(
+        "guest_trace_report_visit",
+        timing.guest_trace_report_visit_duration(),
+    );
     timings.record("guest_trace_emit", timing.guest_trace_emit_duration());
     timings.record(
         "guest_trace_descriptor",

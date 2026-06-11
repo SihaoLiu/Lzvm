@@ -3721,6 +3721,9 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "trace_pending_dma_report_duration",
         "trace_amo_report_duration",
         "trace_store_conditional_report_duration",
+        "trace_report_lowering_duration",
+        "trace_report_row_validation_duration",
+        "trace_report_visit_duration",
         "trace_emit_duration",
         "trace_descriptor_duration",
         "trace_report_count",
@@ -3803,6 +3806,30 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest PC precompile memory lowerer should not fetch the next instruction for every report"
     );
 
+    let validate_start = concat!("fn validate_and_apply_", "zi", "sk", "_main_report");
+    let validate_end = concat!(
+        "fn validate_and_apply_",
+        "zi",
+        "sk",
+        "_main_lowered_report_rows"
+    );
+    let validate_body = function_body(&backend_source, validate_start, validate_end);
+    assert!(
+        validate_body.contains("trace_report_lowering_duration")
+            && validate_body.contains("record_detail_duration")
+            && validate_body.contains("detail_timing"),
+        "guest PC report lowering detail timing should be gated at the shared validation path"
+    );
+    let apply_start = concat!("fn apply_", "zi", "sk", "_main_lowered_report_row");
+    let apply_body = function_body(&backend_source, apply_start, "fn record_trace_report_shape");
+    assert!(
+        apply_body.contains("trace_report_row_validation_duration")
+            && apply_body.contains("trace_report_visit_duration")
+            && apply_body.contains("record_detail_duration")
+            && apply_body.contains("detail_timing"),
+        "guest PC report row validation and visit timing should be gated at the shared row path"
+    );
+
     for field in [
         "guest_trace_report_duration",
         "guest_trace_report_validation_duration",
@@ -3811,6 +3838,9 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest_trace_pending_dma_report_duration",
         "guest_trace_amo_report_duration",
         "guest_trace_store_conditional_report_duration",
+        "guest_trace_report_lowering_duration",
+        "guest_trace_report_row_validation_duration",
+        "guest_trace_report_visit_duration",
         "guest_trace_emit_duration",
         "guest_trace_descriptor_duration",
         "guest_trace_report_count",
@@ -3841,6 +3871,9 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_pending_dma_report_lower\"",
         "\"guest_trace_amo_report_lower\"",
         "\"guest_trace_store_conditional_report_lower\"",
+        "\"guest_trace_report_lowering\"",
+        "\"guest_trace_report_row_validation\"",
+        "\"guest_trace_report_visit\"",
         "\"guest_trace_emit\"",
         "\"guest_trace_descriptor\"",
         "\"guest_trace_reports\"",
