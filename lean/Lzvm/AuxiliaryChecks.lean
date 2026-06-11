@@ -2094,6 +2094,15 @@ def GpuRunOptionsObservedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
 
+theorem gpu_run_options_observed_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (summary : Option GpuRunOptionsSummary) :
+    forall publicInput proof,
+      GpuRunOptionsObservedAcceptance system summary publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof observed
+  exact observed
+
 theorem gpu_run_options_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -2102,7 +2111,16 @@ theorem gpu_run_options_acceptance_sound
       GpuRunOptionsObservedAcceptance system summary publicInput proof ->
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithGpuRunOptions
-  exact abstract_verifier_sound assumptions publicInput proof acceptedWithGpuRunOptions
+  exact
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      (gpu_run_options_observed_acceptance_projects_verifier_acceptance
+        summary
+        publicInput
+        proof
+        acceptedWithGpuRunOptions)
 
 theorem gpu_run_options_acceptance_verifier_core_contract
     {system : VerifierModel}
