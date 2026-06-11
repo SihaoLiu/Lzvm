@@ -369,6 +369,11 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_flag_row_count: usize,
     guest_trace_precompile_row_count: usize,
     guest_trace_indirect_memory_row_count: usize,
+    guest_trace_register_source_read_count: usize,
+    guest_trace_memory_source_read_count: usize,
+    guest_trace_register_store_row_count: usize,
+    guest_trace_memory_store_row_count: usize,
+    guest_trace_no_store_row_count: usize,
     guest_device_source_build_duration: Duration,
     guest_device_source_descriptor_upload_duration: Duration,
     guest_device_source_descriptor_upload_byte_count: usize,
@@ -478,6 +483,12 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_flag_row_count: stream_timing.trace_flag_row_count(),
             guest_trace_precompile_row_count: stream_timing.trace_precompile_row_count(),
             guest_trace_indirect_memory_row_count: stream_timing.trace_indirect_memory_row_count(),
+            guest_trace_register_source_read_count: stream_timing
+                .trace_register_source_read_count(),
+            guest_trace_memory_source_read_count: stream_timing.trace_memory_source_read_count(),
+            guest_trace_register_store_row_count: stream_timing.trace_register_store_row_count(),
+            guest_trace_memory_store_row_count: stream_timing.trace_memory_store_row_count(),
+            guest_trace_no_store_row_count: stream_timing.trace_no_store_row_count(),
             guest_device_source_build_duration: trace_timing.device_source_build_duration,
             guest_device_source_descriptor_upload_duration: trace_timing
                 .device_source_descriptor_upload_duration,
@@ -712,6 +723,26 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_indirect_memory_row_count(&self) -> usize {
         self.guest_trace_indirect_memory_row_count
+    }
+
+    pub fn guest_trace_register_source_read_count(&self) -> usize {
+        self.guest_trace_register_source_read_count
+    }
+
+    pub fn guest_trace_memory_source_read_count(&self) -> usize {
+        self.guest_trace_memory_source_read_count
+    }
+
+    pub fn guest_trace_register_store_row_count(&self) -> usize {
+        self.guest_trace_register_store_row_count
+    }
+
+    pub fn guest_trace_memory_store_row_count(&self) -> usize {
+        self.guest_trace_memory_store_row_count
+    }
+
+    pub fn guest_trace_no_store_row_count(&self) -> usize {
+        self.guest_trace_no_store_row_count
     }
 
     pub fn guest_device_source_build_duration(&self) -> Duration {

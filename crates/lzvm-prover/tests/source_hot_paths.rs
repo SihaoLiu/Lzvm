@@ -3752,6 +3752,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "trace_flag_row_count",
         "trace_precompile_row_count",
         "trace_indirect_memory_row_count",
+        "trace_register_source_read_count",
+        "trace_memory_source_read_count",
+        "trace_register_store_row_count",
+        "trace_memory_store_row_count",
+        "trace_no_store_row_count",
     ] {
         assert!(
             backend_source.contains(field),
@@ -3842,6 +3847,27 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
             && apply_body.contains("detail_timing"),
         "guest PC report row validation and visit timing should be gated at the shared row path"
     );
+    let shape_body = function_body(
+        &backend_source,
+        "fn record_trace_lowered_row_shape",
+        "fn lower_single_",
+    );
+    for field in [
+        "trace_register_source_read_count",
+        "trace_memory_source_read_count",
+        "trace_register_store_row_count",
+        "trace_memory_store_row_count",
+        "trace_no_store_row_count",
+    ] {
+        assert!(
+            shape_body.contains(field),
+            "guest PC lowered row shape timing should classify {field}"
+        );
+    }
+    assert!(
+        shape_body.contains("source_shape_count"),
+        "guest PC lowered row shape timing should share source classification logic"
+    );
 
     for field in [
         "guest_trace_report_duration",
@@ -3869,6 +3895,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest_trace_flag_row_count",
         "guest_trace_precompile_row_count",
         "guest_trace_indirect_memory_row_count",
+        "guest_trace_register_source_read_count",
+        "guest_trace_memory_source_read_count",
+        "guest_trace_register_store_row_count",
+        "guest_trace_memory_store_row_count",
+        "guest_trace_no_store_row_count",
     ] {
         assert!(
             execution_source.contains(field),
@@ -3902,6 +3933,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_flag_rows\"",
         "\"guest_trace_precompile_rows\"",
         "\"guest_trace_indirect_memory_rows\"",
+        "\"guest_trace_register_source_reads\"",
+        "\"guest_trace_memory_source_reads\"",
+        "\"guest_trace_register_store_rows\"",
+        "\"guest_trace_memory_store_rows\"",
+        "\"guest_trace_no_store_rows\"",
     ] {
         assert!(
             cli_source.contains(line_name),

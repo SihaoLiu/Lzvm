@@ -216,6 +216,11 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_flag_row_count: usize,
     trace_precompile_row_count: usize,
     trace_indirect_memory_row_count: usize,
+    trace_register_source_read_count: usize,
+    trace_memory_source_read_count: usize,
+    trace_register_store_row_count: usize,
+    trace_memory_store_row_count: usize,
+    trace_no_store_row_count: usize,
 }
 
 impl GuestPcTraceStreamTiming {
@@ -252,6 +257,11 @@ impl GuestPcTraceStreamTiming {
         self.trace_flag_row_count += other.trace_flag_row_count;
         self.trace_precompile_row_count += other.trace_precompile_row_count;
         self.trace_indirect_memory_row_count += other.trace_indirect_memory_row_count;
+        self.trace_register_source_read_count += other.trace_register_source_read_count;
+        self.trace_memory_source_read_count += other.trace_memory_source_read_count;
+        self.trace_register_store_row_count += other.trace_register_store_row_count;
+        self.trace_memory_store_row_count += other.trace_memory_store_row_count;
+        self.trace_no_store_row_count += other.trace_no_store_row_count;
     }
 
     pub fn runner_duration(&self) -> Duration {
@@ -376,6 +386,26 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_indirect_memory_row_count(&self) -> usize {
         self.trace_indirect_memory_row_count
+    }
+
+    pub fn trace_register_source_read_count(&self) -> usize {
+        self.trace_register_source_read_count
+    }
+
+    pub fn trace_memory_source_read_count(&self) -> usize {
+        self.trace_memory_source_read_count
+    }
+
+    pub fn trace_register_store_row_count(&self) -> usize {
+        self.trace_register_store_row_count
+    }
+
+    pub fn trace_memory_store_row_count(&self) -> usize {
+        self.trace_memory_store_row_count
+    }
+
+    pub fn trace_no_store_row_count(&self) -> usize {
+        self.trace_no_store_row_count
     }
 }
 
@@ -2989,6 +3019,10 @@ fn record_trace_lowered_row_shape(
     timing: &mut GuestPcTraceStreamTiming,
     instruction: &ZiskMainInstruction,
 ) {
+    let (register_a_sources, memory_a_sources) = source_shape_count(instruction.a);
+    let (register_b_sources, memory_b_sources) = source_shape_count(instruction.b);
+    timing.trace_register_source_read_count += register_a_sources + register_b_sources;
+    timing.trace_memory_source_read_count += memory_a_sources + memory_b_sources;
     if instruction.is_external_op {
         timing.trace_external_op_row_count += 1;
     }
@@ -3004,6 +3038,21 @@ fn record_trace_lowered_row_shape(
         || matches!(instruction.store, ZiskMainStore::Indirect(_))
     {
         timing.trace_indirect_memory_row_count += 1;
+    }
+    match instruction.store {
+        ZiskMainStore::Register(_) => timing.trace_register_store_row_count += 1,
+        ZiskMainStore::Memory(_) | ZiskMainStore::Indirect(_) => {
+            timing.trace_memory_store_row_count += 1;
+        }
+        ZiskMainStore::None => timing.trace_no_store_row_count += 1,
+    }
+}
+
+fn source_shape_count(source: ZiskMainSource) -> (usize, usize) {
+    match source {
+        ZiskMainSource::Register(_) => (1, 0),
+        ZiskMainSource::Memory(_) | ZiskMainSource::Indirect(_) => (0, 1),
+        ZiskMainSource::LastC | ZiskMainSource::Immediate(_) => (0, 0),
     }
 }
 

@@ -151,6 +151,26 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_indirect_memory_rows",
         timing.guest_trace_indirect_memory_row_count(),
     );
+    timings.record_count(
+        "guest_trace_register_source_reads",
+        timing.guest_trace_register_source_read_count(),
+    );
+    timings.record_count(
+        "guest_trace_memory_source_reads",
+        timing.guest_trace_memory_source_read_count(),
+    );
+    timings.record_count(
+        "guest_trace_register_store_rows",
+        timing.guest_trace_register_store_row_count(),
+    );
+    timings.record_count(
+        "guest_trace_memory_store_rows",
+        timing.guest_trace_memory_store_row_count(),
+    );
+    timings.record_count(
+        "guest_trace_no_store_rows",
+        timing.guest_trace_no_store_row_count(),
+    );
     timings.record(
         "guest_trace_pending_send_wait",
         timing.guest_trace_pending_send_wait_duration(),
