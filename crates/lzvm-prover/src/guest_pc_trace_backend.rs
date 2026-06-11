@@ -196,6 +196,13 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_store_conditional_report_duration: Duration,
     trace_report_lowering_duration: Duration,
     trace_report_row_validation_duration: Duration,
+    trace_report_source_values_duration: Duration,
+    trace_report_precompile_memory_duration: Duration,
+    trace_report_instruction_result_duration: Duration,
+    trace_report_next_pc_duration: Duration,
+    trace_report_register_access_duration: Duration,
+    trace_report_memory_access_duration: Duration,
+    trace_report_store_apply_duration: Duration,
     trace_report_visit_duration: Duration,
     trace_emit_duration: Duration,
     trace_descriptor_duration: Duration,
@@ -237,6 +244,15 @@ impl GuestPcTraceStreamTiming {
             other.trace_store_conditional_report_duration;
         self.trace_report_lowering_duration += other.trace_report_lowering_duration;
         self.trace_report_row_validation_duration += other.trace_report_row_validation_duration;
+        self.trace_report_source_values_duration += other.trace_report_source_values_duration;
+        self.trace_report_precompile_memory_duration +=
+            other.trace_report_precompile_memory_duration;
+        self.trace_report_instruction_result_duration +=
+            other.trace_report_instruction_result_duration;
+        self.trace_report_next_pc_duration += other.trace_report_next_pc_duration;
+        self.trace_report_register_access_duration += other.trace_report_register_access_duration;
+        self.trace_report_memory_access_duration += other.trace_report_memory_access_duration;
+        self.trace_report_store_apply_duration += other.trace_report_store_apply_duration;
         self.trace_report_visit_duration += other.trace_report_visit_duration;
         self.trace_emit_duration += other.trace_emit_duration;
         self.trace_descriptor_duration += other.trace_descriptor_duration;
@@ -306,6 +322,34 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_row_validation_duration(&self) -> Duration {
         self.trace_report_row_validation_duration
+    }
+
+    pub fn trace_report_source_values_duration(&self) -> Duration {
+        self.trace_report_source_values_duration
+    }
+
+    pub fn trace_report_precompile_memory_duration(&self) -> Duration {
+        self.trace_report_precompile_memory_duration
+    }
+
+    pub fn trace_report_instruction_result_duration(&self) -> Duration {
+        self.trace_report_instruction_result_duration
+    }
+
+    pub fn trace_report_next_pc_duration(&self) -> Duration {
+        self.trace_report_next_pc_duration
+    }
+
+    pub fn trace_report_register_access_duration(&self) -> Duration {
+        self.trace_report_register_access_duration
+    }
+
+    pub fn trace_report_memory_access_duration(&self) -> Duration {
+        self.trace_report_memory_access_duration
+    }
+
+    pub fn trace_report_store_apply_duration(&self) -> Duration {
+        self.trace_report_store_apply_duration
     }
 
     pub fn trace_report_visit_duration(&self) -> Duration {
@@ -2890,6 +2934,7 @@ fn apply_zisk_main_lowered_report_row(
     if let Some(columns) = context.columns {
         validate_zisk_main_memory_columns(output_row, &instruction, columns)?;
     }
+    let source_values_started = detail_duration_started(&timing, detail_timing);
     let (a, a_access) = zisk_main_source_value(
         output_row,
         instruction.a,
@@ -2908,9 +2953,24 @@ fn apply_zisk_main_lowered_report_row(
         Some(a),
         instruction.ind_width,
     )?;
+    record_detail_duration(source_values_started, &mut timing, |timing| {
+        &mut timing.trace_report_source_values_duration
+    });
+
+    let precompile_memory_started = detail_duration_started(&timing, detail_timing);
     validate_zisk_main_precompile_memory_accesses(output_row, report, lowered_row.effects, b)?;
+    record_detail_duration(precompile_memory_started, &mut timing, |timing| {
+        &mut timing.trace_report_precompile_memory_duration
+    });
+
+    let instruction_result_started = detail_duration_started(&timing, detail_timing);
     let (c, flag) =
         zisk_main_instruction_result(output_row, &instruction, a, b, lowered_row.effects)?;
+    record_detail_duration(instruction_result_started, &mut timing, |timing| {
+        &mut timing.trace_report_instruction_result_duration
+    });
+
+    let next_pc_started = detail_duration_started(&timing, detail_timing);
     validate_zisk_main_next_pc(
         output_row,
         &instruction,
@@ -2918,6 +2978,11 @@ fn apply_zisk_main_lowered_report_row(
         c,
         flag,
     )?;
+    record_detail_duration(next_pc_started, &mut timing, |timing| {
+        &mut timing.trace_report_next_pc_duration
+    });
+
+    let register_access_started = detail_duration_started(&timing, detail_timing);
     let register_accesses = zisk_main_register_access_values(
         output_row,
         &instruction,
@@ -2925,6 +2990,11 @@ fn apply_zisk_main_lowered_report_row(
         context.row_count,
         context.segment,
     )?;
+    record_detail_duration(register_access_started, &mut timing, |timing| {
+        &mut timing.trace_report_register_access_duration
+    });
+
+    let memory_access_started = detail_duration_started(&timing, detail_timing);
     validate_zisk_main_memory_accesses(
         output_row,
         &instruction,
@@ -2934,6 +3004,11 @@ fn apply_zisk_main_lowered_report_row(
         a_access,
         b_access,
     )?;
+    record_detail_duration(memory_access_started, &mut timing, |timing| {
+        &mut timing.trace_report_memory_access_duration
+    });
+
+    let store_apply_started = detail_duration_started(&timing, detail_timing);
     apply_zisk_main_store(
         output_row,
         &instruction,
@@ -2945,6 +3020,9 @@ fn apply_zisk_main_lowered_report_row(
     register_accesses
         .next_mem_steps
         .apply(&mut state.register_mem_steps);
+    record_detail_duration(store_apply_started, &mut timing, |timing| {
+        &mut timing.trace_report_store_apply_duration
+    });
     record_detail_duration(validation_started, &mut timing, |timing| {
         &mut timing.trace_report_row_validation_duration
     });

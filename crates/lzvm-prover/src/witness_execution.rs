@@ -349,6 +349,13 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_store_conditional_report_duration: Duration,
     guest_trace_report_lowering_duration: Duration,
     guest_trace_report_row_validation_duration: Duration,
+    guest_trace_report_source_values_duration: Duration,
+    guest_trace_report_precompile_memory_duration: Duration,
+    guest_trace_report_instruction_result_duration: Duration,
+    guest_trace_report_next_pc_duration: Duration,
+    guest_trace_report_register_access_duration: Duration,
+    guest_trace_report_memory_access_duration: Duration,
+    guest_trace_report_store_apply_duration: Duration,
     guest_trace_report_visit_duration: Duration,
     guest_trace_emit_duration: Duration,
     guest_trace_descriptor_duration: Duration,
@@ -460,6 +467,19 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_report_lowering_duration: stream_timing.trace_report_lowering_duration(),
             guest_trace_report_row_validation_duration: stream_timing
                 .trace_report_row_validation_duration(),
+            guest_trace_report_source_values_duration: stream_timing
+                .trace_report_source_values_duration(),
+            guest_trace_report_precompile_memory_duration: stream_timing
+                .trace_report_precompile_memory_duration(),
+            guest_trace_report_instruction_result_duration: stream_timing
+                .trace_report_instruction_result_duration(),
+            guest_trace_report_next_pc_duration: stream_timing.trace_report_next_pc_duration(),
+            guest_trace_report_register_access_duration: stream_timing
+                .trace_report_register_access_duration(),
+            guest_trace_report_memory_access_duration: stream_timing
+                .trace_report_memory_access_duration(),
+            guest_trace_report_store_apply_duration: stream_timing
+                .trace_report_store_apply_duration(),
             guest_trace_report_visit_duration: stream_timing.trace_report_visit_duration(),
             guest_trace_emit_duration: stream_timing.trace_emit_duration(),
             guest_trace_descriptor_duration: stream_timing.trace_descriptor_duration(),
@@ -643,6 +663,34 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_report_row_validation_duration(&self) -> Duration {
         self.guest_trace_report_row_validation_duration
+    }
+
+    pub fn guest_trace_report_source_values_duration(&self) -> Duration {
+        self.guest_trace_report_source_values_duration
+    }
+
+    pub fn guest_trace_report_precompile_memory_duration(&self) -> Duration {
+        self.guest_trace_report_precompile_memory_duration
+    }
+
+    pub fn guest_trace_report_instruction_result_duration(&self) -> Duration {
+        self.guest_trace_report_instruction_result_duration
+    }
+
+    pub fn guest_trace_report_next_pc_duration(&self) -> Duration {
+        self.guest_trace_report_next_pc_duration
+    }
+
+    pub fn guest_trace_report_register_access_duration(&self) -> Duration {
+        self.guest_trace_report_register_access_duration
+    }
+
+    pub fn guest_trace_report_memory_access_duration(&self) -> Duration {
+        self.guest_trace_report_memory_access_duration
+    }
+
+    pub fn guest_trace_report_store_apply_duration(&self) -> Duration {
+        self.guest_trace_report_store_apply_duration
     }
 
     pub fn guest_trace_report_visit_duration(&self) -> Duration {

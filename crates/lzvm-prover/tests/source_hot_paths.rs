@@ -3736,6 +3736,13 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "trace_store_conditional_report_duration",
         "trace_report_lowering_duration",
         "trace_report_row_validation_duration",
+        "trace_report_source_values_duration",
+        "trace_report_precompile_memory_duration",
+        "trace_report_instruction_result_duration",
+        "trace_report_next_pc_duration",
+        "trace_report_register_access_duration",
+        "trace_report_memory_access_duration",
+        "trace_report_store_apply_duration",
         "trace_report_visit_duration",
         "trace_emit_duration",
         "trace_descriptor_duration",
@@ -3842,10 +3849,17 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
     let apply_body = function_body(&backend_source, apply_start, "fn record_trace_report_shape");
     assert!(
         apply_body.contains("trace_report_row_validation_duration")
+            && apply_body.contains("trace_report_source_values_duration")
+            && apply_body.contains("trace_report_precompile_memory_duration")
+            && apply_body.contains("trace_report_instruction_result_duration")
+            && apply_body.contains("trace_report_next_pc_duration")
+            && apply_body.contains("trace_report_register_access_duration")
+            && apply_body.contains("trace_report_memory_access_duration")
+            && apply_body.contains("trace_report_store_apply_duration")
             && apply_body.contains("trace_report_visit_duration")
             && apply_body.contains("record_detail_duration")
             && apply_body.contains("detail_timing"),
-        "guest PC report row validation and visit timing should be gated at the shared row path"
+        "guest PC report row validation sub-timing and visit timing should be gated at the shared row path"
     );
     let shape_body = function_body(
         &backend_source,

@@ -100,6 +100,34 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_report_row_validation_duration(),
     );
     timings.record(
+        "guest_trace_report_source_values",
+        timing.guest_trace_report_source_values_duration(),
+    );
+    timings.record(
+        "guest_trace_report_precompile_memory",
+        timing.guest_trace_report_precompile_memory_duration(),
+    );
+    timings.record(
+        "guest_trace_report_instruction_result",
+        timing.guest_trace_report_instruction_result_duration(),
+    );
+    timings.record(
+        "guest_trace_report_next_pc",
+        timing.guest_trace_report_next_pc_duration(),
+    );
+    timings.record(
+        "guest_trace_report_register_access",
+        timing.guest_trace_report_register_access_duration(),
+    );
+    timings.record(
+        "guest_trace_report_memory_access",
+        timing.guest_trace_report_memory_access_duration(),
+    );
+    timings.record(
+        "guest_trace_report_store_apply",
+        timing.guest_trace_report_store_apply_duration(),
+    );
+    timings.record(
         "guest_trace_report_visit",
         timing.guest_trace_report_visit_duration(),
     );
