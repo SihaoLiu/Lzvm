@@ -607,6 +607,15 @@ theorem source_lookup_checked_acceptance_verifier_core_contract
       checked
   exact sound_witness_implies_verifier_core_contract sound.right
 
+theorem witness_leaf_digest_checked_acceptance_projects_evidence
+    {system : VerifierModel}
+    (validation : WitnessLeafDigestValidation system) :
+    forall publicInput proof,
+      WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
+        WitnessLeafDigestEvidence system validation publicInput proof := by
+  intro publicInput proof checked
+  exact checked.right
+
 theorem witness_leaf_digest_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -617,7 +626,12 @@ theorem witness_leaf_digest_acceptance_sound
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithLeafDigestChecks
   exact
-    And.intro acceptedWithLeafDigestChecks.right
+    And.intro
+      (witness_leaf_digest_checked_acceptance_projects_evidence
+        validation
+        publicInput
+        proof
+        acceptedWithLeafDigestChecks)
       (abstract_verifier_sound assumptions publicInput proof acceptedWithLeafDigestChecks.left)
 
 theorem witness_leaf_digest_checked_acceptance_verifier_core_contract
