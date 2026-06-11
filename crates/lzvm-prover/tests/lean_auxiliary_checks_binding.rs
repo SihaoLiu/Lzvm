@@ -1239,6 +1239,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_fri_fold_interpolation_checked_acceptance_sound",
             "gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract",
             "gpu_merkle_digest_prefix_batch_matches_single_paths_implies_lower_prefixes_bound",
+            "gpu_merkle_digest_prefix_batch_checked_acceptance_projects_matches_single_paths",
             "gpu_merkle_digest_prefix_batch_checked_acceptance_projects_lower_prefixes_bound",
             "gpu_merkle_digest_prefix_batch_checked_acceptance_sound",
             "gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract",

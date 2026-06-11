@@ -985,6 +985,15 @@ theorem gpu_merkle_digest_prefix_batch_matches_single_paths_implies_lower_prefix
       proof
       prefixBatchMatchesSinglePaths
 
+theorem gpu_merkle_digest_prefix_batch_checked_acceptance_projects_matches_single_paths
+    {system : VerifierModel}
+    (validation : GpuMerkleDigestPrefixBatchValidation system) :
+    forall publicInput proof,
+      GpuMerkleDigestPrefixBatchCheckedAcceptance system validation publicInput proof ->
+        validation.gpuMerkleDigestPrefixBatchMatchesSinglePaths publicInput proof := by
+  intro publicInput proof checked
+  exact checked.right
+
 theorem gpu_merkle_digest_prefix_batch_checked_acceptance_projects_lower_prefixes_bound
     {system : VerifierModel}
     (validation : GpuMerkleDigestPrefixBatchValidation system) :
@@ -997,7 +1006,11 @@ theorem gpu_merkle_digest_prefix_batch_checked_acceptance_projects_lower_prefixe
       validation
       publicInput
       proof
-      checked.right
+      (gpu_merkle_digest_prefix_batch_checked_acceptance_projects_matches_single_paths
+        validation
+        publicInput
+        proof
+        checked)
 
 theorem gpu_merkle_digest_prefix_batch_checked_acceptance_sound
     {system : VerifierModel}
