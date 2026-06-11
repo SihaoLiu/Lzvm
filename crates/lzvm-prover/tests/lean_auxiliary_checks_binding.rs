@@ -139,6 +139,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     assert!(
         lean_source.contains(
+            "timing_observed_acceptance_projects_verifier_acceptance\n        observations\n        publicInput\n        proof\n        acceptedWithTimings"
+        ),
+        "Lean timing observation soundness should reuse the observed-acceptance verifier projector"
+    );
+    assert!(
+        lean_source.contains(
             "prover_gpu_mode_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithGpuMode"
         ),
         "Lean prover GPU mode soundness should reuse the observed-acceptance verifier projector"
@@ -1165,6 +1171,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_canonical_leaf_checked_acceptance_projects_leaf_bytes",
             "gpu_canonical_leaf_checked_acceptance_sound",
             "gpu_canonical_leaf_checked_acceptance_verifier_core_contract",
+            "timing_observed_acceptance_projects_verifier_acceptance",
             "timing_observation_acceptance_sound",
             "timing_observation_acceptance_verifier_core_contract",
             "guest_pc_trace_timing_acceptance_sound",

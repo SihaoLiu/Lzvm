@@ -1054,6 +1054,15 @@ def TimingObservedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
 
+theorem timing_observed_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (observations : List TimingObservation) :
+    forall publicInput proof,
+      TimingObservedAcceptance system observations publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof observed
+  exact observed
+
 theorem timing_observation_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1062,7 +1071,16 @@ theorem timing_observation_acceptance_sound
       TimingObservedAcceptance system observations publicInput proof ->
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithTimings
-  exact abstract_verifier_sound assumptions publicInput proof acceptedWithTimings
+  exact
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      (timing_observed_acceptance_projects_verifier_acceptance
+        observations
+        publicInput
+        proof
+        acceptedWithTimings)
 
 theorem timing_observation_acceptance_verifier_core_contract
     {system : VerifierModel}
