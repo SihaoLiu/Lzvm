@@ -616,6 +616,20 @@ theorem witness_leaf_digest_checked_acceptance_projects_evidence
   intro publicInput proof checked
   exact checked.right
 
+theorem witness_leaf_digest_checked_acceptance_projects_canonical_leaf_bytes
+    {system : VerifierModel}
+    (validation : WitnessLeafDigestValidation system) :
+    forall publicInput proof,
+      WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
+        validation.canonicalExtendedLeafBytes publicInput proof := by
+  intro publicInput proof checked
+  exact
+    (witness_leaf_digest_checked_acceptance_projects_evidence
+      validation
+      publicInput
+      proof
+      checked).left
+
 theorem witness_leaf_digest_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
