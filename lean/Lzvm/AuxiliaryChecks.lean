@@ -2351,6 +2351,43 @@ theorem runtime_performance_observation_projects_guest_pc_trace_timing
   intro publicInput proof observed
   exact observed
 
+theorem runtime_performance_observation_guest_pc_trace_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_acceptance_sound
+      assumptions
+      summary.guestPcTraceTiming
+      publicInput
+      proof
+      (runtime_performance_observation_projects_guest_pc_trace_timing
+        summary
+        publicInput
+        proof
+        observed)
+
+theorem runtime_performance_observation_guest_pc_trace_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (runtime_performance_observation_guest_pc_trace_timing_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
 theorem runtime_performance_observation_projects_witness_opening_row_value_timing
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
