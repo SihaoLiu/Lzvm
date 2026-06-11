@@ -2060,6 +2060,15 @@ def ProverGpuModeObservedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
 
+theorem prover_gpu_mode_observed_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (summary : Option ProverGpuModeSummary) :
+    forall publicInput proof,
+      ProverGpuModeObservedAcceptance system summary publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof observed
+  exact observed
+
 theorem prover_gpu_mode_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -2068,7 +2077,16 @@ theorem prover_gpu_mode_acceptance_sound
       ProverGpuModeObservedAcceptance system summary publicInput proof ->
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithGpuMode
-  exact abstract_verifier_sound assumptions publicInput proof acceptedWithGpuMode
+  exact
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      (prover_gpu_mode_observed_acceptance_projects_verifier_acceptance
+        summary
+        publicInput
+        proof
+        acceptedWithGpuMode)
 
 theorem prover_gpu_mode_acceptance_verifier_core_contract
     {system : VerifierModel}

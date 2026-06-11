@@ -139,6 +139,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     assert!(
         lean_source.contains(
+            "prover_gpu_mode_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithGpuMode"
+        ),
+        "Lean prover GPU mode soundness should reuse the observed-acceptance verifier projector"
+    );
+    assert!(
+        lean_source.contains(
             "gpu_run_options_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithGpuRunOptions"
         ),
         "Lean GPU run options soundness should reuse the observed-acceptance verifier projector"
@@ -1185,6 +1191,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "constant_material_validation_timing_acceptance_verifier_core_contract",
             "constant_material_validation_aggregate_timing_acceptance_sound",
             "constant_material_validation_aggregate_timing_acceptance_verifier_core_contract",
+            "prover_gpu_mode_observed_acceptance_projects_verifier_acceptance",
             "prover_gpu_mode_acceptance_sound",
             "prover_gpu_mode_acceptance_verifier_core_contract",
             "gpu_run_options_observed_acceptance_projects_verifier_acceptance",
