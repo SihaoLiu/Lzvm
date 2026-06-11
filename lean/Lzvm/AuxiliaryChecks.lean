@@ -709,6 +709,15 @@ theorem gpu_leaf_output_buffer_reuse_checked_acceptance_projects_length_match
   intro publicInput proof checked
   exact checked.right.left
 
+theorem gpu_leaf_output_buffer_reuse_checked_acceptance_projects_fully_overwritten
+    {system : VerifierModel}
+    (validation : GpuLeafOutputBufferReuseValidation system) :
+    forall publicInput proof,
+      GpuLeafOutputBufferReuseCheckedAcceptance system validation publicInput proof ->
+        validation.leafOutputBufferFullyOverwritten publicInput proof := by
+  intro publicInput proof checked
+  exact checked.right.right
+
 theorem gpu_leaf_output_buffer_reuse_checked_acceptance_projects_leaf_bytes
     {system : VerifierModel}
     (validation : GpuLeafOutputBufferReuseValidation system) :

@@ -1204,6 +1204,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
             "gpu_leaf_output_buffer_reuse_implies_canonical_leaf_bytes",
             "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_length_match",
+            "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_fully_overwritten",
             "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_leaf_bytes",
             "gpu_leaf_output_buffer_reuse_checked_acceptance_sound",
             "gpu_leaf_output_buffer_reuse_checked_acceptance_verifier_core_contract",
