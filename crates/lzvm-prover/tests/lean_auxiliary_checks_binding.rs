@@ -117,6 +117,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestTraceReportVisitMilliseconds",
         "guestTraceReportCount",
         "guestTraceReportRowCount",
+        "guestTraceRegisterSourceReadCount",
+        "guestTraceMemorySourceReadCount",
+        "guestTraceRegisterStoreRowCount",
+        "guestTraceMemoryStoreRowCount",
+        "guestTraceNoStoreRowCount",
         "guestTraceEmitMilliseconds",
         "guestTraceDescriptorMilliseconds",
         "guestTraceDescriptorRowCount",
@@ -184,6 +189,26 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_trace_report_rows\"",
             "guest_trace_report_row_count()",
+        ),
+        (
+            "\"guest_trace_register_source_reads\"",
+            "guest_trace_register_source_read_count()",
+        ),
+        (
+            "\"guest_trace_memory_source_reads\"",
+            "guest_trace_memory_source_read_count()",
+        ),
+        (
+            "\"guest_trace_register_store_rows\"",
+            "guest_trace_register_store_row_count()",
+        ),
+        (
+            "\"guest_trace_memory_store_rows\"",
+            "guest_trace_memory_store_row_count()",
+        ),
+        (
+            "\"guest_trace_no_store_rows\"",
+            "guest_trace_no_store_row_count()",
         ),
         ("\"guest_trace_emit\"", "guest_trace_emit_duration()"),
         (
