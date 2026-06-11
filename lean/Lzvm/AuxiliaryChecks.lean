@@ -792,6 +792,20 @@ theorem gpu_fri_interpolation_matches_host_implies_fri_folds_valid
       proof
       interpolationMatchesHost
 
+theorem gpu_fri_fold_interpolation_checked_acceptance_projects_fri_folds_valid
+    {system : VerifierModel}
+    (validation : GpuFriFoldInterpolationValidation system) :
+    forall publicInput proof,
+      GpuFriFoldInterpolationCheckedAcceptance system validation publicInput proof ->
+        validation.friFoldsValid publicInput proof := by
+  intro publicInput proof checked
+  exact
+    gpu_fri_interpolation_matches_host_implies_fri_folds_valid
+      validation
+      publicInput
+      proof
+      checked.right
+
 theorem gpu_fri_fold_interpolation_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -803,11 +817,11 @@ theorem gpu_fri_fold_interpolation_checked_acceptance_sound
   intro publicInput proof checked
   exact
     And.intro
-      (gpu_fri_interpolation_matches_host_implies_fri_folds_valid
+      (gpu_fri_fold_interpolation_checked_acceptance_projects_fri_folds_valid
         validation
         publicInput
         proof
-        checked.right)
+        checked)
       (abstract_verifier_sound assumptions publicInput proof checked.left)
 
 theorem gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract

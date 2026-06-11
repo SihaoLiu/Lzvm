@@ -1223,6 +1223,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_coset_extension_checked_acceptance_sound",
             "gpu_coset_extension_checked_acceptance_verifier_core_contract",
             "gpu_fri_interpolation_matches_host_implies_fri_folds_valid",
+            "gpu_fri_fold_interpolation_checked_acceptance_projects_fri_folds_valid",
             "gpu_fri_fold_interpolation_checked_acceptance_sound",
             "gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract",
             "gpu_merkle_digest_prefix_batch_matches_single_paths_implies_lower_prefixes_bound",
