@@ -79,6 +79,8 @@ structure GuestPcTraceStageTimingSummary where
   leafSetupOutputAllocByteCount : Nat
   leafSetupWorkspaceAllocByteCount : Nat
   leafSetupOutputAllocCount : Nat
+  leafOutputCacheHitCount : Nat
+  leafOutputCacheMissCount : Nat
   leafSetupWorkspaceAllocCount : Nat
   leafUploadWorkMilliseconds : Nat
   leafKernelWorkMilliseconds : Nat

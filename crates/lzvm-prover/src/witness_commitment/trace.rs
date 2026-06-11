@@ -337,6 +337,14 @@ impl WitnessStageCommitTiming {
         self.leaf_extend_timing.leaf_setup_output_alloc_count()
     }
 
+    pub(crate) fn leaf_output_cache_hit_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_output_cache_hit_count()
+    }
+
+    pub(crate) fn leaf_output_cache_miss_count(&self) -> usize {
+        self.leaf_extend_timing.leaf_output_cache_miss_count()
+    }
+
     pub(crate) fn leaf_setup_workspace_alloc_count(&self) -> usize {
         self.leaf_extend_timing.leaf_setup_workspace_alloc_count()
     }

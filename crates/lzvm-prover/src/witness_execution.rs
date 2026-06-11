@@ -410,6 +410,8 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_stage_leaf_setup_output_alloc_byte_count: usize,
     guest_stage_leaf_setup_workspace_alloc_byte_count: usize,
     guest_stage_leaf_setup_output_alloc_count: usize,
+    guest_stage_leaf_output_cache_hit_count: usize,
+    guest_stage_leaf_output_cache_miss_count: usize,
     guest_stage_leaf_setup_workspace_alloc_count: usize,
     guest_stage_leaf_upload_work_duration: Duration,
     guest_stage_leaf_kernel_work_duration: Duration,
@@ -560,6 +562,9 @@ impl ProveWitnessGuestPcTraceTiming {
                 .stage_leaf_setup_workspace_alloc_byte_count,
             guest_stage_leaf_setup_output_alloc_count: trace_timing
                 .stage_leaf_setup_output_alloc_count,
+            guest_stage_leaf_output_cache_hit_count: trace_timing.stage_leaf_output_cache_hit_count,
+            guest_stage_leaf_output_cache_miss_count: trace_timing
+                .stage_leaf_output_cache_miss_count,
             guest_stage_leaf_setup_workspace_alloc_count: trace_timing
                 .stage_leaf_setup_workspace_alloc_count,
             guest_stage_leaf_upload_work_duration: trace_timing.stage_leaf_upload_work_duration,
@@ -914,6 +919,14 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_stage_leaf_setup_output_alloc_count
     }
 
+    pub fn guest_stage_leaf_output_cache_hit_count(&self) -> usize {
+        self.guest_stage_leaf_output_cache_hit_count
+    }
+
+    pub fn guest_stage_leaf_output_cache_miss_count(&self) -> usize {
+        self.guest_stage_leaf_output_cache_miss_count
+    }
+
     pub fn guest_stage_leaf_setup_workspace_alloc_count(&self) -> usize {
         self.guest_stage_leaf_setup_workspace_alloc_count
     }
@@ -1046,6 +1059,8 @@ pub struct ProveWitnessGuestStageTiming {
     leaf_setup_output_alloc_byte_count: usize,
     leaf_setup_workspace_alloc_byte_count: usize,
     leaf_setup_output_alloc_count: usize,
+    leaf_output_cache_hit_count: usize,
+    leaf_output_cache_miss_count: usize,
     leaf_setup_workspace_alloc_count: usize,
     leaf_upload_work_duration: Duration,
     leaf_kernel_work_duration: Duration,
@@ -1091,6 +1106,8 @@ impl ProveWitnessGuestStageTiming {
             leaf_setup_workspace_alloc_byte_count: timing_value
                 .leaf_setup_workspace_alloc_byte_count(),
             leaf_setup_output_alloc_count: timing_value.leaf_setup_output_alloc_count(),
+            leaf_output_cache_hit_count: timing_value.leaf_output_cache_hit_count(),
+            leaf_output_cache_miss_count: timing_value.leaf_output_cache_miss_count(),
             leaf_setup_workspace_alloc_count: timing_value.leaf_setup_workspace_alloc_count(),
             leaf_upload_work_duration: timing_value.leaf_upload_duration(),
             leaf_kernel_work_duration: timing_value.leaf_kernel_duration(),
@@ -1137,6 +1154,8 @@ impl ProveWitnessGuestStageTiming {
         self.leaf_setup_output_alloc_byte_count += other.leaf_setup_output_alloc_byte_count;
         self.leaf_setup_workspace_alloc_byte_count += other.leaf_setup_workspace_alloc_byte_count;
         self.leaf_setup_output_alloc_count += other.leaf_setup_output_alloc_count;
+        self.leaf_output_cache_hit_count += other.leaf_output_cache_hit_count;
+        self.leaf_output_cache_miss_count += other.leaf_output_cache_miss_count;
         self.leaf_setup_workspace_alloc_count += other.leaf_setup_workspace_alloc_count;
         self.leaf_upload_work_duration += other.leaf_upload_work_duration;
         self.leaf_kernel_work_duration += other.leaf_kernel_work_duration;
@@ -1208,6 +1227,14 @@ impl ProveWitnessGuestStageTiming {
 
     pub fn leaf_setup_output_alloc_count(&self) -> usize {
         self.leaf_setup_output_alloc_count
+    }
+
+    pub fn leaf_output_cache_hit_count(&self) -> usize {
+        self.leaf_output_cache_hit_count
+    }
+
+    pub fn leaf_output_cache_miss_count(&self) -> usize {
+        self.leaf_output_cache_miss_count
     }
 
     pub fn leaf_setup_workspace_alloc_count(&self) -> usize {
@@ -1356,6 +1383,8 @@ struct ProveWitnessTraceTimingAccumulator {
     stage_leaf_setup_output_alloc_byte_count: usize,
     stage_leaf_setup_workspace_alloc_byte_count: usize,
     stage_leaf_setup_output_alloc_count: usize,
+    stage_leaf_output_cache_hit_count: usize,
+    stage_leaf_output_cache_miss_count: usize,
     stage_leaf_setup_workspace_alloc_count: usize,
     stage_leaf_upload_work_duration: Duration,
     stage_leaf_kernel_work_duration: Duration,
@@ -1431,6 +1460,8 @@ impl ProveWitnessTraceTimingAccumulator {
         self.stage_leaf_setup_workspace_alloc_byte_count +=
             other.stage_leaf_setup_workspace_alloc_byte_count;
         self.stage_leaf_setup_output_alloc_count += other.stage_leaf_setup_output_alloc_count;
+        self.stage_leaf_output_cache_hit_count += other.stage_leaf_output_cache_hit_count;
+        self.stage_leaf_output_cache_miss_count += other.stage_leaf_output_cache_miss_count;
         self.stage_leaf_setup_workspace_alloc_count += other.stage_leaf_setup_workspace_alloc_count;
         self.stage_leaf_upload_work_duration += other.stage_leaf_upload_work_duration;
         self.stage_leaf_kernel_work_duration += other.stage_leaf_kernel_work_duration;
@@ -3823,6 +3854,8 @@ fn run_prove_witness_commitments_from_trace_inner(
         timing.stage_leaf_setup_workspace_alloc_byte_count +=
             stage_timing.leaf_setup_workspace_alloc_byte_count();
         timing.stage_leaf_setup_output_alloc_count += stage_timing.leaf_setup_output_alloc_count();
+        timing.stage_leaf_output_cache_hit_count += stage_timing.leaf_output_cache_hit_count();
+        timing.stage_leaf_output_cache_miss_count += stage_timing.leaf_output_cache_miss_count();
         timing.stage_leaf_setup_workspace_alloc_count +=
             stage_timing.leaf_setup_workspace_alloc_count();
         timing.stage_leaf_upload_work_duration += stage_timing.leaf_upload_duration();

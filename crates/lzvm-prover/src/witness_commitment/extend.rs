@@ -57,9 +57,11 @@ impl WitnessStageLeafWorkspaceCache {
     ) -> Result<CudaDeviceBuffer, WitnessTraceCommitmentError> {
         if let Some(buffer) = self.output.take() {
             if buffer.len() == byte_count {
+                timing.record_output_cache_hit();
                 return Ok(buffer);
             }
         }
+        timing.record_output_cache_miss();
         let buffer = record_setup_duration(
             &mut timing.setup_duration,
             &mut timing.leaf_setup_output_alloc_duration,
@@ -159,6 +161,8 @@ pub(crate) struct WitnessStageLeafExtendTiming {
     leaf_setup_output_alloc_byte_count: usize,
     leaf_setup_workspace_alloc_byte_count: usize,
     leaf_setup_output_alloc_count: usize,
+    leaf_output_cache_hit_count: usize,
+    leaf_output_cache_miss_count: usize,
     leaf_setup_workspace_alloc_count: usize,
     upload_duration: Duration,
     kernel_duration: Duration,
@@ -193,6 +197,8 @@ impl WitnessStageLeafExtendTiming {
         self.leaf_setup_output_alloc_byte_count += other.leaf_setup_output_alloc_byte_count;
         self.leaf_setup_workspace_alloc_byte_count += other.leaf_setup_workspace_alloc_byte_count;
         self.leaf_setup_output_alloc_count += other.leaf_setup_output_alloc_count;
+        self.leaf_output_cache_hit_count += other.leaf_output_cache_hit_count;
+        self.leaf_output_cache_miss_count += other.leaf_output_cache_miss_count;
         self.leaf_setup_workspace_alloc_count += other.leaf_setup_workspace_alloc_count;
         self.upload_duration += other.upload_duration;
         self.kernel_duration += other.kernel_duration;
@@ -272,6 +278,16 @@ impl WitnessStageLeafExtendTiming {
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    fn record_output_cache_hit(&mut self) {
+        self.leaf_output_cache_hit_count += 1;
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    fn record_output_cache_miss(&mut self) {
+        self.leaf_output_cache_miss_count += 1;
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
     fn record_workspace_alloc(&mut self, byte_count: usize) {
         self.leaf_setup_workspace_alloc_byte_count += byte_count;
         self.leaf_setup_workspace_alloc_count += 1;
@@ -303,6 +319,14 @@ impl WitnessStageLeafExtendTiming {
 
     pub(crate) fn leaf_setup_output_alloc_count(&self) -> usize {
         self.leaf_setup_output_alloc_count
+    }
+
+    pub(crate) fn leaf_output_cache_hit_count(&self) -> usize {
+        self.leaf_output_cache_hit_count
+    }
+
+    pub(crate) fn leaf_output_cache_miss_count(&self) -> usize {
+        self.leaf_output_cache_miss_count
     }
 
     pub(crate) fn leaf_setup_workspace_alloc_count(&self) -> usize {

@@ -326,6 +326,14 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_stage_leaf_setup_output_alloc_count(),
     );
     timings.record_count(
+        "guest_stage_leaf_output_cache_hits",
+        timing.guest_stage_leaf_output_cache_hit_count(),
+    );
+    timings.record_count(
+        "guest_stage_leaf_output_cache_misses",
+        timing.guest_stage_leaf_output_cache_miss_count(),
+    );
+    timings.record_count(
         "guest_stage_leaf_setup_workspace_alloc_count",
         timing.guest_stage_leaf_setup_workspace_alloc_count(),
     );
@@ -474,6 +482,14 @@ pub(super) fn record_guest_pc_trace_timing(
         timings.record_count_dynamic(
             format!("guest_stage_{stage_index}_leaf_setup_output_alloc_count"),
             stage_timing.leaf_setup_output_alloc_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_output_cache_hits"),
+            stage_timing.leaf_output_cache_hit_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_output_cache_misses"),
+            stage_timing.leaf_output_cache_miss_count(),
         );
         timings.record_count_dynamic(
             format!("guest_stage_{stage_index}_leaf_setup_workspace_alloc_count"),

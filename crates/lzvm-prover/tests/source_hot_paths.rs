@@ -3287,6 +3287,14 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "guest_stage_leaf_setup_output_alloc_count()",
         ),
         (
+            "\"guest_stage_leaf_output_cache_hits\"",
+            "guest_stage_leaf_output_cache_hit_count()",
+        ),
+        (
+            "\"guest_stage_leaf_output_cache_misses\"",
+            "guest_stage_leaf_output_cache_miss_count()",
+        ),
+        (
             "\"guest_stage_leaf_setup_workspace_alloc_count\"",
             "guest_stage_leaf_setup_workspace_alloc_count()",
         ),
@@ -3301,6 +3309,14 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "guest_stage_{stage_index}_leaf_setup_output_alloc_count",
             "leaf_setup_output_alloc_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_output_cache_hits",
+            "leaf_output_cache_hit_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_output_cache_misses",
+            "leaf_output_cache_miss_count()",
         ),
         (
             "guest_stage_{stage_index}_leaf_setup_workspace_alloc_count",
