@@ -1207,6 +1207,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_allocator_no_wait_bypass_implies_pending_not_reused",
             "gpu_allocator_no_wait_bypass_implies_fresh_allocation",
             "gpu_allocator_no_wait_bypass_checked_acceptance_projects_same_request",
+            "gpu_allocator_no_wait_bypass_checked_acceptance_projects_pending_not_reused",
+            "gpu_allocator_no_wait_bypass_checked_acceptance_projects_fresh_allocation",
             "gpu_allocator_no_wait_bypass_checked_acceptance_sound",
             "gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract",
             "gpu_retained_device_cache_budget_checked_acceptance_sound",

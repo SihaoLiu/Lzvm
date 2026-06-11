@@ -407,6 +407,52 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_projects_same_request
       proof
       checked.right
 
+theorem gpu_allocator_no_wait_bypass_checked_acceptance_projects_pending_not_reused
+    {system : VerifierModel}
+    (validation : GpuAllocatorNoWaitBypassValidation)
+    (pending fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuAllocatorNoWaitBypassCheckedAcceptance
+          system
+          validation
+          pending
+          fresh
+          publicInput
+          proof ->
+        validation.pendingAllocationNotReused pending publicInput proof := by
+  intro publicInput proof checked
+  exact
+    gpu_allocator_no_wait_bypass_implies_pending_not_reused
+      validation
+      pending
+      fresh
+      publicInput
+      proof
+      checked.right
+
+theorem gpu_allocator_no_wait_bypass_checked_acceptance_projects_fresh_allocation
+    {system : VerifierModel}
+    (validation : GpuAllocatorNoWaitBypassValidation)
+    (pending fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuAllocatorNoWaitBypassCheckedAcceptance
+          system
+          validation
+          pending
+          fresh
+          publicInput
+          proof ->
+        validation.freshAllocationIssued fresh publicInput proof := by
+  intro publicInput proof checked
+  exact
+    gpu_allocator_no_wait_bypass_implies_fresh_allocation
+      validation
+      pending
+      fresh
+      publicInput
+      proof
+      checked.right
+
 theorem gpu_allocator_no_wait_bypass_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
