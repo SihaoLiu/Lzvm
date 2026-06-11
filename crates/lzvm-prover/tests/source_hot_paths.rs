@@ -3757,6 +3757,8 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "trace_report_count",
         "trace_report_row_count",
         "trace_descriptor_row_count",
+        "trace_descriptor_compact_row_count",
+        "trace_descriptor_wide_row_count",
         "trace_single_row_report_count",
         "trace_multi_row_report_count",
         "trace_pending_dma_report_count",
@@ -3927,6 +3929,8 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest_trace_report_count",
         "guest_trace_report_row_count",
         "guest_trace_descriptor_row_count",
+        "guest_trace_descriptor_compact_row_count",
+        "guest_trace_descriptor_wide_row_count",
         "guest_trace_single_row_report_count",
         "guest_trace_multi_row_report_count",
         "guest_trace_pending_dma_report_count",
@@ -3965,6 +3969,8 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_reports\"",
         "\"guest_trace_report_rows\"",
         "\"guest_trace_descriptor_rows\"",
+        "\"guest_trace_descriptor_compact_rows\"",
+        "\"guest_trace_descriptor_wide_rows\"",
         "\"guest_trace_single_row_reports\"",
         "\"guest_trace_multi_row_reports\"",
         "\"guest_trace_pending_dma_reports\"",
@@ -4036,7 +4042,7 @@ fn guest_pc_trace_lower_records_aggregate_report_timing_without_detail_timers() 
         assert!(
             body.contains("record_aggregate_trace_report_duration(")
                 && body.contains(
-                    "record_aggregate_trace_report_duration(timing, aggregate_report_started);"
+                    "record_aggregate_trace_report_duration(&mut timing, aggregate_report_started);"
                 )
                 && body.contains("aggregate_report_started"),
             "guest PC {label} lowerer should add the aggregate report-loop duration after the loop"

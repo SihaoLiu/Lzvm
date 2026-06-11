@@ -146,6 +146,14 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_descriptor_row_count(),
     );
     timings.record_count(
+        "guest_trace_descriptor_compact_rows",
+        timing.guest_trace_descriptor_compact_row_count(),
+    );
+    timings.record_count(
+        "guest_trace_descriptor_wide_rows",
+        timing.guest_trace_descriptor_wide_row_count(),
+    );
+    timings.record_count(
         "guest_trace_single_row_reports",
         timing.guest_trace_single_row_report_count(),
     );

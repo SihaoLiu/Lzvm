@@ -213,6 +213,8 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_report_count: usize,
     trace_report_row_count: usize,
     trace_descriptor_row_count: usize,
+    trace_descriptor_compact_row_count: usize,
+    trace_descriptor_wide_row_count: usize,
     trace_single_row_report_count: usize,
     trace_multi_row_report_count: usize,
     trace_pending_dma_report_count: usize,
@@ -263,6 +265,8 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_count += other.trace_report_count;
         self.trace_report_row_count += other.trace_report_row_count;
         self.trace_descriptor_row_count += other.trace_descriptor_row_count;
+        self.trace_descriptor_compact_row_count += other.trace_descriptor_compact_row_count;
+        self.trace_descriptor_wide_row_count += other.trace_descriptor_wide_row_count;
         self.trace_single_row_report_count += other.trace_single_row_report_count;
         self.trace_multi_row_report_count += other.trace_multi_row_report_count;
         self.trace_pending_dma_report_count += other.trace_pending_dma_report_count;
@@ -390,6 +394,14 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_descriptor_row_count(&self) -> usize {
         self.trace_descriptor_row_count
+    }
+
+    pub fn trace_descriptor_compact_row_count(&self) -> usize {
+        self.trace_descriptor_compact_row_count
+    }
+
+    pub fn trace_descriptor_wide_row_count(&self) -> usize {
+        self.trace_descriptor_wide_row_count
     }
 
     pub fn trace_single_row_report_count(&self) -> usize {
@@ -3149,11 +3161,32 @@ fn record_trace_report_duration(
 }
 
 fn record_aggregate_trace_report_duration(
-    timing: Option<&mut GuestPcTraceStreamTiming>,
+    timing: &mut Option<&mut GuestPcTraceStreamTiming>,
     started: Option<Instant>,
 ) {
-    if let (Some(timing), Some(started)) = (timing, started) {
+    if let (Some(timing), Some(started)) = (timing.as_mut(), started) {
+        let timing = &mut **timing;
         timing.trace_report_duration += started.elapsed();
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn record_trace_descriptor_width_counts(
+    timing: &mut Option<&mut GuestPcTraceStreamTiming>,
+    descriptors: &ZiskMainDeviceTraceDescriptors,
+) {
+    let Some(timing) = timing.as_mut() else {
+        return;
+    };
+    let timing = &mut **timing;
+    match descriptors.descriptor_word_count() {
+        ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS => {
+            timing.trace_descriptor_compact_row_count += descriptors.descriptor_rows();
+        }
+        ZISK_MAIN_DEVICE_TRACE_WIDE_DESCRIPTOR_WORDS => {
+            timing.trace_descriptor_wide_row_count += descriptors.descriptor_rows();
+        }
+        _ => {}
     }
 }
 
@@ -4023,7 +4056,8 @@ fn build_layout_zisk_main_trace_segment_device_material(
             }
         })?;
     }
-    record_aggregate_trace_report_duration(timing, aggregate_report_started);
+    record_aggregate_trace_report_duration(&mut timing, aggregate_report_started);
+    record_trace_descriptor_width_counts(&mut timing, &device_trace_descriptors);
 
     if output_row < layout.row_count() {
         if !segment.is_last_segment {
@@ -4228,7 +4262,11 @@ fn build_layout_zisk_main_trace_segment(
             }
         })?;
     }
-    record_aggregate_trace_report_duration(timing, aggregate_report_started);
+    record_aggregate_trace_report_duration(&mut timing, aggregate_report_started);
+    #[cfg(feature = "cuda")]
+    if let Some(descriptors) = device_trace_descriptors.as_ref() {
+        record_trace_descriptor_width_counts(&mut timing, descriptors);
+    }
     if output_row < layout.row_count() {
         if !segment.is_last_segment {
             return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {

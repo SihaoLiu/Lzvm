@@ -103,6 +103,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean auxiliary checks should bind GPU copy roundtrip evidence to written contents"
     );
     assert!(
+        lean_source.contains("guestTraceDescriptorCompactRowCount")
+            && lean_source.contains("guestTraceDescriptorWideRowCount"),
+        "Lean guest PC timing summary should expose descriptor width row counts"
+    );
+    assert!(
         lean_source.contains("temporaryBufferReuseAllowed")
             && lean_source.contains("pendingDeviceReadsComplete")
             && lean_source.contains("temporaryBufferReuseImpliesSameRequest")
@@ -431,6 +436,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_trace_descriptor_rows\"",
             "guest_trace_descriptor_row_count()",
+        ),
+        (
+            "\"guest_trace_descriptor_compact_rows\"",
+            "guest_trace_descriptor_compact_row_count()",
+        ),
+        (
+            "\"guest_trace_descriptor_wide_rows\"",
+            "guest_trace_descriptor_wide_row_count()",
         ),
         (
             "\"guest_trace_pending_send_wait\"",

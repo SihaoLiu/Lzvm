@@ -142,6 +142,8 @@ structure GuestPcTraceTimingSummary where
   guestTraceEmitMilliseconds : Nat
   guestTraceDescriptorMilliseconds : Nat
   guestTraceDescriptorRowCount : Nat
+  guestTraceDescriptorCompactRowCount : Nat
+  guestTraceDescriptorWideRowCount : Nat
   guestTracePendingSendWaitMilliseconds : Nat
   guestTracePendingReceiveWaitMilliseconds : Nat
   guestTraceSegmentSendWaitMilliseconds : Nat
