@@ -2701,6 +2701,43 @@ theorem runtime_performance_observation_projects_proof_artifact_finish_timing
   intro publicInput proof observed
   exact observed
 
+theorem runtime_performance_observation_finish_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_acceptance_sound
+      assumptions
+      summary.proofArtifactFinishTiming
+      publicInput
+      proof
+      (runtime_performance_observation_projects_proof_artifact_finish_timing
+        summary
+        publicInput
+        proof
+        observed)
+
+theorem runtime_performance_observation_finish_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (runtime_performance_observation_finish_timing_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
 theorem gpu_setup_cache_reuse_sound
     (validation : GpuSetupCacheValidation)
     (state : GpuSetupCacheState)
