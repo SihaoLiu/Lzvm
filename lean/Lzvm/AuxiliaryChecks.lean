@@ -1872,6 +1872,15 @@ def WitnessOpeningRowValueTimingObservedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
 
+theorem witness_opening_row_value_timing_observed_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (summary : Option WitnessOpeningRowValueTimingSummary) :
+    forall publicInput proof,
+      WitnessOpeningRowValueTimingObservedAcceptance system summary publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof observed
+  exact observed
+
 theorem witness_opening_row_value_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1880,7 +1889,16 @@ theorem witness_opening_row_value_timing_acceptance_sound
       WitnessOpeningRowValueTimingObservedAcceptance system summary publicInput proof ->
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithRowValueTimings
-  exact abstract_verifier_sound assumptions publicInput proof acceptedWithRowValueTimings
+  exact
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      (witness_opening_row_value_timing_observed_acceptance_projects_verifier_acceptance
+        summary
+        publicInput
+        proof
+        acceptedWithRowValueTimings)
 
 theorem witness_opening_row_value_timing_acceptance_verifier_core_contract
     {system : VerifierModel}
