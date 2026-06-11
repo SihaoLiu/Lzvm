@@ -110,6 +110,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean auxiliary checks should bind GPU copy roundtrip evidence to written contents"
     );
     assert!(
+        lean_source.contains(
+            "gpu_setup_checked_acceptance_projects_constants_sound\n        validation\n        request\n        publicInput\n        proof\n        acceptedWithSetup"
+        ),
+        "Lean GPU setup soundness should reuse the checked-acceptance constants projector"
+    );
+    assert!(
         lean_source.contains("guestTraceDescriptorCompactRowCount")
             && lean_source.contains("guestTraceDescriptorWideRowCount"),
         "Lean guest PC timing summary should expose descriptor width row counts"

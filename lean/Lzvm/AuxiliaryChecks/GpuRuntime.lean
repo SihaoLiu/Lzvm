@@ -33,7 +33,13 @@ theorem gpu_setup_checked_acceptance_sound
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithSetup
   exact
-    And.intro acceptedWithSetup.right
+    And.intro
+      (gpu_setup_checked_acceptance_projects_constants_sound
+        validation
+        request
+        publicInput
+        proof
+        acceptedWithSetup)
       (abstract_verifier_sound assumptions publicInput proof acceptedWithSetup.left)
 
 theorem gpu_setup_checked_acceptance_verifier_core_contract
