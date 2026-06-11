@@ -695,6 +695,21 @@ theorem gpu_leaf_output_buffer_reuse_checked_acceptance_projects_length_match
   intro publicInput proof checked
   exact checked.right.left
 
+theorem gpu_leaf_output_buffer_reuse_checked_acceptance_projects_leaf_bytes
+    {system : VerifierModel}
+    (validation : GpuLeafOutputBufferReuseValidation system) :
+    forall publicInput proof,
+      GpuLeafOutputBufferReuseCheckedAcceptance system validation publicInput proof ->
+        validation.leafValidation.canonicalExtendedLeafBytes publicInput proof := by
+  intro publicInput proof checked
+  exact
+    gpu_leaf_output_buffer_reuse_implies_canonical_leaf_bytes
+      validation
+      publicInput
+      proof
+      checked.right.left
+      checked.right.right
+
 theorem gpu_leaf_output_buffer_reuse_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -706,12 +721,11 @@ theorem gpu_leaf_output_buffer_reuse_checked_acceptance_sound
   intro publicInput proof checked
   exact
     And.intro
-      (gpu_leaf_output_buffer_reuse_implies_canonical_leaf_bytes
+      (gpu_leaf_output_buffer_reuse_checked_acceptance_projects_leaf_bytes
         validation
         publicInput
         proof
-        checked.right.left
-        checked.right.right)
+        checked)
       (abstract_verifier_sound assumptions publicInput proof checked.left)
 
 theorem gpu_leaf_output_buffer_reuse_checked_acceptance_verifier_core_contract
