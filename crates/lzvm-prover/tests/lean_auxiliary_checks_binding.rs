@@ -1110,6 +1110,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "source_lookup_checked_acceptance_verifier_core_contract",
             "witness_leaf_digest_acceptance_sound",
             "witness_leaf_digest_checked_acceptance_verifier_core_contract",
+            "gpu_canonical_leaf_checked_acceptance_projects_leaf_bytes",
             "gpu_canonical_leaf_checked_acceptance_sound",
             "gpu_canonical_leaf_checked_acceptance_verifier_core_contract",
             "timing_observation_acceptance_sound",
