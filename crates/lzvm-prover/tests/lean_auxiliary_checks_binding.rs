@@ -122,6 +122,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean GPU allocation soundness should reuse the checked-acceptance written-contents projector"
     );
     assert!(
+        lean_source.contains(
+            "gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request\n      validation\n      previous\n      next\n      publicInput\n      proof\n      checked"
+        ) && lean_source.contains(
+            "gpu_temporary_buffer_reuse_checked_acceptance_projects_pending_reads_complete\n      validation\n      previous\n      next\n      publicInput\n      proof\n      checked"
+        ),
+        "Lean temporary buffer reuse soundness should reuse checked-acceptance projectors"
+    );
+    assert!(
         lean_source.contains("guestTraceDescriptorCompactRowCount")
             && lean_source.contains("guestTraceDescriptorWideRowCount"),
         "Lean guest PC timing summary should expose descriptor width row counts"

@@ -325,21 +325,21 @@ theorem gpu_temporary_buffer_reuse_checked_acceptance_sound
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
   have sameRequest :=
-    gpu_temporary_buffer_reuse_implies_same_request
+    gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request
       validation
       previous
       next
       publicInput
       proof
-      checked.right
+      checked
   have pendingComplete :=
-    gpu_temporary_buffer_reuse_implies_pending_reads_complete
+    gpu_temporary_buffer_reuse_checked_acceptance_projects_pending_reads_complete
       validation
       previous
       next
       publicInput
       proof
-      checked.right
+      checked
   exact
     And.intro sameRequest
       (And.intro pendingComplete
