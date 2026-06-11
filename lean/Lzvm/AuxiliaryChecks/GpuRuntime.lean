@@ -99,7 +99,13 @@ theorem gpu_allocation_checked_acceptance_sound
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithAllocation
   exact
-    And.intro acceptedWithAllocation.right
+    And.intro
+      (gpu_allocation_checked_acceptance_projects_written_contents
+        validation
+        allocation
+        publicInput
+        proof
+        acceptedWithAllocation)
       (abstract_verifier_sound assumptions publicInput proof acceptedWithAllocation.left)
 
 theorem gpu_allocation_checked_acceptance_verifier_core_contract

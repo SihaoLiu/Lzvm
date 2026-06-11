@@ -116,6 +116,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean GPU setup soundness should reuse the checked-acceptance constants projector"
     );
     assert!(
+        lean_source.contains(
+            "gpu_allocation_checked_acceptance_projects_written_contents\n        validation\n        allocation\n        publicInput\n        proof\n        acceptedWithAllocation"
+        ),
+        "Lean GPU allocation soundness should reuse the checked-acceptance written-contents projector"
+    );
+    assert!(
         lean_source.contains("guestTraceDescriptorCompactRowCount")
             && lean_source.contains("guestTraceDescriptorWideRowCount"),
         "Lean guest PC timing summary should expose descriptor width row counts"
