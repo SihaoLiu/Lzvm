@@ -104,6 +104,79 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_contrac
       accepted
   exact And.intro auditedAssumptions fullContract
 
+theorem runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof _requiresExternalSource accepted
+  have compactContract :=
+    runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      _requiresExternalSource
+      accepted
+  have transcriptBound :=
+    runtime_pipeline_binding_checked_acceptance_transcript_bound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have publicInputBound :=
+    runtime_pipeline_binding_checked_acceptance_public_input_bound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have pcsAndFri :=
+    runtime_pipeline_binding_checked_acceptance_pcs_and_fri
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have coreContract :=
+    runtime_pipeline_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro compactContract.left
+      (And.intro compactContract.right.left
+        (And.intro compactContract.right.right.left
+          (And.intro transcriptBound
+            (And.intro publicInputBound
+              (And.intro pcsAndFri.left
+                (And.intro pcsAndFri.right
+                  (And.intro coreContract.right
+                    compactContract.right.right.right)))))))
+
 theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

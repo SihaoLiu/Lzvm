@@ -236,6 +236,14 @@ structure ProverGpuModeSummary where
   proverGpuModeName : Nat
 deriving DecidableEq, Repr
 
+structure GpuRunOptionsSummary where
+  gpuPreallocateRequested : Bool
+  gpuStreamLimit : Nat
+  witnessThreadPoolCount : Nat
+  storedWitnessLimit : Nat
+  packTraceEnabled : Bool
+deriving DecidableEq, Repr
+
 structure CudaBackendSummary where
   cudaBackendEnabled : Bool
 deriving DecidableEq, Repr
@@ -268,6 +276,7 @@ structure RuntimePerformanceObservationSummary where
   witnessOpeningRowValueTiming : Option WitnessOpeningRowValueTimingSummary
   constantMaterialValidationTiming : Option ConstantMaterialValidationTimingSummary
   proverGpuMode : Option ProverGpuModeSummary
+  gpuRunOptions : Option GpuRunOptionsSummary
   cudaBackend : Option CudaBackendSummary
   cudaAllocatorTiming : Option CudaAllocatorTimingSummary
 deriving DecidableEq, Repr
@@ -915,6 +924,40 @@ theorem prover_gpu_mode_acceptance_verifier_core_contract
   exact
     sound_witness_implies_verifier_core_contract
       (prover_gpu_mode_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
+def GpuRunOptionsObservedAcceptance
+    (system : VerifierModel)
+    (_summary : Option GpuRunOptionsSummary)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+
+theorem gpu_run_options_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option GpuRunOptionsSummary) :
+    forall publicInput proof,
+      GpuRunOptionsObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithGpuRunOptions
+  exact abstract_verifier_sound assumptions publicInput proof acceptedWithGpuRunOptions
+
+theorem gpu_run_options_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option GpuRunOptionsSummary) :
+    forall publicInput proof,
+      GpuRunOptionsObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (gpu_run_options_acceptance_sound
         assumptions
         summary
         publicInput

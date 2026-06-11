@@ -65,6 +65,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("ConstantMaterialValidationTimingObservedAcceptance")
             && lean_source.contains("ProverGpuModeSummary")
             && lean_source.contains("ProverGpuModeObservedAcceptance")
+            && lean_source.contains("GpuRunOptionsSummary")
+            && lean_source.contains("GpuRunOptionsObservedAcceptance")
             && lean_source.contains("CudaBackendSummary")
             && lean_source.contains("CudaBackendObservedAcceptance")
             && lean_source.contains("CudaAllocatorTimingSummary")
@@ -798,6 +800,30 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_source.contains("proverGpuModeName"),
         "Lean prover GPU mode summary should expose the reported mode name"
     );
+    for field in [
+        "gpuPreallocateRequested",
+        "gpuStreamLimit",
+        "witnessThreadPoolCount",
+        "storedWitnessLimit",
+        "packTraceEnabled",
+    ] {
+        assert!(
+            lean_source.contains(field),
+            "Lean GPU run options summary should expose {field}"
+        );
+    }
+    for line_name in [
+        "\"gpu_preallocate={}\"",
+        "\"gpu_streams={}\"",
+        "\"witness_thread_pools={}\"",
+        "\"stored_witnesses={}\"",
+        "\"pack_trace={}\"",
+    ] {
+        assert!(
+            prove_plan_source.contains(line_name),
+            "CLI run plan summary should include {line_name}"
+        );
+    }
     assert!(
         prove_plan_source.contains("\"cuda_backend={}\"")
             && prove_plan_source.contains("cuda_backend_status()"),
@@ -839,6 +865,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "witnessOpeningRowValueTiming : Option WitnessOpeningRowValueTimingSummary",
         "constantMaterialValidationTiming : Option ConstantMaterialValidationTimingSummary",
         "proverGpuMode : Option ProverGpuModeSummary",
+        "gpuRunOptions : Option GpuRunOptionsSummary",
         "cudaBackend : Option CudaBackendSummary",
         "cudaAllocatorTiming : Option CudaAllocatorTimingSummary",
     ] {
@@ -964,6 +991,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "constant_material_validation_timing_acceptance_verifier_core_contract",
             "prover_gpu_mode_acceptance_sound",
             "prover_gpu_mode_acceptance_verifier_core_contract",
+            "gpu_run_options_acceptance_sound",
+            "gpu_run_options_acceptance_verifier_core_contract",
             "cuda_backend_acceptance_sound",
             "cuda_backend_acceptance_verifier_core_contract",
             "cuda_allocator_timing_acceptance_sound",

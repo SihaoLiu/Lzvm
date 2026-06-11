@@ -7,8 +7,12 @@ mod lean_binding;
 fn lean_runtime_soundness_binding_exports_core_contract_projection() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness.lean");
-    let lean_source =
+    let runtime_soundness_source =
         std::fs::read_to_string(&lean_path).expect("Lean runtime soundness source should read");
+    let contracts_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness/Contracts.lean");
+    let contracts_source = std::fs::read_to_string(&contracts_path)
+        .expect("Lean runtime soundness contracts source should read");
+    let lean_source = format!("{runtime_soundness_source}\n{contracts_source}");
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
@@ -16,6 +20,10 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
     assert!(
         top_level_source.contains("import Lzvm.RuntimeSoundness"),
         "top-level Lean module should import runtime soundness"
+    );
+    assert!(
+        top_level_source.contains("import Lzvm.RuntimeSoundness.Contracts"),
+        "top-level Lean module should import runtime soundness contracts"
     );
     assert!(
         lean_source.contains("RuntimeSoundnessValidation")
