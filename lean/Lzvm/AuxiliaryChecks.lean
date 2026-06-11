@@ -2478,6 +2478,15 @@ def ProofArtifactFinishTimingObservedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
 
+theorem proof_artifact_finish_timing_observed_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (summary : Option ProofArtifactFinishTimingSummary) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance system summary publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof observed
+  exact observed
+
 theorem proof_artifact_finish_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -2486,7 +2495,16 @@ theorem proof_artifact_finish_timing_acceptance_sound
       ProofArtifactFinishTimingObservedAcceptance system summary publicInput proof ->
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithProofFinishTimings
-  exact abstract_verifier_sound assumptions publicInput proof acceptedWithProofFinishTimings
+  exact
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      (proof_artifact_finish_timing_observed_acceptance_projects_verifier_acceptance
+        summary
+        publicInput
+        proof
+        acceptedWithProofFinishTimings)
 
 theorem proof_artifact_finish_timing_acceptance_verifier_core_contract
     {system : VerifierModel}
