@@ -2608,6 +2608,15 @@ def RuntimePerformanceObservedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
 
+theorem runtime_performance_observed_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof observed
+  exact observed
+
 theorem runtime_performance_observation_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -2616,8 +2625,16 @@ theorem runtime_performance_observation_acceptance_sound
       RuntimePerformanceObservedAcceptance system summary publicInput proof ->
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithPerformanceObservations
-  exact abstract_verifier_sound assumptions publicInput proof
-    acceptedWithPerformanceObservations
+  exact
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      (runtime_performance_observed_acceptance_projects_verifier_acceptance
+        summary
+        publicInput
+        proof
+        acceptedWithPerformanceObservations)
 
 theorem runtime_performance_observation_acceptance_verifier_core_contract
     {system : VerifierModel}
