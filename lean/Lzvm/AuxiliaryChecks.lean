@@ -2288,6 +2288,15 @@ def CudaAllocatorTimingObservedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
 
+theorem cuda_allocator_timing_observed_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (summary : Option CudaAllocatorTimingSummary) :
+    forall publicInput proof,
+      CudaAllocatorTimingObservedAcceptance system summary publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof observed
+  exact observed
+
 theorem cuda_allocator_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -2296,7 +2305,16 @@ theorem cuda_allocator_timing_acceptance_sound
       CudaAllocatorTimingObservedAcceptance system summary publicInput proof ->
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithAllocatorTimings
-  exact abstract_verifier_sound assumptions publicInput proof acceptedWithAllocatorTimings
+  exact
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      (cuda_allocator_timing_observed_acceptance_projects_verifier_acceptance
+        summary
+        publicInput
+        proof
+        acceptedWithAllocatorTimings)
 
 theorem cuda_allocator_timing_acceptance_verifier_core_contract
     {system : VerifierModel}

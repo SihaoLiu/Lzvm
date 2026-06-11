@@ -163,6 +163,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     assert!(
         lean_source.contains(
+            "cuda_allocator_timing_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithAllocatorTimings"
+        ),
+        "Lean CUDA allocator timing soundness should reuse the observed-acceptance verifier projector"
+    );
+    assert!(
+        lean_source.contains(
             "prover_gpu_mode_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithGpuMode"
         ),
         "Lean prover GPU mode soundness should reuse the observed-acceptance verifier projector"
@@ -1228,6 +1234,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "cuda_backend_observed_acceptance_projects_verifier_acceptance",
             "cuda_backend_acceptance_sound",
             "cuda_backend_acceptance_verifier_core_contract",
+            "cuda_allocator_timing_observed_acceptance_projects_verifier_acceptance",
             "cuda_allocator_timing_acceptance_sound",
             "cuda_allocator_timing_acceptance_verifier_core_contract",
             "cuda_allocator_aggregate_timing_acceptance_sound",
