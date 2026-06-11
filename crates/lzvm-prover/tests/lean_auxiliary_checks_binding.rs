@@ -72,6 +72,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuAllocationCheckedAcceptance")
             && lean_source.contains("GpuHostDeviceCopyRoundTripValidation")
             && lean_source.contains("GpuHostDeviceCopyRoundTripCheckedAcceptance")
+            && lean_source.contains("GpuTemporaryBufferReuseValidation")
+            && lean_source.contains("GpuTemporaryBufferReuseCheckedAcceptance")
             && lean_source.contains("FriFixedColumnCacheValidation")
             && lean_source.contains("FriFixedColumnCacheCheckedAcceptance")
             && lean_source.contains("GpuCosetExtensionValidation")
@@ -88,6 +90,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_source.contains("uploadedBytesRoundTrip")
             && lean_source.contains("roundTripImpliesWrittenContents"),
         "Lean auxiliary checks should bind GPU copy roundtrip evidence to written contents"
+    );
+    assert!(
+        lean_source.contains("temporaryBufferReuseAllowed")
+            && lean_source.contains("pendingDeviceReadsComplete")
+            && lean_source.contains("temporaryBufferReuseImpliesSameRequest")
+            && lean_source.contains("temporaryBufferReuseImpliesPendingReadsComplete"),
+        "Lean auxiliary checks should bind temporary GPU buffer reuse to same requests and completed pending reads"
     );
     assert!(
         lean_source.contains("cosetExtensionMatchesHost")
@@ -937,6 +946,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_host_device_copy_round_trip_implies_written_contents",
             "gpu_host_device_copy_round_trip_checked_acceptance_sound",
             "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
+            "gpu_temporary_buffer_reuse_implies_same_request",
+            "gpu_temporary_buffer_reuse_implies_pending_reads_complete",
+            "gpu_temporary_buffer_reuse_checked_acceptance_sound",
+            "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
             "fri_fixed_column_cache_same_request_implies_cached_contents_bound",
             "fri_fixed_column_cache_checked_acceptance_sound",
             "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
