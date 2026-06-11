@@ -12,7 +12,13 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let core_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core.lean");
     let core_source =
         std::fs::read_to_string(&core_path).expect("Lean pipeline core binding source should read");
-    let lean_source = format!("{core_source}\n{pipeline_source}");
+    let contracts_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts.lean");
+    let contracts_source = std::fs::read_to_string(&contracts_path)
+        .expect("Lean pipeline binding contracts source should read");
+    let lean_source = format!("{core_source}\n{pipeline_source}\n{contracts_source}");
+    let top_level_path = crate_root.join("../../lean/Lzvm.lean");
+    let top_level_source =
+        std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
     let setup_preflight_path = crate_root.join("src/setup_preflight.rs");
     let setup_preflight_source =
         std::fs::read_to_string(&setup_preflight_path).expect("setup preflight source should read");
@@ -50,6 +56,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_implies_execution_obligations",
             "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence",
+            "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract",
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
@@ -89,6 +96,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         pipeline_source.contains("import Lzvm.PipelineBinding.Core"),
         "Lean pipeline binding module should import the core pipeline binding module"
     );
+    assert!(
+        top_level_source.contains("import Lzvm.PipelineBinding.Contracts"),
+        "top-level Lean module should import pipeline binding contracts"
+    );
     assert!(theorem_prefix(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence"
@@ -114,6 +125,27 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("AssumptionBundle"),
         "runtime artifact evidence projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract"
+        )
+        .contains("RuntimeArtifactEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof"),
+        "pipeline evidence should package runtime artifact evidence with verifier core obligations"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract"
+        )
+        .contains("AssumptionBundle"),
+        "pipeline evidence artifact-core projection should not require cryptographic assumptions"
     );
     assert!(
         theorem_prefix(

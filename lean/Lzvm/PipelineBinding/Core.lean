@@ -179,6 +179,33 @@ theorem runtime_pipeline_binding_evidence_implies_core_obligations
         (runtime_pipeline_binding_evidence_implies_public_input_bound evidence)
         (runtime_pipeline_binding_evidence_implies_pcs_and_fri evidence))
 
+theorem runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RuntimeArtifactEvidence
+          system
+          validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+          artifact
+          publicInput
+          proof
+        /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro evidence
+  exact
+    And.intro
+      evidence.right.right.left
+      (runtime_pipeline_binding_evidence_implies_core_obligations evidence)
+
 theorem runtime_pipeline_binding_evidence_implies_execution_obligations
     {system : VerifierModel}
     {validation : RuntimePipelineBindingValidation system}
