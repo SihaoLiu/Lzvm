@@ -472,29 +472,29 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_sound
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
   have sameRequest :=
-    gpu_allocator_no_wait_bypass_implies_same_request
+    gpu_allocator_no_wait_bypass_checked_acceptance_projects_same_request
       validation
       pending
       fresh
       publicInput
       proof
-      checked.right
+      checked
   have pendingNotReused :=
-    gpu_allocator_no_wait_bypass_implies_pending_not_reused
+    gpu_allocator_no_wait_bypass_checked_acceptance_projects_pending_not_reused
       validation
       pending
       fresh
       publicInput
       proof
-      checked.right
+      checked
   have freshIssued :=
-    gpu_allocator_no_wait_bypass_implies_fresh_allocation
+    gpu_allocator_no_wait_bypass_checked_acceptance_projects_fresh_allocation
       validation
       pending
       fresh
       publicInput
       proof
-      checked.right
+      checked
   exact
     And.intro sameRequest
       (And.intro pendingNotReused
@@ -564,11 +564,12 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_sound
   intro publicInput proof checked
   exact
     And.intro
-      (validation.retainedDeviceCacheBudgetImpliesWithinLimits
+      (gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
+        validation
         budget
         publicInput
         proof
-        checked.right)
+        checked)
       (abstract_verifier_sound assumptions publicInput proof checked.left)
 
 theorem gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract
@@ -655,19 +656,15 @@ theorem fri_fixed_column_cache_checked_acceptance_sound
         validation.allocationValidation.writtenContentsBound cached publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have requestBound := checked.right.left
-  have freshBound := checked.right.right
-  have cachedBound :=
-    fri_fixed_column_cache_same_request_implies_cached_contents_bound
-      validation
-      cached
-      fresh
-      requestBound
-      publicInput
-      proof
-      freshBound
   exact
-    And.intro cachedBound
+    And.intro
+      (fri_fixed_column_cache_checked_acceptance_projects_cached_contents_bound
+        validation
+        cached
+        fresh
+        publicInput
+        proof
+        checked)
       (abstract_verifier_sound assumptions publicInput proof checked.left)
 
 theorem fri_fixed_column_cache_checked_acceptance_verifier_core_contract
