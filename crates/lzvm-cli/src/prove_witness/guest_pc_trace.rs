@@ -492,6 +492,14 @@ pub(super) fn record_guest_pc_trace_timing(
             stage_timing.leaf_hash_work_duration(),
         );
         timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_hash_rows"),
+            stage_timing.leaf_hash_row_count(),
+        );
+        timings.record_count_dynamic(
+            format!("guest_stage_{stage_index}_leaf_hash_bytes"),
+            stage_timing.leaf_hash_byte_count(),
+        );
+        timings.record_count_dynamic(
             format!("guest_stage_{stage_index}_leaf_hash_arity2_rows"),
             stage_timing.leaf_hash_arity2_row_count(),
         );

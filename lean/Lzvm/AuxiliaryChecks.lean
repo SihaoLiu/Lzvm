@@ -75,6 +75,8 @@ structure GuestPcTraceStageTimingSummary where
   leafDownloadWorkMilliseconds : Nat
   leafValidateWorkMilliseconds : Nat
   leafHashWorkMilliseconds : Nat
+  leafHashRowCount : Nat
+  leafHashByteCount : Nat
   leafHashArity2RowCount : Nat
   leafHashArity2ByteCount : Nat
   leafHashArity4RowCount : Nat

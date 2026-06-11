@@ -6184,6 +6184,16 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
             "{stdout}"
         );
         assert!(
+            stdout.contains(&format!("timing_guest_stage_{stage_index}_leaf_hash_rows=")),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "timing_guest_stage_{stage_index}_leaf_hash_bytes="
+            )),
+            "{stdout}"
+        );
+        assert!(
             stdout.contains(&format!(
                 "timing_guest_stage_{stage_index}_tree_commit_work_ms="
             )),

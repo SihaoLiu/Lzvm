@@ -166,6 +166,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "leafDownloadWorkMilliseconds",
         "leafValidateWorkMilliseconds",
         "leafHashWorkMilliseconds",
+        "leafHashRowCount",
+        "leafHashByteCount",
         "leafHashArity2RowCount",
         "leafHashArity2ByteCount",
         "leafHashArity4RowCount",
@@ -688,6 +690,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "guest_stage_{stage_index}_leaf_hash_work",
             "leaf_hash_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_hash_rows",
+            "leaf_hash_row_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_hash_bytes",
+            "leaf_hash_byte_count()",
         ),
         (
             "guest_stage_{stage_index}_leaf_hash_arity2_rows",
