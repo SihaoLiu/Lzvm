@@ -727,12 +727,29 @@ pub(crate) struct GuestPcTraceDeviceTraceStage {
 
 #[cfg(feature = "cuda")]
 impl ZiskMainDeviceTraceDescriptors {
+    #[cfg(test)]
     fn new(row_count: usize, column_count: usize, terminal_pc: u64) -> Self {
-        let word_capacity = row_count
-            .checked_mul(ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS)
-            .unwrap_or(0);
+        Self::new_with_descriptor_words(
+            row_count,
+            column_count,
+            terminal_pc,
+            ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS,
+        )
+    }
+
+    fn new_with_descriptor_words(
+        row_count: usize,
+        column_count: usize,
+        terminal_pc: u64,
+        descriptor_words: usize,
+    ) -> Self {
+        debug_assert!(
+            descriptor_words == ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS
+                || descriptor_words == ZISK_MAIN_DEVICE_TRACE_WIDE_DESCRIPTOR_WORDS
+        );
+        let word_capacity = row_count.checked_mul(descriptor_words).unwrap_or(0);
         Self {
-            descriptor_words: ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS,
+            descriptor_words,
             descriptor_rows: 0,
             row_count,
             column_count,
@@ -794,25 +811,63 @@ const ZISK_MAIN_DEVICE_TRACE_B_KIND_SHIFT: u64 = 35;
 const ZISK_MAIN_DEVICE_TRACE_STORE_KIND_SHIFT: u64 = 38;
 
 #[cfg(feature = "cuda")]
-fn zisk_main_device_trace_descriptors(
+fn main_device_trace_descriptors(
     layout: &WitnessTraceLayout,
     columns: &ZiskMainTraceColumns<'_>,
     terminal_pc: u64,
+    segment: ZiskMainTraceSegmentInfo,
 ) -> Option<ZiskMainDeviceTraceDescriptors> {
     if !guest_pc_device_trace_source_enabled()
-        || !zisk_main_device_trace_layout_supported(layout, columns)
+        || !main_device_trace_layout_supported(layout, columns)
     {
         return None;
     }
-    Some(ZiskMainDeviceTraceDescriptors::new(
+    Some(ZiskMainDeviceTraceDescriptors::new_with_descriptor_words(
         layout.row_count(),
         layout.column_count(),
         terminal_pc,
+        main_segment_descriptor_words(layout.row_count(), segment.trace_instance_index),
     ))
 }
 
 #[cfg(feature = "cuda")]
-fn zisk_main_device_trace_layout_supported(
+fn main_segment_descriptor_words(row_count: usize, trace_instance_index: u32) -> usize {
+    if main_segment_mem_steps_fit_compact(row_count, trace_instance_index) {
+        ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS
+    } else {
+        ZISK_MAIN_DEVICE_TRACE_WIDE_DESCRIPTOR_WORDS
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn main_segment_mem_steps_fit_compact(row_count: usize, trace_instance_index: u32) -> bool {
+    let Some(row_count) = u64::try_from(row_count).ok() else {
+        return false;
+    };
+    if row_count == 0 {
+        return true;
+    }
+    let Some(exclusive_end) = u64::from(trace_instance_index)
+        .checked_add(1)
+        .and_then(|next| next.checked_mul(row_count))
+    else {
+        return false;
+    };
+    let Some(main_step) = exclusive_end.checked_sub(1) else {
+        return true;
+    };
+    let Some(max_step) = ZISK_MAIN_MEM_STEPS_PER_ROW
+        .checked_mul(main_step)
+        .and_then(|base| base.checked_add(ZISK_MAIN_RESERVED_MEM_STEPS))
+        .and_then(|base| base.checked_add(ZISK_MAIN_SPECIAL_MEM_STEP_OFFSET))
+    else {
+        return false;
+    };
+    max_step <= u64::from(u32::MAX)
+}
+
+#[cfg(feature = "cuda")]
+fn main_device_trace_layout_supported(
     layout: &WitnessTraceLayout,
     columns: &ZiskMainTraceColumns<'_>,
 ) -> bool {
@@ -3885,7 +3940,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
         });
     }
     let Some(mut device_trace_descriptors) =
-        zisk_main_device_trace_descriptors(layout, &columns, terminal_pc)
+        main_device_trace_descriptors(layout, &columns, terminal_pc, segment)
     else {
         return Ok(None);
     };
@@ -4115,7 +4170,7 @@ fn build_layout_zisk_main_trace_segment(
         .map_err(GuestPcTraceBackendError::TraceBuild)?;
     #[cfg(feature = "cuda")]
     let mut device_trace_descriptors =
-        zisk_main_device_trace_descriptors(layout, &columns, terminal_pc);
+        main_device_trace_descriptors(layout, &columns, terminal_pc, segment);
     let mut state = initial_state.clone();
     let mut output_row = 0_usize;
     let detail_timing = guest_pc_trace_lower_detail_timing_enabled();

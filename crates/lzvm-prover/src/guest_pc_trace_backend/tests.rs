@@ -118,6 +118,19 @@ fn zisk_main_device_descriptor_uses_compact_words_when_values_fit() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn main_descriptor_width_tracks_segment_mem_step_capacity() {
+    assert_eq!(
+        main_segment_descriptor_words(120_000_000, 0),
+        ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS
+    );
+    assert_eq!(
+        main_segment_descriptor_words(120_000_000, 9),
+        ZISK_MAIN_DEVICE_TRACE_WIDE_DESCRIPTOR_WORDS
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn zisk_main_device_descriptor_falls_back_to_wide_words_when_values_do_not_fit() {
     let mut descriptors = ZiskMainDeviceTraceDescriptors::new(2, 39, 0x2000);
     let first = zisk_main_descriptor_trace_values(0x1000, 5, 6, 21, 22, 23, 24, 7);

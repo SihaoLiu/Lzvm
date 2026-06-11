@@ -2356,6 +2356,14 @@ fn guest_pc_trace_device_descriptors_preallocate_rows_once() {
         constructor_body.contains("Vec::with_capacity"),
         "guest PC device descriptors should preallocate compact row storage once per segment"
     );
+    assert!(
+        backend_source.contains("fn main_segment_descriptor_words"),
+        "guest PC device descriptors should choose the initial descriptor width from segment capacity"
+    );
+    assert!(
+        constructor_body.contains("new_with_descriptor_words"),
+        "guest PC device descriptors should allocate the selected descriptor width up front"
+    );
 
     let append_body = function_body(
         &backend_source,
