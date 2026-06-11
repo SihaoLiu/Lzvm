@@ -60,6 +60,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_required_external_source_full_soundness_contract",
             "runtime_soundness_required_external_source_proof_system_full_soundness_contract",
             "runtime_soundness_required_external_source_audited_proof_system_contract",
+            "runtime_soundness_required_external_source_audited_proof_system_core_contract",
             "runtime_soundness_required_external_source_audited_accepts_sound_witness_contract",
             "runtime_soundness_required_external_source_audited_pcs_accepts_sound_witness_contract",
             "runtime_soundness_required_external_source_audited_pcs_fri_witness_contract",
@@ -567,6 +568,82 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             )
             .contains("SoundWitness system publicInput proof"),
         "required external-source runtime soundness should package audited crypto assumptions with proof-system soundness"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("ProofSystemSound system")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("system.accepts publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("ExternalSourceOpeningEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("validation.sourceValidation")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("system.transcriptBound publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("system.publicInputBound publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("system.pcsOpeningsValid publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("system.friQueriesValid publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("system.traceConsistent publicInput proof trace")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "required external-source runtime soundness should package audited proof-system core obligations"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+        )
+        .contains("RuntimeSoundnessEvidence")
+            && !theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("RuntimeArtifactSoundnessObligations"),
+        "compact required external-source proof-system core contract should not force full runtime artifact evidence"
     );
     assert!(
         theorem_prefix(

@@ -1677,6 +1677,88 @@ theorem runtime_soundness_required_external_source_audited_pcs_fri_core_witness_
                 (And.intro coreContract
                   compactContract.right.right.right.right.right.right))))))
 
+theorem runtime_soundness_required_external_source_audited_proof_system_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ ProofSystemSound system
+            /\ system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.sourceValidation
+              publicInput
+              proof
+            /\ system.transcriptBound publicInput proof
+            /\ system.publicInputBound publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ (exists witness trace constraints,
+              system.traceConsistent publicInput proof trace
+                /\ system.constraintsSatisfied constraints trace
+                /\ system.witnessMatchesTrace witness trace)
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have compactContract :=
+    runtime_soundness_required_external_source_audited_pcs_fri_core_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  have transcriptBound :=
+    runtime_soundness_checked_acceptance_transcript_bound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have publicInputBound :=
+    runtime_soundness_checked_acceptance_public_input_bound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have executionObligations :=
+    runtime_soundness_checked_acceptance_execution_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact
+    And.intro compactContract.left
+      (And.intro compactContract.right.left
+        (And.intro compactContract.right.right.left
+          (And.intro compactContract.right.right.right.left
+            (And.intro transcriptBound
+              (And.intro publicInputBound
+                (And.intro compactContract.right.right.right.right.left
+                  (And.intro compactContract.right.right.right.right.right.left
+                    (And.intro compactContract.right.right.right.right.right.right.left
+                      (And.intro executionObligations
+                        compactContract.right.right.right.right.right.right.right)))))))))
+
 theorem runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
