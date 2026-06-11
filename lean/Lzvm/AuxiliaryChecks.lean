@@ -623,12 +623,7 @@ theorem witness_leaf_digest_checked_acceptance_projects_canonical_leaf_bytes
       WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
         validation.canonicalExtendedLeafBytes publicInput proof := by
   intro publicInput proof checked
-  exact
-    (witness_leaf_digest_checked_acceptance_projects_evidence
-      validation
-      publicInput
-      proof
-      checked).left
+  exact checked.right.left
 
 theorem witness_leaf_digest_checked_acceptance_projects_narrow_padded_digest_rows
     {system : VerifierModel}
@@ -637,12 +632,7 @@ theorem witness_leaf_digest_checked_acceptance_projects_narrow_padded_digest_row
       WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
         validation.narrowPaddedDigestsBindRows publicInput proof := by
   intro publicInput proof checked
-  exact
-    (witness_leaf_digest_checked_acceptance_projects_evidence
-      validation
-      publicInput
-      proof
-      checked).right.left
+  exact checked.right.right.left
 
 theorem witness_leaf_digest_checked_acceptance_projects_wide_linear_digest_rows
     {system : VerifierModel}
@@ -651,12 +641,7 @@ theorem witness_leaf_digest_checked_acceptance_projects_wide_linear_digest_rows
       WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
         validation.wideLinearDigestsBindRows publicInput proof := by
   intro publicInput proof checked
-  exact
-    (witness_leaf_digest_checked_acceptance_projects_evidence
-      validation
-      publicInput
-      proof
-      checked).right.right
+  exact checked.right.right.right
 
 theorem witness_leaf_digest_acceptance_sound
     {system : VerifierModel}
