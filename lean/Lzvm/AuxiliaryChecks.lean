@@ -1805,6 +1805,68 @@ theorem constant_material_validation_timing_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem constant_material_validation_aggregate_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ConstantMaterialValidationTimingSummary)
+    (elapsedMilliseconds joinWaitMilliseconds unitCount byteCount : Nat) :
+    forall publicInput proof,
+      ConstantMaterialValidationTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            constantMaterialValidationElapsedMilliseconds := elapsedMilliseconds
+            constantMaterialValidationJoinWaitMilliseconds := joinWaitMilliseconds
+            constantMaterialValidationUnitCount := unitCount
+            constantMaterialValidationByteCount := byteCount })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    constant_material_validation_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          constantMaterialValidationElapsedMilliseconds := elapsedMilliseconds
+          constantMaterialValidationJoinWaitMilliseconds := joinWaitMilliseconds
+          constantMaterialValidationUnitCount := unitCount
+          constantMaterialValidationByteCount := byteCount })
+      publicInput
+      proof
+      observed
+
+theorem constant_material_validation_aggregate_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ConstantMaterialValidationTimingSummary)
+    (elapsedMilliseconds joinWaitMilliseconds unitCount byteCount : Nat) :
+    forall publicInput proof,
+      ConstantMaterialValidationTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            constantMaterialValidationElapsedMilliseconds := elapsedMilliseconds
+            constantMaterialValidationJoinWaitMilliseconds := joinWaitMilliseconds
+            constantMaterialValidationUnitCount := unitCount
+            constantMaterialValidationByteCount := byteCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (constant_material_validation_aggregate_timing_acceptance_sound
+        assumptions
+        summary
+        elapsedMilliseconds
+        joinWaitMilliseconds
+        unitCount
+        byteCount
+        publicInput
+        proof
+        observed)
+
 def ProverGpuModeObservedAcceptance
     (system : VerifierModel)
     (_summary : Option ProverGpuModeSummary)
