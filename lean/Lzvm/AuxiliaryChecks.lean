@@ -630,6 +630,34 @@ theorem witness_leaf_digest_checked_acceptance_projects_canonical_leaf_bytes
       proof
       checked).left
 
+theorem witness_leaf_digest_checked_acceptance_projects_narrow_padded_digest_rows
+    {system : VerifierModel}
+    (validation : WitnessLeafDigestValidation system) :
+    forall publicInput proof,
+      WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
+        validation.narrowPaddedDigestsBindRows publicInput proof := by
+  intro publicInput proof checked
+  exact
+    (witness_leaf_digest_checked_acceptance_projects_evidence
+      validation
+      publicInput
+      proof
+      checked).right.left
+
+theorem witness_leaf_digest_checked_acceptance_projects_wide_linear_digest_rows
+    {system : VerifierModel}
+    (validation : WitnessLeafDigestValidation system) :
+    forall publicInput proof,
+      WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
+        validation.wideLinearDigestsBindRows publicInput proof := by
+  intro publicInput proof checked
+  exact
+    (witness_leaf_digest_checked_acceptance_projects_evidence
+      validation
+      publicInput
+      proof
+      checked).right.right
+
 theorem witness_leaf_digest_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
