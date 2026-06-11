@@ -1196,6 +1196,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
             "gpu_temporary_buffer_reuse_implies_same_request",
             "gpu_temporary_buffer_reuse_implies_pending_reads_complete",
+            "gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request",
             "gpu_temporary_buffer_reuse_checked_acceptance_sound",
             "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
             "gpu_leaf_output_buffer_reuse_implies_canonical_leaf_bytes",
