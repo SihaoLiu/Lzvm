@@ -2003,6 +2003,144 @@ theorem cuda_allocator_timing_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem cuda_allocator_aggregate_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : CudaAllocatorTimingSummary)
+    (mallocCalls mallocBytes cachedBlocks cachedBytes eventQueryCalls
+      eventQueryReadyCount eventQueryNotReadyCount eventSynchronizeCalls
+      eventSynchronizeBytes eventSynchronizeMaxBytes eventSynchronizeWaitNanoseconds
+      eventSynchronizeMaxWaitNanoseconds eventSynchronizeHotBytes
+      eventSynchronizeHotCount eventSynchronizeHotWaitNanoseconds cachedReuseCount
+      pendingReuseCount noWaitBypassCount noWaitBypassBytes : Nat) :
+    forall publicInput proof,
+      CudaAllocatorTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            cudaAllocatorMallocCallCount := mallocCalls
+            cudaAllocatorMallocByteCount := mallocBytes
+            cudaAllocatorCachedBlockCount := cachedBlocks
+            cudaAllocatorCachedByteCount := cachedBytes
+            cudaAllocatorEventQueryCallCount := eventQueryCalls
+            cudaAllocatorEventQueryReadyCount := eventQueryReadyCount
+            cudaAllocatorEventQueryNotReadyCount := eventQueryNotReadyCount
+            cudaAllocatorEventSynchronizeCallCount := eventSynchronizeCalls
+            cudaAllocatorEventSynchronizeByteCount := eventSynchronizeBytes
+            cudaAllocatorEventSynchronizeMaxByteCount := eventSynchronizeMaxBytes
+            cudaAllocatorEventSynchronizeWaitNanoseconds := eventSynchronizeWaitNanoseconds
+            cudaAllocatorEventSynchronizeMaxWaitNanoseconds :=
+              eventSynchronizeMaxWaitNanoseconds
+            cudaAllocatorEventSynchronizeHotByteCount := eventSynchronizeHotBytes
+            cudaAllocatorEventSynchronizeHotCount := eventSynchronizeHotCount
+            cudaAllocatorEventSynchronizeHotWaitNanoseconds :=
+              eventSynchronizeHotWaitNanoseconds
+            cudaAllocatorCachedReuseCount := cachedReuseCount
+            cudaAllocatorPendingReuseCount := pendingReuseCount
+            cudaAllocatorNoWaitBypassCount := noWaitBypassCount
+            cudaAllocatorNoWaitBypassByteCount := noWaitBypassBytes })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    cuda_allocator_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          cudaAllocatorMallocCallCount := mallocCalls
+          cudaAllocatorMallocByteCount := mallocBytes
+          cudaAllocatorCachedBlockCount := cachedBlocks
+          cudaAllocatorCachedByteCount := cachedBytes
+          cudaAllocatorEventQueryCallCount := eventQueryCalls
+          cudaAllocatorEventQueryReadyCount := eventQueryReadyCount
+          cudaAllocatorEventQueryNotReadyCount := eventQueryNotReadyCount
+          cudaAllocatorEventSynchronizeCallCount := eventSynchronizeCalls
+          cudaAllocatorEventSynchronizeByteCount := eventSynchronizeBytes
+          cudaAllocatorEventSynchronizeMaxByteCount := eventSynchronizeMaxBytes
+          cudaAllocatorEventSynchronizeWaitNanoseconds := eventSynchronizeWaitNanoseconds
+          cudaAllocatorEventSynchronizeMaxWaitNanoseconds :=
+            eventSynchronizeMaxWaitNanoseconds
+          cudaAllocatorEventSynchronizeHotByteCount := eventSynchronizeHotBytes
+          cudaAllocatorEventSynchronizeHotCount := eventSynchronizeHotCount
+          cudaAllocatorEventSynchronizeHotWaitNanoseconds :=
+            eventSynchronizeHotWaitNanoseconds
+          cudaAllocatorCachedReuseCount := cachedReuseCount
+          cudaAllocatorPendingReuseCount := pendingReuseCount
+          cudaAllocatorNoWaitBypassCount := noWaitBypassCount
+          cudaAllocatorNoWaitBypassByteCount := noWaitBypassBytes })
+      publicInput
+      proof
+      observed
+
+theorem cuda_allocator_aggregate_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : CudaAllocatorTimingSummary)
+    (mallocCalls mallocBytes cachedBlocks cachedBytes eventQueryCalls
+      eventQueryReadyCount eventQueryNotReadyCount eventSynchronizeCalls
+      eventSynchronizeBytes eventSynchronizeMaxBytes eventSynchronizeWaitNanoseconds
+      eventSynchronizeMaxWaitNanoseconds eventSynchronizeHotBytes
+      eventSynchronizeHotCount eventSynchronizeHotWaitNanoseconds cachedReuseCount
+      pendingReuseCount noWaitBypassCount noWaitBypassBytes : Nat) :
+    forall publicInput proof,
+      CudaAllocatorTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            cudaAllocatorMallocCallCount := mallocCalls
+            cudaAllocatorMallocByteCount := mallocBytes
+            cudaAllocatorCachedBlockCount := cachedBlocks
+            cudaAllocatorCachedByteCount := cachedBytes
+            cudaAllocatorEventQueryCallCount := eventQueryCalls
+            cudaAllocatorEventQueryReadyCount := eventQueryReadyCount
+            cudaAllocatorEventQueryNotReadyCount := eventQueryNotReadyCount
+            cudaAllocatorEventSynchronizeCallCount := eventSynchronizeCalls
+            cudaAllocatorEventSynchronizeByteCount := eventSynchronizeBytes
+            cudaAllocatorEventSynchronizeMaxByteCount := eventSynchronizeMaxBytes
+            cudaAllocatorEventSynchronizeWaitNanoseconds := eventSynchronizeWaitNanoseconds
+            cudaAllocatorEventSynchronizeMaxWaitNanoseconds :=
+              eventSynchronizeMaxWaitNanoseconds
+            cudaAllocatorEventSynchronizeHotByteCount := eventSynchronizeHotBytes
+            cudaAllocatorEventSynchronizeHotCount := eventSynchronizeHotCount
+            cudaAllocatorEventSynchronizeHotWaitNanoseconds :=
+              eventSynchronizeHotWaitNanoseconds
+            cudaAllocatorCachedReuseCount := cachedReuseCount
+            cudaAllocatorPendingReuseCount := pendingReuseCount
+            cudaAllocatorNoWaitBypassCount := noWaitBypassCount
+            cudaAllocatorNoWaitBypassByteCount := noWaitBypassBytes })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (cuda_allocator_aggregate_timing_acceptance_sound
+        assumptions
+        summary
+        mallocCalls
+        mallocBytes
+        cachedBlocks
+        cachedBytes
+        eventQueryCalls
+        eventQueryReadyCount
+        eventQueryNotReadyCount
+        eventSynchronizeCalls
+        eventSynchronizeBytes
+        eventSynchronizeMaxBytes
+        eventSynchronizeWaitNanoseconds
+        eventSynchronizeMaxWaitNanoseconds
+        eventSynchronizeHotBytes
+        eventSynchronizeHotCount
+        eventSynchronizeHotWaitNanoseconds
+        cachedReuseCount
+        pendingReuseCount
+        noWaitBypassCount
+        noWaitBypassBytes
+        publicInput
+        proof
+        observed)
+
 def ProofArtifactFinishTimingObservedAcceptance
     (system : VerifierModel)
     (_summary : Option ProofArtifactFinishTimingSummary)
