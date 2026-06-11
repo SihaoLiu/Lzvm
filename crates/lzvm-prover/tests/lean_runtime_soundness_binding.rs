@@ -33,6 +33,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_evidence_implies_public_input_bound",
             "runtime_soundness_evidence_implies_core_obligations",
             "runtime_soundness_evidence_implies_external_source_requirement",
+            "runtime_soundness_evidence_implies_binding_pcs_fri_contract",
             "runtime_soundness_evidence_implies_runtime_artifact_core_contract",
             "runtime_soundness_checked_acceptance_runtime_artifact_evidence",
             "runtime_soundness_checked_acceptance_transcript_bound",
@@ -123,6 +124,37 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("AssumptionBundle"),
         "runtime soundness evidence external-source projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_evidence_implies_binding_pcs_fri_contract"
+        )
+        .contains("system.transcriptBound publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_evidence_implies_binding_pcs_fri_contract"
+            )
+            .contains("system.publicInputBound publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_evidence_implies_binding_pcs_fri_contract"
+            )
+            .contains("system.pcsOpeningsValid publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_evidence_implies_binding_pcs_fri_contract"
+            )
+            .contains("system.friQueriesValid publicInput proof"),
+        "runtime soundness evidence should expose the compact transcript/public-input/PCS/FRI contract"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_evidence_implies_binding_pcs_fri_contract"
+        )
+        .contains("AssumptionBundle"),
+        "runtime soundness evidence binding PCS/FRI projection should not require cryptographic assumptions"
     );
     assert!(
         theorem_prefix(

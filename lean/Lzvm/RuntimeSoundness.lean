@@ -154,6 +154,27 @@ theorem runtime_soundness_evidence_implies_external_source_requirement
   intro artifact publicInput proof requiresExternalSource evidence
   exact evidence.right.right.right.right.left
 
+theorem runtime_soundness_evidence_implies_binding_pcs_fri_contract
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact
+    And.intro evidence.right.right.left
+      (And.intro evidence.right.right.right.left
+        evidence.right.right.right.right.right)
+
 theorem runtime_soundness_evidence_implies_core_obligations
     {system : VerifierModel}
     (validation : RuntimeSoundnessValidation system) :
