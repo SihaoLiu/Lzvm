@@ -2451,6 +2451,43 @@ theorem runtime_performance_observation_projects_constant_material_validation_ti
   intro publicInput proof observed
   exact observed
 
+theorem runtime_performance_observation_constant_material_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    constant_material_validation_timing_acceptance_sound
+      assumptions
+      summary.constantMaterialValidationTiming
+      publicInput
+      proof
+      (runtime_performance_observation_projects_constant_material_validation_timing
+        summary
+        publicInput
+        proof
+        observed)
+
+theorem runtime_performance_observation_constant_material_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (runtime_performance_observation_constant_material_timing_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
 theorem runtime_performance_observation_projects_prover_gpu_mode
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
