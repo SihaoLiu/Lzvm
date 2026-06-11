@@ -3805,6 +3805,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
 
     for field in [
         "guest_trace_report_duration",
+        "guest_trace_report_validation_duration",
         "guest_trace_single_row_report_duration",
         "guest_trace_multi_row_report_duration",
         "guest_trace_pending_dma_report_duration",
@@ -3834,6 +3835,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
 
     for line_name in [
         "\"guest_trace_report\"",
+        "\"guest_trace_report_validation\"",
         "\"guest_trace_single_row_report_lower\"",
         "\"guest_trace_multi_row_report_lower\"",
         "\"guest_trace_pending_dma_report_lower\"",

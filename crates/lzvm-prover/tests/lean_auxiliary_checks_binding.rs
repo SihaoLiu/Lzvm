@@ -111,6 +111,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestTraceLowererMilliseconds",
         "guestTraceLowerMilliseconds",
         "guestTraceReportMilliseconds",
+        "guestTraceReportValidationMilliseconds",
         "guestTraceReportCount",
         "guestTraceReportRowCount",
         "guestTraceEmitMilliseconds",
@@ -160,6 +161,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ("\"guest_trace_lowerer\"", "guest_trace_lowerer_duration()"),
         ("\"guest_trace_lower\"", "guest_trace_lower_duration()"),
         ("\"guest_trace_report\"", "guest_trace_report_duration()"),
+        (
+            "\"guest_trace_report_validation\"",
+            "guest_trace_report_validation_duration()",
+        ),
         ("\"guest_trace_reports\"", "guest_trace_report_count()"),
         (
             "\"guest_trace_report_rows\"",

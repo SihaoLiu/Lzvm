@@ -593,6 +593,12 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_trace_report_duration
     }
 
+    pub fn guest_trace_report_validation_duration(&self) -> Duration {
+        self.guest_trace_report_duration
+            .saturating_sub(self.guest_trace_emit_duration)
+            .saturating_sub(self.guest_trace_descriptor_duration)
+    }
+
     pub fn guest_trace_single_row_report_duration(&self) -> Duration {
         self.guest_trace_single_row_report_duration
     }

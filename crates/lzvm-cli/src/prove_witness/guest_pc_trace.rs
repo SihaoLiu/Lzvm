@@ -68,6 +68,10 @@ pub(super) fn record_guest_pc_trace_timing(
     timings.record("guest_trace_lower", timing.guest_trace_lower_duration());
     timings.record("guest_trace_report", timing.guest_trace_report_duration());
     timings.record(
+        "guest_trace_report_validation",
+        timing.guest_trace_report_validation_duration(),
+    );
+    timings.record(
         "guest_trace_single_row_report_lower",
         timing.guest_trace_single_row_report_duration(),
     );

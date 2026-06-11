@@ -67,6 +67,7 @@ structure GuestPcTraceTimingSummary where
   guestTraceLowererMilliseconds : Nat
   guestTraceLowerMilliseconds : Nat
   guestTraceReportMilliseconds : Nat
+  guestTraceReportValidationMilliseconds : Nat
   guestTraceReportCount : Nat
   guestTraceReportRowCount : Nat
   guestTraceEmitMilliseconds : Nat
