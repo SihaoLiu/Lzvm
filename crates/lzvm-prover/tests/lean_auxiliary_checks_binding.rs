@@ -145,6 +145,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     assert!(
         lean_source.contains(
+            "guest_pc_trace_timing_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithGuestPcTraceTimings"
+        ),
+        "Lean guest PC trace timing soundness should reuse the observed-acceptance verifier projector"
+    );
+    assert!(
+        lean_source.contains(
             "witness_opening_row_value_timing_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithRowValueTimings"
         ),
         "Lean row-value timing soundness should reuse the observed-acceptance verifier projector"
@@ -1186,6 +1192,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "timing_observed_acceptance_projects_verifier_acceptance",
             "timing_observation_acceptance_sound",
             "timing_observation_acceptance_verifier_core_contract",
+            "guest_pc_trace_timing_observed_acceptance_projects_verifier_acceptance",
             "guest_pc_trace_timing_acceptance_sound",
             "guest_pc_trace_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_shape_counts_acceptance_sound",

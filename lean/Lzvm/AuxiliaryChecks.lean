@@ -1106,6 +1106,15 @@ def GuestPcTraceTimingObservedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
 
+theorem guest_pc_trace_timing_observed_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (summary : Option GuestPcTraceTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance system summary publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof observed
+  exact observed
+
 theorem guest_pc_trace_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1114,7 +1123,16 @@ theorem guest_pc_trace_timing_acceptance_sound
       GuestPcTraceTimingObservedAcceptance system summary publicInput proof ->
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithGuestPcTraceTimings
-  exact abstract_verifier_sound assumptions publicInput proof acceptedWithGuestPcTraceTimings
+  exact
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      (guest_pc_trace_timing_observed_acceptance_projects_verifier_acceptance
+        summary
+        publicInput
+        proof
+        acceptedWithGuestPcTraceTimings)
 
 theorem guest_pc_trace_timing_acceptance_verifier_core_contract
     {system : VerifierModel}
