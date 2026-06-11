@@ -1695,6 +1695,82 @@ theorem witness_opening_row_value_timing_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem witness_opening_row_value_aggregate_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : WitnessOpeningRowValueTimingSummary)
+    (sourceExtendMilliseconds sourceDownloadMilliseconds deviceDownloadMilliseconds
+      deviceRows sourceRows words bytes : Nat) :
+    forall publicInput proof,
+      WitnessOpeningRowValueTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            rowValueSourceExtendMilliseconds := sourceExtendMilliseconds
+            rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds
+            rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds
+            deviceRowCount := deviceRows
+            sourceRowCount := sourceRows
+            wordCount := words
+            byteCount := bytes })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    witness_opening_row_value_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          rowValueSourceExtendMilliseconds := sourceExtendMilliseconds
+          rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds
+          rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds
+          deviceRowCount := deviceRows
+          sourceRowCount := sourceRows
+          wordCount := words
+          byteCount := bytes })
+      publicInput
+      proof
+      observed
+
+theorem witness_opening_row_value_aggregate_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : WitnessOpeningRowValueTimingSummary)
+    (sourceExtendMilliseconds sourceDownloadMilliseconds deviceDownloadMilliseconds
+      deviceRows sourceRows words bytes : Nat) :
+    forall publicInput proof,
+      WitnessOpeningRowValueTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            rowValueSourceExtendMilliseconds := sourceExtendMilliseconds
+            rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds
+            rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds
+            deviceRowCount := deviceRows
+            sourceRowCount := sourceRows
+            wordCount := words
+            byteCount := bytes })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (witness_opening_row_value_aggregate_timing_acceptance_sound
+        assumptions
+        summary
+        sourceExtendMilliseconds
+        sourceDownloadMilliseconds
+        deviceDownloadMilliseconds
+        deviceRows
+        sourceRows
+        words
+        bytes
+        publicInput
+        proof
+        observed)
+
 def ConstantMaterialValidationTimingObservedAcceptance
     (system : VerifierModel)
     (_summary : Option ConstantMaterialValidationTimingSummary)

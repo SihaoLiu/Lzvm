@@ -1132,6 +1132,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_tree_commit_timing_acceptance_verifier_core_contract",
             "witness_opening_row_value_timing_acceptance_sound",
             "witness_opening_row_value_timing_acceptance_verifier_core_contract",
+            "witness_opening_row_value_aggregate_timing_acceptance_sound",
+            "witness_opening_row_value_aggregate_timing_acceptance_verifier_core_contract",
             "constant_material_validation_timing_acceptance_sound",
             "constant_material_validation_timing_acceptance_verifier_core_contract",
             "prover_gpu_mode_acceptance_sound",
