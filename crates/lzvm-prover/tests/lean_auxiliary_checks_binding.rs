@@ -173,6 +173,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestStageLeafDownloadWorkMilliseconds",
         "guestStageLeafValidateWorkMilliseconds",
         "guestStageLeafHashWorkMilliseconds",
+        "guestStageTreeCommitWorkMilliseconds",
+        "guestStageTreeCommitCheckpointWorkMilliseconds",
+        "guestStageTreeCommitRootWorkMilliseconds",
+        "guestStageTreeCommitRootCount",
+        "guestStageTreeCommitRootByteCount",
+        "guestStageTreeCommitRetainWorkMilliseconds",
     ] {
         assert!(
             lean_source.contains(field),
@@ -391,6 +397,30 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_descriptor_buffer_retention_rejected_bytes\"",
             "guest_descriptor_buffer_retention_rejected_byte_count()",
+        ),
+        (
+            "\"guest_stage_tree_commit_work\"",
+            "guest_stage_tree_commit_work_duration()",
+        ),
+        (
+            "\"guest_stage_tree_commit_checkpoint_work\"",
+            "guest_stage_tree_commit_checkpoint_work_duration()",
+        ),
+        (
+            "\"guest_stage_tree_commit_root_work\"",
+            "guest_stage_tree_commit_root_work_duration()",
+        ),
+        (
+            "\"guest_stage_tree_commit_root_count\"",
+            "guest_stage_tree_commit_root_count()",
+        ),
+        (
+            "\"guest_stage_tree_commit_root_bytes\"",
+            "guest_stage_tree_commit_root_byte_count()",
+        ),
+        (
+            "\"guest_stage_tree_commit_retain_work\"",
+            "guest_stage_tree_commit_retain_work_duration()",
         ),
     ] {
         assert!(

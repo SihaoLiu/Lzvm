@@ -134,6 +134,11 @@ structure GuestPcTraceTimingSummary where
   guestStageLeafValidateWorkMilliseconds : Nat
   guestStageLeafHashWorkMilliseconds : Nat
   guestStageTreeCommitWorkMilliseconds : Nat
+  guestStageTreeCommitCheckpointWorkMilliseconds : Nat
+  guestStageTreeCommitRootWorkMilliseconds : Nat
+  guestStageTreeCommitRootCount : Nat
+  guestStageTreeCommitRootByteCount : Nat
+  guestStageTreeCommitRetainWorkMilliseconds : Nat
 deriving DecidableEq, Repr
 
 structure WitnessOpeningStageRowValueTimingSummary where
