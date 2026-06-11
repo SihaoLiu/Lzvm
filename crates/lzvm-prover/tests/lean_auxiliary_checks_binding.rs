@@ -115,8 +115,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestTraceReportLoweringMilliseconds",
         "guestTraceReportRowValidationMilliseconds",
         "guestTraceReportVisitMilliseconds",
+        "guestTraceSingleRowReportLowerMilliseconds",
+        "guestTraceMultiRowReportLowerMilliseconds",
+        "guestTracePendingDmaReportLowerMilliseconds",
+        "guestTraceAmoReportLowerMilliseconds",
+        "guestTraceStoreConditionalReportLowerMilliseconds",
         "guestTraceReportCount",
         "guestTraceReportRowCount",
+        "guestTraceSingleRowReportCount",
+        "guestTraceMultiRowReportCount",
+        "guestTracePendingDmaReportCount",
+        "guestTraceAmoReportCount",
+        "guestTraceStoreConditionalReportCount",
         "guestTraceExternalOpRowCount",
         "guestTraceCopyRowCount",
         "guestTraceFlagRowCount",
@@ -190,10 +200,50 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "\"guest_trace_report_visit\"",
             "guest_trace_report_visit_duration()",
         ),
+        (
+            "\"guest_trace_single_row_report_lower\"",
+            "guest_trace_single_row_report_duration()",
+        ),
+        (
+            "\"guest_trace_multi_row_report_lower\"",
+            "guest_trace_multi_row_report_duration()",
+        ),
+        (
+            "\"guest_trace_pending_dma_report_lower\"",
+            "guest_trace_pending_dma_report_duration()",
+        ),
+        (
+            "\"guest_trace_amo_report_lower\"",
+            "guest_trace_amo_report_duration()",
+        ),
+        (
+            "\"guest_trace_store_conditional_report_lower\"",
+            "guest_trace_store_conditional_report_duration()",
+        ),
         ("\"guest_trace_reports\"", "guest_trace_report_count()"),
         (
             "\"guest_trace_report_rows\"",
             "guest_trace_report_row_count()",
+        ),
+        (
+            "\"guest_trace_single_row_reports\"",
+            "guest_trace_single_row_report_count()",
+        ),
+        (
+            "\"guest_trace_multi_row_reports\"",
+            "guest_trace_multi_row_report_count()",
+        ),
+        (
+            "\"guest_trace_pending_dma_reports\"",
+            "guest_trace_pending_dma_report_count()",
+        ),
+        (
+            "\"guest_trace_amo_reports\"",
+            "guest_trace_amo_report_count()",
+        ),
+        (
+            "\"guest_trace_store_conditional_reports\"",
+            "guest_trace_store_conditional_report_count()",
         ),
         (
             "\"guest_trace_external_op_rows\"",

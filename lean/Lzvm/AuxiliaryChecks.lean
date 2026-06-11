@@ -71,8 +71,18 @@ structure GuestPcTraceTimingSummary where
   guestTraceReportLoweringMilliseconds : Nat
   guestTraceReportRowValidationMilliseconds : Nat
   guestTraceReportVisitMilliseconds : Nat
+  guestTraceSingleRowReportLowerMilliseconds : Nat
+  guestTraceMultiRowReportLowerMilliseconds : Nat
+  guestTracePendingDmaReportLowerMilliseconds : Nat
+  guestTraceAmoReportLowerMilliseconds : Nat
+  guestTraceStoreConditionalReportLowerMilliseconds : Nat
   guestTraceReportCount : Nat
   guestTraceReportRowCount : Nat
+  guestTraceSingleRowReportCount : Nat
+  guestTraceMultiRowReportCount : Nat
+  guestTracePendingDmaReportCount : Nat
+  guestTraceAmoReportCount : Nat
+  guestTraceStoreConditionalReportCount : Nat
   guestTraceExternalOpRowCount : Nat
   guestTraceCopyRowCount : Nat
   guestTraceFlagRowCount : Nat
