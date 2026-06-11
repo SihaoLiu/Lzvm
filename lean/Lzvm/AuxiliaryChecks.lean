@@ -563,6 +563,15 @@ def GpuMerkleDigestPrefixBatchCheckedAcceptance
   system.accepts publicInput proof
     /\ validation.gpuMerkleDigestPrefixBatchMatchesSinglePaths publicInput proof
 
+theorem source_lookup_checked_acceptance_projects_auxiliary_evidence
+    {system : VerifierModel}
+    (auxiliary : AuxiliaryValidation system) :
+    forall publicInput proof,
+      SourceLookupCheckedAcceptance system auxiliary publicInput proof ->
+        SourceLookupAuxiliaryEvidence system auxiliary publicInput proof := by
+  intro publicInput proof checked
+  exact checked.right
+
 theorem source_lookup_auxiliary_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -573,7 +582,12 @@ theorem source_lookup_auxiliary_acceptance_sound
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithLookupChecks
   exact
-    And.intro acceptedWithLookupChecks.right
+    And.intro
+      (source_lookup_checked_acceptance_projects_auxiliary_evidence
+        auxiliary
+        publicInput
+        proof
+        acceptedWithLookupChecks)
       (abstract_verifier_sound assumptions publicInput proof acceptedWithLookupChecks.left)
 
 theorem source_lookup_checked_acceptance_verifier_core_contract

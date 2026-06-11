@@ -1106,6 +1106,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "source_lookup_checked_acceptance_projects_auxiliary_evidence",
             "source_lookup_auxiliary_acceptance_sound",
             "source_lookup_checked_acceptance_verifier_core_contract",
             "witness_leaf_digest_acceptance_sound",
