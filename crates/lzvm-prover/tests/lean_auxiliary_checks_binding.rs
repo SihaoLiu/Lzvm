@@ -108,6 +108,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean guest PC timing summary should expose descriptor width row counts"
     );
     assert!(
+        lean_source.contains("guest_pc_trace_descriptor_width_counts_acceptance_sound")
+            && lean_source.contains(
+                "guest_pc_trace_descriptor_width_counts_acceptance_verifier_core_contract"
+            ),
+        "Lean guest PC timing summary should prove descriptor width row counts are verifier-core-neutral"
+    );
+    assert!(
         lean_source.contains("temporaryBufferReuseAllowed")
             && lean_source.contains("pendingDeviceReadsComplete")
             && lean_source.contains("temporaryBufferReuseImpliesSameRequest")
@@ -238,6 +245,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestTraceEmitMilliseconds",
         "guestTraceDescriptorMilliseconds",
         "guestTraceDescriptorRowCount",
+        "guestTraceDescriptorCompactRowCount",
+        "guestTraceDescriptorWideRowCount",
         "guestTracePendingSendWaitMilliseconds",
         "guestTracePendingReceiveWaitMilliseconds",
         "guestTraceSegmentSendWaitMilliseconds",
