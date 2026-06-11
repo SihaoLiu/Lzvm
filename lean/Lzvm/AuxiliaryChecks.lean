@@ -270,6 +270,16 @@ structure CudaAllocatorTimingSummary where
   cudaAllocatorNoWaitBypassByteCount : Nat
 deriving DecidableEq, Repr
 
+structure ProofArtifactFinishTimingSummary where
+  finishQueryPlanMilliseconds : Nat
+  finishConstantOpeningMilliseconds : Nat
+  finishWitnessOpeningMilliseconds : Nat
+  finishFriOpeningMilliseconds : Nat
+  finishProofEncodeMilliseconds : Nat
+  finishContributionSegmentMilliseconds : Nat
+  finishContributionVerifyMilliseconds : Nat
+deriving DecidableEq, Repr
+
 structure RuntimePerformanceObservationSummary where
   timingObservations : List TimingObservation
   guestPcTraceTiming : Option GuestPcTraceTimingSummary
@@ -279,6 +289,7 @@ structure RuntimePerformanceObservationSummary where
   gpuRunOptions : Option GpuRunOptionsSummary
   cudaBackend : Option CudaBackendSummary
   cudaAllocatorTiming : Option CudaAllocatorTimingSummary
+  proofArtifactFinishTiming : Option ProofArtifactFinishTimingSummary
 deriving DecidableEq, Repr
 
 structure GpuSetupCacheState where
@@ -1026,6 +1037,40 @@ theorem cuda_allocator_timing_acceptance_verifier_core_contract
   exact
     sound_witness_implies_verifier_core_contract
       (cuda_allocator_timing_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
+def ProofArtifactFinishTimingObservedAcceptance
+    (system : VerifierModel)
+    (_summary : Option ProofArtifactFinishTimingSummary)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+
+theorem proof_artifact_finish_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ProofArtifactFinishTimingSummary) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithProofFinishTimings
+  exact abstract_verifier_sound assumptions publicInput proof acceptedWithProofFinishTimings
+
+theorem proof_artifact_finish_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ProofArtifactFinishTimingSummary) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (proof_artifact_finish_timing_acceptance_sound
         assumptions
         summary
         publicInput

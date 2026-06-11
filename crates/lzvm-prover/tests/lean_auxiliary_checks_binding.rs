@@ -71,6 +71,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("CudaBackendObservedAcceptance")
             && lean_source.contains("CudaAllocatorTimingSummary")
             && lean_source.contains("CudaAllocatorTimingObservedAcceptance")
+            && lean_source.contains("ProofArtifactFinishTimingSummary")
+            && lean_source.contains("ProofArtifactFinishTimingObservedAcceptance")
             && lean_source.contains("RuntimePerformanceObservationSummary")
             && lean_source.contains("RuntimePerformanceObservedAcceptance")
             && lean_source.contains("GpuSetupCheckedAcceptance")
@@ -868,6 +870,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "gpuRunOptions : Option GpuRunOptionsSummary",
         "cudaBackend : Option CudaBackendSummary",
         "cudaAllocatorTiming : Option CudaAllocatorTimingSummary",
+        "proofArtifactFinishTiming : Option ProofArtifactFinishTimingSummary",
     ] {
         assert!(
             lean_source.contains(field),
@@ -900,6 +903,37 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "CLI CUDA allocator timing output should include {line_name}"
         );
     }
+    for field in [
+        "finishQueryPlanMilliseconds",
+        "finishConstantOpeningMilliseconds",
+        "finishWitnessOpeningMilliseconds",
+        "finishFriOpeningMilliseconds",
+        "finishProofEncodeMilliseconds",
+        "finishContributionSegmentMilliseconds",
+        "finishContributionVerifyMilliseconds",
+    ] {
+        assert!(
+            lean_source.contains(field),
+            "Lean proof artifact finish timing summary should expose {field}"
+        );
+    }
+    for line_name in [
+        "\"finish_query_plan\"",
+        "\"finish_constant_opening\"",
+        "\"finish_witness_opening\"",
+        "\"finish_fri_opening\"",
+        "\"finish_contribution_segment\"",
+        "\"finish_contribution_verify\"",
+    ] {
+        assert!(
+            proof_timing_source.contains(line_name),
+            "CLI proof artifact timing output should include {line_name}"
+        );
+    }
+    assert!(
+        prove_witness_source.contains("\"finish_proof_encode\""),
+        "CLI prove witness output should include proof encode timing"
+    );
     for (line_name, field) in [
         (
             "\"finish_witness_opening_row_value_source_extend\"",
@@ -997,6 +1031,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "cuda_backend_acceptance_verifier_core_contract",
             "cuda_allocator_timing_acceptance_sound",
             "cuda_allocator_timing_acceptance_verifier_core_contract",
+            "proof_artifact_finish_timing_acceptance_sound",
+            "proof_artifact_finish_timing_acceptance_verifier_core_contract",
             "runtime_performance_observation_acceptance_sound",
             "runtime_performance_observation_acceptance_verifier_core_contract",
             "gpu_setup_checked_acceptance_sound",
