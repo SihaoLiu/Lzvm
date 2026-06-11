@@ -101,6 +101,42 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean auxiliary checks should bind GPU Merkle prefix batches to lower-prefix path evidence"
     );
     for field in [
+        "GuestPcTraceStageTimingSummary",
+        "stageTimings : List GuestPcTraceStageTimingSummary",
+        "stageIndex",
+        "leafExtendWorkMilliseconds",
+        "leafSetupWorkMilliseconds",
+        "leafSetupPrepareMilliseconds",
+        "leafSetupOutputAllocMilliseconds",
+        "leafSetupWorkspaceAllocMilliseconds",
+        "leafSetupOutputAllocByteCount",
+        "leafSetupWorkspaceAllocByteCount",
+        "leafSetupOutputAllocCount",
+        "leafSetupWorkspaceAllocCount",
+        "leafUploadWorkMilliseconds",
+        "leafKernelWorkMilliseconds",
+        "leafDownloadWorkMilliseconds",
+        "leafValidateWorkMilliseconds",
+        "leafHashWorkMilliseconds",
+        "leafHashArity2RowCount",
+        "leafHashArity2ByteCount",
+        "leafHashArity4RowCount",
+        "leafHashArity4ByteCount",
+        "leafCosetExtendCallCount",
+        "leafCosetExtendOutputByteCount",
+        "leafCosetExtendColumnCount",
+        "leafCosetExtendMaxColumnCount",
+        "leafCosetExtendNttLaunchCount",
+        "leafCosetExtendBitReverseLaunchCount",
+        "leafCosetExtendNttStageLaunchCount",
+        "leafCosetExtendNttBlockTwiddleLaunchCount",
+        "leafCosetExtendNormalizeLaunchCount",
+        "leafCosetExtendPackLaunchCount",
+        "leafCosetExtendUnpackLaunchCount",
+        "treeCommitWorkMilliseconds",
+        "treeCommitCheckpointWorkMilliseconds",
+        "treeCommitRootWorkMilliseconds",
+        "treeCommitRetainWorkMilliseconds",
         "sourceExtendMilliseconds",
         "sourceDownloadMilliseconds",
         "deviceDownloadMilliseconds",
@@ -511,6 +547,145 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         assert!(
             guest_pc_timing_source.contains(line_name) && guest_pc_timing_source.contains(accessor),
             "CLI guest PC timing output should include {line_name}"
+        );
+    }
+    for (line_name, accessor) in [
+        (
+            "guest_stage_{stage_index}_leaf_extend_work",
+            "leaf_extend_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_work",
+            "leaf_setup_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_prepare",
+            "leaf_setup_prepare_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_output_alloc",
+            "leaf_setup_output_alloc_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_workspace_alloc",
+            "leaf_setup_workspace_alloc_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_output_alloc_bytes",
+            "leaf_setup_output_alloc_byte_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_workspace_alloc_bytes",
+            "leaf_setup_workspace_alloc_byte_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_output_alloc_count",
+            "leaf_setup_output_alloc_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_setup_workspace_alloc_count",
+            "leaf_setup_workspace_alloc_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_upload_work",
+            "leaf_upload_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_kernel_work",
+            "leaf_kernel_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_download_work",
+            "leaf_download_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_validate_work",
+            "leaf_validate_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_hash_work",
+            "leaf_hash_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_hash_arity2_rows",
+            "leaf_hash_arity2_row_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_hash_arity2_bytes",
+            "leaf_hash_arity2_byte_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_hash_arity4_rows",
+            "leaf_hash_arity4_row_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_hash_arity4_bytes",
+            "leaf_hash_arity4_byte_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_calls",
+            "leaf_coset_extend_call_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_output_bytes",
+            "leaf_coset_extend_output_byte_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_columns",
+            "leaf_coset_extend_column_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_max_columns",
+            "leaf_coset_extend_max_column_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_ntt_launches",
+            "leaf_coset_extend_ntt_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_bit_reverse_launches",
+            "leaf_coset_extend_bit_reverse_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_ntt_stage_launches",
+            "leaf_coset_extend_ntt_stage_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_ntt_block_twiddle_launches",
+            "leaf_coset_extend_ntt_block_twiddle_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_normalize_launches",
+            "leaf_coset_extend_normalize_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_pack_launches",
+            "leaf_coset_extend_pack_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_leaf_coset_extend_unpack_launches",
+            "leaf_coset_extend_unpack_launch_count()",
+        ),
+        (
+            "guest_stage_{stage_index}_tree_commit_work",
+            "tree_commit_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_tree_commit_checkpoint_work",
+            "tree_commit_checkpoint_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_tree_commit_root_work",
+            "tree_commit_root_work_duration()",
+        ),
+        (
+            "guest_stage_{stage_index}_tree_commit_retain_work",
+            "tree_commit_retain_work_duration()",
+        ),
+    ] {
+        assert!(
+            guest_pc_timing_source.contains(line_name) && guest_pc_timing_source.contains(accessor),
+            "CLI guest PC stage timing output should include {line_name}"
         );
     }
     for field in [

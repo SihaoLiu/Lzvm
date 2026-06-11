@@ -59,6 +59,43 @@ structure TimingObservation where
   milliseconds : Nat
 deriving DecidableEq, Repr
 
+structure GuestPcTraceStageTimingSummary where
+  stageIndex : Nat
+  leafExtendWorkMilliseconds : Nat
+  leafSetupWorkMilliseconds : Nat
+  leafSetupPrepareMilliseconds : Nat
+  leafSetupOutputAllocMilliseconds : Nat
+  leafSetupWorkspaceAllocMilliseconds : Nat
+  leafSetupOutputAllocByteCount : Nat
+  leafSetupWorkspaceAllocByteCount : Nat
+  leafSetupOutputAllocCount : Nat
+  leafSetupWorkspaceAllocCount : Nat
+  leafUploadWorkMilliseconds : Nat
+  leafKernelWorkMilliseconds : Nat
+  leafDownloadWorkMilliseconds : Nat
+  leafValidateWorkMilliseconds : Nat
+  leafHashWorkMilliseconds : Nat
+  leafHashArity2RowCount : Nat
+  leafHashArity2ByteCount : Nat
+  leafHashArity4RowCount : Nat
+  leafHashArity4ByteCount : Nat
+  leafCosetExtendCallCount : Nat
+  leafCosetExtendOutputByteCount : Nat
+  leafCosetExtendColumnCount : Nat
+  leafCosetExtendMaxColumnCount : Nat
+  leafCosetExtendNttLaunchCount : Nat
+  leafCosetExtendBitReverseLaunchCount : Nat
+  leafCosetExtendNttStageLaunchCount : Nat
+  leafCosetExtendNttBlockTwiddleLaunchCount : Nat
+  leafCosetExtendNormalizeLaunchCount : Nat
+  leafCosetExtendPackLaunchCount : Nat
+  leafCosetExtendUnpackLaunchCount : Nat
+  treeCommitWorkMilliseconds : Nat
+  treeCommitCheckpointWorkMilliseconds : Nat
+  treeCommitRootWorkMilliseconds : Nat
+  treeCommitRetainWorkMilliseconds : Nat
+deriving DecidableEq, Repr
+
 structure GuestPcTraceTimingSummary where
   segmentCount : Nat
   guestTraceStreamMilliseconds : Nat
@@ -156,6 +193,7 @@ structure GuestPcTraceTimingSummary where
   guestStageTreeCommitRootCount : Nat
   guestStageTreeCommitRootByteCount : Nat
   guestStageTreeCommitRetainWorkMilliseconds : Nat
+  stageTimings : List GuestPcTraceStageTimingSummary
 deriving DecidableEq, Repr
 
 structure WitnessOpeningStageRowValueTimingSummary where
