@@ -650,6 +650,38 @@ theorem fri_fixed_column_cache_same_request_implies_cached_contents_bound
       sameRequest
       freshBound
 
+theorem fri_fixed_column_cache_checked_acceptance_projects_request_bound
+    {system : VerifierModel}
+    (validation : FriFixedColumnCacheValidation)
+    (cached fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      FriFixedColumnCacheCheckedAcceptance
+          system
+          validation
+          cached
+          fresh
+          publicInput
+          proof ->
+        validation.fixedColumnCacheRequestBound cached fresh := by
+  intro publicInput proof checked
+  exact checked.right.left
+
+theorem fri_fixed_column_cache_checked_acceptance_projects_fresh_contents_bound
+    {system : VerifierModel}
+    (validation : FriFixedColumnCacheValidation)
+    (cached fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      FriFixedColumnCacheCheckedAcceptance
+          system
+          validation
+          cached
+          fresh
+          publicInput
+          proof ->
+        validation.allocationValidation.writtenContentsBound fresh publicInput proof := by
+  intro publicInput proof checked
+  exact checked.right.right
+
 theorem fri_fixed_column_cache_checked_acceptance_projects_cached_contents_bound
     {system : VerifierModel}
     (validation : FriFixedColumnCacheValidation)
@@ -669,8 +701,24 @@ theorem fri_fixed_column_cache_checked_acceptance_projects_cached_contents_bound
       validation
       cached
       fresh
-      checked.right.left
-  exact cachedBound publicInput proof checked.right.right
+      (fri_fixed_column_cache_checked_acceptance_projects_request_bound
+        validation
+        cached
+        fresh
+        publicInput
+        proof
+        checked)
+  exact
+    cachedBound
+      publicInput
+      proof
+      (fri_fixed_column_cache_checked_acceptance_projects_fresh_contents_bound
+        validation
+        cached
+        fresh
+        publicInput
+        proof
+        checked)
 
 theorem fri_fixed_column_cache_checked_acceptance_sound
     {system : VerifierModel}

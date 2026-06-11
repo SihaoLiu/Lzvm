@@ -1246,6 +1246,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_retained_device_cache_budget_checked_acceptance_sound",
             "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
             "fri_fixed_column_cache_same_request_implies_cached_contents_bound",
+            "fri_fixed_column_cache_checked_acceptance_projects_request_bound",
+            "fri_fixed_column_cache_checked_acceptance_projects_fresh_contents_bound",
             "fri_fixed_column_cache_checked_acceptance_projects_cached_contents_bound",
             "fri_fixed_column_cache_checked_acceptance_sound",
             "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
