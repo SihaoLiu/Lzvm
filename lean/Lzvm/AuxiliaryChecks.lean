@@ -240,6 +240,28 @@ structure CudaBackendSummary where
   cudaBackendEnabled : Bool
 deriving DecidableEq, Repr
 
+structure CudaAllocatorTimingSummary where
+  cudaAllocatorMallocCallCount : Nat
+  cudaAllocatorMallocByteCount : Nat
+  cudaAllocatorCachedBlockCount : Nat
+  cudaAllocatorCachedByteCount : Nat
+  cudaAllocatorEventQueryCallCount : Nat
+  cudaAllocatorEventQueryReadyCount : Nat
+  cudaAllocatorEventQueryNotReadyCount : Nat
+  cudaAllocatorEventSynchronizeCallCount : Nat
+  cudaAllocatorEventSynchronizeByteCount : Nat
+  cudaAllocatorEventSynchronizeMaxByteCount : Nat
+  cudaAllocatorEventSynchronizeWaitNanoseconds : Nat
+  cudaAllocatorEventSynchronizeMaxWaitNanoseconds : Nat
+  cudaAllocatorEventSynchronizeHotByteCount : Nat
+  cudaAllocatorEventSynchronizeHotCount : Nat
+  cudaAllocatorEventSynchronizeHotWaitNanoseconds : Nat
+  cudaAllocatorCachedReuseCount : Nat
+  cudaAllocatorPendingReuseCount : Nat
+  cudaAllocatorNoWaitBypassCount : Nat
+  cudaAllocatorNoWaitBypassByteCount : Nat
+deriving DecidableEq, Repr
+
 structure GpuSetupCacheState where
   device : Nat
   initializedBits : Nat
@@ -835,6 +857,40 @@ theorem cuda_backend_acceptance_verifier_core_contract
   exact
     sound_witness_implies_verifier_core_contract
       (cuda_backend_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
+def CudaAllocatorTimingObservedAcceptance
+    (system : VerifierModel)
+    (_summary : Option CudaAllocatorTimingSummary)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+
+theorem cuda_allocator_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option CudaAllocatorTimingSummary) :
+    forall publicInput proof,
+      CudaAllocatorTimingObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithAllocatorTimings
+  exact abstract_verifier_sound assumptions publicInput proof acceptedWithAllocatorTimings
+
+theorem cuda_allocator_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option CudaAllocatorTimingSummary) :
+    forall publicInput proof,
+      CudaAllocatorTimingObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (cuda_allocator_timing_acceptance_sound
         assumptions
         summary
         publicInput

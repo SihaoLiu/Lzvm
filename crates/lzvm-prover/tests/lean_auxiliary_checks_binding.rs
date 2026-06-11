@@ -64,6 +64,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("ProverGpuModeObservedAcceptance")
             && lean_source.contains("CudaBackendSummary")
             && lean_source.contains("CudaBackendObservedAcceptance")
+            && lean_source.contains("CudaAllocatorTimingSummary")
+            && lean_source.contains("CudaAllocatorTimingObservedAcceptance")
             && lean_source.contains("GpuSetupCheckedAcceptance")
             && lean_source.contains("GpuAllocationCheckedAcceptance")
             && lean_source.contains("GpuHostDeviceCopyRoundTripValidation")
@@ -763,6 +765,58 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_source.contains("cudaBackendEnabled"),
         "Lean CUDA backend summary should expose the compile-time backend capability"
     );
+    for field in [
+        "cudaAllocatorMallocCallCount",
+        "cudaAllocatorMallocByteCount",
+        "cudaAllocatorCachedBlockCount",
+        "cudaAllocatorCachedByteCount",
+        "cudaAllocatorEventQueryCallCount",
+        "cudaAllocatorEventQueryReadyCount",
+        "cudaAllocatorEventQueryNotReadyCount",
+        "cudaAllocatorEventSynchronizeCallCount",
+        "cudaAllocatorEventSynchronizeByteCount",
+        "cudaAllocatorEventSynchronizeMaxByteCount",
+        "cudaAllocatorEventSynchronizeWaitNanoseconds",
+        "cudaAllocatorEventSynchronizeMaxWaitNanoseconds",
+        "cudaAllocatorEventSynchronizeHotByteCount",
+        "cudaAllocatorEventSynchronizeHotCount",
+        "cudaAllocatorEventSynchronizeHotWaitNanoseconds",
+        "cudaAllocatorCachedReuseCount",
+        "cudaAllocatorPendingReuseCount",
+        "cudaAllocatorNoWaitBypassCount",
+        "cudaAllocatorNoWaitBypassByteCount",
+    ] {
+        assert!(
+            lean_source.contains(field),
+            "Lean CUDA allocator timing summary should expose {field}"
+        );
+    }
+    for line_name in [
+        "\"cuda_allocator_malloc_calls\"",
+        "\"cuda_allocator_malloc_bytes\"",
+        "\"cuda_allocator_cached_blocks\"",
+        "\"cuda_allocator_cached_bytes\"",
+        "\"cuda_allocator_event_query_calls\"",
+        "\"cuda_allocator_event_query_ready\"",
+        "\"cuda_allocator_event_query_not_ready\"",
+        "\"cuda_allocator_event_synchronize_calls\"",
+        "\"cuda_allocator_event_synchronize_bytes\"",
+        "\"cuda_allocator_event_synchronize_max_bytes\"",
+        "\"cuda_allocator_event_synchronize_wait_ns\"",
+        "\"cuda_allocator_event_synchronize_max_wait_ns\"",
+        "\"cuda_allocator_event_synchronize_hot_bytes\"",
+        "\"cuda_allocator_event_synchronize_hot_count\"",
+        "\"cuda_allocator_event_synchronize_hot_wait_ns\"",
+        "\"cuda_allocator_cached_reuse_count\"",
+        "\"cuda_allocator_pending_reuse_count\"",
+        "\"cuda_allocator_no_wait_bypass_count\"",
+        "\"cuda_allocator_no_wait_bypass_bytes\"",
+    ] {
+        assert!(
+            cli_timing_source.contains(line_name),
+            "CLI CUDA allocator timing output should include {line_name}"
+        );
+    }
     for (line_name, field) in [
         (
             "\"finish_witness_opening_row_value_source_extend\"",
@@ -856,6 +910,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "prover_gpu_mode_acceptance_verifier_core_contract",
             "cuda_backend_acceptance_sound",
             "cuda_backend_acceptance_verifier_core_contract",
+            "cuda_allocator_timing_acceptance_sound",
+            "cuda_allocator_timing_acceptance_verifier_core_contract",
             "gpu_setup_checked_acceptance_sound",
             "gpu_setup_checked_acceptance_verifier_core_contract",
             "gpu_allocation_checked_acceptance_sound",
