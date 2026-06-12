@@ -2598,8 +2598,9 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
     );
     assert!(
         timing_fields.contains("descriptor_upload_byte_count")
+            && timing_fields.contains("descriptor_upload_word_count")
             && timing_fields.contains("descriptor_upload_row_count"),
-        "guest PC backend timing should carry descriptor upload bytes and rows"
+        "guest PC backend timing should carry descriptor upload bytes, words, and rows"
     );
 
     let material_body = function_body(
@@ -2609,11 +2610,13 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
     );
     assert!(
         material_body.contains("descriptor_upload_byte_count")
+            && material_body.contains("descriptor_upload_word_count")
             && material_body.contains("descriptor_upload_row_count")
             && material_body.contains("descriptors.words()")
+            && material_body.contains("descriptors.words().len()")
             && material_body.contains(".saturating_mul(std::mem::size_of::<u64>())")
             && material_body.contains("descriptors.descriptor_rows()"),
-        "guest PC device material source build should count uploaded descriptor bytes and rows"
+        "guest PC device material source build should count uploaded descriptor bytes, words, and rows"
     );
 
     let accumulator_fields = function_body(
@@ -2623,8 +2626,9 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
     );
     assert!(
         accumulator_fields.contains("device_source_descriptor_upload_byte_count")
+            && accumulator_fields.contains("device_source_descriptor_upload_word_count")
             && accumulator_fields.contains("device_source_descriptor_upload_row_count"),
-        "trace timing accumulation should retain descriptor upload byte and row counts"
+        "trace timing accumulation should retain descriptor upload byte, word, and row counts"
     );
 
     let stage_timing_body = function_body(
@@ -2650,6 +2654,10 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "\"guest_device_source_descriptor_upload_bytes\"",
             "guest_device_source_descriptor_upload_byte_count()",
+        ),
+        (
+            "\"guest_device_source_descriptor_upload_words\"",
+            "guest_device_source_descriptor_upload_word_count()",
         ),
         (
             "\"guest_device_source_descriptor_upload_rows\"",

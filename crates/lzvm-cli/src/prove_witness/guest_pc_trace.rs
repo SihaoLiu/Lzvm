@@ -248,6 +248,10 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_device_source_descriptor_upload_byte_count(),
     );
     timings.record_count(
+        "guest_device_source_descriptor_upload_words",
+        timing.guest_device_source_descriptor_upload_word_count(),
+    );
+    timings.record_count(
         "guest_device_source_descriptor_upload_rows",
         timing.guest_device_source_descriptor_upload_row_count(),
     );

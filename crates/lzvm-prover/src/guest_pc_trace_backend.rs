@@ -715,6 +715,7 @@ pub(crate) struct GuestPcTraceDeviceTraceBuilder {
 pub(crate) struct GuestPcDeviceSourceBuildTiming {
     descriptor_upload_duration: Duration,
     descriptor_upload_byte_count: usize,
+    descriptor_upload_word_count: usize,
     descriptor_upload_row_count: usize,
     trace_expand_duration: Duration,
 }
@@ -727,6 +728,10 @@ impl GuestPcDeviceSourceBuildTiming {
 
     pub(crate) fn descriptor_upload_byte_count(&self) -> usize {
         self.descriptor_upload_byte_count
+    }
+
+    pub(crate) fn descriptor_upload_word_count(&self) -> usize {
+        self.descriptor_upload_word_count
     }
 
     pub(crate) fn descriptor_upload_row_count(&self) -> usize {
@@ -1220,10 +1225,9 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
         ));
     }
 
-    let descriptor_upload_byte_count = descriptors
-        .words()
-        .len()
-        .saturating_mul(std::mem::size_of::<u64>());
+    let descriptor_upload_word_count = descriptors.words().len();
+    let descriptor_upload_byte_count =
+        descriptor_upload_word_count.saturating_mul(std::mem::size_of::<u64>());
     let descriptor_upload_row_count = descriptors.descriptor_rows();
     let descriptor_buffer = Arc::new(record_device_source_build_duration(
         timing
@@ -1239,6 +1243,7 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
     )?);
     if let Some(timing) = timing.as_mut() {
         timing.descriptor_upload_byte_count += descriptor_upload_byte_count;
+        timing.descriptor_upload_word_count += descriptor_upload_word_count;
         timing.descriptor_upload_row_count += descriptor_upload_row_count;
     }
     let mut builder = build_guest_pc_trace_stage_source_devices_from_device_descriptors_timing(
