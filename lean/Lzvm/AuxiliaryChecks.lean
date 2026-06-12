@@ -348,6 +348,14 @@ structure ProofArtifactFinishTimingSummary where
   finishWitnessOpeningPathParentHashRowsPerQuery : Nat
   finishWitnessOpeningPathParentHashRowsPerStage : Nat
   finishWitnessOpeningPathParentHashLaunchesPerStage : Nat
+  finishWitnessOpeningRowValuesMilliseconds : Nat
+  finishWitnessOpeningRowValueSourceExtendMilliseconds : Nat
+  finishWitnessOpeningRowValueSourceDownloadMilliseconds : Nat
+  finishWitnessOpeningRowValueDeviceDownloadMilliseconds : Nat
+  finishWitnessOpeningRowValuesDeviceRowCount : Nat
+  finishWitnessOpeningRowValuesSourceRowCount : Nat
+  finishWitnessOpeningRowValuesWordCount : Nat
+  finishWitnessOpeningRowValuesByteCount : Nat
   finishFriOpeningMilliseconds : Nat
   finishProofEncodeMilliseconds : Nat
   finishContributionSegmentMilliseconds : Nat

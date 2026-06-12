@@ -1214,6 +1214,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessOpeningPathParentHashRowsPerQuery",
         "finishWitnessOpeningPathParentHashRowsPerStage",
         "finishWitnessOpeningPathParentHashLaunchesPerStage",
+        "finishWitnessOpeningRowValuesMilliseconds",
+        "finishWitnessOpeningRowValueSourceExtendMilliseconds",
+        "finishWitnessOpeningRowValueSourceDownloadMilliseconds",
+        "finishWitnessOpeningRowValueDeviceDownloadMilliseconds",
+        "finishWitnessOpeningRowValuesDeviceRowCount",
+        "finishWitnessOpeningRowValuesSourceRowCount",
+        "finishWitnessOpeningRowValuesWordCount",
+        "finishWitnessOpeningRowValuesByteCount",
         "finishFriOpeningMilliseconds",
         "finishProofEncodeMilliseconds",
         "finishContributionSegmentMilliseconds",
@@ -1302,6 +1310,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     }
     for (line_name, field) in [
         (
+            "\"finish_witness_opening_row_values\"",
+            "witness_opening_row_values",
+        ),
+        (
             "\"finish_witness_opening_row_value_source_extend\"",
             "witness_opening_row_values_source_extend",
         ),
@@ -1312,6 +1324,22 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"finish_witness_opening_row_value_device_download\"",
             "witness_opening_row_values_device_download",
+        ),
+        (
+            "\"finish_witness_opening_row_values_device_rows\"",
+            "witness_opening_row_values_device_row_count",
+        ),
+        (
+            "\"finish_witness_opening_row_values_source_rows\"",
+            "witness_opening_row_values_source_row_count",
+        ),
+        (
+            "\"finish_witness_opening_row_values_words\"",
+            "witness_opening_row_values_word_count",
+        ),
+        (
+            "\"finish_witness_opening_row_values_bytes\"",
+            "witness_opening_row_values_byte_count",
         ),
         (
             "\"finish_witness_external_source_descriptor_upload_bytes\"",
@@ -1633,6 +1661,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_path_parent_hash_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound",
             "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_row_values_shape_acceptance_sound",
+            "proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",

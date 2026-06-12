@@ -2215,6 +2215,95 @@ theorem proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifie
         proof
         observed)
 
+theorem proof_artifact_finish_row_values_shape_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (rowValuesMilliseconds sourceExtendMilliseconds sourceDownloadMilliseconds
+      deviceDownloadMilliseconds deviceRows sourceRows words bytes : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+            finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+              sourceExtendMilliseconds
+            finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+              sourceDownloadMilliseconds
+            finishWitnessOpeningRowValueDeviceDownloadMilliseconds :=
+              deviceDownloadMilliseconds
+            finishWitnessOpeningRowValuesDeviceRowCount := deviceRows
+            finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+            finishWitnessOpeningRowValuesWordCount := words
+            finishWitnessOpeningRowValuesByteCount := bytes })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+          finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+            sourceExtendMilliseconds
+          finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+            sourceDownloadMilliseconds
+          finishWitnessOpeningRowValueDeviceDownloadMilliseconds :=
+            deviceDownloadMilliseconds
+          finishWitnessOpeningRowValuesDeviceRowCount := deviceRows
+          finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+          finishWitnessOpeningRowValuesWordCount := words
+          finishWitnessOpeningRowValuesByteCount := bytes })
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (rowValuesMilliseconds sourceExtendMilliseconds sourceDownloadMilliseconds
+      deviceDownloadMilliseconds deviceRows sourceRows words bytes : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+            finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+              sourceExtendMilliseconds
+            finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+              sourceDownloadMilliseconds
+            finishWitnessOpeningRowValueDeviceDownloadMilliseconds :=
+              deviceDownloadMilliseconds
+            finishWitnessOpeningRowValuesDeviceRowCount := deviceRows
+            finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+            finishWitnessOpeningRowValuesWordCount := words
+            finishWitnessOpeningRowValuesByteCount := bytes })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (proof_artifact_finish_row_values_shape_acceptance_sound
+        assumptions
+        summary
+        rowValuesMilliseconds
+        sourceExtendMilliseconds
+        sourceDownloadMilliseconds
+        deviceDownloadMilliseconds
+        deviceRows
+        sourceRows
+        words
+        bytes
+        publicInput
+        proof
+        observed)
+
 theorem proof_artifact_finish_descriptor_upload_word_count_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
