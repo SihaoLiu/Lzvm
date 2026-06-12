@@ -297,7 +297,9 @@ structure ProofArtifactFinishTimingSummary where
   finishQueryPlanMilliseconds : Nat
   finishConstantOpeningMilliseconds : Nat
   finishWitnessOpeningMilliseconds : Nat
+  finishWitnessExternalSourceDescriptorUploadByteCount : Nat
   finishWitnessExternalSourceDescriptorUploadWordCount : Nat
+  finishWitnessExternalSourceDescriptorUploadRowCount : Nat
   finishFriOpeningMilliseconds : Nat
   finishProofEncodeMilliseconds : Nat
   finishContributionSegmentMilliseconds : Nat

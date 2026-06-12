@@ -1810,11 +1810,70 @@ theorem proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_c
         proof
         observed)
 
+theorem proof_artifact_finish_descriptor_upload_shape_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (byteCount wordCount rowCount : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessExternalSourceDescriptorUploadByteCount := byteCount
+            finishWitnessExternalSourceDescriptorUploadWordCount := wordCount
+            finishWitnessExternalSourceDescriptorUploadRowCount := rowCount })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          finishWitnessExternalSourceDescriptorUploadByteCount := byteCount
+          finishWitnessExternalSourceDescriptorUploadWordCount := wordCount
+          finishWitnessExternalSourceDescriptorUploadRowCount := rowCount })
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_descriptor_upload_shape_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (byteCount wordCount rowCount : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessExternalSourceDescriptorUploadByteCount := byteCount
+            finishWitnessExternalSourceDescriptorUploadWordCount := wordCount
+            finishWitnessExternalSourceDescriptorUploadRowCount := rowCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (proof_artifact_finish_descriptor_upload_shape_acceptance_sound
+        assumptions
+        summary
+        byteCount
+        wordCount
+        rowCount
+        publicInput
+        proof
+        observed)
+
 theorem proof_artifact_finish_aggregate_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
     (summary : ProofArtifactFinishTimingSummary)
     (queryPlanMilliseconds constantOpeningMilliseconds witnessOpeningMilliseconds
+      descriptorUploadByteCount descriptorUploadWordCount descriptorUploadRowCount
       friOpeningMilliseconds proofEncodeMilliseconds contributionSegmentMilliseconds
       contributionVerifyMilliseconds : Nat) :
     forall publicInput proof,
@@ -1825,6 +1884,9 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
             finishQueryPlanMilliseconds := queryPlanMilliseconds
             finishConstantOpeningMilliseconds := constantOpeningMilliseconds
             finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+            finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
+            finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
+            finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
             finishFriOpeningMilliseconds := friOpeningMilliseconds
             finishProofEncodeMilliseconds := proofEncodeMilliseconds
             finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
@@ -1841,6 +1903,9 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
           finishQueryPlanMilliseconds := queryPlanMilliseconds
           finishConstantOpeningMilliseconds := constantOpeningMilliseconds
           finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+          finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
+          finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
+          finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
           finishFriOpeningMilliseconds := friOpeningMilliseconds
           finishProofEncodeMilliseconds := proofEncodeMilliseconds
           finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
@@ -1854,6 +1919,7 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
     (assumptions : AssumptionBundle system)
     (summary : ProofArtifactFinishTimingSummary)
     (queryPlanMilliseconds constantOpeningMilliseconds witnessOpeningMilliseconds
+      descriptorUploadByteCount descriptorUploadWordCount descriptorUploadRowCount
       friOpeningMilliseconds proofEncodeMilliseconds contributionSegmentMilliseconds
       contributionVerifyMilliseconds : Nat) :
     forall publicInput proof,
@@ -1864,6 +1930,9 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
             finishQueryPlanMilliseconds := queryPlanMilliseconds
             finishConstantOpeningMilliseconds := constantOpeningMilliseconds
             finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+            finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
+            finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
+            finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
             finishFriOpeningMilliseconds := friOpeningMilliseconds
             finishProofEncodeMilliseconds := proofEncodeMilliseconds
             finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
@@ -1880,6 +1949,9 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
         queryPlanMilliseconds
         constantOpeningMilliseconds
         witnessOpeningMilliseconds
+        descriptorUploadByteCount
+        descriptorUploadWordCount
+        descriptorUploadRowCount
         friOpeningMilliseconds
         proofEncodeMilliseconds
         contributionSegmentMilliseconds

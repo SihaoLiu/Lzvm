@@ -1163,7 +1163,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishQueryPlanMilliseconds",
         "finishConstantOpeningMilliseconds",
         "finishWitnessOpeningMilliseconds",
+        "finishWitnessExternalSourceDescriptorUploadByteCount",
         "finishWitnessExternalSourceDescriptorUploadWordCount",
+        "finishWitnessExternalSourceDescriptorUploadRowCount",
         "finishFriOpeningMilliseconds",
         "finishProofEncodeMilliseconds",
         "finishContributionSegmentMilliseconds",
@@ -1205,8 +1207,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "witness_opening_row_values_device_download",
         ),
         (
+            "\"finish_witness_external_source_descriptor_upload_bytes\"",
+            "witness_external_source_descriptor_upload_byte_count",
+        ),
+        (
             "\"finish_witness_external_source_descriptor_upload_words\"",
             "witness_external_source_descriptor_upload_word_count",
+        ),
+        (
+            "\"finish_witness_external_source_descriptor_upload_rows\"",
+            "witness_external_source_descriptor_upload_row_count",
         ),
     ] {
         assert!(
@@ -1345,6 +1355,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_timing_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract",
+            "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",
+            "proof_artifact_finish_descriptor_upload_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_aggregate_timing_acceptance_sound",
             "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
             "runtime_performance_observed_acceptance_projects_verifier_acceptance",
