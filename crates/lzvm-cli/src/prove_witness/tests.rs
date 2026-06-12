@@ -294,6 +294,7 @@ fn proof_artifact_timing_reports_external_source_rebuild_shape() {
     let timing = lzvm_prover::WitnessProofArtifactTiming {
         witness_external_source_descriptor_upload: std::time::Duration::from_millis(7),
         witness_external_source_descriptor_upload_byte_count: 88,
+        witness_external_source_descriptor_upload_word_count: 11,
         witness_external_source_descriptor_upload_row_count: 2,
         witness_external_source_trace_expand: std::time::Duration::from_millis(11),
         ..lzvm_prover::WitnessProofArtifactTiming::default()
@@ -309,6 +310,7 @@ fn proof_artifact_timing_reports_external_source_rebuild_shape() {
     for expected in [
         "timing_finish_witness_external_source_descriptor_upload_ms=7\n",
         "timing_finish_witness_external_source_descriptor_upload_bytes=88\n",
+        "timing_finish_witness_external_source_descriptor_upload_words=11\n",
         "timing_finish_witness_external_source_descriptor_upload_rows=2\n",
         "timing_finish_witness_external_source_trace_expand_ms=11\n",
     ] {

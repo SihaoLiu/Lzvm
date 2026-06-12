@@ -72,6 +72,10 @@ pub(super) fn record_proof_artifact_timing(
         timing.witness_external_source_descriptor_upload_byte_count,
     );
     timings.record_count(
+        "finish_witness_external_source_descriptor_upload_words",
+        timing.witness_external_source_descriptor_upload_word_count,
+    );
+    timings.record_count(
         "finish_witness_external_source_descriptor_upload_rows",
         timing.witness_external_source_descriptor_upload_row_count,
     );

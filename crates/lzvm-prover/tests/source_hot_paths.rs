@@ -5376,6 +5376,12 @@ fn contribution_proof_artifact_timing_reports_segment_verify_and_challenge_work(
         "CLI timing output should report contribution proof work buckets"
     );
     assert!(
+        timing_source.contains("witness_external_source_descriptor_upload_word_count")
+            && timing_source.contains("descriptor_upload_word_count()")
+            && cli_source.contains("\"finish_witness_external_source_descriptor_upload_words\""),
+        "proof artifact timing should report external descriptor upload words"
+    );
+    assert!(
         artifact_source.contains("add_contribution_segment")
             && artifact_source.contains("add_contribution_verify")
             && artifact_source.contains("add_contribution_challenge")

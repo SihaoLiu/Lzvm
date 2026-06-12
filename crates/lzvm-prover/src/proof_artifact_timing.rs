@@ -21,6 +21,7 @@ pub struct WitnessProofArtifactTiming {
     pub witness_external_source: Duration,
     pub witness_external_source_descriptor_upload: Duration,
     pub witness_external_source_descriptor_upload_byte_count: usize,
+    pub witness_external_source_descriptor_upload_word_count: usize,
     pub witness_external_source_descriptor_upload_row_count: usize,
     pub witness_external_source_trace_expand: Duration,
     pub witness_opening_setup: Duration,
@@ -314,6 +315,8 @@ impl WitnessProofArtifactTiming {
         self.witness_external_source_descriptor_upload += timing.descriptor_upload_duration();
         self.witness_external_source_descriptor_upload_byte_count +=
             timing.descriptor_upload_byte_count();
+        self.witness_external_source_descriptor_upload_word_count +=
+            timing.descriptor_upload_word_count();
         self.witness_external_source_descriptor_upload_row_count +=
             timing.descriptor_upload_row_count();
         self.witness_external_source_trace_expand += timing.trace_expand_duration();

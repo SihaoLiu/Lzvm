@@ -1115,6 +1115,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishQueryPlanMilliseconds",
         "finishConstantOpeningMilliseconds",
         "finishWitnessOpeningMilliseconds",
+        "finishWitnessExternalSourceDescriptorUploadWordCount",
         "finishFriOpeningMilliseconds",
         "finishProofEncodeMilliseconds",
         "finishContributionSegmentMilliseconds",
@@ -1154,6 +1155,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"finish_witness_opening_row_value_device_download\"",
             "witness_opening_row_values_device_download",
+        ),
+        (
+            "\"finish_witness_external_source_descriptor_upload_words\"",
+            "witness_external_source_descriptor_upload_word_count",
         ),
     ] {
         assert!(
