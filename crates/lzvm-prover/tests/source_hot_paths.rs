@@ -3692,6 +3692,18 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "cuda_host_unregister_calls",
         "cuda_host_unregister_wait_ns",
         "cuda_host_unregister_max_wait_ns",
+        "cuda_copy_h2d_calls",
+        "cuda_copy_h2d_bytes",
+        "cuda_copy_h2d_wait_ns",
+        "cuda_copy_h2d_max_wait_ns",
+        "cuda_copy_d2h_calls",
+        "cuda_copy_d2h_bytes",
+        "cuda_copy_d2h_wait_ns",
+        "cuda_copy_d2h_max_wait_ns",
+        "cuda_copy_d2d_calls",
+        "cuda_copy_d2d_bytes",
+        "cuda_copy_d2d_wait_ns",
+        "cuda_copy_d2d_max_wait_ns",
         "cuda_event_query_calls",
         "cuda_event_query_ready_count",
         "cuda_event_query_not_ready_count",
@@ -3759,6 +3771,13 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "large H2D page registration should be visible in CUDA timing stats"
     );
     assert!(
+        native_source.contains("record_cuda_copy_wait")
+            && native_source.contains("g_cuda_copy_h2d_wait_ns")
+            && native_source.contains("g_cuda_copy_d2h_wait_ns")
+            && native_source.contains("g_cuda_copy_d2d_wait_ns"),
+        "CUDA copy direction timing should be visible in CUDA timing stats"
+    );
+    assert!(
         native_source.contains("g_cuda_event_synchronize_by_size")
             && native_source.contains("cuda_event_synchronize_hot_bytes")
             && native_source.contains("cuda_event_synchronize_hot_count")
@@ -3795,6 +3814,18 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "\"cuda_allocator_host_unregister_calls\"",
         "\"cuda_allocator_host_unregister_wait_ns\"",
         "\"cuda_allocator_host_unregister_max_wait_ns\"",
+        "\"cuda_allocator_copy_h2d_calls\"",
+        "\"cuda_allocator_copy_h2d_bytes\"",
+        "\"cuda_allocator_copy_h2d_wait_ns\"",
+        "\"cuda_allocator_copy_h2d_max_wait_ns\"",
+        "\"cuda_allocator_copy_d2h_calls\"",
+        "\"cuda_allocator_copy_d2h_bytes\"",
+        "\"cuda_allocator_copy_d2h_wait_ns\"",
+        "\"cuda_allocator_copy_d2h_max_wait_ns\"",
+        "\"cuda_allocator_copy_d2d_calls\"",
+        "\"cuda_allocator_copy_d2d_bytes\"",
+        "\"cuda_allocator_copy_d2d_wait_ns\"",
+        "\"cuda_allocator_copy_d2d_max_wait_ns\"",
         "\"cuda_allocator_cached_blocks\"",
         "\"cuda_allocator_cached_bytes\"",
         "\"cuda_allocator_event_query_calls\"",

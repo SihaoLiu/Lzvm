@@ -53,6 +53,18 @@ std::size_t g_cuda_host_register_max_wait_ns = 0;
 std::size_t g_cuda_host_unregister_calls = 0;
 std::size_t g_cuda_host_unregister_wait_ns = 0;
 std::size_t g_cuda_host_unregister_max_wait_ns = 0;
+std::size_t g_cuda_copy_h2d_calls = 0;
+std::size_t g_cuda_copy_h2d_bytes = 0;
+std::size_t g_cuda_copy_h2d_wait_ns = 0;
+std::size_t g_cuda_copy_h2d_max_wait_ns = 0;
+std::size_t g_cuda_copy_d2h_calls = 0;
+std::size_t g_cuda_copy_d2h_bytes = 0;
+std::size_t g_cuda_copy_d2h_wait_ns = 0;
+std::size_t g_cuda_copy_d2h_max_wait_ns = 0;
+std::size_t g_cuda_copy_d2d_calls = 0;
+std::size_t g_cuda_copy_d2d_bytes = 0;
+std::size_t g_cuda_copy_d2d_wait_ns = 0;
+std::size_t g_cuda_copy_d2d_max_wait_ns = 0;
 std::size_t g_cuda_free_calls = 0;
 std::size_t g_cuda_device_synchronize_calls = 0;
 std::size_t g_cuda_event_query_calls = 0;
@@ -119,6 +131,14 @@ std::size_t saturated_add(std::size_t left, std::size_t right) {
     return left + right;
 }
 
+std::size_t saturated_multiply(std::size_t left, std::size_t right) {
+    const auto max = std::numeric_limits<std::size_t>::max();
+    if (left != 0 && right > max / left) {
+        return max;
+    }
+    return left * right;
+}
+
 std::size_t parse_byte_limit_or_default(const char* value, std::size_t fallback) {
     if (value == nullptr || *value == '\0') {
         return fallback;
@@ -183,6 +203,43 @@ void record_cuda_host_unregister_wait(std::size_t elapsed_ns) {
     if (elapsed_ns > g_cuda_host_unregister_max_wait_ns) {
         g_cuda_host_unregister_max_wait_ns = elapsed_ns;
     }
+}
+
+void record_cuda_copy_wait(
+    std::size_t bytes,
+    std::size_t elapsed_ns,
+    std::size_t* calls,
+    std::size_t* byte_count,
+    std::size_t* wait_ns,
+    std::size_t* max_wait_ns) {
+    if (calls == nullptr || byte_count == nullptr || wait_ns == nullptr ||
+        max_wait_ns == nullptr) {
+        return;
+    }
+    *calls = saturated_add(*calls, 1);
+    *byte_count = saturated_add(*byte_count, bytes);
+    *wait_ns = saturated_add(*wait_ns, elapsed_ns);
+    if (elapsed_ns > *max_wait_ns) {
+        *max_wait_ns = elapsed_ns;
+    }
+}
+
+void record_cuda_copy_h2d_wait(std::size_t bytes, std::size_t elapsed_ns) {
+    record_cuda_copy_wait(
+        bytes, elapsed_ns, &g_cuda_copy_h2d_calls, &g_cuda_copy_h2d_bytes,
+        &g_cuda_copy_h2d_wait_ns, &g_cuda_copy_h2d_max_wait_ns);
+}
+
+void record_cuda_copy_d2h_wait(std::size_t bytes, std::size_t elapsed_ns) {
+    record_cuda_copy_wait(
+        bytes, elapsed_ns, &g_cuda_copy_d2h_calls, &g_cuda_copy_d2h_bytes,
+        &g_cuda_copy_d2h_wait_ns, &g_cuda_copy_d2h_max_wait_ns);
+}
+
+void record_cuda_copy_d2d_wait(std::size_t bytes, std::size_t elapsed_ns) {
+    record_cuda_copy_wait(
+        bytes, elapsed_ns, &g_cuda_copy_d2d_calls, &g_cuda_copy_d2d_bytes,
+        &g_cuda_copy_d2d_wait_ns, &g_cuda_copy_d2d_max_wait_ns);
 }
 
 int set_allocation_device(int device, int* previous_device) {
@@ -599,6 +656,18 @@ extern "C" int lzvm_cuda_allocator_clear_cache(void) {
             g_cuda_host_unregister_calls = 0;
             g_cuda_host_unregister_wait_ns = 0;
             g_cuda_host_unregister_max_wait_ns = 0;
+            g_cuda_copy_h2d_calls = 0;
+            g_cuda_copy_h2d_bytes = 0;
+            g_cuda_copy_h2d_wait_ns = 0;
+            g_cuda_copy_h2d_max_wait_ns = 0;
+            g_cuda_copy_d2h_calls = 0;
+            g_cuda_copy_d2h_bytes = 0;
+            g_cuda_copy_d2h_wait_ns = 0;
+            g_cuda_copy_d2h_max_wait_ns = 0;
+            g_cuda_copy_d2d_calls = 0;
+            g_cuda_copy_d2d_bytes = 0;
+            g_cuda_copy_d2d_wait_ns = 0;
+            g_cuda_copy_d2d_max_wait_ns = 0;
             g_cuda_free_calls = 0;
             g_cuda_device_synchronize_calls = 0;
             g_cuda_event_query_calls = 0;
@@ -640,6 +709,18 @@ extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out) {
         out->cuda_host_unregister_calls = g_cuda_host_unregister_calls;
         out->cuda_host_unregister_wait_ns = g_cuda_host_unregister_wait_ns;
         out->cuda_host_unregister_max_wait_ns = g_cuda_host_unregister_max_wait_ns;
+        out->cuda_copy_h2d_calls = g_cuda_copy_h2d_calls;
+        out->cuda_copy_h2d_bytes = g_cuda_copy_h2d_bytes;
+        out->cuda_copy_h2d_wait_ns = g_cuda_copy_h2d_wait_ns;
+        out->cuda_copy_h2d_max_wait_ns = g_cuda_copy_h2d_max_wait_ns;
+        out->cuda_copy_d2h_calls = g_cuda_copy_d2h_calls;
+        out->cuda_copy_d2h_bytes = g_cuda_copy_d2h_bytes;
+        out->cuda_copy_d2h_wait_ns = g_cuda_copy_d2h_wait_ns;
+        out->cuda_copy_d2h_max_wait_ns = g_cuda_copy_d2h_max_wait_ns;
+        out->cuda_copy_d2d_calls = g_cuda_copy_d2d_calls;
+        out->cuda_copy_d2d_bytes = g_cuda_copy_d2d_bytes;
+        out->cuda_copy_d2d_wait_ns = g_cuda_copy_d2d_wait_ns;
+        out->cuda_copy_d2d_max_wait_ns = g_cuda_copy_d2d_max_wait_ns;
         out->cuda_free_calls = g_cuda_free_calls;
         out->cuda_device_synchronize_calls = g_cuda_device_synchronize_calls;
         out->cached_blocks = g_cached_allocations.size();
@@ -702,7 +783,12 @@ extern "C" int lzvm_cuda_copy_h2d_bytes(void* dst, const void* src, std::size_t 
         return -1;
     }
     const RegisteredHostRange registered = register_large_host_copy(src, bytes);
+    const auto copy_started = std::chrono::steady_clock::now();
     const int status = static_cast<int>(cudaMemcpy(dst, src, bytes, cudaMemcpyHostToDevice));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        record_cuda_copy_h2d_wait(bytes, saturated_nanoseconds_since(copy_started));
+    }
     const int unregister_status = unregister_host_copy(registered);
     return first_status(status, unregister_status);
 }
@@ -714,7 +800,13 @@ extern "C" int lzvm_cuda_copy_d2h_bytes(void* dst, const void* src, std::size_t 
     if (dst == nullptr || src == nullptr) {
         return -1;
     }
-    return static_cast<int>(cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToHost));
+    const auto copy_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToHost));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        record_cuda_copy_d2h_wait(bytes, saturated_nanoseconds_since(copy_started));
+    }
+    return status;
 }
 
 extern "C" int lzvm_cuda_copy_h2d_row_slice_words(
@@ -746,9 +838,17 @@ extern "C" int lzvm_cuda_copy_h2d_row_slice_words(
     const std::size_t src_pitch = source_width_words * word_bytes;
     const std::size_t width_bytes = slice_width_words * word_bytes;
     const auto* source = static_cast<const std::uint8_t*>(src) + start_word * word_bytes;
-    return static_cast<int>(
+    const auto copy_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(
         cudaMemcpy2D(dst, dst_pitch, source, src_pitch, width_bytes, row_count,
                      cudaMemcpyHostToDevice));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        record_cuda_copy_h2d_wait(
+            saturated_multiply(width_bytes, row_count),
+            saturated_nanoseconds_since(copy_started));
+    }
+    return status;
 }
 
 extern "C" int lzvm_cuda_copy_d2d_row_slice_words(
@@ -780,9 +880,17 @@ extern "C" int lzvm_cuda_copy_d2d_row_slice_words(
     const std::size_t src_pitch = source_width_words * word_bytes;
     const std::size_t width_bytes = slice_width_words * word_bytes;
     const auto* source = static_cast<const std::uint8_t*>(src) + start_word * word_bytes;
-    return static_cast<int>(
+    const auto copy_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(
         cudaMemcpy2D(dst, dst_pitch, source, src_pitch, width_bytes, row_count,
                      cudaMemcpyDeviceToDevice));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        record_cuda_copy_d2d_wait(
+            saturated_multiply(width_bytes, row_count),
+            saturated_nanoseconds_since(copy_started));
+    }
+    return status;
 }
 
 extern "C" int lzvm_cuda_copy_d2h_state_prefix_words(
@@ -810,9 +918,17 @@ extern "C" int lzvm_cuda_copy_d2h_state_prefix_words(
     const std::size_t dst_pitch = prefix_words * word_bytes;
     const std::size_t src_pitch = state_width_words * word_bytes;
     const std::size_t width_bytes = prefix_words * word_bytes;
-    return static_cast<int>(
+    const auto copy_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(
         cudaMemcpy2D(dst, dst_pitch, src, src_pitch, width_bytes, state_count,
                      cudaMemcpyDeviceToHost));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        record_cuda_copy_d2h_wait(
+            saturated_multiply(width_bytes, state_count),
+            saturated_nanoseconds_since(copy_started));
+    }
+    return status;
 }
 
 extern "C" int lzvm_cuda_expand_state_prefix_words(
@@ -849,9 +965,17 @@ extern "C" int lzvm_cuda_expand_state_prefix_words(
         return clear_status;
     }
 
-    return static_cast<int>(
+    const auto copy_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(
         cudaMemcpy2D(dst, dst_pitch, src, src_pitch, width_bytes, state_count,
                      cudaMemcpyHostToDevice));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        record_cuda_copy_h2d_wait(
+            saturated_multiply(width_bytes, state_count),
+            saturated_nanoseconds_since(copy_started));
+    }
+    return status;
 }
 
 extern "C" int lzvm_cuda_expand_state_prefix_words_device_to_device(
@@ -888,9 +1012,17 @@ extern "C" int lzvm_cuda_expand_state_prefix_words_device_to_device(
         return clear_status;
     }
 
-    return static_cast<int>(
+    const auto copy_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(
         cudaMemcpy2D(dst, dst_pitch, src, src_pitch, width_bytes, state_count,
                      cudaMemcpyDeviceToDevice));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        record_cuda_copy_d2d_wait(
+            saturated_multiply(width_bytes, state_count),
+            saturated_nanoseconds_since(copy_started));
+    }
+    return status;
 }
 
 extern "C" int lzvm_cuda_memset_zero_bytes(void* dst, std::size_t bytes) {
