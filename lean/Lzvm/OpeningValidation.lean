@@ -164,6 +164,31 @@ theorem runtime_opening_evidence_implies_pcs_and_fri
   intro artifact publicInput proof requiresExternalSource evidence
   exact evidence.right.right.right.right
 
+theorem runtime_opening_checked_acceptance_pcs_and_fri
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_opening_evidence_implies_pcs_and_fri
+      validation
+      artifact
+      publicInput
+      proof
+      False
+      (runtime_opening_checked_acceptance_evidence
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        False
+        accepted)
+
 theorem runtime_opening_evidence_implies_external_source_requirement
     {system : VerifierModel}
     (validation : RuntimeOpeningValidation system) :

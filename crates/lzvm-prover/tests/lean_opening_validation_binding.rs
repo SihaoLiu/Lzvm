@@ -28,6 +28,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
         &lean_source,
         &[
             "runtime_opening_evidence_implies_external_source_requirement",
+            "runtime_opening_checked_acceptance_pcs_and_fri",
             "runtime_opening_checked_acceptance_sound",
             "runtime_opening_checked_acceptance_verifier_core_contract",
             "runtime_opening_required_external_source_sound",
@@ -51,6 +52,19 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             )
             .contains("validation.runtimeSoundnessValidation.sourceValidation"),
         "opening evidence should expose the external-source requirement carried by runtime soundness evidence"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_opening_checked_acceptance_pcs_and_fri"
+        )
+        .contains("system.pcsOpeningsValid publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_opening_checked_acceptance_pcs_and_fri"
+            )
+            .contains("system.friQueriesValid publicInput proof"),
+        "checked opening acceptance should directly expose PCS opening and FRI query validity"
     );
 }
 
