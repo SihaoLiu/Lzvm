@@ -773,4 +773,53 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_opening_and_core
             proof
             accepted)))
 
+theorem runtime_retained_leaf_digest_opening_checked_acceptance_source_and_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedLeafDigestOpeningShiftedRowSourceContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedLeafDigestOpeningRetainedRowsContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_retained_leaf_digest_opening_checked_acceptance_shifted_row_source_contract
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (And.intro
+        (runtime_retained_leaf_digest_opening_checked_acceptance_retained_rows_contract
+          assumptions
+          validation
+          artifact
+          publicInput
+          proof
+          accepted)
+        (runtime_retained_leaf_digest_opening_checked_acceptance_verifier_core_contract
+          assumptions
+          validation
+          artifact
+          publicInput
+          proof
+          accepted))
+
 end Lzvm

@@ -64,6 +64,7 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "runtime_retained_leaf_digest_opening_checked_acceptance_sound",
             "runtime_retained_leaf_digest_opening_checked_acceptance_verifier_core_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_opening_and_core_contract",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_source_and_core_contract",
         ],
     );
     assert!(

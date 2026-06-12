@@ -15,12 +15,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let timing_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/Timing.lean");
     let timing_source =
         std::fs::read_to_string(&timing_path).expect("Lean timing checks should read");
+    let proof_timing_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming.lean");
+    let proof_timing_source =
+        std::fs::read_to_string(&proof_timing_path).expect("Lean proof timing checks should read");
     let runtime_performance_path =
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/RuntimePerformance.lean");
     let runtime_performance_source = std::fs::read_to_string(&runtime_performance_path)
         .expect("Lean runtime performance checks should read");
     let lean_source = format!(
-        "{auxiliary_source}\n{gpu_runtime_source}\n{timing_source}\n{runtime_performance_source}"
+        "{auxiliary_source}\n{gpu_runtime_source}\n{timing_source}\n{proof_timing_source}\n{runtime_performance_source}"
     );
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
