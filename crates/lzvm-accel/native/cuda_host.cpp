@@ -3,6 +3,7 @@
 #include <cuda_runtime.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <cstdint>
 #include <limits>
 #include <mutex>
@@ -34,6 +35,8 @@ constexpr std::size_t kMaxCachedBytes = std::size_t{16} << 30;
 constexpr std::size_t kMaxCachedBlocksPerSize = 2;
 constexpr std::size_t kPinnedCopyThreshold = std::size_t{1} << 20;
 constexpr std::size_t kPendingCacheNoWaitBytes = std::size_t{1} << 20;
+constexpr const char* kPendingCacheNoWaitBytesEnv =
+    "LZVM_CUDA_PENDING_CACHE_NO_WAIT_BYTES";
 constexpr std::size_t kEventSynchronizeSizeStatsSlots = 64;
 
 std::mutex g_allocator_mutex;
@@ -105,6 +108,30 @@ std::size_t saturated_add(std::size_t left, std::size_t right) {
         return max;
     }
     return left + right;
+}
+
+std::size_t parse_byte_limit_or_default(const char* value, std::size_t fallback) {
+    if (value == nullptr || *value == '\0') {
+        return fallback;
+    }
+    std::size_t parsed = 0;
+    for (const char* cursor = value; *cursor != '\0'; ++cursor) {
+        if (*cursor < '0' || *cursor > '9') {
+            return fallback;
+        }
+        const std::size_t digit = static_cast<std::size_t>(*cursor - '0');
+        const std::size_t max = std::numeric_limits<std::size_t>::max();
+        if (parsed > (max - digit) / 10) {
+            return fallback;
+        }
+        parsed = parsed * 10 + digit;
+    }
+    return parsed;
+}
+
+std::size_t pending_cache_no_wait_bytes(std::size_t fallback) {
+    return parse_byte_limit_or_default(
+        std::getenv(kPendingCacheNoWaitBytesEnv), fallback);
 }
 
 void record_event_synchronize_wait(std::size_t bytes, std::size_t elapsed_ns) {
@@ -347,7 +374,7 @@ int alloc_bytes_impl(void** out, std::size_t bytes) {
             return status;
         }
         if (pending_index != std::numeric_limits<std::size_t>::max()) {
-            if (bytes <= kPendingCacheNoWaitBytes) {
+            if (bytes <= pending_cache_no_wait_bytes(kPendingCacheNoWaitBytes)) {
                 ++g_cuda_no_wait_bypass_count;
                 g_cuda_no_wait_bypass_bytes += bytes;
                 pending_index = std::numeric_limits<std::size_t>::max();
