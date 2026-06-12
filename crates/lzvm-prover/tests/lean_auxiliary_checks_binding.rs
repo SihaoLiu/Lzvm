@@ -306,6 +306,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean guest PC timing summary should prove report-loop timing metadata is verifier-core-neutral"
     );
     assert!(
+        lean_source.contains("guestTraceReportRowValidationMilliseconds")
+            && lean_source.contains("guestTraceReportSourceValuesMilliseconds")
+            && lean_source.contains("guestTraceReportRegisterAccessMilliseconds")
+            && lean_source.contains("guestTraceReportMemoryAccessMilliseconds")
+            && lean_source.contains("guestTraceReportStoreApplyMilliseconds")
+            && lean_source.contains("guestTraceReportVisitMilliseconds")
+            && lean_source.contains("guest_pc_trace_report_subtiming_acceptance_sound")
+            && lean_source
+                .contains("guest_pc_trace_report_subtiming_acceptance_verifier_core_contract"),
+        "Lean guest PC timing summary should prove report subtiming metadata is verifier-core-neutral"
+    );
+    assert!(
         lean_source.contains("guest_pc_trace_stage_timing_acceptance_sound")
             && lean_source
                 .contains("guest_pc_trace_stage_timing_acceptance_verifier_core_contract"),
