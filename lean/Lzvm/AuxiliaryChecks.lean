@@ -492,6 +492,29 @@ structure GpuAllocatorNoWaitLimitValidation where
       noWaitLimitConfigAccepted config publicInput proof ->
         GpuAllocatorNoWaitLimitDecisionMatches config
 
+structure GuestPcTraceSegmentQueueConfig where
+  defaultSegmentQueueCapacity : Nat
+  configuredSegmentQueueCapacity : Option Nat
+  effectiveSegmentQueueCapacity : Nat
+deriving DecidableEq, Repr
+
+def GuestPcTraceSegmentQueueDecisionMatches
+    (config : GuestPcTraceSegmentQueueConfig) : Prop :=
+  match config.configuredSegmentQueueCapacity with
+  | some configured =>
+      config.effectiveSegmentQueueCapacity = configured
+  | none =>
+      config.effectiveSegmentQueueCapacity =
+        config.defaultSegmentQueueCapacity
+
+structure GuestPcTraceSegmentQueueValidation where
+  segmentQueueConfigAccepted :
+    GuestPcTraceSegmentQueueConfig -> PublicInput -> Proof -> Prop
+  segmentQueueConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      segmentQueueConfigAccepted config publicInput proof ->
+        GuestPcTraceSegmentQueueDecisionMatches config
+
 structure GpuRetainedLeafDigestLimitConfig where
   defaultLeafDigestLimitBytes : Nat
   configuredLeafDigestLimitBytes : Option Nat
@@ -599,6 +622,15 @@ def GpuAllocatorNoWaitLimitCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.noWaitLimitConfigAccepted config publicInput proof
+
+def GuestPcTraceSegmentQueueCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GuestPcTraceSegmentQueueValidation)
+    (config : GuestPcTraceSegmentQueueConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.segmentQueueConfigAccepted config publicInput proof
 
 def GpuRetainedLeafDigestLimitCheckedAcceptance
     (system : VerifierModel)

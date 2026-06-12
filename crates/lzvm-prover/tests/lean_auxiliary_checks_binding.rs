@@ -64,6 +64,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let witness_values_path = crate_root.join("src/witness_commitment/values.rs");
     let witness_values_source =
         std::fs::read_to_string(&witness_values_path).expect("witness values source should read");
+    let guest_backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let guest_backend_source =
+        std::fs::read_to_string(&guest_backend_path).expect("guest backend source should read");
 
     assert!(
         top_level_source.contains("import Lzvm.AuxiliaryChecks")
@@ -107,6 +110,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuAllocatorNoWaitLimitConfig")
             && lean_source.contains("GpuAllocatorNoWaitLimitValidation")
             && lean_source.contains("GpuAllocatorNoWaitLimitCheckedAcceptance")
+            && lean_source.contains("GuestPcTraceSegmentQueueConfig")
+            && lean_source.contains("GuestPcTraceSegmentQueueValidation")
+            && lean_source.contains("GuestPcTraceSegmentQueueCheckedAcceptance")
             && lean_source.contains("GpuRetainedLeafDigestLimitConfig")
             && lean_source.contains("GpuRetainedLeafDigestLimitValidation")
             && lean_source.contains("GpuRetainedLeafDigestLimitCheckedAcceptance")
@@ -420,6 +426,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("noWaitLimitConfigAccepted")
             && lean_source.contains("noWaitLimitConfigImpliesDecisionMatches"),
         "Lean auxiliary checks should bind allocator no-wait runtime limits to the bypass decision"
+    );
+    assert!(
+        lean_source.contains("defaultSegmentQueueCapacity")
+            && lean_source.contains("configuredSegmentQueueCapacity")
+            && lean_source.contains("effectiveSegmentQueueCapacity")
+            && lean_source.contains("GuestPcTraceSegmentQueueDecisionMatches")
+            && lean_source.contains("segmentQueueConfigAccepted")
+            && lean_source.contains("segmentQueueConfigImpliesDecisionMatches")
+            && guest_backend_source.contains("LZVM_GUEST_PC_TRACE_SEGMENT_QUEUE")
+            && guest_backend_source.contains("fn guest_pc_trace_segment_queue_capacity")
+            && guest_backend_source.contains("mpsc::sync_channel(guest_pc_trace_segment_queue_capacity())"),
+        "Lean auxiliary checks should bind guest trace segment queue capacity selection to the Rust runtime knob"
     );
     assert!(
         lean_source.contains("GpuRetainedDeviceCacheBudget")
@@ -1918,6 +1936,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_allocator_no_wait_limit_checked_acceptance_projects_decision",
             "gpu_allocator_no_wait_limit_checked_acceptance_sound",
             "gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract",
+            "guest_pc_trace_segment_queue_checked_acceptance_projects_decision",
+            "guest_pc_trace_segment_queue_checked_acceptance_sound",
+            "guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract",
             "gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision",
             "gpu_retained_leaf_digest_limit_checked_acceptance_sound",
             "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
