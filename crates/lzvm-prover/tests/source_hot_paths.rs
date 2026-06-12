@@ -5077,6 +5077,14 @@ fn zisk_main_memory_access_validation_avoids_temporary_vectors() {
             "Zisk Main memory access validation should avoid temporary vectors with {allocation}"
         );
     }
+    assert!(
+        !validate_body.contains(".iter().filter(|access| access.is_some()).count()"),
+        "memory access validation should count fixed slots directly"
+    );
+    assert!(
+        !validate_body.contains(".iter().flatten()"),
+        "memory access validation should compare fixed slots directly"
+    );
 }
 
 #[test]

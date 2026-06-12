@@ -4918,8 +4918,9 @@ fn validate_zisk_main_memory_accesses(
     } else {
         None
     };
-    let expected = [a_access, b_access, store_access];
-    let expected_len = expected.iter().filter(|access| access.is_some()).count();
+    let expected_len = usize::from(a_access.is_some())
+        + usize::from(b_access.is_some())
+        + usize::from(store_access.is_some());
     if effects.memory_accesses.len() != expected_len {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
@@ -4930,31 +4931,48 @@ fn validate_zisk_main_memory_accesses(
             ),
         });
     }
-    for (found, expected) in effects
-        .memory_accesses
-        .iter()
-        .zip(expected.iter().flatten())
+
+    let mut access_index = 0;
+    if let Some(expected) = a_access {
+        validate_expected_memory_access(row, effects.memory_accesses[access_index], expected)?;
+        access_index += 1;
+    }
+    if let Some(expected) = b_access {
+        validate_expected_memory_access(row, effects.memory_accesses[access_index], expected)?;
+        access_index += 1;
+    }
+    if let Some(expected) = store_access {
+        validate_expected_memory_access(row, effects.memory_accesses[access_index], expected)?;
+        access_index += 1;
+    }
+    debug_assert_eq!(access_index, expected_len);
+    Ok(())
+}
+
+fn validate_expected_memory_access(
+    row: usize,
+    found: GuestMemoryAccess,
+    expected: ExpectedMemoryAccess,
+) -> Result<(), GuestPcTraceBackendError> {
+    if found.kind != expected.kind
+        || found.address != expected.address
+        || found.byte_len != expected.byte_len
+        || found.value != expected.value
     {
-        if found.kind != expected.kind
-            || found.address != expected.address
-            || found.byte_len != expected.byte_len
-            || found.value != expected.value
-        {
-            return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-                row,
-                message: format!(
-                    "expected {:?} at {} byte length {} value {}, found {:?} at {} byte length {} value {}",
-                    expected.kind,
-                    expected.address,
-                    expected.byte_len,
-                    expected.value,
-                    found.kind,
-                    found.address,
-                    found.byte_len,
-                    found.value
-                ),
-            });
-        }
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!(
+                "expected {:?} at {} byte length {} value {}, found {:?} at {} byte length {} value {}",
+                expected.kind,
+                expected.address,
+                expected.byte_len,
+                expected.value,
+                found.kind,
+                found.address,
+                found.byte_len,
+                found.value
+            ),
+        });
     }
     Ok(())
 }
