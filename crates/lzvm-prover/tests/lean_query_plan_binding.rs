@@ -50,4 +50,9 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "RuntimeVerifierCoreContract system publicInput proof",
         ],
     );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
+        &[".right.right.right"],
+    );
 }

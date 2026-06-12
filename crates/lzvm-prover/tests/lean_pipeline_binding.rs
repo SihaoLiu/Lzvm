@@ -532,6 +532,11 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             .contains("RuntimeVerifierCoreContract system publicInput proof"),
         "pipeline checked acceptance should expose challenge, transcript, query, opening, and verifier core evidence"
     );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract",
+        &[".right.right.right"],
+    );
     assert!(
         theorem_prefix(
             &lean_source,

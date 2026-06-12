@@ -475,28 +475,36 @@ theorem runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
       proof
       requiresExternalSource
       accepted
+  rcases sound with
+    ⟨queryPlanEvidence,
+      _challengeEvidence,
+      openingSegmentEvidence,
+      openingEvidence,
+      transcriptBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      soundWitness⟩
   have queryPlanBound :=
     runtime_query_plan_binding_evidence_implies_bound_contract
       validation
       artifact
       publicInput
       proof
-      sound.left
+      queryPlanEvidence
   have openingSegmentBound :=
     runtime_opening_segment_binding_evidence_implies_bound_contract
       validation.openingValidation
       artifact
       publicInput
       proof
-      sound.right.right.left
+      openingSegmentEvidence
   exact
     And.intro queryPlanBound
       (And.intro openingSegmentBound
-        (And.intro sound.right.right.right.left
-          (And.intro sound.right.right.right.right.left
-            (And.intro sound.right.right.right.right.right.left
-              (And.intro sound.right.right.right.right.right.right.left
-                (sound_witness_implies_verifier_core_contract
-                  sound.right.right.right.right.right.right.right))))))
+        (And.intro openingEvidence
+          (And.intro transcriptBound
+            (And.intro pcsOpeningsValid
+              (And.intro friQueriesValid
+                (sound_witness_implies_verifier_core_contract soundWitness))))))
 
 end Lzvm

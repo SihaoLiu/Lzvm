@@ -46,6 +46,34 @@ pub fn assert_theorem_prefix_contains(source: &str, name: &str, snippets: &[&str
     }
 }
 
+#[allow(dead_code)]
+pub fn theorem_body(source: &str, name: &str) -> String {
+    let visible_source = uncommented_lines(source).collect::<Vec<_>>().join("\n");
+    let theorem_start = visible_source
+        .find(&format!("theorem {name}"))
+        .unwrap_or_else(|| panic!("Lean source should contain theorem {name}"));
+    let proof_start = visible_source[theorem_start..]
+        .find(" := by")
+        .unwrap_or_else(|| panic!("Lean theorem {name} should have a proof body"));
+    let body_start = theorem_start + proof_start + " := by".len();
+    let body_end = visible_source[body_start..]
+        .find("\ntheorem ")
+        .map(|offset| body_start + offset)
+        .unwrap_or_else(|| visible_source.len());
+    visible_source[body_start..body_end].to_owned()
+}
+
+#[allow(dead_code)]
+pub fn assert_theorem_body_omits(source: &str, name: &str, snippets: &[&str]) {
+    let body = theorem_body(source, name);
+    for snippet in snippets {
+        assert!(
+            !body.contains(snippet),
+            "Lean theorem {name} body should not contain {snippet}"
+        );
+    }
+}
+
 fn uncommented_lines(source: &str) -> impl Iterator<Item = String> + '_ {
     let mut block_depth = 0usize;
     source.lines().map(move |line| {

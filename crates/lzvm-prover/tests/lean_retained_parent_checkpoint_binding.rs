@@ -83,6 +83,11 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "RuntimeVerifierCoreContract system publicInput proof",
         ],
     );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_opening_checked_acceptance_source_and_core_contract",
+        &[".right.right.right"],
+    );
     assert!(
         top_level_source.contains("import Lzvm.RetainedParentCheckpointOpening"),
         "top-level Lean module should import retained parent checkpoint opening binding"

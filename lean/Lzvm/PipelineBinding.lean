@@ -602,16 +602,28 @@ theorem runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core
       proof
       requiresExternalSource
       queryAccepted
+  rcases challengeContract with
+    ⟨challengeEvidence,
+      transcriptEvidence,
+      _challengeTranscriptBound,
+      _challengeCoreObligations⟩
+  rcases queryOpeningContract with
+    ⟨queryPlanBound,
+      openingSegmentBound,
+      openingEvidence,
+      transcriptBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      coreObligations⟩
   exact
-    And.intro challengeContract.left
-      (And.intro challengeContract.right.left
-        (And.intro queryOpeningContract.left
-          (And.intro queryOpeningContract.right.left
-            (And.intro queryOpeningContract.right.right.left
-              (And.intro queryOpeningContract.right.right.right.left
-                (And.intro queryOpeningContract.right.right.right.right.left
-                  (And.intro queryOpeningContract.right.right.right.right.right.left
-                    queryOpeningContract.right.right.right.right.right.right)))))))
+    And.intro challengeEvidence
+      (And.intro transcriptEvidence
+        (And.intro queryPlanBound
+          (And.intro openingSegmentBound
+            (And.intro openingEvidence
+              (And.intro transcriptBound
+                (And.intro pcsOpeningsValid
+                  (And.intro friQueriesValid coreObligations)))))))
 
 theorem runtime_pipeline_compact_digest_merkle_observation_eq_full_state
     {alpha : Type u}
