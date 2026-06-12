@@ -1196,6 +1196,21 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessOpeningLeafCosetExtendNormalizeLaunchCount",
         "finishWitnessOpeningLeafCosetExtendPackLaunchCount",
         "finishWitnessOpeningLeafCosetExtendUnpackLaunchCount",
+        "finishWitnessOpeningPathParentHashRowCount",
+        "finishWitnessOpeningPathParentHashByteCount",
+        "finishWitnessOpeningPathParentHashLaunchCount",
+        "finishWitnessOpeningPathParentHashRecomputedRowCount",
+        "finishWitnessOpeningPathParentHashRecomputedByteCount",
+        "finishWitnessOpeningPathParentHashRecomputedLaunchCount",
+        "finishWitnessOpeningPathParentHashRetainedLeafDigestRowCount",
+        "finishWitnessOpeningPathParentHashRetainedLeafDigestByteCount",
+        "finishWitnessOpeningPathParentHashRetainedLeafDigestLaunchCount",
+        "finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixRowCount",
+        "finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixByteCount",
+        "finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixLaunchCount",
+        "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount",
+        "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount",
+        "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount",
         "finishFriOpeningMilliseconds",
         "finishProofEncodeMilliseconds",
         "finishContributionSegmentMilliseconds",
@@ -1388,6 +1403,84 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "CLI proof timing output should include {line_name}"
         );
     }
+    for (line_name, field) in [
+        (
+            "\"finish_witness_opening_path_parent_hash_rows\"",
+            "witness_opening_path_parent_hash_row_count",
+        ),
+        (
+            "\"finish_witness_opening_path_parent_hash_bytes\"",
+            "witness_opening_path_parent_hash_byte_count",
+        ),
+        (
+            "\"finish_witness_opening_path_parent_hash_launches\"",
+            "witness_opening_path_parent_hash_launch_count",
+        ),
+    ] {
+        assert!(
+            proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
+            "CLI proof timing output should include {line_name}"
+        );
+    }
+    assert!(
+        proof_timing_source.contains("\"finish_witness_opening_path_parent_hash\""),
+        "CLI proof timing output should include path parent hash split prefix"
+    );
+    for (suffix, field) in [
+        (
+            "\"recomputed\"",
+            "witness_opening_path_parent_hash_recomputed_row_count",
+        ),
+        (
+            "\"recomputed\"",
+            "witness_opening_path_parent_hash_recomputed_byte_count",
+        ),
+        (
+            "\"recomputed\"",
+            "witness_opening_path_parent_hash_recomputed_launch_count",
+        ),
+        (
+            "\"retained_leaf_digest\"",
+            "witness_opening_path_parent_hash_retained_leaf_digest_row_count",
+        ),
+        (
+            "\"retained_leaf_digest\"",
+            "witness_opening_path_parent_hash_retained_leaf_digest_byte_count",
+        ),
+        (
+            "\"retained_leaf_digest\"",
+            "witness_opening_path_parent_hash_retained_leaf_digest_launch_count",
+        ),
+        (
+            "\"retained_parent_checkpoint_prefix\"",
+            "witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_row_count",
+        ),
+        (
+            "\"retained_parent_checkpoint_prefix\"",
+            "witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_byte_count",
+        ),
+        (
+            "\"retained_parent_checkpoint_prefix\"",
+            "witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launch_count",
+        ),
+        (
+            "\"retained_parent_checkpoint_suffix\"",
+            "witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_row_count",
+        ),
+        (
+            "\"retained_parent_checkpoint_suffix\"",
+            "witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_byte_count",
+        ),
+        (
+            "\"retained_parent_checkpoint_suffix\"",
+            "witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launch_count",
+        ),
+    ] {
+        assert!(
+            proof_timing_source.contains(suffix) && proof_timing_source.contains(field),
+            "CLI proof timing output should bind path parent hash split {suffix}"
+        );
+    }
     assert!(
         cuda_field_test_source.contains("cuda_device_buffer_round_trips_large_bytes")
             && cuda_field_test_source.contains("large host bytes should copy to device"),
@@ -1521,6 +1614,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_leaf_work_shape_acceptance_sound",
             "proof_artifact_finish_leaf_work_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_path_parent_hash_shape_acceptance_sound",
+            "proof_artifact_finish_path_parent_hash_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",

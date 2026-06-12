@@ -330,6 +330,21 @@ structure ProofArtifactFinishTimingSummary where
   finishWitnessOpeningLeafCosetExtendNormalizeLaunchCount : Nat
   finishWitnessOpeningLeafCosetExtendPackLaunchCount : Nat
   finishWitnessOpeningLeafCosetExtendUnpackLaunchCount : Nat
+  finishWitnessOpeningPathParentHashRowCount : Nat
+  finishWitnessOpeningPathParentHashByteCount : Nat
+  finishWitnessOpeningPathParentHashLaunchCount : Nat
+  finishWitnessOpeningPathParentHashRecomputedRowCount : Nat
+  finishWitnessOpeningPathParentHashRecomputedByteCount : Nat
+  finishWitnessOpeningPathParentHashRecomputedLaunchCount : Nat
+  finishWitnessOpeningPathParentHashRetainedLeafDigestRowCount : Nat
+  finishWitnessOpeningPathParentHashRetainedLeafDigestByteCount : Nat
+  finishWitnessOpeningPathParentHashRetainedLeafDigestLaunchCount : Nat
+  finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixRowCount : Nat
+  finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixByteCount : Nat
+  finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixLaunchCount : Nat
+  finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount : Nat
+  finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount : Nat
+  finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount : Nat
   finishFriOpeningMilliseconds : Nat
   finishProofEncodeMilliseconds : Nat
   finishContributionSegmentMilliseconds : Nat

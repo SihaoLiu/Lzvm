@@ -2014,6 +2014,149 @@ theorem proof_artifact_finish_leaf_work_shape_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem proof_artifact_finish_path_parent_hash_shape_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (parentHashRows parentHashBytes parentHashLaunches
+      recomputedRows recomputedBytes recomputedLaunches
+      retainedLeafDigestRows retainedLeafDigestBytes retainedLeafDigestLaunches
+      retainedCheckpointPrefixRows retainedCheckpointPrefixBytes retainedCheckpointPrefixLaunches
+      retainedCheckpointSuffixRows retainedCheckpointSuffixBytes retainedCheckpointSuffixLaunches
+      : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningPathParentHashRowCount := parentHashRows
+            finishWitnessOpeningPathParentHashByteCount := parentHashBytes
+            finishWitnessOpeningPathParentHashLaunchCount := parentHashLaunches
+            finishWitnessOpeningPathParentHashRecomputedRowCount := recomputedRows
+            finishWitnessOpeningPathParentHashRecomputedByteCount := recomputedBytes
+            finishWitnessOpeningPathParentHashRecomputedLaunchCount := recomputedLaunches
+            finishWitnessOpeningPathParentHashRetainedLeafDigestRowCount :=
+              retainedLeafDigestRows
+            finishWitnessOpeningPathParentHashRetainedLeafDigestByteCount :=
+              retainedLeafDigestBytes
+            finishWitnessOpeningPathParentHashRetainedLeafDigestLaunchCount :=
+              retainedLeafDigestLaunches
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixRowCount :=
+              retainedCheckpointPrefixRows
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixByteCount :=
+              retainedCheckpointPrefixBytes
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixLaunchCount :=
+              retainedCheckpointPrefixLaunches
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount :=
+              retainedCheckpointSuffixRows
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount :=
+              retainedCheckpointSuffixBytes
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount :=
+              retainedCheckpointSuffixLaunches })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          finishWitnessOpeningPathParentHashRowCount := parentHashRows
+          finishWitnessOpeningPathParentHashByteCount := parentHashBytes
+          finishWitnessOpeningPathParentHashLaunchCount := parentHashLaunches
+          finishWitnessOpeningPathParentHashRecomputedRowCount := recomputedRows
+          finishWitnessOpeningPathParentHashRecomputedByteCount := recomputedBytes
+          finishWitnessOpeningPathParentHashRecomputedLaunchCount := recomputedLaunches
+          finishWitnessOpeningPathParentHashRetainedLeafDigestRowCount :=
+            retainedLeafDigestRows
+          finishWitnessOpeningPathParentHashRetainedLeafDigestByteCount :=
+            retainedLeafDigestBytes
+          finishWitnessOpeningPathParentHashRetainedLeafDigestLaunchCount :=
+            retainedLeafDigestLaunches
+          finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixRowCount :=
+            retainedCheckpointPrefixRows
+          finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixByteCount :=
+            retainedCheckpointPrefixBytes
+          finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixLaunchCount :=
+            retainedCheckpointPrefixLaunches
+          finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount :=
+            retainedCheckpointSuffixRows
+          finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount :=
+            retainedCheckpointSuffixBytes
+          finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount :=
+            retainedCheckpointSuffixLaunches })
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_path_parent_hash_shape_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (parentHashRows parentHashBytes parentHashLaunches
+      recomputedRows recomputedBytes recomputedLaunches
+      retainedLeafDigestRows retainedLeafDigestBytes retainedLeafDigestLaunches
+      retainedCheckpointPrefixRows retainedCheckpointPrefixBytes retainedCheckpointPrefixLaunches
+      retainedCheckpointSuffixRows retainedCheckpointSuffixBytes retainedCheckpointSuffixLaunches
+      : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningPathParentHashRowCount := parentHashRows
+            finishWitnessOpeningPathParentHashByteCount := parentHashBytes
+            finishWitnessOpeningPathParentHashLaunchCount := parentHashLaunches
+            finishWitnessOpeningPathParentHashRecomputedRowCount := recomputedRows
+            finishWitnessOpeningPathParentHashRecomputedByteCount := recomputedBytes
+            finishWitnessOpeningPathParentHashRecomputedLaunchCount := recomputedLaunches
+            finishWitnessOpeningPathParentHashRetainedLeafDigestRowCount :=
+              retainedLeafDigestRows
+            finishWitnessOpeningPathParentHashRetainedLeafDigestByteCount :=
+              retainedLeafDigestBytes
+            finishWitnessOpeningPathParentHashRetainedLeafDigestLaunchCount :=
+              retainedLeafDigestLaunches
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixRowCount :=
+              retainedCheckpointPrefixRows
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixByteCount :=
+              retainedCheckpointPrefixBytes
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixLaunchCount :=
+              retainedCheckpointPrefixLaunches
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount :=
+              retainedCheckpointSuffixRows
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount :=
+              retainedCheckpointSuffixBytes
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount :=
+              retainedCheckpointSuffixLaunches })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (proof_artifact_finish_path_parent_hash_shape_acceptance_sound
+        assumptions
+        summary
+        parentHashRows
+        parentHashBytes
+        parentHashLaunches
+        recomputedRows
+        recomputedBytes
+        recomputedLaunches
+        retainedLeafDigestRows
+        retainedLeafDigestBytes
+        retainedLeafDigestLaunches
+        retainedCheckpointPrefixRows
+        retainedCheckpointPrefixBytes
+        retainedCheckpointPrefixLaunches
+        retainedCheckpointSuffixRows
+        retainedCheckpointSuffixBytes
+        retainedCheckpointSuffixLaunches
+        publicInput
+        proof
+        observed)
+
 theorem proof_artifact_finish_descriptor_upload_word_count_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
