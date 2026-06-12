@@ -1179,6 +1179,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessExternalSourceDescriptorUploadByteCount",
         "finishWitnessExternalSourceDescriptorUploadWordCount",
         "finishWitnessExternalSourceDescriptorUploadRowCount",
+        "finishWitnessOpeningLeafHashRowCount",
+        "finishWitnessOpeningLeafHashByteCount",
+        "finishWitnessOpeningLeafHashArity2RowCount",
+        "finishWitnessOpeningLeafHashArity2ByteCount",
+        "finishWitnessOpeningLeafHashArity4RowCount",
+        "finishWitnessOpeningLeafHashArity4ByteCount",
+        "finishWitnessOpeningLeafCosetExtendCallCount",
+        "finishWitnessOpeningLeafCosetExtendOutputByteCount",
+        "finishWitnessOpeningLeafCosetExtendColumnCount",
+        "finishWitnessOpeningLeafCosetExtendMaxColumnCount",
+        "finishWitnessOpeningLeafCosetExtendNttLaunchCount",
+        "finishWitnessOpeningLeafCosetExtendBitReverseLaunchCount",
+        "finishWitnessOpeningLeafCosetExtendNttStageLaunchCount",
+        "finishWitnessOpeningLeafCosetExtendNttBlockTwiddleLaunchCount",
+        "finishWitnessOpeningLeafCosetExtendNormalizeLaunchCount",
+        "finishWitnessOpeningLeafCosetExtendPackLaunchCount",
+        "finishWitnessOpeningLeafCosetExtendUnpackLaunchCount",
         "finishFriOpeningMilliseconds",
         "finishProofEncodeMilliseconds",
         "finishContributionSegmentMilliseconds",
@@ -1289,6 +1306,81 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"finish_witness_external_source_descriptor_upload_rows\"",
             "witness_external_source_descriptor_upload_row_count",
+        ),
+    ] {
+        assert!(
+            proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
+            "CLI proof timing output should include {line_name}"
+        );
+    }
+    for (line_name, field) in [
+        (
+            "\"finish_witness_opening_leaf_hash_rows\"",
+            "witness_opening_leaf_hash_row_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_hash_bytes\"",
+            "witness_opening_leaf_hash_byte_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_hash_arity2_rows\"",
+            "witness_opening_leaf_hash_arity2_row_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_hash_arity2_bytes\"",
+            "witness_opening_leaf_hash_arity2_byte_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_hash_arity4_rows\"",
+            "witness_opening_leaf_hash_arity4_row_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_hash_arity4_bytes\"",
+            "witness_opening_leaf_hash_arity4_byte_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_calls\"",
+            "witness_opening_leaf_coset_extend_call_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_output_bytes\"",
+            "witness_opening_leaf_coset_extend_output_byte_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_columns\"",
+            "witness_opening_leaf_coset_extend_column_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_max_columns\"",
+            "witness_opening_leaf_coset_extend_max_column_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_ntt_launches\"",
+            "witness_opening_leaf_coset_extend_ntt_launch_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_bit_reverse_launches\"",
+            "witness_opening_leaf_coset_extend_bit_reverse_launch_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_ntt_stage_launches\"",
+            "witness_opening_leaf_coset_extend_ntt_stage_launch_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_ntt_block_twiddle_launches\"",
+            "witness_opening_leaf_coset_extend_ntt_block_twiddle_launch_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_normalize_launches\"",
+            "witness_opening_leaf_coset_extend_normalize_launch_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_pack_launches\"",
+            "witness_opening_leaf_coset_extend_pack_launch_count",
+        ),
+        (
+            "\"finish_witness_opening_leaf_coset_extend_unpack_launches\"",
+            "witness_opening_leaf_coset_extend_unpack_launch_count",
         ),
     ] {
         assert!(
@@ -1427,6 +1519,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_timing_acceptance_verifier_core_contract",
             "proof_artifact_finish_witness_opening_shape_acceptance_sound",
             "proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_leaf_work_shape_acceptance_sound",
+            "proof_artifact_finish_leaf_work_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",

@@ -313,6 +313,23 @@ structure ProofArtifactFinishTimingSummary where
   finishWitnessExternalSourceDescriptorUploadByteCount : Nat
   finishWitnessExternalSourceDescriptorUploadWordCount : Nat
   finishWitnessExternalSourceDescriptorUploadRowCount : Nat
+  finishWitnessOpeningLeafHashRowCount : Nat
+  finishWitnessOpeningLeafHashByteCount : Nat
+  finishWitnessOpeningLeafHashArity2RowCount : Nat
+  finishWitnessOpeningLeafHashArity2ByteCount : Nat
+  finishWitnessOpeningLeafHashArity4RowCount : Nat
+  finishWitnessOpeningLeafHashArity4ByteCount : Nat
+  finishWitnessOpeningLeafCosetExtendCallCount : Nat
+  finishWitnessOpeningLeafCosetExtendOutputByteCount : Nat
+  finishWitnessOpeningLeafCosetExtendColumnCount : Nat
+  finishWitnessOpeningLeafCosetExtendMaxColumnCount : Nat
+  finishWitnessOpeningLeafCosetExtendNttLaunchCount : Nat
+  finishWitnessOpeningLeafCosetExtendBitReverseLaunchCount : Nat
+  finishWitnessOpeningLeafCosetExtendNttStageLaunchCount : Nat
+  finishWitnessOpeningLeafCosetExtendNttBlockTwiddleLaunchCount : Nat
+  finishWitnessOpeningLeafCosetExtendNormalizeLaunchCount : Nat
+  finishWitnessOpeningLeafCosetExtendPackLaunchCount : Nat
+  finishWitnessOpeningLeafCosetExtendUnpackLaunchCount : Nat
   finishFriOpeningMilliseconds : Nat
   finishProofEncodeMilliseconds : Nat
   finishContributionSegmentMilliseconds : Nat
