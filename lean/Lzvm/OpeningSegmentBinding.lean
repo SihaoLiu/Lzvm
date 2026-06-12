@@ -340,4 +340,51 @@ theorem runtime_opening_segment_binding_checked_acceptance_verifier_core_contrac
       accepted
   exact sound_witness_implies_verifier_core_contract sound.right.right
 
+theorem runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningSegmentBindingBoundContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_opening_segment_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    And.intro
+      (runtime_opening_segment_binding_evidence_implies_bound_contract
+        validation
+        artifact
+        publicInput
+        proof
+        sound.left)
+      (And.intro
+        sound.right.left
+        (sound_witness_implies_verifier_core_contract sound.right.right))
+
 end Lzvm
