@@ -1777,6 +1777,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_timing_acceptance_verifier_core_contract",
             "proof_artifact_finish_timing_some_summary_acceptance_sound",
             "proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract",
+            "proof_artifact_finish_top_level_timing_acceptance_sound",
+            "proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract",
             "proof_artifact_finish_witness_opening_shape_acceptance_sound",
             "proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_leaf_work_shape_acceptance_sound",
