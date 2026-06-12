@@ -1766,6 +1766,119 @@ theorem proof_artifact_finish_timing_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem proof_artifact_finish_witness_opening_shape_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (queryCount queryUnitCount singleQueryUnitCount maxQueriesPerUnit stageCount
+      retainedSourceCount externalSourceCount embeddedSourceCount missingSourceCount
+      retainedLeafDigestOpeningCount retainedLeafDigestOpeningRowCount
+      retainedParentCheckpointOpeningCount retainedParentCheckpointOpeningRowCount : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningQueryCount := queryCount
+            finishWitnessOpeningQueryUnitCount := queryUnitCount
+            finishWitnessOpeningSingleQueryUnitCount := singleQueryUnitCount
+            finishWitnessOpeningMaxQueriesPerUnit := maxQueriesPerUnit
+            finishWitnessOpeningStageCount := stageCount
+            finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+            finishWitnessOpeningExternalSourceCount := externalSourceCount
+            finishWitnessOpeningEmbeddedSourceCount := embeddedSourceCount
+            finishWitnessOpeningMissingSourceCount := missingSourceCount
+            finishWitnessOpeningRetainedLeafDigestOpeningCount := retainedLeafDigestOpeningCount
+            finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
+              retainedLeafDigestOpeningRowCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+              retainedParentCheckpointOpeningCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+              retainedParentCheckpointOpeningRowCount })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          finishWitnessOpeningQueryCount := queryCount
+          finishWitnessOpeningQueryUnitCount := queryUnitCount
+          finishWitnessOpeningSingleQueryUnitCount := singleQueryUnitCount
+          finishWitnessOpeningMaxQueriesPerUnit := maxQueriesPerUnit
+          finishWitnessOpeningStageCount := stageCount
+          finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+          finishWitnessOpeningExternalSourceCount := externalSourceCount
+          finishWitnessOpeningEmbeddedSourceCount := embeddedSourceCount
+          finishWitnessOpeningMissingSourceCount := missingSourceCount
+          finishWitnessOpeningRetainedLeafDigestOpeningCount := retainedLeafDigestOpeningCount
+          finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
+            retainedLeafDigestOpeningRowCount
+          finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+            retainedParentCheckpointOpeningCount
+          finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+            retainedParentCheckpointOpeningRowCount })
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (queryCount queryUnitCount singleQueryUnitCount maxQueriesPerUnit stageCount
+      retainedSourceCount externalSourceCount embeddedSourceCount missingSourceCount
+      retainedLeafDigestOpeningCount retainedLeafDigestOpeningRowCount
+      retainedParentCheckpointOpeningCount retainedParentCheckpointOpeningRowCount : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningQueryCount := queryCount
+            finishWitnessOpeningQueryUnitCount := queryUnitCount
+            finishWitnessOpeningSingleQueryUnitCount := singleQueryUnitCount
+            finishWitnessOpeningMaxQueriesPerUnit := maxQueriesPerUnit
+            finishWitnessOpeningStageCount := stageCount
+            finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+            finishWitnessOpeningExternalSourceCount := externalSourceCount
+            finishWitnessOpeningEmbeddedSourceCount := embeddedSourceCount
+            finishWitnessOpeningMissingSourceCount := missingSourceCount
+            finishWitnessOpeningRetainedLeafDigestOpeningCount := retainedLeafDigestOpeningCount
+            finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
+              retainedLeafDigestOpeningRowCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+              retainedParentCheckpointOpeningCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+              retainedParentCheckpointOpeningRowCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (proof_artifact_finish_witness_opening_shape_acceptance_sound
+        assumptions
+        summary
+        queryCount
+        queryUnitCount
+        singleQueryUnitCount
+        maxQueriesPerUnit
+        stageCount
+        retainedSourceCount
+        externalSourceCount
+        embeddedSourceCount
+        missingSourceCount
+        retainedLeafDigestOpeningCount
+        retainedLeafDigestOpeningRowCount
+        retainedParentCheckpointOpeningCount
+        retainedParentCheckpointOpeningRowCount
+        publicInput
+        proof
+        observed)
+
 theorem proof_artifact_finish_descriptor_upload_word_count_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1873,6 +1986,14 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
     (assumptions : AssumptionBundle system)
     (summary : ProofArtifactFinishTimingSummary)
     (queryPlanMilliseconds constantOpeningMilliseconds witnessOpeningMilliseconds
+      witnessOpeningQueryCount witnessOpeningQueryUnitCount witnessOpeningSingleQueryUnitCount
+      witnessOpeningMaxQueriesPerUnit witnessOpeningStageCount
+      witnessOpeningRetainedSourceCount witnessOpeningExternalSourceCount
+      witnessOpeningEmbeddedSourceCount witnessOpeningMissingSourceCount
+      witnessOpeningRetainedLeafDigestOpeningCount
+      witnessOpeningRetainedLeafDigestOpeningRowCount
+      witnessOpeningRetainedParentCheckpointOpeningCount
+      witnessOpeningRetainedParentCheckpointOpeningRowCount
       descriptorUploadByteCount descriptorUploadWordCount descriptorUploadRowCount
       friOpeningMilliseconds proofEncodeMilliseconds contributionSegmentMilliseconds
       contributionVerifyMilliseconds : Nat) :
@@ -1884,6 +2005,23 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
             finishQueryPlanMilliseconds := queryPlanMilliseconds
             finishConstantOpeningMilliseconds := constantOpeningMilliseconds
             finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+            finishWitnessOpeningQueryCount := witnessOpeningQueryCount
+            finishWitnessOpeningQueryUnitCount := witnessOpeningQueryUnitCount
+            finishWitnessOpeningSingleQueryUnitCount := witnessOpeningSingleQueryUnitCount
+            finishWitnessOpeningMaxQueriesPerUnit := witnessOpeningMaxQueriesPerUnit
+            finishWitnessOpeningStageCount := witnessOpeningStageCount
+            finishWitnessOpeningRetainedSourceCount := witnessOpeningRetainedSourceCount
+            finishWitnessOpeningExternalSourceCount := witnessOpeningExternalSourceCount
+            finishWitnessOpeningEmbeddedSourceCount := witnessOpeningEmbeddedSourceCount
+            finishWitnessOpeningMissingSourceCount := witnessOpeningMissingSourceCount
+            finishWitnessOpeningRetainedLeafDigestOpeningCount :=
+              witnessOpeningRetainedLeafDigestOpeningCount
+            finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
+              witnessOpeningRetainedLeafDigestOpeningRowCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+              witnessOpeningRetainedParentCheckpointOpeningCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+              witnessOpeningRetainedParentCheckpointOpeningRowCount
             finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
             finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
             finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
@@ -1903,6 +2041,23 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
           finishQueryPlanMilliseconds := queryPlanMilliseconds
           finishConstantOpeningMilliseconds := constantOpeningMilliseconds
           finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+          finishWitnessOpeningQueryCount := witnessOpeningQueryCount
+          finishWitnessOpeningQueryUnitCount := witnessOpeningQueryUnitCount
+          finishWitnessOpeningSingleQueryUnitCount := witnessOpeningSingleQueryUnitCount
+          finishWitnessOpeningMaxQueriesPerUnit := witnessOpeningMaxQueriesPerUnit
+          finishWitnessOpeningStageCount := witnessOpeningStageCount
+          finishWitnessOpeningRetainedSourceCount := witnessOpeningRetainedSourceCount
+          finishWitnessOpeningExternalSourceCount := witnessOpeningExternalSourceCount
+          finishWitnessOpeningEmbeddedSourceCount := witnessOpeningEmbeddedSourceCount
+          finishWitnessOpeningMissingSourceCount := witnessOpeningMissingSourceCount
+          finishWitnessOpeningRetainedLeafDigestOpeningCount :=
+            witnessOpeningRetainedLeafDigestOpeningCount
+          finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
+            witnessOpeningRetainedLeafDigestOpeningRowCount
+          finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+            witnessOpeningRetainedParentCheckpointOpeningCount
+          finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+            witnessOpeningRetainedParentCheckpointOpeningRowCount
           finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
           finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
           finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
@@ -1919,6 +2074,14 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
     (assumptions : AssumptionBundle system)
     (summary : ProofArtifactFinishTimingSummary)
     (queryPlanMilliseconds constantOpeningMilliseconds witnessOpeningMilliseconds
+      witnessOpeningQueryCount witnessOpeningQueryUnitCount witnessOpeningSingleQueryUnitCount
+      witnessOpeningMaxQueriesPerUnit witnessOpeningStageCount
+      witnessOpeningRetainedSourceCount witnessOpeningExternalSourceCount
+      witnessOpeningEmbeddedSourceCount witnessOpeningMissingSourceCount
+      witnessOpeningRetainedLeafDigestOpeningCount
+      witnessOpeningRetainedLeafDigestOpeningRowCount
+      witnessOpeningRetainedParentCheckpointOpeningCount
+      witnessOpeningRetainedParentCheckpointOpeningRowCount
       descriptorUploadByteCount descriptorUploadWordCount descriptorUploadRowCount
       friOpeningMilliseconds proofEncodeMilliseconds contributionSegmentMilliseconds
       contributionVerifyMilliseconds : Nat) :
@@ -1930,6 +2093,23 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
             finishQueryPlanMilliseconds := queryPlanMilliseconds
             finishConstantOpeningMilliseconds := constantOpeningMilliseconds
             finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+            finishWitnessOpeningQueryCount := witnessOpeningQueryCount
+            finishWitnessOpeningQueryUnitCount := witnessOpeningQueryUnitCount
+            finishWitnessOpeningSingleQueryUnitCount := witnessOpeningSingleQueryUnitCount
+            finishWitnessOpeningMaxQueriesPerUnit := witnessOpeningMaxQueriesPerUnit
+            finishWitnessOpeningStageCount := witnessOpeningStageCount
+            finishWitnessOpeningRetainedSourceCount := witnessOpeningRetainedSourceCount
+            finishWitnessOpeningExternalSourceCount := witnessOpeningExternalSourceCount
+            finishWitnessOpeningEmbeddedSourceCount := witnessOpeningEmbeddedSourceCount
+            finishWitnessOpeningMissingSourceCount := witnessOpeningMissingSourceCount
+            finishWitnessOpeningRetainedLeafDigestOpeningCount :=
+              witnessOpeningRetainedLeafDigestOpeningCount
+            finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
+              witnessOpeningRetainedLeafDigestOpeningRowCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+              witnessOpeningRetainedParentCheckpointOpeningCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+              witnessOpeningRetainedParentCheckpointOpeningRowCount
             finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
             finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
             finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
@@ -1949,6 +2129,19 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
         queryPlanMilliseconds
         constantOpeningMilliseconds
         witnessOpeningMilliseconds
+        witnessOpeningQueryCount
+        witnessOpeningQueryUnitCount
+        witnessOpeningSingleQueryUnitCount
+        witnessOpeningMaxQueriesPerUnit
+        witnessOpeningStageCount
+        witnessOpeningRetainedSourceCount
+        witnessOpeningExternalSourceCount
+        witnessOpeningEmbeddedSourceCount
+        witnessOpeningMissingSourceCount
+        witnessOpeningRetainedLeafDigestOpeningCount
+        witnessOpeningRetainedLeafDigestOpeningRowCount
+        witnessOpeningRetainedParentCheckpointOpeningCount
+        witnessOpeningRetainedParentCheckpointOpeningRowCount
         descriptorUploadByteCount
         descriptorUploadWordCount
         descriptorUploadRowCount

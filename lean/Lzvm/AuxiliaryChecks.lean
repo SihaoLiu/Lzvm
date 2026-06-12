@@ -297,6 +297,19 @@ structure ProofArtifactFinishTimingSummary where
   finishQueryPlanMilliseconds : Nat
   finishConstantOpeningMilliseconds : Nat
   finishWitnessOpeningMilliseconds : Nat
+  finishWitnessOpeningQueryCount : Nat
+  finishWitnessOpeningQueryUnitCount : Nat
+  finishWitnessOpeningSingleQueryUnitCount : Nat
+  finishWitnessOpeningMaxQueriesPerUnit : Nat
+  finishWitnessOpeningStageCount : Nat
+  finishWitnessOpeningRetainedSourceCount : Nat
+  finishWitnessOpeningExternalSourceCount : Nat
+  finishWitnessOpeningEmbeddedSourceCount : Nat
+  finishWitnessOpeningMissingSourceCount : Nat
+  finishWitnessOpeningRetainedLeafDigestOpeningCount : Nat
+  finishWitnessOpeningRetainedLeafDigestOpeningRowCount : Nat
+  finishWitnessOpeningRetainedParentCheckpointOpeningCount : Nat
+  finishWitnessOpeningRetainedParentCheckpointOpeningRowCount : Nat
   finishWitnessExternalSourceDescriptorUploadByteCount : Nat
   finishWitnessExternalSourceDescriptorUploadWordCount : Nat
   finishWitnessExternalSourceDescriptorUploadRowCount : Nat

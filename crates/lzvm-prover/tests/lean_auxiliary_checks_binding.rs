@@ -1163,6 +1163,19 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishQueryPlanMilliseconds",
         "finishConstantOpeningMilliseconds",
         "finishWitnessOpeningMilliseconds",
+        "finishWitnessOpeningQueryCount",
+        "finishWitnessOpeningQueryUnitCount",
+        "finishWitnessOpeningSingleQueryUnitCount",
+        "finishWitnessOpeningMaxQueriesPerUnit",
+        "finishWitnessOpeningStageCount",
+        "finishWitnessOpeningRetainedSourceCount",
+        "finishWitnessOpeningExternalSourceCount",
+        "finishWitnessOpeningEmbeddedSourceCount",
+        "finishWitnessOpeningMissingSourceCount",
+        "finishWitnessOpeningRetainedLeafDigestOpeningCount",
+        "finishWitnessOpeningRetainedLeafDigestOpeningRowCount",
+        "finishWitnessOpeningRetainedParentCheckpointOpeningCount",
+        "finishWitnessOpeningRetainedParentCheckpointOpeningRowCount",
         "finishWitnessExternalSourceDescriptorUploadByteCount",
         "finishWitnessExternalSourceDescriptorUploadWordCount",
         "finishWitnessExternalSourceDescriptorUploadRowCount",
@@ -1193,6 +1206,65 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         prove_witness_source.contains("\"finish_proof_encode\""),
         "CLI prove witness output should include proof encode timing"
     );
+    for (line_name, field) in [
+        (
+            "\"finish_witness_opening_query_count\"",
+            "witness_opening_query_count",
+        ),
+        (
+            "\"finish_witness_opening_query_unit_count\"",
+            "witness_opening_query_unit_count",
+        ),
+        (
+            "\"finish_witness_opening_single_query_unit_count\"",
+            "witness_opening_single_query_unit_count",
+        ),
+        (
+            "\"finish_witness_opening_max_queries_per_unit\"",
+            "witness_opening_max_queries_per_unit",
+        ),
+        (
+            "\"finish_witness_opening_stage_count\"",
+            "witness_opening_stage_count",
+        ),
+        (
+            "\"finish_witness_opening_retained_source_count\"",
+            "witness_opening_retained_source_count",
+        ),
+        (
+            "\"finish_witness_opening_external_source_count\"",
+            "witness_opening_external_source_count",
+        ),
+        (
+            "\"finish_witness_opening_embedded_source_count\"",
+            "witness_opening_embedded_source_count",
+        ),
+        (
+            "\"finish_witness_opening_missing_source_count\"",
+            "witness_opening_missing_source_count",
+        ),
+        (
+            "\"finish_witness_opening_retained_leaf_digest_openings\"",
+            "witness_opening_retained_leaf_digest_opening_count",
+        ),
+        (
+            "\"finish_witness_opening_retained_leaf_digest_rows\"",
+            "witness_opening_retained_leaf_digest_opening_row_count",
+        ),
+        (
+            "\"finish_witness_opening_retained_parent_checkpoint_openings\"",
+            "witness_opening_retained_parent_checkpoint_opening_count",
+        ),
+        (
+            "\"finish_witness_opening_retained_parent_checkpoint_rows\"",
+            "witness_opening_retained_parent_checkpoint_opening_row_count",
+        ),
+    ] {
+        assert!(
+            proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
+            "CLI proof timing output should include {line_name}"
+        );
+    }
     for (line_name, field) in [
         (
             "\"finish_witness_opening_row_value_source_extend\"",
@@ -1353,6 +1425,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_timing_observed_acceptance_projects_verifier_acceptance",
             "proof_artifact_finish_timing_acceptance_sound",
             "proof_artifact_finish_timing_acceptance_verifier_core_contract",
+            "proof_artifact_finish_witness_opening_shape_acceptance_sound",
+            "proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",
