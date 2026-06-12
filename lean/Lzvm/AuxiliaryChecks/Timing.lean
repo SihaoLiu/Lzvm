@@ -467,6 +467,64 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_cont
         proof
         observed)
 
+theorem guest_pc_trace_device_source_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (buildMilliseconds descriptorUploadMilliseconds traceExpandMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDeviceSourceBuildMilliseconds := buildMilliseconds
+            guestDeviceSourceDescriptorUploadMilliseconds := descriptorUploadMilliseconds
+            guestDeviceSourceTraceExpandMilliseconds := traceExpandMilliseconds })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          guestDeviceSourceBuildMilliseconds := buildMilliseconds
+          guestDeviceSourceDescriptorUploadMilliseconds := descriptorUploadMilliseconds
+          guestDeviceSourceTraceExpandMilliseconds := traceExpandMilliseconds })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_device_source_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (buildMilliseconds descriptorUploadMilliseconds traceExpandMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDeviceSourceBuildMilliseconds := buildMilliseconds
+            guestDeviceSourceDescriptorUploadMilliseconds := descriptorUploadMilliseconds
+            guestDeviceSourceTraceExpandMilliseconds := traceExpandMilliseconds })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (guest_pc_trace_device_source_timing_acceptance_sound
+        assumptions
+        summary
+        buildMilliseconds
+        descriptorUploadMilliseconds
+        traceExpandMilliseconds
+        publicInput
+        proof
+        observed)
+
 theorem guest_pc_trace_shape_counts_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

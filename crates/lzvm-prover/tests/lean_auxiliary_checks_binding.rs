@@ -344,6 +344,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean guest PC timing summary should prove emit, descriptor, and channel-wait timing metadata is verifier-core-neutral"
     );
     assert!(
+        lean_source.contains("guestDeviceSourceBuildMilliseconds")
+            && lean_source.contains("guestDeviceSourceDescriptorUploadMilliseconds")
+            && lean_source.contains("guestDeviceSourceTraceExpandMilliseconds")
+            && lean_source.contains("guest_pc_trace_device_source_timing_acceptance_sound")
+            && lean_source
+                .contains("guest_pc_trace_device_source_timing_acceptance_verifier_core_contract"),
+        "Lean guest PC timing summary should prove device-source timing metadata is verifier-core-neutral"
+    );
+    assert!(
         lean_source.contains("guest_pc_trace_stage_timing_acceptance_sound")
             && lean_source
                 .contains("guest_pc_trace_stage_timing_acceptance_verifier_core_contract"),
