@@ -624,6 +624,27 @@ structure GuestPcTraceSparseSourceValidation where
       sparseSourceConfigAccepted config publicInput proof ->
         GuestPcTraceSparseSourceDecisionMatches config
 
+structure FriRetainedStageSourceConfig where
+  configuredRetainedStageSourceEnabled : Option Bool
+  effectiveRetainedStageSourceEnabled : Bool
+deriving DecidableEq, Repr
+
+def FriRetainedStageSourceDecisionMatches
+    (config : FriRetainedStageSourceConfig) : Prop :=
+  match config.configuredRetainedStageSourceEnabled with
+  | some configured =>
+      config.effectiveRetainedStageSourceEnabled = configured
+  | none =>
+      config.effectiveRetainedStageSourceEnabled = true
+
+structure FriRetainedStageSourceValidation where
+  retainedStageSourceConfigAccepted :
+    FriRetainedStageSourceConfig -> PublicInput -> Proof -> Prop
+  retainedStageSourceConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      retainedStageSourceConfigAccepted config publicInput proof ->
+        FriRetainedStageSourceDecisionMatches config
+
 structure GpuRetainedLeafDigestLimitConfig where
   defaultLeafDigestLimitBytes : Nat
   configuredLeafDigestLimitBytes : Option Nat
@@ -782,6 +803,15 @@ def GuestPcTraceSparseSourceCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.sparseSourceConfigAccepted config publicInput proof
+
+def FriRetainedStageSourceCheckedAcceptance
+    (system : VerifierModel)
+    (validation : FriRetainedStageSourceValidation)
+    (config : FriRetainedStageSourceConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.retainedStageSourceConfigAccepted config publicInput proof
 
 def GpuRetainedLeafDigestLimitCheckedAcceptance
     (system : VerifierModel)

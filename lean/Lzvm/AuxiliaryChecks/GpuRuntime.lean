@@ -997,6 +997,75 @@ theorem guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract
       checked
   exact sound_witness_implies_verifier_core_contract sound.right
 
+theorem fri_retained_stage_source_checked_acceptance_projects_decision
+    {system : VerifierModel}
+    (validation : FriRetainedStageSourceValidation)
+    (config : FriRetainedStageSourceConfig) :
+    forall publicInput proof,
+      FriRetainedStageSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        FriRetainedStageSourceDecisionMatches config := by
+  intro publicInput proof checked
+  exact
+    validation.retainedStageSourceConfigImpliesDecisionMatches
+      config
+      publicInput
+      proof
+      checked.right
+
+theorem fri_retained_stage_source_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : FriRetainedStageSourceValidation)
+    (config : FriRetainedStageSourceConfig) :
+    forall publicInput proof,
+      FriRetainedStageSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        FriRetainedStageSourceDecisionMatches config
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (fri_retained_stage_source_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      (abstract_verifier_sound assumptions publicInput proof checked.left)
+
+theorem fri_retained_stage_source_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : FriRetainedStageSourceValidation)
+    (config : FriRetainedStageSourceConfig) :
+    forall publicInput proof,
+      FriRetainedStageSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    fri_retained_stage_source_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
+
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GpuRetainedLeafDigestLimitValidation)

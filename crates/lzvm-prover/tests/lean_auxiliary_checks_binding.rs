@@ -521,6 +521,24 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean auxiliary checks should bind sparse CUDA source selection to the Rust runtime guard"
     );
     assert!(
+        lean_source.contains("FriRetainedStageSourceConfig")
+            && lean_source.contains("configuredRetainedStageSourceEnabled")
+            && lean_source.contains("effectiveRetainedStageSourceEnabled")
+            && lean_source.contains("FriRetainedStageSourceDecisionMatches")
+            && lean_source.contains("retainedStageSourceConfigAccepted")
+            && lean_source.contains("retainedStageSourceConfigImpliesDecisionMatches")
+            && lean_source.contains("fri_retained_stage_source_checked_acceptance_sound")
+            && lean_source
+                .contains("fri_retained_stage_source_checked_acceptance_verifier_core_contract")
+            && witness_execution_source.contains("fn retain_fri_stage_source_devices")
+            && witness_execution_source.contains("LZVM_CUDA_RETAIN_FRI_STAGE_SOURCES")
+            && witness_execution_source.contains("Ok(\"0\") | Ok(\"false\") | Ok(\"no\")")
+            && witness_execution_source.contains("let retained_stage_source_devices = if retain_stage_sources")
+            && witness_execution_source.contains("stage_source_device_cache.retained_descriptors")
+            && witness_execution_source.contains("Vec::new()"),
+        "Lean auxiliary checks should bind retained stage source selection to the Rust runtime guard"
+    );
+    assert!(
         lean_source.contains("GpuRetainedDeviceCacheBudget")
             && lean_source.contains("sourceBytes")
             && lean_source.contains("leafDigestBytes")
