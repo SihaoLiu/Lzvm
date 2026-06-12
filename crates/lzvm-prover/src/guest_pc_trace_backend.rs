@@ -2807,32 +2807,15 @@ impl<'a> SparseRegisterMemSteps<'a> {
         self.updates
     }
 
-    fn ensure_entry(&mut self, index: usize) -> usize {
+    fn read_then_update(&mut self, index: usize, value: u64) -> u64 {
         if let Some(position) = self.updates.position(index) {
-            return position;
+            let previous = self.updates.entries[position].1;
+            self.updates.entries[position].1 = value;
+            return previous;
         }
-        let position = self.updates.len;
-        self.updates.push(index, self.base[index]);
-        position
-    }
-}
-
-impl std::ops::Index<usize> for SparseRegisterMemSteps<'_> {
-    type Output = u64;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        if let Some(position) = self.updates.position(index) {
-            &self.updates.entries[position].1
-        } else {
-            &self.base[index]
-        }
-    }
-}
-
-impl std::ops::IndexMut<usize> for SparseRegisterMemSteps<'_> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        let position = self.ensure_entry(index);
-        &mut self.updates.entries[position].1
+        let previous = self.base[index];
+        self.updates.push(index, value);
+        previous
     }
 }
 
@@ -3810,32 +3793,32 @@ fn zisk_main_register_access_values(
     let mut next_mem_steps = SparseRegisterMemSteps::new(&state.register_mem_steps);
 
     if let Some(index) = zisk_main_source_register_index(row, instruction.a)? {
-        values.a_prev_mem_step = Some(next_mem_steps[index]);
-        next_mem_steps[index] = zisk_main_row_mem_step(
+        let next_step = zisk_main_row_mem_step(
             row_count,
             segment.trace_instance_index,
             row,
             ZISK_MAIN_A_MEM_STEP_OFFSET,
         )?;
+        values.a_prev_mem_step = Some(next_mem_steps.read_then_update(index, next_step));
     }
     if let Some(index) = zisk_main_source_register_index(row, instruction.b)? {
-        values.b_prev_mem_step = Some(next_mem_steps[index]);
-        next_mem_steps[index] = zisk_main_row_mem_step(
+        let next_step = zisk_main_row_mem_step(
             row_count,
             segment.trace_instance_index,
             row,
             ZISK_MAIN_B_MEM_STEP_OFFSET,
         )?;
+        values.b_prev_mem_step = Some(next_mem_steps.read_then_update(index, next_step));
     }
     if let Some(index) = zisk_main_store_register_index(row, instruction.store)? {
-        values.store_prev_mem_step = Some(next_mem_steps[index]);
         values.store_prev_value = Some(state.registers[index]);
-        next_mem_steps[index] = zisk_main_row_mem_step(
+        let next_step = zisk_main_row_mem_step(
             row_count,
             segment.trace_instance_index,
             row,
             ZISK_MAIN_STORE_MEM_STEP_OFFSET,
         )?;
+        values.store_prev_mem_step = Some(next_mem_steps.read_then_update(index, next_step));
     }
 
     let next_mem_steps = next_mem_steps.into_updates();

@@ -245,6 +245,62 @@ fn zisk_main_memory_access_validation_preserves_source_then_store_order() {
     assert!(error.to_string().contains("expected Read at 64"));
 }
 
+#[test]
+fn register_mem_steps_preserve_same_register_access_order() {
+    let row = 5;
+    let row_count = 100;
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 2,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+    let mut state = ZiskMainTraceState::new();
+    state.registers[1] = 99;
+    state.register_mem_steps[1] = 42;
+    let instruction = zisk_main_base_instruction(
+        0x8000_0000,
+        ZiskMainSource::Register(1),
+        ZiskMainSource::Register(1),
+        ZiskMainOp::Add,
+        ZiskMainStore::Register(1),
+        4,
+    );
+
+    let update = zisk_main_register_access_values(row, &instruction, &state, row_count, segment)
+        .expect("same-register accesses should validate");
+
+    let a_step = zisk_main_row_mem_step(
+        row_count,
+        segment.trace_instance_index,
+        row,
+        ZISK_MAIN_A_MEM_STEP_OFFSET,
+    )
+    .expect("A mem step should fit");
+    let b_step = zisk_main_row_mem_step(
+        row_count,
+        segment.trace_instance_index,
+        row,
+        ZISK_MAIN_B_MEM_STEP_OFFSET,
+    )
+    .expect("B mem step should fit");
+    let store_step = zisk_main_row_mem_step(
+        row_count,
+        segment.trace_instance_index,
+        row,
+        ZISK_MAIN_STORE_MEM_STEP_OFFSET,
+    )
+    .expect("store mem step should fit");
+
+    assert_eq!(update.values.a_prev_mem_step, Some(42));
+    assert_eq!(update.values.b_prev_mem_step, Some(a_step));
+    assert_eq!(update.values.store_prev_mem_step, Some(b_step));
+    assert_eq!(update.values.store_prev_value, Some(99));
+
+    let mut register_mem_steps = state.register_mem_steps;
+    update.next_mem_steps.apply(&mut register_mem_steps);
+    assert_eq!(register_mem_steps[1], store_step);
+}
+
 fn add256_report() -> GuestMachineReport {
     let params_address = 64;
     let a_address = 96;

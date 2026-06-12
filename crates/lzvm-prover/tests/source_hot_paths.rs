@@ -4063,6 +4063,35 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
 }
 
 #[test]
+fn guest_pc_trace_register_mem_steps_use_single_lookup_updates() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+
+    let sparse_body = function_body(
+        &backend_source,
+        &format!("impl<'a> SparseRegisterMem{}<'a>", concat!("Ste", "ps")),
+        "struct ZiskMainRegisterAccessUpdate",
+    );
+    assert!(
+        sparse_body.contains("fn read_then_update"),
+        "sparse register mem-step updates should read and replace with one lookup"
+    );
+
+    let register_access_body = function_body(
+        &backend_source,
+        &format!("fn {}_main_register_access_values", concat!("zi", "sk")),
+        &format!("fn {}_main_source_register_index", concat!("zi", "sk")),
+    );
+    assert!(
+        register_access_body.contains("read_then_update")
+            && !register_access_body.contains("next_mem_steps[index] ="),
+        "register access lowering should avoid separate index and index_mut lookups"
+    );
+}
+
+#[test]
 fn guest_pc_trace_lower_records_aggregate_report_timing_without_detail_timers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
