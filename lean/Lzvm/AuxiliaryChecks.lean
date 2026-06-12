@@ -462,6 +462,27 @@ structure GpuAllocatorNoWaitBypassValidation where
       noWaitBypassAllowed pending fresh publicInput proof ->
         freshAllocationIssued fresh publicInput proof
 
+structure GpuAllocatorNoWaitLimitConfig where
+  pendingNoWaitLimitBytes : Nat
+  pendingAllocationBytes : Nat
+  freshAllocationBytes : Nat
+  bypassSelected : Bool
+deriving DecidableEq, Repr
+
+def GpuAllocatorNoWaitLimitDecisionMatches
+    (config : GpuAllocatorNoWaitLimitConfig) : Prop :=
+  config.freshAllocationBytes = config.pendingAllocationBytes
+    /\ config.bypassSelected =
+      decide (config.pendingAllocationBytes <= config.pendingNoWaitLimitBytes)
+
+structure GpuAllocatorNoWaitLimitValidation where
+  noWaitLimitConfigAccepted :
+    GpuAllocatorNoWaitLimitConfig -> PublicInput -> Proof -> Prop
+  noWaitLimitConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      noWaitLimitConfigAccepted config publicInput proof ->
+        GpuAllocatorNoWaitLimitDecisionMatches config
+
 structure GpuRetainedDeviceCacheBudget where
   sourceBytes : Nat
   leafDigestBytes : Nat
@@ -537,6 +558,15 @@ def GpuAllocatorNoWaitBypassCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.noWaitBypassAllowed pending fresh publicInput proof
+
+def GpuAllocatorNoWaitLimitCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GpuAllocatorNoWaitLimitValidation)
+    (config : GpuAllocatorNoWaitLimitConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.noWaitLimitConfigAccepted config publicInput proof
 
 def GpuRetainedDeviceCacheBudgetCheckedAcceptance
     (system : VerifierModel)

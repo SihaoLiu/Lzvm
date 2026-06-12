@@ -101,6 +101,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuLeafOutputBufferReuseCheckedAcceptance")
             && lean_source.contains("GpuAllocatorNoWaitBypassValidation")
             && lean_source.contains("GpuAllocatorNoWaitBypassCheckedAcceptance")
+            && lean_source.contains("GpuAllocatorNoWaitLimitConfig")
+            && lean_source.contains("GpuAllocatorNoWaitLimitValidation")
+            && lean_source.contains("GpuAllocatorNoWaitLimitCheckedAcceptance")
             && lean_source.contains("GpuRetainedDeviceCacheBudgetValidation")
             && lean_source.contains("GpuRetainedDeviceCacheBudgetCheckedAcceptance")
             && lean_source.contains("FriFixedColumnCacheValidation")
@@ -401,6 +404,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("noWaitBypassImpliesPendingNotReused")
             && lean_source.contains("noWaitBypassImpliesFreshAllocation"),
         "Lean auxiliary checks should bind allocator no-wait bypass to skipped pending allocations and fresh requests"
+    );
+    assert!(
+        lean_source.contains("pendingNoWaitLimitBytes")
+            && lean_source.contains("pendingAllocationBytes")
+            && lean_source.contains("freshAllocationBytes")
+            && lean_source.contains("bypassSelected")
+            && lean_source.contains("GpuAllocatorNoWaitLimitDecisionMatches")
+            && lean_source.contains("noWaitLimitConfigAccepted")
+            && lean_source.contains("noWaitLimitConfigImpliesDecisionMatches"),
+        "Lean auxiliary checks should bind allocator no-wait runtime limits to the bypass decision"
     );
     assert!(
         lean_source.contains("GpuRetainedDeviceCacheBudget")
@@ -1864,6 +1877,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_allocator_no_wait_bypass_checked_acceptance_projects_fresh_allocation",
             "gpu_allocator_no_wait_bypass_checked_acceptance_sound",
             "gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract",
+            "gpu_allocator_no_wait_limit_checked_acceptance_projects_decision",
+            "gpu_allocator_no_wait_limit_checked_acceptance_sound",
+            "gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract",
             "gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits",
             "gpu_retained_device_cache_budget_checked_acceptance_sound",
             "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
