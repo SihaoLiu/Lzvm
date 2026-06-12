@@ -2070,18 +2070,18 @@ fn compact_opening_reuses_retained_wide_leaf_digest_levels() {
 }
 
 #[test]
-fn retained_cache_defaults_balance_source_and_leaf_digest_reuse() {
+fn retained_cache_defaults_prioritize_leaf_digest_reuse() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");
     let values_source = std::fs::read_to_string(&values_path)
         .expect("witness commitment values source should read");
 
     assert!(
-        values_source.contains("const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 9_000_000_000")
+        values_source.contains("const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 0")
             && values_source.contains(
                 "const MAX_DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = DEFAULT_RETAINED_SOURCE_DEVICE_BYTES"
             ),
-        "default source-device retention should keep a measured cache cap for trace-source reuse"
+        "default source-device retention should leave cache capacity for retained leaf digests"
     );
     assert!(
         values_source.contains("const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 22_000_000_000")
