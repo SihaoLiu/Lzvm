@@ -64,6 +64,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_opening_segment_evidence",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_bound_contract",
             "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract",
+            "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract",
             "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_trace_conformance_contract",
             "runtime_pipeline_compact_digest_merkle_observation_eq_full_state",
@@ -482,6 +483,54 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("RuntimePipelineBindingEvidence"),
         "compact audited pipeline binding contract should not force callers to unpack full pipeline evidence"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
+        )
+        .contains("RuntimeChallengeSegmentBindingEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
+            )
+            .contains("RuntimeTranscriptBindingEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
+            )
+            .contains("RuntimeQueryPlanBindingBoundContract")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
+            )
+            .contains("RuntimeOpeningSegmentBindingBoundContract")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
+            )
+            .contains("RuntimeOpeningEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
+            )
+            .contains("system.transcriptBound publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
+            )
+            .contains("system.pcsOpeningsValid publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
+            )
+            .contains("system.friQueriesValid publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof"),
+        "pipeline checked acceptance should expose challenge, transcript, query, opening, and verifier core evidence"
     );
     assert!(
         theorem_prefix(

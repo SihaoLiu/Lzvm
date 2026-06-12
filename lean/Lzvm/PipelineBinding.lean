@@ -524,6 +524,95 @@ theorem runtime_pipeline_binding_checked_acceptance_challenge_query_opening_cont
                                               (And.intro pcsOpeningsValid
                                                 (And.intro friQueriesValid soundWitness))))))))
 
+theorem runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeChallengeSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.challengeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTranscriptBindingEvidence
+            system
+            validation.queryPlanBindingValidation.challengeValidation.transcriptValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeQueryPlanBindingBoundContract
+            system
+            validation.queryPlanBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingBoundContract
+            system
+            validation.queryPlanBindingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.transcriptBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have queryAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have challengeAccepted :=
+    runtime_query_plan_binding_checked_acceptance_challenge
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryAccepted
+  have challengeContract :=
+    runtime_challenge_segment_binding_checked_acceptance_challenge_and_core_contract
+      assumptions
+      validation.queryPlanBindingValidation.challengeValidation
+      artifact
+      publicInput
+      proof
+      challengeAccepted
+  have queryOpeningContract :=
+    runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
+      assumptions
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      queryAccepted
+  exact
+    And.intro challengeContract.left
+      (And.intro challengeContract.right.left
+        (And.intro queryOpeningContract.left
+          (And.intro queryOpeningContract.right.left
+            (And.intro queryOpeningContract.right.right.left
+              (And.intro queryOpeningContract.right.right.right.left
+                (And.intro queryOpeningContract.right.right.right.right.left
+                  (And.intro queryOpeningContract.right.right.right.right.right.left
+                    queryOpeningContract.right.right.right.right.right.right)))))))
+
 theorem runtime_pipeline_compact_digest_merkle_observation_eq_full_state
     {alpha : Type u}
     (evidence : DigestPrefixRoundEvidence alpha) :
