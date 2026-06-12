@@ -196,6 +196,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         "Lean proof finish timing soundness should reuse the observed-acceptance verifier projector"
     );
+    let finish_summary_wrapper_uses = lean_source
+        .matches(
+            "proof_artifact_finish_timing_some_summary_acceptance_sound\n      assumptions\n      { summary with",
+        )
+        .count();
+    assert!(
+        finish_summary_wrapper_uses >= 10,
+        "Lean proof finish timing specializations should reuse the some-summary soundness wrapper"
+    );
     assert!(
         lean_source.contains(
             "runtime_performance_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithPerformanceObservations"
@@ -1682,6 +1691,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_timing_observed_acceptance_projects_verifier_acceptance",
             "proof_artifact_finish_timing_acceptance_sound",
             "proof_artifact_finish_timing_acceptance_verifier_core_contract",
+            "proof_artifact_finish_timing_some_summary_acceptance_sound",
+            "proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract",
             "proof_artifact_finish_witness_opening_shape_acceptance_sound",
             "proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_leaf_work_shape_acceptance_sound",

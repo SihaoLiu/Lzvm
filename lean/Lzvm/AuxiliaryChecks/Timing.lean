@@ -1766,6 +1766,32 @@ theorem proof_artifact_finish_timing_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem proof_artifact_finish_timing_some_summary_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance system (some summary) publicInput proof ->
+        SoundWitness system publicInput proof :=
+  proof_artifact_finish_timing_acceptance_sound assumptions (some summary)
+
+theorem proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance system (some summary) publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (proof_artifact_finish_timing_some_summary_acceptance_sound
+        assumptions
+        summary
+        publicInput
+        proof
+        observed)
+
 theorem proof_artifact_finish_witness_opening_shape_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1800,26 +1826,25 @@ theorem proof_artifact_finish_witness_opening_shape_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof observed
   exact
-    proof_artifact_finish_timing_acceptance_sound
+    proof_artifact_finish_timing_some_summary_acceptance_sound
       assumptions
-      (some
-        { summary with
-          finishWitnessOpeningQueryCount := queryCount
-          finishWitnessOpeningQueryUnitCount := queryUnitCount
-          finishWitnessOpeningSingleQueryUnitCount := singleQueryUnitCount
-          finishWitnessOpeningMaxQueriesPerUnit := maxQueriesPerUnit
-          finishWitnessOpeningStageCount := stageCount
-          finishWitnessOpeningRetainedSourceCount := retainedSourceCount
-          finishWitnessOpeningExternalSourceCount := externalSourceCount
-          finishWitnessOpeningEmbeddedSourceCount := embeddedSourceCount
-          finishWitnessOpeningMissingSourceCount := missingSourceCount
-          finishWitnessOpeningRetainedLeafDigestOpeningCount := retainedLeafDigestOpeningCount
-          finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
-            retainedLeafDigestOpeningRowCount
-          finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
-            retainedParentCheckpointOpeningCount
-          finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
-            retainedParentCheckpointOpeningRowCount })
+      { summary with
+        finishWitnessOpeningQueryCount := queryCount
+        finishWitnessOpeningQueryUnitCount := queryUnitCount
+        finishWitnessOpeningSingleQueryUnitCount := singleQueryUnitCount
+        finishWitnessOpeningMaxQueriesPerUnit := maxQueriesPerUnit
+        finishWitnessOpeningStageCount := stageCount
+        finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+        finishWitnessOpeningExternalSourceCount := externalSourceCount
+        finishWitnessOpeningEmbeddedSourceCount := embeddedSourceCount
+        finishWitnessOpeningMissingSourceCount := missingSourceCount
+        finishWitnessOpeningRetainedLeafDigestOpeningCount := retainedLeafDigestOpeningCount
+        finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
+          retainedLeafDigestOpeningRowCount
+        finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+          retainedParentCheckpointOpeningCount
+        finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+          retainedParentCheckpointOpeningRowCount }
       publicInput
       proof
       observed
@@ -1920,30 +1945,29 @@ theorem proof_artifact_finish_leaf_work_shape_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof observed
   exact
-    proof_artifact_finish_timing_acceptance_sound
+    proof_artifact_finish_timing_some_summary_acceptance_sound
       assumptions
-      (some
-        { summary with
-          finishWitnessOpeningLeafHashRowCount := leafHashRows
-          finishWitnessOpeningLeafHashByteCount := leafHashBytes
-          finishWitnessOpeningLeafHashArity2RowCount := leafHashArity2Rows
-          finishWitnessOpeningLeafHashArity2ByteCount := leafHashArity2Bytes
-          finishWitnessOpeningLeafHashArity4RowCount := leafHashArity4Rows
-          finishWitnessOpeningLeafHashArity4ByteCount := leafHashArity4Bytes
-          finishWitnessOpeningLeafCosetExtendCallCount := leafCosetCalls
-          finishWitnessOpeningLeafCosetExtendOutputByteCount := leafCosetOutputBytes
-          finishWitnessOpeningLeafCosetExtendColumnCount := leafCosetColumns
-          finishWitnessOpeningLeafCosetExtendMaxColumnCount := leafCosetMaxColumns
-          finishWitnessOpeningLeafCosetExtendNttLaunchCount := leafCosetNttLaunches
-          finishWitnessOpeningLeafCosetExtendBitReverseLaunchCount :=
-            leafCosetBitReverseLaunches
-          finishWitnessOpeningLeafCosetExtendNttStageLaunchCount :=
-            leafCosetNttStageLaunches
-          finishWitnessOpeningLeafCosetExtendNttBlockTwiddleLaunchCount :=
-            leafCosetNttBlockTwiddleLaunches
-          finishWitnessOpeningLeafCosetExtendNormalizeLaunchCount := leafCosetNormalizeLaunches
-          finishWitnessOpeningLeafCosetExtendPackLaunchCount := leafCosetPackLaunches
-          finishWitnessOpeningLeafCosetExtendUnpackLaunchCount := leafCosetUnpackLaunches })
+      { summary with
+        finishWitnessOpeningLeafHashRowCount := leafHashRows
+        finishWitnessOpeningLeafHashByteCount := leafHashBytes
+        finishWitnessOpeningLeafHashArity2RowCount := leafHashArity2Rows
+        finishWitnessOpeningLeafHashArity2ByteCount := leafHashArity2Bytes
+        finishWitnessOpeningLeafHashArity4RowCount := leafHashArity4Rows
+        finishWitnessOpeningLeafHashArity4ByteCount := leafHashArity4Bytes
+        finishWitnessOpeningLeafCosetExtendCallCount := leafCosetCalls
+        finishWitnessOpeningLeafCosetExtendOutputByteCount := leafCosetOutputBytes
+        finishWitnessOpeningLeafCosetExtendColumnCount := leafCosetColumns
+        finishWitnessOpeningLeafCosetExtendMaxColumnCount := leafCosetMaxColumns
+        finishWitnessOpeningLeafCosetExtendNttLaunchCount := leafCosetNttLaunches
+        finishWitnessOpeningLeafCosetExtendBitReverseLaunchCount :=
+          leafCosetBitReverseLaunches
+        finishWitnessOpeningLeafCosetExtendNttStageLaunchCount :=
+          leafCosetNttStageLaunches
+        finishWitnessOpeningLeafCosetExtendNttBlockTwiddleLaunchCount :=
+          leafCosetNttBlockTwiddleLaunches
+        finishWitnessOpeningLeafCosetExtendNormalizeLaunchCount := leafCosetNormalizeLaunches
+        finishWitnessOpeningLeafCosetExtendPackLaunchCount := leafCosetPackLaunches
+        finishWitnessOpeningLeafCosetExtendUnpackLaunchCount := leafCosetUnpackLaunches }
       publicInput
       proof
       observed
@@ -2058,34 +2082,33 @@ theorem proof_artifact_finish_path_parent_hash_shape_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof observed
   exact
-    proof_artifact_finish_timing_acceptance_sound
+    proof_artifact_finish_timing_some_summary_acceptance_sound
       assumptions
-      (some
-        { summary with
-          finishWitnessOpeningPathParentHashRowCount := parentHashRows
-          finishWitnessOpeningPathParentHashByteCount := parentHashBytes
-          finishWitnessOpeningPathParentHashLaunchCount := parentHashLaunches
-          finishWitnessOpeningPathParentHashRecomputedRowCount := recomputedRows
-          finishWitnessOpeningPathParentHashRecomputedByteCount := recomputedBytes
-          finishWitnessOpeningPathParentHashRecomputedLaunchCount := recomputedLaunches
-          finishWitnessOpeningPathParentHashRetainedLeafDigestRowCount :=
-            retainedLeafDigestRows
-          finishWitnessOpeningPathParentHashRetainedLeafDigestByteCount :=
-            retainedLeafDigestBytes
-          finishWitnessOpeningPathParentHashRetainedLeafDigestLaunchCount :=
-            retainedLeafDigestLaunches
-          finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixRowCount :=
-            retainedCheckpointPrefixRows
-          finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixByteCount :=
-            retainedCheckpointPrefixBytes
-          finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixLaunchCount :=
-            retainedCheckpointPrefixLaunches
-          finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount :=
-            retainedCheckpointSuffixRows
-          finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount :=
-            retainedCheckpointSuffixBytes
-          finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount :=
-            retainedCheckpointSuffixLaunches })
+      { summary with
+        finishWitnessOpeningPathParentHashRowCount := parentHashRows
+        finishWitnessOpeningPathParentHashByteCount := parentHashBytes
+        finishWitnessOpeningPathParentHashLaunchCount := parentHashLaunches
+        finishWitnessOpeningPathParentHashRecomputedRowCount := recomputedRows
+        finishWitnessOpeningPathParentHashRecomputedByteCount := recomputedBytes
+        finishWitnessOpeningPathParentHashRecomputedLaunchCount := recomputedLaunches
+        finishWitnessOpeningPathParentHashRetainedLeafDigestRowCount :=
+          retainedLeafDigestRows
+        finishWitnessOpeningPathParentHashRetainedLeafDigestByteCount :=
+          retainedLeafDigestBytes
+        finishWitnessOpeningPathParentHashRetainedLeafDigestLaunchCount :=
+          retainedLeafDigestLaunches
+        finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixRowCount :=
+          retainedCheckpointPrefixRows
+        finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixByteCount :=
+          retainedCheckpointPrefixBytes
+        finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixLaunchCount :=
+          retainedCheckpointPrefixLaunches
+        finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount :=
+          retainedCheckpointSuffixRows
+        finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount :=
+          retainedCheckpointSuffixBytes
+        finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount :=
+          retainedCheckpointSuffixLaunches }
       publicInput
       proof
       observed
@@ -2175,13 +2198,12 @@ theorem proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof observed
   exact
-    proof_artifact_finish_timing_acceptance_sound
+    proof_artifact_finish_timing_some_summary_acceptance_sound
       assumptions
-      (some
-        { summary with
-          finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery
-          finishWitnessOpeningPathParentHashRowsPerStage := rowsPerStage
-          finishWitnessOpeningPathParentHashLaunchesPerStage := launchesPerStage })
+      { summary with
+        finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery
+        finishWitnessOpeningPathParentHashRowsPerStage := rowsPerStage
+        finishWitnessOpeningPathParentHashLaunchesPerStage := launchesPerStage }
       publicInput
       proof
       observed
@@ -2242,21 +2264,20 @@ theorem proof_artifact_finish_row_values_shape_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof observed
   exact
-    proof_artifact_finish_timing_acceptance_sound
+    proof_artifact_finish_timing_some_summary_acceptance_sound
       assumptions
-      (some
-        { summary with
-          finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
-          finishWitnessOpeningRowValueSourceExtendMilliseconds :=
-            sourceExtendMilliseconds
-          finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
-            sourceDownloadMilliseconds
-          finishWitnessOpeningRowValueDeviceDownloadMilliseconds :=
-            deviceDownloadMilliseconds
-          finishWitnessOpeningRowValuesDeviceRowCount := deviceRows
-          finishWitnessOpeningRowValuesSourceRowCount := sourceRows
-          finishWitnessOpeningRowValuesWordCount := words
-          finishWitnessOpeningRowValuesByteCount := bytes })
+      { summary with
+        finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+        finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+          sourceExtendMilliseconds
+        finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+          sourceDownloadMilliseconds
+        finishWitnessOpeningRowValueDeviceDownloadMilliseconds :=
+          deviceDownloadMilliseconds
+        finishWitnessOpeningRowValuesDeviceRowCount := deviceRows
+        finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+        finishWitnessOpeningRowValuesWordCount := words
+        finishWitnessOpeningRowValuesByteCount := bytes }
       publicInput
       proof
       observed
@@ -2324,14 +2345,13 @@ theorem proof_artifact_finish_external_source_timing_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof observed
   exact
-    proof_artifact_finish_timing_acceptance_sound
+    proof_artifact_finish_timing_some_summary_acceptance_sound
       assumptions
-      (some
-        { summary with
-          finishWitnessExternalSourceMilliseconds := externalSourceMilliseconds
-          finishWitnessExternalSourceDescriptorUploadMilliseconds :=
-            descriptorUploadMilliseconds
-          finishWitnessExternalSourceTraceExpandMilliseconds := traceExpandMilliseconds })
+      { summary with
+        finishWitnessExternalSourceMilliseconds := externalSourceMilliseconds
+        finishWitnessExternalSourceDescriptorUploadMilliseconds :=
+          descriptorUploadMilliseconds
+        finishWitnessExternalSourceTraceExpandMilliseconds := traceExpandMilliseconds }
       publicInput
       proof
       observed
@@ -2387,14 +2407,13 @@ theorem proof_artifact_finish_witness_opening_subtiming_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof observed
   exact
-    proof_artifact_finish_timing_acceptance_sound
+    proof_artifact_finish_timing_some_summary_acceptance_sound
       assumptions
-      (some
-        { summary with
-          finishWitnessOpeningSetupMilliseconds := setupMilliseconds
-          finishWitnessOpeningLeafExtendMilliseconds := leafExtendMilliseconds
-          finishWitnessOpeningLeafHashMilliseconds := leafHashMilliseconds
-          finishWitnessOpeningPathMilliseconds := pathMilliseconds })
+      { summary with
+        finishWitnessOpeningSetupMilliseconds := setupMilliseconds
+        finishWitnessOpeningLeafExtendMilliseconds := leafExtendMilliseconds
+        finishWitnessOpeningLeafHashMilliseconds := leafHashMilliseconds
+        finishWitnessOpeningPathMilliseconds := pathMilliseconds }
       publicInput
       proof
       observed
@@ -2445,9 +2464,9 @@ theorem proof_artifact_finish_descriptor_upload_word_count_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof observed
   exact
-    proof_artifact_finish_timing_acceptance_sound
+    proof_artifact_finish_timing_some_summary_acceptance_sound
       assumptions
-      (some { summary with finishWitnessExternalSourceDescriptorUploadWordCount := wordCount })
+      { summary with finishWitnessExternalSourceDescriptorUploadWordCount := wordCount }
       publicInput
       proof
       observed
@@ -2493,13 +2512,12 @@ theorem proof_artifact_finish_descriptor_upload_shape_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof observed
   exact
-    proof_artifact_finish_timing_acceptance_sound
+    proof_artifact_finish_timing_some_summary_acceptance_sound
       assumptions
-      (some
-        { summary with
-          finishWitnessExternalSourceDescriptorUploadByteCount := byteCount
-          finishWitnessExternalSourceDescriptorUploadWordCount := wordCount
-          finishWitnessExternalSourceDescriptorUploadRowCount := rowCount })
+      { summary with
+        finishWitnessExternalSourceDescriptorUploadByteCount := byteCount
+        finishWitnessExternalSourceDescriptorUploadWordCount := wordCount
+        finishWitnessExternalSourceDescriptorUploadRowCount := rowCount }
       publicInput
       proof
       observed
@@ -2586,37 +2604,36 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof observed
   exact
-    proof_artifact_finish_timing_acceptance_sound
+    proof_artifact_finish_timing_some_summary_acceptance_sound
       assumptions
-      (some
-        { summary with
-          finishQueryPlanMilliseconds := queryPlanMilliseconds
-          finishConstantOpeningMilliseconds := constantOpeningMilliseconds
-          finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
-          finishWitnessOpeningQueryCount := witnessOpeningQueryCount
-          finishWitnessOpeningQueryUnitCount := witnessOpeningQueryUnitCount
-          finishWitnessOpeningSingleQueryUnitCount := witnessOpeningSingleQueryUnitCount
-          finishWitnessOpeningMaxQueriesPerUnit := witnessOpeningMaxQueriesPerUnit
-          finishWitnessOpeningStageCount := witnessOpeningStageCount
-          finishWitnessOpeningRetainedSourceCount := witnessOpeningRetainedSourceCount
-          finishWitnessOpeningExternalSourceCount := witnessOpeningExternalSourceCount
-          finishWitnessOpeningEmbeddedSourceCount := witnessOpeningEmbeddedSourceCount
-          finishWitnessOpeningMissingSourceCount := witnessOpeningMissingSourceCount
-          finishWitnessOpeningRetainedLeafDigestOpeningCount :=
-            witnessOpeningRetainedLeafDigestOpeningCount
-          finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
-            witnessOpeningRetainedLeafDigestOpeningRowCount
-          finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
-            witnessOpeningRetainedParentCheckpointOpeningCount
-          finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
-            witnessOpeningRetainedParentCheckpointOpeningRowCount
-          finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
-          finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
-          finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
-          finishFriOpeningMilliseconds := friOpeningMilliseconds
-          finishProofEncodeMilliseconds := proofEncodeMilliseconds
-          finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
-          finishContributionVerifyMilliseconds := contributionVerifyMilliseconds })
+      { summary with
+        finishQueryPlanMilliseconds := queryPlanMilliseconds
+        finishConstantOpeningMilliseconds := constantOpeningMilliseconds
+        finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+        finishWitnessOpeningQueryCount := witnessOpeningQueryCount
+        finishWitnessOpeningQueryUnitCount := witnessOpeningQueryUnitCount
+        finishWitnessOpeningSingleQueryUnitCount := witnessOpeningSingleQueryUnitCount
+        finishWitnessOpeningMaxQueriesPerUnit := witnessOpeningMaxQueriesPerUnit
+        finishWitnessOpeningStageCount := witnessOpeningStageCount
+        finishWitnessOpeningRetainedSourceCount := witnessOpeningRetainedSourceCount
+        finishWitnessOpeningExternalSourceCount := witnessOpeningExternalSourceCount
+        finishWitnessOpeningEmbeddedSourceCount := witnessOpeningEmbeddedSourceCount
+        finishWitnessOpeningMissingSourceCount := witnessOpeningMissingSourceCount
+        finishWitnessOpeningRetainedLeafDigestOpeningCount :=
+          witnessOpeningRetainedLeafDigestOpeningCount
+        finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
+          witnessOpeningRetainedLeafDigestOpeningRowCount
+        finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+          witnessOpeningRetainedParentCheckpointOpeningCount
+        finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+          witnessOpeningRetainedParentCheckpointOpeningRowCount
+        finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
+        finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
+        finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
+        finishFriOpeningMilliseconds := friOpeningMilliseconds
+        finishProofEncodeMilliseconds := proofEncodeMilliseconds
+        finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
+        finishContributionVerifyMilliseconds := contributionVerifyMilliseconds }
       publicInput
       proof
       observed
