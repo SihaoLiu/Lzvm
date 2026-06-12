@@ -6,6 +6,8 @@ Authors: Sihao Liu
 
 import Lzvm.AuxiliaryChecks
 import Lzvm.AuxiliaryChecks.GpuRuntime
+import Lzvm.AuxiliaryChecks.Timing
+import Lzvm.AuxiliaryChecks.RuntimePerformance
 import Lzvm.Assumptions
 import Lzvm.AssumptionAudit
 import Lzvm.BatchOpeningBinding

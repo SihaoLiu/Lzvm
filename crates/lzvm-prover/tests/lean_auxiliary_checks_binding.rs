@@ -12,7 +12,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let gpu_runtime_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean");
     let gpu_runtime_source =
         std::fs::read_to_string(&gpu_runtime_path).expect("Lean GPU runtime checks should read");
-    let lean_source = format!("{auxiliary_source}\n{gpu_runtime_source}");
+    let timing_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/Timing.lean");
+    let timing_source =
+        std::fs::read_to_string(&timing_path).expect("Lean timing checks should read");
+    let runtime_performance_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/RuntimePerformance.lean");
+    let runtime_performance_source = std::fs::read_to_string(&runtime_performance_path)
+        .expect("Lean runtime performance checks should read");
+    let lean_source = format!(
+        "{auxiliary_source}\n{gpu_runtime_source}\n{timing_source}\n{runtime_performance_source}"
+    );
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
@@ -55,7 +64,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
 
     assert!(
         top_level_source.contains("import Lzvm.AuxiliaryChecks")
-            && top_level_source.contains("import Lzvm.AuxiliaryChecks.GpuRuntime"),
+            && top_level_source.contains("import Lzvm.AuxiliaryChecks.GpuRuntime")
+            && top_level_source.contains("import Lzvm.AuxiliaryChecks.Timing")
+            && top_level_source.contains("import Lzvm.AuxiliaryChecks.RuntimePerformance"),
         "top-level Lean module should import auxiliary checks"
     );
     assert!(
@@ -1321,6 +1332,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_temporary_buffer_reuse_checked_acceptance_sound",
             "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
             "gpu_leaf_output_buffer_reuse_implies_canonical_leaf_bytes",
+            "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_verifier_acceptance",
             "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_length_match",
             "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_fully_overwritten",
             "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_leaf_bytes",
