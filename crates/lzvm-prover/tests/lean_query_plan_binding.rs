@@ -18,6 +18,10 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             )
             && lean_source.contains("RuntimeOpeningSegmentBindingEvidence")
             && lean_source.contains("RuntimeOpeningSegmentBindingBoundContract")
+            && lean_source.contains("RuntimeOpeningEvidence")
+            && lean_source.contains("system.transcriptBound publicInput proof")
+            && lean_source.contains("system.pcsOpeningsValid publicInput proof")
+            && lean_source.contains("system.friQueriesValid publicInput proof")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof"),
         "Lean query plan binding should expose opening segment and verifier core projections"
     );
@@ -30,6 +34,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_opening_segment_bound_contract",
             "runtime_query_plan_binding_checked_acceptance_sound",
             "runtime_query_plan_binding_checked_acceptance_verifier_core_contract",
+            "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
         ],
     );
 }

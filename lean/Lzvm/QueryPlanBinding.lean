@@ -431,4 +431,72 @@ theorem runtime_query_plan_binding_checked_acceptance_verifier_core_contract
       _requiresExternalSource
       openingAccepted
 
+theorem runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingBoundContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingBoundContract
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.transcriptBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_query_plan_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have queryPlanBound :=
+    runtime_query_plan_binding_evidence_implies_bound_contract
+      validation
+      artifact
+      publicInput
+      proof
+      sound.left
+  have openingSegmentBound :=
+    runtime_opening_segment_binding_evidence_implies_bound_contract
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      sound.right.right.left
+  exact
+    And.intro queryPlanBound
+      (And.intro openingSegmentBound
+        (And.intro sound.right.right.right.left
+          (And.intro sound.right.right.right.right.left
+            (And.intro sound.right.right.right.right.right.left
+              (And.intro sound.right.right.right.right.right.right.left
+                (sound_witness_implies_verifier_core_contract
+                  sound.right.right.right.right.right.right.right))))))
+
 end Lzvm
