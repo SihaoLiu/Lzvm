@@ -1182,6 +1182,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessExternalSourceDescriptorUploadWordCount",
         "finishWitnessExternalSourceDescriptorUploadRowCount",
         "finishWitnessExternalSourceTraceExpandMilliseconds",
+        "finishWitnessOpeningSetupMilliseconds",
+        "finishWitnessOpeningLeafExtendMilliseconds",
+        "finishWitnessOpeningLeafHashMilliseconds",
         "finishWitnessOpeningLeafHashRowCount",
         "finishWitnessOpeningLeafHashByteCount",
         "finishWitnessOpeningLeafHashArity2RowCount",
@@ -1225,6 +1228,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessOpeningRowValuesSourceRowCount",
         "finishWitnessOpeningRowValuesWordCount",
         "finishWitnessOpeningRowValuesByteCount",
+        "finishWitnessOpeningPathMilliseconds",
         "finishFriOpeningMilliseconds",
         "finishProofEncodeMilliseconds",
         "finishContributionSegmentMilliseconds",
@@ -1368,6 +1372,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "\"finish_witness_external_source_trace_expand\"",
             "witness_external_source_trace_expand",
         ),
+        ("\"finish_witness_opening_setup\"", "witness_opening_setup"),
+        (
+            "\"finish_witness_opening_leaf_extend\"",
+            "witness_opening_leaf_extend",
+        ),
+        (
+            "\"finish_witness_opening_leaf_hash\"",
+            "witness_opening_leaf_hash",
+        ),
+        ("\"finish_witness_opening_path\"", "witness_opening_path"),
     ] {
         assert!(
             proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
@@ -1680,6 +1694,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_external_source_timing_acceptance_sound",
             "proof_artifact_finish_external_source_timing_acceptance_verifier_core_contract",
+            "proof_artifact_finish_witness_opening_subtiming_acceptance_sound",
+            "proof_artifact_finish_witness_opening_subtiming_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",

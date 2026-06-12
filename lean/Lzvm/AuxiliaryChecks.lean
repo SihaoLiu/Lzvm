@@ -316,6 +316,9 @@ structure ProofArtifactFinishTimingSummary where
   finishWitnessExternalSourceDescriptorUploadWordCount : Nat
   finishWitnessExternalSourceDescriptorUploadRowCount : Nat
   finishWitnessExternalSourceTraceExpandMilliseconds : Nat
+  finishWitnessOpeningSetupMilliseconds : Nat
+  finishWitnessOpeningLeafExtendMilliseconds : Nat
+  finishWitnessOpeningLeafHashMilliseconds : Nat
   finishWitnessOpeningLeafHashRowCount : Nat
   finishWitnessOpeningLeafHashByteCount : Nat
   finishWitnessOpeningLeafHashArity2RowCount : Nat
@@ -359,6 +362,7 @@ structure ProofArtifactFinishTimingSummary where
   finishWitnessOpeningRowValuesSourceRowCount : Nat
   finishWitnessOpeningRowValuesWordCount : Nat
   finishWitnessOpeningRowValuesByteCount : Nat
+  finishWitnessOpeningPathMilliseconds : Nat
   finishFriOpeningMilliseconds : Nat
   finishProofEncodeMilliseconds : Nat
   finishContributionSegmentMilliseconds : Nat

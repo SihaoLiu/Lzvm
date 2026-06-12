@@ -2367,6 +2367,70 @@ theorem proof_artifact_finish_external_source_timing_acceptance_verifier_core_co
         proof
         observed)
 
+theorem proof_artifact_finish_witness_opening_subtiming_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (setupMilliseconds leafExtendMilliseconds leafHashMilliseconds
+      pathMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningSetupMilliseconds := setupMilliseconds
+            finishWitnessOpeningLeafExtendMilliseconds := leafExtendMilliseconds
+            finishWitnessOpeningLeafHashMilliseconds := leafHashMilliseconds
+            finishWitnessOpeningPathMilliseconds := pathMilliseconds })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          finishWitnessOpeningSetupMilliseconds := setupMilliseconds
+          finishWitnessOpeningLeafExtendMilliseconds := leafExtendMilliseconds
+          finishWitnessOpeningLeafHashMilliseconds := leafHashMilliseconds
+          finishWitnessOpeningPathMilliseconds := pathMilliseconds })
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_witness_opening_subtiming_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (setupMilliseconds leafExtendMilliseconds leafHashMilliseconds
+      pathMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningSetupMilliseconds := setupMilliseconds
+            finishWitnessOpeningLeafExtendMilliseconds := leafExtendMilliseconds
+            finishWitnessOpeningLeafHashMilliseconds := leafHashMilliseconds
+            finishWitnessOpeningPathMilliseconds := pathMilliseconds })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (proof_artifact_finish_witness_opening_subtiming_acceptance_sound
+        assumptions
+        summary
+        setupMilliseconds
+        leafExtendMilliseconds
+        leafHashMilliseconds
+        pathMilliseconds
+        publicInput
+        proof
+        observed)
+
 theorem proof_artifact_finish_descriptor_upload_word_count_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
