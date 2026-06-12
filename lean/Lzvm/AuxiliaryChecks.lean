@@ -515,6 +515,31 @@ structure GuestPcTraceSegmentQueueValidation where
       segmentQueueConfigAccepted config publicInput proof ->
         GuestPcTraceSegmentQueueDecisionMatches config
 
+structure GuestPcTraceLargeGpuGateConfig where
+  defaultLargeTraceInstructionThreshold : Nat
+  requestedInstructionLimit : Option Nat
+  gpuBackendAvailable : Bool
+  largeTraceAllowed : Bool
+deriving DecidableEq, Repr
+
+def GuestPcTraceLargeGpuGateDecisionMatches
+    (config : GuestPcTraceLargeGpuGateConfig) : Prop :=
+  match config.requestedInstructionLimit with
+  | some limit =>
+      config.largeTraceAllowed =
+        decide (limit < config.defaultLargeTraceInstructionThreshold
+          \/ config.gpuBackendAvailable)
+  | none =>
+      config.largeTraceAllowed = true
+
+structure GuestPcTraceLargeGpuGateValidation where
+  largeGpuGateConfigAccepted :
+    GuestPcTraceLargeGpuGateConfig -> PublicInput -> Proof -> Prop
+  largeGpuGateConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      largeGpuGateConfigAccepted config publicInput proof ->
+        GuestPcTraceLargeGpuGateDecisionMatches config
+
 structure GpuRetainedLeafDigestLimitConfig where
   defaultLeafDigestLimitBytes : Nat
   configuredLeafDigestLimitBytes : Option Nat
@@ -631,6 +656,15 @@ def GuestPcTraceSegmentQueueCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.segmentQueueConfigAccepted config publicInput proof
+
+def GuestPcTraceLargeGpuGateCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GuestPcTraceLargeGpuGateValidation)
+    (config : GuestPcTraceLargeGpuGateConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.largeGpuGateConfigAccepted config publicInput proof
 
 def GpuRetainedLeafDigestLimitCheckedAcceptance
     (system : VerifierModel)

@@ -113,6 +113,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GuestPcTraceSegmentQueueConfig")
             && lean_source.contains("GuestPcTraceSegmentQueueValidation")
             && lean_source.contains("GuestPcTraceSegmentQueueCheckedAcceptance")
+            && lean_source.contains("GuestPcTraceLargeGpuGateConfig")
+            && lean_source.contains("GuestPcTraceLargeGpuGateValidation")
+            && lean_source.contains("GuestPcTraceLargeGpuGateCheckedAcceptance")
             && lean_source.contains("GpuRetainedLeafDigestLimitConfig")
             && lean_source.contains("GpuRetainedLeafDigestLimitValidation")
             && lean_source.contains("GpuRetainedLeafDigestLimitCheckedAcceptance")
@@ -438,6 +441,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && guest_backend_source.contains("fn guest_pc_trace_segment_queue_capacity")
             && guest_backend_source.contains("mpsc::sync_channel(guest_pc_trace_segment_queue_capacity())"),
         "Lean auxiliary checks should bind guest trace segment queue capacity selection to the Rust runtime knob"
+    );
+    assert!(
+        lean_source.contains("defaultLargeTraceInstructionThreshold")
+            && lean_source.contains("requestedInstructionLimit")
+            && lean_source.contains("gpuBackendAvailable")
+            && lean_source.contains("largeTraceAllowed")
+            && lean_source.contains("GuestPcTraceLargeGpuGateDecisionMatches")
+            && lean_source.contains("largeGpuGateConfigAccepted")
+            && lean_source.contains("largeGpuGateConfigImpliesDecisionMatches")
+            && lean_source.contains("guest_pc_trace_large_gpu_gate_checked_acceptance_sound")
+            && lean_source.contains(
+                "guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract"
+            )
+            && prove_witness_source.contains("fn validate_large_guest_pc_gpu")
+            && prove_witness_source.contains("1_000_000")
+            && prove_witness_source.contains("lzvm_prover::gpu_setup_available()"),
+        "Lean auxiliary checks should bind the large guest trace GPU gate to the Rust runtime guard"
     );
     assert!(
         lean_source.contains("GpuRetainedDeviceCacheBudget")
