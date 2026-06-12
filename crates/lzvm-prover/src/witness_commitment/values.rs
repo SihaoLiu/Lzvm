@@ -323,7 +323,7 @@ fn merkle_opening_path_prefix_parent_work(
 }
 
 #[cfg(feature = "cuda")]
-const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 0;
+const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 9_000_000_000;
 #[cfg(feature = "cuda")]
 const RETAINED_SOURCE_DEVICE_RESERVE_BYTES: usize = 11 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
