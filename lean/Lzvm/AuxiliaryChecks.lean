@@ -310,9 +310,12 @@ structure ProofArtifactFinishTimingSummary where
   finishWitnessOpeningRetainedLeafDigestOpeningRowCount : Nat
   finishWitnessOpeningRetainedParentCheckpointOpeningCount : Nat
   finishWitnessOpeningRetainedParentCheckpointOpeningRowCount : Nat
+  finishWitnessExternalSourceMilliseconds : Nat
+  finishWitnessExternalSourceDescriptorUploadMilliseconds : Nat
   finishWitnessExternalSourceDescriptorUploadByteCount : Nat
   finishWitnessExternalSourceDescriptorUploadWordCount : Nat
   finishWitnessExternalSourceDescriptorUploadRowCount : Nat
+  finishWitnessExternalSourceTraceExpandMilliseconds : Nat
   finishWitnessOpeningLeafHashRowCount : Nat
   finishWitnessOpeningLeafHashByteCount : Nat
   finishWitnessOpeningLeafHashArity2RowCount : Nat

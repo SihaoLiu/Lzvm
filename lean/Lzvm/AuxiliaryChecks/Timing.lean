@@ -2304,6 +2304,69 @@ theorem proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem proof_artifact_finish_external_source_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (externalSourceMilliseconds descriptorUploadMilliseconds
+      traceExpandMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessExternalSourceMilliseconds := externalSourceMilliseconds
+            finishWitnessExternalSourceDescriptorUploadMilliseconds :=
+              descriptorUploadMilliseconds
+            finishWitnessExternalSourceTraceExpandMilliseconds := traceExpandMilliseconds })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          finishWitnessExternalSourceMilliseconds := externalSourceMilliseconds
+          finishWitnessExternalSourceDescriptorUploadMilliseconds :=
+            descriptorUploadMilliseconds
+          finishWitnessExternalSourceTraceExpandMilliseconds := traceExpandMilliseconds })
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_external_source_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (externalSourceMilliseconds descriptorUploadMilliseconds
+      traceExpandMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessExternalSourceMilliseconds := externalSourceMilliseconds
+            finishWitnessExternalSourceDescriptorUploadMilliseconds :=
+              descriptorUploadMilliseconds
+            finishWitnessExternalSourceTraceExpandMilliseconds := traceExpandMilliseconds })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (proof_artifact_finish_external_source_timing_acceptance_sound
+        assumptions
+        summary
+        externalSourceMilliseconds
+        descriptorUploadMilliseconds
+        traceExpandMilliseconds
+        publicInput
+        proof
+        observed)
+
 theorem proof_artifact_finish_descriptor_upload_word_count_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

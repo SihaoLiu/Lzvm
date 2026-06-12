@@ -1176,9 +1176,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessOpeningRetainedLeafDigestOpeningRowCount",
         "finishWitnessOpeningRetainedParentCheckpointOpeningCount",
         "finishWitnessOpeningRetainedParentCheckpointOpeningRowCount",
+        "finishWitnessExternalSourceMilliseconds",
+        "finishWitnessExternalSourceDescriptorUploadMilliseconds",
         "finishWitnessExternalSourceDescriptorUploadByteCount",
         "finishWitnessExternalSourceDescriptorUploadWordCount",
         "finishWitnessExternalSourceDescriptorUploadRowCount",
+        "finishWitnessExternalSourceTraceExpandMilliseconds",
         "finishWitnessOpeningLeafHashRowCount",
         "finishWitnessOpeningLeafHashByteCount",
         "finishWitnessOpeningLeafHashArity2RowCount",
@@ -1310,6 +1313,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     }
     for (line_name, field) in [
         (
+            "\"finish_witness_external_source\"",
+            "witness_external_source",
+        ),
+        (
+            "\"finish_witness_external_source_descriptor_upload\"",
+            "witness_external_source_descriptor_upload",
+        ),
+        (
             "\"finish_witness_opening_row_values\"",
             "witness_opening_row_values",
         ),
@@ -1352,6 +1363,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"finish_witness_external_source_descriptor_upload_rows\"",
             "witness_external_source_descriptor_upload_row_count",
+        ),
+        (
+            "\"finish_witness_external_source_trace_expand\"",
+            "witness_external_source_trace_expand",
         ),
     ] {
         assert!(
@@ -1663,6 +1678,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_row_values_shape_acceptance_sound",
             "proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_external_source_timing_acceptance_sound",
+            "proof_artifact_finish_external_source_timing_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",
