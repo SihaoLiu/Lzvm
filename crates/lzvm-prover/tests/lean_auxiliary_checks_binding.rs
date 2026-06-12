@@ -1211,6 +1211,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount",
         "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount",
         "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount",
+        "finishWitnessOpeningPathParentHashRowsPerQuery",
+        "finishWitnessOpeningPathParentHashRowsPerStage",
+        "finishWitnessOpeningPathParentHashLaunchesPerStage",
         "finishFriOpeningMilliseconds",
         "finishProofEncodeMilliseconds",
         "finishContributionSegmentMilliseconds",
@@ -1416,6 +1419,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "\"finish_witness_opening_path_parent_hash_launches\"",
             "witness_opening_path_parent_hash_launch_count",
         ),
+        (
+            "\"finish_witness_opening_path_parent_hash_rows_per_query\"",
+            "witness_opening_query_count",
+        ),
+        (
+            "\"finish_witness_opening_path_parent_hash_rows_per_stage\"",
+            "witness_opening_stage_count",
+        ),
+        (
+            "\"finish_witness_opening_path_parent_hash_launches_per_stage\"",
+            "witness_opening_stage_count",
+        ),
     ] {
         assert!(
             proof_timing_source.contains(line_name) && proof_timing_source.contains(field),
@@ -1616,6 +1631,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_leaf_work_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_path_parent_hash_shape_acceptance_sound",
             "proof_artifact_finish_path_parent_hash_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound",
+            "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",

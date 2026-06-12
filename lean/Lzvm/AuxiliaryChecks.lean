@@ -345,6 +345,9 @@ structure ProofArtifactFinishTimingSummary where
   finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount : Nat
   finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount : Nat
   finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount : Nat
+  finishWitnessOpeningPathParentHashRowsPerQuery : Nat
+  finishWitnessOpeningPathParentHashRowsPerStage : Nat
+  finishWitnessOpeningPathParentHashLaunchesPerStage : Nat
   finishFriOpeningMilliseconds : Nat
   finishProofEncodeMilliseconds : Nat
   finishContributionSegmentMilliseconds : Nat

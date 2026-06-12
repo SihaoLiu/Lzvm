@@ -2157,6 +2157,64 @@ theorem proof_artifact_finish_path_parent_hash_shape_acceptance_verifier_core_co
         proof
         observed)
 
+theorem proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (rowsPerQuery rowsPerStage launchesPerStage : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery
+            finishWitnessOpeningPathParentHashRowsPerStage := rowsPerStage
+            finishWitnessOpeningPathParentHashLaunchesPerStage := launchesPerStage })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery
+          finishWitnessOpeningPathParentHashRowsPerStage := rowsPerStage
+          finishWitnessOpeningPathParentHashLaunchesPerStage := launchesPerStage })
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (rowsPerQuery rowsPerStage launchesPerStage : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery
+            finishWitnessOpeningPathParentHashRowsPerStage := rowsPerStage
+            finishWitnessOpeningPathParentHashLaunchesPerStage := launchesPerStage })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound
+        assumptions
+        summary
+        rowsPerQuery
+        rowsPerStage
+        launchesPerStage
+        publicInput
+        proof
+        observed)
+
 theorem proof_artifact_finish_descriptor_upload_word_count_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
