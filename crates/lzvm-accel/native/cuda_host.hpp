@@ -33,6 +33,8 @@ struct LzvmCudaRegularConstraintOutput {
 struct LzvmCudaAllocatorStats {
     std::size_t cuda_malloc_calls;
     std::size_t cuda_malloc_bytes;
+    std::size_t cuda_malloc_wait_ns;
+    std::size_t cuda_malloc_max_wait_ns;
     std::size_t cuda_free_calls;
     std::size_t cuda_device_synchronize_calls;
     std::size_t cached_blocks;

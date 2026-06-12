@@ -1200,6 +1200,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     for field in [
         "cudaAllocatorMallocCallCount",
         "cudaAllocatorMallocByteCount",
+        "cudaAllocatorMallocWaitNanoseconds",
+        "cudaAllocatorMallocMaxWaitNanoseconds",
         "cudaAllocatorCachedBlockCount",
         "cudaAllocatorCachedByteCount",
         "cudaAllocatorEventQueryCallCount",
@@ -1242,6 +1244,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     for line_name in [
         "\"cuda_allocator_malloc_calls\"",
         "\"cuda_allocator_malloc_bytes\"",
+        "\"cuda_allocator_malloc_wait_ns\"",
+        "\"cuda_allocator_malloc_max_wait_ns\"",
         "\"cuda_allocator_cached_blocks\"",
         "\"cuda_allocator_cached_bytes\"",
         "\"cuda_allocator_event_query_calls\"",

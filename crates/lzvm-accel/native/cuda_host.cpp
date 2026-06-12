@@ -44,6 +44,8 @@ std::unordered_map<void*, AllocationRecord> g_active_allocations;
 std::vector<CachedAllocation> g_cached_allocations;
 std::size_t g_cuda_malloc_calls = 0;
 std::size_t g_cuda_malloc_bytes = 0;
+std::size_t g_cuda_malloc_wait_ns = 0;
+std::size_t g_cuda_malloc_max_wait_ns = 0;
 std::size_t g_cuda_free_calls = 0;
 std::size_t g_cuda_device_synchronize_calls = 0;
 std::size_t g_cuda_event_query_calls = 0;
@@ -150,6 +152,13 @@ void record_event_synchronize_wait(std::size_t bytes, std::size_t elapsed_ns) {
         size_stats.count = saturated_add(size_stats.count, 1);
         size_stats.wait_ns = saturated_add(size_stats.wait_ns, elapsed_ns);
         return;
+    }
+}
+
+void record_cuda_malloc_wait(std::size_t elapsed_ns) {
+    g_cuda_malloc_wait_ns = saturated_add(g_cuda_malloc_wait_ns, elapsed_ns);
+    if (elapsed_ns > g_cuda_malloc_max_wait_ns) {
+        g_cuda_malloc_max_wait_ns = elapsed_ns;
     }
 }
 
@@ -405,14 +414,24 @@ int alloc_bytes_impl(void** out, std::size_t bytes) {
     }
 
     void* ptr = nullptr;
+    auto malloc_started = std::chrono::steady_clock::now();
     int status = static_cast<int>(cudaMalloc(&ptr, bytes));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        record_cuda_malloc_wait(saturated_nanoseconds_since(malloc_started));
+    }
     if (status != 0) {
         int release_status = 0;
         {
             std::lock_guard<std::mutex> lock(g_allocator_mutex);
             release_status = release_cached_blocks_locked();
         }
+        malloc_started = std::chrono::steady_clock::now();
         status = static_cast<int>(cudaMalloc(&ptr, bytes));
+        {
+            std::lock_guard<std::mutex> lock(g_allocator_mutex);
+            record_cuda_malloc_wait(saturated_nanoseconds_since(malloc_started));
+        }
         if (status != 0) {
             status = first_status(release_status, status);
         }
@@ -533,6 +552,8 @@ extern "C" int lzvm_cuda_allocator_clear_cache(void) {
         if (status == 0) {
             g_cuda_malloc_calls = 0;
             g_cuda_malloc_bytes = 0;
+            g_cuda_malloc_wait_ns = 0;
+            g_cuda_malloc_max_wait_ns = 0;
             g_cuda_free_calls = 0;
             g_cuda_device_synchronize_calls = 0;
             g_cuda_event_query_calls = 0;
@@ -565,6 +586,8 @@ extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out) {
         std::lock_guard<std::mutex> lock(g_allocator_mutex);
         out->cuda_malloc_calls = g_cuda_malloc_calls;
         out->cuda_malloc_bytes = g_cuda_malloc_bytes;
+        out->cuda_malloc_wait_ns = g_cuda_malloc_wait_ns;
+        out->cuda_malloc_max_wait_ns = g_cuda_malloc_max_wait_ns;
         out->cuda_free_calls = g_cuda_free_calls;
         out->cuda_device_synchronize_calls = g_cuda_device_synchronize_calls;
         out->cached_blocks = g_cached_allocations.size();

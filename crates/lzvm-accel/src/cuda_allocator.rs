@@ -29,6 +29,8 @@ pub(crate) fn free_bytes(ptr: *mut c_void) {
 pub struct CudaAllocatorStats {
     pub cuda_malloc_calls: usize,
     pub cuda_malloc_bytes: usize,
+    pub cuda_malloc_wait_ns: usize,
+    pub cuda_malloc_max_wait_ns: usize,
     pub cuda_free_calls: usize,
     pub cuda_device_synchronize_calls: usize,
     pub cached_blocks: usize,

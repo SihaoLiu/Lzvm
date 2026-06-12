@@ -274,6 +274,8 @@ deriving DecidableEq, Repr
 structure CudaAllocatorTimingSummary where
   cudaAllocatorMallocCallCount : Nat
   cudaAllocatorMallocByteCount : Nat
+  cudaAllocatorMallocWaitNanoseconds : Nat
+  cudaAllocatorMallocMaxWaitNanoseconds : Nat
   cudaAllocatorCachedBlockCount : Nat
   cudaAllocatorCachedByteCount : Nat
   cudaAllocatorEventQueryCallCount : Nat

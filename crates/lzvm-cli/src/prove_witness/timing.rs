@@ -113,6 +113,11 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
     };
     timings.record_count("cuda_allocator_malloc_calls", stats.cuda_malloc_calls);
     timings.record_count("cuda_allocator_malloc_bytes", stats.cuda_malloc_bytes);
+    timings.record_count("cuda_allocator_malloc_wait_ns", stats.cuda_malloc_wait_ns);
+    timings.record_count(
+        "cuda_allocator_malloc_max_wait_ns",
+        stats.cuda_malloc_max_wait_ns,
+    );
     timings.record_count("cuda_allocator_cached_blocks", stats.cached_blocks);
     timings.record_count("cuda_allocator_cached_bytes", stats.cached_bytes);
     timings.record_count(

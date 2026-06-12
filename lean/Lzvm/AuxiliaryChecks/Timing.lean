@@ -2109,7 +2109,8 @@ theorem cuda_allocator_aggregate_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
     (summary : CudaAllocatorTimingSummary)
-    (mallocCalls mallocBytes cachedBlocks cachedBytes eventQueryCalls
+    (mallocCalls mallocBytes mallocWaitNanoseconds mallocMaxWaitNanoseconds
+      cachedBlocks cachedBytes eventQueryCalls
       eventQueryReadyCount eventQueryNotReadyCount eventSynchronizeCalls
       eventSynchronizeBytes eventSynchronizeMaxBytes eventSynchronizeWaitNanoseconds
       eventSynchronizeMaxWaitNanoseconds eventSynchronizeHotBytes
@@ -2122,6 +2123,8 @@ theorem cuda_allocator_aggregate_timing_acceptance_sound
           { summary with
             cudaAllocatorMallocCallCount := mallocCalls
             cudaAllocatorMallocByteCount := mallocBytes
+            cudaAllocatorMallocWaitNanoseconds := mallocWaitNanoseconds
+            cudaAllocatorMallocMaxWaitNanoseconds := mallocMaxWaitNanoseconds
             cudaAllocatorCachedBlockCount := cachedBlocks
             cudaAllocatorCachedByteCount := cachedBytes
             cudaAllocatorEventQueryCallCount := eventQueryCalls
@@ -2152,6 +2155,8 @@ theorem cuda_allocator_aggregate_timing_acceptance_sound
         { summary with
           cudaAllocatorMallocCallCount := mallocCalls
           cudaAllocatorMallocByteCount := mallocBytes
+          cudaAllocatorMallocWaitNanoseconds := mallocWaitNanoseconds
+          cudaAllocatorMallocMaxWaitNanoseconds := mallocMaxWaitNanoseconds
           cudaAllocatorCachedBlockCount := cachedBlocks
           cudaAllocatorCachedByteCount := cachedBytes
           cudaAllocatorEventQueryCallCount := eventQueryCalls
@@ -2179,7 +2184,8 @@ theorem cuda_allocator_aggregate_timing_acceptance_verifier_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
     (summary : CudaAllocatorTimingSummary)
-    (mallocCalls mallocBytes cachedBlocks cachedBytes eventQueryCalls
+    (mallocCalls mallocBytes mallocWaitNanoseconds mallocMaxWaitNanoseconds
+      cachedBlocks cachedBytes eventQueryCalls
       eventQueryReadyCount eventQueryNotReadyCount eventSynchronizeCalls
       eventSynchronizeBytes eventSynchronizeMaxBytes eventSynchronizeWaitNanoseconds
       eventSynchronizeMaxWaitNanoseconds eventSynchronizeHotBytes
@@ -2192,6 +2198,8 @@ theorem cuda_allocator_aggregate_timing_acceptance_verifier_core_contract
           { summary with
             cudaAllocatorMallocCallCount := mallocCalls
             cudaAllocatorMallocByteCount := mallocBytes
+            cudaAllocatorMallocWaitNanoseconds := mallocWaitNanoseconds
+            cudaAllocatorMallocMaxWaitNanoseconds := mallocMaxWaitNanoseconds
             cudaAllocatorCachedBlockCount := cachedBlocks
             cudaAllocatorCachedByteCount := cachedBytes
             cudaAllocatorEventQueryCallCount := eventQueryCalls
@@ -2222,6 +2230,8 @@ theorem cuda_allocator_aggregate_timing_acceptance_verifier_core_contract
         summary
         mallocCalls
         mallocBytes
+        mallocWaitNanoseconds
+        mallocMaxWaitNanoseconds
         cachedBlocks
         cachedBytes
         eventQueryCalls

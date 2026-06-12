@@ -3683,6 +3683,8 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
 
     for field in [
         "cuda_malloc_bytes",
+        "cuda_malloc_wait_ns",
+        "cuda_malloc_max_wait_ns",
         "cuda_event_query_calls",
         "cuda_event_query_ready_count",
         "cuda_event_query_not_ready_count",
@@ -3735,6 +3737,13 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "allocator pending reuse should time event synchronization waits"
     );
     assert!(
+        alloc_body.contains("cudaMalloc(&ptr, bytes)")
+            && alloc_body.contains("record_cuda_malloc_wait")
+            && native_source.contains("g_cuda_malloc_wait_ns")
+            && native_source.contains("g_cuda_malloc_max_wait_ns"),
+        "allocator fresh allocations should time cudaMalloc waits"
+    );
+    assert!(
         native_source.contains("g_cuda_event_synchronize_by_size")
             && native_source.contains("cuda_event_synchronize_hot_bytes")
             && native_source.contains("cuda_event_synchronize_hot_count")
@@ -3762,6 +3771,8 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
     for line_name in [
         "\"cuda_allocator_malloc_calls\"",
         "\"cuda_allocator_malloc_bytes\"",
+        "\"cuda_allocator_malloc_wait_ns\"",
+        "\"cuda_allocator_malloc_max_wait_ns\"",
         "\"cuda_allocator_cached_blocks\"",
         "\"cuda_allocator_cached_bytes\"",
         "\"cuda_allocator_event_query_calls\"",
