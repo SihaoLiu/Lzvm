@@ -143,6 +143,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     }
     timings.mark("gpu_setup");
+    if let Err(message) = validate_large_guest_pc_gpu(parsed.guest_pc_trace_instruction_limit) {
+        let _ = writeln!(stderr, "prove witness failed: {message}");
+        return 1;
+    }
     let single_unit_index = match selected_single_unit_index(&plan, &parsed) {
         Ok(unit_index) => unit_index,
         Err(message) => {
@@ -756,6 +760,16 @@ fn validate_guest_pc_trace_eth_input_binding(parsed: &ParsedWitnessArgs) -> Resu
         return Err("--eth-block-input/--eth-public-input with --guest-pc-trace requires --input-data with framed guest stdin".to_owned());
     }
     Ok(())
+}
+
+fn validate_large_guest_pc_gpu(instruction_limit: Option<u64>) -> Result<(), &'static str> {
+    match (
+        instruction_limit.unwrap_or(0) >= 1_000_000,
+        lzvm_prover::gpu_setup_available(),
+    ) {
+        (true, false) => Err("large --guest-pc-trace runs require a CUDA-enabled lzvm-cli build"),
+        _ => Ok(()),
+    }
 }
 
 fn selected_single_unit_index(

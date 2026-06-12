@@ -92,6 +92,18 @@ fn rejects_duplicate_timings_option() {
     ));
 }
 
+#[cfg(not(feature = "cuda"))]
+#[test]
+fn rejects_large_guest_pc_trace_without_gpu_backend() {
+    assert_eq!(
+        validate_large_guest_pc_gpu(Some(1_000_000))
+            .expect_err("large guest PC trace should require a GPU backend"),
+        "large --guest-pc-trace runs require a CUDA-enabled lzvm-cli build"
+    );
+    assert!(validate_large_guest_pc_gpu(Some(999_999)).is_ok());
+    assert!(validate_large_guest_pc_gpu(None).is_ok());
+}
+
 #[test]
 fn writes_timing_summary_lines() {
     let mut stdout = Vec::new();
