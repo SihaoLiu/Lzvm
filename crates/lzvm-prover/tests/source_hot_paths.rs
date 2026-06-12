@@ -1307,6 +1307,46 @@ fn zisk_main_descriptor_expansion_writes_rows_without_full_zero_prefill() {
 }
 
 #[test]
+fn descriptor_backed_zero_stage_uses_zero_compact_commitment() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+    let trace_path = crate_root.join("src/witness_commitment/trace.rs");
+    let trace_source =
+        std::fs::read_to_string(&trace_path).expect("witness trace source should read");
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+
+    let builder_body = function_body(
+        &backend_source,
+        "fn guest_pc_device_trace_builder_from_layout_with_descriptors",
+        "fn validate_guest_pc_trace_device_source_matches_layout",
+    );
+    assert!(
+        builder_body.contains("known_zero: has_descriptor_source")
+            && builder_body.contains("stage.start_column == ZISK_MAIN_DEVICE_TRACE_COLUMNS - 1"),
+        "descriptor-backed stage windows should mark the trailing zero column"
+    );
+    assert!(
+        execution_source.contains("from_row_major_column_window_with_known_zero"),
+        "stage source cache should preserve zero-source metadata"
+    );
+
+    let pending_body = function_body(
+        &trace_source,
+        "fn commit_extended_witness_stage_source_device_pending",
+        "fn commit_extended_witness_stage",
+    );
+    assert!(
+        pending_body.contains("source_device.is_known_zero()")
+            && pending_body.contains("commit_witness_stage_zero_compact"),
+        "zero-source device commits should bypass leaf extension and tree kernels"
+    );
+}
+
+#[test]
 fn trace_less_guest_pc_opening_reuses_retained_device_descriptors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

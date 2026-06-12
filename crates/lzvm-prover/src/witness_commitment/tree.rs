@@ -111,6 +111,7 @@ impl PendingCudaWitnessStageCommitment {
                 raw_leaf_bytes: self.raw_leaf_bytes,
                 logical_tree_bytes: self.logical_tree_bytes,
                 digest_tree: None,
+                zero_source: false,
                 external_source_required: retained_source_device.is_none()
                     && self.external_source_required,
                 retained_source_device,
@@ -260,6 +261,7 @@ pub(crate) fn commit_witness_stage_leaves_compact_with_leaf_hashes(
             raw_leaf_bytes,
             logical_tree_bytes,
             digest_tree: Some(digest_tree),
+            zero_source: false,
             external_source_required: false,
             #[cfg(feature = "cuda")]
             retained_source_device: None,
@@ -269,6 +271,82 @@ pub(crate) fn commit_witness_stage_leaves_compact_with_leaf_hashes(
             retained_parent_checkpoint_level: None,
         },
     ))
+}
+
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+pub(crate) fn commit_witness_stage_zero_compact(
+    stage_index: usize,
+    source_bits: usize,
+    target_bits: usize,
+    column_count: usize,
+    arity: usize,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    validate_witness_commitment_arity(arity)?;
+    let source_rows = checked_domain_rows(source_bits)?;
+    let extended_rows = checked_domain_rows(target_bits)?;
+    if target_bits < source_bits {
+        return Err(WitnessStageCommitmentError::LengthOverflow);
+    }
+    if column_count == 0 || extended_rows == 0 {
+        return Err(WitnessStageCommitmentError::EmptyStage);
+    }
+    let raw_leaf_bytes = extended_rows
+        .checked_mul(column_count)
+        .and_then(|words| words.checked_mul(WORD_BYTES))
+        .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
+    let logical_tree_bytes =
+        expected_witness_stage_commitment_tree_byte_count(extended_rows, column_count, arity)?;
+    let root = zero_compact_stage_root(extended_rows, column_count, arity)?;
+    Ok(WitnessStageCommitment::new_compact(
+        stage_index,
+        arity,
+        root,
+        WitnessStageCompactTreeParts {
+            source_rows,
+            extended_rows,
+            columns: column_count,
+            source_bits,
+            target_bits,
+            arity,
+            source_values: Vec::new(),
+            raw_leaf_bytes,
+            logical_tree_bytes,
+            digest_tree: None,
+            zero_source: true,
+            external_source_required: false,
+            #[cfg(feature = "cuda")]
+            retained_source_device: None,
+            #[cfg(feature = "cuda")]
+            retained_leaf_digest_level: None,
+            #[cfg(feature = "cuda")]
+            retained_parent_checkpoint_level: None,
+        },
+    ))
+}
+
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+fn zero_compact_stage_root(
+    extended_rows: usize,
+    column_count: usize,
+    arity: usize,
+) -> Result<[Felt; HASH_WORDS], WitnessStageCommitmentError> {
+    let mut digest = linear_hash(&vec![Felt::ZERO; column_count], arity)?;
+    let mut level_len = extended_rows;
+    while level_len > 1 {
+        let padded_len = round_up_to_arity(
+            level_len,
+            arity,
+            WitnessStageCommitmentError::LengthOverflow,
+        )?;
+        let mut children = vec![[Felt::ZERO; HASH_WORDS]; arity];
+        let active = level_len.min(arity);
+        for child in children.iter_mut().take(active) {
+            *child = digest;
+        }
+        digest = parent_hash(&children, arity)?;
+        level_len = padded_len / arity;
+    }
+    Ok(digest)
 }
 
 #[cfg(feature = "cuda")]
@@ -424,6 +502,7 @@ fn commit_witness_stage_leaves_compact_with_leaf_hash_level_inner(
             raw_leaf_bytes,
             logical_tree_bytes,
             digest_tree: None,
+            zero_source: false,
             external_source_required: false,
             retained_source_device,
             retained_leaf_digest_level,
@@ -680,6 +759,7 @@ fn commit_witness_stage_device_compact_with_leaf_hash_level_inner(
             raw_leaf_bytes,
             logical_tree_bytes,
             digest_tree: None,
+            zero_source: false,
             external_source_required: retained_source_device.is_none() && external_source_required,
             retained_source_device,
             retained_leaf_digest_level,
@@ -1266,8 +1346,9 @@ mod tests {
     use super::{
         commit_witness_stage_leaves, commit_witness_stage_leaves_compact_with_leaf_hashes,
         commit_witness_stage_leaves_owned, commit_witness_stage_leaves_owned_with_leaf_hashes,
-        open_witness_stage_commitment, verify_witness_stage_opening_root,
-        WitnessStageCommitmentError, WitnessStageLeaves, WORD_BYTES,
+        commit_witness_stage_zero_compact, open_witness_stage_commitment,
+        verify_witness_stage_opening_root, WitnessStageCommitmentError, WitnessStageLeaves,
+        WORD_BYTES,
     };
     #[cfg(feature = "cuda")]
     use crate::witness_commitment::compact_witness_stage_leaf_hash_level_from_source_device_view_timing;
@@ -1428,6 +1509,61 @@ mod tests {
                     .expect("compact opening should verify")
             );
         }
+    }
+
+    #[test]
+    fn zero_compact_stage_commitment_opens_like_full_zero_tree() {
+        let source_bits = 2;
+        let target_bits = 5;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let column_count = 1;
+        let arity = 4;
+        let stage_index = 3;
+        let source_values = vec![Felt::ZERO; source_rows * column_count];
+        let leaf_bytes = vec![0_u8; extended_rows * column_count * WORD_BYTES];
+        let leaves = WitnessStageLeaves::new(
+            stage_index,
+            source_rows,
+            extended_rows,
+            column_count,
+            leaf_bytes,
+        );
+        let full =
+            commit_witness_stage_leaves(&leaves, arity).expect("full commitment should build");
+        let compact = commit_witness_stage_zero_compact(
+            stage_index,
+            source_bits,
+            target_bits,
+            column_count,
+            arity,
+        )
+        .expect("zero compact commitment should build");
+
+        assert_eq!(compact.root(), full.root());
+        assert_eq!(compact.tree_byte_count(), full.tree_byte_count());
+        for row in [0, 1, 16, 31] {
+            let full_opening =
+                open_witness_stage_commitment(&full, row, extended_rows as u64, column_count)
+                    .expect("full commitment should open");
+            let compact_opening =
+                open_witness_stage_commitment(&compact, row, extended_rows as u64, column_count)
+                    .expect("compact commitment should open");
+
+            assert_eq!(compact_opening, full_opening);
+            assert!(
+                verify_witness_stage_opening_root(compact.root(), arity, &compact_opening)
+                    .expect("compact opening should verify")
+            );
+        }
+        assert_eq!(compact.tree_bytes(), full.tree_bytes());
+        let stage = WitnessTraceStageValues::new_for_test(
+            stage_index,
+            source_rows,
+            column_count,
+            source_values,
+        );
+        assert_eq!(stage.values(), &[Felt::ZERO; 4]);
     }
 
     #[cfg(feature = "cuda")]

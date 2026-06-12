@@ -1011,12 +1011,13 @@ fn guest_pc_external_stage_sources(
             .stages()
             .iter()
             .map(|stage| {
-                WitnessStageSourceDevice::from_row_major_column_window(
+                WitnessStageSourceDevice::from_row_major_column_window_with_known_zero(
                     stage.stage_index(),
                     stage.row_count(),
                     stage.column_count(),
                     stage.row_stride(),
                     stage.column_offset(),
+                    stage.is_known_zero(),
                     trace,
                 )
             })

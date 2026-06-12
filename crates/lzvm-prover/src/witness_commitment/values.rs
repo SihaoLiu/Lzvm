@@ -26,12 +26,14 @@ use lzvm_field::Felt;
 use super::{coset_extend_launch_work, errors::WitnessStageOpeningError, HASH_WORDS, WORD_BYTES};
 #[cfg(feature = "cuda")]
 use crate::gpu_setup::prepare_gpu_setup;
+use crate::merkle_hash::{
+    linear_hash, linear_hashes_from_row_major_bytes, parent_hash, parent_levels_from_digest_level,
+};
 #[cfg(feature = "cuda")]
 use crate::merkle_hash::{
     linear_hash_level_from_validated_row_major_device_buffer, CudaDigestCheckpointLevel,
     CudaDigestLevel,
 };
-use crate::merkle_hash::{linear_hashes_from_row_major_bytes, parent_levels_from_digest_level};
 
 type CompactOnDemandOpening = (Vec<Felt>, Vec<Vec<[Felt; HASH_WORDS]>>);
 
@@ -845,6 +847,7 @@ pub(crate) struct WitnessStageCompactTreeParts {
     pub(crate) raw_leaf_bytes: usize,
     pub(crate) logical_tree_bytes: usize,
     pub(crate) digest_tree: Option<Vec<u8>>,
+    pub(crate) zero_source: bool,
     pub(crate) external_source_required: bool,
     #[cfg(feature = "cuda")]
     pub(crate) retained_source_device: Option<Arc<RetainedCudaSourceDevice>>,
@@ -874,6 +877,7 @@ struct WitnessStageCompactTreeStorage {
     raw_leaf_bytes: usize,
     logical_tree_bytes: usize,
     digest_tree: Option<Vec<u8>>,
+    zero_source: bool,
     external_source_required: bool,
     #[cfg(feature = "cuda")]
     retained_source_device: Option<Arc<RetainedCudaSourceDevice>>,
@@ -901,6 +905,7 @@ impl Clone for WitnessStageCompactTreeStorage {
             raw_leaf_bytes: self.raw_leaf_bytes,
             logical_tree_bytes: self.logical_tree_bytes,
             digest_tree: self.digest_tree.clone(),
+            zero_source: self.zero_source,
             external_source_required: self.external_source_required,
             #[cfg(feature = "cuda")]
             retained_source_device: self.retained_source_device.clone(),
@@ -950,6 +955,7 @@ impl WitnessStageCommitment {
                 raw_leaf_bytes: parts.raw_leaf_bytes,
                 logical_tree_bytes: parts.logical_tree_bytes,
                 digest_tree: parts.digest_tree,
+                zero_source: parts.zero_source,
                 external_source_required: parts.external_source_required,
                 #[cfg(feature = "cuda")]
                 retained_source_device: parts.retained_source_device,
@@ -1219,6 +1225,9 @@ impl WitnessStageCompactTreeStorage {
                 found: self.logical_tree_bytes,
             });
         }
+        if self.zero_source {
+            return Ok(vec![Felt::ZERO; self.columns]);
+        }
         self.extended_row_values(row)
     }
 
@@ -1234,9 +1243,12 @@ impl WitnessStageCompactTreeStorage {
     fn materialized_tree_bytes(&self) -> &[u8] {
         self.materialized_tree
             .get_or_init(|| {
-                let mut bytes = self
-                    .extended_leaf_bytes()
-                    .expect("compact witness leaves should materialize");
+                let mut bytes = if self.zero_source {
+                    vec![0_u8; self.raw_leaf_bytes]
+                } else {
+                    self.extended_leaf_bytes()
+                        .expect("compact witness leaves should materialize")
+                };
                 let digest_tree = self
                     .materialized_digest_tree_bytes(&bytes)
                     .expect("compact witness digest tree should materialize");
@@ -1324,6 +1336,16 @@ impl WitnessStageCompactTreeStorage {
         if row_count != self.extended_rows || column_count != self.columns || arity != self.arity {
             return Err(WitnessStageOpeningError::LengthOverflow);
         }
+        if self.zero_source {
+            return self
+                .open_zero_compact_on_demand(
+                    row_index,
+                    expected_root,
+                    #[cfg(feature = "cuda")]
+                    timing,
+                )
+                .map(Some);
+        }
 
         #[cfg(feature = "cuda")]
         {
@@ -1347,7 +1369,7 @@ impl WitnessStageCompactTreeStorage {
         arity: usize,
         expected_root: [Felt; HASH_WORDS],
         #[cfg(feature = "cuda")] source_device: Option<&WitnessStageSourceDeviceView>,
-        #[cfg(feature = "cuda")] timing: Option<&mut WitnessStageOpeningWorkTiming>,
+        #[cfg(feature = "cuda")] mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
     ) -> Result<Option<Vec<CompactOnDemandOpening>>, WitnessStageOpeningError> {
         let should_open_on_demand = self.digest_tree.is_none();
         if !should_open_on_demand {
@@ -1355,6 +1377,20 @@ impl WitnessStageCompactTreeStorage {
         }
         if row_count != self.extended_rows || column_count != self.columns || arity != self.arity {
             return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        if self.zero_source {
+            return row_indices
+                .iter()
+                .map(|row_index| {
+                    self.open_zero_compact_on_demand(
+                        *row_index,
+                        expected_root,
+                        #[cfg(feature = "cuda")]
+                        timing.as_deref_mut(),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(Some);
         }
 
         #[cfg(feature = "cuda")]
@@ -1368,6 +1404,61 @@ impl WitnessStageCompactTreeStorage {
             let _ = expected_root;
             Err(WitnessStageOpeningError::LengthOverflow)
         }
+    }
+
+    fn open_zero_compact_on_demand(
+        &self,
+        row_index: usize,
+        expected_root: [Felt; HASH_WORDS],
+        #[cfg(feature = "cuda")] timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    ) -> Result<CompactOnDemandOpening, WitnessStageOpeningError> {
+        if row_index >= self.extended_rows {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        let mut level_len = self.extended_rows;
+        let mut level_query = row_index;
+        let mut digest = self.zero_leaf_digest()?;
+        let mut siblings = Vec::new();
+        while level_len > 1 {
+            let padded_len = round_up_zero_level(level_len, self.arity)?;
+            let child_slot = level_query % self.arity;
+            let group_start = (level_query / self.arity)
+                .checked_mul(self.arity)
+                .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+            let mut level_siblings = Vec::with_capacity(self.arity - 1);
+            let mut children = vec![[Felt::ZERO; HASH_WORDS]; self.arity];
+            for (slot, child) in children.iter_mut().enumerate() {
+                let child_index = group_start
+                    .checked_add(slot)
+                    .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+                if child_index < level_len {
+                    *child = digest;
+                }
+                if slot != child_slot {
+                    level_siblings.push(*child);
+                }
+            }
+            siblings.push(level_siblings);
+            digest = parent_hash(&children, self.arity)?;
+            level_len = padded_len / self.arity;
+            level_query /= self.arity;
+        }
+        if digest != expected_root {
+            return Err(WitnessStageOpeningError::InvalidTreeByteLength {
+                expected: self.logical_tree_bytes,
+                found: 0,
+            });
+        }
+        #[cfg(feature = "cuda")]
+        if let Some(timing) = timing {
+            timing.record_row_values(1, self.columns);
+        }
+        Ok((vec![Felt::ZERO; self.columns], siblings))
+    }
+
+    fn zero_leaf_digest(&self) -> Result<[Felt; HASH_WORDS], WitnessStageOpeningError> {
+        linear_hash(&vec![Felt::ZERO; self.columns], self.arity)
+            .map_err(WitnessStageOpeningError::from)
     }
 
     fn extended_row_values(&self, row: usize) -> Result<Vec<Felt>, WitnessStageOpeningError> {
@@ -2087,6 +2178,13 @@ fn append_digest_bytes(out: &mut Vec<u8>, digest: [Felt; HASH_WORDS]) {
     for value in digest {
         out.extend_from_slice(&value.to_le_bytes());
     }
+}
+
+fn round_up_zero_level(value: usize, arity: usize) -> Result<usize, WitnessStageOpeningError> {
+    let extra = (arity - (value % arity)) % arity;
+    value
+        .checked_add(extra)
+        .ok_or(WitnessStageOpeningError::LengthOverflow)
 }
 
 #[cfg(feature = "cuda")]

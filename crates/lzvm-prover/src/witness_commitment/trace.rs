@@ -25,6 +25,7 @@ use super::{
     commit_witness_stage_device_compact_with_leaf_hash_level_pending_timing,
     commit_witness_stage_leaves_compact_with_leaf_hash_level,
     commit_witness_stage_leaves_compact_with_leaf_hash_level_timing,
+    commit_witness_stage_zero_compact,
     compact_witness_stage_leaf_hash_level_from_source_device_view_with_workspace_cache_timing,
     compact_witness_stage_leaf_hash_level_with_source_device_timing,
     extend_witness_stage_leaves_from_source_device_view, retain_source_device_view,
@@ -130,6 +131,7 @@ pub(crate) struct WitnessStageSourceDevice {
     column_count: usize,
     row_stride: usize,
     column_offset: usize,
+    known_zero: bool,
     values: Arc<CudaDeviceBuffer>,
 }
 
@@ -184,12 +186,13 @@ pub(crate) fn retain_device_buffer(
 
 #[cfg(feature = "cuda")]
 impl WitnessStageSourceDevice {
-    pub(crate) fn from_row_major_column_window(
+    pub(crate) fn from_row_major_column_window_with_known_zero(
         stage_index: usize,
         row_count: usize,
         column_count: usize,
         row_stride: usize,
         column_offset: usize,
+        known_zero: bool,
         values: &Arc<CudaDeviceBuffer>,
     ) -> Self {
         Self {
@@ -198,6 +201,7 @@ impl WitnessStageSourceDevice {
             column_count,
             row_stride,
             column_offset,
+            known_zero,
             values: Arc::clone(values),
         }
     }
@@ -212,6 +216,10 @@ impl WitnessStageSourceDevice {
 
     pub(crate) fn column_count(&self) -> usize {
         self.column_count
+    }
+
+    pub(crate) fn is_known_zero(&self) -> bool {
+        self.known_zero
     }
 
     pub(crate) fn source_view(&self) -> WitnessStageSourceDeviceView {
@@ -971,10 +979,16 @@ fn commit_witness_stage_source_devices_and_indexed_timing_inner(
 }
 
 #[cfg(feature = "cuda")]
+enum PendingWitnessStageCommitment {
+    Cuda(PendingCudaWitnessStageCommitment),
+    Ready(WitnessStageCommitment),
+}
+
+#[cfg(feature = "cuda")]
 fn materialize_pending_cuda_witness_stage_commitments(
     mut pending_commitments: Vec<(
         usize,
-        PendingCudaWitnessStageCommitment,
+        PendingWitnessStageCommitment,
         WitnessStageCommitTiming,
     )>,
     timing: &mut WitnessStageCommitTiming,
@@ -989,14 +1003,20 @@ fn materialize_pending_cuda_witness_stage_commitments(
     let mut stage_timings = Vec::with_capacity(pending_commitments.len());
     pending_commitments.sort_by_key(|(stage_index, _, _)| *stage_index);
     for (stage_index, pending, mut stage_timing) in pending_commitments {
-        let mut tree_timing = WitnessStageTreeCommitTiming::default();
-        let commitment =
-            record_optional_duration(Some(&mut stage_timing.tree_commit_duration), || {
-                pending
-                    .materialize_with_timing(&mut tree_timing)
-                    .map_err(WitnessTraceCommitmentError::from)
-            })?;
-        stage_timing.accumulate_tree_commit_timing(tree_timing);
+        let commitment = match pending {
+            PendingWitnessStageCommitment::Cuda(pending) => {
+                let mut tree_timing = WitnessStageTreeCommitTiming::default();
+                let commitment =
+                    record_optional_duration(Some(&mut stage_timing.tree_commit_duration), || {
+                        pending
+                            .materialize_with_timing(&mut tree_timing)
+                            .map_err(WitnessTraceCommitmentError::from)
+                    })?;
+                stage_timing.accumulate_tree_commit_timing(tree_timing);
+                commitment
+            }
+            PendingWitnessStageCommitment::Ready(commitment) => commitment,
+        };
         timing.accumulate(stage_timing);
         stage_timings.push(WitnessIndexedStageCommitTiming::new(
             stage_index,
@@ -1198,7 +1218,18 @@ fn commit_extended_witness_stage_source_device_pending(
     workspace_cache: Option<&mut WitnessStageLeafWorkspaceCache>,
     timing: &mut WitnessStageCommitTiming,
     external_source_required: bool,
-) -> Result<PendingCudaWitnessStageCommitment, WitnessTraceCommitmentError> {
+) -> Result<PendingWitnessStageCommitment, WitnessTraceCommitmentError> {
+    if source_device.is_known_zero() {
+        return commit_witness_stage_zero_compact(
+            source_device.stage_index(),
+            params.source_bits,
+            params.target_bits,
+            source_device.column_count(),
+            params.arity,
+        )
+        .map(PendingWitnessStageCommitment::Ready)
+        .map_err(WitnessTraceCommitmentError::from);
+    }
     let source_view = source_device.source_view();
     let retained_source_device = if external_source_required {
         None
@@ -1241,7 +1272,7 @@ fn commit_extended_witness_stage_source_device_pending(
         .map_err(WitnessTraceCommitmentError::from)
     })?;
     timing.accumulate_tree_commit_timing(tree_timing);
-    Ok(commitment)
+    Ok(PendingWitnessStageCommitment::Cuda(commitment))
 }
 
 fn commit_extended_witness_stage(
@@ -1297,6 +1328,18 @@ fn commit_extended_witness_stage_with_workspace_cache(
     mut workspace_cache: Option<&mut WitnessStageLeafWorkspaceCache>,
     mut timing: Option<&mut WitnessStageCommitTiming>,
 ) -> Result<super::WitnessStageCommitment, WitnessTraceCommitmentError> {
+    if let Some(source_device) = source_device {
+        if source_device.is_known_zero() {
+            return commit_witness_stage_zero_compact(
+                stage.stage_index(),
+                params.source_bits,
+                params.target_bits,
+                stage.column_count(),
+                params.arity,
+            )
+            .map_err(WitnessTraceCommitmentError::from);
+        }
+    }
     let leaf_level = if let Some(timing) = timing.as_deref_mut() {
         let leaf_extend_duration = &mut timing.leaf_extend_duration;
         let leaf_extend_timing = &mut timing.leaf_extend_timing;

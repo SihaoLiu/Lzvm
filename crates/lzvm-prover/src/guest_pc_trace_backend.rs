@@ -762,6 +762,7 @@ pub(crate) struct GuestPcTraceDeviceTraceStage {
     column_count: usize,
     row_stride: usize,
     column_offset: usize,
+    known_zero: bool,
 }
 
 #[cfg(feature = "cuda")]
@@ -1193,6 +1194,10 @@ impl GuestPcTraceDeviceTraceStage {
     pub(crate) fn column_offset(&self) -> usize {
         self.column_offset
     }
+
+    pub(crate) fn is_known_zero(&self) -> bool {
+        self.known_zero
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -1325,8 +1330,12 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors_
             })
         },
     )?;
-    let builder =
-        guest_pc_device_trace_builder_from_layout_with_descriptors(layout, trace_device, None);
+    let builder = guest_pc_device_trace_builder_from_layout_with_descriptor_source(
+        layout,
+        trace_device,
+        None,
+        true,
+    );
     validate_guest_pc_trace_device_source_matches_layout(layout, &builder)?;
     Ok(builder)
 }
@@ -1373,7 +1382,12 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices(
                 "CUDA trace descriptor expansion failed: {error}"
             ))
         })?;
-        let builder = guest_pc_device_trace_builder(layout, trace, trace_device);
+        let builder = guest_pc_device_trace_builder_from_layout_with_descriptor_source(
+            layout,
+            trace_device,
+            None,
+            true,
+        );
         validate_guest_pc_trace_device_source_matches_trace(layout, trace, &builder)?;
         return Ok(Some(builder));
     }
@@ -1441,6 +1455,22 @@ fn guest_pc_device_trace_builder_from_layout_with_descriptors(
     trace_device: CudaDeviceBuffer,
     device_trace_descriptor_buffer: Option<Arc<CudaDeviceBuffer>>,
 ) -> GuestPcTraceDeviceTraceBuilder {
+    let has_descriptor_source = device_trace_descriptor_buffer.is_some();
+    guest_pc_device_trace_builder_from_layout_with_descriptor_source(
+        layout,
+        trace_device,
+        device_trace_descriptor_buffer,
+        has_descriptor_source,
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_device_trace_builder_from_layout_with_descriptor_source(
+    layout: &WitnessTraceLayout,
+    trace_device: CudaDeviceBuffer,
+    device_trace_descriptor_buffer: Option<Arc<CudaDeviceBuffer>>,
+    has_descriptor_source: bool,
+) -> GuestPcTraceDeviceTraceBuilder {
     let stages = layout
         .stages()
         .iter()
@@ -1450,6 +1480,10 @@ fn guest_pc_device_trace_builder_from_layout_with_descriptors(
             column_count: stage.width,
             row_stride: layout.column_count(),
             column_offset: stage.start_column,
+            known_zero: has_descriptor_source
+                && layout.column_count() == ZISK_MAIN_DEVICE_TRACE_COLUMNS
+                && stage.width == 1
+                && stage.start_column == ZISK_MAIN_DEVICE_TRACE_COLUMNS - 1,
         })
         .collect::<Vec<_>>();
     GuestPcTraceDeviceTraceBuilder {

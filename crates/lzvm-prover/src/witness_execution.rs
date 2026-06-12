@@ -1784,7 +1784,7 @@ impl WitnessStageTraceCache {
 struct WitnessStageSourceDeviceCache {
     trace: Option<Arc<CudaDeviceBuffer>>,
     guest_pc_device_descriptor_buffer: Option<Arc<CudaDeviceBuffer>>,
-    stages: Vec<(usize, usize, usize, usize, usize)>,
+    stages: Vec<(usize, usize, usize, usize, usize, bool)>,
 }
 
 #[cfg(feature = "cuda")]
@@ -1800,6 +1800,7 @@ impl WitnessStageSourceDeviceCache {
                     stage.column_count(),
                     stage.row_stride(),
                     stage.column_offset(),
+                    stage.is_known_zero(),
                 )
             })
             .collect();
@@ -1984,6 +1985,7 @@ impl WitnessStageSourceDeviceCache {
                 stage.width,
                 layout.column_count(),
                 stage.start_column,
+                false,
             ));
         }
     }
@@ -1993,7 +1995,7 @@ impl WitnessStageSourceDeviceCache {
         layout: &WitnessTraceLayout,
     ) -> Result<(), ProveWitnessCommitmentError> {
         for stage in layout.stages() {
-            let Some((row_count, column_count, row_stride, column_offset, _)) =
+            let Some((row_count, column_count, row_stride, column_offset, _, _)) =
                 self.get_stage(stage.stage_index)
             else {
                 return Err(ProveWitnessCommitmentError::PreloadedStageSource {
@@ -2026,13 +2028,14 @@ impl WitnessStageSourceDeviceCache {
         self.stages
             .iter()
             .map(
-                |(stage_index, row_count, column_count, row_stride, column_offset)| {
-                    WitnessStageSourceDevice::from_row_major_column_window(
+                |(stage_index, row_count, column_count, row_stride, column_offset, known_zero)| {
+                    WitnessStageSourceDevice::from_row_major_column_window_with_known_zero(
                         *stage_index,
                         *row_count,
                         *column_count,
                         *row_stride,
                         *column_offset,
+                        *known_zero,
                         trace,
                     )
                 },
@@ -2108,8 +2111,8 @@ impl WitnessStageSourceDeviceCache {
         let trace = self.trace.as_ref()?;
         self.stages
             .iter()
-            .find(|(index, _, _, _, _)| *index == stage_index)
-            .map(|(_, _, column_count, row_stride, column_offset)| {
+            .find(|(index, _, _, _, _, _)| *index == stage_index)
+            .map(|(_, _, column_count, row_stride, column_offset, _)| {
                 (*column_count, *row_stride, *column_offset, trace.as_ref())
             })
     }
@@ -2117,20 +2120,23 @@ impl WitnessStageSourceDeviceCache {
     fn get_stage(
         &self,
         stage_index: usize,
-    ) -> Option<(usize, usize, usize, usize, &CudaDeviceBuffer)> {
+    ) -> Option<(usize, usize, usize, usize, bool, &CudaDeviceBuffer)> {
         let trace = self.trace.as_ref()?;
         self.stages
             .iter()
-            .find(|(index, _, _, _, _)| *index == stage_index)
-            .map(|(_, row_count, column_count, row_stride, column_offset)| {
-                (
-                    *row_count,
-                    *column_count,
-                    *row_stride,
-                    *column_offset,
-                    trace.as_ref(),
-                )
-            })
+            .find(|(index, _, _, _, _, _)| *index == stage_index)
+            .map(
+                |(_, row_count, column_count, row_stride, column_offset, known_zero)| {
+                    (
+                        *row_count,
+                        *column_count,
+                        *row_stride,
+                        *column_offset,
+                        *known_zero,
+                        trace.as_ref(),
+                    )
+                },
+            )
     }
 }
 
@@ -4341,7 +4347,7 @@ where
                     stage_index: stage.stage_index,
                 }
             })?;
-            let Some((row_count, column_count, row_stride, column_offset, values_device)) =
+            let Some((row_count, column_count, row_stride, column_offset, _, values_device)) =
                 stage_source_devices.get_stage(stage.stage_index)
             else {
                 all_stage_devices_available = false;
