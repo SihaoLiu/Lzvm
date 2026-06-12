@@ -561,6 +561,27 @@ structure GuestPcTraceTracelessCommitmentInputValidation where
       tracelessCommitmentInputConfigAccepted config publicInput proof ->
         GuestPcTraceTracelessCommitmentInputDecisionMatches config
 
+structure GuestPcTraceTracelessSegmentOutputConfig where
+  configuredTracelessSegmentOutput : Option Bool
+  effectiveTracelessSegmentOutput : Bool
+deriving DecidableEq, Repr
+
+def GuestPcTraceTracelessSegmentOutputDecisionMatches
+    (config : GuestPcTraceTracelessSegmentOutputConfig) : Prop :=
+  match config.configuredTracelessSegmentOutput with
+  | some configured =>
+      config.effectiveTracelessSegmentOutput = configured
+  | none =>
+      config.effectiveTracelessSegmentOutput = true
+
+structure GuestPcTraceTracelessSegmentOutputValidation where
+  tracelessSegmentOutputConfigAccepted :
+    GuestPcTraceTracelessSegmentOutputConfig -> PublicInput -> Proof -> Prop
+  tracelessSegmentOutputConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      tracelessSegmentOutputConfigAccepted config publicInput proof ->
+        GuestPcTraceTracelessSegmentOutputDecisionMatches config
+
 structure GpuRetainedLeafDigestLimitConfig where
   defaultLeafDigestLimitBytes : Nat
   configuredLeafDigestLimitBytes : Option Nat
@@ -695,6 +716,18 @@ def GuestPcTraceTracelessCommitmentInputCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.tracelessCommitmentInputConfigAccepted
+      config
+      publicInput
+      proof
+
+def GuestPcTraceTracelessSegmentOutputCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GuestPcTraceTracelessSegmentOutputValidation)
+    (config : GuestPcTraceTracelessSegmentOutputConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.tracelessSegmentOutputConfigAccepted
       config
       publicInput
       proof

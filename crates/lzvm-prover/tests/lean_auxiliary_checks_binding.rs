@@ -482,6 +482,24 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean auxiliary checks should bind traceless guest trace commitment input selection to the Rust runtime guard"
     );
     assert!(
+        lean_source.contains("GuestPcTraceTracelessSegmentOutputConfig")
+            && lean_source.contains("configuredTracelessSegmentOutput")
+            && lean_source.contains("effectiveTracelessSegmentOutput")
+            && lean_source.contains("GuestPcTraceTracelessSegmentOutputDecisionMatches")
+            && lean_source.contains("tracelessSegmentOutputConfigAccepted")
+            && lean_source.contains("tracelessSegmentOutputConfigImpliesDecisionMatches")
+            && lean_source.contains("guest_pc_trace_traceless_segment_output_checked_acceptance_sound")
+            && lean_source.contains(
+                "guest_pc_trace_traceless_segment_output_checked_acceptance_verifier_core_contract"
+            )
+            && guest_backend_source.contains("fn guest_pc_trace_less_segment_output_enabled")
+            && guest_backend_source.contains("LZVM_CUDA_GUEST_PC_TRACELESS_SEGMENT_OUTPUT")
+            && guest_backend_source.contains(
+                "env_flag_enabled(\"LZVM_CUDA_GUEST_PC_TRACELESS_SEGMENT_OUTPUT\", true)"
+            ),
+        "Lean auxiliary checks should bind traceless guest trace segment output selection to the Rust runtime guard"
+    );
+    assert!(
         lean_source.contains("GpuRetainedDeviceCacheBudget")
             && lean_source.contains("sourceBytes")
             && lean_source.contains("leafDigestBytes")
