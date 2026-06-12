@@ -431,4 +431,56 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_bound_and_core_con
         proof
         accepted)
 
+theorem runtime_batch_witness_opening_rows_checked_acceptance_opening_and_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeBatchWitnessOpeningRowsCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningEvidence
+            system
+            validation.openingSegmentValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeBatchWitnessOpeningRowsBoundContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  exact
+    And.intro
+      (runtime_batch_witness_opening_rows_checked_acceptance_opening_evidence
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource
+        accepted)
+      (And.intro
+        (runtime_batch_witness_opening_rows_checked_acceptance_bound_contract
+          assumptions
+          validation
+          artifact
+          publicInput
+          proof
+          accepted)
+        (runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract
+          assumptions
+          validation
+          artifact
+          publicInput
+          proof
+          accepted))
+
 end Lzvm
