@@ -243,6 +243,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean guest PC timing summary should prove descriptor upload word counts are verifier-core-neutral"
     );
     assert!(
+        lean_source.contains("guestDeviceSourceDescriptorUploadByteCount")
+            && lean_source.contains("guestDeviceSourceDescriptorUploadRowCount")
+            && lean_source.contains("guest_pc_trace_descriptor_upload_shape_acceptance_sound")
+            && lean_source
+                .contains("guest_pc_trace_descriptor_upload_shape_acceptance_verifier_core_contract"),
+        "Lean guest PC timing summary should prove descriptor upload byte and row counts are verifier-core-neutral"
+    );
+    assert!(
         lean_source.contains("guestStageSourceRetentionRetainedByteCount")
             && lean_source.contains(
                 "guest_pc_trace_source_retention_byte_counts_acceptance_sound"
@@ -1292,6 +1300,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_report_buffer_capacity_acceptance_verifier_core_contract",
             "guest_pc_trace_descriptor_upload_word_count_acceptance_sound",
             "guest_pc_trace_descriptor_upload_word_count_acceptance_verifier_core_contract",
+            "guest_pc_trace_descriptor_upload_shape_acceptance_sound",
+            "guest_pc_trace_descriptor_upload_shape_acceptance_verifier_core_contract",
             "guest_pc_trace_source_retention_byte_counts_acceptance_sound",
             "guest_pc_trace_source_retention_byte_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_sound",
