@@ -1250,6 +1250,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_shape_counts_acceptance_sound",
             "guest_pc_trace_shape_counts_acceptance_verifier_core_contract",
+            "guest_pc_trace_memory_access_shape_acceptance_sound",
+            "guest_pc_trace_memory_access_shape_acceptance_verifier_core_contract",
             "guest_pc_trace_report_buffer_capacity_acceptance_sound",
             "guest_pc_trace_report_buffer_capacity_acceptance_verifier_core_contract",
             "guest_pc_trace_leaf_output_cache_counts_acceptance_sound",
