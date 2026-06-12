@@ -446,7 +446,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean auxiliary checks should bind guest trace segment queue capacity selection to the Rust runtime knob"
     );
     assert!(
-        lean_source.contains("defaultLargeTraceInstructionThreshold")
+        lean_source.contains("GuestPcTraceLargeGpuGateInstructionThreshold")
+            && lean_source.contains(": Nat := 1000000")
+            && lean_source.contains("defaultLargeTraceInstructionThreshold")
+            && lean_source.contains(
+                "config.defaultLargeTraceInstructionThreshold =\n    GuestPcTraceLargeGpuGateInstructionThreshold"
+            )
             && lean_source.contains("requestedInstructionLimit")
             && lean_source.contains("gpuBackendAvailable")
             && lean_source.contains("largeTraceAllowed")
@@ -458,7 +463,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract"
             )
             && prove_witness_source.contains("fn validate_large_guest_pc_gpu")
-            && prove_witness_source.contains("1_000_000")
+            && prove_witness_source.contains("instruction_limit.unwrap_or(0) >= 1_000_000")
             && prove_witness_source.contains("lzvm_prover::gpu_setup_available()"),
         "Lean auxiliary checks should bind the large guest trace GPU gate to the Rust runtime guard"
     );
@@ -532,8 +537,17 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("effectiveSparseSourceSelected")
             && lean_source.contains("defaultSparseSourceMaxPercent")
             && lean_source.contains("configuredSparseSourceMaxPercent")
-            && lean_source.contains("actualSparseSourcePercent")
+            && lean_source.contains("traceWordCount")
+            && lean_source.contains("nonzeroWordCount")
+            && lean_source.contains("maxNonzeroWordCount")
+            && lean_source.contains("GuestPcTraceSparseSourceWordLimitMatches")
+            && lean_source.contains(
+                "config.maxNonzeroWordCount =\n    config.traceWordCount * config.effectiveSparseSourceMaxPercent / 100"
+            )
             && lean_source.contains("GuestPcTraceSparseSourceDecisionMatches")
+            && lean_source.contains(
+                "config.nonzeroWordCount <=\n                  config.maxNonzeroWordCount"
+            )
             && lean_source.contains("sparseSourceConfigAccepted")
             && lean_source.contains("sparseSourceConfigImpliesDecisionMatches")
             && lean_source.contains("guest_pc_trace_sparse_source_checked_acceptance_sound")
@@ -544,6 +558,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && witness_execution_source.contains("fn sparse_trace_source_max_percent")
             && witness_execution_source.contains("LZVM_CUDA_SPARSE_TRACE_SOURCE_MAX_PERCENT")
             && witness_execution_source.contains("unwrap_or(45)")
+            && witness_execution_source
+                .contains("trace_words.len().saturating_mul(max_percent) / 100")
             && witness_execution_source.contains("nonzero_count > max_nonzero_words"),
         "Lean auxiliary checks should bind sparse CUDA source selection to the Rust runtime guard"
     );

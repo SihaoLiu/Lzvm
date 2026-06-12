@@ -522,15 +522,19 @@ structure GuestPcTraceLargeGpuGateConfig where
   largeTraceAllowed : Bool
 deriving DecidableEq, Repr
 
+def GuestPcTraceLargeGpuGateInstructionThreshold : Nat := 1000000
+
 def GuestPcTraceLargeGpuGateDecisionMatches
     (config : GuestPcTraceLargeGpuGateConfig) : Prop :=
-  match config.requestedInstructionLimit with
-  | some limit =>
-      config.largeTraceAllowed =
-        decide (limit < config.defaultLargeTraceInstructionThreshold
-          \/ config.gpuBackendAvailable)
-  | none =>
-      config.largeTraceAllowed = true
+  config.defaultLargeTraceInstructionThreshold =
+    GuestPcTraceLargeGpuGateInstructionThreshold
+    /\ match config.requestedInstructionLimit with
+      | some limit =>
+          config.largeTraceAllowed =
+            decide (limit < config.defaultLargeTraceInstructionThreshold
+              \/ config.gpuBackendAvailable)
+      | none =>
+          config.largeTraceAllowed = true
 
 structure GuestPcTraceLargeGpuGateValidation where
   largeGpuGateConfigAccepted :
@@ -616,7 +620,9 @@ structure GuestPcTraceSparseSourceConfig where
   defaultSparseSourceMaxPercent : Nat
   configuredSparseSourceMaxPercent : Option Nat
   effectiveSparseSourceMaxPercent : Nat
-  actualSparseSourcePercent : Nat
+  traceWordCount : Nat
+  nonzeroWordCount : Nat
+  maxNonzeroWordCount : Nat
 deriving DecidableEq, Repr
 
 def GuestPcTraceSparseSourceMaxPercentMatches
@@ -631,16 +637,22 @@ def GuestPcTraceSparseSourceMaxPercentMatches
           config.effectiveSparseSourceMaxPercent =
             config.defaultSparseSourceMaxPercent
 
+def GuestPcTraceSparseSourceWordLimitMatches
+    (config : GuestPcTraceSparseSourceConfig) : Prop :=
+  config.maxNonzeroWordCount =
+    config.traceWordCount * config.effectiveSparseSourceMaxPercent / 100
+
 def GuestPcTraceSparseSourceDecisionMatches
     (config : GuestPcTraceSparseSourceConfig) : Prop :=
   GuestPcTraceSparseSourceMaxPercentMatches config
+    /\ GuestPcTraceSparseSourceWordLimitMatches config
     /\ match config.configuredSparseSourceEnabled with
       | some enabled =>
           config.effectiveSparseSourceSelected =
             (enabled
               && decide
-                (config.actualSparseSourcePercent <=
-                  config.effectiveSparseSourceMaxPercent))
+                (config.nonzeroWordCount <=
+                  config.maxNonzeroWordCount))
       | none =>
           config.effectiveSparseSourceSelected = false
 

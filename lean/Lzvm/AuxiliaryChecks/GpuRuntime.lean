@@ -12,6 +12,19 @@ GPU auxiliary runtime cache and reuse contracts.
 
 namespace Lzvm
 
+private theorem checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {auxiliaryAccepted : PublicInput -> Proof -> Prop} :
+    forall publicInput proof,
+      system.accepts publicInput proof
+        /\ auxiliaryAccepted publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    sound_witness_implies_verifier_core_contract
+      (abstract_verifier_sound assumptions publicInput proof checked.left)
+
 theorem gpu_setup_checked_acceptance_projects_constants_sound
     {system : VerifierModel}
     (validation : GpuSetupCacheValidation)
@@ -780,15 +793,12 @@ theorem guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_large_gpu_gate_checked_acceptance_sound
+  exact
+    checked_acceptance_verifier_core_contract
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact sound_witness_implies_verifier_core_contract sound.right
 
 theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -849,15 +859,12 @@ theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_verifier_co
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_traceless_commitment_input_checked_acceptance_sound
+  exact
+    checked_acceptance_verifier_core_contract
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact sound_witness_implies_verifier_core_contract sound.right
 
 theorem guest_pc_trace_traceless_segment_output_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -918,15 +925,12 @@ theorem guest_pc_trace_traceless_segment_output_checked_acceptance_verifier_core
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_traceless_segment_output_checked_acceptance_sound
+  exact
+    checked_acceptance_verifier_core_contract
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact sound_witness_implies_verifier_core_contract sound.right
 
 theorem guest_pc_trace_device_trace_source_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -987,15 +991,12 @@ theorem guest_pc_trace_device_trace_source_checked_acceptance_verifier_core_cont
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_device_trace_source_checked_acceptance_sound
+  exact
+    checked_acceptance_verifier_core_contract
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact sound_witness_implies_verifier_core_contract sound.right
 
 theorem guest_pc_trace_sparse_source_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -1056,15 +1057,12 @@ theorem guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_sparse_source_checked_acceptance_sound
+  exact
+    checked_acceptance_verifier_core_contract
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact sound_witness_implies_verifier_core_contract sound.right
 
 theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -1125,15 +1123,12 @@ theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_verifier_core_c
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_terminal_sparse_source_checked_acceptance_sound
+  exact
+    checked_acceptance_verifier_core_contract
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact sound_witness_implies_verifier_core_contract sound.right
 
 theorem fri_retained_stage_source_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -1194,15 +1189,12 @@ theorem fri_retained_stage_source_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    fri_retained_stage_source_checked_acceptance_sound
+  exact
+    checked_acceptance_verifier_core_contract
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact sound_witness_implies_verifier_core_contract sound.right
 
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
