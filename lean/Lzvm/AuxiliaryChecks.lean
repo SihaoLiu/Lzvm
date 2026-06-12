@@ -582,6 +582,48 @@ structure GuestPcTraceTracelessSegmentOutputValidation where
       tracelessSegmentOutputConfigAccepted config publicInput proof ->
         GuestPcTraceTracelessSegmentOutputDecisionMatches config
 
+structure GuestPcTraceSparseSourceConfig where
+  configuredSparseSourceEnabled : Option Bool
+  effectiveSparseSourceSelected : Bool
+  defaultSparseSourceMaxPercent : Nat
+  configuredSparseSourceMaxPercent : Option Nat
+  effectiveSparseSourceMaxPercent : Nat
+  actualSparseSourcePercent : Nat
+deriving DecidableEq, Repr
+
+def GuestPcTraceSparseSourceMaxPercentMatches
+    (config : GuestPcTraceSparseSourceConfig) : Prop :=
+  config.defaultSparseSourceMaxPercent = 45
+    /\ match config.configuredSparseSourceMaxPercent with
+      | some percent =>
+          1 <= percent
+            /\ percent < 50
+            /\ config.effectiveSparseSourceMaxPercent = percent
+      | none =>
+          config.effectiveSparseSourceMaxPercent =
+            config.defaultSparseSourceMaxPercent
+
+def GuestPcTraceSparseSourceDecisionMatches
+    (config : GuestPcTraceSparseSourceConfig) : Prop :=
+  GuestPcTraceSparseSourceMaxPercentMatches config
+    /\ match config.configuredSparseSourceEnabled with
+      | some enabled =>
+          config.effectiveSparseSourceSelected =
+            (enabled
+              && decide
+                (config.actualSparseSourcePercent <=
+                  config.effectiveSparseSourceMaxPercent))
+      | none =>
+          config.effectiveSparseSourceSelected = false
+
+structure GuestPcTraceSparseSourceValidation where
+  sparseSourceConfigAccepted :
+    GuestPcTraceSparseSourceConfig -> PublicInput -> Proof -> Prop
+  sparseSourceConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      sparseSourceConfigAccepted config publicInput proof ->
+        GuestPcTraceSparseSourceDecisionMatches config
+
 structure GpuRetainedLeafDigestLimitConfig where
   defaultLeafDigestLimitBytes : Nat
   configuredLeafDigestLimitBytes : Option Nat
@@ -731,6 +773,15 @@ def GuestPcTraceTracelessSegmentOutputCheckedAcceptance
       config
       publicInput
       proof
+
+def GuestPcTraceSparseSourceCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GuestPcTraceSparseSourceValidation)
+    (config : GuestPcTraceSparseSourceConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.sparseSourceConfigAccepted config publicInput proof
 
 def GpuRetainedLeafDigestLimitCheckedAcceptance
     (system : VerifierModel)

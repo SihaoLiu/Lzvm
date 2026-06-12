@@ -496,8 +496,29 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && guest_backend_source.contains("LZVM_CUDA_GUEST_PC_TRACELESS_SEGMENT_OUTPUT")
             && guest_backend_source.contains(
                 "env_flag_enabled(\"LZVM_CUDA_GUEST_PC_TRACELESS_SEGMENT_OUTPUT\", true)"
-            ),
+        ),
         "Lean auxiliary checks should bind traceless guest trace segment output selection to the Rust runtime guard"
+    );
+    assert!(
+        lean_source.contains("GuestPcTraceSparseSourceConfig")
+            && lean_source.contains("configuredSparseSourceEnabled")
+            && lean_source.contains("effectiveSparseSourceSelected")
+            && lean_source.contains("defaultSparseSourceMaxPercent")
+            && lean_source.contains("configuredSparseSourceMaxPercent")
+            && lean_source.contains("actualSparseSourcePercent")
+            && lean_source.contains("GuestPcTraceSparseSourceDecisionMatches")
+            && lean_source.contains("sparseSourceConfigAccepted")
+            && lean_source.contains("sparseSourceConfigImpliesDecisionMatches")
+            && lean_source.contains("guest_pc_trace_sparse_source_checked_acceptance_sound")
+            && lean_source
+                .contains("guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract")
+            && witness_execution_source.contains("fn sparse_trace_source_enabled")
+            && witness_execution_source.contains("LZVM_CUDA_SPARSE_TRACE_SOURCE")
+            && witness_execution_source.contains("fn sparse_trace_source_max_percent")
+            && witness_execution_source.contains("LZVM_CUDA_SPARSE_TRACE_SOURCE_MAX_PERCENT")
+            && witness_execution_source.contains("unwrap_or(45)")
+            && witness_execution_source.contains("nonzero_count > max_nonzero_words"),
+        "Lean auxiliary checks should bind sparse CUDA source selection to the Rust runtime guard"
     );
     assert!(
         lean_source.contains("GpuRetainedDeviceCacheBudget")
