@@ -790,6 +790,75 @@ theorem guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract
       checked
   exact sound_witness_implies_verifier_core_contract sound.right
 
+theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_decision
+    {system : VerifierModel}
+    (validation : GuestPcTraceTracelessCommitmentInputValidation)
+    (config : GuestPcTraceTracelessCommitmentInputConfig) :
+    forall publicInput proof,
+      GuestPcTraceTracelessCommitmentInputCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceTracelessCommitmentInputDecisionMatches config := by
+  intro publicInput proof checked
+  exact
+    validation.tracelessCommitmentInputConfigImpliesDecisionMatches
+      config
+      publicInput
+      proof
+      checked.right
+
+theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceTracelessCommitmentInputValidation)
+    (config : GuestPcTraceTracelessCommitmentInputConfig) :
+    forall publicInput proof,
+      GuestPcTraceTracelessCommitmentInputCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceTracelessCommitmentInputDecisionMatches config
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      (abstract_verifier_sound assumptions publicInput proof checked.left)
+
+theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceTracelessCommitmentInputValidation)
+    (config : GuestPcTraceTracelessCommitmentInputConfig) :
+    forall publicInput proof,
+      GuestPcTraceTracelessCommitmentInputCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    guest_pc_trace_traceless_commitment_input_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
+
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GpuRetainedLeafDigestLimitValidation)

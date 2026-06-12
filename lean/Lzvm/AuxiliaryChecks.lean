@@ -540,6 +540,27 @@ structure GuestPcTraceLargeGpuGateValidation where
       largeGpuGateConfigAccepted config publicInput proof ->
         GuestPcTraceLargeGpuGateDecisionMatches config
 
+structure GuestPcTraceTracelessCommitmentInputConfig where
+  configuredTracelessCommitmentInput : Option Bool
+  effectiveTracelessCommitmentInput : Bool
+deriving DecidableEq, Repr
+
+def GuestPcTraceTracelessCommitmentInputDecisionMatches
+    (config : GuestPcTraceTracelessCommitmentInputConfig) : Prop :=
+  match config.configuredTracelessCommitmentInput with
+  | some configured =>
+      config.effectiveTracelessCommitmentInput = configured
+  | none =>
+      config.effectiveTracelessCommitmentInput = true
+
+structure GuestPcTraceTracelessCommitmentInputValidation where
+  tracelessCommitmentInputConfigAccepted :
+    GuestPcTraceTracelessCommitmentInputConfig -> PublicInput -> Proof -> Prop
+  tracelessCommitmentInputConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      tracelessCommitmentInputConfigAccepted config publicInput proof ->
+        GuestPcTraceTracelessCommitmentInputDecisionMatches config
+
 structure GpuRetainedLeafDigestLimitConfig where
   defaultLeafDigestLimitBytes : Nat
   configuredLeafDigestLimitBytes : Option Nat
@@ -665,6 +686,18 @@ def GuestPcTraceLargeGpuGateCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.largeGpuGateConfigAccepted config publicInput proof
+
+def GuestPcTraceTracelessCommitmentInputCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GuestPcTraceTracelessCommitmentInputValidation)
+    (config : GuestPcTraceTracelessCommitmentInputConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.tracelessCommitmentInputConfigAccepted
+      config
+      publicInput
+      proof
 
 def GpuRetainedLeafDigestLimitCheckedAcceptance
     (system : VerifierModel)

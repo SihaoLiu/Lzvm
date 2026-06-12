@@ -64,6 +64,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let witness_values_path = crate_root.join("src/witness_commitment/values.rs");
     let witness_values_source =
         std::fs::read_to_string(&witness_values_path).expect("witness values source should read");
+    let witness_execution_path = crate_root.join("src/witness_execution.rs");
+    let witness_execution_source = std::fs::read_to_string(&witness_execution_path)
+        .expect("witness execution source should read");
     let guest_backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
     let guest_backend_source =
         std::fs::read_to_string(&guest_backend_path).expect("guest backend source should read");
@@ -458,6 +461,25 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && prove_witness_source.contains("1_000_000")
             && prove_witness_source.contains("lzvm_prover::gpu_setup_available()"),
         "Lean auxiliary checks should bind the large guest trace GPU gate to the Rust runtime guard"
+    );
+    assert!(
+        lean_source.contains("GuestPcTraceTracelessCommitmentInputConfig")
+            && lean_source.contains("configuredTracelessCommitmentInput")
+            && lean_source.contains("effectiveTracelessCommitmentInput")
+            && lean_source.contains("GuestPcTraceTracelessCommitmentInputDecisionMatches")
+            && lean_source.contains("tracelessCommitmentInputConfigAccepted")
+            && lean_source.contains("tracelessCommitmentInputConfigImpliesDecisionMatches")
+            && lean_source
+                .contains("guest_pc_trace_traceless_commitment_input_checked_acceptance_sound")
+            && lean_source.contains(
+                "guest_pc_trace_traceless_commitment_input_checked_acceptance_verifier_core_contract"
+            )
+            && witness_execution_source
+                .contains("fn guest_pc_trace_less_commitment_input_enabled")
+            && witness_execution_source.contains("LZVM_CUDA_GUEST_PC_TRACELESS_COMMITMENT_INPUT")
+            && witness_execution_source.contains("unwrap_or(true)")
+            && witness_execution_source.contains("Ok((None, device_segment_material))"),
+        "Lean auxiliary checks should bind traceless guest trace commitment input selection to the Rust runtime guard"
     );
     assert!(
         lean_source.contains("GpuRetainedDeviceCacheBudget")
