@@ -652,6 +652,35 @@ structure GuestPcTraceSparseSourceValidation where
       sparseSourceConfigAccepted config publicInput proof ->
         GuestPcTraceSparseSourceDecisionMatches config
 
+structure GuestPcTraceTerminalSparseSourceConfig where
+  configuredTerminalSparseSourceEnabled : Option Bool
+  effectiveTerminalSparseSourceSelected : Bool
+  terminalTraceSourcePrefixRows : Option Nat
+  terminalTraceLayoutRows : Nat
+deriving DecidableEq, Repr
+
+def GuestPcTraceTerminalSparseSourceDecisionMatches
+    (config : GuestPcTraceTerminalSparseSourceConfig) : Prop :=
+  match config.configuredTerminalSparseSourceEnabled with
+  | some enabled =>
+      config.effectiveTerminalSparseSourceSelected =
+        (enabled
+          && match config.terminalTraceSourcePrefixRows with
+            | some prefixRows =>
+                decide (prefixRows < config.terminalTraceLayoutRows)
+            | none =>
+                false)
+  | none =>
+      config.effectiveTerminalSparseSourceSelected = false
+
+structure GuestPcTraceTerminalSparseSourceValidation where
+  terminalSparseSourceConfigAccepted :
+    GuestPcTraceTerminalSparseSourceConfig -> PublicInput -> Proof -> Prop
+  terminalSparseSourceConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      terminalSparseSourceConfigAccepted config publicInput proof ->
+        GuestPcTraceTerminalSparseSourceDecisionMatches config
+
 structure FriRetainedStageSourceConfig where
   configuredRetainedStageSourceEnabled : Option Bool
   effectiveRetainedStageSourceEnabled : Bool
@@ -840,6 +869,15 @@ def GuestPcTraceSparseSourceCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.sparseSourceConfigAccepted config publicInput proof
+
+def GuestPcTraceTerminalSparseSourceCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GuestPcTraceTerminalSparseSourceValidation)
+    (config : GuestPcTraceTerminalSparseSourceConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.terminalSparseSourceConfigAccepted config publicInput proof
 
 def FriRetainedStageSourceCheckedAcceptance
     (system : VerifierModel)

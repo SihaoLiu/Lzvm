@@ -548,6 +548,29 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean auxiliary checks should bind sparse CUDA source selection to the Rust runtime guard"
     );
     assert!(
+        lean_source.contains("GuestPcTraceTerminalSparseSourceConfig")
+            && lean_source.contains("configuredTerminalSparseSourceEnabled")
+            && lean_source.contains("effectiveTerminalSparseSourceSelected")
+            && lean_source.contains("terminalTraceSourcePrefixRows")
+            && lean_source.contains("terminalTraceLayoutRows")
+            && lean_source.contains("GuestPcTraceTerminalSparseSourceDecisionMatches")
+            && lean_source.contains("terminalSparseSourceConfigAccepted")
+            && lean_source.contains("terminalSparseSourceConfigImpliesDecisionMatches")
+            && lean_source
+                .contains("guest_pc_trace_terminal_sparse_source_checked_acceptance_sound")
+            && lean_source.contains(
+                "guest_pc_trace_terminal_sparse_source_checked_acceptance_verifier_core_contract"
+            )
+            && witness_execution_source.contains("fn terminal_sparse_trace_source_enabled")
+            && witness_execution_source.contains("LZVM_CUDA_TERMINAL_SPARSE_TRACE_SOURCE")
+            && witness_execution_source.contains("unwrap_or(false)")
+            && witness_execution_source.contains("terminal_sparse_trace_source_enabled()")
+            && witness_execution_source.contains("if prefix_rows < layout.row_count()")
+            && witness_execution_source
+                .contains("upload_from_trace_prefix_and_terminal_fill_if_empty"),
+        "Lean auxiliary checks should bind terminal sparse CUDA source selection to the Rust runtime guard"
+    );
+    assert!(
         lean_source.contains("FriRetainedStageSourceConfig")
             && lean_source.contains("configuredRetainedStageSourceEnabled")
             && lean_source.contains("effectiveRetainedStageSourceEnabled")

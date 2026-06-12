@@ -1066,6 +1066,75 @@ theorem guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract
       checked
   exact sound_witness_implies_verifier_core_contract sound.right
 
+theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_projects_decision
+    {system : VerifierModel}
+    (validation : GuestPcTraceTerminalSparseSourceValidation)
+    (config : GuestPcTraceTerminalSparseSourceConfig) :
+    forall publicInput proof,
+      GuestPcTraceTerminalSparseSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceTerminalSparseSourceDecisionMatches config := by
+  intro publicInput proof checked
+  exact
+    validation.terminalSparseSourceConfigImpliesDecisionMatches
+      config
+      publicInput
+      proof
+      checked.right
+
+theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceTerminalSparseSourceValidation)
+    (config : GuestPcTraceTerminalSparseSourceConfig) :
+    forall publicInput proof,
+      GuestPcTraceTerminalSparseSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceTerminalSparseSourceDecisionMatches config
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (guest_pc_trace_terminal_sparse_source_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      (abstract_verifier_sound assumptions publicInput proof checked.left)
+
+theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceTerminalSparseSourceValidation)
+    (config : GuestPcTraceTerminalSparseSourceConfig) :
+    forall publicInput proof,
+      GuestPcTraceTerminalSparseSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    guest_pc_trace_terminal_sparse_source_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
+
 theorem fri_retained_stage_source_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : FriRetainedStageSourceValidation)
