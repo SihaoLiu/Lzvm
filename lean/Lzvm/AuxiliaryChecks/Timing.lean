@@ -460,6 +460,56 @@ theorem guest_pc_trace_report_buffer_capacity_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem guest_pc_trace_descriptor_upload_word_count_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (wordCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDeviceSourceDescriptorUploadWordCount := wordCount })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          guestDeviceSourceDescriptorUploadWordCount := wordCount })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_descriptor_upload_word_count_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (wordCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDeviceSourceDescriptorUploadWordCount := wordCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (guest_pc_trace_descriptor_upload_word_count_acceptance_sound
+        assumptions
+        summary
+        wordCount
+        publicInput
+        proof
+        observed)
+
 theorem guest_pc_trace_leaf_output_cache_counts_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

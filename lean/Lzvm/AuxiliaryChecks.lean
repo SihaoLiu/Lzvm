@@ -166,6 +166,7 @@ structure GuestPcTraceTimingSummary where
   guestDeviceSourceBuildMilliseconds : Nat
   guestDeviceSourceDescriptorUploadMilliseconds : Nat
   guestDeviceSourceDescriptorUploadByteCount : Nat
+  guestDeviceSourceDescriptorUploadWordCount : Nat
   guestDeviceSourceDescriptorUploadRowCount : Nat
   guestDeviceSourceTraceExpandMilliseconds : Nat
   guestStageSourceRetentionAttemptCount : Nat
