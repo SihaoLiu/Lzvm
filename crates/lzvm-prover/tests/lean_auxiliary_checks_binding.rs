@@ -767,6 +767,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_stage_source_retention_rejected_count()",
         ),
         (
+            "\"guest_stage_source_retention_retained_bytes\"",
+            "guest_stage_source_retention_retained_byte_count()",
+        ),
+        (
             "\"guest_stage_source_retention_rejected_bytes\"",
             "guest_stage_source_retention_rejected_byte_count()",
         ),

@@ -272,6 +272,10 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_stage_source_retention_rejected_count(),
     );
     timings.record_count(
+        "guest_stage_source_retention_retained_bytes",
+        timing.guest_stage_source_retention_retained_byte_count(),
+    );
+    timings.record_count(
         "guest_stage_source_retention_rejected_bytes",
         timing.guest_stage_source_retention_rejected_byte_count(),
     );

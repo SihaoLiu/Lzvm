@@ -3375,6 +3375,7 @@ fn guest_pc_trace_timing_reports_stage_source_retention_budget() {
         "stage_source_retention_attempt_count",
         "stage_source_retention_retained_count",
         "stage_source_retention_rejected_count",
+        "stage_source_retention_retained_byte_count",
         "stage_source_retention_rejected_byte_count",
         "stage_source_retention_limit_byte_count",
     ] {
@@ -3395,6 +3396,10 @@ fn guest_pc_trace_timing_reports_stage_source_retention_budget() {
             && cache_body.contains("retained_byte_len()"),
         "retained descriptor collection should record attempts, rejections, rejected bytes, and limit"
     );
+    assert!(
+        cache_body.contains("retained_buffer_keys") && cache_body.contains("retained_buffer_key()"),
+        "retained source bytes should count each retained device buffer once"
+    );
 
     for (line_name, accessor) in [
         (
@@ -3408,6 +3413,10 @@ fn guest_pc_trace_timing_reports_stage_source_retention_budget() {
         (
             "\"guest_stage_source_retention_rejected\"",
             "guest_stage_source_retention_rejected_count()",
+        ),
+        (
+            "\"guest_stage_source_retention_retained_bytes\"",
+            "guest_stage_source_retention_retained_byte_count()",
         ),
         (
             "\"guest_stage_source_retention_rejected_bytes\"",

@@ -1,3 +1,5 @@
+#[cfg(feature = "cuda")]
+use std::collections::HashSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -395,6 +397,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_stage_source_retention_attempt_count: usize,
     guest_stage_source_retention_retained_count: usize,
     guest_stage_source_retention_rejected_count: usize,
+    guest_stage_source_retention_retained_byte_count: usize,
     guest_stage_source_retention_rejected_byte_count: usize,
     guest_stage_source_retention_limit_byte_count: usize,
     guest_descriptor_buffer_retention_attempt_count: usize,
@@ -542,6 +545,8 @@ impl ProveWitnessGuestPcTraceTiming {
                 .stage_source_retention_retained_count,
             guest_stage_source_retention_rejected_count: trace_timing
                 .stage_source_retention_rejected_count,
+            guest_stage_source_retention_retained_byte_count: trace_timing
+                .stage_source_retention_retained_byte_count,
             guest_stage_source_retention_rejected_byte_count: trace_timing
                 .stage_source_retention_rejected_byte_count,
             guest_stage_source_retention_limit_byte_count: trace_timing
@@ -868,6 +873,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_stage_source_retention_rejected_count(&self) -> usize {
         self.guest_stage_source_retention_rejected_count
+    }
+
+    pub fn guest_stage_source_retention_retained_byte_count(&self) -> usize {
+        self.guest_stage_source_retention_retained_byte_count
     }
 
     pub fn guest_stage_source_retention_rejected_byte_count(&self) -> usize {
@@ -1392,6 +1401,7 @@ struct ProveWitnessTraceTimingAccumulator {
     stage_source_retention_attempt_count: usize,
     stage_source_retention_retained_count: usize,
     stage_source_retention_rejected_count: usize,
+    stage_source_retention_retained_byte_count: usize,
     stage_source_retention_rejected_byte_count: usize,
     stage_source_retention_limit_byte_count: usize,
     descriptor_buffer_retention_attempt_count: usize,
@@ -1460,6 +1470,8 @@ impl ProveWitnessTraceTimingAccumulator {
         self.stage_source_retention_attempt_count += other.stage_source_retention_attempt_count;
         self.stage_source_retention_retained_count += other.stage_source_retention_retained_count;
         self.stage_source_retention_rejected_count += other.stage_source_retention_rejected_count;
+        self.stage_source_retention_retained_byte_count +=
+            other.stage_source_retention_retained_byte_count;
         self.stage_source_retention_rejected_byte_count +=
             other.stage_source_retention_rejected_byte_count;
         self.stage_source_retention_limit_byte_count = self
@@ -1563,12 +1575,16 @@ impl ProveWitnessTraceTimingAccumulator {
         attempt_count: usize,
         retained_count: usize,
         rejected_count: usize,
+        retained_byte_count: usize,
         rejected_byte_count: usize,
         limit_byte_count: usize,
     ) {
         self.stage_source_retention_attempt_count += attempt_count;
         self.stage_source_retention_retained_count += retained_count;
         self.stage_source_retention_rejected_count += rejected_count;
+        self.stage_source_retention_retained_byte_count = self
+            .stage_source_retention_retained_byte_count
+            .saturating_add(retained_byte_count);
         self.stage_source_retention_rejected_byte_count += rejected_byte_count;
         self.stage_source_retention_limit_byte_count = self
             .stage_source_retention_limit_byte_count
@@ -2031,12 +2047,18 @@ impl WitnessStageSourceDeviceCache {
         let retention_limit = retained_source_device_limit();
         let mut attempt_count = 0usize;
         let mut rejected_count = 0usize;
+        let mut retained_byte_count = 0usize;
         let mut rejected_byte_count = 0usize;
+        let mut retained_buffer_keys = HashSet::new();
         let mut retained = Vec::new();
         for source_device in self.descriptors() {
             attempt_count += 1;
             let retained_byte_len = source_device.retained_byte_len();
+            let retained_buffer_key = source_device.retained_buffer_key();
             if let Some(source_device) = source_device.retain() {
+                if retained_buffer_keys.insert(retained_buffer_key) {
+                    retained_byte_count = retained_byte_count.saturating_add(retained_byte_len);
+                }
                 retained.push(source_device);
             } else {
                 rejected_count += 1;
@@ -2048,13 +2070,14 @@ impl WitnessStageSourceDeviceCache {
                 attempt_count,
                 retained.len(),
                 rejected_count,
+                retained_byte_count,
                 rejected_byte_count,
                 retention_limit,
             );
         }
         if debug_fri_stage_source_devices() {
             eprintln!(
-                "lzvm_cuda_fri_stage_source_retained={} attempts={attempt_count} rejected={rejected_count} rejected_bytes={rejected_byte_count} limit_bytes={retention_limit}",
+                "lzvm_cuda_fri_stage_source_retained={} attempts={attempt_count} retained_bytes={retained_byte_count} rejected={rejected_count} rejected_bytes={rejected_byte_count} limit_bytes={retention_limit}",
                 retained.len(),
             );
         }

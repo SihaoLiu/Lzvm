@@ -228,6 +228,10 @@ impl WitnessStageSourceDevice {
         self.source_view().retained_byte_len()
     }
 
+    pub(crate) fn retained_buffer_key(&self) -> usize {
+        Arc::as_ptr(&self.values) as usize
+    }
+
     pub(crate) fn retain(&self) -> Option<WitnessStageRetainedSourceDevice> {
         retain_source_device_view(self.source_view()).map(|source_device| {
             WitnessStageRetainedSourceDevice {
