@@ -107,6 +107,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuAllocatorNoWaitLimitConfig")
             && lean_source.contains("GpuAllocatorNoWaitLimitValidation")
             && lean_source.contains("GpuAllocatorNoWaitLimitCheckedAcceptance")
+            && lean_source.contains("GpuRetainedLeafDigestLimitConfig")
+            && lean_source.contains("GpuRetainedLeafDigestLimitValidation")
+            && lean_source.contains("GpuRetainedLeafDigestLimitCheckedAcceptance")
             && lean_source.contains("GpuRetainedDeviceCacheBudgetValidation")
             && lean_source.contains("GpuRetainedDeviceCacheBudgetCheckedAcceptance")
             && lean_source.contains("FriFixedColumnCacheValidation")
@@ -432,6 +435,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && witness_values_source.contains("reserve_retained_device_bytes")
             && witness_values_source.contains("reserve_retained_leaf_digest_bytes"),
         "Lean auxiliary checks should bind retained source and leaf digest cache retention to runtime budget limits"
+    );
+    assert!(
+        lean_source.contains("defaultLeafDigestLimitBytes")
+            && lean_source.contains("configuredLeafDigestLimitBytes")
+            && lean_source.contains("effectiveLeafDigestLimitBytes")
+            && lean_source.contains("GpuRetainedLeafDigestLimitDecisionMatches")
+            && lean_source.contains("retainedLeafDigestLimitConfigAccepted")
+            && lean_source.contains("retainedLeafDigestLimitConfigImpliesDecisionMatches")
+            && witness_values_source.contains("DEFAULT_RETAINED_LEAF_DIGEST_BYTES")
+            && witness_values_source.contains("LZVM_CUDA_RETAINED_LEAF_DIGEST_BYTES")
+            && witness_values_source.contains("retained_combined_device_cache_allows"),
+        "Lean auxiliary checks should bind retained leaf digest runtime limit selection to the Rust cache cap"
     );
     assert!(
         lean_source.contains("cosetExtensionMatchesHost")
@@ -1903,6 +1918,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_allocator_no_wait_limit_checked_acceptance_projects_decision",
             "gpu_allocator_no_wait_limit_checked_acceptance_sound",
             "gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract",
+            "gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision",
+            "gpu_retained_leaf_digest_limit_checked_acceptance_sound",
+            "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
             "gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits",
             "gpu_retained_device_cache_budget_checked_acceptance_sound",
             "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",

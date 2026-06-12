@@ -652,6 +652,75 @@ theorem gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract
       checked
   exact sound_witness_implies_verifier_core_contract sound.right
 
+theorem gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
+    {system : VerifierModel}
+    (validation : GpuRetainedLeafDigestLimitValidation)
+    (config : GpuRetainedLeafDigestLimitConfig) :
+    forall publicInput proof,
+      GpuRetainedLeafDigestLimitCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GpuRetainedLeafDigestLimitDecisionMatches config := by
+  intro publicInput proof checked
+  exact
+    validation.retainedLeafDigestLimitConfigImpliesDecisionMatches
+      config
+      publicInput
+      proof
+      checked.right
+
+theorem gpu_retained_leaf_digest_limit_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedLeafDigestLimitValidation)
+    (config : GpuRetainedLeafDigestLimitConfig) :
+    forall publicInput proof,
+      GpuRetainedLeafDigestLimitCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GpuRetainedLeafDigestLimitDecisionMatches config
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      (abstract_verifier_sound assumptions publicInput proof checked.left)
+
+theorem gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedLeafDigestLimitValidation)
+    (config : GpuRetainedLeafDigestLimitConfig) :
+    forall publicInput proof,
+      GpuRetainedLeafDigestLimitCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_retained_leaf_digest_limit_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact sound_witness_implies_verifier_core_contract sound.right
+
 theorem gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
     {system : VerifierModel}
     (validation : GpuRetainedDeviceCacheBudgetValidation)

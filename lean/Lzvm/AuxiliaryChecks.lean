@@ -492,6 +492,29 @@ structure GpuAllocatorNoWaitLimitValidation where
       noWaitLimitConfigAccepted config publicInput proof ->
         GpuAllocatorNoWaitLimitDecisionMatches config
 
+structure GpuRetainedLeafDigestLimitConfig where
+  defaultLeafDigestLimitBytes : Nat
+  configuredLeafDigestLimitBytes : Option Nat
+  effectiveLeafDigestLimitBytes : Nat
+deriving DecidableEq, Repr
+
+def GpuRetainedLeafDigestLimitDecisionMatches
+    (config : GpuRetainedLeafDigestLimitConfig) : Prop :=
+  match config.configuredLeafDigestLimitBytes with
+  | some configured =>
+      config.effectiveLeafDigestLimitBytes = configured
+  | none =>
+      config.effectiveLeafDigestLimitBytes =
+        config.defaultLeafDigestLimitBytes
+
+structure GpuRetainedLeafDigestLimitValidation where
+  retainedLeafDigestLimitConfigAccepted :
+    GpuRetainedLeafDigestLimitConfig -> PublicInput -> Proof -> Prop
+  retainedLeafDigestLimitConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      retainedLeafDigestLimitConfigAccepted config publicInput proof ->
+        GpuRetainedLeafDigestLimitDecisionMatches config
+
 structure GpuRetainedDeviceCacheBudget where
   sourceBytes : Nat
   leafDigestBytes : Nat
@@ -576,6 +599,18 @@ def GpuAllocatorNoWaitLimitCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.noWaitLimitConfigAccepted config publicInput proof
+
+def GpuRetainedLeafDigestLimitCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GpuRetainedLeafDigestLimitValidation)
+    (config : GpuRetainedLeafDigestLimitConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.retainedLeafDigestLimitConfigAccepted
+      config
+      publicInput
+      proof
 
 def GpuRetainedDeviceCacheBudgetCheckedAcceptance
     (system : VerifierModel)
