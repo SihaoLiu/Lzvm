@@ -330,6 +330,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean guest PC timing summary should prove report-lower subtiming metadata is verifier-core-neutral"
     );
     assert!(
+        lean_source.contains("guestTraceEmitMilliseconds")
+            && lean_source.contains("guestTraceDescriptorMilliseconds")
+            && lean_source.contains("guestTraceDescriptorRowCount")
+            && lean_source.contains("guestTracePendingSendWaitMilliseconds")
+            && lean_source.contains("guestTracePendingReceiveWaitMilliseconds")
+            && lean_source.contains("guestTraceSegmentSendWaitMilliseconds")
+            && lean_source.contains("guestTraceSegmentReceiveWaitMilliseconds")
+            && lean_source.contains("guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound")
+            && lean_source.contains(
+                "guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_contract"
+            ),
+        "Lean guest PC timing summary should prove emit, descriptor, and channel-wait timing metadata is verifier-core-neutral"
+    );
+    assert!(
         lean_source.contains("guest_pc_trace_stage_timing_acceptance_sound")
             && lean_source
                 .contains("guest_pc_trace_stage_timing_acceptance_verifier_core_contract"),
