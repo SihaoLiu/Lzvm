@@ -1149,6 +1149,62 @@ theorem guest_pc_trace_leaf_output_cache_counts_acceptance_verifier_core_contrac
         proof
         observed)
 
+theorem guest_pc_trace_leaf_extend_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (extendMilliseconds : Nat)
+    (stageTimings : List GuestPcTraceStageTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageLeafExtendWorkMilliseconds := extendMilliseconds
+            stageTimings := stageTimings })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          guestStageLeafExtendWorkMilliseconds := extendMilliseconds
+          stageTimings := stageTimings })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_leaf_extend_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (extendMilliseconds : Nat)
+    (stageTimings : List GuestPcTraceStageTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageLeafExtendWorkMilliseconds := extendMilliseconds
+            stageTimings := stageTimings })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (guest_pc_trace_leaf_extend_timing_acceptance_sound
+        assumptions
+        summary
+        extendMilliseconds
+        stageTimings
+        publicInput
+        proof
+        observed)
+
 theorem guest_pc_trace_leaf_setup_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
