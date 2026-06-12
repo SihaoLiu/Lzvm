@@ -34,4 +34,14 @@ fn lean_transcript_binding_exports_core_contract_projection() {
             "runtime_transcript_binding_checked_acceptance_transcript_and_core_contract",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_transcript_and_core_contract",
+        &[
+            "RuntimeTranscriptBindingEvidence",
+            "RuntimeArtifactEvidence",
+            "system.transcriptBound publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
 }

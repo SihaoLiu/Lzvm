@@ -34,4 +34,14 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
             "runtime_challenge_segment_binding_checked_acceptance_challenge_and_core_contract",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_challenge_and_core_contract",
+        &[
+            "RuntimeChallengeSegmentBindingEvidence",
+            "RuntimeTranscriptBindingEvidence",
+            "system.transcriptBound publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
 }

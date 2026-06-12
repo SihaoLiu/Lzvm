@@ -23,6 +23,29 @@ pub fn assert_theorem_declarations(source: &str, names: &[&str]) {
     }
 }
 
+#[allow(dead_code)]
+pub fn theorem_prefix(source: &str, name: &str) -> String {
+    let visible_source = uncommented_lines(source).collect::<Vec<_>>().join("\n");
+    let theorem_start = visible_source
+        .find(&format!("theorem {name}"))
+        .unwrap_or_else(|| panic!("Lean source should contain theorem {name}"));
+    let proof_start = visible_source[theorem_start..]
+        .find(" := by")
+        .unwrap_or_else(|| panic!("Lean theorem {name} should have a proof body"));
+    visible_source[theorem_start..theorem_start + proof_start].to_owned()
+}
+
+#[allow(dead_code)]
+pub fn assert_theorem_prefix_contains(source: &str, name: &str, snippets: &[&str]) {
+    let prefix = theorem_prefix(source, name);
+    for snippet in snippets {
+        assert!(
+            prefix.contains(snippet),
+            "Lean theorem {name} prefix should contain {snippet}"
+        );
+    }
+}
+
 fn uncommented_lines(source: &str) -> impl Iterator<Item = String> + '_ {
     let mut block_depth = 0usize;
     source.lines().map(move |line| {

@@ -35,4 +35,13 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract",
+        &[
+            "RuntimeOpeningSegmentBindingBoundContract",
+            "RuntimeOpeningEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
 }

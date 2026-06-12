@@ -37,4 +37,17 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
+        &[
+            "RuntimeQueryPlanBindingBoundContract",
+            "RuntimeOpeningSegmentBindingBoundContract",
+            "RuntimeOpeningEvidence",
+            "system.transcriptBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
 }
