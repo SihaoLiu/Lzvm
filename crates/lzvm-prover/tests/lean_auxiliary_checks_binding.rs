@@ -253,6 +253,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean guest PC timing summary should prove source retention byte counts are verifier-core-neutral"
     );
     assert!(
+        lean_source.contains("guestDescriptorBufferRetentionRetainedByteCount")
+            && lean_source.contains(
+                "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_sound"
+            )
+            && lean_source.contains(
+                "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_verifier_core_contract"
+            ),
+        "Lean guest PC timing summary should prove descriptor buffer retention byte counts are verifier-core-neutral"
+    );
+    assert!(
         lean_source.contains("guest_pc_trace_report_timing_acceptance_sound")
             && lean_source
                 .contains("guest_pc_trace_report_timing_acceptance_verifier_core_contract"),
@@ -1284,6 +1294,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_descriptor_upload_word_count_acceptance_verifier_core_contract",
             "guest_pc_trace_source_retention_byte_counts_acceptance_sound",
             "guest_pc_trace_source_retention_byte_counts_acceptance_verifier_core_contract",
+            "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_sound",
+            "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_leaf_output_cache_counts_acceptance_sound",
             "guest_pc_trace_leaf_output_cache_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_leaf_setup_timing_acceptance_sound",
