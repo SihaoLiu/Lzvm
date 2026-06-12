@@ -500,6 +500,33 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean auxiliary checks should bind traceless guest trace segment output selection to the Rust runtime guard"
     );
     assert!(
+        lean_source.contains("GuestPcTraceDeviceTraceSourceConfig")
+            && lean_source.contains("configuredDeviceTraceSourceEnabled")
+            && lean_source.contains("effectiveDeviceTraceSourceEnabled")
+            && lean_source.contains("configuredDeviceTraceSourceDeepValidation")
+            && lean_source.contains("effectiveDeviceTraceSourceDeepValidation")
+            && lean_source.contains("GuestPcTraceDeviceTraceSourceDecisionMatches")
+            && lean_source.contains("deviceTraceSourceConfigAccepted")
+            && lean_source.contains("deviceTraceSourceConfigImpliesDecisionMatches")
+            && lean_source.contains("guest_pc_trace_device_trace_source_checked_acceptance_sound")
+            && lean_source.contains(
+                "guest_pc_trace_device_trace_source_checked_acceptance_verifier_core_contract"
+            )
+            && guest_backend_source.contains("fn guest_pc_device_trace_source_enabled")
+            && guest_backend_source.contains(
+                "env_flag_enabled(\"LZVM_CUDA_GUEST_PC_DEVICE_TRACE_SOURCE\", true)"
+            )
+            && guest_backend_source
+                .contains("fn guest_pc_device_trace_source_deep_validation_enabled")
+            && guest_backend_source.contains(
+                "env_flag_enabled(\"LZVM_CUDA_VALIDATE_GUEST_PC_DEVICE_TRACE_SOURCE\", false)"
+            )
+            && guest_backend_source.contains("if !guest_pc_device_trace_source_enabled()")
+            && guest_backend_source
+                .contains("if guest_pc_device_trace_source_deep_validation_enabled()"),
+        "Lean auxiliary checks should bind guest PC device trace source selection to the Rust runtime guard"
+    );
+    assert!(
         lean_source.contains("GuestPcTraceSparseSourceConfig")
             && lean_source.contains("configuredSparseSourceEnabled")
             && lean_source.contains("effectiveSparseSourceSelected")

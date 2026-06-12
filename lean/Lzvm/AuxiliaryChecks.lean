@@ -582,6 +582,34 @@ structure GuestPcTraceTracelessSegmentOutputValidation where
       tracelessSegmentOutputConfigAccepted config publicInput proof ->
         GuestPcTraceTracelessSegmentOutputDecisionMatches config
 
+structure GuestPcTraceDeviceTraceSourceConfig where
+  configuredDeviceTraceSourceEnabled : Option Bool
+  effectiveDeviceTraceSourceEnabled : Bool
+  configuredDeviceTraceSourceDeepValidation : Option Bool
+  effectiveDeviceTraceSourceDeepValidation : Bool
+deriving DecidableEq, Repr
+
+def GuestPcTraceDeviceTraceSourceDecisionMatches
+    (config : GuestPcTraceDeviceTraceSourceConfig) : Prop :=
+  (match config.configuredDeviceTraceSourceEnabled with
+    | some configured =>
+        config.effectiveDeviceTraceSourceEnabled = configured
+    | none =>
+        config.effectiveDeviceTraceSourceEnabled = true)
+    /\ match config.configuredDeviceTraceSourceDeepValidation with
+      | some configured =>
+          config.effectiveDeviceTraceSourceDeepValidation = configured
+      | none =>
+          config.effectiveDeviceTraceSourceDeepValidation = false
+
+structure GuestPcTraceDeviceTraceSourceValidation where
+  deviceTraceSourceConfigAccepted :
+    GuestPcTraceDeviceTraceSourceConfig -> PublicInput -> Proof -> Prop
+  deviceTraceSourceConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      deviceTraceSourceConfigAccepted config publicInput proof ->
+        GuestPcTraceDeviceTraceSourceDecisionMatches config
+
 structure GuestPcTraceSparseSourceConfig where
   configuredSparseSourceEnabled : Option Bool
   effectiveSparseSourceSelected : Bool
@@ -794,6 +822,15 @@ def GuestPcTraceTracelessSegmentOutputCheckedAcceptance
       config
       publicInput
       proof
+
+def GuestPcTraceDeviceTraceSourceCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GuestPcTraceDeviceTraceSourceValidation)
+    (config : GuestPcTraceDeviceTraceSourceConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.deviceTraceSourceConfigAccepted config publicInput proof
 
 def GuestPcTraceSparseSourceCheckedAcceptance
     (system : VerifierModel)
