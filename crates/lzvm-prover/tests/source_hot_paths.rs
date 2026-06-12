@@ -3685,6 +3685,13 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "cuda_malloc_bytes",
         "cuda_malloc_wait_ns",
         "cuda_malloc_max_wait_ns",
+        "cuda_host_register_calls",
+        "cuda_host_register_bytes",
+        "cuda_host_register_wait_ns",
+        "cuda_host_register_max_wait_ns",
+        "cuda_host_unregister_calls",
+        "cuda_host_unregister_wait_ns",
+        "cuda_host_unregister_max_wait_ns",
         "cuda_event_query_calls",
         "cuda_event_query_ready_count",
         "cuda_event_query_not_ready_count",
@@ -3744,6 +3751,14 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "allocator fresh allocations should time cudaMalloc waits"
     );
     assert!(
+        native_source.contains("record_cuda_host_register_wait")
+            && native_source.contains("g_cuda_host_register_wait_ns")
+            && native_source.contains("g_cuda_host_register_max_wait_ns")
+            && native_source.contains("g_cuda_host_unregister_wait_ns")
+            && native_source.contains("g_cuda_host_unregister_max_wait_ns"),
+        "large H2D page registration should be visible in CUDA timing stats"
+    );
+    assert!(
         native_source.contains("g_cuda_event_synchronize_by_size")
             && native_source.contains("cuda_event_synchronize_hot_bytes")
             && native_source.contains("cuda_event_synchronize_hot_count")
@@ -3773,6 +3788,13 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "\"cuda_allocator_malloc_bytes\"",
         "\"cuda_allocator_malloc_wait_ns\"",
         "\"cuda_allocator_malloc_max_wait_ns\"",
+        "\"cuda_allocator_host_register_calls\"",
+        "\"cuda_allocator_host_register_bytes\"",
+        "\"cuda_allocator_host_register_wait_ns\"",
+        "\"cuda_allocator_host_register_max_wait_ns\"",
+        "\"cuda_allocator_host_unregister_calls\"",
+        "\"cuda_allocator_host_unregister_wait_ns\"",
+        "\"cuda_allocator_host_unregister_max_wait_ns\"",
         "\"cuda_allocator_cached_blocks\"",
         "\"cuda_allocator_cached_bytes\"",
         "\"cuda_allocator_event_query_calls\"",

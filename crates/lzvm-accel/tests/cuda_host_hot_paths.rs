@@ -38,7 +38,7 @@ fn allocator_does_not_wait_to_reuse_pending_small_blocks() {
         "allocator should define a small pending-cache no-wait threshold"
     );
     assert!(
-        body.contains("bytes <= kPendingCacheNoWaitBytes")
+        body.contains("bytes <= pending_cache_no_wait_bytes(kPendingCacheNoWaitBytes)")
             && body.contains("pending_index = std::numeric_limits<std::size_t>::max()"),
         "small pending cached blocks should fall through to a fresh allocation instead of synchronizing"
     );

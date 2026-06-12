@@ -35,6 +35,13 @@ struct LzvmCudaAllocatorStats {
     std::size_t cuda_malloc_bytes;
     std::size_t cuda_malloc_wait_ns;
     std::size_t cuda_malloc_max_wait_ns;
+    std::size_t cuda_host_register_calls;
+    std::size_t cuda_host_register_bytes;
+    std::size_t cuda_host_register_wait_ns;
+    std::size_t cuda_host_register_max_wait_ns;
+    std::size_t cuda_host_unregister_calls;
+    std::size_t cuda_host_unregister_wait_ns;
+    std::size_t cuda_host_unregister_max_wait_ns;
     std::size_t cuda_free_calls;
     std::size_t cuda_device_synchronize_calls;
     std::size_t cached_blocks;

@@ -46,6 +46,13 @@ std::size_t g_cuda_malloc_calls = 0;
 std::size_t g_cuda_malloc_bytes = 0;
 std::size_t g_cuda_malloc_wait_ns = 0;
 std::size_t g_cuda_malloc_max_wait_ns = 0;
+std::size_t g_cuda_host_register_calls = 0;
+std::size_t g_cuda_host_register_bytes = 0;
+std::size_t g_cuda_host_register_wait_ns = 0;
+std::size_t g_cuda_host_register_max_wait_ns = 0;
+std::size_t g_cuda_host_unregister_calls = 0;
+std::size_t g_cuda_host_unregister_wait_ns = 0;
+std::size_t g_cuda_host_unregister_max_wait_ns = 0;
 std::size_t g_cuda_free_calls = 0;
 std::size_t g_cuda_device_synchronize_calls = 0;
 std::size_t g_cuda_event_query_calls = 0;
@@ -162,6 +169,22 @@ void record_cuda_malloc_wait(std::size_t elapsed_ns) {
     }
 }
 
+void record_cuda_host_register_wait(std::size_t elapsed_ns) {
+    g_cuda_host_register_wait_ns =
+        saturated_add(g_cuda_host_register_wait_ns, elapsed_ns);
+    if (elapsed_ns > g_cuda_host_register_max_wait_ns) {
+        g_cuda_host_register_max_wait_ns = elapsed_ns;
+    }
+}
+
+void record_cuda_host_unregister_wait(std::size_t elapsed_ns) {
+    g_cuda_host_unregister_wait_ns =
+        saturated_add(g_cuda_host_unregister_wait_ns, elapsed_ns);
+    if (elapsed_ns > g_cuda_host_unregister_max_wait_ns) {
+        g_cuda_host_unregister_max_wait_ns = elapsed_ns;
+    }
+}
+
 int set_allocation_device(int device, int* previous_device) {
     *previous_device = -1;
     const int current_status = static_cast<int>(cudaGetDevice(previous_device));
@@ -216,8 +239,16 @@ RegisteredHostRange register_large_host_copy(const void* src, std::size_t bytes)
 
     range.base = reinterpret_cast<void*>(aligned_start);
     range.bytes = static_cast<std::size_t>(aligned_end - aligned_start);
+    const auto register_started = std::chrono::steady_clock::now();
     const int status =
         static_cast<int>(cudaHostRegister(range.base, range.bytes, cudaHostRegisterDefault));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        ++g_cuda_host_register_calls;
+        g_cuda_host_register_bytes =
+            saturated_add(g_cuda_host_register_bytes, range.bytes);
+        record_cuda_host_register_wait(saturated_nanoseconds_since(register_started));
+    }
     range.registered = status == 0;
     return range;
 }
@@ -226,7 +257,14 @@ int unregister_host_copy(const RegisteredHostRange& range) {
     if (!range.registered) {
         return 0;
     }
-    return static_cast<int>(cudaHostUnregister(range.base));
+    const auto unregister_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(cudaHostUnregister(range.base));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        ++g_cuda_host_unregister_calls;
+        record_cuda_host_unregister_wait(saturated_nanoseconds_since(unregister_started));
+    }
+    return status;
 }
 
 int free_allocation_on_device(void* ptr, int device) {
@@ -554,6 +592,13 @@ extern "C" int lzvm_cuda_allocator_clear_cache(void) {
             g_cuda_malloc_bytes = 0;
             g_cuda_malloc_wait_ns = 0;
             g_cuda_malloc_max_wait_ns = 0;
+            g_cuda_host_register_calls = 0;
+            g_cuda_host_register_bytes = 0;
+            g_cuda_host_register_wait_ns = 0;
+            g_cuda_host_register_max_wait_ns = 0;
+            g_cuda_host_unregister_calls = 0;
+            g_cuda_host_unregister_wait_ns = 0;
+            g_cuda_host_unregister_max_wait_ns = 0;
             g_cuda_free_calls = 0;
             g_cuda_device_synchronize_calls = 0;
             g_cuda_event_query_calls = 0;
@@ -588,6 +633,13 @@ extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out) {
         out->cuda_malloc_bytes = g_cuda_malloc_bytes;
         out->cuda_malloc_wait_ns = g_cuda_malloc_wait_ns;
         out->cuda_malloc_max_wait_ns = g_cuda_malloc_max_wait_ns;
+        out->cuda_host_register_calls = g_cuda_host_register_calls;
+        out->cuda_host_register_bytes = g_cuda_host_register_bytes;
+        out->cuda_host_register_wait_ns = g_cuda_host_register_wait_ns;
+        out->cuda_host_register_max_wait_ns = g_cuda_host_register_max_wait_ns;
+        out->cuda_host_unregister_calls = g_cuda_host_unregister_calls;
+        out->cuda_host_unregister_wait_ns = g_cuda_host_unregister_wait_ns;
+        out->cuda_host_unregister_max_wait_ns = g_cuda_host_unregister_max_wait_ns;
         out->cuda_free_calls = g_cuda_free_calls;
         out->cuda_device_synchronize_calls = g_cuda_device_synchronize_calls;
         out->cached_blocks = g_cached_allocations.size();
