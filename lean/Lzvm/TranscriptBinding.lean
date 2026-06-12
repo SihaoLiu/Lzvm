@@ -263,4 +263,45 @@ theorem runtime_transcript_binding_checked_acceptance_verifier_core_contract
       accepted
   exact sound_witness_implies_verifier_core_contract sound.right.right.right
 
+theorem runtime_transcript_binding_checked_acceptance_transcript_and_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTranscriptBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.artifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ system.transcriptBound publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_transcript_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro sound.left
+      (And.intro sound.right.left
+        (And.intro sound.right.right.left
+          (sound_witness_implies_verifier_core_contract
+            sound.right.right.right)))
+
 end Lzvm
