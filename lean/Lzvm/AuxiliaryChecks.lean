@@ -712,6 +712,15 @@ theorem witness_leaf_digest_checked_acceptance_verifier_core_contract
       checked
   exact sound_witness_implies_verifier_core_contract sound.right
 
+theorem gpu_canonical_leaf_checked_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (validation : GpuCanonicalLeafValidation system) :
+    forall publicInput proof,
+      GpuCanonicalLeafCheckedAcceptance system validation publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof checked
+  exact checked.left
+
 theorem gpu_canonical_leaf_checked_acceptance_projects_flag_clear
     {system : VerifierModel}
     (validation : GpuCanonicalLeafValidation system) :
@@ -754,7 +763,15 @@ theorem gpu_canonical_leaf_checked_acceptance_sound
         publicInput
         proof
         acceptedWithCanonicalFlag)
-      (abstract_verifier_sound assumptions publicInput proof acceptedWithCanonicalFlag.left)
+      (abstract_verifier_sound
+        assumptions
+        publicInput
+        proof
+        (gpu_canonical_leaf_checked_acceptance_projects_verifier_acceptance
+          validation
+          publicInput
+          proof
+          acceptedWithCanonicalFlag))
 
 theorem gpu_canonical_leaf_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -886,6 +903,15 @@ theorem gpu_coset_extension_matches_host_implies_leaf_bytes
       proof
       cosetMatchesHost
 
+theorem gpu_coset_extension_checked_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (validation : GpuCosetExtensionValidation system) :
+    forall publicInput proof,
+      GpuCosetExtensionCheckedAcceptance system validation publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof checked
+  exact checked.left
+
 theorem gpu_coset_extension_checked_acceptance_projects_matches_host
     {system : VerifierModel}
     (validation : GpuCosetExtensionValidation system) :
@@ -929,7 +955,15 @@ theorem gpu_coset_extension_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound assumptions publicInput proof checked.left)
+      (abstract_verifier_sound
+        assumptions
+        publicInput
+        proof
+        (gpu_coset_extension_checked_acceptance_projects_verifier_acceptance
+          validation
+          publicInput
+          proof
+          checked))
 
 theorem gpu_coset_extension_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -960,6 +994,15 @@ theorem gpu_fri_interpolation_matches_host_implies_fri_folds_valid
       publicInput
       proof
       interpolationMatchesHost
+
+theorem gpu_fri_fold_interpolation_checked_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (validation : GpuFriFoldInterpolationValidation system) :
+    forall publicInput proof,
+      GpuFriFoldInterpolationCheckedAcceptance system validation publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof checked
+  exact checked.left
 
 theorem gpu_fri_fold_interpolation_checked_acceptance_projects_matches_host
     {system : VerifierModel}
@@ -1004,7 +1047,15 @@ theorem gpu_fri_fold_interpolation_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound assumptions publicInput proof checked.left)
+      (abstract_verifier_sound
+        assumptions
+        publicInput
+        proof
+        (gpu_fri_fold_interpolation_checked_acceptance_projects_verifier_acceptance
+          validation
+          publicInput
+          proof
+          checked))
 
 theorem gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1035,6 +1086,15 @@ theorem gpu_merkle_digest_prefix_batch_matches_single_paths_implies_lower_prefix
       publicInput
       proof
       prefixBatchMatchesSinglePaths
+
+theorem gpu_merkle_digest_prefix_batch_checked_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (validation : GpuMerkleDigestPrefixBatchValidation system) :
+    forall publicInput proof,
+      GpuMerkleDigestPrefixBatchCheckedAcceptance system validation publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof checked
+  exact checked.left
 
 theorem gpu_merkle_digest_prefix_batch_checked_acceptance_projects_matches_single_paths
     {system : VerifierModel}
@@ -1079,7 +1139,15 @@ theorem gpu_merkle_digest_prefix_batch_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound assumptions publicInput proof checked.left)
+      (abstract_verifier_sound
+        assumptions
+        publicInput
+        proof
+        (gpu_merkle_digest_prefix_batch_checked_acceptance_projects_verifier_acceptance
+          validation
+          publicInput
+          proof
+          checked))
 
 theorem gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
