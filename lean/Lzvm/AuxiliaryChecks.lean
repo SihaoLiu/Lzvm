@@ -276,6 +276,13 @@ structure CudaAllocatorTimingSummary where
   cudaAllocatorMallocByteCount : Nat
   cudaAllocatorMallocWaitNanoseconds : Nat
   cudaAllocatorMallocMaxWaitNanoseconds : Nat
+  cudaAllocatorHostRegisterCallCount : Nat
+  cudaAllocatorHostRegisterByteCount : Nat
+  cudaAllocatorHostRegisterWaitNanoseconds : Nat
+  cudaAllocatorHostRegisterMaxWaitNanoseconds : Nat
+  cudaAllocatorHostUnregisterCallCount : Nat
+  cudaAllocatorHostUnregisterWaitNanoseconds : Nat
+  cudaAllocatorHostUnregisterMaxWaitNanoseconds : Nat
   cudaAllocatorCachedBlockCount : Nat
   cudaAllocatorCachedByteCount : Nat
   cudaAllocatorEventQueryCallCount : Nat
