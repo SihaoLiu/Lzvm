@@ -270,6 +270,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean guest PC timing summary should prove source retention byte counts are verifier-core-neutral"
     );
     assert!(
+        lean_source.contains("guestStageSourceRetentionAttemptCount")
+            && lean_source.contains("guestStageSourceRetentionRetainedCount")
+            && lean_source.contains("guestStageSourceRetentionRejectedCount")
+            && lean_source.contains("guest_pc_trace_source_retention_counts_acceptance_sound")
+            && lean_source
+                .contains("guest_pc_trace_source_retention_counts_acceptance_verifier_core_contract"),
+        "Lean guest PC timing summary should prove source retention attempt counts are verifier-core-neutral"
+    );
+    assert!(
         lean_source.contains("guestDescriptorBufferRetentionRetainedByteCount")
             && lean_source.contains(
                 "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_sound"
@@ -278,6 +287,17 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_verifier_core_contract"
             ),
         "Lean guest PC timing summary should prove descriptor buffer retention byte counts are verifier-core-neutral"
+    );
+    assert!(
+        lean_source.contains("guestDescriptorBufferRetentionAttemptCount")
+            && lean_source.contains("guestDescriptorBufferRetentionRetainedCount")
+            && lean_source.contains("guestDescriptorBufferRetentionRejectedCount")
+            && lean_source
+                .contains("guest_pc_trace_descriptor_buffer_retention_counts_acceptance_sound")
+            && lean_source.contains(
+                "guest_pc_trace_descriptor_buffer_retention_counts_acceptance_verifier_core_contract"
+            ),
+        "Lean guest PC timing summary should prove descriptor buffer retention attempt counts are verifier-core-neutral"
     );
     assert!(
         lean_source.contains("guest_pc_trace_report_timing_acceptance_sound")
