@@ -318,6 +318,77 @@ theorem guest_pc_trace_report_subtiming_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem guest_pc_trace_report_lower_subtiming_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (singleRowMilliseconds multiRowMilliseconds pendingDmaMilliseconds amoMilliseconds
+      storeConditionalMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceSingleRowReportLowerMilliseconds := singleRowMilliseconds
+            guestTraceMultiRowReportLowerMilliseconds := multiRowMilliseconds
+            guestTracePendingDmaReportLowerMilliseconds := pendingDmaMilliseconds
+            guestTraceAmoReportLowerMilliseconds := amoMilliseconds
+            guestTraceStoreConditionalReportLowerMilliseconds :=
+              storeConditionalMilliseconds })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_acceptance_sound
+      assumptions
+      (some
+        { summary with
+          guestTraceSingleRowReportLowerMilliseconds := singleRowMilliseconds
+          guestTraceMultiRowReportLowerMilliseconds := multiRowMilliseconds
+          guestTracePendingDmaReportLowerMilliseconds := pendingDmaMilliseconds
+          guestTraceAmoReportLowerMilliseconds := amoMilliseconds
+          guestTraceStoreConditionalReportLowerMilliseconds :=
+            storeConditionalMilliseconds })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_report_lower_subtiming_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (singleRowMilliseconds multiRowMilliseconds pendingDmaMilliseconds amoMilliseconds
+      storeConditionalMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceSingleRowReportLowerMilliseconds := singleRowMilliseconds
+            guestTraceMultiRowReportLowerMilliseconds := multiRowMilliseconds
+            guestTracePendingDmaReportLowerMilliseconds := pendingDmaMilliseconds
+            guestTraceAmoReportLowerMilliseconds := amoMilliseconds
+            guestTraceStoreConditionalReportLowerMilliseconds :=
+              storeConditionalMilliseconds })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (guest_pc_trace_report_lower_subtiming_acceptance_sound
+        assumptions
+        summary
+        singleRowMilliseconds
+        multiRowMilliseconds
+        pendingDmaMilliseconds
+        amoMilliseconds
+        storeConditionalMilliseconds
+        publicInput
+        proof
+        observed)
+
 theorem guest_pc_trace_shape_counts_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

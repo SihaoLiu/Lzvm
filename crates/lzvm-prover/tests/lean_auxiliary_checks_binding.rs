@@ -318,6 +318,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean guest PC timing summary should prove report subtiming metadata is verifier-core-neutral"
     );
     assert!(
+        lean_source.contains("guestTraceSingleRowReportLowerMilliseconds")
+            && lean_source.contains("guestTraceMultiRowReportLowerMilliseconds")
+            && lean_source.contains("guestTracePendingDmaReportLowerMilliseconds")
+            && lean_source.contains("guestTraceAmoReportLowerMilliseconds")
+            && lean_source.contains("guestTraceStoreConditionalReportLowerMilliseconds")
+            && lean_source.contains("guest_pc_trace_report_lower_subtiming_acceptance_sound")
+            && lean_source.contains(
+                "guest_pc_trace_report_lower_subtiming_acceptance_verifier_core_contract"
+            ),
+        "Lean guest PC timing summary should prove report-lower subtiming metadata is verifier-core-neutral"
+    );
+    assert!(
         lean_source.contains("guest_pc_trace_stage_timing_acceptance_sound")
             && lean_source
                 .contains("guest_pc_trace_stage_timing_acceptance_verifier_core_contract"),
