@@ -88,6 +88,30 @@ theorem gpu_allocation_checked_acceptance_projects_written_contents
   intro publicInput proof checked
   exact checked.right
 
+theorem gpu_allocation_checked_acceptance_projects_cached_written_contents
+    {system : VerifierModel}
+    (validation : GpuAllocationCacheValidation)
+    (cached fresh : GpuAllocationSource) :
+    GpuAllocationSameRequest cached fresh ->
+      forall publicInput proof,
+        GpuAllocationCheckedAcceptance system validation fresh publicInput proof ->
+          validation.writtenContentsBound cached publicInput proof := by
+  intro sameRequest publicInput proof checked
+  exact
+    gpu_allocation_cache_reuse_preserves_written_contents
+      validation
+      cached
+      fresh
+      sameRequest
+      publicInput
+      proof
+      (gpu_allocation_checked_acceptance_projects_written_contents
+        validation
+        fresh
+        publicInput
+        proof
+        checked)
+
 theorem gpu_allocation_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
