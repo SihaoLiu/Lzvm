@@ -172,6 +172,7 @@ structure GuestPcTraceTimingSummary where
   guestStageSourceRetentionAttemptCount : Nat
   guestStageSourceRetentionRetainedCount : Nat
   guestStageSourceRetentionRejectedCount : Nat
+  guestStageSourceRetentionRetainedByteCount : Nat
   guestStageSourceRetentionRejectedByteCount : Nat
   guestStageSourceRetentionLimitByteCount : Nat
   guestDescriptorBufferRetentionAttemptCount : Nat
