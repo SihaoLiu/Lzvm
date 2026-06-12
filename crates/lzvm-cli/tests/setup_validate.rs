@@ -13798,6 +13798,60 @@ fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
 }
 
 #[test]
+fn rejects_verify_proof_with_seeded_witness_digest_forgery() {
+    let dir = temp_dir("verify-proof-seeded-witness-digest-forgery");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let mut proof = sample_proof_with_material(&public_values, &catalog);
+    let witness_segment = proof
+        .segments
+        .iter_mut()
+        .find(|segment| segment.id == WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+        .expect("witness segment should be present");
+    let mut witness = parse_witness_commitment_segment(&witness_segment.data)
+        .expect("witness segment should parse");
+    witness.stages[0].tree_digest[0] ^= 1;
+    witness_segment.data =
+        encode_witness_commitment_segment(&witness).expect("witness segment should encode");
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "proof",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(String::from_utf8(stderr)
+        .expect("stderr should be utf-8")
+        .contains("PCS query plan segment mismatch"));
+}
+
+#[test]
 fn validates_setup_aware_verify_preflight_with_proof_values() {
     let dir = temp_dir("verify-setup-preflight-proof-values");
     let _ = fs::remove_dir_all(&dir);

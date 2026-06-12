@@ -162,7 +162,7 @@ fn validates_seeded_pcs_query_plan_segments() {
 }
 
 #[test]
-fn seeded_query_plan_ignores_unverified_witness_tree_digest() {
+fn seeded_query_plan_binds_witness_tree_digest() {
     let mut schedule = sample_schedule();
     schedule.total_query_count = 16;
     schedule.max_extended_domain_bits = 8;
@@ -202,7 +202,7 @@ fn seeded_query_plan_ignores_unverified_witness_tree_digest() {
     )
     .expect("query plan should build");
 
-    assert_eq!(first_query.data, second_query.data);
+    assert_ne!(first_query.data, second_query.data);
 }
 
 #[test]

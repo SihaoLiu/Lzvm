@@ -363,7 +363,7 @@ fn hash_witness_commitment_segment_for_query_seed(
         });
     }
 
-    hasher.update(b"lzvm-witness-commitment-query-seed-v1");
+    hasher.update(b"lzvm-witness-commitment-query-seed-v2");
     hasher.update(segment.id.to_le_bytes());
     hasher.update(identity.unit_index.to_le_bytes());
     hasher.update(identity.trace_instance_index.to_le_bytes());
@@ -379,6 +379,7 @@ fn hash_witness_commitment_segment_for_query_seed(
         for word in stage.root {
             hasher.update(word.to_le_bytes());
         }
+        hasher.update(stage.tree_digest);
     }
     Ok(())
 }

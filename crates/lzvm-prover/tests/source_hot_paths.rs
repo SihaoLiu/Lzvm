@@ -4890,6 +4890,9 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     let query_plan_path = crate_root.join("src/pcs_query_plan.rs");
     let query_plan_source =
         std::fs::read_to_string(&query_plan_path).expect("PCS query plan source should read");
+    let query_plan_build_path = crate_root.join("src/pcs_query_plan/build.rs");
+    let query_plan_build_source = std::fs::read_to_string(&query_plan_build_path)
+        .expect("PCS query plan build source should read");
     let transcript_segments_path = crate_root.join("src/pcs_transcript_segments.rs");
     let transcript_segments_source = std::fs::read_to_string(&transcript_segments_path)
         .expect("PCS transcript segments source should read");
@@ -4928,6 +4931,11 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && query_plan_source.contains("validate_pcs_fri_opening_units_match_query_units")
             && query_plan_source.contains("validate_unit_values_units_match_query_units"),
         "query plan validation should bind transcript-derived challenges and all query-indexed artifacts"
+    );
+    assert!(
+        query_plan_build_source.contains("hash_witness_commitment_segment_for_query_seed")
+            && query_plan_build_source.contains("stage.tree_digest"),
+        "seeded query plan derivation should bind witness tree digests"
     );
     assert!(
         transcript_segments_source.contains("derive_pcs_transcript_challenges_from_segments")
