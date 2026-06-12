@@ -109,6 +109,17 @@ def RuntimeRetainedParentCheckpointOpeningPrefixBatchContract
     /\ validation.retainedParentCheckpointLowerPrefixBound artifact publicInput proof
     /\ validation.retainedParentCheckpointRowsBoundToQueryPlan artifact publicInput proof
 
+def RuntimeRetainedParentCheckpointOpeningSourceContract
+    (_system : VerifierModel)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.retainedParentCheckpointPrefixBatchUsed artifact publicInput proof
+    /\ validation.retainedParentCheckpointLowerPrefixBound artifact publicInput proof
+    /\ validation.retainedParentCheckpointRowsFromSource artifact publicInput proof
+    /\ validation.retainedParentCheckpointRowsBoundToQueryPlan artifact publicInput proof
+
 def RuntimeRetainedParentCheckpointOpeningRetainedRowsContract
     (_system : VerifierModel)
     (validation : RuntimeRetainedParentCheckpointOpeningValidation _system)
@@ -339,6 +350,53 @@ theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_prefix_bat
   exact
     And.intro prefixBatchUsed
       (And.intro lowerPrefix rowsBoundToQueryPlan)
+
+theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract
+    {system : VerifierModel}
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedParentCheckpointOpeningSourceContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have prefixBatchUsed :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesPrefixBatchUsed
+      artifact
+      publicInput
+      proof
+      accepted
+  have lowerPrefix :=
+    runtime_retained_parent_checkpoint_prefix_batch_implies_lower_prefix_bound
+      validation
+      artifact
+      publicInput
+      proof
+      prefixBatchUsed
+  have rowsFromSource :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesRowsFromSource
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsBoundToQueryPlan :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesRowsBoundToQueryPlan
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro prefixBatchUsed
+      (And.intro lowerPrefix
+        (And.intro rowsFromSource rowsBoundToQueryPlan))
 
 theorem runtime_retained_parent_checkpoint_opening_evidence_implies_digest_contract
     {system : VerifierModel}
@@ -832,5 +890,54 @@ theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_an
               publicInput
               proof
               accepted))))
+
+theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_source_and_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedParentCheckpointOpeningSourceContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedParentCheckpointOpeningRetainedRowsContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (And.intro
+        (runtime_retained_parent_checkpoint_opening_checked_acceptance_retained_rows_contract
+          assumptions
+          validation
+          artifact
+          publicInput
+          proof
+          accepted)
+        (runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract
+          assumptions
+          validation
+          artifact
+          publicInput
+          proof
+          accepted))
 
 end Lzvm

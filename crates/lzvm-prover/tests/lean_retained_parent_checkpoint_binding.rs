@@ -43,6 +43,7 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
                 .contains("def RuntimeRetainedParentCheckpointOpeningDigestContract")
             && lean_source
                 .contains("def RuntimeRetainedParentCheckpointOpeningPrefixBatchContract")
+            && lean_source.contains("def RuntimeRetainedParentCheckpointOpeningSourceContract")
             && lean_source
                 .contains("def RuntimeRetainedParentCheckpointOpeningRetainedRowsContract")
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsBoundContract")
@@ -66,9 +67,11 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_digest_contract",
             "runtime_retained_parent_checkpoint_prefix_batch_implies_lower_prefix_bound",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_prefix_batch_contract",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_sound",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_and_core_contract",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_source_and_core_contract",
         ],
     );
     assert!(
