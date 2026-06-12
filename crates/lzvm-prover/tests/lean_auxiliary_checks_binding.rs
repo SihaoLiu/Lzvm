@@ -1343,6 +1343,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_timing_observed_acceptance_projects_verifier_acceptance",
             "proof_artifact_finish_timing_acceptance_sound",
             "proof_artifact_finish_timing_acceptance_verifier_core_contract",
+            "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
+            "proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract",
             "proof_artifact_finish_aggregate_timing_acceptance_sound",
             "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
             "runtime_performance_observed_acceptance_projects_verifier_acceptance",
