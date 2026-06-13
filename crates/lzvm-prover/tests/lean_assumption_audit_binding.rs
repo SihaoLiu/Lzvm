@@ -29,8 +29,32 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         &[
             "cryptographic_assumptions_carry_required_evidence",
             "assumption_bundle_carries_required_crypto_evidence",
+            "required_crypto_assumptions_merkle_hash_collision_resistance",
+            "required_crypto_assumptions_transcript_hash_collision_resistance",
+            "required_crypto_assumptions_random_oracle_model",
+            "required_crypto_assumptions_fiat_shamir_transcript_binding",
+            "required_crypto_assumptions_pcs_binding",
+            "required_crypto_assumptions_pcs_opening_soundness",
+            "required_crypto_assumptions_fri_low_degree_soundness",
+            "required_crypto_assumptions_fri_query_soundness",
         ],
     );
+    for theorem_name in [
+        "required_crypto_assumptions_pcs_opening_soundness",
+        "required_crypto_assumptions_fri_query_soundness",
+        "required_crypto_assumptions_fiat_shamir_transcript_binding",
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &audit_source,
+            theorem_name,
+            &["RequiredCryptographicAssumptionStatements assumptions"],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &audit_source,
+            theorem_name,
+            &[".right.right.right"],
+        );
+    }
     lean_binding::assert_theorem_declarations(
         &runtime_source,
         &["runtime_soundness_checked_acceptance_audited_assumptions"],

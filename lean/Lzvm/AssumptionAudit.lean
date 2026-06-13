@@ -46,6 +46,100 @@ def cryptographic_assumptions_required_groups
       pcsSoundness := assumptions.pcsSoundness
       friSoundness := assumptions.friSoundness }
 
+theorem required_crypto_assumptions_merkle_hash_collision_resistance
+    {system : VerifierModel}
+    {assumptions : CryptographicAssumptions system}
+    (required : RequiredCryptographicAssumptionStatements assumptions) :
+    assumptions.hashCollisionResistance.merkleHashCollisionResistanceStatement := by
+  rcases required with
+    ⟨merkleHashCollisionResistance, _transcriptHashCollisionResistance,
+      _randomOracleModel, _fiatShamirTranscriptBinding, _pcsBinding,
+      _pcsOpeningSoundness, _friLowDegreeSoundness, _friQuerySoundness⟩
+  exact merkleHashCollisionResistance
+
+theorem required_crypto_assumptions_transcript_hash_collision_resistance
+    {system : VerifierModel}
+    {assumptions : CryptographicAssumptions system}
+    (required : RequiredCryptographicAssumptionStatements assumptions) :
+    assumptions.hashCollisionResistance.transcriptHashCollisionResistanceStatement := by
+  rcases required with
+    ⟨_merkleHashCollisionResistance, transcriptHashCollisionResistance,
+      _randomOracleModel, _fiatShamirTranscriptBinding, _pcsBinding,
+      _pcsOpeningSoundness, _friLowDegreeSoundness, _friQuerySoundness⟩
+  exact transcriptHashCollisionResistance
+
+theorem required_crypto_assumptions_random_oracle_model
+    {system : VerifierModel}
+    {assumptions : CryptographicAssumptions system}
+    (required : RequiredCryptographicAssumptionStatements assumptions) :
+    assumptions.randomOracleFiatShamir.randomOracleModelStatement := by
+  rcases required with
+    ⟨_merkleHashCollisionResistance, _transcriptHashCollisionResistance,
+      randomOracleModel, _fiatShamirTranscriptBinding, _pcsBinding,
+      _pcsOpeningSoundness, _friLowDegreeSoundness, _friQuerySoundness⟩
+  exact randomOracleModel
+
+theorem required_crypto_assumptions_fiat_shamir_transcript_binding
+    {system : VerifierModel}
+    {assumptions : CryptographicAssumptions system}
+    (required : RequiredCryptographicAssumptionStatements assumptions) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.transcriptBound publicInput proof := by
+  rcases required with
+    ⟨_merkleHashCollisionResistance, _transcriptHashCollisionResistance,
+      _randomOracleModel, fiatShamirTranscriptBinding, _pcsBinding,
+      _pcsOpeningSoundness, _friLowDegreeSoundness, _friQuerySoundness⟩
+  exact fiatShamirTranscriptBinding
+
+theorem required_crypto_assumptions_pcs_binding
+    {system : VerifierModel}
+    {assumptions : CryptographicAssumptions system}
+    (required : RequiredCryptographicAssumptionStatements assumptions) :
+    assumptions.pcsSoundness.pcsBindingStatement := by
+  rcases required with
+    ⟨_merkleHashCollisionResistance, _transcriptHashCollisionResistance,
+      _randomOracleModel, _fiatShamirTranscriptBinding, pcsBinding,
+      _pcsOpeningSoundness, _friLowDegreeSoundness, _friQuerySoundness⟩
+  exact pcsBinding
+
+theorem required_crypto_assumptions_pcs_opening_soundness
+    {system : VerifierModel}
+    {assumptions : CryptographicAssumptions system}
+    (required : RequiredCryptographicAssumptionStatements assumptions) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.pcsOpeningsValid publicInput proof := by
+  rcases required with
+    ⟨_merkleHashCollisionResistance, _transcriptHashCollisionResistance,
+      _randomOracleModel, _fiatShamirTranscriptBinding, _pcsBinding,
+      pcsOpeningSoundness, _friLowDegreeSoundness, _friQuerySoundness⟩
+  exact pcsOpeningSoundness
+
+theorem required_crypto_assumptions_fri_low_degree_soundness
+    {system : VerifierModel}
+    {assumptions : CryptographicAssumptions system}
+    (required : RequiredCryptographicAssumptionStatements assumptions) :
+    assumptions.friSoundness.friLowDegreeSoundnessStatement := by
+  rcases required with
+    ⟨_merkleHashCollisionResistance, _transcriptHashCollisionResistance,
+      _randomOracleModel, _fiatShamirTranscriptBinding, _pcsBinding,
+      _pcsOpeningSoundness, friLowDegreeSoundness, _friQuerySoundness⟩
+  exact friLowDegreeSoundness
+
+theorem required_crypto_assumptions_fri_query_soundness
+    {system : VerifierModel}
+    {assumptions : CryptographicAssumptions system}
+    (required : RequiredCryptographicAssumptionStatements assumptions) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.friQueriesValid publicInput proof := by
+  rcases required with
+    ⟨_merkleHashCollisionResistance, _transcriptHashCollisionResistance,
+      _randomOracleModel, _fiatShamirTranscriptBinding, _pcsBinding,
+      _pcsOpeningSoundness, _friLowDegreeSoundness, friQuerySoundness⟩
+  exact friQuerySoundness
+
 theorem cryptographic_assumptions_carry_required_evidence
     {system : VerifierModel}
     (assumptions : CryptographicAssumptions system) :
