@@ -198,6 +198,23 @@ unsafe extern "C" {
         target_root: u64,
         shift: u64,
     ) -> i32;
+    #[link_name = "lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream"]
+    fn lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream_raw(
+        values: *const u64,
+        out: *mut u64,
+        workspace: *mut u64,
+        source_len: usize,
+        source_bits: usize,
+        target_len: usize,
+        target_bits: usize,
+        source_row_stride: usize,
+        column_offset: usize,
+        column_count: usize,
+        source_root_inverse: u64,
+        target_root: u64,
+        shift: u64,
+        stream: *mut std::ffi::c_void,
+    ) -> i32;
     #[link_name = "lzvm_cuda_goldilocks_coset_extend_row_major_columns_row_device"]
     fn lzvm_cuda_goldilocks_coset_extend_row_major_columns_row_device_raw(
         values: *const u64,
@@ -1664,6 +1681,120 @@ pub fn cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced(
             pow_mod(source_root, 0xffff_ffff_0000_0001 - 2),
             target_root,
             SHIFT,
+        )
+    };
+    cuda_status(code)
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream(
+    values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    workspace: &mut CudaDeviceBuffer,
+    view: CudaRowMajorColumnView,
+    source_bits: usize,
+    target_bits: usize,
+    stream: &CudaStream,
+) -> Result<(), AccelError> {
+    let CudaRowMajorColumnView {
+        source_rows,
+        source_row_stride,
+        column_offset,
+        column_count,
+    } = view;
+    if column_count == 0 || source_row_stride == 0 {
+        if values.is_empty() && out.is_empty() && workspace.is_empty() {
+            return Ok(());
+        }
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+    if column_offset > source_row_stride || column_count > source_row_stride - column_offset {
+        return Err(AccelError::InvalidDomain {
+            bits: source_row_stride,
+            len: column_count,
+        });
+    }
+    if !values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len(),
+            rhs: values.len() / 8 * 8,
+        });
+    }
+    if !out.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: out.len(),
+            rhs: out.len() / 8 * 8,
+        });
+    }
+    if workspace.len() < out.len() {
+        return Err(AccelError::LengthMismatch {
+            lhs: out.len(),
+            rhs: workspace.len(),
+        });
+    }
+
+    let (source_len, target_len, source_root, target_root) =
+        coset_extend_domain(source_rows, source_bits, target_bits)?;
+    if source_rows != source_len {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_rows,
+        });
+    }
+    let required_source_words = source_rows
+        .checked_sub(1)
+        .and_then(|last_row| last_row.checked_mul(source_row_stride))
+        .and_then(|base| base.checked_add(column_offset))
+        .and_then(|base| base.checked_add(column_count))
+        .ok_or(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_rows,
+        })?;
+    if values.len() / 8 < required_source_words {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len() / 8,
+            rhs: required_source_words,
+        });
+    }
+    let target_words = target_len
+        .checked_mul(column_count)
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: source_rows,
+        })?;
+    let target_bytes = target_words
+        .checked_mul(8)
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: target_words,
+        })?;
+    if out.len() != target_bytes {
+        return Err(AccelError::LengthMismatch {
+            lhs: target_bytes,
+            rhs: out.len(),
+        });
+    }
+    ensure_cuda_setup(target_bits)?;
+
+    let code = unsafe {
+        lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream_raw(
+            values.as_raw_ptr() as *const u64,
+            out.as_raw_ptr() as *mut u64,
+            workspace.as_raw_ptr() as *mut u64,
+            source_len,
+            source_bits,
+            target_len,
+            target_bits,
+            source_row_stride,
+            column_offset,
+            column_count,
+            pow_mod(source_root, 0xffff_ffff_0000_0001 - 2),
+            target_root,
+            SHIFT,
+            stream.as_raw(),
         )
     };
     cuda_status(code)
@@ -3762,7 +3893,9 @@ mod tests {
         cuda_goldilocks_coset_extend_row_major_columns_device,
         cuda_goldilocks_coset_extend_row_major_columns_device_on_stream,
         cuda_goldilocks_coset_extend_row_major_columns_output_bytes,
-        row_weight_shift_for_target_row, CudaDeviceBuffer, CudaStream,
+        cuda_goldilocks_coset_extend_row_major_columns_strided_device,
+        cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream,
+        row_weight_shift_for_target_row, CudaDeviceBuffer, CudaRowMajorColumnView, CudaStream,
     };
 
     #[test]
@@ -3854,6 +3987,75 @@ mod tests {
         stream
             .synchronize()
             .expect("explicit stream extension should finish");
+
+        assert_eq!(
+            stream_out
+                .to_u64_words()
+                .expect("stream output should download"),
+            default_out
+                .to_u64_words()
+                .expect("default output should download")
+        );
+    }
+
+    #[test]
+    fn strided_row_major_coset_extension_on_stream_matches_default_stream() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let source_row_stride = 5;
+        let column_offset = 1;
+        let column_count = 3;
+        let values = (0..source_rows * source_row_stride)
+            .map(|index| (index as u64 + 11) * 23)
+            .collect::<Vec<_>>();
+        let view = CudaRowMajorColumnView {
+            source_rows,
+            source_row_stride,
+            column_offset,
+            column_count,
+        };
+        let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+            source_rows * column_count,
+            column_count,
+            source_bits,
+            target_bits,
+        )
+        .expect("output shape should be valid");
+
+        let source = CudaDeviceBuffer::from_u64_words(&values).expect("source should upload");
+        let mut default_out =
+            CudaDeviceBuffer::new(out_byte_count).expect("default output should allocate");
+        cuda_goldilocks_coset_extend_row_major_columns_strided_device(
+            &source,
+            &mut default_out,
+            view,
+            source_bits,
+            target_bits,
+        )
+        .expect("default strided extension should run");
+
+        let mut stream_out =
+            CudaDeviceBuffer::new(out_byte_count).expect("stream output should allocate");
+        let mut workspace =
+            CudaDeviceBuffer::new(out_byte_count).expect("stream workspace should allocate");
+        let stream = CudaStream::new().expect("CUDA stream should create");
+        cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream(
+            &source,
+            &mut stream_out,
+            &mut workspace,
+            view,
+            source_bits,
+            target_bits,
+            &stream,
+        )
+        .expect("explicit stream strided extension should enqueue");
+        stream
+            .synchronize()
+            .expect("explicit stream strided extension should finish");
 
         assert_eq!(
             stream_out

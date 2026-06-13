@@ -6,12 +6,14 @@ use std::time::Instant;
 use lzvm_accel::{
     cuda_goldilocks_begin_validate_canonical_words_device,
     cuda_goldilocks_coset_extend_row_major_columns_device,
+    cuda_goldilocks_coset_extend_row_major_columns_device_on_stream,
     cuda_goldilocks_coset_extend_row_major_columns_device_unsynced,
     cuda_goldilocks_coset_extend_row_major_columns_output_bytes,
     cuda_goldilocks_coset_extend_row_major_columns_strided_device,
+    cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream,
     cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced,
     cuda_goldilocks_validate_canonical_words_device, AccelError, CudaCanonicalCheck,
-    CudaDeviceBuffer, CudaRowMajorColumnView,
+    CudaDeviceBuffer, CudaRowMajorColumnView, CudaStream,
 };
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::coset_extend_evaluations;
@@ -590,6 +592,7 @@ pub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_timing(
         target_bits,
         arity,
         None,
+        None,
         timing,
     )
 }
@@ -612,6 +615,49 @@ pub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_view_timi
         target_bits,
         arity,
         source_device,
+        None,
+        timing,
+    )
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_view_on_stream_timing(
+    row_count: usize,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    source_device: &WitnessStageSourceDeviceView,
+    stream: &CudaStream,
+    timing: &mut WitnessStageLeafExtendTiming,
+) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
+    if !source_device.has_matching_shape(row_count, column_count) {
+        return Err(WitnessStageLeafError::LengthOverflow.into());
+    }
+    let required_source_bytes = source_device
+        .required_byte_len()
+        .ok_or(WitnessStageLeafError::LengthOverflow)?;
+    if source_device.buffer().len() < required_source_bytes {
+        return Err(WitnessStageLeafError::Accel(AccelError::LengthMismatch {
+            lhs: source_device.buffer().len(),
+            rhs: required_source_bytes,
+        })
+        .into());
+    }
+    compact_witness_stage_leaf_hash_level_from_source_device_timed(
+        source_device.buffer(),
+        CudaRowMajorColumnView {
+            source_rows: row_count,
+            source_row_stride: source_device.row_stride(),
+            column_offset: source_device.column_offset(),
+            column_count,
+        },
+        source_bits,
+        target_bits,
+        arity,
+        Some(stream),
         None,
         timing,
     )
@@ -653,6 +699,7 @@ pub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_view_with
         source_bits,
         target_bits,
         arity,
+        None,
         workspace_cache,
         timing,
     )
@@ -889,12 +936,14 @@ fn compact_witness_stage_leaf_hash_level_timed(
 
 #[cfg(feature = "cuda")]
 #[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
 fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
     source_device: &CudaDeviceBuffer,
     view: CudaRowMajorColumnView,
     source_bits: usize,
     target_bits: usize,
     arity: usize,
+    stream: Option<&CudaStream>,
     mut workspace_cache: Option<&mut WitnessStageLeafWorkspaceCache>,
     timing: &mut WitnessStageLeafExtendTiming,
 ) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
@@ -953,8 +1002,33 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
         &mut extension_workspace_storage
     };
 
-    record_duration(&mut timing.kernel_duration, || {
-        if view.source_row_stride == view.column_count && view.column_offset == 0 {
+    record_duration(&mut timing.kernel_duration, || match stream {
+        Some(stream) => {
+            if view.source_row_stride == view.column_count && view.column_offset == 0 {
+                cuda_goldilocks_coset_extend_row_major_columns_device_on_stream(
+                    source_device,
+                    &mut output_buffer,
+                    extension_workspace,
+                    view.column_count,
+                    source_bits,
+                    target_bits,
+                    stream,
+                )
+            } else {
+                cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream(
+                    source_device,
+                    &mut output_buffer,
+                    extension_workspace,
+                    view,
+                    source_bits,
+                    target_bits,
+                    stream,
+                )
+            }
+            .map_err(WitnessStageLeafError::from)?;
+            stream.synchronize().map_err(WitnessStageLeafError::from)
+        }
+        None => if view.source_row_stride == view.column_count && view.column_offset == 0 {
             cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(
                 source_device,
                 &mut output_buffer,
@@ -973,7 +1047,7 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
                 target_bits,
             )
         }
-        .map_err(WitnessStageLeafError::from)
+        .map_err(WitnessStageLeafError::from),
     })?;
     timing.record_coset_extend_work(out_byte_count, view.column_count, source_bits, target_bits);
     let extended_rows = extended_row_count_from_bytes(out_byte_count, view.column_count)?;
@@ -1146,8 +1220,10 @@ fn validate_leaf_hash_arity(arity: usize) -> Result<(), WitnessStageCommitmentEr
 mod tests {
     use super::{validate_row_major_device_words, validate_row_major_word_bytes_and_padded_hashes};
     use crate::witness_commitment::WitnessStageLeafError;
-    use lzvm_accel::CudaDeviceBuffer;
+    use crate::witness_commitment::WitnessStageSourceDeviceView;
+    use lzvm_accel::{CudaDeviceBuffer, CudaStream};
     use lzvm_field::{Felt, MODULUS};
+    use std::sync::Arc;
 
     fn encode_words(words: &[u64]) -> Vec<u8> {
         let mut out = Vec::with_capacity(words.len() * 8);
@@ -1201,6 +1277,71 @@ mod tests {
             .expect_err("non-canonical device words should be rejected");
 
         assert_eq!(error, WitnessStageLeafError::NonCanonicalDeviceWord);
+    }
+
+    #[test]
+    fn compact_leaf_hash_level_on_stream_matches_default_source_device_view() {
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let column_count = 3;
+        let arity = 4;
+        let values = (0..source_rows * column_count)
+            .map(|index| Felt::from_u64((index as u64 + 3) * 19))
+            .collect::<Vec<_>>();
+        let source = Arc::new(
+            CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&values))
+                .expect("source should upload"),
+        );
+        let view = WitnessStageSourceDeviceView::new(
+            source_rows,
+            column_count,
+            column_count,
+            0,
+            Arc::clone(&source),
+        );
+
+        let mut default_timing = super::WitnessStageLeafExtendTiming::default();
+        let default_level =
+            super::compact_witness_stage_leaf_hash_level_from_source_device_view_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                &view,
+                &mut default_timing,
+            )
+            .expect("default source-device leaf level should build");
+        default_level
+            .finish_canonical_check()
+            .expect("default output should be canonical");
+
+        let stream = CudaStream::new().expect("stream should create");
+        let mut stream_timing = super::WitnessStageLeafExtendTiming::default();
+        let stream_level =
+            super::compact_witness_stage_leaf_hash_level_from_source_device_view_on_stream_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                &view,
+                &stream,
+                &mut stream_timing,
+            )
+            .expect("stream source-device leaf level should build");
+        stream_level
+            .finish_canonical_check()
+            .expect("stream output should be canonical");
+
+        assert_eq!(
+            stream_level.root().expect("stream root should materialize"),
+            default_level
+                .root()
+                .expect("default root should materialize")
+        );
+        assert_eq!(stream_timing.leaf_coset_extend_call_count(), 1);
     }
 }
 
