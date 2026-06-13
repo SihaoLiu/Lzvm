@@ -18,28 +18,49 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
         "top-level Lean module should import Merkle path soundness"
     );
     assert!(
-        lean_source.contains("structure MerklePathModel")
-            && lean_source.contains("def MerklePathCollisionResistance")
-            && lean_source.contains("def MerkleRootCommitsToLeaf")
-            && lean_source.contains("def CentralizedMerklePathCollisionResistance"),
-        "Lean Merkle path model should expose path verification, collision resistance, commitment, and centralized assumption binding"
+        !lean_source.contains("structure MerklePathModel")
+            && !lean_source.contains("verifies : Root -> Leaf -> Path -> Prop")
+            && !lean_source.contains("def MerklePathCollisionResistance"),
+        "Lean Merkle path soundness should not package the binding conclusion as an abstract verification model"
+    );
+    assert!(
+        lean_source.contains("inductive MerklePathDirection")
+            && lean_source.contains("structure MerklePathLayer")
+            && lean_source.contains("structure MerklePathOpening")
+            && lean_source.contains("def MerklePathFold")
+            && lean_source.contains("def MerklePathVerifies")
+            && lean_source.contains("def MerkleCompressionCollisionFree")
+            && lean_source.contains("def MerklePathRootCommitsToLeafAtIndex")
+            && lean_source.contains("def CentralizedMerkleCompressionCollisionResistance"),
+        "Lean Merkle path model should expose concrete path data, fold verification, compression collision freedom, indexed commitment, and centralized assumption binding"
     );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
-            "centralized_merkle_path_collision_resistance",
-            "verified_merkle_path_implies_root_commits_to_leaf",
-            "verified_merkle_path_implies_root_commits_to_leaf_from_assumption",
-            "verified_merkle_path_implies_root_commits_to_leaf_from_bundle",
+            "centralized_merkle_compression_collision_free",
+            "concrete_merkle_path_same_index_binding",
+            "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index",
+            "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_assumption",
+            "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_bundle",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
-        "verified_merkle_path_implies_root_commits_to_leaf_from_bundle",
+        "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_bundle",
         &[
             "AssumptionBundle system",
-            "CentralizedMerklePathCollisionResistance",
-            "MerkleRootCommitsToLeaf",
+            "CentralizedMerkleCompressionCollisionResistance",
+            "MerklePathRootCommitsToLeafAtIndex",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "concrete_merkle_path_same_index_binding",
+        &[
+            "MerkleCompressionCollisionFree compress",
+            "MerklePathSameIndex path otherPath",
+            "MerklePathVerifies compress root leaf path",
+            "MerklePathVerifies compress root otherLeaf otherPath",
         ],
     );
 }
