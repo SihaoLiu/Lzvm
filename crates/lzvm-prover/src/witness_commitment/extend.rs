@@ -7,6 +7,7 @@ use lzvm_accel::{
     cuda_goldilocks_begin_coset_extend_row_major_columns_device_on_stream,
     cuda_goldilocks_begin_coset_extend_row_major_columns_strided_device_on_stream,
     cuda_goldilocks_begin_validate_canonical_words_device,
+    cuda_goldilocks_begin_validate_canonical_words_device_on_stream,
     cuda_goldilocks_coset_extend_row_major_columns_device,
     cuda_goldilocks_coset_extend_row_major_columns_device_on_stream,
     cuda_goldilocks_coset_extend_row_major_columns_device_unsynced,
@@ -26,6 +27,7 @@ use crate::gpu_setup::prepare_gpu_setup;
 #[cfg(feature = "cuda")]
 use crate::merkle_hash::{
     linear_hash_level_from_validated_row_major_device_buffer,
+    linear_hash_level_from_validated_row_major_device_buffer_on_stream,
     linear_hashes_from_validated_wide_row_major_device_buffer, CudaDigestCheckpointLevel,
     CudaDigestLevel, CudaDigestRoot,
 };
@@ -189,19 +191,40 @@ impl PendingCudaLeafExtension {
         mut self,
         timing: &mut WitnessStageLeafExtendTiming,
     ) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
-        self.synchronize_queued_work()?;
         let canonical_check = record_duration(&mut timing.validate_duration, || {
-            begin_validate_row_major_device_words(&self.output_buffer, self.out_byte_count)
+            if !self.out_byte_count.is_multiple_of(WORD_BYTES)
+                || self.output_buffer.len() != self.out_byte_count
+            {
+                return Err(WitnessStageLeafError::LengthOverflow);
+            }
+            let word_count = self.out_byte_count / WORD_BYTES;
+            unsafe {
+                cuda_goldilocks_begin_validate_canonical_words_device_on_stream(
+                    &self.output_buffer,
+                    word_count,
+                    &self.stream,
+                )
+            }
+            .map_err(WitnessStageLeafError::from)
         })?;
         let level = record_duration(&mut timing.leaf_hash_duration, || {
-            linear_hash_level_from_validated_row_major_device_buffer(
+            linear_hash_level_from_validated_row_major_device_buffer_on_stream(
                 &self.output_buffer,
                 self.extended_rows,
                 self.view.column_count,
                 self.arity,
+                &self.stream,
             )
             .map_err(WitnessStageCommitmentError::from)
         })?;
+        if let Err(error) = self.ready.record(&self.stream) {
+            let _ = self.stream.synchronize();
+            return Err(WitnessStageLeafError::from(error).into());
+        }
+        self.ready
+            .synchronize()
+            .map_err(WitnessStageLeafError::from)?;
+        self.stream_work_completed = true;
         timing.record_leaf_hash_work(self.extended_rows, self.out_byte_count, self.arity);
         let _keep_source_alive = &self.source_device;
         let _keep_workspace_alive = &self.extension_workspace;

@@ -33,6 +33,15 @@ unsafe extern "C" {
         start_word: usize,
         slice_width_words: usize,
     ) -> i32;
+    fn lzvm_cuda_copy_d2d_row_slice_words_on_stream(
+        dst: *mut c_void,
+        src: *const c_void,
+        row_count: usize,
+        source_width_words: usize,
+        start_word: usize,
+        slice_width_words: usize,
+        stream: *mut c_void,
+    ) -> i32;
     fn lzvm_cuda_copy_d2h_state_prefix_words(
         dst: *mut c_void,
         src: *const c_void,
@@ -343,6 +352,48 @@ impl CudaDeviceBuffer {
             start_word,
             slice_width_words,
         )?;
+        Ok(buffer)
+    }
+
+    /// Enqueues a device-to-device row-major slice copy on `stream`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep `source`, the returned buffer, and `stream` alive
+    /// until the queued copy has completed, and must not read or reuse the
+    /// returned buffer until that work has completed.
+    pub unsafe fn from_device_row_major_u64_slice_on_stream(
+        source: &Self,
+        row_count: usize,
+        source_width_words: usize,
+        start_word: usize,
+        slice_width_words: usize,
+        stream: &CudaStream,
+    ) -> Result<Self, AccelError> {
+        if !source.len.is_multiple_of(8) {
+            return Err(AccelError::LengthMismatch {
+                lhs: source.len,
+                rhs: source.len / 8 * 8,
+            });
+        }
+        let output_words = validate_row_major_u64_slice_shape(
+            source.len / 8,
+            row_count,
+            source_width_words,
+            start_word,
+            slice_width_words,
+        )?;
+        let mut buffer = Self::new(u64_word_byte_len(output_words)?)?;
+        unsafe {
+            buffer.copy_from_device_row_major_u64_slice_on_stream(
+                source,
+                row_count,
+                source_width_words,
+                start_word,
+                slice_width_words,
+                stream,
+            )?;
+        }
         Ok(buffer)
     }
 
@@ -1048,6 +1099,59 @@ impl CudaDeviceBuffer {
         cuda_status(code)
     }
 
+    /// Enqueues a device-to-device row-major slice copy into this buffer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep `source`, this buffer, and `stream` alive until the
+    /// queued copy has completed, and must not read or reuse this buffer until
+    /// that work has completed.
+    pub unsafe fn copy_from_device_row_major_u64_slice_on_stream(
+        &mut self,
+        source: &Self,
+        row_count: usize,
+        source_width_words: usize,
+        start_word: usize,
+        slice_width_words: usize,
+        stream: &CudaStream,
+    ) -> Result<(), AccelError> {
+        if !source.len.is_multiple_of(8) {
+            return Err(AccelError::LengthMismatch {
+                lhs: source.len,
+                rhs: source.len / 8 * 8,
+            });
+        }
+        let output_words = validate_row_major_u64_slice_shape(
+            source.len / 8,
+            row_count,
+            source_width_words,
+            start_word,
+            slice_width_words,
+        )?;
+        let expected_len = u64_word_byte_len(output_words)?;
+        if expected_len != self.len {
+            return Err(AccelError::LengthMismatch {
+                lhs: self.len,
+                rhs: expected_len,
+            });
+        }
+        if self.len == 0 {
+            return Ok(());
+        }
+        let code = unsafe {
+            lzvm_cuda_copy_d2d_row_slice_words_on_stream(
+                self.ptr,
+                source.ptr as *const c_void,
+                row_count,
+                source_width_words,
+                start_word,
+                slice_width_words,
+                stream.as_raw(),
+            )
+        };
+        cuda_status(code)
+    }
+
     pub fn to_state_prefix_u64_words(
         &self,
         state_count: usize,
@@ -1241,5 +1345,52 @@ mod tests {
         }
         .expect_err("invalid stream prefix expansion should be rejected");
         assert!(matches!(error, AccelError::InvalidDomain { .. }));
+    }
+
+    #[test]
+    fn stream_row_slice_on_stream_matches_blocking() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let row_count = 6;
+        let source_width_words = 9;
+        let start_word = 2;
+        let slice_width_words = 4;
+        let values = (0..row_count * source_width_words)
+            .map(|index| (index as u64 + 5) * 23)
+            .collect::<Vec<_>>();
+        let source = CudaDeviceBuffer::from_u64_words(&values).expect("source should upload");
+        let blocking = CudaDeviceBuffer::from_device_row_major_u64_slice(
+            &source,
+            row_count,
+            source_width_words,
+            start_word,
+            slice_width_words,
+        )
+        .expect("blocking row slice should copy");
+        let stream = CudaStream::new().expect("CUDA stream should create");
+        let streamed = unsafe {
+            CudaDeviceBuffer::from_device_row_major_u64_slice_on_stream(
+                &source,
+                row_count,
+                source_width_words,
+                start_word,
+                slice_width_words,
+                &stream,
+            )
+        }
+        .expect("stream row slice should enqueue");
+        stream
+            .synchronize()
+            .expect("stream row slice should finish");
+
+        assert_eq!(
+            streamed
+                .to_u64_words()
+                .expect("stream row slice should download"),
+            blocking
+                .to_u64_words()
+                .expect("blocking row slice should download")
+        );
     }
 }

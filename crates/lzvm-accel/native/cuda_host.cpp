@@ -1015,6 +1015,49 @@ extern "C" int lzvm_cuda_copy_d2d_row_slice_words(
     return status;
 }
 
+extern "C" int lzvm_cuda_copy_d2d_row_slice_words_on_stream(
+    void* dst,
+    const void* src,
+    std::size_t row_count,
+    std::size_t source_width_words,
+    std::size_t start_word,
+    std::size_t slice_width_words,
+    void* stream_raw) {
+    if (row_count == 0 || slice_width_words == 0) {
+        return 0;
+    }
+    if (dst == nullptr || src == nullptr || stream_raw == nullptr) {
+        return -1;
+    }
+    if (source_width_words == 0 || start_word > source_width_words ||
+        slice_width_words > source_width_words - start_word) {
+        return -2;
+    }
+
+    constexpr std::size_t word_bytes = sizeof(std::uint64_t);
+    if (source_width_words > std::numeric_limits<std::size_t>::max() / word_bytes ||
+        slice_width_words > std::numeric_limits<std::size_t>::max() / word_bytes ||
+        start_word > std::numeric_limits<std::size_t>::max() / word_bytes) {
+        return -2;
+    }
+
+    const std::size_t dst_pitch = slice_width_words * word_bytes;
+    const std::size_t src_pitch = source_width_words * word_bytes;
+    const std::size_t width_bytes = slice_width_words * word_bytes;
+    const auto* source = static_cast<const std::uint8_t*>(src) + start_word * word_bytes;
+    const auto copy_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(
+        cudaMemcpy2DAsync(dst, dst_pitch, source, src_pitch, width_bytes, row_count,
+                          cudaMemcpyDeviceToDevice, static_cast<cudaStream_t>(stream_raw)));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        record_cuda_copy_d2d_wait(
+            saturated_multiply(width_bytes, row_count),
+            saturated_nanoseconds_since(copy_started));
+    }
+    return status;
+}
+
 extern "C" int lzvm_cuda_copy_d2h_state_prefix_words(
     void* dst,
     const void* src,

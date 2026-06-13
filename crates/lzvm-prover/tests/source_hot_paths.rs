@@ -271,6 +271,7 @@ fn cuda_canonical_validation_has_stream_entrypoint() {
             "pub unsafe fn cuda_goldilocks_begin_validate_canonical_words_device_on_stream"
         ) && canonical_source
             .contains("lzvm_cuda_goldilocks_begin_validate_canonical_words_device_on_stream")
+            && canonical_source.contains("CudaDeviceBuffer::zeroed_on_stream")
             && canonical_source.contains("stream.as_raw()")
             && canonical_source.contains("canonical_validate_on_stream_matches_default_stream"),
         "lzvm-accel should expose and test an unsafe begin wrapper for stream canonical validation"
@@ -342,9 +343,12 @@ fn cuda_leaf_extension_has_owning_pending_stream_handle() {
         impl_body.contains("fn finish")
             && impl_body.contains("self.ready")
             && impl_body.contains(".synchronize()")
-            && impl_body.contains("begin_validate_row_major_device_words(&self.output_buffer")
-            && impl_body.contains("linear_hash_level_from_validated_row_major_device_buffer"),
-        "pending stream leaf extension should synchronize its event before digest construction"
+            && impl_body
+                .contains("cuda_goldilocks_begin_validate_canonical_words_device_on_stream")
+            && impl_body
+                .contains("linear_hash_level_from_validated_row_major_device_buffer_on_stream")
+            && !impl_body.contains("self.synchronize_queued_work()?"),
+        "pending stream leaf extension should keep validation and leaf hashing on its CUDA stream"
     );
 
     assert!(
@@ -382,8 +386,10 @@ fn cuda_pending_leaf_extension_drop_synchronizes_queued_stream_work() {
             && impl_body.contains("self.ready")
             && impl_body.contains(".synchronize()")
             && impl_body.contains("self.stream_work_completed = true")
-            && impl_body.contains("self.synchronize_queued_work()?"),
-        "pending stream leaf extension finish should synchronize queued CUDA work exactly once before using output"
+            && impl_body.contains("self.ready.record(&self.stream)")
+            && impl_body.contains("cuda_goldilocks_begin_validate_canonical_words_device_on_stream")
+            && !impl_body.contains("self.synchronize_queued_work()?"),
+        "pending stream leaf extension finish should synchronize after same-stream validation and hashing"
     );
 
     let drop_body = function_body(
@@ -453,6 +459,34 @@ fn cuda_buffer_has_stream_zero_and_state_prefix_primitives() {
             && buffer_source.contains("pub unsafe fn from_device_state_prefix_u64_words_on_stream")
             && buffer_source.contains("stream_buffer_initialization_on_stream_matches_blocking"),
         "CudaDeviceBuffer should expose unsafe stream initialization primitives with tests"
+    );
+}
+
+#[test]
+fn cuda_buffer_has_stream_row_slice_primitive() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let host_header_path = crate_root.join("../lzvm-accel/native/cuda_host.hpp");
+    let host_header =
+        std::fs::read_to_string(&host_header_path).expect("CUDA host header should read");
+    let host_source_path = crate_root.join("../lzvm-accel/native/cuda_host.cpp");
+    let host_source =
+        std::fs::read_to_string(&host_source_path).expect("CUDA host source should read");
+    let buffer_path = crate_root.join("../lzvm-accel/src/cuda_buffer.rs");
+    let buffer_source =
+        std::fs::read_to_string(&buffer_path).expect("CUDA buffer source should read");
+
+    assert!(
+        host_header.contains("lzvm_cuda_copy_d2d_row_slice_words_on_stream")
+            && host_source.contains("lzvm_cuda_copy_d2d_row_slice_words_on_stream")
+            && host_source.contains("cudaMemcpy2DAsync"),
+        "CUDA host layer should expose stream-ordered device row-slice copies"
+    );
+    assert!(
+        buffer_source.contains("pub unsafe fn from_device_row_major_u64_slice_on_stream")
+            && buffer_source
+                .contains("pub unsafe fn copy_from_device_row_major_u64_slice_on_stream")
+            && buffer_source.contains("stream_row_slice_on_stream_matches_blocking"),
+        "CudaDeviceBuffer should expose unsafe stream row-slice primitives with tests"
     );
 }
 

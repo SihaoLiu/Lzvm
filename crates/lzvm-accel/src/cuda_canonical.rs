@@ -89,7 +89,7 @@ pub unsafe fn cuda_goldilocks_begin_validate_canonical_words_device_on_stream(
             rhs: expected_len,
         });
     }
-    let found = CudaDeviceBuffer::zeroed(std::mem::size_of::<u32>())?;
+    let found = unsafe { CudaDeviceBuffer::zeroed_on_stream(std::mem::size_of::<u32>(), stream) }?;
     let code = unsafe {
         lzvm_cuda_goldilocks_begin_validate_canonical_words_device_on_stream(
             values.as_raw_ptr().cast::<u64>() as *const u64,
