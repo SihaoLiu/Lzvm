@@ -20,6 +20,8 @@ structure RuntimeQueryPlanBindingValidation (system : VerifierModel) where
   queryPlanSegmentCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
   queryPlanDerivedFromTranscript : RuntimeArtifact -> PublicInput -> Proof -> Prop
   queryPlanMatchesOpenedArtifacts : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  queryPlanSeedBindsWitnessTreeDigests : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  queryPlanSeededFriOpeningRequirementsChecked : RuntimeArtifact -> PublicInput -> Proof -> Prop
   queryPlanBindingAcceptedImpliesChallengeAccepted :
     forall artifact publicInput proof,
       queryPlanBindingAccepted artifact publicInput proof ->
@@ -40,6 +42,14 @@ structure RuntimeQueryPlanBindingValidation (system : VerifierModel) where
     forall artifact publicInput proof,
       queryPlanBindingAccepted artifact publicInput proof ->
         queryPlanMatchesOpenedArtifacts artifact publicInput proof
+  queryPlanBindingAcceptedImpliesSeedBindsWitnessTreeDigests :
+    forall artifact publicInput proof,
+      queryPlanBindingAccepted artifact publicInput proof ->
+        queryPlanSeedBindsWitnessTreeDigests artifact publicInput proof
+  queryPlanBindingAcceptedImpliesSeededFriOpeningRequirementsChecked :
+    forall artifact publicInput proof,
+      queryPlanBindingAccepted artifact publicInput proof ->
+        queryPlanSeededFriOpeningRequirementsChecked artifact publicInput proof
   queryPlanChecksImplyTranscriptQueryPlanBound :
     forall artifact publicInput proof,
       queryPlanSegmentCanonical artifact publicInput proof ->
@@ -65,6 +75,15 @@ def RuntimeQueryPlanBindingBoundContract
       publicInput
       proof
     /\ validation.openingValidation.queryPlanBound artifact publicInput proof
+
+def RuntimeQueryPlanBindingSeededContract
+    (_system : VerifierModel)
+    (validation : RuntimeQueryPlanBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.queryPlanSeedBindsWitnessTreeDigests artifact publicInput proof
+    /\ validation.queryPlanSeededFriOpeningRequirementsChecked artifact publicInput proof
 
 def RuntimeQueryPlanBindingEvidence
     (_system : VerifierModel)
@@ -240,6 +259,38 @@ theorem runtime_query_plan_binding_checked_acceptance_bound_contract
       publicInput
       proof
       evidence
+
+theorem runtime_query_plan_binding_checked_acceptance_seeded_contract
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingSeededContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have seedBindsWitnessTreeDigests :=
+    validation.queryPlanBindingAcceptedImpliesSeedBindsWitnessTreeDigests
+      artifact
+      publicInput
+      proof
+      accepted
+  have seededFriOpeningRequirementsChecked :=
+    validation.queryPlanBindingAcceptedImpliesSeededFriOpeningRequirementsChecked
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro seedBindsWitnessTreeDigests seededFriOpeningRequirementsChecked
 
 theorem runtime_query_plan_binding_checked_acceptance_opening_segment_evidence
     {system : VerifierModel}
