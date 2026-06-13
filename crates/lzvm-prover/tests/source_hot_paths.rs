@@ -4570,25 +4570,30 @@ fn guest_pc_trace_register_mem_steps_use_single_lookup_updates() {
     let backend_source =
         std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
 
-    let sparse_body = function_body(
+    let helper_body = function_body(
         &backend_source,
-        &format!("impl<'a> SparseRegisterMem{}<'a>", concat!("Ste", "ps")),
-        "struct ZiskMainRegisterAccessUpdate",
+        "fn read_then_update_register_mem_step",
+        &format!("fn {}_main_source_register_index", concat!("zi", "sk")),
     );
     assert!(
-        sparse_body.contains("fn read_then_update"),
-        "sparse register mem-step updates should read and replace with one lookup"
+        helper_body.contains("let previous = register_mem_steps[index]")
+            && helper_body.contains("register_mem_steps[index] = value"),
+        "register mem-step updates should read and replace through one helper"
     );
 
     let register_access_body = function_body(
         &backend_source,
-        &format!("fn {}_main_register_access_values", concat!("zi", "sk")),
+        &format!(
+            "fn apply_{}_main_register_access_values",
+            concat!("zi", "sk")
+        ),
         &format!("fn {}_main_source_register_index", concat!("zi", "sk")),
     );
     assert!(
-        register_access_body.contains("read_then_update")
-            && !register_access_body.contains("next_mem_steps[index] ="),
-        "register access lowering should avoid separate index and index_mut lookups"
+        register_access_body.contains("read_then_update_register_mem_step")
+            && !backend_source.contains("struct ZiskMainRegisterAccessUpdate")
+            && !backend_source.contains("SparseRegisterMem"),
+        "register access lowering should update touched register mem-steps in place"
     );
 }
 
@@ -4904,31 +4909,22 @@ fn guest_machine_reports_inline_common_effect_storage() {
 }
 
 #[test]
-fn register_access_hot_path_records_sparse_updates() {
+fn register_access_hot_path_updates_mem_steps_in_place() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
     let source = std::fs::read_to_string(&source_path).expect("backend source should read");
 
     let prefix = "zi".to_owned() + "sk_main_";
-    let update_name = "Zi".to_owned() + "skMainRegisterAccessUpdate";
-    let update_body = function_body(
-        &source,
-        &format!("struct {update_name}"),
-        &format!("fn validate_and_apply_{prefix}report"),
-    );
-    assert!(
-        !update_body.contains("next_mem_steps: [u64; 32]"),
-        "register access updates should not copy the whole register clock array per row"
-    );
-
     let body = function_body(
         &source,
-        &format!("fn {prefix}register_access_values"),
+        &format!("fn apply_{prefix}register_access_values"),
         &format!("fn {prefix}source_register_index"),
     );
     assert!(
-        !body.contains("let mut next_mem_steps = state.register_mem_steps"),
-        "register access hot path should record touched indices instead of copying the full array"
+        body.contains("&mut state.register_mem_steps")
+            && body.contains("read_then_update_register_mem_step")
+            && !body.contains("let mut next_mem_steps = state.register_mem_steps"),
+        "register access hot path should update touched mem-step entries without copying the full array"
     );
 }
 

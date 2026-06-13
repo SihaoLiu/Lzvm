@@ -2797,68 +2797,6 @@ struct ZiskMainRegisterAccessValues {
     store_prev_value: Option<u64>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct RegisterMemStepUpdates {
-    entries: [(usize, u64); 3],
-    len: usize,
-}
-
-impl RegisterMemStepUpdates {
-    fn position(&self, index: usize) -> Option<usize> {
-        self.entries[..self.len]
-            .iter()
-            .rposition(|(entry_index, _)| *entry_index == index)
-    }
-
-    fn push(&mut self, index: usize, value: u64) {
-        debug_assert!(self.len < self.entries.len());
-        self.entries[self.len] = (index, value);
-        self.len += 1;
-    }
-
-    fn apply(self, register_mem_steps: &mut [u64; 32]) {
-        for (index, value) in &self.entries[..self.len] {
-            register_mem_steps[*index] = *value;
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SparseRegisterMemSteps<'a> {
-    base: &'a [u64; 32],
-    updates: RegisterMemStepUpdates,
-}
-
-impl<'a> SparseRegisterMemSteps<'a> {
-    fn new(base: &'a [u64; 32]) -> Self {
-        Self {
-            base,
-            updates: RegisterMemStepUpdates::default(),
-        }
-    }
-
-    fn into_updates(self) -> RegisterMemStepUpdates {
-        self.updates
-    }
-
-    fn read_then_update(&mut self, index: usize, value: u64) -> u64 {
-        if let Some(position) = self.updates.position(index) {
-            let previous = self.updates.entries[position].1;
-            self.updates.entries[position].1 = value;
-            return previous;
-        }
-        let previous = self.base[index];
-        self.updates.push(index, value);
-        previous
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ZiskMainRegisterAccessUpdate {
-    values: ZiskMainRegisterAccessValues,
-    next_mem_steps: RegisterMemStepUpdates,
-}
-
 #[allow(clippy::too_many_arguments)]
 fn validate_and_apply_zisk_main_report(
     row: usize,
@@ -3107,7 +3045,7 @@ fn apply_zisk_main_lowered_report_row(
     });
 
     let register_access_started = detail_duration_started(&timing, detail_timing);
-    let register_accesses = zisk_main_register_access_values(
+    let register_accesses = apply_zisk_main_register_access_values(
         output_row,
         &instruction,
         state,
@@ -3141,9 +3079,6 @@ fn apply_zisk_main_lowered_report_row(
         lowered_row.expected_next_pc,
         state,
     )?;
-    register_accesses
-        .next_mem_steps
-        .apply(&mut state.register_mem_steps);
     record_detail_duration(store_apply_started, &mut timing, |timing| {
         &mut timing.trace_report_store_apply_duration
     });
@@ -3156,7 +3091,7 @@ fn apply_zisk_main_lowered_report_row(
         b,
         c,
         flag,
-        register_accesses: register_accesses.values,
+        register_accesses,
     };
     let visit_started = detail_duration_started(&timing, detail_timing);
     let result = visit(output_row, values, timing.as_deref_mut());
@@ -3811,20 +3746,19 @@ fn zisk_main_register_store(index: u8) -> ZiskMainStore {
     }
 }
 
-fn zisk_main_register_access_values(
+fn apply_zisk_main_register_access_values(
     row: usize,
     instruction: &ZiskMainInstruction,
-    state: &ZiskMainTraceState,
+    state: &mut ZiskMainTraceState,
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
-) -> Result<ZiskMainRegisterAccessUpdate, GuestPcTraceBackendError> {
+) -> Result<ZiskMainRegisterAccessValues, GuestPcTraceBackendError> {
     let mut values = ZiskMainRegisterAccessValues {
         a_prev_mem_step: None,
         b_prev_mem_step: None,
         store_prev_mem_step: None,
         store_prev_value: None,
     };
-    let mut next_mem_steps = SparseRegisterMemSteps::new(&state.register_mem_steps);
     let mut row_mem_step_base = None;
     let mut row_mem_step = |offset| {
         let base = match row_mem_step_base {
@@ -3841,23 +3775,41 @@ fn zisk_main_register_access_values(
 
     if let Some(index) = zisk_main_source_register_index(row, instruction.a)? {
         let next_step = row_mem_step(ZISK_MAIN_A_MEM_STEP_OFFSET)?;
-        values.a_prev_mem_step = Some(next_mem_steps.read_then_update(index, next_step));
+        values.a_prev_mem_step = Some(read_then_update_register_mem_step(
+            &mut state.register_mem_steps,
+            index,
+            next_step,
+        ));
     }
     if let Some(index) = zisk_main_source_register_index(row, instruction.b)? {
         let next_step = row_mem_step(ZISK_MAIN_B_MEM_STEP_OFFSET)?;
-        values.b_prev_mem_step = Some(next_mem_steps.read_then_update(index, next_step));
+        values.b_prev_mem_step = Some(read_then_update_register_mem_step(
+            &mut state.register_mem_steps,
+            index,
+            next_step,
+        ));
     }
     if let Some(index) = zisk_main_store_register_index(row, instruction.store)? {
         values.store_prev_value = Some(state.registers[index]);
         let next_step = row_mem_step(ZISK_MAIN_STORE_MEM_STEP_OFFSET)?;
-        values.store_prev_mem_step = Some(next_mem_steps.read_then_update(index, next_step));
+        values.store_prev_mem_step = Some(read_then_update_register_mem_step(
+            &mut state.register_mem_steps,
+            index,
+            next_step,
+        ));
     }
 
-    let next_mem_steps = next_mem_steps.into_updates();
-    Ok(ZiskMainRegisterAccessUpdate {
-        values,
-        next_mem_steps,
-    })
+    Ok(values)
+}
+
+fn read_then_update_register_mem_step(
+    register_mem_steps: &mut [u64; 32],
+    index: usize,
+    value: u64,
+) -> u64 {
+    let previous = register_mem_steps[index];
+    register_mem_steps[index] = value;
+    previous
 }
 
 fn zisk_main_source_register_index(

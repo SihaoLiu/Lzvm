@@ -266,8 +266,9 @@ fn register_mem_steps_preserve_same_register_access_order() {
         4,
     );
 
-    let update = zisk_main_register_access_values(row, &instruction, &state, row_count, segment)
-        .expect("same-register accesses should validate");
+    let values =
+        apply_zisk_main_register_access_values(row, &instruction, &mut state, row_count, segment)
+            .expect("same-register accesses should validate");
 
     let a_step = zisk_main_row_mem_step(
         row_count,
@@ -291,14 +292,11 @@ fn register_mem_steps_preserve_same_register_access_order() {
     )
     .expect("store mem step should fit");
 
-    assert_eq!(update.values.a_prev_mem_step, Some(42));
-    assert_eq!(update.values.b_prev_mem_step, Some(a_step));
-    assert_eq!(update.values.store_prev_mem_step, Some(b_step));
-    assert_eq!(update.values.store_prev_value, Some(99));
-
-    let mut register_mem_steps = state.register_mem_steps;
-    update.next_mem_steps.apply(&mut register_mem_steps);
-    assert_eq!(register_mem_steps[1], store_step);
+    assert_eq!(values.a_prev_mem_step, Some(42));
+    assert_eq!(values.b_prev_mem_step, Some(a_step));
+    assert_eq!(values.store_prev_mem_step, Some(b_step));
+    assert_eq!(values.store_prev_value, Some(99));
+    assert_eq!(state.register_mem_steps[1], store_step);
 }
 
 #[test]
