@@ -209,6 +209,36 @@ theorem runtime_opening_segment_binding_evidence_implies_bound_contract
   intro artifact publicInput proof evidence
   exact evidence
 
+theorem runtime_opening_segment_binding_evidence_implies_fri_opening_checks
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.friOpeningSegmentsValid artifact publicInput proof
+          /\ validation.friFoldsValid artifact publicInput proof
+          /\ validation.verifierQueryOutputsValid artifact publicInput proof
+          /\ validation.openingValidation.friOpeningBound artifact publicInput proof := by
+  intro artifact publicInput proof evidence
+  rcases evidence with
+    ⟨_queryPlanBound,
+      _constantSegments,
+      _witnessSegments,
+      friSegments,
+      friFolds,
+      verifierQueries,
+      _constantBound,
+      _witnessBound,
+      friOpeningBound⟩
+  exact
+    And.intro friSegments
+      (And.intro friFolds
+        (And.intro verifierQueries friOpeningBound))
+
 theorem runtime_opening_segment_binding_checked_acceptance_opening
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -259,6 +289,36 @@ theorem runtime_opening_segment_binding_checked_acceptance_bound_contract
       accepted
   exact
     runtime_opening_segment_binding_evidence_implies_bound_contract
+      validation
+      artifact
+      publicInput
+      proof
+      evidence
+
+theorem runtime_opening_segment_binding_checked_acceptance_fri_opening_checks
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.friOpeningSegmentsValid artifact publicInput proof
+          /\ validation.friFoldsValid artifact publicInput proof
+          /\ validation.verifierQueryOutputsValid artifact publicInput proof
+          /\ validation.openingValidation.friOpeningBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have evidence :=
+    runtime_opening_segment_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_segment_binding_evidence_implies_fri_opening_checks
       validation
       artifact
       publicInput
