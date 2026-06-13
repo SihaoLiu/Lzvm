@@ -401,6 +401,17 @@ unsafe extern "C" {
         offset: usize,
         chunk_len: usize,
     ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width8_linear_round_row_major_digest_device_on_stream"]
+    fn lzvm_cuda_poseidon2_width8_linear_round_row_major_digest_device_on_stream_raw(
+        current_states: *const u64,
+        row_values: *const u64,
+        out: *mut u64,
+        row_count: usize,
+        column_count: usize,
+        offset: usize,
+        chunk_len: usize,
+        stream: *mut std::ffi::c_void,
+    ) -> i32;
     fn lzvm_cuda_poseidon2_width16(values: *const u64, out: *mut u64, state_count: usize) -> i32;
     #[link_name = "lzvm_cuda_poseidon2_width16_device"]
     fn lzvm_cuda_poseidon2_width16_device_raw(
@@ -499,6 +510,17 @@ unsafe extern "C" {
         column_count: usize,
         offset: usize,
         chunk_len: usize,
+    ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width16_linear_round_row_major_digest_device_on_stream"]
+    fn lzvm_cuda_poseidon2_width16_linear_round_row_major_digest_device_on_stream_raw(
+        current_states: *const u64,
+        row_values: *const u64,
+        out: *mut u64,
+        row_count: usize,
+        column_count: usize,
+        offset: usize,
+        chunk_len: usize,
+        stream: *mut std::ffi::c_void,
     ) -> i32;
     fn lzvm_cuda_keccak256_fixed(
         input: *const u8,
@@ -3313,6 +3335,19 @@ type CudaPoseidon2LinearRoundRowMajorDeviceOp =
     unsafe extern "C" fn(*const u64, *const u64, *mut u64, usize, usize, usize, usize) -> i32;
 
 #[cfg(feature = "cuda")]
+type CudaPoseidon2LinearRoundRowMajorDeviceOnStreamOp = unsafe extern "C" fn(
+    *const u64,
+    *const u64,
+    *mut u64,
+    usize,
+    usize,
+    usize,
+    usize,
+    *mut std::ffi::c_void,
+) -> i32;
+
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, Copy)]
 struct CudaLinearRoundRowMajorParams {
     width: usize,
     rate: usize,
@@ -3401,6 +3436,71 @@ fn run_cuda_poseidon2_linear_round_row_major_device_op(
     params: CudaLinearRoundRowMajorParams,
     operation: CudaPoseidon2LinearRoundRowMajorDeviceOp,
 ) -> Result<(), AccelError> {
+    let row_count = validate_cuda_poseidon2_linear_round_row_major_buffers(
+        current_states,
+        row_values,
+        out,
+        params,
+    )?;
+    if row_count == 0 {
+        return Ok(());
+    }
+
+    let code = unsafe {
+        operation(
+            current_states.as_raw_ptr() as *const u64,
+            row_values.as_raw_ptr() as *const u64,
+            out.as_raw_ptr() as *mut u64,
+            row_count,
+            params.column_count,
+            params.offset,
+            params.chunk_len,
+        )
+    };
+    cuda_status(code)
+}
+
+#[cfg(feature = "cuda")]
+fn run_cuda_poseidon2_linear_round_row_major_device_op_on_stream(
+    current_states: &CudaDeviceBuffer,
+    row_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    params: CudaLinearRoundRowMajorParams,
+    stream: &CudaStream,
+    operation: CudaPoseidon2LinearRoundRowMajorDeviceOnStreamOp,
+) -> Result<(), AccelError> {
+    let row_count = validate_cuda_poseidon2_linear_round_row_major_buffers(
+        current_states,
+        row_values,
+        out,
+        params,
+    )?;
+    if row_count == 0 {
+        return Ok(());
+    }
+
+    let code = unsafe {
+        operation(
+            current_states.as_raw_ptr() as *const u64,
+            row_values.as_raw_ptr() as *const u64,
+            out.as_raw_ptr() as *mut u64,
+            row_count,
+            params.column_count,
+            params.offset,
+            params.chunk_len,
+            stream.as_raw(),
+        )
+    };
+    cuda_status(code)
+}
+
+#[cfg(feature = "cuda")]
+fn validate_cuda_poseidon2_linear_round_row_major_buffers(
+    current_states: &CudaDeviceBuffer,
+    row_values: &CudaDeviceBuffer,
+    out: &CudaDeviceBuffer,
+    params: CudaLinearRoundRowMajorParams,
+) -> Result<usize, AccelError> {
     if !current_states.len().is_multiple_of(8) {
         return Err(AccelError::LengthMismatch {
             lhs: current_states.len(),
@@ -3457,22 +3557,7 @@ fn run_cuda_poseidon2_linear_round_row_major_device_op(
             rhs: row_values.len(),
         });
     }
-    if row_count == 0 {
-        return Ok(());
-    }
-
-    let code = unsafe {
-        operation(
-            current_states.as_raw_ptr() as *const u64,
-            row_values.as_raw_ptr() as *const u64,
-            out.as_raw_ptr() as *mut u64,
-            row_count,
-            params.column_count,
-            params.offset,
-            params.chunk_len,
-        )
-    };
-    cuda_status(code)
+    Ok(row_count)
 }
 
 #[cfg(feature = "cuda")]
@@ -3931,6 +4016,39 @@ pub fn cuda_poseidon2_width8_linear_round_row_major_digest_device(
     )
 }
 
+/// Enqueues a width-8 row-major digest round on `stream` and returns after launch.
+///
+/// # Safety
+///
+/// The caller must keep `current_states`, `row_values`, `out`, and `stream`
+/// alive until the queued stream work has completed, and must not read or
+/// reuse `out` until that work has completed.
+#[cfg(feature = "cuda")]
+pub unsafe fn cuda_poseidon2_begin_width8_linear_round_row_major_digest_device_on_stream(
+    current_states: &CudaDeviceBuffer,
+    row_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    column_count: usize,
+    offset: usize,
+    chunk_len: usize,
+    stream: &CudaStream,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_linear_round_row_major_device_op_on_stream(
+        current_states,
+        row_values,
+        out,
+        CudaLinearRoundRowMajorParams {
+            width: 8,
+            rate: 4,
+            column_count,
+            offset,
+            chunk_len,
+        },
+        stream,
+        lzvm_cuda_poseidon2_width8_linear_round_row_major_digest_device_on_stream_raw,
+    )
+}
+
 #[cfg(feature = "cuda")]
 pub fn cuda_poseidon2_width16_linear_round_device(
     current_states: &CudaDeviceBuffer,
@@ -3994,6 +4112,39 @@ pub fn cuda_poseidon2_width16_linear_round_row_major_digest_device(
             chunk_len,
         },
         lzvm_cuda_poseidon2_width16_linear_round_row_major_digest_device_raw,
+    )
+}
+
+/// Enqueues a width-16 row-major digest round on `stream` and returns after launch.
+///
+/// # Safety
+///
+/// The caller must keep `current_states`, `row_values`, `out`, and `stream`
+/// alive until the queued stream work has completed, and must not read or
+/// reuse `out` until that work has completed.
+#[cfg(feature = "cuda")]
+pub unsafe fn cuda_poseidon2_begin_width16_linear_round_row_major_digest_device_on_stream(
+    current_states: &CudaDeviceBuffer,
+    row_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    column_count: usize,
+    offset: usize,
+    chunk_len: usize,
+    stream: &CudaStream,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_linear_round_row_major_device_op_on_stream(
+        current_states,
+        row_values,
+        out,
+        CudaLinearRoundRowMajorParams {
+            width: 16,
+            rate: 12,
+            column_count,
+            offset,
+            chunk_len,
+        },
+        stream,
+        lzvm_cuda_poseidon2_width16_linear_round_row_major_digest_device_on_stream_raw,
     )
 }
 
@@ -4119,7 +4270,9 @@ mod tests {
         cuda_goldilocks_coset_extend_row_major_columns_device_on_stream,
         cuda_goldilocks_coset_extend_row_major_columns_output_bytes,
         cuda_goldilocks_coset_extend_row_major_columns_strided_device,
-        cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream, cuda_status,
+        cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream,
+        cuda_poseidon2_begin_width16_linear_round_row_major_digest_device_on_stream,
+        cuda_poseidon2_width16_linear_round_row_major_digest_device, cuda_status,
         lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream_raw, pow_mod,
         row_weight_shift_for_target_row, CudaDeviceBuffer, CudaEvent, CudaRowMajorColumnView,
         CudaStream, SHIFT,
@@ -4325,6 +4478,68 @@ mod tests {
         stream
             .synchronize()
             .expect("explicit stream strided extension should finish");
+
+        assert_eq!(
+            stream_out
+                .to_u64_words()
+                .expect("stream output should download"),
+            default_out
+                .to_u64_words()
+                .expect("default output should download")
+        );
+    }
+
+    #[test]
+    fn row_major_digest_on_stream_matches_default_stream() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let row_count = 16;
+        let width = 16;
+        let column_count = 19;
+        let offset = 5;
+        let chunk_len = 12;
+        let current_words = (0..row_count * width)
+            .map(|index| (index as u64 + 3) * 29)
+            .collect::<Vec<_>>();
+        let row_words = (0..row_count * column_count)
+            .map(|index| (index as u64 + 7) * 31)
+            .collect::<Vec<_>>();
+        let current_states =
+            CudaDeviceBuffer::from_u64_words(&current_words).expect("states should upload");
+        let row_values =
+            CudaDeviceBuffer::from_u64_words(&row_words).expect("row values should upload");
+        let byte_count = current_words.len() * std::mem::size_of::<u64>();
+        let mut default_out =
+            CudaDeviceBuffer::zeroed(byte_count).expect("default output should allocate");
+        cuda_poseidon2_width16_linear_round_row_major_digest_device(
+            &current_states,
+            &row_values,
+            &mut default_out,
+            column_count,
+            offset,
+            chunk_len,
+        )
+        .expect("default row-major digest round should launch");
+
+        let stream = CudaStream::new().expect("CUDA stream should create");
+        let mut stream_out =
+            CudaDeviceBuffer::zeroed(byte_count).expect("stream output should allocate");
+        unsafe {
+            cuda_poseidon2_begin_width16_linear_round_row_major_digest_device_on_stream(
+                &current_states,
+                &row_values,
+                &mut stream_out,
+                column_count,
+                offset,
+                chunk_len,
+                &stream,
+            )
+            .expect("stream row-major digest round should enqueue");
+        }
+        stream
+            .synchronize()
+            .expect("stream row-major digest round should finish");
 
         assert_eq!(
             stream_out

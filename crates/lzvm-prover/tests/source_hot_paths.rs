@@ -204,6 +204,44 @@ fn cuda_witness_commit_has_stream_capable_row_major_extension() {
 }
 
 #[test]
+fn cuda_poseidon_row_major_digest_has_stream_entrypoints() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let row_major_path = crate_root.join("../lzvm-accel/native/cuda_poseidon2_row_major.cuh");
+    let row_major_source =
+        std::fs::read_to_string(&row_major_path).expect("CUDA row-major source should read");
+    let exports_path = crate_root.join("../lzvm-accel/native/cuda_poseidon2_row_major_exports.cuh");
+    let exports_source =
+        std::fs::read_to_string(&exports_path).expect("CUDA row-major exports should read");
+    let accel_lib_path = crate_root.join("../lzvm-accel/src/lib.rs");
+    let accel_lib_source =
+        std::fs::read_to_string(&accel_lib_path).expect("lzvm-accel lib source should read");
+
+    assert!(
+        row_major_source
+            .contains("run_poseidon2_width16_linear_round_row_major_digest_on_device_on_stream")
+            && row_major_source.contains("cudaStream_t stream")
+            && row_major_source.contains(
+                "poseidon2_width16_linear_round_row_major_kernel<<<blocks, kThreads, 0, stream>>>"
+            ),
+        "native width16 row-major digest rounds should launch on the caller-provided stream"
+    );
+    assert!(
+        exports_source
+            .contains("lzvm_cuda_poseidon2_width16_linear_round_row_major_digest_device_on_stream")
+            && exports_source.contains("static_cast<cudaStream_t>(stream_raw)"),
+        "native row-major digest exports should expose an explicit-stream entrypoint"
+    );
+    assert!(
+        accel_lib_source.contains(
+            "cuda_poseidon2_begin_width16_linear_round_row_major_digest_device_on_stream"
+        ) && accel_lib_source.contains(
+            "lzvm_cuda_poseidon2_width16_linear_round_row_major_digest_device_on_stream_raw"
+        ) && accel_lib_source.contains("row_major_digest_on_stream_matches_default_stream"),
+        "lzvm-accel should expose and test an unsafe begin wrapper for stream row-major digest rounds"
+    );
+}
+
+#[test]
 fn cuda_on_stream_row_major_extension_returns_after_stream_completion() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let accel_lib_path = crate_root.join("../lzvm-accel/src/lib.rs");
