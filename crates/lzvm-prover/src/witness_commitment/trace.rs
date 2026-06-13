@@ -959,7 +959,7 @@ fn commit_witness_stage_source_devices_and_indexed_timing_inner(
     WitnessTraceCommitmentError,
 > {
     let depth = source_device_stream_pipeline_depth();
-    if depth > 1 && source_devices.len() > 1 && leaf_workspace_cache.is_none() {
+    if depth > 1 && source_devices.len() > 1 {
         return commit_witness_stage_source_devices_stream_pipeline_timing(
             source_devices,
             unit,

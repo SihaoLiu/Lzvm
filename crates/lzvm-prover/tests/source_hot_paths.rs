@@ -2404,6 +2404,10 @@ fn cuda_source_device_commit_can_pipeline_stream_leaf_extensions() {
                 .contains("commit_witness_stage_source_devices_stream_pipeline_timing"),
         "source-device commitment should have a bounded stream-pending path"
     );
+    assert!(
+        !source_device_body.contains("&& leaf_workspace_cache.is_none()"),
+        "stream source-device pipeline should not be disabled by guest-PC workspace cache reuse"
+    );
 
     let pipeline_body = function_body(
         &trace_source,
