@@ -54,7 +54,20 @@ unsafe extern "C" {
         state_width_words: usize,
         prefix_words: usize,
     ) -> i32;
+    fn lzvm_cuda_expand_state_prefix_words_device_to_device_on_stream(
+        dst: *mut c_void,
+        src: *const c_void,
+        state_count: usize,
+        state_width_words: usize,
+        prefix_words: usize,
+        stream: *mut c_void,
+    ) -> i32;
     fn lzvm_cuda_memset_zero_bytes(dst: *mut c_void, bytes: usize) -> i32;
+    fn lzvm_cuda_memset_zero_bytes_on_stream(
+        dst: *mut c_void,
+        bytes: usize,
+        stream: *mut c_void,
+    ) -> i32;
     fn lzvm_cuda_fill_row_major_column_u64(
         dst: *mut u64,
         row_count: usize,
@@ -166,6 +179,48 @@ fn validate_row_major_u64_slice_shape(
         })
 }
 
+fn validate_device_state_prefix_shape(
+    source_len: usize,
+    state_count: usize,
+    state_width_words: usize,
+    prefix_words: usize,
+) -> Result<usize, AccelError> {
+    if state_count > 0 && state_width_words == 0 {
+        return Err(AccelError::InvalidDomain {
+            bits: state_width_words,
+            len: prefix_words,
+        });
+    }
+    if prefix_words > state_width_words {
+        return Err(AccelError::InvalidDomain {
+            bits: state_width_words,
+            len: prefix_words,
+        });
+    }
+    let expected_words =
+        state_count
+            .checked_mul(prefix_words)
+            .ok_or(AccelError::InvalidDomain {
+                bits: prefix_words,
+                len: state_count,
+            })?;
+    let expected_input_len = u64_word_byte_len(expected_words)?;
+    if source_len != expected_input_len {
+        return Err(AccelError::LengthMismatch {
+            lhs: source_len,
+            rhs: expected_input_len,
+        });
+    }
+    let output_words =
+        state_count
+            .checked_mul(state_width_words)
+            .ok_or(AccelError::InvalidDomain {
+                bits: state_width_words,
+                len: state_count,
+            })?;
+    u64_word_byte_len(output_words)
+}
+
 fn u32_word_byte_len(word_count: usize) -> Result<usize, AccelError> {
     word_count.checked_mul(4).ok_or(AccelError::InvalidDomain {
         bits: 32,
@@ -195,6 +250,23 @@ impl CudaDeviceBuffer {
         let buffer = Self::new(len)?;
         if len > 0 {
             let code = unsafe { lzvm_cuda_memset_zero_bytes(buffer.ptr, len) };
+            cuda_status(code)?;
+        }
+        Ok(buffer)
+    }
+
+    /// Enqueues zero-initialization on `stream` and returns after launch.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep the returned buffer and `stream` alive until the
+    /// queued work has completed, and must not read or reuse the buffer until
+    /// that work has completed.
+    pub unsafe fn zeroed_on_stream(len: usize, stream: &CudaStream) -> Result<Self, AccelError> {
+        let buffer = Self::new(len)?;
+        if len > 0 {
+            let code =
+                unsafe { lzvm_cuda_memset_zero_bytes_on_stream(buffer.ptr, len, stream.as_raw()) };
             cuda_status(code)?;
         }
         Ok(buffer)
@@ -558,40 +630,13 @@ impl CudaDeviceBuffer {
         state_width_words: usize,
         prefix_words: usize,
     ) -> Result<Self, AccelError> {
-        if state_count > 0 && state_width_words == 0 {
-            return Err(AccelError::InvalidDomain {
-                bits: state_width_words,
-                len: prefix_words,
-            });
-        }
-        if prefix_words > state_width_words {
-            return Err(AccelError::InvalidDomain {
-                bits: state_width_words,
-                len: prefix_words,
-            });
-        }
-        let expected_words =
-            state_count
-                .checked_mul(prefix_words)
-                .ok_or(AccelError::InvalidDomain {
-                    bits: prefix_words,
-                    len: state_count,
-                })?;
-        let expected_input_len = u64_word_byte_len(expected_words)?;
-        if source.len != expected_input_len {
-            return Err(AccelError::LengthMismatch {
-                lhs: source.len,
-                rhs: expected_input_len,
-            });
-        }
-        let output_words =
-            state_count
-                .checked_mul(state_width_words)
-                .ok_or(AccelError::InvalidDomain {
-                    bits: state_width_words,
-                    len: state_count,
-                })?;
-        let buffer = Self::new(u64_word_byte_len(output_words)?)?;
+        let output_len = validate_device_state_prefix_shape(
+            source.len,
+            state_count,
+            state_width_words,
+            prefix_words,
+        )?;
+        let buffer = Self::new(output_len)?;
         if state_count == 0 {
             return Ok(buffer);
         }
@@ -602,6 +647,44 @@ impl CudaDeviceBuffer {
                 state_count,
                 state_width_words,
                 prefix_words,
+            )
+        };
+        cuda_status(code)?;
+        Ok(buffer)
+    }
+
+    /// Enqueues device-to-device state-prefix expansion on `stream`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep `source`, the returned buffer, and `stream` alive
+    /// until the queued work has completed, and must not read or reuse the
+    /// returned buffer until that work has completed.
+    pub unsafe fn from_device_state_prefix_u64_words_on_stream(
+        source: &Self,
+        state_count: usize,
+        state_width_words: usize,
+        prefix_words: usize,
+        stream: &CudaStream,
+    ) -> Result<Self, AccelError> {
+        let output_len = validate_device_state_prefix_shape(
+            source.len,
+            state_count,
+            state_width_words,
+            prefix_words,
+        )?;
+        let buffer = Self::new(output_len)?;
+        if state_count == 0 {
+            return Ok(buffer);
+        }
+        let code = unsafe {
+            lzvm_cuda_expand_state_prefix_words_device_to_device_on_stream(
+                buffer.ptr,
+                source.ptr as *const c_void,
+                state_count,
+                state_width_words,
+                prefix_words,
+                stream.as_raw(),
             )
         };
         cuda_status(code)?;
@@ -1083,5 +1166,80 @@ impl Drop for CudaDeviceBuffer {
             cuda_allocator::free_bytes(self.ptr);
             self.ptr = ptr::null_mut();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AccelError, CudaDeviceBuffer, CudaStream};
+
+    #[test]
+    fn stream_buffer_initialization_on_stream_matches_blocking() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let stream = CudaStream::new().expect("CUDA stream should create");
+        let stream_zeroed =
+            unsafe { CudaDeviceBuffer::zeroed_on_stream(32 * std::mem::size_of::<u64>(), &stream) }
+                .expect("stream zeroed buffer should enqueue");
+        stream
+            .synchronize()
+            .expect("stream zeroed buffer should finish");
+        assert_eq!(
+            stream_zeroed
+                .to_u64_words()
+                .expect("stream zeroed buffer should download"),
+            vec![0_u64; 32]
+        );
+
+        let state_count = 5;
+        let prefix_words = 4;
+        let state_width_words = 8;
+        let compact_words = (0..state_count * prefix_words)
+            .map(|index| (index as u64 + 11) * 17)
+            .collect::<Vec<_>>();
+        let compact =
+            CudaDeviceBuffer::from_u64_words(&compact_words).expect("compact source should upload");
+        let blocking = CudaDeviceBuffer::from_device_state_prefix_u64_words(
+            &compact,
+            state_count,
+            state_width_words,
+            prefix_words,
+        )
+        .expect("blocking prefix expansion should run");
+        let stream = CudaStream::new().expect("CUDA stream should create");
+        let streamed = unsafe {
+            CudaDeviceBuffer::from_device_state_prefix_u64_words_on_stream(
+                &compact,
+                state_count,
+                state_width_words,
+                prefix_words,
+                &stream,
+            )
+        }
+        .expect("stream prefix expansion should enqueue");
+        stream
+            .synchronize()
+            .expect("stream prefix expansion should finish");
+        assert_eq!(
+            streamed
+                .to_u64_words()
+                .expect("stream prefix output should download"),
+            blocking
+                .to_u64_words()
+                .expect("blocking prefix output should download")
+        );
+
+        let error = unsafe {
+            CudaDeviceBuffer::from_device_state_prefix_u64_words_on_stream(
+                &compact,
+                state_count,
+                prefix_words - 1,
+                prefix_words,
+                &stream,
+            )
+        }
+        .expect_err("invalid stream prefix expansion should be rejected");
+        assert!(matches!(error, AccelError::InvalidDomain { .. }));
     }
 }

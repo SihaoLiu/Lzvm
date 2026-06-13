@@ -423,6 +423,40 @@ fn cuda_stream_h2d_upload_exposes_unsafe_lifetime_contract() {
 }
 
 #[test]
+fn cuda_buffer_has_stream_zero_and_state_prefix_primitives() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let host_header_path = crate_root.join("../lzvm-accel/native/cuda_host.hpp");
+    let host_header =
+        std::fs::read_to_string(&host_header_path).expect("CUDA host header should read");
+    let host_source_path = crate_root.join("../lzvm-accel/native/cuda_host.cpp");
+    let host_source =
+        std::fs::read_to_string(&host_source_path).expect("CUDA host source should read");
+    let buffer_path = crate_root.join("../lzvm-accel/src/cuda_buffer.rs");
+    let buffer_source =
+        std::fs::read_to_string(&buffer_path).expect("CUDA buffer source should read");
+
+    assert!(
+        host_header.contains("lzvm_cuda_memset_zero_bytes_on_stream")
+            && host_source.contains("cudaMemsetAsync")
+            && host_source.contains("lzvm_cuda_memset_zero_bytes_on_stream"),
+        "CUDA host layer should expose stream-ordered memset"
+    );
+    assert!(
+        host_header.contains("lzvm_cuda_expand_state_prefix_words_device_to_device_on_stream")
+            && host_source.contains("cudaMemcpy2DAsync")
+            && host_source
+                .contains("lzvm_cuda_expand_state_prefix_words_device_to_device_on_stream"),
+        "CUDA host layer should expose stream-ordered state-prefix expansion"
+    );
+    assert!(
+        buffer_source.contains("pub unsafe fn zeroed_on_stream")
+            && buffer_source.contains("pub unsafe fn from_device_state_prefix_u64_words_on_stream")
+            && buffer_source.contains("stream_buffer_initialization_on_stream_matches_blocking"),
+        "CudaDeviceBuffer should expose unsafe stream initialization primitives with tests"
+    );
+}
+
+#[test]
 fn cuda_merkle_root_folds_on_device_without_host_level_loop() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/merkle_hash.rs");

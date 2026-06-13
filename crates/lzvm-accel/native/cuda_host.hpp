@@ -132,7 +132,18 @@ extern "C" int lzvm_cuda_expand_state_prefix_words_device_to_device(
     std::size_t state_count,
     std::size_t state_width_words,
     std::size_t prefix_words);
+extern "C" int lzvm_cuda_expand_state_prefix_words_device_to_device_on_stream(
+    void* dst,
+    const void* src,
+    std::size_t state_count,
+    std::size_t state_width_words,
+    std::size_t prefix_words,
+    void* stream);
 extern "C" int lzvm_cuda_memset_zero_bytes(void* dst, std::size_t bytes);
+extern "C" int lzvm_cuda_memset_zero_bytes_on_stream(
+    void* dst,
+    std::size_t bytes,
+    void* stream);
 extern "C" int lzvm_cuda_fill_row_major_column_u64(
     std::uint64_t* dst,
     std::size_t row_count,
