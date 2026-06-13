@@ -4137,9 +4137,11 @@ mod tests {
         let mut streamed = CudaDeviceBuffer::new(values.len() * std::mem::size_of::<u64>())
             .expect("streamed upload buffer should allocate");
 
-        streamed
-            .copy_from_u64_words_on_stream(&values, &stream)
-            .expect("stream upload should enqueue");
+        unsafe {
+            streamed
+                .copy_from_u64_words_on_stream(&values, &stream)
+                .expect("stream upload should enqueue");
+        }
         stream.synchronize().expect("stream upload should finish");
 
         let blocking =
@@ -4156,9 +4158,11 @@ mod tests {
         let mut too_small = CudaDeviceBuffer::new((values.len() - 1) * std::mem::size_of::<u64>())
             .expect("short buffer should allocate");
         assert!(
-            too_small
-                .copy_from_u64_words_on_stream(&values, &stream)
-                .is_err(),
+            unsafe {
+                too_small
+                    .copy_from_u64_words_on_stream(&values, &stream)
+                    .is_err()
+            },
             "stream upload should reject length mismatches"
         );
     }

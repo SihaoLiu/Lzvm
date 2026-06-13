@@ -664,9 +664,12 @@ impl CudaDeviceBuffer {
 
     /// Enqueues a host-to-device upload on `stream`.
     ///
+    /// # Safety
+    ///
     /// The caller must keep `words` alive until the stream has completed the
-    /// copy or an ordering event recorded after this call has completed.
-    pub fn copy_from_u64_words_on_stream(
+    /// copy or an ordering event recorded after this call has completed, and
+    /// must keep this buffer alive until the queued copy has completed.
+    pub unsafe fn copy_from_u64_words_on_stream(
         &mut self,
         words: &[u64],
         stream: &CudaStream,

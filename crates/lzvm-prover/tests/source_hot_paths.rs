@@ -277,6 +277,73 @@ fn cuda_leaf_extension_has_owning_pending_stream_handle() {
 }
 
 #[test]
+fn cuda_pending_leaf_extension_drop_synchronizes_queued_stream_work() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let extend_path = crate_root.join("src/witness_commitment/extend.rs");
+    let extend_source =
+        std::fs::read_to_string(&extend_path).expect("witness extension source should read");
+
+    let pending_body = function_body(
+        &extend_source,
+        "struct PendingCudaLeafExtension",
+        "impl PendingCudaLeafExtension",
+    );
+    assert!(
+        pending_body.contains("stream_work_completed: bool"),
+        "pending stream leaf extension should track whether queued CUDA work has completed"
+    );
+
+    let impl_body = function_body(
+        &extend_source,
+        "impl PendingCudaLeafExtension",
+        "#[cfg(feature = \"cuda\")]\nimpl Drop for PendingCudaLeafExtension",
+    );
+    assert!(
+        impl_body.contains("fn synchronize_queued_work")
+            && impl_body.contains("self.ready")
+            && impl_body.contains(".synchronize()")
+            && impl_body.contains("self.stream_work_completed = true")
+            && impl_body.contains("self.synchronize_queued_work()?"),
+        "pending stream leaf extension finish should synchronize queued CUDA work exactly once before using output"
+    );
+
+    let drop_body = function_body(
+        &extend_source,
+        "impl Drop for PendingCudaLeafExtension",
+        "#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]",
+    );
+    assert!(
+        drop_body.contains("fn drop")
+            && drop_body.contains("!self.stream_work_completed")
+            && drop_body.contains("self.ready.synchronize()"),
+        "pending stream leaf extension drop should synchronize unfinished CUDA work before resources are released"
+    );
+
+    let begin_body = function_body(
+        &extend_source,
+        "fn begin_compact_witness_stage_leaf_hash_level_from_source_device_view_on_stream_timing",
+        "#[cfg(feature = \"cuda\")]\n#[allow(clippy::too_many_arguments)]\npub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_view_with_workspace_cache_timing",
+    );
+    assert!(
+        begin_body.contains("ready.record(&stream)") && begin_body.contains("stream.synchronize()"),
+        "pending stream leaf extension begin should synchronize before returning an error after enqueue but failed event record"
+    );
+}
+
+#[test]
+fn cuda_stream_h2d_upload_exposes_unsafe_lifetime_contract() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let buffer_path = crate_root.join("../lzvm-accel/src/cuda_buffer.rs");
+    let buffer_source =
+        std::fs::read_to_string(&buffer_path).expect("CUDA buffer source should read");
+
+    assert!(
+        buffer_source.contains("pub unsafe fn copy_from_u64_words_on_stream"),
+        "asynchronous stream H2D upload should be unsafe because caller-owned host and device storage must outlive queued work"
+    );
+}
+
+#[test]
 fn cuda_merkle_root_folds_on_device_without_host_level_loop() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/merkle_hash.rs");

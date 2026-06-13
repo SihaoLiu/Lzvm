@@ -58,6 +58,7 @@ pub(crate) struct PendingCudaLeafExtension {
     out_byte_count: usize,
     extended_rows: usize,
     arity: usize,
+    stream_work_completed: bool,
 }
 
 #[cfg(feature = "cuda")]
@@ -174,13 +175,21 @@ impl PendingCanonicalCudaDigestLevel {
 #[cfg(feature = "cuda")]
 #[allow(dead_code)]
 impl PendingCudaLeafExtension {
+    fn synchronize_queued_work(&mut self) -> Result<(), WitnessStageLeafError> {
+        if !self.stream_work_completed {
+            self.ready
+                .synchronize()
+                .map_err(WitnessStageLeafError::from)?;
+            self.stream_work_completed = true;
+        }
+        Ok(())
+    }
+
     pub(crate) fn finish(
-        self,
+        mut self,
         timing: &mut WitnessStageLeafExtendTiming,
     ) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
-        self.ready
-            .synchronize()
-            .map_err(WitnessStageLeafError::from)?;
+        self.synchronize_queued_work()?;
         let canonical_check = record_duration(&mut timing.validate_duration, || {
             begin_validate_row_major_device_words(&self.output_buffer, self.out_byte_count)
         })?;
@@ -198,6 +207,16 @@ impl PendingCudaLeafExtension {
         let _keep_workspace_alive = &self.extension_workspace;
         let _keep_stream_alive = &self.stream;
         Ok(PendingCanonicalCudaDigestLevel::new(level, canonical_check))
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl Drop for PendingCudaLeafExtension {
+    fn drop(&mut self) {
+        if !self.stream_work_completed {
+            let _ = self.ready.synchronize();
+            self.stream_work_completed = true;
+        }
     }
 }
 
@@ -779,33 +798,38 @@ pub(crate) fn begin_compact_witness_stage_leaf_hash_level_from_source_device_vie
     )?;
 
     record_duration(&mut timing.kernel_duration, || {
-        if view.source_row_stride == view.column_count && view.column_offset == 0 {
-            unsafe {
-                cuda_goldilocks_begin_coset_extend_row_major_columns_device_on_stream(
-                    source_device.buffer(),
-                    &mut output_buffer,
-                    &mut extension_workspace,
-                    view.column_count,
-                    source_bits,
-                    target_bits,
-                    &stream,
-                )
-            }
-        } else {
-            unsafe {
-                cuda_goldilocks_begin_coset_extend_row_major_columns_strided_device_on_stream(
-                    source_device.buffer(),
-                    &mut output_buffer,
-                    &mut extension_workspace,
-                    view,
-                    source_bits,
-                    target_bits,
-                    &stream,
-                )
-            }
+        let enqueue_result =
+            if view.source_row_stride == view.column_count && view.column_offset == 0 {
+                unsafe {
+                    cuda_goldilocks_begin_coset_extend_row_major_columns_device_on_stream(
+                        source_device.buffer(),
+                        &mut output_buffer,
+                        &mut extension_workspace,
+                        view.column_count,
+                        source_bits,
+                        target_bits,
+                        &stream,
+                    )
+                }
+            } else {
+                unsafe {
+                    cuda_goldilocks_begin_coset_extend_row_major_columns_strided_device_on_stream(
+                        source_device.buffer(),
+                        &mut output_buffer,
+                        &mut extension_workspace,
+                        view,
+                        source_bits,
+                        target_bits,
+                        &stream,
+                    )
+                }
+            };
+        enqueue_result.map_err(WitnessStageLeafError::from)?;
+        if let Err(error) = ready.record(&stream) {
+            let _ = stream.synchronize();
+            return Err(WitnessStageLeafError::from(error));
         }
-        .and_then(|()| ready.record(&stream))
-        .map_err(WitnessStageLeafError::from)
+        Ok(())
     })?;
     timing.record_coset_extend_work(out_byte_count, column_count, source_bits, target_bits);
     let extended_rows = extended_row_count_from_bytes(out_byte_count, column_count)?;
@@ -820,6 +844,7 @@ pub(crate) fn begin_compact_witness_stage_leaf_hash_level_from_source_device_vie
         out_byte_count,
         extended_rows,
         arity,
+        stream_work_completed: false,
     })
 }
 
