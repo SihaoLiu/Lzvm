@@ -1004,7 +1004,7 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
 
     record_duration(&mut timing.kernel_duration, || match stream {
         Some(stream) => {
-            if view.source_row_stride == view.column_count && view.column_offset == 0 {
+            let result = if view.source_row_stride == view.column_count && view.column_offset == 0 {
                 cuda_goldilocks_coset_extend_row_major_columns_device_on_stream(
                     source_device,
                     &mut output_buffer,
@@ -1024,9 +1024,8 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
                     target_bits,
                     stream,
                 )
-            }
-            .map_err(WitnessStageLeafError::from)?;
-            stream.synchronize().map_err(WitnessStageLeafError::from)
+            };
+            result.map_err(WitnessStageLeafError::from)
         }
         None => if view.source_row_stride == view.column_count && view.column_offset == 0 {
             cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(

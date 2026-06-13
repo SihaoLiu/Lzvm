@@ -1460,7 +1460,8 @@ pub fn cuda_goldilocks_coset_extend_row_major_columns_device_on_stream(
             stream.as_raw(),
         )
     };
-    cuda_status(code)
+    cuda_status(code)?;
+    stream.synchronize()
 }
 
 #[cfg(feature = "cuda")]
@@ -1799,7 +1800,8 @@ pub fn cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream(
             stream.as_raw(),
         )
     };
-    cuda_status(code)
+    cuda_status(code)?;
+    stream.synchronize()
 }
 
 #[cfg(feature = "cuda")]
@@ -3896,9 +3898,10 @@ mod tests {
         cuda_goldilocks_coset_extend_row_major_columns_device_on_stream,
         cuda_goldilocks_coset_extend_row_major_columns_output_bytes,
         cuda_goldilocks_coset_extend_row_major_columns_strided_device,
-        cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream,
+        cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream, cuda_status,
+        lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream_raw, pow_mod,
         row_weight_shift_for_target_row, CudaDeviceBuffer, CudaEvent, CudaRowMajorColumnView,
-        CudaStream,
+        CudaStream, SHIFT,
     };
 
     #[test]
@@ -4070,8 +4073,41 @@ mod tests {
         );
     }
 
+    fn enqueue_row_major_extension_raw_on_stream(
+        values: &CudaDeviceBuffer,
+        out: &mut CudaDeviceBuffer,
+        workspace: &mut CudaDeviceBuffer,
+        column_count: usize,
+        source_bits: usize,
+        target_bits: usize,
+        stream: &CudaStream,
+    ) {
+        let source_words = values.len() / 8;
+        let source_rows = source_words / column_count;
+        let (source_len, target_len, source_root, target_root) =
+            coset_extend_domain(source_rows, source_bits, target_bits)
+                .expect("domain shape should be valid");
+        let code = unsafe {
+            lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream_raw(
+                values.as_raw_ptr() as *const u64,
+                out.as_raw_ptr() as *mut u64,
+                workspace.as_raw_ptr() as *mut u64,
+                source_len,
+                source_bits,
+                target_len,
+                target_bits,
+                column_count,
+                pow_mod(source_root, 0xffff_ffff_0000_0001 - 2),
+                target_root,
+                SHIFT,
+                stream.as_raw(),
+            )
+        };
+        cuda_status(code).expect("raw stream extension should enqueue");
+    }
+
     #[test]
-    fn stream_wait_event_orders_cross_stream_extension() {
+    fn stream_wait_event_orders_cross_stream_raw_extension() {
         let _guard = crate::CUDA_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -4127,7 +4163,7 @@ mod tests {
             CudaDeviceBuffer::new(mid_byte_count).expect("stream mid should allocate");
         let mut stream_mid_workspace =
             CudaDeviceBuffer::new(mid_byte_count).expect("stream mid workspace should allocate");
-        cuda_goldilocks_coset_extend_row_major_columns_device_on_stream(
+        enqueue_row_major_extension_raw_on_stream(
             &source,
             &mut stream_mid,
             &mut stream_mid_workspace,
@@ -4135,8 +4171,7 @@ mod tests {
             source_bits,
             mid_bits,
             &producer,
-        )
-        .expect("producer extension should enqueue");
+        );
         ready.record(&producer).expect("event should record");
         consumer
             .wait_event(&ready)
@@ -4146,7 +4181,7 @@ mod tests {
             CudaDeviceBuffer::new(target_byte_count).expect("stream output should allocate");
         let mut stream_out_workspace = CudaDeviceBuffer::new(target_byte_count)
             .expect("stream output workspace should allocate");
-        cuda_goldilocks_coset_extend_row_major_columns_device_on_stream(
+        enqueue_row_major_extension_raw_on_stream(
             &stream_mid,
             &mut stream_out,
             &mut stream_out_workspace,
@@ -4154,8 +4189,7 @@ mod tests {
             mid_bits,
             target_bits,
             &consumer,
-        )
-        .expect("consumer extension should enqueue");
+        );
         consumer
             .synchronize()
             .expect("consumer extension should finish");

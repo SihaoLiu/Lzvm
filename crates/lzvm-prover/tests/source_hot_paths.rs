@@ -204,6 +204,37 @@ fn cuda_witness_commit_has_stream_capable_row_major_extension() {
 }
 
 #[test]
+fn cuda_on_stream_row_major_extension_returns_after_stream_completion() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let accel_lib_path = crate_root.join("../lzvm-accel/src/lib.rs");
+    let accel_lib_source =
+        std::fs::read_to_string(&accel_lib_path).expect("lzvm-accel lib source should read");
+    let row_major_body = function_body(
+        &accel_lib_source,
+        "pub fn cuda_goldilocks_coset_extend_row_major_columns_device_on_stream",
+        "#[cfg(feature = \"cuda\")]\n#[derive(Debug, Clone, Copy, PartialEq, Eq)]",
+    );
+    let strided_body = function_body(
+        &accel_lib_source,
+        "pub fn cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream",
+        "#[cfg(feature = \"cuda\")]\npub fn cuda_goldilocks_coset_extend_row_major_columns_row_device",
+    );
+
+    for body in [row_major_body, strided_body] {
+        let enqueue_index = body
+            .find("_device_on_stream_raw")
+            .expect("stream wrapper should enqueue native work");
+        let sync_index = body
+            .find("stream.synchronize()")
+            .expect("safe stream wrapper should complete queued work before returning");
+        assert!(
+            enqueue_index < sync_index,
+            "safe stream wrapper should not return while queued kernels can still access caller-owned buffers"
+        );
+    }
+}
+
+#[test]
 fn cuda_merkle_root_folds_on_device_without_host_level_loop() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/merkle_hash.rs");
