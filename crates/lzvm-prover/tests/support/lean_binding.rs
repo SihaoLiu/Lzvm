@@ -74,6 +74,17 @@ pub fn assert_theorem_body_omits(source: &str, name: &str, snippets: &[&str]) {
     }
 }
 
+#[allow(dead_code)]
+pub fn assert_theorem_body_contains(source: &str, name: &str, snippets: &[&str]) {
+    let body = theorem_body(source, name);
+    for snippet in snippets {
+        assert!(
+            body.contains(snippet),
+            "Lean theorem {name} body should contain {snippet}"
+        );
+    }
+}
+
 fn uncommented_lines(source: &str) -> impl Iterator<Item = String> + '_ {
     let mut block_depth = 0usize;
     source.lines().map(move |line| {

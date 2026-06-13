@@ -251,6 +251,8 @@ theorem runtime_soundness_checked_acceptance_evidence
           proof
           requiresExternalSource := by
   intro artifact publicInput proof requiresExternalSource checked
+  have auditedCrypto :=
+    assumption_bundle_carries_required_crypto_evidence assumptions
   have transcriptAccepted := checked.left
   have sourceRequirement := checked.right
   have transcriptSound :=
@@ -280,10 +282,14 @@ theorem runtime_soundness_checked_acceptance_evidence
       publicInput
       proof
       runtimeAccepted
+  have pcsOpeningSound :=
+    required_crypto_assumptions_pcs_opening_soundness auditedCrypto
+  have friQuerySound :=
+    required_crypto_assumptions_fri_query_soundness auditedCrypto
   have pcsOpenings :=
-    assumptions.crypto.pcs_opening_sound publicInput proof verifierAccepts
+    pcsOpeningSound publicInput proof verifierAccepts
   have friQueries :=
-    assumptions.crypto.fri_query_sound publicInput proof verifierAccepts
+    friQuerySound publicInput proof verifierAccepts
   have publicInputBound :=
     (sound_witness_implies_verifier_core_contract
       transcriptSound.right.right.right).right.left

@@ -59,6 +59,23 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         &runtime_source,
         &["runtime_soundness_checked_acceptance_audited_assumptions"],
     );
+    lean_binding::assert_theorem_body_contains(
+        &runtime_source,
+        "runtime_soundness_checked_acceptance_evidence",
+        &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "required_crypto_assumptions_pcs_opening_soundness",
+            "required_crypto_assumptions_fri_query_soundness",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &runtime_source,
+        "runtime_soundness_checked_acceptance_evidence",
+        &[
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
+        ],
+    );
     assert!(
         soundness_source.contains("import Lzvm.AssumptionAudit"),
         "abstract soundness should import the centralized assumption audit"
