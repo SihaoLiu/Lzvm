@@ -73,9 +73,11 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_concrete_path_digest_contract_from_bundle",
             "runtime_retained_parent_checkpoint_concrete_path_position_bound_from_no_collision",
             "runtime_retained_parent_checkpoint_concrete_path_position_bound_from_bundle",
+            "runtime_retained_parent_checkpoint_concrete_path_opening_and_core_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_path_position_bound_from_no_collision",
             "runtime_retained_parent_checkpoint_nary_path_position_bound_from_bundle",
             "runtime_retained_parent_checkpoint_nary_path_digest_contract_from_bundle",
+            "runtime_retained_parent_checkpoint_nary_path_opening_and_core_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_position_bound_from_no_collision",
             "runtime_retained_parent_checkpoint_nary_opening_position_bound_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_bundle",
@@ -192,6 +194,44 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "RuntimeRetainedParentCheckpointConcretePathBinding",
             "RuntimeRetainedParentCheckpointOpeningDigestContract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_concrete_path_opening_and_core_contract_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedMerkleCompressionCollisionResistance",
+            "RuntimeRetainedParentCheckpointConcretePathBinding",
+            "RuntimeOpeningEvidence",
+            "RuntimeRetainedParentCheckpointOpeningDigestContract",
+            "RuntimeRetainedParentCheckpointOpeningPrefixBatchContract",
+            "RuntimeRetainedParentCheckpointOpeningRetainedRowsContract",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_concrete_path_opening_and_core_contract_from_bundle",
+        &["runtime_retained_parent_checkpoint_concrete_path_digest_contract_from_bundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_path_opening_and_core_contract_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedParentCheckpointNAryConcretePathBinding",
+            "RuntimeOpeningEvidence",
+            "RuntimeRetainedParentCheckpointOpeningDigestContract",
+            "RuntimeRetainedParentCheckpointOpeningPrefixBatchContract",
+            "RuntimeRetainedParentCheckpointOpeningRetainedRowsContract",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_path_opening_and_core_contract_from_bundle",
+        &["runtime_retained_parent_checkpoint_nary_path_digest_contract_from_bundle"],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
