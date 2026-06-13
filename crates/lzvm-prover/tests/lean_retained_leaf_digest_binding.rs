@@ -61,6 +61,7 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_retained_rows_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_digest_contract",
+            "runtime_retained_leaf_digest_concrete_path_digest_contract_from_bundle",
             "runtime_retained_leaf_digest_concrete_path_position_bound_from_no_collision",
             "runtime_retained_leaf_digest_concrete_path_position_bound_from_bundle",
             "runtime_retained_leaf_digest_opening_checked_acceptance_sound",
@@ -77,6 +78,21 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "MerkleCompressionNoCollision compress",
             "retainedLeafDigestPathBound",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_concrete_path_digest_contract_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedMerkleCompressionCollisionResistance",
+            "RuntimeRetainedLeafDigestConcretePathBinding",
+            "RuntimeRetainedLeafDigestOpeningDigestContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_leaf_digest_concrete_path_digest_contract_from_bundle",
+        &["retainedLeafDigestOpeningAcceptedImpliesPathBound"],
     );
     assert!(
         top_level_source.contains("import Lzvm.RetainedLeafDigestOpening"),

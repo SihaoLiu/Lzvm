@@ -65,6 +65,7 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_opening_evidence_implies_retained_rows_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_retained_rows_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_digest_contract",
+            "runtime_retained_parent_checkpoint_concrete_path_digest_contract_from_bundle",
             "runtime_retained_parent_checkpoint_concrete_path_position_bound_from_no_collision",
             "runtime_retained_parent_checkpoint_concrete_path_position_bound_from_bundle",
             "runtime_retained_parent_checkpoint_prefix_batch_implies_lower_prefix_bound",
@@ -84,6 +85,21 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "MerkleCompressionNoCollision compress",
             "retainedParentCheckpointStitchedPathBound",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_concrete_path_digest_contract_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedMerkleCompressionCollisionResistance",
+            "RuntimeRetainedParentCheckpointConcretePathBinding",
+            "RuntimeRetainedParentCheckpointOpeningDigestContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_concrete_path_digest_contract_from_bundle",
+        &["retainedParentCheckpointOpeningAcceptedImpliesStitchedPathBound"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

@@ -850,6 +850,76 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_digest_contract
         (And.intro rootMatches
           (And.intro rowsFromSource rowsBoundToQueryPlan)))
 
+theorem runtime_retained_leaf_digest_concrete_path_digest_contract_from_bundle
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeRetainedLeafDigestConcretePathBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedLeafDigestOpeningDigestContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have levelAvailable :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesLevelAvailable
+      artifact
+      publicInput
+      proof
+      accepted
+  have pathBound :=
+    runtime_retained_leaf_digest_concrete_path_position_bound_from_bundle
+      assumptions
+      validation
+      centralized
+      binding
+      artifact
+      publicInput
+      proof
+      accepted
+  have rootMatches :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRootMatchesExpectedRoot
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsFromSource :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRowsFromSource
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsBoundToQueryPlan :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRowsBoundToQueryPlan
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro levelAvailable
+      (And.intro pathBound
+        (And.intro rootMatches
+          (And.intro rowsFromSource rowsBoundToQueryPlan)))
+
 theorem runtime_retained_leaf_digest_opening_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
