@@ -301,6 +301,136 @@ fn guest_pc_trace_seed_mirror_attaches_pending_segment_seeds_when_enabled() {
 }
 
 #[test]
+fn guest_pc_trace_runner_seed_snapshot_matches_mirror_when_enabled() {
+    struct EnvGuard {
+        name: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn new(name: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(name);
+            std::env::set_var(name, value);
+            Self { name, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
+
+    let _mirror_env = EnvGuard::new("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let _snapshot_env = EnvGuard::new("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT", "1");
+    let dir = repo_temp_dir("guest-pc-runner-seed-snapshot");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let mut pending = Vec::new();
+
+    produce_guest_pc_trace_pending_slices(
+        16,
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        &[],
+        layout.row_count(),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
+    )
+    .expect("runner seed snapshot should match mirrored seeds");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(pending.len(), 2);
+    assert!(pending.iter().all(|segment| segment.seed.is_some()));
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_carries_dma_prepare_scratch() {
+    let mut current_seed = ZiskMainSegmentSeed::new();
+    current_seed.initial_state.registers[5] = 0x1000;
+    current_seed.initial_state.registers[6] = 0x20;
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::ZiskDmaPrepare {
+            kind: RiscvDmaKind::Memcpy,
+            rs1: 5,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: Vec::new().into(),
+        memory_accesses: Vec::new().into(),
+        precompile_memory_accesses: Vec::new(),
+        precompile_result: None,
+    };
+    let mut runner_state = GuestMachineState::new(report.next_pc);
+    runner_state
+        .set_register(5, 0x1000)
+        .expect("source register should set");
+    runner_state
+        .set_register(6, 0x20)
+        .expect("count register should set");
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+
+    let lifted = lift_zisk_main_next_segment_seed_from_runner_boundary(
+        2,
+        segment,
+        std::slice::from_ref(&report),
+        Some(RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd: 7,
+            rs1: 8,
+            rs2: 6,
+        }),
+        &runner_state,
+        &current_seed,
+        0x20,
+    )
+    .expect("runner boundary seed should lift");
+
+    assert_eq!(lifted.previous_c, 0x20);
+    assert_eq!(lifted.initial_state.last_c, 0x20);
+    assert_eq!(lifted.initial_state.next_pc, report.next_pc);
+    assert_eq!(
+        lifted.initial_state.pending_dma,
+        Some(ZiskMainPendingDma {
+            kind: RiscvDmaKind::Memcpy,
+            first_arg_reg: 5,
+        })
+    );
+    assert_eq!(
+        lifted
+            .initial_state
+            .internal_memory
+            .get(&ZISK_EXTRA_PARAMS_ADDRESS)
+            .copied(),
+        Some(0x20)
+    );
+}
+
+#[test]
 #[cfg(feature = "cuda")]
 fn zisk_main_device_descriptor_uses_compact_words_when_values_fit() {
     let mut descriptors = ZiskMainDeviceTraceDescriptors::new(2, 39, 0x2000);

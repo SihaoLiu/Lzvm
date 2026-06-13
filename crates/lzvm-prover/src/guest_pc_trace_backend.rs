@@ -2332,7 +2332,9 @@ fn produce_guest_pc_trace_pending_slices(
     let (mut memory, mut state, mut fcall_handler) = load_guest_pc_trace_machine(context, input)?;
     let mut executed_instructions = 0_u64;
     let mut trace_instance_count = 0_usize;
-    let mut seed_mirror = guest_pc_trace_seed_mirror_enabled().then(ZiskMainSegmentSeed::new);
+    let runner_seed_snapshot = guest_pc_trace_runner_seed_snapshot_enabled();
+    let mut seed_mirror = (guest_pc_trace_seed_mirror_enabled() || runner_seed_snapshot)
+        .then(ZiskMainSegmentSeed::new);
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
         let slice = run_guest_pc_trace_segment_slice(
@@ -2396,6 +2398,35 @@ fn produce_guest_pc_trace_pending_slices(
             ),
             None => None,
         };
+        if runner_seed_snapshot && !segment.is_last_segment {
+            let current_seed =
+                seed.as_ref()
+                    .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace runner seed snapshot missing current seed"
+                            .to_owned(),
+                    })?;
+            let expected_next_seed = next_seed.as_ref().ok_or_else(|| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace runner seed snapshot missing mirror seed".to_owned(),
+                }
+            })?;
+            let runner_next_seed = lift_zisk_main_next_segment_seed_from_runner_boundary(
+                row_count,
+                segment,
+                &slice.reports,
+                lookahead_instruction,
+                &state,
+                current_seed,
+                expected_next_seed.previous_c,
+            )?;
+            if runner_next_seed != *expected_next_seed {
+                return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: format!(
+                        "guest PC trace runner seed snapshot mismatch after segment {trace_instance_index}"
+                    ),
+                });
+            }
+        }
         let report_capacity = slice.report_capacity;
         emit(GuestPcTracePendingSegmentSlice {
             trace_instance_index,
@@ -2527,6 +2558,10 @@ fn validate_guest_pc_trace_pending_segment_seed(
 
 fn guest_pc_trace_seed_mirror_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_SEED_MIRROR", false)
+}
+
+fn guest_pc_trace_runner_seed_snapshot_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT", false)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4336,6 +4371,139 @@ fn advance_zisk_main_segment_seed(
         initial_state: continuation_state,
         previous_c: state.last_c,
     }))
+}
+
+fn lift_zisk_main_next_segment_seed_from_runner_boundary(
+    row_count: usize,
+    segment: ZiskMainTraceSegmentInfo,
+    reports: &[GuestMachineReport],
+    lookahead_instruction: Option<RiscvInstruction>,
+    runner_state: &GuestMachineState,
+    current_seed: &ZiskMainSegmentSeed,
+    next_previous_c: u64,
+) -> Result<ZiskMainSegmentSeed, GuestPcTraceBackendError> {
+    if segment.is_last_segment {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "runner boundary seed snapshot is only defined for non-final segments"
+                .to_owned(),
+        });
+    }
+
+    let mut internal_memory = current_seed.initial_state.internal_memory.clone();
+    let mut scan_registers = current_seed.initial_state.registers;
+    advance_zisk_main_runner_internal_memory_snapshot(
+        &mut internal_memory,
+        &mut scan_registers,
+        reports,
+        lookahead_instruction,
+    )?;
+    if &scan_registers != runner_state.registers() {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "runner boundary register snapshot mismatch after segment {}",
+                segment.trace_instance_index
+            ),
+        });
+    }
+
+    let mut register_mem_steps = [0; 32];
+    let final_reload_step =
+        zisk_main_last_segment_reg_mem_step(row_count, segment.trace_instance_index)?;
+    for step in register_mem_steps
+        .iter_mut()
+        .skip(ZISK_MAIN_REGISTER_START)
+        .take(ZISK_MAIN_REGISTER_COUNT)
+    {
+        *step = final_reload_step;
+    }
+
+    Ok(ZiskMainSegmentSeed {
+        initial_state: ZiskMainTraceState {
+            registers: *runner_state.registers(),
+            internal_memory,
+            register_mem_steps,
+            pending_dma: reports.last().and_then(zisk_main_pending_dma),
+            last_c: next_previous_c,
+            next_pc: runner_state.pc(),
+        },
+        previous_c: next_previous_c,
+    })
+}
+
+fn advance_zisk_main_runner_internal_memory_snapshot(
+    internal_memory: &mut BTreeMap<u64, u64>,
+    registers: &mut [u64; 32],
+    reports: &[GuestMachineReport],
+    lookahead_instruction: Option<RiscvInstruction>,
+) -> Result<(), GuestPcTraceBackendError> {
+    for (report_index, report) in reports.iter().enumerate() {
+        let next_instruction =
+            guest_report_next_instruction(reports, report_index, lookahead_instruction);
+        record_zisk_main_runner_scratch_update(
+            internal_memory,
+            registers,
+            report,
+            next_instruction,
+        )?;
+        for write in &report.register_writes {
+            if write.index != 0 {
+                registers[usize::from(write.index)] = write.value;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn record_zisk_main_runner_scratch_update(
+    internal_memory: &mut BTreeMap<u64, u64>,
+    registers: &[u64; 32],
+    report: &GuestMachineReport,
+    next_instruction: Option<RiscvInstruction>,
+) -> Result<(), GuestPcTraceBackendError> {
+    if let RiscvInstruction::Amo {
+        kind: RiscvAmoKind::Add,
+        width,
+        rd,
+        rs1,
+        rs2,
+        ..
+    } = report.instruction
+    {
+        if rd != 0 && (rd == rs1 || rd == rs2) {
+            let Some(read_access) = report
+                .memory_accesses
+                .iter()
+                .find(|access| access.kind == GuestMemoryAccessKind::Read)
+            else {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row: 0,
+                    message: "AMO scratch snapshot is missing the load access".to_owned(),
+                });
+            };
+            let value = match width {
+                RiscvAmoWidth::Word => sign_extend_word(read_access.value as u32),
+                RiscvAmoWidth::Doubleword => read_access.value,
+            };
+            internal_memory.insert(
+                zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER),
+                value,
+            );
+        }
+    }
+
+    if let RiscvInstruction::ZiskDmaPrepare { kind, .. } = report.instruction {
+        if matches!(kind, RiscvDmaKind::Memcpy | RiscvDmaKind::Memcmp) {
+            if let Some(RiscvInstruction::Op {
+                kind: RiscvOpKind::Add,
+                rs2,
+                ..
+            }) = next_instruction
+            {
+                internal_memory.insert(ZISK_EXTRA_PARAMS_ADDRESS, registers[usize::from(rs2)]);
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "cuda")]
