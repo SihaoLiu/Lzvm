@@ -22,6 +22,7 @@ import Lzvm.ProofArtifactBinding
 import Lzvm.OpeningValidation
 import Lzvm.OpeningSegmentBinding
 import Lzvm.PipelineBinding
+import Lzvm.PipelineBinding.Accepts
 import Lzvm.PipelineBinding.Contracts
 import Lzvm.QueryPlanBinding
 import Lzvm.RetainedLeafDigestOpening

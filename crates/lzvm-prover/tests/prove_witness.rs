@@ -61,7 +61,9 @@ use lzvm_artifacts::pcs_query_segment::{
     encode_pcs_query_plan_segment, parse_pcs_query_plan_segment, PcsQueryPlanSegment,
     PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
 };
-use lzvm_artifacts::proof::{encode_proof_artifact, parse_proof_artifact, ProofSegment};
+use lzvm_artifacts::proof::{
+    encode_proof_artifact, parse_proof_artifact, ProofArtifact, ProofSegment,
+};
 use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
@@ -70,7 +72,8 @@ use lzvm_artifacts::setup_info::{
 };
 use lzvm_artifacts::trace_bundle::{TraceBundle, TraceBundleUnit};
 use lzvm_artifacts::trace_constraint_segment::{
-    encode_trace_constraint_segment, parse_trace_constraint_segment, TRACE_CONSTRAINT_SEGMENT_ID,
+    encode_trace_constraint_segment, parse_trace_constraint_segment, TraceConstraintSegment,
+    TraceConstraintUnitSegment, TRACE_CONSTRAINT_SEGMENT_ID,
 };
 use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
@@ -2449,6 +2452,117 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
         .segments
         .iter()
         .any(|segment| { segment.id == CONTRIBUTION_SEGMENT_ID }));
+}
+
+#[test]
+fn rejects_seeded_fri_unit_proof_without_fri_opening_in_preflight() {
+    let dir = temp_dir("proof-artifact-seeded-fri-missing-opening");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [5_u8]).expect("input data should be written");
+
+    let expression_id = 42;
+    let mut unit = sample_unit();
+    unit.paths.fixed_columns = dir.join("unit.const");
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    unit.metadata.verifier.quotient.expression_id = Some(expression_id);
+    unit.expression_program = fixed_plus_stage_expression_program(expression_id);
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output =
+        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+            .expect("witness commitments should run");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: plan.run_plan.schedule.setup_hash,
+        values: Vec::new(),
+    };
+    let public_values_hash = public_values_digest(&public_values).expect("digest should compute");
+    let material_segment = build_pcs_material_manifest_segment(&plan.run_plan.schedule)
+        .expect("material segment should build");
+    let witness_segment = build_witness_commitment_segment_for_schedule(
+        plan.run_plan.schedule.units.len(),
+        output.commitments(),
+    )
+    .expect("witness segment should build");
+    let query_segment = build_pcs_query_plan_segment(
+        &plan.run_plan.schedule,
+        public_values_hash,
+        &material_segment,
+        std::slice::from_ref(&witness_segment),
+    )
+    .expect("seeded query plan should build");
+    let constant_opening_segment =
+        build_constant_opening_segment(&catalog, &plan.run_plan.schedule, &query_segment)
+            .expect("constant opening segment should build");
+    let witness_opening_segment = build_witness_opening_segment(
+        &plan.run_plan.schedule,
+        &query_segment,
+        output.commitments(),
+    )
+    .expect("witness opening segment should build");
+    let evidence = output.trace_constraint_evidence();
+    let trace_constraint_segment = ProofSegment {
+        id: TRACE_CONSTRAINT_SEGMENT_ID,
+        data: encode_trace_constraint_segment(&TraceConstraintSegment {
+            units: vec![TraceConstraintUnitSegment {
+                unit_index: u32::try_from(evidence.unit_index()).expect("unit index should fit"),
+                trace_instance_index: evidence.trace_instance_index(),
+                trace_row_count: u64::try_from(evidence.trace_row_count())
+                    .expect("row count should fit"),
+                trace_column_count: u32::try_from(evidence.trace_column_count())
+                    .expect("column count should fit"),
+                regular_constraint_count: u32::try_from(evidence.regular_constraint_count())
+                    .expect("constraint count should fit"),
+                trace_extracted: evidence.trace_extracted(),
+                regular_constraints_evaluated: evidence.regular_constraints_evaluated(),
+                witness_values_committed: evidence.witness_values_committed(),
+                constraint_checker_conformant: evidence.constraint_checker_conformant(),
+            }],
+        })
+        .expect("trace constraint segment should encode"),
+    };
+    let proof = ProofArtifact {
+        setup_hash: plan.run_plan.schedule.setup_hash,
+        public_values_hash,
+        segments: vec![
+            material_segment,
+            query_segment,
+            constant_opening_segment,
+            witness_opening_segment,
+            trace_constraint_segment,
+            witness_segment,
+        ],
+    };
+
+    let error =
+        lzvm_prover::setup_preflight::validate_setup_preflight(&catalog, &proof, &public_values)
+            .expect_err("seeded FRI unit proof without opening should reject");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(
+        error
+            .to_string()
+            .contains("missing PCS FRI opening segment"),
+        "{error}"
+    );
 }
 
 #[test]

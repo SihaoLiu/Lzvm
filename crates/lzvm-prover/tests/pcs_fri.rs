@@ -585,12 +585,39 @@ fn validates_optional_pcs_fri_opening_when_segment_is_absent() {
         ValidateOptionalPcsFriOpeningProofSegmentsRequest {
             schedule: &schedule,
             verifier_codes: &[],
+            fri_opening_required_units: &[false],
             global_info: &global_info_without_proof_values(),
             public_values: &[],
             segments: &[],
         },
     )
     .expect("missing optional FRI opening should be accepted");
+}
+
+#[test]
+fn rejects_seeded_required_pcs_fri_opening_without_segment() {
+    let (unit, mut segments) = valid_pcs_fri_opening_segments();
+    let schedule = sample_prove_schedule(unit);
+    segments.retain(|segment| segment.id != PCS_FRI_OPENING_SEGMENT_ID);
+
+    let error = validate_optional_pcs_fri_opening_proof_segments(
+        ValidateOptionalPcsFriOpeningProofSegmentsRequest {
+            schedule: &schedule,
+            verifier_codes: &[],
+            fri_opening_required_units: &[true],
+            global_info: &global_info_without_proof_values(),
+            public_values: &[],
+            segments: &segments,
+        },
+    )
+    .expect_err("required seeded FRI opening should reject");
+
+    assert_eq!(
+        error,
+        ValidateOptionalPcsFriOpeningProofSegmentsError::OpeningSegment(
+            LoadPcsFriOpeningSegmentError::MissingSegment
+        )
+    );
 }
 
 #[test]
@@ -607,6 +634,7 @@ fn rejects_optional_pcs_fri_opening_transcript_inputs_without_opening() {
         ValidateOptionalPcsFriOpeningProofSegmentsRequest {
             schedule: &schedule,
             verifier_codes: &[],
+            fri_opening_required_units: &[false],
             global_info: &global_info_without_proof_values(),
             public_values: &[],
             segments: &segments,
@@ -631,6 +659,7 @@ fn rejects_optional_pcs_fri_opening_from_seeded_inputs() {
         ValidateOptionalPcsFriOpeningProofSegmentsRequest {
             schedule: &schedule,
             verifier_codes: &[],
+            fri_opening_required_units: &[false],
             global_info: &global_info_without_proof_values(),
             public_values: &[],
             segments: &segments,
@@ -657,6 +686,7 @@ fn rejects_optional_pcs_fri_opening_transcript_inputs_without_material() {
         ValidateOptionalPcsFriOpeningProofSegmentsRequest {
             schedule: &schedule,
             verifier_codes: &[],
+            fri_opening_required_units: &[false],
             global_info: &global_info_without_proof_values(),
             public_values: &[],
             segments: &segments,

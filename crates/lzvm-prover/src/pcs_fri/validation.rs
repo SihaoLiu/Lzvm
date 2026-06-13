@@ -205,12 +205,28 @@ pub fn validate_pcs_fri_opening_folds_from_units(
 pub fn validate_optional_pcs_fri_opening_proof_segments(
     request: ValidateOptionalPcsFriOpeningProofSegmentsRequest<'_>,
 ) -> Result<(), ValidateOptionalPcsFriOpeningProofSegmentsError> {
+    if request.fri_opening_required_units.len() != request.schedule.units.len() {
+        return Err(
+            ValidateOptionalPcsFriOpeningProofSegmentsError::RequiredUnitCountMismatch {
+                expected: request.schedule.units.len(),
+                found: request.fri_opening_required_units.len(),
+            },
+        );
+    }
+
     if !request
         .segments
         .iter()
         .any(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
     {
         if uses_transcript_pcs_query_plan_inputs(request.segments) {
+            return Err(
+                ValidateOptionalPcsFriOpeningProofSegmentsError::OpeningSegment(
+                    LoadPcsFriOpeningSegmentError::MissingSegment,
+                ),
+            );
+        }
+        if seeded_query_plan_requires_fri_opening(request)? {
             return Err(
                 ValidateOptionalPcsFriOpeningProofSegmentsError::OpeningSegment(
                     LoadPcsFriOpeningSegmentError::MissingSegment,
@@ -255,6 +271,34 @@ pub fn validate_optional_pcs_fri_opening_proof_segments(
         segments: request.segments,
     })
     .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::VerifierQuery)
+}
+
+fn seeded_query_plan_requires_fri_opening(
+    request: ValidateOptionalPcsFriOpeningProofSegmentsRequest<'_>,
+) -> Result<bool, ValidateOptionalPcsFriOpeningProofSegmentsError> {
+    if !request
+        .fri_opening_required_units
+        .iter()
+        .any(|required| *required)
+    {
+        return Ok(false);
+    }
+
+    let query_plan = load_pcs_query_plan_from_segments(request.segments)
+        .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::QueryPlan)?;
+    for query_unit in query_plan.units {
+        let unit_index = usize::try_from(query_unit.unit_index)
+            .map_err(|_| ValidateOptionalPcsFriOpeningProofSegmentsError::UnitIndexOverflow)?;
+        if request
+            .fri_opening_required_units
+            .get(unit_index)
+            .copied()
+            .unwrap_or(false)
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn expected_fri_sibling_level_count(

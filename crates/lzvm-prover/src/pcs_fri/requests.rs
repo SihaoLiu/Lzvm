@@ -96,6 +96,7 @@ pub struct PcsFriTranscriptCommitmentRequest<'a> {
 pub struct ValidateOptionalPcsFriOpeningProofSegmentsRequest<'a> {
     pub schedule: &'a ProveSchedule,
     pub verifier_codes: &'a [&'a VerifierCode],
+    pub fri_opening_required_units: &'a [bool],
     pub global_info: &'a GlobalInfo,
     pub public_values: &'a [Felt],
     pub segments: &'a [ProofSegment],

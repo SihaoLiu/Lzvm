@@ -703,10 +703,16 @@ pub fn validate_setup_preflight(
         .iter()
         .map(|unit| &unit.metadata.verifier.query)
         .collect::<Vec<_>>();
+    let fri_opening_required_units = catalog
+        .units
+        .iter()
+        .map(|unit| unit.metadata.verifier.quotient.expression_id.is_some())
+        .collect::<Vec<_>>();
     validate_optional_pcs_fri_opening_proof_segments(
         ValidateOptionalPcsFriOpeningProofSegmentsRequest {
             schedule: &schedule,
             verifier_codes: &verifier_codes,
+            fri_opening_required_units: &fri_opening_required_units,
             global_info: &catalog.layout.global_info,
             public_values: transcript_public_fields,
             segments: &proof.segments,

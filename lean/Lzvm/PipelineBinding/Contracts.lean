@@ -4,7 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
-import Lzvm.PipelineBinding
+import Lzvm.PipelineBinding.Accepts
 
 /-!
 Compact proof-system contracts derived from runtime proof pipeline binding.

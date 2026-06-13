@@ -12,10 +12,14 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let core_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core.lean");
     let core_source =
         std::fs::read_to_string(&core_path).expect("Lean pipeline core binding source should read");
+    let accepts_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Accepts.lean");
+    let accepts_source = std::fs::read_to_string(&accepts_path)
+        .expect("Lean pipeline accepts binding source should read");
     let contracts_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts.lean");
     let contracts_source = std::fs::read_to_string(&contracts_path)
         .expect("Lean pipeline binding contracts source should read");
-    let lean_source = format!("{core_source}\n{pipeline_source}\n{contracts_source}");
+    let lean_source =
+        format!("{core_source}\n{pipeline_source}\n{accepts_source}\n{contracts_source}");
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
@@ -103,6 +107,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     assert!(
         top_level_source.contains("import Lzvm.PipelineBinding.Contracts"),
         "top-level Lean module should import pipeline binding contracts"
+    );
+    assert!(
+        top_level_source.contains("import Lzvm.PipelineBinding.Accepts"),
+        "top-level Lean module should import pipeline binding accepts contracts"
     );
     assert!(theorem_prefix(
         &lean_source,

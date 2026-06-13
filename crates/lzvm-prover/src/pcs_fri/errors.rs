@@ -68,6 +68,8 @@ pub enum ValidateOptionalPcsFriOpeningProofSegmentsError {
     Opening(ValidatePcsFriOpeningSegmentsError),
     QueryPlan(LoadPcsQueryPlanSegmentError),
     OpeningSegment(LoadPcsFriOpeningSegmentError),
+    RequiredUnitCountMismatch { expected: usize, found: usize },
+    UnitIndexOverflow,
     UnboundOpeningSegment,
     Transcript(PcsTranscriptProofSegmentsError),
     Fold(ValidatePcsFriOpeningFoldUnitsError),
@@ -221,6 +223,11 @@ impl fmt::Display for ValidateOptionalPcsFriOpeningProofSegmentsError {
             Self::Opening(error) => write!(f, "{error}"),
             Self::QueryPlan(error) => write!(f, "{error}"),
             Self::OpeningSegment(error) => write!(f, "{error}"),
+            Self::RequiredUnitCountMismatch { expected, found } => write!(
+                f,
+                "PCS FRI opening required unit count mismatch: expected {expected}, found {found}"
+            ),
+            Self::UnitIndexOverflow => write!(f, "PCS FRI opening required unit index overflow"),
             Self::UnboundOpeningSegment => {
                 write!(
                     f,
@@ -240,7 +247,9 @@ impl std::error::Error for ValidateOptionalPcsFriOpeningProofSegmentsError {
             Self::Opening(error) => Some(error),
             Self::QueryPlan(error) => Some(error),
             Self::OpeningSegment(error) => Some(error),
-            Self::UnboundOpeningSegment => None,
+            Self::RequiredUnitCountMismatch { .. }
+            | Self::UnitIndexOverflow
+            | Self::UnboundOpeningSegment => None,
             Self::Transcript(error) => Some(error),
             Self::Fold(error) => Some(error),
             Self::VerifierQuery(error) => Some(error),

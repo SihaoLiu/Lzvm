@@ -6,6 +6,7 @@ Authors: Sihao Liu
 
 import Lzvm.AuxiliaryChecks
 import Lzvm.AuxiliaryChecks.ProofTiming
+import Lzvm.AuxiliaryChecks.ProofTimingVerifier
 
 /-!
 Runtime timing acceptance projections for auxiliary verifier metadata.
