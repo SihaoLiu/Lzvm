@@ -2320,6 +2320,51 @@ fn cuda_source_device_commit_defers_root_downloads_until_batch_end() {
 }
 
 #[test]
+fn cuda_source_device_commit_can_pipeline_stream_leaf_extensions() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let trace_path = crate_root.join("src/witness_commitment/trace.rs");
+    let trace_source =
+        std::fs::read_to_string(&trace_path).expect("witness commitment trace source should read");
+
+    let source_device_body = function_body(
+        &trace_source,
+        "fn commit_witness_stage_source_devices_and_indexed_timing_inner",
+        "#[cfg(feature = \"cuda\")]\nenum PendingWitnessStageCommitment",
+    );
+    assert!(
+        source_device_body.contains("source_device_stream_pipeline_depth()")
+            && source_device_body
+                .contains("commit_witness_stage_source_devices_stream_pipeline_timing"),
+        "source-device commitment should have a bounded stream-pending path"
+    );
+
+    let pipeline_body = function_body(
+        &trace_source,
+        "fn commit_witness_stage_source_devices_stream_pipeline_timing",
+        "#[cfg(feature = \"cuda\")]\nfn source_device_stream_pipeline_depth",
+    );
+    assert!(
+        pipeline_body.contains(
+            "begin_compact_witness_stage_leaf_hash_level_from_source_device_view_on_stream_timing"
+        ) && pipeline_body.contains("PendingCudaLeafExtension")
+            && pipeline_body.contains("CudaStream::new()")
+            && pipeline_body.contains("while pending_leaf_extensions.len() >= depth")
+            && pipeline_body.contains("finish_source_device_stream_pending_leaf"),
+        "stream pipeline should enqueue bounded pending leaf extensions and finish them before commitment materialization"
+    );
+
+    let depth_body = function_body(
+        &trace_source,
+        "fn source_device_stream_pipeline_depth",
+        "fn finish_source_device_stream_pending_leaf",
+    );
+    assert!(
+        depth_body.contains("LZVM_CUDA_SOURCE_DEVICE_STREAM_PIPELINE"),
+        "stream source-device pipeline should be explicitly gated"
+    );
+}
+
+#[test]
 fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");
