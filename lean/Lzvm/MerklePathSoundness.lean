@@ -76,6 +76,21 @@ def MerklePathSameIndex
         /\ MerklePathSameIndex leftRest rightRest
   | _, _ => False
 
+structure MerkleCompressionCollision
+    {Digest : Type uDigest}
+    (compress : Digest -> Digest -> Digest) where
+  left : Digest
+  right : Digest
+  otherLeft : Digest
+  otherRight : Digest
+  sameDigest : compress left right = compress otherLeft otherRight
+  differentInputs : left ≠ otherLeft \/ right ≠ otherRight
+
+def MerkleCompressionNoCollision
+    {Digest : Type uDigest}
+    (compress : Digest -> Digest -> Digest) : Prop :=
+  forall _ : MerkleCompressionCollision compress, False
+
 def MerkleCompressionCollisionFree
     {Digest : Type uDigest}
     (compress : Digest -> Digest -> Digest) : Prop :=
@@ -99,7 +114,29 @@ def CentralizedMerkleCompressionCollisionResistance
     (hashAssumptions : HashCollisionResistanceAssumption)
     (compress : Digest -> Digest -> Digest) : Prop :=
   hashAssumptions.merkleHashCollisionResistanceStatement =
-    MerkleCompressionCollisionFree compress
+    MerkleCompressionNoCollision compress
+
+theorem merkle_compression_collision_free_of_no_collision
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (noCollision : MerkleCompressionNoCollision compress) :
+    MerkleCompressionCollisionFree compress := by
+  intro left right otherLeft otherRight sameDigest
+  by_contra differentPair
+  apply noCollision
+  exact
+    { left := left
+      right := right
+      otherLeft := otherLeft
+      otherRight := otherRight
+      sameDigest := sameDigest
+      differentInputs := by
+        by_cases sameLeft : left = otherLeft
+        · right
+          intro sameRight
+          exact differentPair (And.intro sameLeft sameRight)
+        · left
+          exact sameLeft }
 
 theorem centralized_merkle_compression_collision_free
     {Digest : Type uDigest}
@@ -111,9 +148,10 @@ theorem centralized_merkle_compression_collision_free
         compress) :
     MerkleCompressionCollisionFree compress := by
   exact
-    Eq.mp
-      centralized
-      hashAssumptions.merkleHashCollisionResistance.evidence
+    merkle_compression_collision_free_of_no_collision
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
 
 theorem merkle_parent_digest_injective
     {Digest : Type uDigest}
@@ -161,6 +199,92 @@ theorem merkle_parent_digest_injective
                       otherSibling
                       otherLeaf
                       sameParent).right
+
+theorem different_leaf_same_index_verified_paths_imply_merkle_compression_collision
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest} :
+    forall root leaf path otherLeaf otherPath,
+      MerklePathSameIndex path otherPath ->
+        MerklePathVerifies compress root leaf path ->
+          MerklePathVerifies compress root otherLeaf otherPath ->
+            otherLeaf ≠ leaf ->
+              Nonempty (MerkleCompressionCollision compress) := by
+  intro root leaf path
+  induction path generalizing root leaf with
+  | nil =>
+      intro otherLeaf otherPath sameIndex verified otherVerified differentLeaf
+      cases otherPath with
+      | nil =>
+          simp [MerklePathVerifies, MerklePathFold] at verified otherVerified
+          exact False.elim (differentLeaf (otherVerified.trans verified.symm))
+      | cons _ _ =>
+          simp [MerklePathSameIndex] at sameIndex
+  | cons layer rest ih =>
+      intro otherLeaf otherPath sameIndex verified otherVerified differentLeaf
+      cases otherPath with
+      | nil =>
+          simp [MerklePathSameIndex] at sameIndex
+      | cons otherLayer otherRest =>
+          have sameDirection :
+              layer.direction = otherLayer.direction := by
+            exact sameIndex.left
+          have sameRest :
+              MerklePathSameIndex rest otherRest := by
+            exact sameIndex.right
+          let parent :=
+            MerklePathLayer.parentDigest compress leaf layer
+          let otherParent :=
+            MerklePathLayer.parentDigest compress otherLeaf otherLayer
+          by_cases sameParent : parent = otherParent
+          · cases layer with
+            | mk sibling direction =>
+                cases otherLayer with
+                | mk otherSibling otherDirection =>
+                    cases direction with
+                    | currentOnLeft =>
+                        cases otherDirection with
+                        | currentOnLeft =>
+                            exact
+                              Nonempty.intro
+                                { left := leaf
+                                  right := sibling
+                                  otherLeft := otherLeaf
+                                  otherRight := otherSibling
+                                  sameDigest := by exact sameParent
+                                  differentInputs := by
+                                    left
+                                    intro sameLeaf
+                                    exact differentLeaf sameLeaf.symm }
+                        | currentOnRight =>
+                            cases sameDirection
+                    | currentOnRight =>
+                        cases otherDirection with
+                        | currentOnLeft =>
+                            cases sameDirection
+                        | currentOnRight =>
+                            exact
+                              Nonempty.intro
+                                { left := sibling
+                                  right := leaf
+                                  otherLeft := otherSibling
+                                  otherRight := otherLeaf
+                                  sameDigest := by exact sameParent
+                                  differentInputs := by
+                                    right
+                                    intro sameLeaf
+                                    exact differentLeaf sameLeaf.symm }
+          · exact
+              ih
+                root
+                parent
+                otherParent
+                otherRest
+                sameRest
+                verified
+                otherVerified
+                (by
+                  intro reverseParent
+                  exact sameParent reverseParent.symm)
 
 theorem concrete_merkle_path_same_index_binding
     {Digest : Type uDigest}
@@ -217,6 +341,33 @@ theorem concrete_merkle_path_same_index_binding
               sameDirection
               sameParent).symm
 
+theorem concrete_merkle_path_same_index_binding_from_no_collision
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (noCollision : MerkleCompressionNoCollision compress) :
+    forall root leaf path otherLeaf otherPath,
+      MerklePathSameIndex path otherPath ->
+        MerklePathVerifies compress root leaf path ->
+          MerklePathVerifies compress root otherLeaf otherPath ->
+            otherLeaf = leaf := by
+  intro root leaf path otherLeaf otherPath sameIndex verified otherVerified
+  by_contra differentLeaf
+  have collisionWitness :
+      Nonempty (MerkleCompressionCollision compress) :=
+    different_leaf_same_index_verified_paths_imply_merkle_compression_collision
+      root
+      leaf
+      path
+      otherLeaf
+      otherPath
+      sameIndex
+      verified
+      otherVerified
+      differentLeaf
+  cases collisionWitness with
+  | intro collision =>
+      exact noCollision collision
+
 theorem verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index
     {Digest : Type uDigest}
     {compress : Digest -> Digest -> Digest}
@@ -228,6 +379,26 @@ theorem verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index
   exact
     concrete_merkle_path_same_index_binding
       collisionFree
+      root
+      leaf
+      path
+      otherLeaf
+      otherPath
+      sameIndex
+      verified
+      otherVerified
+
+theorem verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (noCollision : MerkleCompressionNoCollision compress) :
+    forall root leaf path,
+      MerklePathVerifies compress root leaf path ->
+        MerklePathRootCommitsToLeafAtIndex compress root leaf path := by
+  intro root leaf path verified otherLeaf otherPath sameIndex otherVerified
+  exact
+    concrete_merkle_path_same_index_binding_from_no_collision
+      noCollision
       root
       leaf
       path
@@ -250,10 +421,10 @@ theorem verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from
         MerklePathRootCommitsToLeafAtIndex compress root leaf path := by
   intro root leaf path verified
   exact
-    verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index
-      (centralized_merkle_compression_collision_free
-        hashAssumptions
-        centralized)
+    verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
       root
       leaf
       path
