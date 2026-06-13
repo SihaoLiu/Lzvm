@@ -64,6 +64,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_implies_external_source_requirements",
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
+            "runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_evidence",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_bound_contract",
@@ -491,6 +492,14 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("RuntimePipelineBindingEvidence"),
         "compact audited pipeline binding contract should not force callers to unpack full pipeline evidence"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract"
+        )
+        .contains("RuntimeQueryPlanBindingSeededContract"),
+        "pipeline checked acceptance should project seeded query-plan constraints"
     );
     assert!(
         theorem_prefix(

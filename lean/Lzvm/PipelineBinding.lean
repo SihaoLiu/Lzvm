@@ -433,6 +433,38 @@ theorem runtime_pipeline_binding_checked_acceptance_opening_segment_bound_contra
             proof
             openingSegmentEvidence
 
+theorem runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingSeededContract
+          system
+          validation.queryPlanBindingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have queryAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_checked_acceptance_seeded_contract
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
