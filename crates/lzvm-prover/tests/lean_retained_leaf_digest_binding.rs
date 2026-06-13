@@ -41,6 +41,7 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             && lean_source.contains("RuntimeRetainedLeafDigestOpeningShiftedRowSourceContract")
             && lean_source.contains("RuntimeRetainedLeafDigestNAryConcretePathBinding")
             && lean_source.contains("NAryMerklePathLayer")
+            && lean_source.contains("NAryMerklePathRootCommitsToLeafAtIndex")
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsEvidence")
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsBoundContract")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
@@ -84,6 +85,20 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "RuntimeRetainedLeafDigestNAryConcretePathBinding",
             "NAryMerkleCompressionNoCollision compress",
             "retainedLeafDigestPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_path_position_bound_from_no_collision",
+        &[
+            "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_path_position_bound_from_no_collision",
+        &[
+            "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

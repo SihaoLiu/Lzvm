@@ -164,7 +164,7 @@ structure RuntimeRetainedParentCheckpointNAryConcretePathBinding
           artifact
           publicInput
           proof ->
-        NAryMerklePathRootCommitsToLeafAtPosition
+        NAryMerklePathRootCommitsToLeafAtIndex
           compress
           (root artifact publicInput proof)
           (leaf artifact publicInput proof)
@@ -382,7 +382,7 @@ theorem runtime_retained_parent_checkpoint_nary_path_position_bound_from_no_coll
   have verified :=
     binding.concreteStitchedPathVerifies artifact publicInput proof accepted
   have rootCommitsToLeaf :=
-    verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision
+    verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
       noCollision
       (binding.root artifact publicInput proof)
       (binding.leaf artifact publicInput proof)

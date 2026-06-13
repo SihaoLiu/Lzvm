@@ -48,6 +48,7 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
                 .contains("def RuntimeRetainedParentCheckpointOpeningRetainedRowsContract")
             && lean_source.contains("RuntimeRetainedParentCheckpointNAryConcretePathBinding")
             && lean_source.contains("NAryMerklePathLayer")
+            && lean_source.contains("NAryMerklePathRootCommitsToLeafAtIndex")
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsBoundContract")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
@@ -89,6 +90,20 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "RuntimeRetainedParentCheckpointNAryConcretePathBinding",
             "NAryMerkleCompressionNoCollision compress",
             "retainedParentCheckpointStitchedPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_path_position_bound_from_no_collision",
+        &[
+            "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_path_position_bound_from_no_collision",
+        &[
+            "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
