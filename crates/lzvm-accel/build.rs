@@ -4,6 +4,7 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-changed=native/cuda_field.cu");
     println!("cargo:rerun-if-changed=native/cuda_field_constants.cuh");
+    println!("cargo:rerun-if-changed=native/cuda_goldilocks_canonical.cuh");
     println!("cargo:rerun-if-changed=native/cuda_goldilocks_ntt.cuh");
     println!("cargo:rerun-if-changed=native/cuda_goldilocks_row_extend.cuh");
     println!("cargo:rerun-if-changed=native/cuda_row_major_fill.cuh");

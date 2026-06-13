@@ -28,6 +28,7 @@ pub use cuda_buffer::CudaDeviceBuffer;
 #[cfg(feature = "cuda")]
 pub use cuda_canonical::{
     cuda_goldilocks_begin_validate_canonical_words_device,
+    cuda_goldilocks_begin_validate_canonical_words_device_on_stream,
     cuda_goldilocks_validate_canonical_words_device, CudaCanonicalCheck,
 };
 #[cfg(feature = "cuda")]

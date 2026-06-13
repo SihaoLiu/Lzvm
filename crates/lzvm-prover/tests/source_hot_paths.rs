@@ -242,6 +242,47 @@ fn cuda_poseidon_row_major_digest_has_stream_entrypoints() {
 }
 
 #[test]
+fn cuda_canonical_validation_has_stream_entrypoint() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let field_path = crate_root.join("../lzvm-accel/native/cuda_field.cu");
+    let field_source = std::fs::read_to_string(&field_path).expect("CUDA field source should read");
+    let canonical_native_path =
+        crate_root.join("../lzvm-accel/native/cuda_goldilocks_canonical.cuh");
+    let canonical_native_source =
+        std::fs::read_to_string(&canonical_native_path).expect("CUDA canonical source should read");
+    let canonical_path = crate_root.join("../lzvm-accel/src/cuda_canonical.rs");
+    let canonical_source =
+        std::fs::read_to_string(&canonical_path).expect("CUDA canonical source should read");
+    let accel_lib_path = crate_root.join("../lzvm-accel/src/lib.rs");
+    let accel_lib_source =
+        std::fs::read_to_string(&accel_lib_path).expect("lzvm-accel lib source should read");
+
+    assert!(
+        field_source.contains("#include \"cuda_goldilocks_canonical.cuh\"")
+            && canonical_native_source
+                .contains("lzvm_cuda_goldilocks_begin_validate_canonical_words_device_on_stream")
+            && canonical_native_source.contains("cudaStream_t stream")
+            && canonical_native_source
+                .contains("validate_canonical_words_kernel<<<blocks, kThreads, 0, stream>>>"),
+        "native canonical validation should launch on the caller-provided stream"
+    );
+    assert!(
+        canonical_source.contains(
+            "pub unsafe fn cuda_goldilocks_begin_validate_canonical_words_device_on_stream"
+        ) && canonical_source
+            .contains("lzvm_cuda_goldilocks_begin_validate_canonical_words_device_on_stream")
+            && canonical_source.contains("stream.as_raw()")
+            && canonical_source.contains("canonical_validate_on_stream_matches_default_stream"),
+        "lzvm-accel should expose and test an unsafe begin wrapper for stream canonical validation"
+    );
+    assert!(
+        accel_lib_source
+            .contains("cuda_goldilocks_begin_validate_canonical_words_device_on_stream"),
+        "lzvm-accel should re-export stream canonical validation"
+    );
+}
+
+#[test]
 fn cuda_on_stream_row_major_extension_returns_after_stream_completion() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let accel_lib_path = crate_root.join("../lzvm-accel/src/lib.rs");
