@@ -4126,6 +4126,44 @@ mod tests {
     };
 
     #[test]
+    fn copy_from_u64_words_on_stream_matches_blocking_upload() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let values = (0..4096)
+            .map(|index| (index as u64 + 17) * 19)
+            .collect::<Vec<_>>();
+        let stream = CudaStream::new().expect("CUDA stream should create");
+        let mut streamed = CudaDeviceBuffer::new(values.len() * std::mem::size_of::<u64>())
+            .expect("streamed upload buffer should allocate");
+
+        streamed
+            .copy_from_u64_words_on_stream(&values, &stream)
+            .expect("stream upload should enqueue");
+        stream.synchronize().expect("stream upload should finish");
+
+        let blocking =
+            CudaDeviceBuffer::from_u64_words(&values).expect("blocking upload should run");
+        assert_eq!(
+            streamed
+                .to_u64_words()
+                .expect("streamed upload should download"),
+            blocking
+                .to_u64_words()
+                .expect("blocking upload should download")
+        );
+
+        let mut too_small = CudaDeviceBuffer::new((values.len() - 1) * std::mem::size_of::<u64>())
+            .expect("short buffer should allocate");
+        assert!(
+            too_small
+                .copy_from_u64_words_on_stream(&values, &stream)
+                .is_err(),
+            "stream upload should reject length mismatches"
+        );
+    }
+
+    #[test]
     fn row_weights_for_matching_blowup_residue_are_cyclic_shifts() {
         let source_bits = 5;
         let target_bits = 8;

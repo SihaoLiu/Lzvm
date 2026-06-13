@@ -894,6 +894,27 @@ extern "C" int lzvm_cuda_copy_h2d_bytes(void* dst, const void* src, std::size_t 
     return first_status(status, unregister_status);
 }
 
+extern "C" int lzvm_cuda_copy_h2d_bytes_on_stream(
+    void* dst,
+    const void* src,
+    std::size_t bytes,
+    void* stream) {
+    if (bytes == 0) {
+        return 0;
+    }
+    if (dst == nullptr || src == nullptr || stream == nullptr) {
+        return -1;
+    }
+    const auto copy_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(cudaMemcpyAsync(
+        dst, src, bytes, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream)));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        record_cuda_copy_h2d_wait(bytes, saturated_nanoseconds_since(copy_started));
+    }
+    return status;
+}
+
 extern "C" int lzvm_cuda_copy_d2h_bytes(void* dst, const void* src, std::size_t bytes) {
     if (bytes == 0) {
         return 0;

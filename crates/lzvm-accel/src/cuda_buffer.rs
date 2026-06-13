@@ -1,7 +1,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use super::{cuda_allocator, cuda_status, u64_word_byte_len, AccelError};
+use super::{cuda_allocator, cuda_status, u64_word_byte_len, AccelError, CudaStream};
 
 const SPARSE_U64_WORD_CHUNK: usize = 8 * 1024 * 1024;
 const ZISK_MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS: usize = 11;
@@ -10,6 +10,12 @@ const ZISK_MAIN_TRACE_WIDTH_WORDS: usize = 39;
 
 unsafe extern "C" {
     fn lzvm_cuda_copy_h2d_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
+    fn lzvm_cuda_copy_h2d_bytes_on_stream(
+        dst: *mut c_void,
+        src: *const c_void,
+        bytes: usize,
+        stream: *mut c_void,
+    ) -> i32;
     fn lzvm_cuda_copy_d2h_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
     fn lzvm_cuda_copy_h2d_row_slice_words(
         dst: *mut c_void,
@@ -653,6 +659,43 @@ impl CudaDeviceBuffer {
         {
             let bytes = u64_words_to_bytes(words);
             self.copy_from(&bytes)
+        }
+    }
+
+    /// Enqueues a host-to-device upload on `stream`.
+    ///
+    /// The caller must keep `words` alive until the stream has completed the
+    /// copy or an ordering event recorded after this call has completed.
+    pub fn copy_from_u64_words_on_stream(
+        &mut self,
+        words: &[u64],
+        stream: &CudaStream,
+    ) -> Result<(), AccelError> {
+        let expected_len = u64_word_byte_len(words.len())?;
+        if expected_len != self.len {
+            return Err(AccelError::LengthMismatch {
+                lhs: self.len,
+                rhs: expected_len,
+            });
+        }
+        if self.len == 0 {
+            return Ok(());
+        }
+        #[cfg(target_endian = "little")]
+        {
+            let code = unsafe {
+                lzvm_cuda_copy_h2d_bytes_on_stream(
+                    self.ptr,
+                    words.as_ptr().cast(),
+                    self.len,
+                    stream.as_raw(),
+                )
+            };
+            cuda_status(code)
+        }
+        #[cfg(not(target_endian = "little"))]
+        {
+            self.copy_from_u64_words(words)
         }
     }
 
