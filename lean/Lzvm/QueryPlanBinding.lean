@@ -97,6 +97,12 @@ def RuntimeQueryPlanBindingEvidence
     artifact
     publicInput
     proof
+    /\ RuntimeQueryPlanBindingSeededContract
+      _system
+      validation
+      artifact
+      publicInput
+      proof
 
 def RuntimeQueryPlanBindingCheckedAcceptance
     (_system : VerifierModel)
@@ -155,11 +161,35 @@ theorem runtime_query_plan_binding_checked_acceptance_evidence
       proof
       segmentCanonical
       matchesOpenedArtifacts
+  have seedBindsWitnessTreeDigests :=
+    validation.queryPlanBindingAcceptedImpliesSeedBindsWitnessTreeDigests
+      artifact
+      publicInput
+      proof
+      accepted
+  have seededFriOpeningRequirementsChecked :=
+    validation.queryPlanBindingAcceptedImpliesSeededFriOpeningRequirementsChecked
+      artifact
+      publicInput
+      proof
+      accepted
+  have seededContract :
+      RuntimeQueryPlanBindingSeededContract
+        system
+        validation
+        artifact
+        publicInput
+        proof :=
+    And.intro
+      seedBindsWitnessTreeDigests
+      seededFriOpeningRequirementsChecked
   exact
-    And.intro segmentCanonical
-      (And.intro derivedFromTranscript
-        (And.intro matchesOpenedArtifacts
-          (And.intro transcriptQueryPlanBound openingQueryPlanBound)))
+    And.intro
+      (And.intro segmentCanonical
+        (And.intro derivedFromTranscript
+          (And.intro matchesOpenedArtifacts
+            (And.intro transcriptQueryPlanBound openingQueryPlanBound))))
+      seededContract
 
 theorem runtime_query_plan_binding_evidence_implies_bound_contract
     {system : VerifierModel}
@@ -178,7 +208,26 @@ theorem runtime_query_plan_binding_evidence_implies_bound_contract
           publicInput
           proof := by
   intro artifact publicInput proof evidence
-  exact evidence
+  exact evidence.left
+
+theorem runtime_query_plan_binding_evidence_implies_seeded_contract
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingSeededContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof evidence
+  exact evidence.right
 
 theorem runtime_query_plan_binding_checked_acceptance_challenge
     {system : VerifierModel}

@@ -40,10 +40,20 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             && lean_source.contains("queryPlanSeededFriOpeningRequirementsChecked"),
         "Lean query plan binding should expose seeded query-plan witness digest and FRI-opening checks"
     );
+    assert!(
+        function_body(
+            &lean_source,
+            "def RuntimeQueryPlanBindingEvidence",
+            "def RuntimeQueryPlanBindingCheckedAcceptance",
+        )
+        .contains("RuntimeQueryPlanBindingSeededContract"),
+        "Lean query plan evidence should retain seeded witness-digest and FRI-opening obligations"
+    );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
             "runtime_query_plan_binding_evidence_implies_bound_contract",
+            "runtime_query_plan_binding_evidence_implies_seeded_contract",
             "runtime_query_plan_binding_checked_acceptance_bound_contract",
             "runtime_query_plan_binding_checked_acceptance_seeded_contract",
             "runtime_query_plan_binding_checked_acceptance_opening_segment_evidence",
@@ -74,6 +84,14 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "RuntimeQueryPlanBindingSeededContract",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_evidence_implies_seeded_contract",
+        &[
+            "RuntimeQueryPlanBindingEvidence",
+            "RuntimeQueryPlanBindingSeededContract",
+        ],
+    );
     assert!(
         query_plan_source.contains("validate_seeded_pcs_query_plan_segments")
             && query_plan_source.contains("build_pcs_query_plan_segment_with_bindings")
@@ -88,4 +106,15 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
         &[".right.right.right"],
     );
+}
+
+fn function_body(source: &str, start: &str, end: &str) -> String {
+    let start_index = source
+        .find(start)
+        .unwrap_or_else(|| panic!("source should contain {start}"));
+    let rest = &source[start_index..];
+    let end_index = rest
+        .find(end)
+        .unwrap_or_else(|| panic!("source should contain {end} after {start}"));
+    rest[..end_index].to_owned()
 }

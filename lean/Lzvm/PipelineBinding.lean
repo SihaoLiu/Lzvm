@@ -527,7 +527,14 @@ theorem runtime_pipeline_binding_checked_acceptance_challenge_query_opening_cont
         | intro openingEvidence tail =>
           cases tail with
           | intro obligations soundWitness =>
-            cases queryPlanEvidence with
+            have queryPlanBound :=
+              runtime_query_plan_binding_evidence_implies_bound_contract
+                validation.queryPlanBindingValidation
+                artifact
+                publicInput
+                proof
+                queryPlanEvidence
+            cases queryPlanBound with
             | intro _segmentCanonical tail =>
               cases tail with
               | intro _derivedFromTranscript tail =>
