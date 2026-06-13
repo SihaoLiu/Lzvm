@@ -235,6 +235,48 @@ fn cuda_on_stream_row_major_extension_returns_after_stream_completion() {
 }
 
 #[test]
+fn cuda_leaf_extension_has_owning_pending_stream_handle() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let extend_path = crate_root.join("src/witness_commitment/extend.rs");
+    let extend_source =
+        std::fs::read_to_string(&extend_path).expect("witness extension source should read");
+
+    let pending_body = function_body(
+        &extend_source,
+        "struct PendingCudaLeafExtension",
+        "impl PendingCudaLeafExtension",
+    );
+    assert!(
+        pending_body.contains("output_buffer: CudaDeviceBuffer")
+            && pending_body.contains("extension_workspace: CudaDeviceBuffer")
+            && pending_body.contains("ready: CudaEvent")
+            && pending_body.contains("stream: CudaStream"),
+        "pending stream leaf extension should own queued CUDA resources until completion"
+    );
+
+    let impl_body = function_body(
+        &extend_source,
+        "impl PendingCudaLeafExtension",
+        "#[cfg(feature = \"cuda\")]\nfn validate_source_device_buffer",
+    );
+    assert!(
+        impl_body.contains("fn finish")
+            && impl_body.contains("self.ready")
+            && impl_body.contains(".synchronize()")
+            && impl_body.contains("begin_validate_row_major_device_words(&self.output_buffer")
+            && impl_body.contains("linear_hash_level_from_validated_row_major_device_buffer"),
+        "pending stream leaf extension should synchronize its event before digest construction"
+    );
+
+    assert!(
+        extend_source.contains(
+            "fn begin_compact_witness_stage_leaf_hash_level_from_source_device_view_on_stream_timing"
+        ),
+        "witness extension should expose a begin/finish split for future multi-stream overlap"
+    );
+}
+
+#[test]
 fn cuda_merkle_root_folds_on_device_without_host_level_loop() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/merkle_hash.rs");

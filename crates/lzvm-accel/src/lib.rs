@@ -1465,6 +1465,106 @@ pub fn cuda_goldilocks_coset_extend_row_major_columns_device_on_stream(
 }
 
 #[cfg(feature = "cuda")]
+/// Enqueues row-major coset extension on `stream` and returns after launch.
+///
+/// # Safety
+///
+/// The caller must keep `values`, `out`, `workspace`, and `stream` alive and
+/// must not read or reuse `out` or `workspace` until the queued stream work has
+/// completed.
+pub unsafe fn cuda_goldilocks_begin_coset_extend_row_major_columns_device_on_stream(
+    values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    workspace: &mut CudaDeviceBuffer,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+    stream: &CudaStream,
+) -> Result<(), AccelError> {
+    if column_count == 0 {
+        if values.is_empty() && out.is_empty() && workspace.is_empty() {
+            return Ok(());
+        }
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+    if !values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len(),
+            rhs: values.len() / 8 * 8,
+        });
+    }
+    if !out.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: out.len(),
+            rhs: out.len() / 8 * 8,
+        });
+    }
+    if workspace.len() < out.len() {
+        return Err(AccelError::LengthMismatch {
+            lhs: out.len(),
+            rhs: workspace.len(),
+        });
+    }
+
+    let source_words = values.len() / 8;
+    if !source_words.is_multiple_of(column_count) {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_words,
+        });
+    }
+    let source_rows = source_words / column_count;
+    let (source_len, target_len, source_root, target_root) =
+        coset_extend_domain(source_rows, source_bits, target_bits)?;
+    if source_rows != source_len {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_words,
+        });
+    }
+    let target_words = target_len
+        .checked_mul(column_count)
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: source_words,
+        })?;
+    let target_bytes = target_words
+        .checked_mul(8)
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: target_words,
+        })?;
+    if out.len() != target_bytes {
+        return Err(AccelError::LengthMismatch {
+            lhs: target_bytes,
+            rhs: out.len(),
+        });
+    }
+    ensure_cuda_setup(target_bits)?;
+
+    let code = unsafe {
+        lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream_raw(
+            values.as_raw_ptr() as *const u64,
+            out.as_raw_ptr() as *mut u64,
+            workspace.as_raw_ptr() as *mut u64,
+            source_len,
+            source_bits,
+            target_len,
+            target_bits,
+            column_count,
+            pow_mod(source_root, 0xffff_ffff_0000_0001 - 2),
+            target_root,
+            SHIFT,
+            stream.as_raw(),
+        )
+    };
+    cuda_status(code)
+}
+
+#[cfg(feature = "cuda")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CudaRowMajorColumnView {
     pub source_rows: usize,
@@ -1802,6 +1902,127 @@ pub fn cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream(
     };
     cuda_status(code)?;
     stream.synchronize()
+}
+
+#[cfg(feature = "cuda")]
+/// Enqueues strided row-major coset extension on `stream` and returns after launch.
+///
+/// # Safety
+///
+/// The caller must keep `values`, `out`, `workspace`, and `stream` alive and
+/// must not read or reuse `out` or `workspace` until the queued stream work has
+/// completed.
+pub unsafe fn cuda_goldilocks_begin_coset_extend_row_major_columns_strided_device_on_stream(
+    values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    workspace: &mut CudaDeviceBuffer,
+    view: CudaRowMajorColumnView,
+    source_bits: usize,
+    target_bits: usize,
+    stream: &CudaStream,
+) -> Result<(), AccelError> {
+    let CudaRowMajorColumnView {
+        source_rows,
+        source_row_stride,
+        column_offset,
+        column_count,
+    } = view;
+    if column_count == 0 || source_row_stride == 0 {
+        if values.is_empty() && out.is_empty() && workspace.is_empty() {
+            return Ok(());
+        }
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+    if column_offset > source_row_stride || column_count > source_row_stride - column_offset {
+        return Err(AccelError::InvalidDomain {
+            bits: source_row_stride,
+            len: column_count,
+        });
+    }
+    if !values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len(),
+            rhs: values.len() / 8 * 8,
+        });
+    }
+    if !out.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: out.len(),
+            rhs: out.len() / 8 * 8,
+        });
+    }
+    if workspace.len() < out.len() {
+        return Err(AccelError::LengthMismatch {
+            lhs: out.len(),
+            rhs: workspace.len(),
+        });
+    }
+
+    let (source_len, target_len, source_root, target_root) =
+        coset_extend_domain(source_rows, source_bits, target_bits)?;
+    if source_rows != source_len {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_rows,
+        });
+    }
+    let required_source_words = source_rows
+        .checked_sub(1)
+        .and_then(|last_row| last_row.checked_mul(source_row_stride))
+        .and_then(|base| base.checked_add(column_offset))
+        .and_then(|base| base.checked_add(column_count))
+        .ok_or(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_rows,
+        })?;
+    if values.len() / 8 < required_source_words {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len() / 8,
+            rhs: required_source_words,
+        });
+    }
+    let target_words = target_len
+        .checked_mul(column_count)
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: source_rows,
+        })?;
+    let target_bytes = target_words
+        .checked_mul(8)
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: target_words,
+        })?;
+    if out.len() != target_bytes {
+        return Err(AccelError::LengthMismatch {
+            lhs: target_bytes,
+            rhs: out.len(),
+        });
+    }
+    ensure_cuda_setup(target_bits)?;
+
+    let code = unsafe {
+        lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream_raw(
+            values.as_raw_ptr() as *const u64,
+            out.as_raw_ptr() as *mut u64,
+            workspace.as_raw_ptr() as *mut u64,
+            source_len,
+            source_bits,
+            target_len,
+            target_bits,
+            source_row_stride,
+            column_offset,
+            column_count,
+            pow_mod(source_root, 0xffff_ffff_0000_0001 - 2),
+            target_root,
+            SHIFT,
+            stream.as_raw(),
+        )
+    };
+    cuda_status(code)
 }
 
 #[cfg(feature = "cuda")]

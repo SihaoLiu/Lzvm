@@ -4,6 +4,8 @@ use std::time::Instant;
 
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
+    cuda_goldilocks_begin_coset_extend_row_major_columns_device_on_stream,
+    cuda_goldilocks_begin_coset_extend_row_major_columns_strided_device_on_stream,
     cuda_goldilocks_begin_validate_canonical_words_device,
     cuda_goldilocks_coset_extend_row_major_columns_device,
     cuda_goldilocks_coset_extend_row_major_columns_device_on_stream,
@@ -13,7 +15,7 @@ use lzvm_accel::{
     cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream,
     cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced,
     cuda_goldilocks_validate_canonical_words_device, AccelError, CudaCanonicalCheck,
-    CudaDeviceBuffer, CudaRowMajorColumnView, CudaStream,
+    CudaDeviceBuffer, CudaEvent, CudaRowMajorColumnView, CudaStream,
 };
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::coset_extend_evaluations;
@@ -41,6 +43,21 @@ use super::{
 pub(crate) struct PendingCanonicalCudaDigestLevel {
     level: CudaDigestLevel,
     canonical_check: CudaCanonicalCheck,
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) struct PendingCudaLeafExtension {
+    source_device: WitnessStageSourceDeviceView,
+    output_buffer: CudaDeviceBuffer,
+    extension_workspace: CudaDeviceBuffer,
+    ready: CudaEvent,
+    stream: CudaStream,
+    view: CudaRowMajorColumnView,
+    out_byte_count: usize,
+    extended_rows: usize,
+    arity: usize,
 }
 
 #[cfg(feature = "cuda")]
@@ -151,6 +168,36 @@ impl PendingCanonicalCudaDigestLevel {
     pub(crate) fn into_validated_level(self) -> Result<CudaDigestLevel, WitnessStageLeafError> {
         self.finish_canonical_check()?;
         Ok(self.level)
+    }
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+impl PendingCudaLeafExtension {
+    pub(crate) fn finish(
+        self,
+        timing: &mut WitnessStageLeafExtendTiming,
+    ) -> Result<PendingCanonicalCudaDigestLevel, WitnessTraceCommitmentError> {
+        self.ready
+            .synchronize()
+            .map_err(WitnessStageLeafError::from)?;
+        let canonical_check = record_duration(&mut timing.validate_duration, || {
+            begin_validate_row_major_device_words(&self.output_buffer, self.out_byte_count)
+        })?;
+        let level = record_duration(&mut timing.leaf_hash_duration, || {
+            linear_hash_level_from_validated_row_major_device_buffer(
+                &self.output_buffer,
+                self.extended_rows,
+                self.view.column_count,
+                self.arity,
+            )
+            .map_err(WitnessStageCommitmentError::from)
+        })?;
+        timing.record_leaf_hash_work(self.extended_rows, self.out_byte_count, self.arity);
+        let _keep_source_alive = &self.source_device;
+        let _keep_workspace_alive = &self.extension_workspace;
+        let _keep_stream_alive = &self.stream;
+        Ok(PendingCanonicalCudaDigestLevel::new(level, canonical_check))
     }
 }
 
@@ -661,6 +708,119 @@ pub(crate) fn compact_witness_stage_leaf_hash_level_from_source_device_view_on_s
         None,
         timing,
     )
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn begin_compact_witness_stage_leaf_hash_level_from_source_device_view_on_stream_timing(
+    row_count: usize,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+    arity: usize,
+    source_device: WitnessStageSourceDeviceView,
+    stream: CudaStream,
+    timing: &mut WitnessStageLeafExtendTiming,
+) -> Result<PendingCudaLeafExtension, WitnessTraceCommitmentError> {
+    if !source_device.has_matching_shape(row_count, column_count) {
+        return Err(WitnessStageLeafError::LengthOverflow.into());
+    }
+    let required_source_bytes = source_device
+        .required_byte_len()
+        .ok_or(WitnessStageLeafError::LengthOverflow)?;
+    if source_device.buffer().len() < required_source_bytes {
+        return Err(WitnessStageLeafError::Accel(AccelError::LengthMismatch {
+            lhs: source_device.buffer().len(),
+            rhs: required_source_bytes,
+        })
+        .into());
+    }
+    let view = CudaRowMajorColumnView {
+        source_rows: row_count,
+        source_row_stride: source_device.row_stride(),
+        column_offset: source_device.column_offset(),
+        column_count,
+    };
+    let out_byte_count = record_setup_duration(
+        &mut timing.setup_duration,
+        &mut timing.leaf_setup_prepare_duration,
+        || {
+            let value_count = row_count
+                .checked_mul(column_count)
+                .ok_or(WitnessStageLeafError::LengthOverflow)?;
+            let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+                value_count,
+                column_count,
+                source_bits,
+                target_bits,
+            )
+            .map_err(WitnessStageLeafError::from)?;
+            prepare_gpu_setup(target_bits).map_err(WitnessStageLeafError::from)?;
+            Ok::<_, WitnessStageLeafError>(out_byte_count)
+        },
+    )?;
+    let mut output_buffer = record_setup_duration(
+        &mut timing.setup_duration,
+        &mut timing.leaf_setup_output_alloc_duration,
+        || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
+    )?;
+    timing.record_output_alloc(out_byte_count);
+    let mut extension_workspace = record_setup_duration(
+        &mut timing.setup_duration,
+        &mut timing.leaf_setup_workspace_alloc_duration,
+        || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
+    )?;
+    timing.record_workspace_alloc(out_byte_count);
+    let ready = record_setup_duration(
+        &mut timing.setup_duration,
+        &mut timing.leaf_setup_prepare_duration,
+        || CudaEvent::new().map_err(WitnessStageLeafError::from),
+    )?;
+
+    record_duration(&mut timing.kernel_duration, || {
+        if view.source_row_stride == view.column_count && view.column_offset == 0 {
+            unsafe {
+                cuda_goldilocks_begin_coset_extend_row_major_columns_device_on_stream(
+                    source_device.buffer(),
+                    &mut output_buffer,
+                    &mut extension_workspace,
+                    view.column_count,
+                    source_bits,
+                    target_bits,
+                    &stream,
+                )
+            }
+        } else {
+            unsafe {
+                cuda_goldilocks_begin_coset_extend_row_major_columns_strided_device_on_stream(
+                    source_device.buffer(),
+                    &mut output_buffer,
+                    &mut extension_workspace,
+                    view,
+                    source_bits,
+                    target_bits,
+                    &stream,
+                )
+            }
+        }
+        .and_then(|()| ready.record(&stream))
+        .map_err(WitnessStageLeafError::from)
+    })?;
+    timing.record_coset_extend_work(out_byte_count, column_count, source_bits, target_bits);
+    let extended_rows = extended_row_count_from_bytes(out_byte_count, column_count)?;
+
+    Ok(PendingCudaLeafExtension {
+        source_device,
+        output_buffer,
+        extension_workspace,
+        ready,
+        stream,
+        view,
+        out_byte_count,
+        extended_rows,
+        arity,
+    })
 }
 
 #[cfg(feature = "cuda")]
@@ -1341,6 +1501,70 @@ mod tests {
                 .expect("default root should materialize")
         );
         assert_eq!(stream_timing.leaf_coset_extend_call_count(), 1);
+    }
+
+    #[test]
+    fn pending_stream_leaf_extension_matches_default_source_device_view() {
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let column_count = 3;
+        let arity = 4;
+        let values = (0..source_rows * column_count)
+            .map(|index| Felt::from_u64((index as u64 + 11) * 13))
+            .collect::<Vec<_>>();
+        let source = Arc::new(
+            CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&values))
+                .expect("source should upload"),
+        );
+        let view = WitnessStageSourceDeviceView::new(
+            source_rows,
+            column_count,
+            column_count,
+            0,
+            Arc::clone(&source),
+        );
+
+        let mut default_timing = super::WitnessStageLeafExtendTiming::default();
+        let default_level =
+            super::compact_witness_stage_leaf_hash_level_from_source_device_view_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                &view,
+                &mut default_timing,
+            )
+            .expect("default source-device leaf level should build");
+
+        let stream = CudaStream::new().expect("stream should create");
+        let mut pending_timing = super::WitnessStageLeafExtendTiming::default();
+        let pending =
+            super::begin_compact_witness_stage_leaf_hash_level_from_source_device_view_on_stream_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                view.clone(),
+                stream,
+                &mut pending_timing,
+            )
+            .expect("pending stream extension should enqueue");
+        let pending_level = pending
+            .finish(&mut pending_timing)
+            .expect("pending stream leaf level should finish");
+
+        assert_eq!(
+            pending_level
+                .root()
+                .expect("pending root should materialize"),
+            default_level
+                .root()
+                .expect("default root should materialize")
+        );
+        assert_eq!(pending_timing.leaf_coset_extend_call_count(), 1);
     }
 }
 
