@@ -28,6 +28,9 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             && lean_source.contains("structure MerklePathLayer")
             && lean_source.contains("structure MerklePathOpening")
             && lean_source.contains("def MerklePathFold")
+            && lean_source.contains("namespace MerklePathDirection")
+            && lean_source.contains("def indexBit")
+            && lean_source.contains("def MerklePathIndex")
             && lean_source.contains("def MerklePathVerifies")
             && lean_source.contains("structure MerkleCompressionCollision")
             && lean_source.contains("def MerkleCompressionNoCollision")
@@ -48,6 +51,7 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "different_leaf_same_index_verified_paths_imply_merkle_compression_collision",
             "merkle_compression_collision_free_of_no_collision",
             "centralized_merkle_compression_collision_free",
+            "merkle_path_same_index_implies_index_depth_eq",
             "concrete_merkle_path_same_index_binding",
             "concrete_merkle_path_same_index_binding_from_no_collision",
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index",

@@ -20,6 +20,14 @@ inductive MerklePathDirection where
   | currentOnRight
   deriving DecidableEq
 
+namespace MerklePathDirection
+
+def indexBit : MerklePathDirection -> Nat
+  | currentOnLeft => 0
+  | currentOnRight => 1
+
+end MerklePathDirection
+
 structure MerklePathLayer (Digest : Type uDigest) where
   sibling : Digest
   direction : MerklePathDirection
@@ -66,6 +74,13 @@ def MerklePathOpeningVerifies
     (root : Digest)
     (opening : MerklePathOpening Digest) : Prop :=
   MerklePathVerifies compress root opening.leaf opening.layers
+
+def MerklePathIndex
+    {Digest : Type uDigest} :
+    List (MerklePathLayer Digest) -> Nat
+  | [] => 0
+  | layer :: rest =>
+      MerklePathDirection.indexBit layer.direction + 2 * MerklePathIndex rest
 
 def MerklePathSameIndex
     {Digest : Type uDigest} :
@@ -199,6 +214,38 @@ theorem merkle_parent_digest_injective
                       otherSibling
                       otherLeaf
                       sameParent).right
+
+theorem merkle_path_same_index_implies_index_depth_eq
+    {Digest : Type uDigest} :
+    forall path otherPath : List (MerklePathLayer Digest),
+      MerklePathSameIndex path otherPath ->
+        MerklePathIndex path = MerklePathIndex otherPath
+          /\ path.length = otherPath.length := by
+  intro path
+  induction path with
+  | nil =>
+      intro otherPath sameIndex
+      cases otherPath with
+      | nil =>
+          simp [MerklePathIndex]
+      | cons _ _ =>
+          simp [MerklePathSameIndex] at sameIndex
+  | cons layer rest ih =>
+      intro otherPath sameIndex
+      cases otherPath with
+      | nil =>
+          simp [MerklePathSameIndex] at sameIndex
+      | cons otherLayer otherRest =>
+          have sameDirection :
+              layer.direction = otherLayer.direction := by
+            exact sameIndex.left
+          have sameRest :
+              MerklePathSameIndex rest otherRest := by
+            exact sameIndex.right
+          have restBound := ih otherRest sameRest
+          constructor
+          · rw [MerklePathIndex, MerklePathIndex, sameDirection, restBound.left]
+          · simp [restBound.right]
 
 theorem different_leaf_same_index_verified_paths_imply_merkle_compression_collision
     {Digest : Type uDigest}
