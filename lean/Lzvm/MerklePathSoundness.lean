@@ -499,4 +499,74 @@ theorem verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from
       path
       verified
 
+theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (noCollision : MerkleCompressionNoCollision compress) :
+    forall root opening,
+      MerklePathOpeningVerifies compress root opening ->
+        MerklePathRootCommitsToLeafAtIndex
+          compress
+          root
+          opening.leaf
+          opening.layers := by
+  intro root opening verified
+  exact
+    verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
+      noCollision
+      root
+      opening.leaf
+      opening.layers
+      verified
+
+theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_assumption
+    {Digest : Type uDigest}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    {compress : Digest -> Digest -> Digest}
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress) :
+    forall root opening,
+      MerklePathOpeningVerifies compress root opening ->
+        MerklePathRootCommitsToLeafAtIndex
+          compress
+          root
+          opening.leaf
+          opening.layers := by
+  intro root opening verified
+  exact
+    verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
+      root
+      opening
+      verified
+
+theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : Digest -> Digest -> Digest}
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root opening,
+      MerklePathOpeningVerifies compress root opening ->
+        MerklePathRootCommitsToLeafAtIndex
+          compress
+          root
+          opening.leaf
+          opening.layers := by
+  intro root opening verified
+  exact
+    verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_assumption
+      assumptions.crypto.hashCollisionResistance
+      centralized
+      root
+      opening
+      verified
+
 end Lzvm

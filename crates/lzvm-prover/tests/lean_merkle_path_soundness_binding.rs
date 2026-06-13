@@ -58,6 +58,8 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_assumption",
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_bundle",
+            "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision",
+            "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -74,6 +76,15 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
         "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
         &[
             "MerkleCompressionNoCollision compress",
+            "MerklePathRootCommitsToLeafAtIndex",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision",
+        &[
+            "MerkleCompressionNoCollision compress",
+            "MerklePathOpeningVerifies compress root opening",
             "MerklePathRootCommitsToLeafAtIndex",
         ],
     );
