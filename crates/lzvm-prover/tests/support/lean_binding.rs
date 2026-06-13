@@ -1,17 +1,5 @@
 pub fn contains_theorem_declaration(source: &str, name: &str) -> bool {
-    uncommented_lines(source).any(|line| {
-        let Some(rest) = line.trim_start().strip_prefix("theorem ") else {
-            return false;
-        };
-        let Some(after_name) = rest.strip_prefix(name) else {
-            return false;
-        };
-        after_name
-            .chars()
-            .next()
-            .map(|ch| ch.is_whitespace() || ch == ':')
-            .unwrap_or(true)
-    })
+    find_theorem_declaration(&visible_source(source), name).is_some()
 }
 
 pub fn assert_theorem_declarations(source: &str, names: &[&str]) {
@@ -25,9 +13,8 @@ pub fn assert_theorem_declarations(source: &str, names: &[&str]) {
 
 #[allow(dead_code)]
 pub fn theorem_prefix(source: &str, name: &str) -> String {
-    let visible_source = uncommented_lines(source).collect::<Vec<_>>().join("\n");
-    let theorem_start = visible_source
-        .find(&format!("theorem {name}"))
+    let visible_source = visible_source(source);
+    let theorem_start = find_theorem_declaration(&visible_source, name)
         .unwrap_or_else(|| panic!("Lean source should contain theorem {name}"));
     let proof_start = visible_source[theorem_start..]
         .find(" := by")
@@ -48,9 +35,8 @@ pub fn assert_theorem_prefix_contains(source: &str, name: &str, snippets: &[&str
 
 #[allow(dead_code)]
 pub fn theorem_body(source: &str, name: &str) -> String {
-    let visible_source = uncommented_lines(source).collect::<Vec<_>>().join("\n");
-    let theorem_start = visible_source
-        .find(&format!("theorem {name}"))
+    let visible_source = visible_source(source);
+    let theorem_start = find_theorem_declaration(&visible_source, name)
         .unwrap_or_else(|| panic!("Lean source should contain theorem {name}"));
     let proof_start = visible_source[theorem_start..]
         .find(" := by")
@@ -61,6 +47,38 @@ pub fn theorem_body(source: &str, name: &str) -> String {
         .map(|offset| body_start + offset)
         .unwrap_or_else(|| visible_source.len());
     visible_source[body_start..body_end].to_owned()
+}
+
+fn visible_source(source: &str) -> String {
+    uncommented_lines(source).collect::<Vec<_>>().join("\n")
+}
+
+fn find_theorem_declaration(source: &str, name: &str) -> Option<usize> {
+    source.match_indices("theorem").find_map(|(start, _)| {
+        if start > 0 {
+            let previous = source[..start].chars().next_back()?;
+            if previous.is_alphanumeric() || previous == '_' {
+                return None;
+            }
+        }
+        let rest = &source[start + "theorem".len()..];
+        let first = rest.chars().next()?;
+        if !first.is_whitespace() {
+            return None;
+        }
+        let rest = rest.trim_start();
+        let after_name = rest.strip_prefix(name)?;
+        if after_name
+            .chars()
+            .next()
+            .map(|ch| ch.is_whitespace() || ch == ':')
+            .unwrap_or(true)
+        {
+            Some(start)
+        } else {
+            None
+        }
+    })
 }
 
 #[allow(dead_code)]

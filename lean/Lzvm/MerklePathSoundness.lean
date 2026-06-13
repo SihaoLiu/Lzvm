@@ -143,6 +143,344 @@ def CentralizedMerkleCompressionCollisionResistance
   hashAssumptions.merkleHashCollisionResistanceStatement =
     MerkleCompressionNoCollision compress
 
+structure NAryMerklePathLayer (Digest : Type uDigest) where
+  leftSiblings : List Digest
+  rightSiblings : List Digest
+
+structure NAryMerklePathOpening (Digest : Type uDigest) where
+  leaf : Digest
+  layers : List (NAryMerklePathLayer Digest)
+
+namespace NAryMerklePathLayer
+
+def children
+    {Digest : Type uDigest}
+    (current : Digest)
+    (layer : NAryMerklePathLayer Digest) : List Digest :=
+  layer.leftSiblings ++ current :: layer.rightSiblings
+
+def childSlot
+    {Digest : Type uDigest}
+    (layer : NAryMerklePathLayer Digest) : Nat :=
+  layer.leftSiblings.length
+
+def arity
+    {Digest : Type uDigest}
+    (layer : NAryMerklePathLayer Digest) : Nat :=
+  layer.leftSiblings.length + 1 + layer.rightSiblings.length
+
+def parentDigest
+    {Digest : Type uDigest}
+    (compress : List Digest -> Digest)
+    (current : Digest)
+    (layer : NAryMerklePathLayer Digest) : Digest :=
+  compress (children current layer)
+
+end NAryMerklePathLayer
+
+def NAryMerklePathFold
+    {Digest : Type uDigest}
+    (compress : List Digest -> Digest) :
+    Digest -> List (NAryMerklePathLayer Digest) -> Digest
+  | leaf, [] => leaf
+  | leaf, layer :: rest =>
+      NAryMerklePathFold
+        compress
+        (NAryMerklePathLayer.parentDigest compress leaf layer)
+        rest
+
+def NAryMerklePathVerifies
+    {Digest : Type uDigest}
+    (compress : List Digest -> Digest)
+    (root : Digest)
+    (leaf : Digest)
+    (path : List (NAryMerklePathLayer Digest)) : Prop :=
+  NAryMerklePathFold compress leaf path = root
+
+def NAryMerklePathOpeningVerifies
+    {Digest : Type uDigest}
+    (compress : List Digest -> Digest)
+    (root : Digest)
+    (opening : NAryMerklePathOpening Digest) : Prop :=
+  NAryMerklePathVerifies compress root opening.leaf opening.layers
+
+def NAryMerklePathSamePosition
+    {Digest : Type uDigest} :
+    List (NAryMerklePathLayer Digest) ->
+      List (NAryMerklePathLayer Digest) ->
+        Prop
+  | [], [] => True
+  | leftLayer :: leftRest, rightLayer :: rightRest =>
+      leftLayer.leftSiblings.length = rightLayer.leftSiblings.length
+        /\ leftLayer.rightSiblings.length = rightLayer.rightSiblings.length
+        /\ NAryMerklePathSamePosition leftRest rightRest
+  | _, _ => False
+
+structure NAryMerkleCompressionCollision
+    {Digest : Type uDigest}
+    (compress : List Digest -> Digest) where
+  children : List Digest
+  otherChildren : List Digest
+  sameDigest : compress children = compress otherChildren
+  differentInputs : children ≠ otherChildren
+
+def NAryMerkleCompressionNoCollision
+    {Digest : Type uDigest}
+    (compress : List Digest -> Digest) : Prop :=
+  forall _ : NAryMerkleCompressionCollision compress, False
+
+def NAryMerkleCompressionCollisionFree
+    {Digest : Type uDigest}
+    (compress : List Digest -> Digest) : Prop :=
+  forall children otherChildren,
+    compress children = compress otherChildren ->
+      children = otherChildren
+
+def NAryMerklePathRootCommitsToLeafAtPosition
+    {Digest : Type uDigest}
+    (compress : List Digest -> Digest)
+    (root : Digest)
+    (leaf : Digest)
+    (path : List (NAryMerklePathLayer Digest)) : Prop :=
+  forall otherLeaf otherPath,
+    NAryMerklePathSamePosition path otherPath ->
+      NAryMerklePathVerifies compress root otherLeaf otherPath ->
+      otherLeaf = leaf
+
+def CentralizedNAryMerkleCompressionCollisionResistance
+    {Digest : Type uDigest}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (compress : List Digest -> Digest) : Prop :=
+  hashAssumptions.merkleHashCollisionResistanceStatement =
+    NAryMerkleCompressionNoCollision compress
+
+theorem nary_merkle_compression_collision_free_of_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    NAryMerkleCompressionCollisionFree compress := by
+  intro children otherChildren sameDigest
+  by_contra differentChildren
+  apply noCollision
+  exact
+    { children := children
+      otherChildren := otherChildren
+      sameDigest := sameDigest
+      differentInputs := differentChildren }
+
+theorem centralized_nary_merkle_compression_collision_free
+    {Digest : Type uDigest}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress) :
+    NAryMerkleCompressionCollisionFree compress := by
+  exact
+    nary_merkle_compression_collision_free_of_no_collision
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
+
+theorem nary_merkle_children_current_eq_of_eq
+    {Digest : Type uDigest} :
+    forall leftSiblings otherLeftSiblings : List Digest,
+      forall current otherCurrent : Digest,
+        forall rightSiblings otherRightSiblings : List Digest,
+          leftSiblings.length = otherLeftSiblings.length ->
+            leftSiblings ++ current :: rightSiblings =
+              otherLeftSiblings ++ otherCurrent :: otherRightSiblings ->
+                current = otherCurrent := by
+  intro leftSiblings
+  induction leftSiblings with
+  | nil =>
+      intro otherLeftSiblings current otherCurrent rightSiblings
+        otherRightSiblings sameLength sameChildren
+      cases otherLeftSiblings with
+      | nil =>
+          exact (List.cons.inj sameChildren).left
+      | cons _ _ =>
+          simp at sameLength
+  | cons _ leftRest ih =>
+      intro otherLeftSiblings current otherCurrent rightSiblings
+        otherRightSiblings sameLength sameChildren
+      cases otherLeftSiblings with
+      | nil =>
+          simp at sameLength
+      | cons _ otherLeftRest =>
+          have sameTail := (List.cons.inj sameChildren).right
+          exact
+            ih
+              otherLeftRest
+              current
+              otherCurrent
+              rightSiblings
+              otherRightSiblings
+              (Nat.succ.inj sameLength)
+              sameTail
+
+theorem different_leaf_same_position_verified_nary_paths_imply_merkle_compression_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest} :
+    forall root leaf path otherLeaf otherPath,
+      NAryMerklePathSamePosition path otherPath ->
+        NAryMerklePathVerifies compress root leaf path ->
+          NAryMerklePathVerifies compress root otherLeaf otherPath ->
+            otherLeaf ≠ leaf ->
+              Nonempty (NAryMerkleCompressionCollision compress) := by
+  intro root leaf path
+  induction path generalizing root leaf with
+  | nil =>
+      intro otherLeaf otherPath samePosition verified otherVerified differentLeaf
+      cases otherPath with
+      | nil =>
+          simp [NAryMerklePathVerifies, NAryMerklePathFold] at verified otherVerified
+          exact False.elim (differentLeaf (otherVerified.trans verified.symm))
+      | cons _ _ =>
+          simp [NAryMerklePathSamePosition] at samePosition
+  | cons layer rest ih =>
+      intro otherLeaf otherPath samePosition verified otherVerified differentLeaf
+      cases otherPath with
+      | nil =>
+          simp [NAryMerklePathSamePosition] at samePosition
+      | cons otherLayer otherRest =>
+          have sameLeftLength :
+              layer.leftSiblings.length =
+                otherLayer.leftSiblings.length := by
+            exact samePosition.left
+          have sameRest :
+              NAryMerklePathSamePosition rest otherRest := by
+            exact samePosition.right.right
+          let parent :=
+            NAryMerklePathLayer.parentDigest compress leaf layer
+          let otherParent :=
+            NAryMerklePathLayer.parentDigest compress otherLeaf otherLayer
+          by_cases sameParent : parent = otherParent
+          · exact
+              Nonempty.intro
+                { children := NAryMerklePathLayer.children leaf layer
+                  otherChildren :=
+                    NAryMerklePathLayer.children otherLeaf otherLayer
+                  sameDigest := by exact sameParent
+                  differentInputs := by
+                    intro sameChildren
+                    exact
+                      differentLeaf
+                        ((nary_merkle_children_current_eq_of_eq
+                          layer.leftSiblings
+                          otherLayer.leftSiblings
+                          leaf
+                          otherLeaf
+                          layer.rightSiblings
+                          otherLayer.rightSiblings
+                          sameLeftLength
+                          sameChildren).symm) }
+          · exact
+              ih
+                root
+                parent
+                otherParent
+                otherRest
+                sameRest
+                verified
+                otherVerified
+                (by
+                  intro reverseParent
+                  exact sameParent reverseParent.symm)
+
+theorem concrete_nary_merkle_path_same_position_binding_from_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root leaf path otherLeaf otherPath,
+      NAryMerklePathSamePosition path otherPath ->
+        NAryMerklePathVerifies compress root leaf path ->
+          NAryMerklePathVerifies compress root otherLeaf otherPath ->
+            otherLeaf = leaf := by
+  intro root leaf path otherLeaf otherPath samePosition verified otherVerified
+  by_contra differentLeaf
+  have collisionWitness :
+      Nonempty (NAryMerkleCompressionCollision compress) :=
+    different_leaf_same_position_verified_nary_paths_imply_merkle_compression_collision
+      root
+      leaf
+      path
+      otherLeaf
+      otherPath
+      samePosition
+      verified
+      otherVerified
+      differentLeaf
+  cases collisionWitness with
+  | intro collision =>
+      exact noCollision collision
+
+theorem
+  verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root leaf path,
+      NAryMerklePathVerifies compress root leaf path ->
+        NAryMerklePathRootCommitsToLeafAtPosition compress root leaf path := by
+  intro root leaf path verified otherLeaf otherPath samePosition otherVerified
+  exact
+    concrete_nary_merkle_path_same_position_binding_from_no_collision
+      noCollision
+      root
+      leaf
+      path
+      otherLeaf
+      otherPath
+      samePosition
+      verified
+      otherVerified
+
+theorem verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_assumption
+    {Digest : Type uDigest}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress) :
+    forall root leaf path,
+      NAryMerklePathVerifies compress root leaf path ->
+        NAryMerklePathRootCommitsToLeafAtPosition compress root leaf path := by
+  intro root leaf path verified
+  exact
+    verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
+      root
+      leaf
+      path
+      verified
+
+theorem verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root leaf path,
+      NAryMerklePathVerifies compress root leaf path ->
+        NAryMerklePathRootCommitsToLeafAtPosition compress root leaf path := by
+  intro root leaf path verified
+  exact
+    verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_assumption
+      assumptions.crypto.hashCollisionResistance
+      centralized
+      root
+      leaf
+      path
+      verified
+
 theorem merkle_compression_collision_free_of_no_collision
     {Digest : Type uDigest}
     {compress : Digest -> Digest -> Digest}
