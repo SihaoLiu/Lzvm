@@ -153,6 +153,44 @@ structure RuntimeRetainedLeafDigestNAryConcretePathBinding
           (path artifact publicInput proof) ->
             validation.retainedLeafDigestPathBound artifact publicInput proof
 
+structure RuntimeRetainedLeafDigestNAryConcreteOpeningBinding
+    (system : VerifierModel)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    (Digest : Type uDigest)
+    (compress : List Digest -> Digest) where
+  root : RuntimeArtifact -> PublicInput -> Proof -> Digest
+  opening :
+    RuntimeArtifact ->
+      PublicInput ->
+        Proof ->
+          NAryMerklePathOpening Digest
+  concreteOpeningVerifies :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        NAryMerklePathOpeningVerifies
+          compress
+          (root artifact publicInput proof)
+          (opening artifact publicInput proof)
+  retainedLeafDigestPathRootCommitsToLeafImpliesPathBound :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        NAryMerklePathRootCommitsToLeafAtIndex
+          compress
+          (root artifact publicInput proof)
+          ((opening artifact publicInput proof).leaf)
+          ((opening artifact publicInput proof).layers) ->
+            validation.retainedLeafDigestPathBound artifact publicInput proof
+
 theorem runtime_retained_leaf_digest_concrete_path_bound_from_no_collision
     {system : VerifierModel}
     (validation : RuntimeRetainedLeafDigestOpeningValidation system)
@@ -387,6 +425,80 @@ theorem runtime_retained_leaf_digest_nary_path_position_bound_from_bundle
   intro artifact publicInput proof accepted
   exact
     runtime_retained_leaf_digest_nary_path_position_bound_from_no_collision
+      validation
+      binding
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_retained_leaf_digest_nary_opening_position_bound_from_no_collision
+    {system : VerifierModel}
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (binding :
+      RuntimeRetainedLeafDigestNAryConcreteOpeningBinding
+        system
+        validation
+        Digest
+        compress)
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedLeafDigestPathBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have verified :=
+    binding.concreteOpeningVerifies artifact publicInput proof accepted
+  have rootCommitsToLeaf :=
+    verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision
+      noCollision
+      (binding.root artifact publicInput proof)
+      (binding.opening artifact publicInput proof)
+      verified
+  exact
+    binding.retainedLeafDigestPathRootCommitsToLeafImpliesPathBound
+      artifact
+      publicInput
+      proof
+      accepted
+      rootCommitsToLeaf
+
+theorem runtime_retained_leaf_digest_nary_opening_position_bound_from_bundle
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeRetainedLeafDigestNAryConcreteOpeningBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedLeafDigestPathBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_retained_leaf_digest_nary_opening_position_bound_from_no_collision
       validation
       binding
       (Eq.mp
@@ -1073,6 +1185,76 @@ theorem runtime_retained_leaf_digest_nary_path_digest_contract_from_bundle
       accepted
   have pathBound :=
     runtime_retained_leaf_digest_nary_path_position_bound_from_bundle
+      assumptions
+      validation
+      centralized
+      binding
+      artifact
+      publicInput
+      proof
+      accepted
+  have rootMatches :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRootMatchesExpectedRoot
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsFromSource :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRowsFromSource
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsBoundToQueryPlan :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRowsBoundToQueryPlan
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro levelAvailable
+      (And.intro pathBound
+        (And.intro rootMatches
+          (And.intro rowsFromSource rowsBoundToQueryPlan)))
+
+theorem runtime_retained_leaf_digest_nary_opening_digest_contract_from_bundle
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeRetainedLeafDigestNAryConcreteOpeningBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedLeafDigestOpeningDigestContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have levelAvailable :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesLevelAvailable
+      artifact
+      publicInput
+      proof
+      accepted
+  have pathBound :=
+    runtime_retained_leaf_digest_nary_opening_position_bound_from_bundle
       assumptions
       validation
       centralized
