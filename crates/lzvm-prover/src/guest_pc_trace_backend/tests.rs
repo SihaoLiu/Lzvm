@@ -229,6 +229,42 @@ fn zisk_main_segment_seed_mirror_matches_written_continuation() {
 }
 
 #[test]
+fn direct_boundary_c_uses_register_store_write_value() {
+    let report = addi_report_at(0x8000_0000, 3, 0, 11, 11);
+    let instruction = lower_guest_report(&report).expect("report should lower");
+
+    assert_eq!(
+        direct_zisk_main_report_boundary_c(&report, &instruction),
+        Some(11)
+    );
+}
+
+#[test]
+fn direct_boundary_c_does_not_confuse_store_pc_write_with_c() {
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Jal { rd: 1, offset: 16 },
+        next_pc: 0x8000_0010,
+        register_writes: vec![GuestRegisterWrite {
+            index: 1,
+            value: 0x8000_0004,
+        }]
+        .into(),
+        memory_accesses: Vec::new().into(),
+        precompile_memory_accesses: Vec::new(),
+        precompile_result: None,
+    };
+    let instruction = lower_guest_report(&report).expect("report should lower");
+    assert!(instruction.store_pc);
+
+    assert_eq!(
+        direct_zisk_main_report_boundary_c(&report, &instruction),
+        None
+    );
+}
+
+#[test]
 fn guest_pc_trace_seed_mirror_attaches_pending_segment_seeds_when_enabled() {
     struct EnvGuard {
         name: &'static str,
@@ -428,6 +464,34 @@ fn runner_boundary_seed_snapshot_carries_dma_prepare_scratch() {
             .copied(),
         Some(0x20)
     );
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_rejects_direct_previous_c_mismatch() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let report = addi_report_at(0x8000_0000, 3, 0, 11, 11);
+    let mut runner_state = GuestMachineState::new(report.next_pc);
+    runner_state
+        .set_register(3, 11)
+        .expect("destination register should set");
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+
+    let error = lift_zisk_main_next_segment_seed_from_runner_boundary(
+        1,
+        segment,
+        std::slice::from_ref(&report),
+        None,
+        &runner_state,
+        &current_seed,
+        12,
+    )
+    .expect_err("directly derivable boundary c mismatch should reject");
+
+    assert!(error.to_string().contains("direct boundary c"));
 }
 
 #[test]

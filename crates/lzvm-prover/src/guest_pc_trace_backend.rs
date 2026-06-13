@@ -4405,6 +4405,18 @@ fn lift_zisk_main_next_segment_seed_from_runner_boundary(
             ),
         });
     }
+    if let Some(direct_c) =
+        direct_zisk_main_segment_boundary_c(reports, lookahead_instruction, current_seed)?
+    {
+        if direct_c != next_previous_c {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "runner boundary direct boundary c {direct_c} does not match mirror c {next_previous_c} after segment {}",
+                    segment.trace_instance_index
+                ),
+            });
+        }
+    }
 
     let mut register_mem_steps = [0; 32];
     let final_reload_step =
@@ -5906,6 +5918,52 @@ fn zisk_main_store_value(instruction: &ZiskMainInstruction, c: u64) -> u64 {
     } else {
         c
     }
+}
+
+fn direct_zisk_main_segment_boundary_c(
+    reports: &[GuestMachineReport],
+    lookahead_instruction: Option<RiscvInstruction>,
+    current_seed: &ZiskMainSegmentSeed,
+) -> Result<Option<u64>, GuestPcTraceBackendError> {
+    let Some(report) = reports.last() else {
+        return Ok(None);
+    };
+    if current_seed.initial_state.pending_dma.is_some() && reports.len() == 1 {
+        return Ok(None);
+    }
+    if matches!(
+        report.instruction,
+        RiscvInstruction::Amo { .. } | RiscvInstruction::StoreConditional { .. }
+    ) {
+        return Ok(None);
+    }
+    if matches!(report.instruction, RiscvInstruction::ZiskDmaPrepare { .. })
+        && lookahead_instruction.is_none()
+    {
+        return Ok(None);
+    }
+
+    let lowered = lower_single_zisk_main_report_row(0, report, || lookahead_instruction)?;
+    Ok(direct_zisk_main_report_boundary_c(
+        report,
+        &lowered.instruction,
+    ))
+}
+
+fn direct_zisk_main_report_boundary_c(
+    report: &GuestMachineReport,
+    instruction: &ZiskMainInstruction,
+) -> Option<u64> {
+    if instruction.store_pc {
+        return None;
+    }
+    let ZiskMainStore::Register(index) = instruction.store else {
+        return None;
+    };
+    let [write] = report.register_writes.as_slice() else {
+        return None;
+    };
+    (write.index == index).then_some(write.value)
 }
 
 fn write_layout_pc_trace(
