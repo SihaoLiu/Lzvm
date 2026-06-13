@@ -5,12 +5,15 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.BatchOpeningBinding
+import Lzvm.MerklePathSoundness
 
 /-!
 Runtime retained leaf digest opening obligations.
 -/
 
 namespace Lzvm
+
+universe uDigest
 
 structure RuntimeRetainedLeafDigestOpeningValidation (system : VerifierModel) where
   batchRowsValidation : RuntimeBatchWitnessOpeningRowsValidation system
@@ -69,6 +72,121 @@ def RuntimeRetainedLeafDigestOpeningCheckedAcceptance
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
   validation.retainedLeafDigestOpeningAccepted artifact publicInput proof
+
+structure RuntimeRetainedLeafDigestConcretePathBinding
+    (system : VerifierModel)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    (Digest : Type uDigest)
+    (compress : Digest -> Digest -> Digest) where
+  root : RuntimeArtifact -> PublicInput -> Proof -> Digest
+  leaf : RuntimeArtifact -> PublicInput -> Proof -> Digest
+  path :
+    RuntimeArtifact ->
+      PublicInput ->
+        Proof ->
+          List (MerklePathLayer Digest)
+  concretePathVerifies :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        MerklePathVerifies
+          compress
+          (root artifact publicInput proof)
+          (leaf artifact publicInput proof)
+          (path artifact publicInput proof)
+  retainedLeafDigestPathRootCommitsToLeafImpliesPathBound :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        MerklePathRootCommitsToLeafAtIndex
+          compress
+          (root artifact publicInput proof)
+          (leaf artifact publicInput proof)
+          (path artifact publicInput proof) ->
+            validation.retainedLeafDigestPathBound artifact publicInput proof
+
+theorem runtime_retained_leaf_digest_concrete_path_bound_from_no_collision
+    {system : VerifierModel}
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (binding :
+      RuntimeRetainedLeafDigestConcretePathBinding
+        system
+        validation
+        Digest
+        compress)
+    (noCollision : MerkleCompressionNoCollision compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedLeafDigestPathBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have verified :=
+    binding.concretePathVerifies artifact publicInput proof accepted
+  have rootCommitsToLeaf :=
+    verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
+      noCollision
+      (binding.root artifact publicInput proof)
+      (binding.leaf artifact publicInput proof)
+      (binding.path artifact publicInput proof)
+      verified
+  exact
+    binding.retainedLeafDigestPathRootCommitsToLeafImpliesPathBound
+      artifact
+      publicInput
+      proof
+      accepted
+      rootCommitsToLeaf
+
+theorem runtime_retained_leaf_digest_concrete_path_bound_from_bundle
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeRetainedLeafDigestConcretePathBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedLeafDigestPathBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_retained_leaf_digest_concrete_path_bound_from_no_collision
+      validation
+      binding
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      artifact
+      publicInput
+      proof
+      accepted
 
 def RuntimeRetainedLeafDigestOpeningDigestContract
     (_system : VerifierModel)
