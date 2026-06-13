@@ -36,6 +36,7 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             && lean_source.contains("def MerkleCompressionNoCollision")
             && lean_source.contains("def MerkleCompressionCollisionFree")
             && lean_source.contains("def MerklePathRootCommitsToLeafAtIndex")
+            && lean_source.contains("def MerklePathRootCommitsToLeafAtPosition")
             && lean_source.contains("def CentralizedMerkleCompressionCollisionResistance"),
         "Lean Merkle path model should expose concrete path data, fold verification, compression collision witnesses, indexed commitment, and centralized assumption binding"
     );
@@ -58,8 +59,13 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_assumption",
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_bundle",
+            "merkle_path_same_position_implies_same_index",
+            "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision",
+            "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_bundle",
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision",
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle",
+            "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_no_collision",
+            "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_bundle",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -69,6 +75,14 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "AssumptionBundle system",
             "CentralizedMerkleCompressionCollisionResistance",
             "MerklePathRootCommitsToLeafAtIndex",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision",
+        &[
+            "MerkleCompressionNoCollision compress",
+            "MerklePathRootCommitsToLeafAtPosition",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

@@ -124,6 +124,18 @@ def MerklePathRootCommitsToLeafAtIndex
       MerklePathVerifies compress root otherLeaf otherPath ->
       otherLeaf = leaf
 
+def MerklePathRootCommitsToLeafAtPosition
+    {Digest : Type uDigest}
+    (compress : Digest -> Digest -> Digest)
+    (root : Digest)
+    (leaf : Digest)
+    (path : List (MerklePathLayer Digest)) : Prop :=
+  forall otherLeaf otherPath,
+    MerklePathIndex path = MerklePathIndex otherPath ->
+      path.length = otherPath.length ->
+        MerklePathVerifies compress root otherLeaf otherPath ->
+          otherLeaf = leaf
+
 def CentralizedMerkleCompressionCollisionResistance
     {Digest : Type uDigest}
     (hashAssumptions : HashCollisionResistanceAssumption)
@@ -246,6 +258,53 @@ theorem merkle_path_same_index_implies_index_depth_eq
           constructor
           · rw [MerklePathIndex, MerklePathIndex, sameDirection, restBound.left]
           · simp [restBound.right]
+
+theorem merkle_path_same_position_implies_same_index
+    {Digest : Type uDigest} :
+    forall path otherPath : List (MerklePathLayer Digest),
+      MerklePathIndex path = MerklePathIndex otherPath ->
+        path.length = otherPath.length ->
+          MerklePathSameIndex path otherPath := by
+  intro path
+  induction path with
+  | nil =>
+      intro otherPath _samePosition sameDepth
+      cases otherPath with
+      | nil =>
+          simp [MerklePathSameIndex]
+      | cons _ _ =>
+          simp at sameDepth
+  | cons layer rest ih =>
+      intro otherPath samePosition sameDepth
+      cases otherPath with
+      | nil =>
+          simp at sameDepth
+      | cons otherLayer otherRest =>
+          cases layer with
+          | mk _sibling direction =>
+              cases otherLayer with
+              | mk _otherSibling otherDirection =>
+                  cases direction <;> cases otherDirection
+                  · constructor
+                    · rfl
+                    · apply ih
+                      · simp [MerklePathIndex, MerklePathDirection.indexBit]
+                          at samePosition ⊢
+                        omega
+                      · exact Nat.succ.inj sameDepth
+                  · simp [MerklePathIndex, MerklePathDirection.indexBit]
+                      at samePosition
+                    omega
+                  · simp [MerklePathIndex, MerklePathDirection.indexBit]
+                      at samePosition
+                    omega
+                  · constructor
+                    · rfl
+                    · apply ih
+                      · simp [MerklePathIndex, MerklePathDirection.indexBit]
+                          at samePosition ⊢
+                        omega
+                      · exact Nat.succ.inj sameDepth
 
 theorem different_leaf_same_index_verified_paths_imply_merkle_compression_collision
     {Digest : Type uDigest}
@@ -499,6 +558,74 @@ theorem verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from
       path
       verified
 
+theorem verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (noCollision : MerkleCompressionNoCollision compress) :
+    forall root leaf path,
+      MerklePathVerifies compress root leaf path ->
+        MerklePathRootCommitsToLeafAtPosition compress root leaf path := by
+  intro root leaf path verified otherLeaf otherPath samePosition sameDepth otherVerified
+  exact
+    verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
+      noCollision
+      root
+      leaf
+      path
+      verified
+      otherLeaf
+      otherPath
+      (merkle_path_same_position_implies_same_index
+        path
+        otherPath
+        samePosition
+        sameDepth)
+      otherVerified
+
+theorem verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_assumption
+    {Digest : Type uDigest}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    {compress : Digest -> Digest -> Digest}
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress) :
+    forall root leaf path,
+      MerklePathVerifies compress root leaf path ->
+        MerklePathRootCommitsToLeafAtPosition compress root leaf path := by
+  intro root leaf path verified
+  exact
+    verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
+      root
+      leaf
+      path
+      verified
+
+theorem verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : Digest -> Digest -> Digest}
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root leaf path,
+      MerklePathVerifies compress root leaf path ->
+        MerklePathRootCommitsToLeafAtPosition compress root leaf path := by
+  intro root leaf path verified
+  exact
+    verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_assumption
+      assumptions.crypto.hashCollisionResistance
+      centralized
+      root
+      leaf
+      path
+      verified
+
 theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision
     {Digest : Type uDigest}
     {compress : Digest -> Digest -> Digest}
@@ -563,6 +690,76 @@ theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_f
   intro root opening verified
   exact
     verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_assumption
+      assumptions.crypto.hashCollisionResistance
+      centralized
+      root
+      opening
+      verified
+
+theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_no_collision
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (noCollision : MerkleCompressionNoCollision compress) :
+    forall root opening,
+      MerklePathOpeningVerifies compress root opening ->
+        MerklePathRootCommitsToLeafAtPosition
+          compress
+          root
+          opening.leaf
+          opening.layers := by
+  intro root opening verified
+  exact
+    verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision
+      noCollision
+      root
+      opening.leaf
+      opening.layers
+      verified
+
+theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_assumption
+    {Digest : Type uDigest}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    {compress : Digest -> Digest -> Digest}
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress) :
+    forall root opening,
+      MerklePathOpeningVerifies compress root opening ->
+        MerklePathRootCommitsToLeafAtPosition
+          compress
+          root
+          opening.leaf
+          opening.layers := by
+  intro root opening verified
+  exact
+    verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_no_collision
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
+      root
+      opening
+      verified
+
+theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : Digest -> Digest -> Digest}
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root opening,
+      MerklePathOpeningVerifies compress root opening ->
+        MerklePathRootCommitsToLeafAtPosition
+          compress
+          root
+          opening.leaf
+          opening.layers := by
+  intro root opening verified
+  exact
+    verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_assumption
       assumptions.crypto.hashCollisionResistance
       centralized
       root
