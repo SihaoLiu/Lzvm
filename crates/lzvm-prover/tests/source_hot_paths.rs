@@ -4350,6 +4350,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "trace_report_visit_duration",
         "trace_emit_duration",
         "trace_descriptor_duration",
+        "trace_report_detail_sample_count",
         "trace_report_count",
         "trace_report_row_count",
         "trace_descriptor_row_count",
@@ -4409,8 +4410,9 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest PC device material lowerer should skip per-row timing plumbing unless row timing is enabled"
     );
     assert!(
-        device_material_body.contains("let row_timing = if row_timing_enabled")
-            && device_material_body.contains("timing.as_deref_mut()")
+        device_material_body.contains(
+            "let row_timing = if row_timing_enabled && (report_detail_timing || shape_timing)"
+        ) && device_material_body.contains("timing.as_deref_mut()")
             && device_material_body.contains("} else {\n            None\n        };"),
         "guest PC device material lowerer should gate per-row timing before validation"
     );
@@ -4418,7 +4420,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         .find("let _descriptor_timer = DurationTimer::new")
         .expect("guest PC device material lowerer should retain descriptor detail timing");
     let descriptor_detail_branch_index = device_material_body[..descriptor_timer_index]
-        .rfind("if detail_timing {")
+        .rfind("if report_detail_timing {")
         .expect("guest PC device material lowerer should branch before descriptor timing");
     assert!(
         descriptor_detail_branch_index < descriptor_timer_index,
@@ -4522,6 +4524,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest_trace_report_visit_duration",
         "guest_trace_emit_duration",
         "guest_trace_descriptor_duration",
+        "guest_trace_report_detail_sample_count",
         "guest_trace_report_count",
         "guest_trace_report_row_count",
         "guest_trace_descriptor_row_count",
@@ -4562,6 +4565,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_report_visit\"",
         "\"guest_trace_emit\"",
         "\"guest_trace_descriptor\"",
+        "\"guest_trace_report_detail_samples\"",
         "\"guest_trace_reports\"",
         "\"guest_trace_report_rows\"",
         "\"guest_trace_descriptor_rows\"",
@@ -4635,6 +4639,14 @@ fn guest_pc_trace_lower_records_aggregate_report_timing_without_detail_timers() 
         backend_source.contains("fn record_aggregate_trace_report_duration"),
         "guest PC trace lowerer should have a segment-level report-loop timing helper"
     );
+    assert!(
+        backend_source.contains("LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE"),
+        "guest PC trace lowerer should expose env-gated sampled detail timing"
+    );
+    assert!(
+        backend_source.contains("fn guest_pc_trace_detail_timing_sample_stride"),
+        "guest PC trace lowerer should parse the detail timing sample stride in one helper"
+    );
 
     let device_material_start = concat!(
         "#[cfg(feature = \"cuda\")]\n#[allow(dead_code)]\nfn build_layout_",
@@ -4668,6 +4680,15 @@ fn guest_pc_trace_lower_records_aggregate_report_timing_without_detail_timers() 
                 && body.contains("filter(|_| !detail_timing)")
                 && body.contains("Instant::now()"),
             "guest PC {label} lowerer should start one aggregate report-loop timer when detail timing is off"
+        );
+        assert!(
+            body.contains("let detail_sample_stride = guest_pc_trace_detail_timing_sample_stride();")
+                && body.contains(
+                    "let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;"
+                )
+                && body.contains("row_timing,")
+                && body.contains("report_detail_timing"),
+            "guest PC {label} lowerer should support sampled detail timing without changing the default aggregate timer"
         );
         assert!(
             body.contains("record_aggregate_trace_report_duration(")

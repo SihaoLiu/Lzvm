@@ -9,6 +9,54 @@ use lzvm_artifacts::setup_info::CommitmentColumn;
 use lzvm_field::Felt;
 
 #[test]
+fn guest_trace_detail_timing_sample_stride_uses_positive_env_values() {
+    struct EnvGuard {
+        name: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn new(name: &'static str) -> Self {
+            let previous = std::env::var_os(name);
+            std::env::remove_var(name);
+            Self { name, previous }
+        }
+
+        fn set(&self, value: &str) {
+            std::env::set_var(self.name, value);
+        }
+
+        fn clear(&self) {
+            std::env::remove_var(self.name);
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
+
+    let env = EnvGuard::new("LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE");
+    assert_eq!(guest_pc_trace_detail_timing_sample_stride(), 1);
+
+    env.set("0");
+    assert_eq!(guest_pc_trace_detail_timing_sample_stride(), 1);
+
+    env.set("not-a-number");
+    assert_eq!(guest_pc_trace_detail_timing_sample_stride(), 1);
+
+    env.set("17");
+    assert_eq!(guest_pc_trace_detail_timing_sample_stride(), 17);
+
+    env.clear();
+    assert_eq!(guest_pc_trace_detail_timing_sample_stride(), 1);
+}
+
+#[test]
 fn rejects_add256_precompile_memory_access_address_mismatch() {
     let mut report = add256_report();
     report.precompile_memory_accesses[4].address += 8;

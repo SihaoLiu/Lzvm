@@ -206,6 +206,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_report_visit_duration: Duration,
     trace_emit_duration: Duration,
     trace_descriptor_duration: Duration,
+    trace_report_detail_sample_count: usize,
     pending_send_wait_duration: Duration,
     pending_receive_wait_duration: Duration,
     segment_send_wait_duration: Duration,
@@ -261,6 +262,7 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_visit_duration += other.trace_report_visit_duration;
         self.trace_emit_duration += other.trace_emit_duration;
         self.trace_descriptor_duration += other.trace_descriptor_duration;
+        self.trace_report_detail_sample_count += other.trace_report_detail_sample_count;
         self.pending_send_wait_duration += other.pending_send_wait_duration;
         self.pending_receive_wait_duration += other.pending_receive_wait_duration;
         self.segment_send_wait_duration += other.segment_send_wait_duration;
@@ -374,6 +376,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_descriptor_duration(&self) -> Duration {
         self.trace_descriptor_duration
+    }
+
+    pub fn trace_report_detail_sample_count(&self) -> usize {
+        self.trace_report_detail_sample_count
     }
 
     pub fn pending_send_wait_duration(&self) -> Duration {
@@ -4006,19 +4012,21 @@ fn build_layout_zisk_main_trace_segment_device_material(
     let mut output_row = 0_usize;
     let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
     let shape_timing = guest_pc_trace_shape_timing_enabled();
+    let detail_sample_stride = guest_pc_trace_detail_timing_sample_stride();
     let row_timing_enabled = detail_timing || shape_timing;
     let aggregate_report_started = timing
         .as_ref()
         .filter(|_| !detail_timing)
         .map(|_| Instant::now());
     for (report_index, report) in reports.iter().enumerate() {
+        let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;
         let report_started = timing
             .as_ref()
-            .filter(|_| detail_timing)
+            .filter(|_| report_detail_timing)
             .map(|_| Instant::now());
         let descriptor_rows_before = device_trace_descriptors.descriptor_rows();
         let pending_report = state.pending_dma.is_some();
-        let row_timing = if row_timing_enabled {
+        let row_timing = if row_timing_enabled && (report_detail_timing || shape_timing) {
             timing.as_deref_mut()
         } else {
             None
@@ -4034,14 +4042,14 @@ fn build_layout_zisk_main_trace_segment_device_material(
                 segment,
             },
             row_timing,
-            detail_timing,
+            report_detail_timing,
             |_, values, mut visit_timing| {
                 if shape_timing {
                     if let Some(timing) = visit_timing.as_deref_mut() {
                         record_trace_lowered_row_shape(timing, &values.instruction);
                     }
                 }
-                if detail_timing {
+                if report_detail_timing {
                     let _descriptor_timer = DurationTimer::new(
                         visit_timing
                             .as_deref_mut()
@@ -4063,6 +4071,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
                 record_trace_report_shape(timing, report, pending_report, written_rows);
             }
             if let Some(started) = report_started {
+                timing.trace_report_detail_sample_count += 1;
                 let duration = started.elapsed();
                 timing.trace_report_duration += duration;
                 record_trace_report_duration(
@@ -4200,6 +4209,14 @@ fn guest_pc_trace_lower_detail_timing_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_TRACE_DETAIL_TIMING", false)
 }
 
+fn guest_pc_trace_detail_timing_sample_stride() -> usize {
+    std::env::var("LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|&stride| stride != 0)
+        .unwrap_or(1)
+}
+
 fn guest_pc_trace_shape_timing_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_TRACE_SHAPE_TIMING", false)
 }
@@ -4233,18 +4250,25 @@ fn build_layout_zisk_main_trace_segment(
     let mut output_row = 0_usize;
     let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
     let shape_timing = guest_pc_trace_shape_timing_enabled();
+    let detail_sample_stride = guest_pc_trace_detail_timing_sample_stride();
     let aggregate_report_started = timing
         .as_ref()
         .filter(|_| !detail_timing)
         .map(|_| Instant::now());
     for (report_index, report) in reports.iter().enumerate() {
+        let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;
         let report_started = timing
             .as_ref()
-            .filter(|_| detail_timing)
+            .filter(|_| report_detail_timing)
             .map(|_| Instant::now());
         let pending_report = state.pending_dma.is_some();
         let mut next_instruction =
             || guest_report_next_instruction(reports, report_index, lookahead_instruction);
+        let row_timing = if report_detail_timing || shape_timing {
+            timing.as_deref_mut()
+        } else {
+            None
+        };
         let written_rows = write_zisk_main_report_columns(
             &mut builder,
             output_row,
@@ -4258,8 +4282,8 @@ fn build_layout_zisk_main_trace_segment(
             segment,
             #[cfg(feature = "cuda")]
             &mut device_trace_descriptors,
-            timing.as_deref_mut(),
-            detail_timing,
+            row_timing,
+            report_detail_timing,
             shape_timing,
         )?;
         if let Some(timing) = timing.as_deref_mut() {
@@ -4269,6 +4293,7 @@ fn build_layout_zisk_main_trace_segment(
                 record_trace_report_shape(timing, report, pending_report, written_rows);
             }
             if let Some(started) = report_started {
+                timing.trace_report_detail_sample_count += 1;
                 let duration = started.elapsed();
                 timing.trace_report_duration += duration;
                 record_trace_report_duration(

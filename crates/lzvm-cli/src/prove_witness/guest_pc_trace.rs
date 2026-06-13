@@ -136,6 +136,10 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_descriptor",
         timing.guest_trace_descriptor_duration(),
     );
+    timings.record_count(
+        "guest_trace_report_detail_samples",
+        timing.guest_trace_report_detail_sample_count(),
+    );
     timings.record_count("guest_trace_reports", timing.guest_trace_report_count());
     timings.record_count(
         "guest_trace_report_rows",
