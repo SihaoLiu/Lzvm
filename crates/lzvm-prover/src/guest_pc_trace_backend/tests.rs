@@ -1,8 +1,10 @@
 use super::*;
 use crate::guest_instruction::{RiscvInstruction, RiscvOpImmKind, RiscvPrecompileKind};
 use crate::witness_layout::derive_witness_trace_layout;
+use crate::witness_loader::WitnessComputeContext;
 use crate::witness_trace::parse_witness_trace;
 use crate::ProveUnitSchedule;
+use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::setup_info::CommitmentColumn;
@@ -149,6 +151,153 @@ fn zisk_main_trace_build_uses_resolved_column_targets() {
     );
     assert_eq!(crate::witness_layout::column_lookup_count(), 0);
     assert_eq!(crate::witness_layout::resolved_column_validation_count(), 0);
+}
+
+#[test]
+fn zisk_main_segment_seed_mirror_matches_written_continuation() {
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let first_reports = [
+        addi_report_at(0x8000_0000, 1, 0, 7, 7),
+        addi_report_at(0x8000_0004, 2, 1, 3, 10),
+    ];
+    let second_reports = [addi_report_at(0x8000_0008, 3, 2, 5, 15)];
+    let initial_seed = ZiskMainSegmentSeed::new();
+    let first_segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: initial_seed.previous_c,
+    };
+
+    let first_written = build_layout_zisk_main_trace_segment(
+        &layout,
+        &first_reports,
+        0x8000_0008,
+        &initial_seed.initial_state,
+        Some(second_reports[0].instruction),
+        first_segment,
+        None,
+    )
+    .expect("first segment should build")
+    .expect("Zisk Main layout should be supported");
+    let second_seed = advance_zisk_main_segment_seed(
+        &layout,
+        &first_reports,
+        0x8000_0008,
+        &initial_seed,
+        Some(second_reports[0].instruction),
+        first_segment,
+    )
+    .expect("first segment seed should advance")
+    .expect("Zisk Main layout should be supported");
+
+    assert_eq!(second_seed.initial_state, first_written.continuation_state);
+    assert_eq!(second_seed.previous_c, first_written.final_state.last_c);
+
+    let second_segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 1,
+        is_last_segment: true,
+        previous_c: second_seed.previous_c,
+    };
+    let second_written = build_layout_zisk_main_trace_segment(
+        &layout,
+        &second_reports,
+        0x8000_000c,
+        &second_seed.initial_state,
+        None,
+        second_segment,
+        None,
+    )
+    .expect("second segment should build")
+    .expect("Zisk Main layout should be supported");
+    let terminal_seed = advance_zisk_main_segment_seed(
+        &layout,
+        &second_reports,
+        0x8000_000c,
+        &second_seed,
+        None,
+        second_segment,
+    )
+    .expect("second segment seed should advance")
+    .expect("Zisk Main layout should be supported");
+
+    assert_eq!(
+        terminal_seed.initial_state,
+        second_written.continuation_state
+    );
+    assert_eq!(terminal_seed.previous_c, second_written.final_state.last_c);
+}
+
+#[test]
+fn guest_pc_trace_seed_mirror_attaches_pending_segment_seeds_when_enabled() {
+    struct EnvGuard {
+        name: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn new(name: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(name);
+            std::env::set_var(name, value);
+            Self { name, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
+
+    let _env = EnvGuard::new("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-seed-mirror");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let mut pending = Vec::new();
+
+    produce_guest_pc_trace_pending_slices(
+        16,
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        &[],
+        layout.row_count(),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
+    )
+    .expect("pending slices should produce");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(pending.len(), 2);
+    assert!(pending.iter().all(|segment| segment.seed.is_some()));
+    assert_eq!(pending[0].seed.as_ref().unwrap().previous_c, 0);
+    assert_eq!(pending[1].seed.as_ref().unwrap().previous_c, 10);
+    assert_eq!(
+        pending[1].seed.as_ref().unwrap().initial_state.registers[1],
+        7
+    );
+    assert_eq!(
+        pending[1].seed.as_ref().unwrap().initial_state.registers[2],
+        10
+    );
 }
 
 #[test]
@@ -411,17 +560,21 @@ fn add256_report() -> GuestMachineReport {
 }
 
 fn addi_report() -> GuestMachineReport {
+    addi_report_at(0x8000_0000, 1, 0, 7, 7)
+}
+
+fn addi_report_at(address: u64, rd: u8, rs1: u8, immediate: i16, value: u64) -> GuestMachineReport {
     GuestMachineReport {
-        address: 0x8000_0000,
+        address,
         instruction_byte_len: 4,
         instruction: RiscvInstruction::OpImm {
             kind: RiscvOpImmKind::Addi,
-            rd: 1,
-            rs1: 0,
-            immediate: 7,
+            rd,
+            rs1,
+            immediate: immediate.into(),
         },
-        next_pc: 0x8000_0004,
-        register_writes: vec![GuestRegisterWrite { index: 1, value: 7 }].into(),
+        next_pc: address + 4,
+        register_writes: vec![GuestRegisterWrite { index: rd, value }].into(),
         memory_accesses: Vec::new().into(),
         precompile_memory_accesses: Vec::new(),
         precompile_result: None,
@@ -485,6 +638,72 @@ fn memory_write(address: u64, value: u64) -> GuestMemoryAccess {
         byte_len: 8,
         value,
     }
+}
+
+fn repo_temp_dir(name: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("temp")
+        .join(format!("lzvm-prover-{}-{name}", std::process::id()))
+}
+
+const ENTRY: u64 = 0x8000_0000;
+
+fn sample_guest_image_with_words(words: &[u32]) -> Vec<u8> {
+    let mut code = Vec::with_capacity(words.len() * 4);
+    for word in words {
+        code.extend_from_slice(&word.to_le_bytes());
+    }
+    let header = program_header(120, code.len() as u64);
+    let mut image = sample_guest_image_with_program_headers(&[header]);
+    image.extend_from_slice(&code);
+    image
+}
+
+fn sample_guest_image() -> Vec<u8> {
+    let mut bytes = vec![0_u8; 64];
+    bytes[0..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes[6] = 1;
+    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    bytes[18..20].copy_from_slice(&243_u16.to_le_bytes());
+    bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[24..32].copy_from_slice(&ENTRY.to_le_bytes());
+    bytes[32..40].copy_from_slice(&64_u64.to_le_bytes());
+    bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
+    bytes
+}
+
+fn sample_guest_image_with_program_headers(program_headers: &[[u8; 56]]) -> Vec<u8> {
+    let mut bytes = sample_guest_image();
+    bytes[32..40].copy_from_slice(&64_u64.to_le_bytes());
+    bytes[54..56].copy_from_slice(&56_u16.to_le_bytes());
+    bytes[56..58].copy_from_slice(&(program_headers.len() as u16).to_le_bytes());
+    for header in program_headers {
+        bytes.extend_from_slice(header);
+    }
+    bytes
+}
+
+fn program_header(file_offset: u64, file_size: u64) -> [u8; 56] {
+    let mut bytes = [0_u8; 56];
+    bytes[0..4].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[4..8].copy_from_slice(&5_u32.to_le_bytes());
+    bytes[8..16].copy_from_slice(&file_offset.to_le_bytes());
+    bytes[16..24].copy_from_slice(&ENTRY.to_le_bytes());
+    bytes[24..32].copy_from_slice(&ENTRY.to_le_bytes());
+    bytes[32..40].copy_from_slice(&file_size.to_le_bytes());
+    bytes[40..48].copy_from_slice(&file_size.to_le_bytes());
+    bytes[48..56].copy_from_slice(&0x1000_u64.to_le_bytes());
+    bytes
+}
+
+fn riscv_addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
+    (((immediate as i32 as u32) & 0x0fff) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(rd) << 7)
+        | 0x13
 }
 
 fn commitment_column(

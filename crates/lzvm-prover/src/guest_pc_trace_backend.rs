@@ -686,6 +686,7 @@ struct GuestPcTracePendingSegmentSlice {
     terminal_pc: u64,
     lookahead_instruction: Option<RiscvInstruction>,
     is_last_segment: bool,
+    seed: Option<Box<ZiskMainSegmentSeed>>,
 }
 
 enum GuestPcTraceSegmentStreamMessage {
@@ -2325,9 +2326,13 @@ fn produce_guest_pc_trace_pending_slices(
     row_count: usize,
     mut emit: impl FnMut(GuestPcTracePendingSegmentSlice) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<Vec<WitnessTraceProofValue>, GuestPcTraceBackendError> {
+    let layout = context
+        .trace_layout
+        .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
     let (mut memory, mut state, mut fcall_handler) = load_guest_pc_trace_machine(context, input)?;
     let mut executed_instructions = 0_u64;
     let mut trace_instance_count = 0_usize;
+    let mut seed_mirror = guest_pc_trace_seed_mirror_enabled().then(ZiskMainSegmentSeed::new);
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
         let slice = run_guest_pc_trace_segment_slice(
@@ -2368,6 +2373,29 @@ fn produce_guest_pc_trace_pending_slices(
                 message: "Zisk Main trace instance index is too large".to_owned(),
             }
         })?;
+        let segment = ZiskMainTraceSegmentInfo {
+            trace_instance_index,
+            is_last_segment,
+            previous_c: seed_mirror
+                .as_ref()
+                .map(|seed| seed.previous_c)
+                .unwrap_or_default(),
+        };
+        let seed = seed_mirror.clone();
+        let next_seed = match seed.as_ref() {
+            Some(seed) => Some(
+                advance_zisk_main_segment_seed(
+                    layout,
+                    &slice.reports,
+                    terminal_pc,
+                    seed,
+                    lookahead_instruction,
+                    segment,
+                )?
+                .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?,
+            ),
+            None => None,
+        };
         let report_capacity = slice.report_capacity;
         emit(GuestPcTracePendingSegmentSlice {
             trace_instance_index,
@@ -2376,7 +2404,11 @@ fn produce_guest_pc_trace_pending_slices(
             terminal_pc,
             lookahead_instruction,
             is_last_segment,
+            seed: seed.map(Box::new),
         })?;
+        if let Some(next_seed) = next_seed {
+            seed_mirror = Some(next_seed);
+        }
         trace_instance_count = trace_instance_count.checked_add(1).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "Zisk Main trace instance count overflow".to_owned(),
@@ -2433,6 +2465,12 @@ fn lower_guest_pc_trace_pending_segments(
         timing.trace_report_buffer_excess_capacity += pending
             .report_capacity
             .saturating_sub(pending.reports.len());
+        validate_guest_pc_trace_pending_segment_seed(
+            pending.trace_instance_index,
+            pending.seed.as_deref(),
+            &trace_state,
+            previous_c,
+        )?;
         let lower_started = Instant::now();
         let written = build_layout_zisk_main_trace_segment_for_segment_output(
             layout,
@@ -2466,6 +2504,29 @@ fn lower_guest_pc_trace_pending_segments(
     Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
         message: "guest PC trace pending segment runner stopped".to_owned(),
     })
+}
+
+fn validate_guest_pc_trace_pending_segment_seed(
+    trace_instance_index: u32,
+    seed: Option<&ZiskMainSegmentSeed>,
+    trace_state: &ZiskMainTraceState,
+    previous_c: u64,
+) -> Result<(), GuestPcTraceBackendError> {
+    let Some(seed) = seed else {
+        return Ok(());
+    };
+    if seed.previous_c != previous_c || seed.initial_state != *trace_state {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "guest PC trace seed mirror mismatch at segment {trace_instance_index}"
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn guest_pc_trace_seed_mirror_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_SEED_MIRROR", false)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2702,6 +2763,21 @@ impl ZiskMainTraceState {
             pending_dma: None,
             last_c: 0,
             next_pc: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ZiskMainSegmentSeed {
+    initial_state: ZiskMainTraceState,
+    previous_c: u64,
+}
+
+impl ZiskMainSegmentSeed {
+    fn new() -> Self {
+        Self {
+            initial_state: ZiskMainTraceState::new(),
+            previous_c: 0,
         }
     }
 }
@@ -4198,6 +4274,68 @@ fn build_layout_zisk_main_trace_segment_for_segment_output(
         segment,
         timing,
     )
+}
+
+fn advance_zisk_main_segment_seed(
+    layout: &WitnessTraceLayout,
+    reports: &[GuestMachineReport],
+    terminal_pc: u64,
+    seed: &ZiskMainSegmentSeed,
+    lookahead_instruction: Option<RiscvInstruction>,
+    segment: ZiskMainTraceSegmentInfo,
+) -> Result<Option<ZiskMainSegmentSeed>, GuestPcTraceBackendError> {
+    if zisk_main_trace_columns(layout)?.is_none() {
+        return Ok(None);
+    }
+    if seed.previous_c != segment.previous_c {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "Zisk Main segment seed previous_c {} does not match segment previous_c {}",
+                seed.previous_c, segment.previous_c
+            ),
+        });
+    }
+
+    let mut state = seed.initial_state.clone();
+    let mut output_row = 0_usize;
+    for (report_index, report) in reports.iter().enumerate() {
+        let mut next_instruction =
+            || guest_report_next_instruction(reports, report_index, lookahead_instruction);
+        let written_rows = validate_and_apply_zisk_main_report(
+            output_row,
+            report,
+            &mut next_instruction,
+            &mut state,
+            ZiskMainReportValidationContext {
+                columns: None,
+                row_count: layout.row_count(),
+                segment,
+            },
+            None,
+            false,
+            |_, _, _| Ok(()),
+        )?;
+        output_row = output_row.checked_add(written_rows).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main row index overflow".to_owned(),
+            }
+        })?;
+    }
+
+    if output_row < layout.row_count() {
+        if !segment.is_last_segment {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "non-final Zisk Main segment does not fill layout rows".to_owned(),
+            });
+        }
+        validate_zisk_main_halt_pc(output_row, &state, terminal_pc)?;
+    }
+
+    let continuation_state = zisk_main_continuation_state(layout.row_count(), &state, segment)?;
+    Ok(Some(ZiskMainSegmentSeed {
+        initial_state: continuation_state,
+        previous_c: state.last_c,
+    }))
 }
 
 #[cfg(feature = "cuda")]
