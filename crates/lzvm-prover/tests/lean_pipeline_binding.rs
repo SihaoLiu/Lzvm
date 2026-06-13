@@ -62,6 +62,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence",
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract",
             "runtime_pipeline_binding_evidence_implies_external_source_requirements",
+            "runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract",
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract",
@@ -190,6 +191,27 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("AssumptionBundle"),
         "pipeline external-source requirement projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract"
+        )
+        .contains("RuntimePipelineBindingEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract"
+            )
+            .contains("RuntimeQueryPlanBindingSeededContract"),
+        "pipeline evidence should retain seeded query-plan witness digest and FRI-opening obligations"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract"
+        )
+        .contains("AssumptionBundle"),
+        "pipeline seeded query-plan projection should not require cryptographic assumptions"
     );
     assert!(
         theorem_prefix(

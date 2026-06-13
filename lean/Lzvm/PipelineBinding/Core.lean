@@ -298,6 +298,49 @@ theorem runtime_pipeline_binding_evidence_implies_external_source_requirements
         requiresExternalSource
         evidence.right.right.right.right.right.right.right.right.left)
 
+theorem runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RuntimeQueryPlanBindingSeededContract
+        system
+        validation.queryPlanBindingValidation
+        artifact
+        publicInput
+        proof := by
+  intro evidence
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      _traceConstraintEvidence,
+      queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      _openingEvidence,
+      _transcriptBound,
+      _publicInputBound,
+      _pcsOpeningsValid,
+      _friQueriesValid⟩
+  exact
+    runtime_query_plan_binding_evidence_implies_seeded_contract
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanEvidence
+
 theorem runtime_pipeline_binding_evidence_implies_execution_obligations
     {system : VerifierModel}
     {validation : RuntimePipelineBindingValidation system}
