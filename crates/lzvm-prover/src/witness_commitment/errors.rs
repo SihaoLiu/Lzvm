@@ -474,6 +474,10 @@ pub enum WitnessTraceCommitmentError {
     Layout(WitnessTraceLayoutError),
     StageLeaf(WitnessStageLeafError),
     StageCommitment(WitnessStageCommitmentError),
+    #[cfg(feature = "cuda")]
+    KnownZeroSourceMismatch {
+        stage_index: usize,
+    },
     WorkerPanic,
     LengthOverflow,
 }
@@ -488,6 +492,11 @@ impl fmt::Display for WitnessTraceCommitmentError {
             Self::StageCommitment(error) => {
                 write!(f, "witness trace commitment tree error: {error}")
             }
+            #[cfg(feature = "cuda")]
+            Self::KnownZeroSourceMismatch { stage_index } => write!(
+                f,
+                "witness trace commitment known-zero source mismatch at stage {stage_index}"
+            ),
             Self::WorkerPanic => write!(f, "witness trace commitment worker panicked"),
             Self::LengthOverflow => write!(f, "witness trace commitment length overflow"),
         }
@@ -500,6 +509,8 @@ impl std::error::Error for WitnessTraceCommitmentError {
             Self::Layout(error) => Some(error),
             Self::StageLeaf(error) => Some(error),
             Self::StageCommitment(error) => Some(error),
+            #[cfg(feature = "cuda")]
+            Self::KnownZeroSourceMismatch { .. } => None,
             Self::WorkerPanic | Self::LengthOverflow => None,
         }
     }

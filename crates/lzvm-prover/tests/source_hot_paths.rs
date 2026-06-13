@@ -1685,12 +1685,39 @@ fn descriptor_backed_zero_stage_uses_zero_compact_commitment() {
 #[test]
 fn descriptor_backed_zero_stage_has_runtime_slice_guard() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let trace_path = crate_root.join("src/witness_commitment/trace.rs");
+    let trace_source =
+        std::fs::read_to_string(&trace_path).expect("witness trace source should read");
     let tree_path = crate_root.join("src/witness_commitment/tree.rs");
     let tree_source = std::fs::read_to_string(&tree_path).expect("witness tree source should read");
 
     assert!(
         tree_source.contains("zero_compact_descriptor_column_matches_actual_device_slice"),
         "known-zero descriptor column elision should compare against an actual device slice commitment"
+    );
+    assert!(
+        trace_source.contains("fn debug_validate_zero_compact_source_device")
+            && trace_source.contains("zero_compact_source_device_validation_enabled")
+            && trace_source.contains("LZVM_DEBUG_ZERO_COMPACT_SOURCE"),
+        "known-zero descriptor column elision should expose a default-debug and env-enabled runtime guard"
+    );
+    let pending_body = function_body(
+        &trace_source,
+        "fn commit_extended_witness_stage_source_device_pending",
+        "fn commit_extended_witness_stage",
+    );
+    assert!(
+        pending_body.contains("debug_validate_zero_compact_source_device("),
+        "pending zero-source device commits should validate the actual device slice before trusting zero compact roots"
+    );
+    let stage_body = function_body(
+        &trace_source,
+        "fn commit_extended_witness_stage_with_workspace_cache",
+        "pub(crate) fn extend_witness_trace_stage_values_with_source_devices",
+    );
+    assert!(
+        stage_body.contains("debug_validate_zero_compact_source_device("),
+        "workspace-cache zero-source device commits should validate the actual device slice before trusting zero compact roots"
     );
 }
 

@@ -33,9 +33,9 @@ use super::{
     compact_witness_stage_leaf_hash_level_with_source_device_timing,
     extend_witness_stage_leaves_from_source_device_view, retain_source_device_view,
     PendingCudaLeafExtension, PendingCudaWitnessStageCommitment, RetainedCudaSourceDevice,
-    WitnessStageCommitment, WitnessStageDeviceCompactCommitInput, WitnessStageLeafError,
-    WitnessStageLeafWorkspaceCache, WitnessStageSourceDeviceView, WitnessStageTreeCommitTiming,
-    WORD_BYTES,
+    WitnessStageCommitment, WitnessStageCommitmentError, WitnessStageDeviceCompactCommitInput,
+    WitnessStageLeafError, WitnessStageLeafWorkspaceCache, WitnessStageSourceDeviceView,
+    WitnessStageTreeCommitTiming, WORD_BYTES,
 };
 use super::{
     decode_witness_stage_leaf_values, extend_witness_stage_leaves, WitnessStageExtendedValues,
@@ -1028,15 +1028,21 @@ pub(crate) fn commit_witness_stage_source_devices_stream_pipeline_timing(
 
     for source_device in source_devices {
         if source_device.is_known_zero() {
-            let mut stage_timing = WitnessStageCommitTiming::default();
-            let commitment = commit_extended_witness_stage_source_device_pending(
-                source_device,
-                params,
-                None,
-                &mut stage_timing,
-                external_source_required,
-            )?;
-            pending_commitments.push((source_device.stage_index(), commitment, stage_timing));
+            let stage_timing = WitnessStageCommitTiming::default();
+            let commitment = commit_witness_stage_zero_compact(
+                source_device.stage_index(),
+                params.source_bits,
+                params.target_bits,
+                source_device.column_count(),
+                params.arity,
+            )
+            .map_err(WitnessTraceCommitmentError::from)?;
+            debug_validate_zero_compact_source_device(params, source_device, commitment.root())?;
+            pending_commitments.push((
+                source_device.stage_index(),
+                PendingWitnessStageCommitment::Ready(commitment),
+                stage_timing,
+            ));
             continue;
         }
 
@@ -1103,6 +1109,51 @@ fn source_device_stream_pipeline_depth() -> usize {
             .unwrap_or(1),
         Err(_) => 1,
     }
+}
+
+#[cfg(feature = "cuda")]
+fn zero_compact_source_device_validation_enabled() -> bool {
+    cfg!(debug_assertions)
+        || matches!(
+            std::env::var("LZVM_DEBUG_ZERO_COMPACT_SOURCE").as_deref(),
+            Ok("1" | "true" | "yes" | "on")
+        )
+}
+
+#[cfg(feature = "cuda")]
+fn debug_validate_zero_compact_source_device(
+    params: WitnessStageCommitParams,
+    source_device: &WitnessStageSourceDevice,
+    expected_root: [Felt; super::HASH_WORDS],
+) -> Result<(), WitnessTraceCommitmentError> {
+    if !zero_compact_source_device_validation_enabled() {
+        return Ok(());
+    }
+
+    let source_view = source_device.source_view();
+    let mut timing = WitnessStageLeafExtendTiming::default();
+    let leaf_level =
+        compact_witness_stage_leaf_hash_level_from_source_device_view_with_workspace_cache_timing(
+            source_device.row_count(),
+            source_device.column_count(),
+            params.source_bits,
+            params.target_bits,
+            params.arity,
+            &source_view,
+            None,
+            &mut timing,
+        )?;
+    let actual_root = leaf_level
+        .root()
+        .map_err(WitnessStageCommitmentError::from)
+        .map_err(WitnessTraceCommitmentError::from)?;
+    leaf_level.finish_canonical_check()?;
+    if actual_root != expected_root {
+        return Err(WitnessTraceCommitmentError::KnownZeroSourceMismatch {
+            stage_index: source_device.stage_index(),
+        });
+    }
+    Ok(())
 }
 
 #[cfg(feature = "cuda")]
@@ -1390,15 +1441,16 @@ fn commit_extended_witness_stage_source_device_pending(
     external_source_required: bool,
 ) -> Result<PendingWitnessStageCommitment, WitnessTraceCommitmentError> {
     if source_device.is_known_zero() {
-        return commit_witness_stage_zero_compact(
+        let commitment = commit_witness_stage_zero_compact(
             source_device.stage_index(),
             params.source_bits,
             params.target_bits,
             source_device.column_count(),
             params.arity,
         )
-        .map(PendingWitnessStageCommitment::Ready)
-        .map_err(WitnessTraceCommitmentError::from);
+        .map_err(WitnessTraceCommitmentError::from)?;
+        debug_validate_zero_compact_source_device(params, source_device, commitment.root())?;
+        return Ok(PendingWitnessStageCommitment::Ready(commitment));
     }
     let source_view = source_device.source_view();
     let retained_source_device = if external_source_required {
@@ -1500,14 +1552,16 @@ fn commit_extended_witness_stage_with_workspace_cache(
 ) -> Result<super::WitnessStageCommitment, WitnessTraceCommitmentError> {
     if let Some(source_device) = source_device {
         if source_device.is_known_zero() {
-            return commit_witness_stage_zero_compact(
+            let commitment = commit_witness_stage_zero_compact(
                 stage.stage_index(),
                 params.source_bits,
                 params.target_bits,
                 stage.column_count(),
                 params.arity,
             )
-            .map_err(WitnessTraceCommitmentError::from);
+            .map_err(WitnessTraceCommitmentError::from)?;
+            debug_validate_zero_compact_source_device(params, source_device, commitment.root())?;
+            return Ok(commitment);
         }
     }
     let leaf_level = if let Some(timing) = timing.as_deref_mut() {
@@ -1794,6 +1848,35 @@ mod tests {
             assert_eq!(actual.root(), expected.root());
             assert_eq!(actual.tree_byte_count(), expected.tree_byte_count());
         }
+    }
+
+    #[test]
+    fn cuda_known_zero_source_device_rejects_nonzero_slice_in_debug_guard() {
+        let unit = sample_unit(4, vec![1]);
+        let values = (0..4)
+            .map(|value| Felt::from_u64(value as u64 + 1))
+            .collect::<Vec<_>>();
+        let source = Arc::new(
+            CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&values))
+                .expect("trace source should upload"),
+        );
+        let source_devices = vec![
+            WitnessStageSourceDevice::from_row_major_column_window_with_known_zero(
+                1, 4, 1, 1, 0, true, &source,
+            ),
+        ];
+        let mut timing = WitnessStageCommitTiming::default();
+
+        let error = commit_witness_stage_source_devices_stream_pipeline_timing(
+            &source_devices,
+            &unit,
+            &mut timing,
+            true,
+            2,
+        )
+        .expect_err("nonzero known-zero device slice should reject");
+
+        assert!(error.to_string().contains("known-zero"));
     }
 
     fn assert_combined_witness_stage_commitment_matches_separate_path(width: u32) {
