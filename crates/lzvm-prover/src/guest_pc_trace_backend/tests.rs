@@ -301,6 +301,28 @@ fn register_mem_steps_preserve_same_register_access_order() {
     assert_eq!(register_mem_steps[1], store_step);
 }
 
+#[test]
+fn row_mem_step_base_matches_direct_offset_helper() {
+    for (row_count, trace_instance_index, row) in
+        [(1, 0, 0), (100, 2, 5), (120_000_000, 8, 119_999_999)]
+    {
+        let base = zisk_main_row_mem_step_base(row_count, trace_instance_index, row)
+            .expect("row mem-step base should fit");
+        for offset in [
+            ZISK_MAIN_A_MEM_STEP_OFFSET,
+            ZISK_MAIN_B_MEM_STEP_OFFSET,
+            ZISK_MAIN_STORE_MEM_STEP_OFFSET,
+            ZISK_MAIN_SPECIAL_MEM_STEP_OFFSET,
+        ] {
+            assert_eq!(
+                zisk_main_mem_step_from_base(base, offset).expect("offset mem-step should fit"),
+                zisk_main_row_mem_step(row_count, trace_instance_index, row, offset)
+                    .expect("direct mem-step should fit")
+            );
+        }
+    }
+}
+
 fn add256_report() -> GuestMachineReport {
     let params_address = 64;
     let a_address = 96;

@@ -3825,33 +3825,31 @@ fn zisk_main_register_access_values(
         store_prev_value: None,
     };
     let mut next_mem_steps = SparseRegisterMemSteps::new(&state.register_mem_steps);
+    let mut row_mem_step_base = None;
+    let mut row_mem_step = |offset| {
+        let base = match row_mem_step_base {
+            Some(base) => base,
+            None => {
+                let base =
+                    zisk_main_row_mem_step_base(row_count, segment.trace_instance_index, row)?;
+                row_mem_step_base = Some(base);
+                base
+            }
+        };
+        zisk_main_mem_step_from_base(base, offset)
+    };
 
     if let Some(index) = zisk_main_source_register_index(row, instruction.a)? {
-        let next_step = zisk_main_row_mem_step(
-            row_count,
-            segment.trace_instance_index,
-            row,
-            ZISK_MAIN_A_MEM_STEP_OFFSET,
-        )?;
+        let next_step = row_mem_step(ZISK_MAIN_A_MEM_STEP_OFFSET)?;
         values.a_prev_mem_step = Some(next_mem_steps.read_then_update(index, next_step));
     }
     if let Some(index) = zisk_main_source_register_index(row, instruction.b)? {
-        let next_step = zisk_main_row_mem_step(
-            row_count,
-            segment.trace_instance_index,
-            row,
-            ZISK_MAIN_B_MEM_STEP_OFFSET,
-        )?;
+        let next_step = row_mem_step(ZISK_MAIN_B_MEM_STEP_OFFSET)?;
         values.b_prev_mem_step = Some(next_mem_steps.read_then_update(index, next_step));
     }
     if let Some(index) = zisk_main_store_register_index(row, instruction.store)? {
         values.store_prev_value = Some(state.registers[index]);
-        let next_step = zisk_main_row_mem_step(
-            row_count,
-            segment.trace_instance_index,
-            row,
-            ZISK_MAIN_STORE_MEM_STEP_OFFSET,
-        )?;
+        let next_step = row_mem_step(ZISK_MAIN_STORE_MEM_STEP_OFFSET)?;
         values.store_prev_mem_step = Some(next_mem_steps.read_then_update(index, next_step));
     }
 
@@ -3897,11 +3895,21 @@ fn zisk_main_register_index(index: u8) -> Result<usize, ()> {
     }
 }
 
+#[cfg(test)]
 fn zisk_main_row_mem_step(
     row_count: usize,
     trace_instance_index: u32,
     row: usize,
     offset: u64,
+) -> Result<u64, GuestPcTraceBackendError> {
+    let base = zisk_main_row_mem_step_base(row_count, trace_instance_index, row)?;
+    zisk_main_mem_step_from_base(base, offset)
+}
+
+fn zisk_main_row_mem_step_base(
+    row_count: usize,
+    trace_instance_index: u32,
+    row: usize,
 ) -> Result<u64, GuestPcTraceBackendError> {
     let row_count =
         u64::try_from(row_count).map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -3916,7 +3924,14 @@ fn zisk_main_row_mem_step(
         .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: "Zisk Main step is too large".to_owned(),
         })?;
-    zisk_main_mem_step(main_step, offset)
+    zisk_main_mem_step(main_step, ZISK_MAIN_A_MEM_STEP_OFFSET)
+}
+
+fn zisk_main_mem_step_from_base(base: u64, offset: u64) -> Result<u64, GuestPcTraceBackendError> {
+    base.checked_add(offset)
+        .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk Main memory step is too large".to_owned(),
+        })
 }
 
 fn zisk_main_last_segment_reg_mem_step(
