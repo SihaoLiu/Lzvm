@@ -212,6 +212,106 @@ theorem runtime_retained_parent_checkpoint_concrete_path_bound_from_bundle
       proof
       accepted
 
+theorem runtime_retained_parent_checkpoint_concrete_path_position_bound_from_no_collision
+    {system : VerifierModel}
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (binding :
+      RuntimeRetainedParentCheckpointConcretePathBinding
+        system
+        validation
+        Digest
+        compress)
+    (noCollision : MerkleCompressionNoCollision compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedParentCheckpointStitchedPathBound
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have verified :=
+    binding.concreteStitchedPathVerifies artifact publicInput proof accepted
+  have rootCommitsToLeafAtPosition :=
+    verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision
+      noCollision
+      (binding.root artifact publicInput proof)
+      (binding.leaf artifact publicInput proof)
+      (binding.stitchedPath artifact publicInput proof)
+      verified
+  have rootCommitsToLeafAtIndex :
+      MerklePathRootCommitsToLeafAtIndex
+        compress
+        (binding.root artifact publicInput proof)
+        (binding.leaf artifact publicInput proof)
+        (binding.stitchedPath artifact publicInput proof) := by
+    intro otherLeaf otherPath sameIndex otherVerified
+    have samePosition :=
+      merkle_path_same_index_implies_index_depth_eq
+        (binding.stitchedPath artifact publicInput proof)
+        otherPath
+        sameIndex
+    exact
+      rootCommitsToLeafAtPosition
+        otherLeaf
+        otherPath
+        samePosition.left
+        samePosition.right
+        otherVerified
+  exact
+    binding.stitchedPathRootCommitsToLeafImpliesStitchedPathBound
+      artifact
+      publicInput
+      proof
+      accepted
+      rootCommitsToLeafAtIndex
+
+theorem runtime_retained_parent_checkpoint_concrete_path_position_bound_from_bundle
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeRetainedParentCheckpointConcretePathBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedParentCheckpointStitchedPathBound
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_retained_parent_checkpoint_concrete_path_position_bound_from_no_collision
+      validation
+      binding
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      artifact
+      publicInput
+      proof
+      accepted
+
 def RuntimeRetainedParentCheckpointOpeningDigestContract
     (_system : VerifierModel)
     (validation : RuntimeRetainedParentCheckpointOpeningValidation _system)

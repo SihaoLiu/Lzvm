@@ -61,10 +61,21 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_retained_rows_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_digest_contract",
+            "runtime_retained_leaf_digest_concrete_path_position_bound_from_no_collision",
+            "runtime_retained_leaf_digest_concrete_path_position_bound_from_bundle",
             "runtime_retained_leaf_digest_opening_checked_acceptance_sound",
             "runtime_retained_leaf_digest_opening_checked_acceptance_verifier_core_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_opening_and_core_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_source_and_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_concrete_path_position_bound_from_no_collision",
+        &[
+            "RuntimeRetainedLeafDigestConcretePathBinding",
+            "MerkleCompressionNoCollision compress",
+            "retainedLeafDigestPathBound",
         ],
     );
     assert!(
