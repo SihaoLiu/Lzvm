@@ -39,6 +39,8 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             && lean_source.contains("RuntimeRetainedLeafDigestOpeningDigestContract")
             && lean_source.contains("RuntimeRetainedLeafDigestOpeningRetainedRowsContract")
             && lean_source.contains("RuntimeRetainedLeafDigestOpeningShiftedRowSourceContract")
+            && lean_source.contains("RuntimeRetainedLeafDigestNAryConcretePathBinding")
+            && lean_source.contains("NAryMerklePathLayer")
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsEvidence")
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsBoundContract")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
@@ -65,10 +67,45 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "runtime_retained_leaf_digest_concrete_path_position_bound_from_no_collision",
             "runtime_retained_leaf_digest_concrete_path_position_bound_from_bundle",
             "runtime_retained_leaf_digest_concrete_path_opening_and_core_contract_from_bundle",
+            "runtime_retained_leaf_digest_nary_path_position_bound_from_no_collision",
+            "runtime_retained_leaf_digest_nary_path_position_bound_from_bundle",
+            "runtime_retained_leaf_digest_nary_path_digest_contract_from_bundle",
+            "runtime_retained_leaf_digest_nary_path_opening_and_core_contract_from_bundle",
             "runtime_retained_leaf_digest_opening_checked_acceptance_sound",
             "runtime_retained_leaf_digest_opening_checked_acceptance_verifier_core_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_opening_and_core_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_source_and_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_path_position_bound_from_no_collision",
+        &[
+            "RuntimeRetainedLeafDigestNAryConcretePathBinding",
+            "NAryMerkleCompressionNoCollision compress",
+            "retainedLeafDigestPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_path_digest_contract_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedLeafDigestNAryConcretePathBinding",
+            "RuntimeRetainedLeafDigestOpeningDigestContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_path_opening_and_core_contract_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedLeafDigestNAryConcretePathBinding",
+            "RuntimeOpeningEvidence",
+            "RuntimeRetainedLeafDigestOpeningDigestContract",
+            "RuntimeVerifierCoreContract system publicInput proof",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

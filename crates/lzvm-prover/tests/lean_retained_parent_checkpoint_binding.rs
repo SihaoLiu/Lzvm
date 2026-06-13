@@ -46,6 +46,8 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             && lean_source.contains("def RuntimeRetainedParentCheckpointOpeningSourceContract")
             && lean_source
                 .contains("def RuntimeRetainedParentCheckpointOpeningRetainedRowsContract")
+            && lean_source.contains("RuntimeRetainedParentCheckpointNAryConcretePathBinding")
+            && lean_source.contains("NAryMerklePathLayer")
             && lean_source.contains("RuntimeBatchWitnessOpeningRowsBoundContract")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
@@ -68,6 +70,9 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_concrete_path_digest_contract_from_bundle",
             "runtime_retained_parent_checkpoint_concrete_path_position_bound_from_no_collision",
             "runtime_retained_parent_checkpoint_concrete_path_position_bound_from_bundle",
+            "runtime_retained_parent_checkpoint_nary_path_position_bound_from_no_collision",
+            "runtime_retained_parent_checkpoint_nary_path_position_bound_from_bundle",
+            "runtime_retained_parent_checkpoint_nary_path_digest_contract_from_bundle",
             "runtime_retained_parent_checkpoint_prefix_batch_implies_lower_prefix_bound",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_prefix_batch_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract",
@@ -75,6 +80,25 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_and_core_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_source_and_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_path_position_bound_from_no_collision",
+        &[
+            "RuntimeRetainedParentCheckpointNAryConcretePathBinding",
+            "NAryMerkleCompressionNoCollision compress",
+            "retainedParentCheckpointStitchedPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_path_digest_contract_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedParentCheckpointNAryConcretePathBinding",
+            "RuntimeRetainedParentCheckpointOpeningDigestContract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

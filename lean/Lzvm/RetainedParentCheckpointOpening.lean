@@ -131,6 +131,49 @@ structure RuntimeRetainedParentCheckpointConcretePathBinding
               publicInput
               proof
 
+structure RuntimeRetainedParentCheckpointNAryConcretePathBinding
+    (system : VerifierModel)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
+    (Digest : Type uDigest)
+    (compress : List Digest -> Digest) where
+  root : RuntimeArtifact -> PublicInput -> Proof -> Digest
+  leaf : RuntimeArtifact -> PublicInput -> Proof -> Digest
+  stitchedPath :
+    RuntimeArtifact ->
+      PublicInput ->
+        Proof ->
+          List (NAryMerklePathLayer Digest)
+  concreteStitchedPathVerifies :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        NAryMerklePathVerifies
+          compress
+          (root artifact publicInput proof)
+          (leaf artifact publicInput proof)
+          (stitchedPath artifact publicInput proof)
+  stitchedPathRootCommitsToLeafImpliesStitchedPathBound :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        NAryMerklePathRootCommitsToLeafAtPosition
+          compress
+          (root artifact publicInput proof)
+          (leaf artifact publicInput proof)
+          (stitchedPath artifact publicInput proof) ->
+            validation.retainedParentCheckpointStitchedPathBound
+              artifact
+              publicInput
+              proof
+
 theorem runtime_retained_parent_checkpoint_concrete_path_bound_from_no_collision
     {system : VerifierModel}
     (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
@@ -302,6 +345,87 @@ theorem runtime_retained_parent_checkpoint_concrete_path_position_bound_from_bun
   intro artifact publicInput proof accepted
   exact
     runtime_retained_parent_checkpoint_concrete_path_position_bound_from_no_collision
+      validation
+      binding
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_retained_parent_checkpoint_nary_path_position_bound_from_no_collision
+    {system : VerifierModel}
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (binding :
+      RuntimeRetainedParentCheckpointNAryConcretePathBinding
+        system
+        validation
+        Digest
+        compress)
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedParentCheckpointStitchedPathBound
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have verified :=
+    binding.concreteStitchedPathVerifies artifact publicInput proof accepted
+  have rootCommitsToLeaf :=
+    verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision
+      noCollision
+      (binding.root artifact publicInput proof)
+      (binding.leaf artifact publicInput proof)
+      (binding.stitchedPath artifact publicInput proof)
+      verified
+  exact
+    binding.stitchedPathRootCommitsToLeafImpliesStitchedPathBound
+      artifact
+      publicInput
+      proof
+      accepted
+      rootCommitsToLeaf
+
+theorem runtime_retained_parent_checkpoint_nary_path_position_bound_from_bundle
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeRetainedParentCheckpointNAryConcretePathBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedParentCheckpointStitchedPathBound
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_retained_parent_checkpoint_nary_path_position_bound_from_no_collision
       validation
       binding
       (Eq.mp
@@ -1020,6 +1144,90 @@ theorem runtime_retained_parent_checkpoint_concrete_path_digest_contract_from_bu
       accepted
   have stitchedPath :=
     runtime_retained_parent_checkpoint_concrete_path_position_bound_from_bundle
+      assumptions
+      validation
+      centralized
+      binding
+      artifact
+      publicInput
+      proof
+      accepted
+  have rootMatches :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesRootMatchesExpectedRoot
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsFromSource :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesRowsFromSource
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsBoundToQueryPlan :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesRowsBoundToQueryPlan
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro levelAvailable
+      (And.intro lowerPrefix
+        (And.intro upperSuffix
+          (And.intro stitchedPath
+            (And.intro rootMatches
+              (And.intro rowsFromSource rowsBoundToQueryPlan)))))
+
+theorem runtime_retained_parent_checkpoint_nary_path_digest_contract_from_bundle
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeRetainedParentCheckpointNAryConcretePathBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedParentCheckpointOpeningDigestContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have levelAvailable :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesLevelAvailable
+      artifact
+      publicInput
+      proof
+      accepted
+  have lowerPrefix :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesLowerPrefixBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have upperSuffix :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesUpperSuffixBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have stitchedPath :=
+    runtime_retained_parent_checkpoint_nary_path_position_bound_from_bundle
       assumptions
       validation
       centralized
