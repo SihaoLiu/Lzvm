@@ -204,6 +204,14 @@ def NAryMerklePathOpeningVerifies
     (opening : NAryMerklePathOpening Digest) : Prop :=
   NAryMerklePathVerifies compress root opening.leaf opening.layers
 
+def NAryMerklePathIndex
+    {Digest : Type uDigest} :
+    List (NAryMerklePathLayer Digest) -> Nat
+  | [] => 0
+  | layer :: rest =>
+      NAryMerklePathLayer.childSlot layer
+        + NAryMerklePathLayer.arity layer * NAryMerklePathIndex rest
+
 def NAryMerklePathSamePosition
     {Digest : Type uDigest} :
     List (NAryMerklePathLayer Digest) ->
@@ -247,6 +255,19 @@ def NAryMerklePathRootCommitsToLeafAtPosition
       NAryMerklePathVerifies compress root otherLeaf otherPath ->
       otherLeaf = leaf
 
+def NAryMerklePathRootCommitsToLeafAtIndex
+    {Digest : Type uDigest}
+    (compress : List Digest -> Digest)
+    (root : Digest)
+    (leaf : Digest)
+    (path : List (NAryMerklePathLayer Digest)) : Prop :=
+  forall otherLeaf otherPath,
+    NAryMerklePathSamePosition path otherPath ->
+      NAryMerklePathIndex path = NAryMerklePathIndex otherPath ->
+        path.length = otherPath.length ->
+          NAryMerklePathVerifies compress root otherLeaf otherPath ->
+          otherLeaf = leaf
+
 def CentralizedNAryMerkleCompressionCollisionResistance
     {Digest : Type uDigest}
     (hashAssumptions : HashCollisionResistanceAssumption)
@@ -282,6 +303,50 @@ theorem centralized_nary_merkle_compression_collision_free
       (Eq.mp
         centralized
         hashAssumptions.merkleHashCollisionResistance.evidence)
+
+theorem nary_merkle_path_same_position_implies_index_depth_eq
+    {Digest : Type uDigest} :
+    forall path otherPath : List (NAryMerklePathLayer Digest),
+      NAryMerklePathSamePosition path otherPath ->
+        NAryMerklePathIndex path = NAryMerklePathIndex otherPath
+          /\ path.length = otherPath.length := by
+  intro path
+  induction path with
+  | nil =>
+      intro otherPath samePosition
+      cases otherPath with
+      | nil =>
+          simp [NAryMerklePathIndex]
+      | cons _ _ =>
+          simp [NAryMerklePathSamePosition] at samePosition
+  | cons layer rest ih =>
+      intro otherPath samePosition
+      cases otherPath with
+      | nil =>
+          simp [NAryMerklePathSamePosition] at samePosition
+      | cons otherLayer otherRest =>
+          have sameLeftLength :
+              layer.leftSiblings.length =
+                otherLayer.leftSiblings.length := by
+            exact samePosition.left
+          have sameRightLength :
+              layer.rightSiblings.length =
+                otherLayer.rightSiblings.length := by
+            exact samePosition.right.left
+          have sameRest :
+              NAryMerklePathSamePosition rest otherRest := by
+            exact samePosition.right.right
+          have restBound := ih otherRest sameRest
+          constructor
+          · rw [NAryMerklePathIndex, NAryMerklePathIndex]
+            simp [
+              NAryMerklePathLayer.childSlot,
+              NAryMerklePathLayer.arity,
+              sameLeftLength,
+              sameRightLength,
+              restBound.left,
+            ]
+          · simp [restBound.right]
 
 theorem nary_merkle_children_current_eq_of_eq
     {Digest : Type uDigest} :
@@ -436,6 +501,72 @@ theorem
       samePosition
       verified
       otherVerified
+
+theorem
+  verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root leaf path,
+      NAryMerklePathVerifies compress root leaf path ->
+        NAryMerklePathRootCommitsToLeafAtIndex compress root leaf path := by
+  intro root leaf path verified otherLeaf otherPath samePosition _sameIndex
+    _sameDepth otherVerified
+  exact
+    concrete_nary_merkle_path_same_position_binding_from_no_collision
+      noCollision
+      root
+      leaf
+      path
+      otherLeaf
+      otherPath
+      samePosition
+      verified
+      otherVerified
+
+theorem verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_assumption
+    {Digest : Type uDigest}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress) :
+    forall root leaf path,
+      NAryMerklePathVerifies compress root leaf path ->
+        NAryMerklePathRootCommitsToLeafAtIndex compress root leaf path := by
+  intro root leaf path verified
+  exact
+    verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
+      root
+      leaf
+      path
+      verified
+
+theorem verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root leaf path,
+      NAryMerklePathVerifies compress root leaf path ->
+        NAryMerklePathRootCommitsToLeafAtIndex compress root leaf path := by
+  intro root leaf path verified
+  exact
+    verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_assumption
+      assumptions.crypto.hashCollisionResistance
+      centralized
+      root
+      leaf
+      path
+      verified
 
 theorem verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_assumption
     {Digest : Type uDigest}
