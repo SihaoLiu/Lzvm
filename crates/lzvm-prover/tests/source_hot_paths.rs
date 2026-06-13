@@ -1347,6 +1347,18 @@ fn descriptor_backed_zero_stage_uses_zero_compact_commitment() {
 }
 
 #[test]
+fn descriptor_backed_zero_stage_has_runtime_slice_guard() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let tree_path = crate_root.join("src/witness_commitment/tree.rs");
+    let tree_source = std::fs::read_to_string(&tree_path).expect("witness tree source should read");
+
+    assert!(
+        tree_source.contains("zero_compact_descriptor_column_matches_actual_device_slice"),
+        "known-zero descriptor column elision should compare against an actual device slice commitment"
+    );
+}
+
+#[test]
 fn trace_less_guest_pc_opening_reuses_retained_device_descriptors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

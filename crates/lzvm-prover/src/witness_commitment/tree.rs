@@ -1568,6 +1568,105 @@ mod tests {
 
     #[cfg(feature = "cuda")]
     #[test]
+    fn zero_compact_descriptor_column_matches_actual_device_slice() {
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let full_column_count = 39;
+        let column_offset = full_column_count - 1;
+        let column_count = 1;
+        let arity = 4;
+        let stage_index = 3;
+        let full_trace_values = (0..source_rows)
+            .flat_map(|row| {
+                (0..full_column_count).map(move |column| {
+                    if column == column_offset {
+                        Felt::ZERO
+                    } else {
+                        Felt::from_u64((row * full_column_count + column + 1) as u64)
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        let full_trace_device = std::sync::Arc::new(
+            lzvm_accel::CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&full_trace_values))
+                .expect("full trace values should upload"),
+        );
+        let source_view = WitnessStageSourceDeviceView::new(
+            source_rows,
+            column_count,
+            full_column_count,
+            column_offset,
+            full_trace_device,
+        );
+        let mut timing = crate::witness_commitment::WitnessStageLeafExtendTiming::default();
+        let leaf_level = compact_witness_stage_leaf_hash_level_from_source_device_view_timing(
+            source_rows,
+            column_count,
+            source_bits,
+            target_bits,
+            arity,
+            &source_view,
+            &mut timing,
+        )
+        .expect("device leaf hash level should build");
+        let actual = commit_witness_stage_device_compact_with_leaf_hash_level(
+            WitnessStageDeviceCompactCommitInput {
+                stage_index,
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                external_source_required: true,
+            },
+            leaf_level,
+            Some(source_view.clone()),
+        )
+        .expect("actual slice commitment should build");
+        let compact = commit_witness_stage_zero_compact(
+            stage_index,
+            source_bits,
+            target_bits,
+            column_count,
+            arity,
+        )
+        .expect("zero compact commitment should build");
+
+        assert_eq!(compact.root(), actual.root());
+        assert_eq!(compact.tree_byte_count(), actual.tree_byte_count());
+        for row in [0, 1, extended_rows - 1] {
+            let compact_opening = open_witness_stage_commitment(
+                &compact,
+                row as u64,
+                extended_rows as u64,
+                column_count,
+            )
+            .expect("compact commitment should open");
+            let mut timing = WitnessStageOpeningWorkTiming::default();
+            let mut actual_openings = open_witness_stage_commitments_with_source_device_timing(
+                &actual,
+                &[row as u64],
+                extended_rows as u64,
+                column_count,
+                Some(&source_view),
+                &mut timing,
+            )
+            .expect("actual slice commitment should open");
+            let actual_opening = actual_openings
+                .pop()
+                .expect("actual slice opening should be present");
+            assert_eq!(compact_opening, actual_opening);
+            assert!(
+                verify_witness_stage_opening_root(compact.root(), arity, &actual_opening)
+                    .expect("actual slice opening should verify")
+            );
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
     fn compact_device_leaf_hash_level_matches_host_commitment() {
         let source_bits = 2;
         let target_bits = 3;
