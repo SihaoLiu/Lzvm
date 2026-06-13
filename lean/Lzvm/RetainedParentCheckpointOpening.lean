@@ -5,12 +5,15 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.BatchOpeningBinding
+import Lzvm.MerklePathSoundness
 
 /-!
 Runtime retained parent checkpoint opening obligations.
 -/
 
 namespace Lzvm
+
+universe uDigest
 
 structure RuntimeRetainedParentCheckpointOpeningValidation (system : VerifierModel) where
   batchRowsValidation : RuntimeBatchWitnessOpeningRowsValidation system
@@ -84,6 +87,130 @@ def RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
   validation.retainedParentCheckpointOpeningAccepted artifact publicInput proof
+
+structure RuntimeRetainedParentCheckpointConcretePathBinding
+    (system : VerifierModel)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
+    (Digest : Type uDigest)
+    (compress : Digest -> Digest -> Digest) where
+  root : RuntimeArtifact -> PublicInput -> Proof -> Digest
+  leaf : RuntimeArtifact -> PublicInput -> Proof -> Digest
+  stitchedPath :
+    RuntimeArtifact ->
+      PublicInput ->
+        Proof ->
+          List (MerklePathLayer Digest)
+  concreteStitchedPathVerifies :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        MerklePathVerifies
+          compress
+          (root artifact publicInput proof)
+          (leaf artifact publicInput proof)
+          (stitchedPath artifact publicInput proof)
+  stitchedPathRootCommitsToLeafImpliesStitchedPathBound :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        MerklePathRootCommitsToLeafAtIndex
+          compress
+          (root artifact publicInput proof)
+          (leaf artifact publicInput proof)
+          (stitchedPath artifact publicInput proof) ->
+            validation.retainedParentCheckpointStitchedPathBound
+              artifact
+              publicInput
+              proof
+
+theorem runtime_retained_parent_checkpoint_concrete_path_bound_from_no_collision
+    {system : VerifierModel}
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (binding :
+      RuntimeRetainedParentCheckpointConcretePathBinding
+        system
+        validation
+        Digest
+        compress)
+    (noCollision : MerkleCompressionNoCollision compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedParentCheckpointStitchedPathBound
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have verified :=
+    binding.concreteStitchedPathVerifies artifact publicInput proof accepted
+  have rootCommitsToLeaf :=
+    verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
+      noCollision
+      (binding.root artifact publicInput proof)
+      (binding.leaf artifact publicInput proof)
+      (binding.stitchedPath artifact publicInput proof)
+      verified
+  exact
+    binding.stitchedPathRootCommitsToLeafImpliesStitchedPathBound
+      artifact
+      publicInput
+      proof
+      accepted
+      rootCommitsToLeaf
+
+theorem runtime_retained_parent_checkpoint_concrete_path_bound_from_bundle
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeRetainedParentCheckpointConcretePathBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedParentCheckpointStitchedPathBound
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_retained_parent_checkpoint_concrete_path_bound_from_no_collision
+      validation
+      binding
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      artifact
+      publicInput
+      proof
+      accepted
 
 def RuntimeRetainedParentCheckpointOpeningDigestContract
     (_system : VerifierModel)
