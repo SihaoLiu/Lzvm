@@ -2454,9 +2454,15 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
         .any(|segment| { segment.id == CONTRIBUTION_SEGMENT_ID }));
 }
 
-#[test]
-fn rejects_seeded_fri_unit_proof_without_fri_opening_in_preflight() {
-    let dir = temp_dir("proof-artifact-seeded-fri-missing-opening");
+struct SeededFriPreflightFixture {
+    dir: PathBuf,
+    catalog: KeyDirectoryCatalog,
+    public_values: PublicValues,
+    proof: ProofArtifact,
+}
+
+fn seeded_fri_preflight_fixture(name: &str) -> SeededFriPreflightFixture {
+    let dir = temp_dir(name);
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("fixture directory should be created");
     let witness_library = build_shared_library(&dir, "witness", witness_source());
@@ -2552,15 +2558,61 @@ fn rejects_seeded_fri_unit_proof_without_fri_opening_in_preflight() {
         ],
     };
 
-    let error =
-        lzvm_prover::setup_preflight::validate_setup_preflight(&catalog, &proof, &public_values)
-            .expect_err("seeded FRI unit proof without opening should reject");
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    SeededFriPreflightFixture {
+        dir,
+        catalog,
+        public_values,
+        proof,
+    }
+}
+
+#[test]
+fn rejects_seeded_fri_unit_proof_without_fri_opening_in_preflight() {
+    let fixture = seeded_fri_preflight_fixture("proof-artifact-seeded-fri-missing-opening");
+
+    let error = lzvm_prover::setup_preflight::validate_setup_preflight(
+        &fixture.catalog,
+        &fixture.proof,
+        &fixture.public_values,
+    )
+    .expect_err("seeded FRI unit proof without opening should reject");
+    fs::remove_dir_all(&fixture.dir).expect("fixture directory should be removed");
 
     assert!(
         error
             .to_string()
             .contains("missing PCS FRI opening segment"),
+        "{error}"
+    );
+}
+
+#[test]
+fn rejects_tampered_seeded_witness_commitment_in_preflight() {
+    let mut fixture = seeded_fri_preflight_fixture("proof-artifact-seeded-fri-tampered-witness");
+    let segment = fixture
+        .proof
+        .segments
+        .iter_mut()
+        .find(|segment| segment.id == WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+        .expect("witness commitment segment should exist");
+    let mut witness = parse_witness_commitment_segment(&segment.data)
+        .expect("witness commitment segment should parse");
+    witness.stages[0].tree_digest[0] ^= 1;
+    segment.data =
+        encode_witness_commitment_segment(&witness).expect("tampered witness should encode");
+
+    let error = lzvm_prover::setup_preflight::validate_setup_preflight(
+        &fixture.catalog,
+        &fixture.proof,
+        &fixture.public_values,
+    )
+    .expect_err("tampered seeded witness commitment should reject");
+    fs::remove_dir_all(&fixture.dir).expect("fixture directory should be removed");
+
+    assert!(
+        error
+            .to_string()
+            .contains("PCS query plan segment mismatch"),
         "{error}"
     );
 }
