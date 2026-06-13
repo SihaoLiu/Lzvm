@@ -640,6 +640,43 @@ extern "C" void lzvm_cuda_free_bytes(void* ptr) {
     }
 }
 
+extern "C" int lzvm_cuda_stream_create(void** out) {
+    try {
+        if (out == nullptr) {
+            return -1;
+        }
+        *out = nullptr;
+        cudaStream_t stream = nullptr;
+        const int status = static_cast<int>(
+            cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+        if (status == 0) {
+            *out = stream;
+        }
+        return status;
+    } catch (...) {
+        return -1;
+    }
+}
+
+extern "C" int lzvm_cuda_stream_destroy(void* stream) {
+    try {
+        if (stream == nullptr) {
+            return 0;
+        }
+        return static_cast<int>(cudaStreamDestroy(static_cast<cudaStream_t>(stream)));
+    } catch (...) {
+        return -1;
+    }
+}
+
+extern "C" int lzvm_cuda_stream_synchronize(void* stream) {
+    try {
+        return static_cast<int>(cudaStreamSynchronize(static_cast<cudaStream_t>(stream)));
+    } catch (...) {
+        return -1;
+    }
+}
+
 extern "C" int lzvm_cuda_allocator_clear_cache(void) {
     try {
         std::lock_guard<std::mutex> lock(g_allocator_mutex);

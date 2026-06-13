@@ -806,7 +806,7 @@ extern "C" int lzvm_cuda_goldilocks_ntt(
     LZVM_CUDA_RETURN_ON_ERROR(device_values.reset(len));
     LZVM_CUDA_RETURN_ON_ERROR(device_values.copy_from_bytes(values, bytes));
 
-    cudaError_t status = run_ntt(device_values.data(), len, bits, root, false);
+    cudaError_t status = run_ntt(device_values.data(), len, bits, root, false, 0);
     if (status != cudaSuccess) {
         return static_cast<int>(status);
     }
@@ -836,7 +836,7 @@ extern "C" int lzvm_cuda_goldilocks_intt(
     LZVM_CUDA_RETURN_ON_ERROR(device_values.copy_from_bytes(values, bytes));
 
     const uint64_t root_inverse = host_pow_mod(root, kModulus - 2);
-    cudaError_t status = run_ntt(device_values.data(), len, bits, root_inverse, true);
+    cudaError_t status = run_ntt(device_values.data(), len, bits, root_inverse, true, 0);
     if (status != cudaSuccess) {
         return static_cast<int>(status);
     }
@@ -890,7 +890,8 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend(
 int run_row_major_columns_device(
     const uint64_t* values, uint64_t* out, uint64_t* workspace, size_t source_len,
     size_t source_bits, size_t target_len, size_t target_bits, size_t column_count,
-    uint64_t source_root_inverse, uint64_t target_root, uint64_t shift, bool synchronize) {
+    uint64_t source_root_inverse, uint64_t target_root, uint64_t shift, bool synchronize,
+    cudaStream_t stream) {
     if (values == nullptr || out == nullptr) { return -1; }
     if (source_len == 0 || target_len == 0 || source_len > target_len || column_count == 0) {
         return -2;
@@ -909,16 +910,17 @@ int run_row_major_columns_device(
         columns = device_columns.data();
     }
     const size_t source_blocks = (source_words + kThreads - 1) / kThreads;
-    pack_row_major_columns_kernel<<<source_blocks, kThreads>>>(
+    pack_row_major_columns_kernel<<<source_blocks, kThreads, 0, stream>>>(
         values, columns, source_len, target_len, column_count);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
     for (size_t column = 0; column < column_count; ++column) {
         LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_on_device_unsynced(
             columns + column * target_len, source_len, source_bits, target_len, target_bits,
-            source_root_inverse, target_root, shift));
+            source_root_inverse, target_root, shift, stream));
     }
     const size_t target_blocks = (target_words + kThreads - 1) / kThreads;
-    unpack_row_major_columns_kernel<<<target_blocks, kThreads>>>(columns, out, target_len, column_count);
+    unpack_row_major_columns_kernel<<<target_blocks, kThreads, 0, stream>>>(
+        columns, out, target_len, column_count);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
     return synchronize ? lzvm_cuda_synchronize() : 0;
 }
@@ -929,7 +931,7 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_device(
     uint64_t target_root, uint64_t shift) {
     return run_row_major_columns_device(
         values, out, nullptr, source_len, source_bits, target_len, target_bits, column_count,
-        source_root_inverse, target_root, shift, true);
+        source_root_inverse, target_root, shift, true, 0);
 }
 
 extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(
@@ -938,7 +940,17 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_unsync
     uint64_t source_root_inverse, uint64_t target_root, uint64_t shift) {
     return run_row_major_columns_device(
         values, out, workspace, source_len, source_bits, target_len, target_bits, column_count,
-        source_root_inverse, target_root, shift, false);
+        source_root_inverse, target_root, shift, false, 0);
+}
+
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream(
+    const uint64_t* values, uint64_t* out, uint64_t* workspace, size_t source_len,
+    size_t source_bits, size_t target_len, size_t target_bits, size_t column_count,
+    uint64_t source_root_inverse, uint64_t target_root, uint64_t shift, void* stream_raw) {
+    cudaStream_t stream = static_cast<cudaStream_t>(stream_raw);
+    return run_row_major_columns_device(
+        values, out, workspace, source_len, source_bits, target_len, target_bits, column_count,
+        source_root_inverse, target_root, shift, false, stream);
 }
 
 int run_row_major_columns_strided_device(
@@ -972,7 +984,7 @@ int run_row_major_columns_strided_device(
     for (size_t column = 0; column < column_count; ++column) {
         LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_on_device_unsynced(
             columns + column * target_len, source_len, source_bits, target_len, target_bits,
-            source_root_inverse, target_root, shift));
+            source_root_inverse, target_root, shift, 0));
     }
     const size_t target_blocks = (target_words + kThreads - 1) / kThreads;
     unpack_row_major_columns_kernel<<<target_blocks, kThreads>>>(columns, out, target_len, column_count);

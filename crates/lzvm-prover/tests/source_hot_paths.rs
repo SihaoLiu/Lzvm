@@ -155,6 +155,55 @@ fn cuda_fri_fixed_extension_uses_device_output_without_extended_word_vector() {
 }
 
 #[test]
+fn cuda_witness_commit_has_stream_capable_row_major_extension() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let host_header_path = crate_root.join("../lzvm-accel/native/cuda_host.hpp");
+    let host_header =
+        std::fs::read_to_string(&host_header_path).expect("CUDA host header should read");
+    let host_source_path = crate_root.join("../lzvm-accel/native/cuda_host.cpp");
+    let host_source =
+        std::fs::read_to_string(&host_source_path).expect("CUDA host source should read");
+    let field_source_path = crate_root.join("../lzvm-accel/native/cuda_field.cu");
+    let field_source =
+        std::fs::read_to_string(&field_source_path).expect("CUDA field source should read");
+    let accel_lib_path = crate_root.join("../lzvm-accel/src/lib.rs");
+    let accel_lib_source =
+        std::fs::read_to_string(&accel_lib_path).expect("lzvm-accel lib source should read");
+    let stream_source_path = crate_root.join("../lzvm-accel/src/cuda_stream.rs");
+    let stream_source = std::fs::read_to_string(&stream_source_path).unwrap_or_default();
+
+    assert!(
+        host_header.contains("lzvm_cuda_stream_create")
+            && host_source.contains("cudaStreamCreateWithFlags")
+            && host_source.contains("cudaStreamDestroy")
+            && host_source.contains("cudaStreamSynchronize"),
+        "CUDA host layer should expose owned stream create/destroy/synchronize operations"
+    );
+    assert!(
+        stream_source.contains("pub struct CudaStream")
+            && stream_source.contains("pub fn new()")
+            && stream_source.contains("pub fn synchronize(&self)")
+            && stream_source.contains("impl Drop for CudaStream"),
+        "lzvm-accel should own CUDA streams safely from Rust"
+    );
+    assert!(
+        accel_lib_source.contains("pub use cuda_stream::CudaStream")
+            && accel_lib_source
+                .contains("cuda_goldilocks_coset_extend_row_major_columns_device_on_stream")
+            && accel_lib_source.contains("CudaStream"),
+        "row-major coset extension should have an explicit-stream Rust wrapper"
+    );
+    assert!(
+        field_source
+            .contains("lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream")
+            && field_source.contains("cudaStream_t stream")
+            && field_source.contains("<<<source_blocks, kThreads, 0, stream>>>")
+            && field_source.contains("<<<target_blocks, kThreads, 0, stream>>>"),
+        "native row-major coset extension should launch work on the caller-provided stream"
+    );
+}
+
+#[test]
 fn cuda_merkle_root_folds_on_device_without_host_level_loop() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/merkle_hash.rs");

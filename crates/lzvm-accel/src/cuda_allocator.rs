@@ -90,6 +90,9 @@ mod tests {
 
     #[test]
     fn cuda_device_buffer_reuses_freed_same_size_allocation_without_device_synchronizing() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         clear_allocator_cache();
 
         {

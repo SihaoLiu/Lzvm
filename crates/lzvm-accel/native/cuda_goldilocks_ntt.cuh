@@ -119,9 +119,10 @@ cudaError_t run_ntt(
     size_t len,
     size_t bits,
     uint64_t root,
-    bool inverse_roots) {
+    bool inverse_roots,
+    cudaStream_t stream) {
     const size_t blocks = (len + kThreads - 1) / kThreads;
-    bit_reverse_kernel<<<blocks, kThreads>>>(device_values, len, bits);
+    bit_reverse_kernel<<<blocks, kThreads, 0, stream>>>(device_values, len, bits);
     cudaError_t status = static_cast<cudaError_t>(lzvm_cuda_check_launch());
     if (status != cudaSuccess) {
         return status;
@@ -131,10 +132,10 @@ cudaError_t run_ntt(
         const size_t pair_count = len / 2;
         const size_t stage_blocks = (pair_count + kThreads - 1) / kThreads;
         if (stage_len / 2 > kThreads) {
-            ntt_stage_block_twiddle_kernel<<<stage_blocks, kThreads>>>(
+            ntt_stage_block_twiddle_kernel<<<stage_blocks, kThreads, 0, stream>>>(
                 device_values, len, stage_len, stage_bits, root, inverse_roots);
         } else {
-            ntt_stage_kernel<<<stage_blocks, kThreads>>>(
+            ntt_stage_kernel<<<stage_blocks, kThreads, 0, stream>>>(
                 device_values, len, stage_len, stage_bits, root, inverse_roots);
         }
         status = static_cast<cudaError_t>(lzvm_cuda_check_launch());
@@ -153,20 +154,21 @@ int run_coset_extend_on_device_unsynced(
     size_t target_bits,
     uint64_t source_root_inverse,
     uint64_t target_root,
-    uint64_t shift) {
+    uint64_t shift,
+    cudaStream_t stream) {
     cudaError_t status =
-        run_ntt(device_values, source_len, source_bits, source_root_inverse, true);
+        run_ntt(device_values, source_len, source_bits, source_root_inverse, true, stream);
     if (status != cudaSuccess) {
         return static_cast<int>(status);
     }
 
     const uint64_t inverse_len = host_pow_mod(static_cast<uint64_t>(source_len), kModulus - 2);
     const size_t blocks = (target_len + kThreads - 1) / kThreads;
-    normalize_shift_and_pad_kernel<<<blocks, kThreads>>>(
+    normalize_shift_and_pad_kernel<<<blocks, kThreads, 0, stream>>>(
         device_values, source_len, target_len, inverse_len, shift);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
 
-    status = run_ntt(device_values, target_len, target_bits, target_root, false);
+    status = run_ntt(device_values, target_len, target_bits, target_root, false, stream);
     if (status != cudaSuccess) {
         return static_cast<int>(status);
     }
@@ -185,7 +187,7 @@ int run_coset_extend_on_device(
     uint64_t shift) {
     LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_on_device_unsynced(
         device_values, source_len, source_bits, target_len, target_bits, source_root_inverse,
-        target_root, shift));
+        target_root, shift, 0));
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
     return 0;
 }

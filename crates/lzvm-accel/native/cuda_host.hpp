@@ -82,6 +82,9 @@ struct LzvmCudaMemoryInfo {
 
 extern "C" int lzvm_cuda_alloc_bytes(void** out, std::size_t bytes);
 extern "C" void lzvm_cuda_free_bytes(void* ptr);
+extern "C" int lzvm_cuda_stream_create(void** out);
+extern "C" int lzvm_cuda_stream_destroy(void* stream);
+extern "C" int lzvm_cuda_stream_synchronize(void* stream);
 extern "C" int lzvm_cuda_allocator_clear_cache(void);
 extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out);
 extern "C" int lzvm_cuda_memory_info(LzvmCudaMemoryInfo* out);
