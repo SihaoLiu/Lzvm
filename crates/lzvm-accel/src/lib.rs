@@ -45,6 +45,8 @@ pub use cuda_row_selected::{
 #[cfg(feature = "cuda")]
 pub use cuda_setup::cuda_setup_init;
 #[cfg(feature = "cuda")]
+pub use cuda_stream::CudaEvent;
+#[cfg(feature = "cuda")]
 pub use cuda_stream::CudaStream;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3895,7 +3897,8 @@ mod tests {
         cuda_goldilocks_coset_extend_row_major_columns_output_bytes,
         cuda_goldilocks_coset_extend_row_major_columns_strided_device,
         cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream,
-        row_weight_shift_for_target_row, CudaDeviceBuffer, CudaRowMajorColumnView, CudaStream,
+        row_weight_shift_for_target_row, CudaDeviceBuffer, CudaEvent, CudaRowMajorColumnView,
+        CudaStream,
     };
 
     #[test]
@@ -4056,6 +4059,106 @@ mod tests {
         stream
             .synchronize()
             .expect("explicit stream strided extension should finish");
+
+        assert_eq!(
+            stream_out
+                .to_u64_words()
+                .expect("stream output should download"),
+            default_out
+                .to_u64_words()
+                .expect("default output should download")
+        );
+    }
+
+    #[test]
+    fn stream_wait_event_orders_cross_stream_extension() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let column_count = 3;
+        let source_bits = 2;
+        let mid_bits = 3;
+        let target_bits = 4;
+        let source_rows = 1_usize << source_bits;
+        let values = (0..source_rows * column_count)
+            .map(|index| (index as u64 + 5) * 31)
+            .collect::<Vec<_>>();
+        let mid_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+            values.len(),
+            column_count,
+            source_bits,
+            mid_bits,
+        )
+        .expect("mid shape should be valid");
+        let target_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+            (1_usize << mid_bits) * column_count,
+            column_count,
+            mid_bits,
+            target_bits,
+        )
+        .expect("target shape should be valid");
+
+        let source = CudaDeviceBuffer::from_u64_words(&values).expect("source should upload");
+        let mut default_mid =
+            CudaDeviceBuffer::new(mid_byte_count).expect("default mid should allocate");
+        cuda_goldilocks_coset_extend_row_major_columns_device(
+            &source,
+            &mut default_mid,
+            column_count,
+            source_bits,
+            mid_bits,
+        )
+        .expect("default mid extension should run");
+        let mut default_out =
+            CudaDeviceBuffer::new(target_byte_count).expect("default output should allocate");
+        cuda_goldilocks_coset_extend_row_major_columns_device(
+            &default_mid,
+            &mut default_out,
+            column_count,
+            mid_bits,
+            target_bits,
+        )
+        .expect("default target extension should run");
+
+        let producer = CudaStream::new().expect("producer stream should create");
+        let consumer = CudaStream::new().expect("consumer stream should create");
+        let ready = CudaEvent::new().expect("event should create");
+        let mut stream_mid =
+            CudaDeviceBuffer::new(mid_byte_count).expect("stream mid should allocate");
+        let mut stream_mid_workspace =
+            CudaDeviceBuffer::new(mid_byte_count).expect("stream mid workspace should allocate");
+        cuda_goldilocks_coset_extend_row_major_columns_device_on_stream(
+            &source,
+            &mut stream_mid,
+            &mut stream_mid_workspace,
+            column_count,
+            source_bits,
+            mid_bits,
+            &producer,
+        )
+        .expect("producer extension should enqueue");
+        ready.record(&producer).expect("event should record");
+        consumer
+            .wait_event(&ready)
+            .expect("consumer stream should wait for producer event");
+
+        let mut stream_out =
+            CudaDeviceBuffer::new(target_byte_count).expect("stream output should allocate");
+        let mut stream_out_workspace = CudaDeviceBuffer::new(target_byte_count)
+            .expect("stream output workspace should allocate");
+        cuda_goldilocks_coset_extend_row_major_columns_device_on_stream(
+            &stream_mid,
+            &mut stream_out,
+            &mut stream_out_workspace,
+            column_count,
+            mid_bits,
+            target_bits,
+            &consumer,
+        )
+        .expect("consumer extension should enqueue");
+        consumer
+            .synchronize()
+            .expect("consumer extension should finish");
 
         assert_eq!(
             stream_out

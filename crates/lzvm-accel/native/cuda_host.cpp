@@ -677,6 +677,70 @@ extern "C" int lzvm_cuda_stream_synchronize(void* stream) {
     }
 }
 
+extern "C" int lzvm_cuda_event_create(void** out) {
+    try {
+        if (out == nullptr) {
+            return -1;
+        }
+        *out = nullptr;
+        cudaEvent_t event = nullptr;
+        const int status =
+            static_cast<int>(cudaEventCreateWithFlags(&event, cudaEventDisableTiming));
+        if (status == 0) {
+            *out = event;
+        }
+        return status;
+    } catch (...) {
+        return -1;
+    }
+}
+
+extern "C" int lzvm_cuda_event_destroy(void* event) {
+    try {
+        if (event == nullptr) {
+            return 0;
+        }
+        return static_cast<int>(cudaEventDestroy(static_cast<cudaEvent_t>(event)));
+    } catch (...) {
+        return -1;
+    }
+}
+
+extern "C" int lzvm_cuda_event_record(void* event, void* stream) {
+    try {
+        if (event == nullptr) {
+            return -1;
+        }
+        return static_cast<int>(
+            cudaEventRecord(static_cast<cudaEvent_t>(event), static_cast<cudaStream_t>(stream)));
+    } catch (...) {
+        return -1;
+    }
+}
+
+extern "C" int lzvm_cuda_event_synchronize(void* event) {
+    try {
+        if (event == nullptr) {
+            return -1;
+        }
+        return static_cast<int>(cudaEventSynchronize(static_cast<cudaEvent_t>(event)));
+    } catch (...) {
+        return -1;
+    }
+}
+
+extern "C" int lzvm_cuda_stream_wait_event(void* stream, void* event) {
+    try {
+        if (event == nullptr) {
+            return -1;
+        }
+        return static_cast<int>(cudaStreamWaitEvent(
+            static_cast<cudaStream_t>(stream), static_cast<cudaEvent_t>(event), 0));
+    } catch (...) {
+        return -1;
+    }
+}
+
 extern "C" int lzvm_cuda_allocator_clear_cache(void) {
     try {
         std::lock_guard<std::mutex> lock(g_allocator_mutex);
