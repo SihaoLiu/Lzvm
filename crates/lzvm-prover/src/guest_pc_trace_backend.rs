@@ -5954,16 +5954,100 @@ fn direct_zisk_main_report_boundary_c(
     report: &GuestMachineReport,
     instruction: &ZiskMainInstruction,
 ) -> Option<u64> {
-    if instruction.store_pc {
+    if instruction.store_pc || matches!(instruction.store, ZiskMainStore::None) {
+        return direct_zisk_main_report_result_c(report, instruction);
+    }
+    if let ZiskMainStore::Register(index) = instruction.store {
+        let [write] = report.register_writes.as_slice() else {
+            return None;
+        };
+        return (write.index == index).then_some(write.value);
+    }
+    direct_zisk_main_full_width_memory_store_c(report, instruction)
+}
+
+fn direct_zisk_main_report_result_c(
+    report: &GuestMachineReport,
+    instruction: &ZiskMainInstruction,
+) -> Option<u64> {
+    if instruction.set_pc {
+        return Some(wrapping_sub_signed(report.next_pc, instruction.jmp_offset1));
+    }
+    if matches!(
+        instruction.op,
+        ZiskMainOp::Eq | ZiskMainOp::Lt | ZiskMainOp::Ltu
+    ) {
+        return direct_zisk_main_branch_c(report, instruction);
+    }
+    match instruction.op {
+        ZiskMainOp::Flag => Some(0),
+        ZiskMainOp::CopyB => direct_zisk_main_source_value_without_state(instruction.b),
+        ZiskMainOp::Add256 if instruction.is_precompiled => report.precompile_result,
+        ZiskMainOp::Keccak
+        | ZiskMainOp::Arith256
+        | ZiskMainOp::Arith256Mod
+        | ZiskMainOp::Secp256k1Add
+        | ZiskMainOp::Secp256k1Dbl
+            if instruction.is_precompiled =>
+        {
+            Some(0)
+        }
+        _ => None,
+    }
+}
+
+fn direct_zisk_main_branch_c(
+    report: &GuestMachineReport,
+    instruction: &ZiskMainInstruction,
+) -> Option<u64> {
+    let flag_next_pc = instruction.pc.wrapping_add_signed(instruction.jmp_offset1);
+    let fallthrough_next_pc = instruction.pc.wrapping_add_signed(instruction.jmp_offset2);
+    if flag_next_pc == fallthrough_next_pc {
         return None;
     }
-    let ZiskMainStore::Register(index) = instruction.store else {
+    if report.next_pc == flag_next_pc {
+        Some(1)
+    } else if report.next_pc == fallthrough_next_pc {
+        Some(0)
+    } else {
+        None
+    }
+}
+
+fn direct_zisk_main_source_value_without_state(source: ZiskMainSource) -> Option<u64> {
+    match source {
+        ZiskMainSource::Immediate(value) => Some(value),
+        ZiskMainSource::LastC
+        | ZiskMainSource::Memory(_)
+        | ZiskMainSource::Register(_)
+        | ZiskMainSource::Indirect(_) => None,
+    }
+}
+
+fn direct_zisk_main_full_width_memory_store_c(
+    report: &GuestMachineReport,
+    instruction: &ZiskMainInstruction,
+) -> Option<u64> {
+    if !matches!(instruction.store, ZiskMainStore::Indirect(_)) || instruction.ind_width != 8 {
         return None;
-    };
-    let [write] = report.register_writes.as_slice() else {
+    }
+    let mut writes = report
+        .memory_accesses
+        .iter()
+        .filter(|access| access.kind == GuestMemoryAccessKind::Write && access.byte_len == 8);
+    let write = writes.next()?;
+    if writes.next().is_some() {
         return None;
-    };
-    (write.index == index).then_some(write.value)
+    }
+    Some(write.value)
+}
+
+fn wrapping_sub_signed(value: u64, offset: i64) -> u64 {
+    if offset >= 0 {
+        value.wrapping_sub(offset as u64)
+    } else {
+        value.wrapping_add(offset.unsigned_abs())
+    }
 }
 
 fn write_layout_pc_trace(

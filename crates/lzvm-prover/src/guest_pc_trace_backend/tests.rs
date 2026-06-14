@@ -1,5 +1,7 @@
 use super::*;
-use crate::guest_instruction::{RiscvInstruction, RiscvOpImmKind, RiscvPrecompileKind};
+use crate::guest_instruction::{
+    RiscvBranchKind, RiscvInstruction, RiscvOpImmKind, RiscvPrecompileKind, RiscvStoreKind,
+};
 use crate::witness_layout::derive_witness_trace_layout;
 use crate::witness_loader::WitnessComputeContext;
 use crate::witness_trace::parse_witness_trace;
@@ -258,9 +260,79 @@ fn direct_boundary_c_does_not_confuse_store_pc_write_with_c() {
     let instruction = lower_guest_report(&report).expect("report should lower");
     assert!(instruction.store_pc);
 
+    assert_ne!(
+        direct_zisk_main_report_boundary_c(&report, &instruction),
+        Some(0x8000_0004)
+    );
     assert_eq!(
         direct_zisk_main_report_boundary_c(&report, &instruction),
-        None
+        Some(0)
+    );
+}
+
+#[test]
+fn direct_boundary_c_uses_full_width_memory_store_value() {
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Store {
+            kind: RiscvStoreKind::Sd,
+            rs1: 1,
+            rs2: 2,
+            offset: 8,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: Vec::new().into(),
+        memory_accesses: vec![GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address: 0x1008,
+            byte_len: 8,
+            value: 0x1234_5678_9abc_def0,
+        }]
+        .into(),
+        precompile_memory_accesses: Vec::new(),
+        precompile_result: None,
+    };
+    let instruction = lower_guest_report(&report).expect("report should lower");
+    assert!(matches!(instruction.store, ZiskMainStore::Indirect(8)));
+
+    assert_eq!(
+        direct_zisk_main_report_boundary_c(&report, &instruction),
+        Some(0x1234_5678_9abc_def0)
+    );
+}
+
+#[test]
+fn direct_boundary_c_uses_branch_next_pc_outcome() {
+    let taken = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Branch {
+            kind: RiscvBranchKind::Beq,
+            rs1: 1,
+            rs2: 2,
+            offset: 16,
+        },
+        next_pc: 0x8000_0010,
+        register_writes: Vec::new().into(),
+        memory_accesses: Vec::new().into(),
+        precompile_memory_accesses: Vec::new(),
+        precompile_result: None,
+    };
+    let taken_instruction = lower_guest_report(&taken).expect("branch should lower");
+    assert_eq!(
+        direct_zisk_main_report_boundary_c(&taken, &taken_instruction),
+        Some(1)
+    );
+
+    let not_taken = GuestMachineReport {
+        next_pc: 0x8000_0004,
+        ..taken
+    };
+    let not_taken_instruction = lower_guest_report(&not_taken).expect("branch should lower");
+    assert_eq!(
+        direct_zisk_main_report_boundary_c(&not_taken, &not_taken_instruction),
+        Some(0)
     );
 }
 
