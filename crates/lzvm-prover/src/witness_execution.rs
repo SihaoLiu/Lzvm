@@ -2881,30 +2881,82 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
     instruction_limit: u64,
     timing_observer: Option<&mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
 ) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
-    let mut source_lookup_balance = SourceLookupBalance::default();
     validate_witness_unit_index(plan, unit_index)?;
     let shared_inputs = load_witness_shared_inputs(plan)?;
     let auxiliary_inputs = Arc::new(auxiliary_inputs);
+    let mut timing_observer = timing_observer;
+    let result = run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt(
+        plan,
+        unit_index,
+        &shared_inputs,
+        Arc::clone(&auxiliary_inputs),
+        instruction_limit,
+        timing_observer
+            .as_mut()
+            .map(|observer| &mut **observer as &mut dyn FnMut(ProveWitnessGuestPcTraceTiming)),
+        None,
+    );
+    match result {
+        Ok(outputs) => Ok(outputs),
+        Err(error)
+            if should_retry_guest_pc_segment_commit_with_serial_worker(
+                shared_inputs.input.len(),
+                None,
+                &error,
+            ) =>
+        {
+            run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt(
+                plan,
+                unit_index,
+                &shared_inputs,
+                auxiliary_inputs,
+                instruction_limit,
+                timing_observer.as_mut().map(|observer| {
+                    &mut **observer as &mut dyn FnMut(ProveWitnessGuestPcTraceTiming)
+                }),
+                Some(1),
+            )
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    shared_inputs: &WitnessSharedInputs,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    instruction_limit: u64,
+    timing_observer: Option<&mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
+    segment_commit_worker_count_override: Option<usize>,
+) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
+    let mut source_lookup_balance = SourceLookupBalance::default();
     let defer_cross_unit_source_lookup = should_defer_cross_unit_source_lookup(plan, unit_index);
     let outputs = if defer_cross_unit_source_lookup {
         run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             plan,
             unit_index,
-            &shared_inputs,
             Arc::clone(&auxiliary_inputs),
             instruction_limit,
-            None,
-            timing_observer,
+            GuestPcTraceSegmentCommitRunOptions {
+                shared_inputs,
+                source_lookup_balance: None,
+                timing_observer,
+                segment_commit_worker_count_override,
+            },
         )?
     } else {
         let outputs = run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             plan,
             unit_index,
-            &shared_inputs,
             Arc::clone(&auxiliary_inputs),
             instruction_limit,
-            Some(&mut source_lookup_balance),
-            timing_observer,
+            GuestPcTraceSegmentCommitRunOptions {
+                shared_inputs,
+                source_lookup_balance: Some(&mut source_lookup_balance),
+                timing_observer,
+                segment_commit_worker_count_override,
+            },
         )?;
         let global_auxiliary_inputs =
             global_auxiliary_inputs_from_outputs(auxiliary_inputs.as_ref(), &outputs)?;
@@ -3428,10 +3480,17 @@ struct GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
 }
 
 impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
-    fn new(scope: &'scope thread::Scope<'scope, 'env>, input_byte_count: usize) -> Self {
+    fn new(
+        scope: &'scope thread::Scope<'scope, 'env>,
+        input_byte_count: usize,
+        worker_count_override: Option<usize>,
+    ) -> Self {
         Self {
             scope,
-            worker_count: guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count),
+            worker_count: guest_pc_trace_segment_commit_worker_count_for_input_with_override(
+                input_byte_count,
+                worker_count_override,
+            ),
             worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
             pending_workers: VecDeque::new(),
         }
@@ -3521,6 +3580,52 @@ fn guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize)
         })
 }
 
+fn guest_pc_trace_segment_commit_worker_count_for_input_with_override(
+    input_byte_count: usize,
+    worker_count_override: Option<usize>,
+) -> usize {
+    worker_count_override
+        .filter(|count| *count > 0)
+        .unwrap_or_else(|| guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count))
+}
+
+fn should_retry_guest_pc_segment_commit_with_serial_worker(
+    input_byte_count: usize,
+    worker_count_override: Option<usize>,
+    error: &ProveWitnessCommitmentError,
+) -> bool {
+    guest_pc_trace_segment_commit_worker_count_for_input_with_override(
+        input_byte_count,
+        worker_count_override,
+    ) > 1
+        && prove_witness_commitment_error_is_cuda_out_of_memory(error)
+}
+
+#[cfg(feature = "cuda")]
+fn prove_witness_commitment_error_is_cuda_out_of_memory(
+    error: &ProveWitnessCommitmentError,
+) -> bool {
+    const CUDA_ERROR_OUT_OF_MEMORY: i32 = 2;
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(error) = source {
+        if matches!(
+            error.downcast_ref::<lzvm_accel::AccelError>(),
+            Some(lzvm_accel::AccelError::Cuda { code }) if *code == CUDA_ERROR_OUT_OF_MEMORY
+        ) {
+            return true;
+        }
+        source = error.source();
+    }
+    false
+}
+
+#[cfg(not(feature = "cuda"))]
+fn prove_witness_commitment_error_is_cuda_out_of_memory(
+    _error: &ProveWitnessCommitmentError,
+) -> bool {
+    false
+}
+
 fn join_guest_pc_trace_segment_commit_worker(
     handle: GuestPcTraceSegmentCommitWorkerHandle<'_>,
 ) -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
@@ -3556,6 +3661,7 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
         input_byte_count: usize,
         source_lookup_balance: Option<&'b mut SourceLookupBalance>,
         collect_timing: bool,
+        segment_commit_worker_count_override: Option<usize>,
     ) -> Self {
         Self {
             context,
@@ -3566,7 +3672,11 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
             guest_segment_commit_duration: Duration::ZERO,
             trace_timing: ProveWitnessTraceTimingAccumulator::default(),
             segment_count: 0,
-            worker_pool: GuestPcTraceSegmentCommitWorkerPool::new(scope, input_byte_count),
+            worker_pool: GuestPcTraceSegmentCommitWorkerPool::new(
+                scope,
+                input_byte_count,
+                segment_commit_worker_count_override,
+            ),
         }
     }
 
@@ -3751,15 +3861,26 @@ fn commit_guest_pc_trace_segment_output(
     Ok(output)
 }
 
+struct GuestPcTraceSegmentCommitRunOptions<'shared, 'balance, 'timing> {
+    shared_inputs: &'shared WitnessSharedInputs,
+    source_lookup_balance: Option<&'balance mut SourceLookupBalance>,
+    timing_observer: Option<&'timing mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
+    segment_commit_worker_count_override: Option<usize>,
+}
+
 fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
     plan: &ProveExecutionPlan,
     unit_index: usize,
-    shared_inputs: &WitnessSharedInputs,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     instruction_limit: u64,
-    source_lookup_balance: Option<&mut SourceLookupBalance>,
-    mut timing_observer: Option<&mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
+    options: GuestPcTraceSegmentCommitRunOptions<'_, '_, '_>,
 ) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
+    let GuestPcTraceSegmentCommitRunOptions {
+        shared_inputs,
+        source_lookup_balance,
+        mut timing_observer,
+        segment_commit_worker_count_override,
+    } = options;
     let unit_count = plan.run_plan.schedule.units.len();
     let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
         ProveWitnessCommitmentError::UnitIndexOutOfRange {
@@ -3804,6 +3925,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 shared_inputs.input.len(),
                 source_lookup_balance,
                 collect_timing,
+                segment_commit_worker_count_override,
             );
             let guest_trace_stream_started = collect_timing.then(Instant::now);
             let stream_result =
@@ -3868,6 +3990,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             shared_inputs.input.len(),
             source_lookup_balance,
             collect_timing,
+            segment_commit_worker_count_override,
         );
         let guest_trace_stream_started = collect_timing.then(Instant::now);
         let stream_timing = for_each_guest_pc_trace_segment_with_context(
@@ -5487,6 +5610,60 @@ mod tests {
         );
         assert_eq!(
             default_guest_pc_trace_segment_commit_worker_count_for_input(usize::MAX),
+            1
+        );
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn cuda_out_of_memory_commit_error_is_retryable() {
+        let oom_error = ProveWitnessCommitmentError::Commit(
+            WitnessTraceCommitmentError::StageCommitment(WitnessStageCommitmentError::Leaf(
+                WitnessStageLeafError::Accel(lzvm_accel::AccelError::Cuda { code: 2 }),
+            )),
+        );
+        let other_cuda_error = ProveWitnessCommitmentError::Commit(
+            WitnessTraceCommitmentError::StageCommitment(WitnessStageCommitmentError::Leaf(
+                WitnessStageLeafError::Accel(lzvm_accel::AccelError::Cuda { code: 700 }),
+            )),
+        );
+        let layout_error = ProveWitnessCommitmentError::SegmentCommitOutputOrder {
+            message: "not a CUDA allocation failure".to_owned(),
+        };
+
+        assert!(prove_witness_commitment_error_is_cuda_out_of_memory(
+            &oom_error
+        ));
+        assert!(!prove_witness_commitment_error_is_cuda_out_of_memory(
+            &other_cuda_error
+        ));
+        assert!(!prove_witness_commitment_error_is_cuda_out_of_memory(
+            &layout_error
+        ));
+        assert!(should_retry_guest_pc_segment_commit_with_serial_worker(
+            8 * 1024 * 1024,
+            Some(3),
+            &oom_error
+        ));
+        assert!(!should_retry_guest_pc_segment_commit_with_serial_worker(
+            8 * 1024 * 1024,
+            Some(1),
+            &oom_error
+        ));
+        assert!(!should_retry_guest_pc_segment_commit_with_serial_worker(
+            8 * 1024 * 1024,
+            Some(3),
+            &other_cuda_error
+        ));
+    }
+
+    #[test]
+    fn guest_pc_segment_commit_worker_count_can_be_forced_serial() {
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input_with_override(
+                8 * 1024 * 1024,
+                Some(1)
+            ),
             1
         );
     }
