@@ -1,3 +1,5 @@
+use std::path::Path;
+
 pub fn contains_theorem_declaration(source: &str, name: &str) -> bool {
     find_theorem_declaration(&visible_source(source), name).is_some()
 }
@@ -112,6 +114,87 @@ pub fn assert_theorem_body_contains(source: &str, name: &str, snippets: &[&str])
             "Lean theorem {name} body should contain {snippet}"
         );
     }
+}
+
+#[allow(dead_code)]
+pub fn assert_no_uncontrolled_lean_placeholders(root: &Path) {
+    let mut violations = Vec::new();
+    collect_uncontrolled_lean_placeholders(root, &mut violations);
+    assert!(
+        violations.is_empty(),
+        "Lean sources must not use uncontrolled proof placeholders: {violations:?}"
+    );
+}
+
+#[allow(dead_code)]
+fn collect_uncontrolled_lean_placeholders(path: &Path, violations: &mut Vec<String>) {
+    for entry in std::fs::read_dir(path).expect("Lean source directory should read") {
+        let entry = entry.expect("Lean source entry should read");
+        let path = entry.path();
+        if path.is_dir() {
+            collect_uncontrolled_lean_placeholders(&path, violations);
+            continue;
+        }
+        if path.extension().and_then(|extension| extension.to_str()) != Some("lean") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("Lean source should read");
+        let visible = strip_string_literals(&visible_source(&source));
+        for (line_index, line) in visible.lines().enumerate() {
+            for token in ["sorry", "admit", "axiom"] {
+                if contains_identifier_token(line, token) {
+                    violations.push(format!("{}:{}:{token}", path.display(), line_index + 1));
+                }
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn contains_identifier_token(line: &str, token: &str) -> bool {
+    line.match_indices(token).any(|(start, _)| {
+        let before = line[..start].chars().next_back();
+        let after = line[start + token.len()..].chars().next();
+        !is_lean_identifier_char(before) && !is_lean_identifier_char(after)
+    })
+}
+
+#[allow(dead_code)]
+fn is_lean_identifier_char(ch: Option<char>) -> bool {
+    ch.map(|ch| ch.is_alphanumeric() || ch == '_' || ch == '\'')
+        .unwrap_or(false)
+}
+
+#[allow(dead_code)]
+fn strip_string_literals(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut chars = source.chars().peekable();
+    let mut in_string = false;
+    while let Some(ch) = chars.next() {
+        if in_string {
+            if ch == '\\' {
+                if chars.next().is_some() {
+                    out.push(' ');
+                    out.push(' ');
+                } else {
+                    out.push(' ');
+                }
+                continue;
+            }
+            if ch == '"' {
+                in_string = false;
+            }
+            out.push(if ch == '\n' { '\n' } else { ' ' });
+            continue;
+        }
+        if ch == '"' {
+            in_string = true;
+            out.push(' ');
+            continue;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 fn uncommented_lines(source: &str) -> impl Iterator<Item = String> + '_ {

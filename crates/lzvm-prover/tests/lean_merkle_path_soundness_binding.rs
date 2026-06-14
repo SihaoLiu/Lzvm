@@ -6,9 +6,7 @@ mod lean_binding;
 #[test]
 fn lean_merkle_path_soundness_binds_central_hash_assumption() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let lean_path = crate_root.join("../../lean/Lzvm/MerklePathSoundness.lean");
-    let lean_source =
-        std::fs::read_to_string(&lean_path).expect("Lean Merkle path source should read");
+    let lean_source = read_merkle_path_soundness_sources(crate_root);
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
@@ -556,4 +554,21 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
         "nary_merkle_path_arity_four_index_binding_from_bundle",
         &["nary_merkle_path_arity_four_index_binding_from_no_collision"],
     );
+}
+
+fn read_merkle_path_soundness_sources(crate_root: &Path) -> String {
+    [
+        "../../lean/Lzvm/MerklePathSoundness.lean",
+        "../../lean/Lzvm/MerklePathSoundness/Core.lean",
+        "../../lean/Lzvm/MerklePathSoundness/NAry.lean",
+        "../../lean/Lzvm/MerklePathSoundness/Binary.lean",
+    ]
+    .into_iter()
+    .map(|relative| {
+        std::fs::read_to_string(crate_root.join(relative)).unwrap_or_else(|error| {
+            panic!("Lean Merkle path source {relative} should read: {error}")
+        })
+    })
+    .collect::<Vec<_>>()
+    .join("\n")
 }

@@ -113,6 +113,14 @@ fn lean_soundness_sources_stay_modular() {
     );
 }
 
+#[test]
+fn lean_soundness_sources_do_not_use_uncontrolled_placeholders() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_root = crate_root.join("../../lean/Lzvm");
+
+    lean_binding::assert_no_uncontrolled_lean_placeholders(&lean_root);
+}
+
 fn collect_oversized_lean_sources(path: &Path, oversized: &mut Vec<(String, usize)>) {
     for entry in std::fs::read_dir(path).expect("Lean source directory should read") {
         let entry = entry.expect("Lean source entry should read");
