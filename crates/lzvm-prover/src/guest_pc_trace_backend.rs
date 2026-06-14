@@ -3210,7 +3210,13 @@ fn apply_zisk_main_lowered_report_row(
     });
 
     let precompile_memory_started = detail_duration_started(&timing, detail_timing);
-    validate_zisk_main_precompile_memory_accesses(output_row, report, lowered_row.effects, b)?;
+    validate_zisk_main_precompile_memory_accesses_if_required(
+        output_row,
+        report,
+        &instruction,
+        lowered_row.effects,
+        b,
+    )?;
     record_detail_duration(precompile_memory_started, &mut timing, |timing| {
         &mut timing.trace_report_precompile_memory_duration
     });
@@ -5482,6 +5488,19 @@ fn validate_zisk_main_precompile_memory_accesses(
         }
     }
     cursor.finish()
+}
+
+fn validate_zisk_main_precompile_memory_accesses_if_required(
+    row: usize,
+    report: &GuestMachineReport,
+    instruction: &ZiskMainInstruction,
+    effects: ZiskMainReportEffects<'_>,
+    operand_address: u64,
+) -> Result<(), GuestPcTraceBackendError> {
+    if !instruction.is_precompiled && effects.precompile_memory_accesses.is_empty() {
+        return Ok(());
+    }
+    validate_zisk_main_precompile_memory_accesses(row, report, effects, operand_address)
 }
 
 struct PrecompileMemoryAccessCursor<'a> {

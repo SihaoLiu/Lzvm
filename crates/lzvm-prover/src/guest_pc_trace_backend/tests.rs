@@ -110,6 +110,59 @@ fn rejects_add256_precompile_memory_access_address_mismatch() {
 }
 
 #[test]
+fn precompile_memory_validation_skips_empty_non_precompile_rows() {
+    let report = addi_report();
+    let instruction = lower_guest_report(&report).expect("report should lower");
+
+    validate_zisk_main_precompile_memory_accesses_if_required(
+        3,
+        &report,
+        &instruction,
+        ZiskMainReportEffects::from_report(&report),
+        0,
+    )
+    .expect("empty non-precompile rows should skip precompile memory validation");
+}
+
+#[test]
+fn precompile_memory_validation_rejects_non_precompile_rows_with_accesses() {
+    let mut report = addi_report();
+    report.precompile_memory_accesses.push(memory_read(64, 7));
+    let instruction = lower_guest_report(&report).expect("report should lower");
+
+    let error = validate_zisk_main_precompile_memory_accesses_if_required(
+        3,
+        &report,
+        &instruction,
+        ZiskMainReportEffects::from_report(&report),
+        0,
+    )
+    .expect_err("non-precompile rows with precompile accesses should fail");
+
+    assert!(error.to_string().contains("non-precompile row reported"));
+}
+
+#[test]
+fn precompile_memory_validation_rejects_precompile_rows_with_missing_accesses() {
+    let mut report = add256_report();
+    report.precompile_memory_accesses.clear();
+    let instruction = lower_guest_report(&report).expect("report should lower");
+
+    let error = validate_zisk_main_precompile_memory_accesses_if_required(
+        3,
+        &report,
+        &instruction,
+        ZiskMainReportEffects::from_report(&report),
+        64,
+    )
+    .expect_err("precompile rows with missing precompile accesses should fail");
+
+    assert!(error
+        .to_string()
+        .contains("missing precompile memory access"));
+}
+
+#[test]
 fn builds_zisk_main_segment_trace_without_serialized_roundtrip() {
     let unit = sample_unit_with_zisk_main_columns_rows(2);
     let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
