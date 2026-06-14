@@ -3511,7 +3511,7 @@ const GUEST_PC_TRACE_SEGMENT_COMMIT_AUTO_WORKER_INPUT_BYTES: usize = 8 * 1024 * 
 
 fn default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
     if input_byte_count >= GUEST_PC_TRACE_SEGMENT_COMMIT_AUTO_WORKER_INPUT_BYTES {
-        2
+        3
     } else {
         1
     }
@@ -5492,11 +5492,11 @@ mod tests {
         );
         assert_eq!(
             default_guest_pc_trace_segment_commit_worker_count_for_input(at_auto),
-            2
+            3
         );
         assert_eq!(
             default_guest_pc_trace_segment_commit_worker_count_for_input(usize::MAX),
-            2
+            3
         );
     }
 
