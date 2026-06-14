@@ -879,6 +879,17 @@ fn guest_pc_trace_default_runner_seed_snapshot_stays_disabled() {
 }
 
 #[test]
+fn parallel_lower_implies_trusted_runner_seed_snapshot() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
+    let _parallel_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", "1");
+
+    assert!(guest_pc_trace_runner_seed_snapshot_trusted_enabled());
+}
+
+#[test]
 fn trusted_runner_seed_snapshot_forces_reference_seed_when_validation_enabled() {
     assert!(guest_pc_trace_needs_full_seed_advance(
         true, true, true, false, true

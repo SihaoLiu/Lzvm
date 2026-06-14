@@ -3226,6 +3226,7 @@ fn guest_pc_trace_runner_seed_snapshot_enabled() -> bool {
 
 fn guest_pc_trace_runner_seed_snapshot_trusted_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED", false)
+        || guest_pc_trace_parallel_lower_enabled()
 }
 
 fn guest_pc_trace_runner_seed_snapshot_validation_enabled() -> bool {

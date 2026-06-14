@@ -4308,6 +4308,15 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
             .contains("|| guest_pc_trace_parallel_lower_enabled()"),
         "parallel guest PC trace lowering should enable runner seed snapshots for its pending segments"
     );
+    let trusted_snapshot_body = function_body(
+        &backend_source,
+        "fn guest_pc_trace_runner_seed_snapshot_trusted_enabled",
+        "fn guest_pc_trace_runner_seed_snapshot_validation_enabled",
+    );
+    assert!(
+        trusted_snapshot_body.contains("guest_pc_trace_parallel_lower_enabled()"),
+        "parallel guest PC trace lowering should enable trusted seed lifting"
+    );
 
     let helper_body = function_body(
         &backend_source,
