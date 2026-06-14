@@ -54,10 +54,11 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             && lean_source.contains("def NAryMerklePathSamePosition")
             && lean_source.contains("structure NAryMerkleCompressionCollision")
             && lean_source.contains("def NAryMerkleCompressionNoCollision")
+            && lean_source.contains("def NAryMerklePathRootCommitsToLeafAtSamePositionIndex")
             && lean_source.contains("def NAryMerklePathRootCommitsToLeafAtIndex")
             && lean_source.contains("def NAryMerklePathRootCommitsToLeafAtPosition")
             && lean_source.contains("def CentralizedNAryMerkleCompressionCollisionResistance"),
-        "Lean Merkle path model should also expose n-ary path data, numeric position, and fold binding for runtime arity-2 and arity-4 opening paths"
+        "Lean Merkle path model should also expose n-ary path data, same-position indexed binding, numeric position, and fold binding for runtime arity-2 and arity-4 opening paths"
     );
     lean_binding::assert_theorem_declarations(
         &lean_source,
@@ -73,10 +74,14 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "concrete_merkle_path_same_index_binding",
             "concrete_merkle_path_same_index_binding_from_no_collision",
             "concrete_nary_merkle_path_same_position_binding_from_no_collision",
+            "nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_no_collision",
+            "nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_bundle",
             "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
             "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_bundle",
             "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision",
             "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_bundle",
+            "nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_no_collision",
+            "nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_bundle",
             "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision",
             "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle",
             "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_position_from_no_collision",
@@ -150,6 +155,30 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_no_collision",
+        &[
+            "NAryMerkleCompressionNoCollision compress",
+            "NAryMerklePathVerifies compress root leaf path",
+            "NAryMerklePathRootCommitsToLeafAtSamePositionIndex",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_no_collision",
+        &["concrete_nary_merkle_path_same_position_binding_from_no_collision"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathVerifies compress root leaf path",
+            "NAryMerklePathRootCommitsToLeafAtSamePositionIndex",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_bundle",
         &[
             "AssumptionBundle system",
@@ -169,7 +198,7 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
-        &["concrete_nary_merkle_path_same_position_binding_from_no_collision"],
+        &["nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_no_collision"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -190,10 +219,34 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "NAryMerklePathRootCommitsToLeafAtIndex",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_no_collision",
+        &[
+            "NAryMerkleCompressionNoCollision compress",
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathRootCommitsToLeafAtSamePositionIndex",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_no_collision",
+        &["nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_no_collision"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathRootCommitsToLeafAtSamePositionIndex",
+        ],
+    );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision",
-        &["verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision"],
+        &["nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_no_collision"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

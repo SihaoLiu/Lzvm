@@ -255,7 +255,7 @@ def NAryMerklePathRootCommitsToLeafAtPosition
       NAryMerklePathVerifies compress root otherLeaf otherPath ->
       otherLeaf = leaf
 
-def NAryMerklePathRootCommitsToLeafAtIndex
+def NAryMerklePathRootCommitsToLeafAtSamePositionIndex
     {Digest : Type uDigest}
     (compress : List Digest -> Digest)
     (root : Digest)
@@ -267,6 +267,18 @@ def NAryMerklePathRootCommitsToLeafAtIndex
         path.length = otherPath.length ->
           NAryMerklePathVerifies compress root otherLeaf otherPath ->
           otherLeaf = leaf
+
+def NAryMerklePathRootCommitsToLeafAtIndex
+    {Digest : Type uDigest}
+    (compress : List Digest -> Digest)
+    (root : Digest)
+    (leaf : Digest)
+    (path : List (NAryMerklePathLayer Digest)) : Prop :=
+  NAryMerklePathRootCommitsToLeafAtSamePositionIndex
+    compress
+    root
+    leaf
+    path
 
 def CentralizedNAryMerkleCompressionCollisionResistance
     {Digest : Type uDigest}
@@ -503,13 +515,17 @@ theorem
       otherVerified
 
 theorem
-  verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
+  nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_no_collision
     {Digest : Type uDigest}
     {compress : List Digest -> Digest}
     (noCollision : NAryMerkleCompressionNoCollision compress) :
     forall root leaf path,
       NAryMerklePathVerifies compress root leaf path ->
-        NAryMerklePathRootCommitsToLeafAtIndex compress root leaf path := by
+        NAryMerklePathRootCommitsToLeafAtSamePositionIndex
+          compress
+          root
+          leaf
+          path := by
   intro root leaf path verified otherLeaf otherPath samePosition _sameIndex
     _sameDepth otherVerified
   exact
@@ -523,6 +539,23 @@ theorem
       samePosition
       verified
       otherVerified
+
+theorem
+  verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root leaf path,
+      NAryMerklePathVerifies compress root leaf path ->
+        NAryMerklePathRootCommitsToLeafAtIndex compress root leaf path := by
+  intro root leaf path verified
+  exact
+    nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_no_collision
+      noCollision
+      root
+      leaf
+      path
+      verified
 
 theorem verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_assumption
     {Digest : Type uDigest}
@@ -541,6 +574,34 @@ theorem verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index
       (Eq.mp
         centralized
         hashAssumptions.merkleHashCollisionResistance.evidence)
+      root
+      leaf
+      path
+      verified
+
+theorem
+  nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root leaf path,
+      NAryMerklePathVerifies compress root leaf path ->
+        NAryMerklePathRootCommitsToLeafAtSamePositionIndex
+          compress
+          root
+          leaf
+          path := by
+  intro root leaf path verified
+  exact
+    nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_no_collision
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
       root
       leaf
       path
@@ -613,6 +674,27 @@ theorem verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_posit
       verified
 
 theorem
+  nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root opening,
+      NAryMerklePathOpeningVerifies compress root opening ->
+        NAryMerklePathRootCommitsToLeafAtSamePositionIndex
+          compress
+          root
+          opening.leaf
+          opening.layers := by
+  intro root opening verified
+  exact
+    nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_no_collision
+      noCollision
+      root
+      opening.leaf
+      opening.layers
+      verified
+
+theorem
   verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision
     {Digest : Type uDigest}
     {compress : List Digest -> Digest}
@@ -626,11 +708,10 @@ theorem
           opening.layers := by
   intro root opening verified
   exact
-    verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
+    nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_no_collision
       noCollision
       root
-      opening.leaf
-      opening.layers
+      opening
       verified
 
 theorem verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_assumption
@@ -654,6 +735,33 @@ theorem verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_in
       (Eq.mp
         centralized
         hashAssumptions.merkleHashCollisionResistance.evidence)
+      root
+      opening
+      verified
+
+theorem
+  nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root opening,
+      NAryMerklePathOpeningVerifies compress root opening ->
+        NAryMerklePathRootCommitsToLeafAtSamePositionIndex
+          compress
+          root
+          opening.leaf
+          opening.layers := by
+  intro root opening verified
+  exact
+    nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_no_collision
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
       root
       opening
       verified
