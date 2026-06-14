@@ -30,8 +30,10 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         &[
             "runtime_opening_segment_binding_evidence_implies_bound_contract",
             "runtime_opening_segment_binding_evidence_implies_fri_opening_checks",
+            "runtime_opening_segment_binding_evidence_implies_pcs_and_fri",
             "runtime_opening_segment_binding_checked_acceptance_bound_contract",
             "runtime_opening_segment_binding_checked_acceptance_fri_opening_checks",
+            "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri",
             "runtime_opening_segment_binding_checked_acceptance_sound",
             "runtime_opening_segment_binding_checked_acceptance_verifier_core_contract",
             "runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract",
@@ -57,6 +59,29 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "validation.verifierQueryOutputsValid artifact publicInput proof",
             "validation.openingValidation.friOpeningBound artifact publicInput proof",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_evidence_implies_pcs_and_fri",
+        &[
+            "RuntimeOpeningSegmentBindingEvidence",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri",
+        &[
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri",
+        &["AssumptionBundle"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

@@ -405,6 +405,34 @@ theorem runtime_query_plan_binding_checked_acceptance_opening_segment_bound_cont
       proof
       openingSegmentEvidence
 
+theorem runtime_query_plan_binding_checked_acceptance_pcs_and_fri
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  have openingAccepted :=
+    runtime_query_plan_binding_checked_acceptance_opening
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_segment_binding_checked_acceptance_pcs_and_fri
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingAccepted
+
 theorem runtime_query_plan_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

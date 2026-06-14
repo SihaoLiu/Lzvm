@@ -34,6 +34,17 @@ pub fn assert_theorem_prefix_contains(source: &str, name: &str, snippets: &[&str
 }
 
 #[allow(dead_code)]
+pub fn assert_theorem_prefix_omits(source: &str, name: &str, snippets: &[&str]) {
+    let prefix = theorem_prefix(source, name);
+    for snippet in snippets {
+        assert!(
+            !prefix.contains(snippet),
+            "Lean theorem {name} prefix should not contain {snippet}"
+        );
+    }
+}
+
+#[allow(dead_code)]
 pub fn theorem_body(source: &str, name: &str) -> String {
     let visible_source = visible_source(source);
     let theorem_start = find_theorem_declaration(&visible_source, name)
