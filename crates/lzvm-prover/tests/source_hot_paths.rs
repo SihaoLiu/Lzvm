@@ -4215,6 +4215,40 @@ fn guest_pc_trace_runner_seed_snapshot_has_trusted_boundary_gate() {
 }
 
 #[test]
+fn guest_pc_trace_runner_seed_snapshot_tracks_boundary_inside_runner_slice() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+
+    assert!(
+        backend_source.contains("struct ZiskMainRunnerBoundarySnapshot"),
+        "runner boundary snapshots should have a dedicated incremental state"
+    );
+
+    let produce_body = function_body(
+        &backend_source,
+        "fn produce_guest_pc_trace_pending_slices",
+        "fn lower_guest_pc_trace_pending_segments",
+    );
+    assert!(
+        produce_body.contains("run_guest_pc_trace_segment_slice_with_boundary_snapshot")
+            && produce_body.contains("ZiskMainRunnerBoundarySnapshot::new"),
+        "pending slice production should update runner boundary snapshots inside the runner slice"
+    );
+
+    let runner_body = function_body(
+        &backend_source,
+        "fn run_guest_pc_trace_segment_slice_with_boundary_snapshot",
+        "fn zisk_main_instruction_max_rows",
+    );
+    assert!(
+        runner_body.contains("record_report"),
+        "runner boundary snapshots should be updated while guest reports are produced"
+    );
+}
+
+#[test]
 fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

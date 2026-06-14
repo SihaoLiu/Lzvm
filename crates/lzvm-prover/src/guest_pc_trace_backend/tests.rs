@@ -806,6 +806,49 @@ fn runner_boundary_seed_snapshot_carries_dma_prepare_scratch() {
 }
 
 #[test]
+fn runner_boundary_snapshot_records_dma_prepare_scratch_incrementally() {
+    let mut current_seed = ZiskMainSegmentSeed::new();
+    current_seed.initial_state.registers[5] = 0x1000;
+    current_seed.initial_state.registers[6] = 0x20;
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::ZiskDmaPrepare {
+            kind: RiscvDmaKind::Memcpy,
+            rs1: 5,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: Vec::new().into(),
+        memory_accesses: Vec::new().into(),
+        precompile_memory_accesses: Vec::new(),
+        precompile_result: None,
+    };
+
+    let mut snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    snapshot
+        .record_report(
+            &report,
+            Some(RiscvInstruction::Op {
+                kind: RiscvOpKind::Add,
+                rd: 7,
+                rs1: 8,
+                rs2: 6,
+            }),
+        )
+        .expect("boundary snapshot should record DMA scratch");
+
+    assert_eq!(snapshot.registers[5], 0x1000);
+    assert_eq!(snapshot.registers[6], 0x20);
+    assert_eq!(
+        snapshot
+            .internal_memory
+            .get(&ZISK_EXTRA_PARAMS_ADDRESS)
+            .copied(),
+        Some(0x20)
+    );
+}
+
+#[test]
 fn runner_boundary_seed_snapshot_rejects_direct_previous_c_mismatch() {
     let current_seed = ZiskMainSegmentSeed::new();
     let report = addi_report_at(0x8000_0000, 3, 0, 11, 11);
