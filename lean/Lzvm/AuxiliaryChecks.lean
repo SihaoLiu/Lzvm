@@ -173,6 +173,9 @@ structure GuestPcTraceTimingSummary where
   guestTraceStreamElapsedMilliseconds : Nat
   guestTraceStreamMilliseconds : Nat
   guestSegmentCommitMilliseconds : Nat
+  guestSegmentCommitInitialWorkerCount : Nat
+  guestSegmentCommitEffectiveWorkerCount : Nat
+  guestSegmentCommitOomRetryCount : Nat
   guestTraceRunnerMilliseconds : Nat
   guestTraceLowererMilliseconds : Nat
   guestTraceLowerMilliseconds : Nat

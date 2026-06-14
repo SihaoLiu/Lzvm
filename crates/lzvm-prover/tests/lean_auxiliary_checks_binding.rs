@@ -729,6 +729,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestTracePendingReceiveWaitMilliseconds",
         "guestTraceSegmentSendWaitMilliseconds",
         "guestTraceSegmentReceiveWaitMilliseconds",
+        "guestSegmentCommitInitialWorkerCount",
+        "guestSegmentCommitEffectiveWorkerCount",
+        "guestSegmentCommitOomRetryCount",
         "guestDeviceSourceBuildMilliseconds",
         "guestDeviceSourceDescriptorUploadMilliseconds",
         "guestDeviceSourceDescriptorUploadByteCount",
@@ -967,6 +970,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_trace_segment_receive_wait\"",
             "guest_trace_segment_receive_wait_duration()",
+        ),
+        (
+            "\"guest_segment_commit_initial_workers\"",
+            "guest_segment_commit_initial_worker_count()",
+        ),
+        (
+            "\"guest_segment_commit_effective_workers\"",
+            "guest_segment_commit_effective_worker_count()",
+        ),
+        (
+            "\"guest_segment_commit_oom_retries\"",
+            "guest_segment_commit_oom_retry_count()",
         ),
         (
             "\"guest_device_source_build\"",
@@ -1995,6 +2010,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_leaf_coset_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_tree_commit_timing_acceptance_sound",
             "guest_pc_trace_tree_commit_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_segment_commit_worker_timing_acceptance_sound",
+            "guest_pc_trace_segment_commit_worker_timing_acceptance_verifier_core_contract",
             "witness_opening_row_value_timing_observed_acceptance_projects_verifier_acceptance",
             "witness_opening_row_value_timing_acceptance_sound",
             "witness_opening_row_value_timing_acceptance_verifier_core_contract",
