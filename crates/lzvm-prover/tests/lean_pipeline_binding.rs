@@ -464,6 +464,18 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
             )
+            .contains("validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
+            )
+            .contains(
+                "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked"
+            )
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
+            )
             .contains("RuntimeVerifierCoreContract system publicInput proof")
             && theorem_prefix(
                 &lean_source,
@@ -562,13 +574,33 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
             )
+            .contains("validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
+            )
+            .contains(
+                "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked"
+            )
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
+            )
             .contains("RuntimeVerifierCoreContract system publicInput proof")
             && theorem_prefix(
                 &lean_source,
                 "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
             )
             .contains("SoundWitness system publicInput proof"),
-        "pipeline checked acceptance should expose compact audited binding, PCS/FRI, verifier core, and witness evidence"
+        "pipeline checked acceptance should expose compact audited binding, seeded PCS/FRI, verifier core, and witness evidence"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
+            "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
+        ],
     );
     assert!(
         !theorem_prefix(
@@ -873,6 +905,18 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
             )
+            .contains("validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains(
+                "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked"
+            )
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
+            )
             .contains("RuntimeVerifierCoreContract system publicInput proof")
             && theorem_prefix(
                 &lean_source,
@@ -898,6 +942,19 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             )
             .contains("RuntimeArtifactSoundnessObligations"),
         "compact required external-source proof-system core contract should not force full artifact evidence"
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_contracts_core_contract",
+        &[
+            "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
+            "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_contracts_core_contract",
+        &["runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"],
     );
     assert!(
         theorem_prefix(
@@ -1097,13 +1154,33 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
             )
+            .contains("validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
+            )
+            .contains(
+                "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked"
+            )
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
+            )
             .contains("RuntimeVerifierCoreContract system publicInput proof")
             && theorem_prefix(
                 &lean_source,
                 "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
             )
             .contains("SoundWitness system publicInput proof"),
-        "pipeline required external-source projection should expose compact audited PCS/FRI, verifier core obligations, and witness evidence"
+        "pipeline required external-source projection should expose compact audited seeded PCS/FRI, verifier core obligations, and witness evidence"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
+            "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
+        ],
     );
     assert!(
         !theorem_prefix(

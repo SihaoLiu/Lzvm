@@ -193,6 +193,14 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core
           /\ system.publicInputBound publicInput proof
           /\ system.pcsOpeningsValid publicInput proof
           /\ system.friQueriesValid publicInput proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof _requiresExternalSource accepted
@@ -237,6 +245,20 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core
       publicInput
       proof
       accepted
+  have seedBinds :=
+    runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have seededFriOpeningChecked :=
+    runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   exact
     And.intro compactContract.left
       (And.intro compactContract.right.left
@@ -245,8 +267,10 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core
             (And.intro publicInputBound
               (And.intro pcsAndFri.left
                 (And.intro pcsAndFri.right
-                  (And.intro coreContract.right
-                    compactContract.right.right.right)))))))
+                  (And.intro seedBinds
+                    (And.intro seededFriOpeningChecked
+                      (And.intro coreContract.right
+                        compactContract.right.right.right)))))))))
 
 theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract
     {system : VerifierModel}
@@ -266,6 +290,14 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_co
           /\ system.publicInputBound publicInput proof
           /\ system.pcsOpeningsValid publicInput proof
           /\ system.friQueriesValid publicInput proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ (exists witness trace constraints,
             system.traceConsistent publicInput proof trace
@@ -290,6 +322,14 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_co
       publicInput
       proof
       accepted
+  have seedBinds :=
+    compactContract.right.right.right.right.right.right.right.left
+  have seededFriOpeningChecked :=
+    compactContract.right.right.right.right.right.right.right.right.left
+  have verifierCore :=
+    compactContract.right.right.right.right.right.right.right.right.right.left
+  have soundWitness :=
+    compactContract.right.right.right.right.right.right.right.right.right.right
   exact
     And.intro compactContract.left
       (And.intro compactContract.right.left
@@ -298,9 +338,10 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_co
             (And.intro compactContract.right.right.right.right.left
               (And.intro compactContract.right.right.right.right.right.left
                 (And.intro compactContract.right.right.right.right.right.right.left
-                  (And.intro compactContract.right.right.right.right.right.right.right.left
-                    (And.intro executionObligations
-                      compactContract.right.right.right.right.right.right.right.right))))))))
+                  (And.intro seedBinds
+                    (And.intro seededFriOpeningChecked
+                      (And.intro verifierCore
+                        (And.intro executionObligations soundWitness))))))))))
 
 theorem runtime_pipeline_binding_required_external_source_contracts_core_contract
     {system : VerifierModel}
@@ -331,6 +372,14 @@ theorem runtime_pipeline_binding_required_external_source_contracts_core_contrac
             /\ system.publicInputBound publicInput proof
             /\ system.pcsOpeningsValid publicInput proof
             /\ system.friQueriesValid publicInput proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+              artifact
+              publicInput
+              proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+              artifact
+              publicInput
+              proof
             /\ RuntimeVerifierCoreContract system publicInput proof
             /\ (exists witness trace constraints,
               system.traceConsistent publicInput proof trace
