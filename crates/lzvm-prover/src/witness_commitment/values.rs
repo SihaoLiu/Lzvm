@@ -405,12 +405,20 @@ impl RetainedCudaLeafDigestLevel {
         self.level.arity()
     }
 
+    #[allow(dead_code)]
     fn opening_path(
         &self,
         query_row: usize,
     ) -> Result<crate::merkle_hash::CudaMerkleOpeningPath, crate::merkle_hash::MerkleHashError>
     {
         self.level.opening_path(query_row)
+    }
+
+    fn opening_path_siblings(
+        &self,
+        query_row: usize,
+    ) -> Result<Vec<Vec<[Felt; HASH_WORDS]>>, crate::merkle_hash::MerkleHashError> {
+        self.level.opening_path_siblings(query_row)
     }
 }
 
@@ -433,12 +441,20 @@ impl RetainedCudaParentCheckpointLevel {
         self.level.arity()
     }
 
+    #[allow(dead_code)]
     fn opening_path_for_source_row(
         &self,
         source_row: usize,
     ) -> Result<crate::merkle_hash::CudaMerkleOpeningPath, crate::merkle_hash::MerkleHashError>
     {
         self.level.opening_path_for_source_row(source_row)
+    }
+
+    fn opening_path_siblings_for_source_row(
+        &self,
+        source_row: usize,
+    ) -> Result<Vec<Vec<[Felt; HASH_WORDS]>>, crate::merkle_hash::MerkleHashError> {
+        self.level.opening_path_siblings_for_source_row(source_row)
     }
 }
 
@@ -1837,22 +1853,16 @@ impl WitnessStageCompactTreeStorage {
         };
         let mut openings = Vec::with_capacity(rows.len());
         for row in rows {
-            let path = record_path_parent_hash_duration(
+            let siblings = record_path_parent_hash_duration(
                 timing.as_deref_mut(),
                 PathParentHashTimingKind::Recomputed,
                 || {
                     leaf_level
-                        .opening_path(*row)
+                        .opening_path_siblings(*row)
                         .map_err(WitnessStageOpeningError::from)
                 },
             )
             .map_err(|source| WitnessStageOpeningError::context("compact full path", source))?;
-            if path.root != expected_root {
-                return Err(WitnessStageOpeningError::InvalidTreeByteLength {
-                    expected: self.logical_tree_bytes,
-                    found: 0,
-                });
-            }
             if let (Some(timing), Some((row_count, byte_count, launch_count))) =
                 (timing.as_deref_mut(), path_parent_work)
             {
@@ -1871,7 +1881,7 @@ impl WitnessStageCompactTreeStorage {
             if let Some(timing) = timing.as_deref_mut() {
                 timing.record_device_row_values(1, self.columns);
             }
-            openings.push((values, path.siblings));
+            openings.push((values, siblings));
         }
         Ok(openings)
     }
@@ -1880,7 +1890,7 @@ impl WitnessStageCompactTreeStorage {
     fn open_batch_with_retained_parent_checkpoint_level_cuda(
         &self,
         rows: &[usize],
-        expected_root: [Felt; HASH_WORDS],
+        _expected_root: [Felt; HASH_WORDS],
         output_buffer: &CudaDeviceBuffer,
         leaf_level: &CudaDigestLevel,
         checkpoint: &RetainedCudaParentCheckpointLevel,
@@ -1952,19 +1962,13 @@ impl WitnessStageCompactTreeStorage {
                 PathParentHashTimingKind::RetainedParentCheckpointSuffix,
                 || {
                     checkpoint
-                        .opening_path_for_source_row(row)
+                        .opening_path_siblings_for_source_row(row)
                         .map_err(WitnessStageOpeningError::from)
                 },
             )
             .map_err(|source| {
                 WitnessStageOpeningError::context("compact parent checkpoint suffix path", source)
             })?;
-            if upper_suffix.root != expected_root {
-                return Err(WitnessStageOpeningError::InvalidTreeByteLength {
-                    expected: self.logical_tree_bytes,
-                    found: 0,
-                });
-            }
             if let (Some(timing), Some((row_count, byte_count, launch_count))) =
                 (timing.as_deref_mut(), upper_suffix_parent_work)
             {
@@ -1987,7 +1991,7 @@ impl WitnessStageCompactTreeStorage {
                 timing.record_device_row_values(1, self.columns);
             }
             let mut siblings = lower_prefix;
-            siblings.extend(upper_suffix.siblings);
+            siblings.extend(upper_suffix);
             openings.push((values, siblings));
         }
         Ok(openings)
@@ -1997,7 +2001,7 @@ impl WitnessStageCompactTreeStorage {
     fn open_batch_with_retained_leaf_digest_level_cuda(
         &self,
         rows: &[usize],
-        expected_root: [Felt; HASH_WORDS],
+        _expected_root: [Felt; HASH_WORDS],
         source_buffer: &SourceDeviceBuffer<'_>,
         leaf_level: &RetainedCudaLeafDigestLevel,
         mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
@@ -2018,24 +2022,18 @@ impl WitnessStageCompactTreeStorage {
         };
         let mut openings = Vec::with_capacity(rows.len());
         for row in rows {
-            let path = record_path_parent_hash_duration(
+            let siblings = record_path_parent_hash_duration(
                 timing.as_deref_mut(),
                 PathParentHashTimingKind::RetainedLeafDigest,
                 || {
                     leaf_level
-                        .opening_path(*row)
+                        .opening_path_siblings(*row)
                         .map_err(WitnessStageOpeningError::from)
                 },
             )
             .map_err(|source| {
                 WitnessStageOpeningError::context("compact retained leaf digest path", source)
             })?;
-            if path.root != expected_root {
-                return Err(WitnessStageOpeningError::InvalidTreeByteLength {
-                    expected: self.logical_tree_bytes,
-                    found: 0,
-                });
-            }
             if let (Some(timing), Some((row_count, byte_count, launch_count))) =
                 (timing.as_deref_mut(), path_parent_work)
             {
@@ -2057,7 +2055,7 @@ impl WitnessStageCompactTreeStorage {
             if let Some(timing) = timing.as_deref_mut() {
                 timing.record_source_row_values(1, self.columns);
             }
-            openings.push((values, path.siblings));
+            openings.push((values, siblings));
         }
         Ok(openings)
     }

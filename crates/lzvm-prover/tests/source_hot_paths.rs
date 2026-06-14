@@ -1002,8 +1002,8 @@ fn cuda_compact_witness_opening_uses_retained_parent_checkpoint_after_leaf_diges
         .find("open_batch_with_retained_parent_checkpoint_level_cuda")
         .expect("recomputed opening should contain retained parent checkpoint branch");
     let full_path_index = recompute_body
-        .find(".opening_path(*row)")
-        .expect("recomputed opening should keep full path fallback");
+        .find(".opening_path_siblings(*row)")
+        .expect("recomputed opening should keep full siblings fallback");
     assert!(
         checkpoint_branch_index < full_path_index,
         "checkpoint openings should be attempted before the full leaf-level opening fallback"
@@ -1095,6 +1095,54 @@ fn cuda_retained_checkpoint_opening_batches_lower_prefix_work() {
             && batch_body
                 .contains("cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device"),
         "CUDA digest opening prefix batches should call the native batch prefix primitives"
+    );
+}
+
+#[test]
+fn cuda_compact_opening_avoids_redundant_path_root_downloads() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source =
+        std::fs::read_to_string(&values_path).expect("witness values source should read");
+    let merkle_path = crate_root.join("src/merkle_hash.rs");
+    let merkle_source =
+        std::fs::read_to_string(&merkle_path).expect("Merkle hash source should read");
+    let opening_path_body = function_body(
+        &merkle_source,
+        "pub(crate) fn opening_path_siblings",
+        "pub(crate) fn opening_path_prefix_for_source_row",
+    );
+    assert!(
+        opening_path_body.contains("opening_path_prefix_for_source_row"),
+        "CUDA full opening siblings should reuse the prefix primitive so the root stays host-known"
+    );
+    assert!(
+        !opening_path_body.contains("merkle_digest_opening_path_device"),
+        "CUDA full opening siblings should avoid the native path primitive that downloads a root"
+    );
+
+    let retained_leaf_body = function_body(
+        &values_source,
+        "fn open_batch_with_retained_leaf_digest_level_cuda",
+        "fn copy_extended_row_values_from_device",
+    );
+    assert!(
+        retained_leaf_body.contains("opening_path_siblings(*row)")
+            && !retained_leaf_body.contains(".opening_path(*row)")
+            && !retained_leaf_body.contains("path.root != expected_root"),
+        "retained leaf digest openings should use host-known roots and download only siblings"
+    );
+
+    let checkpoint_body = function_body(
+        &values_source,
+        "fn open_batch_with_retained_parent_checkpoint_level_cuda",
+        "fn open_batch_with_retained_leaf_digest_level_cuda",
+    );
+    assert!(
+        checkpoint_body.contains("opening_path_siblings_for_source_row(row)")
+            && !checkpoint_body.contains("opening_path_for_source_row(row)")
+            && !checkpoint_body.contains("upper_suffix.root != expected_root"),
+        "retained checkpoint openings should avoid downloading an upper suffix root"
     );
 }
 

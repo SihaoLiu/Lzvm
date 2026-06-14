@@ -260,10 +260,13 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             && values_source.contains(
                 "cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device"
             )
-            && values_source.contains("path.root != expected_root")
+            && values_source.contains("opening_path_siblings(*row)")
+            && !values_source.contains("path.root != expected_root")
+            && hot_paths_source
+                .contains("cuda_compact_opening_avoids_redundant_path_root_downloads")
             && hot_paths_source.contains("retained_leaf_digest_opening_uses_shifted_row_weight_cache")
             && hot_paths_source.contains("extended_selected_row_values_from_source_cuda")
             && hot_paths_source.contains("residue weight cache"),
-        "runtime retained leaf digest opening should bind retained paths to source-derived rows, shifted-row cache use, and expected roots"
+        "runtime retained leaf digest opening should bind retained paths to source-derived rows, shifted-row cache use, and host-known expected roots"
     );
 }

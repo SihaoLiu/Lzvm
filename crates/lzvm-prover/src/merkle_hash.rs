@@ -72,6 +72,7 @@ pub(crate) struct CudaDigestLevel {
 }
 
 #[cfg(feature = "cuda")]
+#[allow(dead_code)]
 pub(crate) struct CudaMerkleOpeningPath {
     pub(crate) root: [Felt; HASH_WORDS],
     pub(crate) siblings: Vec<Vec<[Felt; HASH_WORDS]>>,
@@ -261,6 +262,7 @@ impl CudaDigestLevel {
         digest_from_state_words(&parent_words)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn opening_path(
         &self,
         query_row: usize,
@@ -300,6 +302,24 @@ impl CudaDigestLevel {
             return Err(MerkleHashError::LengthOverflow);
         }
         Ok(CudaMerkleOpeningPath { root, siblings })
+    }
+
+    pub(crate) fn opening_path_siblings(
+        &self,
+        query_row: usize,
+    ) -> Result<Vec<Vec<[Felt; HASH_WORDS]>>, MerkleHashError> {
+        if query_row >= self.state_count {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let mut level_count = 0usize;
+        let mut state_count = self.state_count;
+        while state_count > 1 {
+            level_count = level_count
+                .checked_add(1)
+                .ok_or(MerkleHashError::LengthOverflow)?;
+            state_count = state_count.div_ceil(self.arity);
+        }
+        self.opening_path_prefix_for_source_row(query_row, level_count)
     }
 
     #[allow(dead_code)]
@@ -480,6 +500,7 @@ impl CudaDigestCheckpointLevel {
         self.level.root_device()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn opening_path_for_source_row(
         &self,
         source_row: usize,
@@ -490,6 +511,18 @@ impl CudaDigestCheckpointLevel {
         let leaf_span = self.source_leaf_span()?;
         let checkpoint_row = source_row / leaf_span;
         self.level.opening_path(checkpoint_row)
+    }
+
+    pub(crate) fn opening_path_siblings_for_source_row(
+        &self,
+        source_row: usize,
+    ) -> Result<Vec<Vec<[Felt; HASH_WORDS]>>, MerkleHashError> {
+        if source_row >= self.source_state_count {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let leaf_span = self.source_leaf_span()?;
+        let checkpoint_row = source_row / leaf_span;
+        self.level.opening_path_siblings(checkpoint_row)
     }
 
     fn source_leaf_span(&self) -> Result<usize, MerkleHashError> {
@@ -2014,6 +2047,38 @@ mod tests {
         let mut stitched_path = lower_prefix;
         stitched_path.extend(upper_suffix.siblings);
         assert_eq!(stitched_path, full_path.siblings);
+    }
+
+    #[test]
+    fn cuda_digest_opening_path_siblings_match_full_path_siblings() {
+        let level = (0..37)
+            .map(|index| {
+                digest([
+                    700 + index * 4,
+                    701 + index * 4,
+                    702 + index * 4,
+                    703 + index * 4,
+                ])
+            })
+            .collect::<Vec<_>>();
+        let query_row = 35;
+        let words = digest_words(&level);
+        let buffer = CudaDeviceBuffer::from_u64_words(&words).expect("digests should upload");
+        let digest_level = CudaDigestLevel::new(
+            buffer,
+            level.len(),
+            4,
+            cuda_poseidon2_width16_merkle_digest_root_device,
+        );
+
+        let full_path = digest_level
+            .opening_path(query_row)
+            .expect("full opening path should hash");
+        let siblings_only = digest_level
+            .opening_path_siblings(query_row)
+            .expect("siblings-only opening path should hash");
+
+        assert_eq!(siblings_only, full_path.siblings);
     }
 
     #[test]
