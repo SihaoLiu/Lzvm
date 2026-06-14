@@ -1722,6 +1722,26 @@ fn descriptor_backed_zero_stage_has_runtime_slice_guard() {
 }
 
 #[test]
+fn improve_log_writer_uses_quoted_csv_rows() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/append-improve-log.py");
+    let script_source =
+        std::fs::read_to_string(&script_path).expect("improve-log writer source should read");
+
+    assert!(
+        script_source.contains("csv.writer")
+            && script_source.contains("csv.QUOTE_ALL")
+            && script_source.contains("lineterminator=\"\\n\""),
+        "improve-log writer should quote every CSV field through the csv module"
+    );
+    assert!(
+        script_source.contains("def validate_improve_log")
+            && script_source.contains("len(row) != 5"),
+        "improve-log writer should validate the schema remains five fields per row"
+    );
+}
+
+#[test]
 fn trace_less_guest_pc_opening_reuses_retained_device_descriptors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
