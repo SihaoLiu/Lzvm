@@ -2295,7 +2295,7 @@ fn for_each_guest_pc_trace_segment<E>(
 ) -> Result<GuestPcTraceStreamResult, GuestPcTraceSegmentStreamError<E>> {
     let (sender, receiver) = mpsc::sync_channel(guest_pc_trace_segment_queue_capacity());
     thread::scope(|scope| {
-        let producer = scope.spawn(move || {
+        let producer = spawn_guest_pc_trace_thread(scope, "lzvm-gp-lower", move || {
             let mut segment_send_wait_duration = Duration::ZERO;
             let produced = produce_guest_pc_trace_segments(
                 instruction_limit,
@@ -2377,6 +2377,21 @@ fn guest_pc_trace_segment_queue_capacity() -> usize {
         .unwrap_or(1)
 }
 
+fn spawn_guest_pc_trace_thread<'scope, 'env, F, T>(
+    scope: &'scope thread::Scope<'scope, 'env>,
+    name: &'static str,
+    f: F,
+) -> thread::ScopedJoinHandle<'scope, T>
+where
+    F: FnOnce() -> T + Send + 'scope,
+    T: Send + 'scope,
+{
+    thread::Builder::new()
+        .name(name.to_owned())
+        .spawn_scoped(scope, f)
+        .expect("guest PC trace thread should spawn")
+}
+
 fn produce_guest_pc_trace_segments(
     instruction_limit: u64,
     context: WitnessComputeContext<'_>,
@@ -2400,7 +2415,7 @@ fn produce_guest_pc_trace_segments(
     let (pending_sender, pending_receiver) =
         mpsc::sync_channel(guest_pc_trace_segment_queue_capacity());
     thread::scope(|scope| {
-        let runner = scope.spawn(move || {
+        let runner = spawn_guest_pc_trace_thread(scope, "lzvm-gp-runner", move || {
             let runner_started = Instant::now();
             let mut pending_send_wait_duration = Duration::ZERO;
             let produced = produce_guest_pc_trace_pending_slices(
@@ -2983,45 +2998,49 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                 mpsc::sync_channel::<GuestPcTracePendingSegmentSlice>(1);
             job_senders.push(job_sender);
             let result_sender = result_sender.clone();
-            worker_handles.push(scope.spawn(move || {
-                while let Ok(pending) = job_receiver.recv() {
-                    let trace_instance_index = pending.trace_instance_index;
-                    let mut worker_timing = GuestPcTraceStreamTiming::default();
-                    let result = (|| {
-                        let seed = pending.seed.as_deref().ok_or_else(|| {
-                            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                                message: format!(
-                                    "parallel guest PC trace lower requires seed for segment {trace_instance_index}"
-                                ),
-                            }
-                        })?;
-                        Ok(GuestPcTraceSeededLoweredSegment {
-                            seed: seed.clone(),
-                            lowered: lower_guest_pc_trace_seeded_pending_segment(
-                                layout,
-                                &pending,
-                                seed,
-                                expected_proof_values,
-                                Some(&mut worker_timing),
-                            )?,
-                        })
-                    })();
-                    if result_sender
-                        .send(GuestPcTraceParallelLowerMessage::Segment {
-                            trace_instance_index,
-                            result: Box::new(result),
-                            timing: worker_timing,
-                        })
-                        .is_err()
-                    {
-                        break;
+            worker_handles.push(spawn_guest_pc_trace_thread(
+                scope,
+                "lzvm-gp-plow",
+                move || {
+                    while let Ok(pending) = job_receiver.recv() {
+                        let trace_instance_index = pending.trace_instance_index;
+                        let mut worker_timing = GuestPcTraceStreamTiming::default();
+                        let result = (|| {
+                            let seed = pending.seed.as_deref().ok_or_else(|| {
+                                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                    message: format!(
+                                        "parallel guest PC trace lower requires seed for segment {trace_instance_index}"
+                                    ),
+                                }
+                            })?;
+                            Ok(GuestPcTraceSeededLoweredSegment {
+                                seed: seed.clone(),
+                                lowered: lower_guest_pc_trace_seeded_pending_segment(
+                                    layout,
+                                    &pending,
+                                    seed,
+                                    expected_proof_values,
+                                    Some(&mut worker_timing),
+                                )?,
+                            })
+                        })();
+                        if result_sender
+                            .send(GuestPcTraceParallelLowerMessage::Segment {
+                                trace_instance_index,
+                                result: Box::new(result),
+                                timing: worker_timing,
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
-                }
-            }));
+                },
+            ));
         }
 
         let dispatcher_sender = result_sender.clone();
-        let dispatcher_handle = scope.spawn(move || {
+        let dispatcher_handle = spawn_guest_pc_trace_thread(scope, "lzvm-gp-pdisp", move || {
             let mut dispatcher_timing = GuestPcTraceStreamTiming::default();
             let mut dispatched_count = 0_usize;
             let mut next_worker = 0_usize;

@@ -687,10 +687,13 @@ fn start_constant_tree_material_validation(
     let schedule = schedule.clone();
     Some(ConstantTreeMaterialValidationJob {
         started: Instant::now(),
-        handle: thread::spawn(move || {
-            lzvm_prover::validate_constant_opening_materials(&catalog, &schedule)
-                .map_err(|error| error.to_string())
-        }),
+        handle: thread::Builder::new()
+            .name("lzvm-ct-val".to_owned())
+            .spawn(move || {
+                lzvm_prover::validate_constant_opening_materials(&catalog, &schedule)
+                    .map_err(|error| error.to_string())
+            })
+            .expect("constant-tree material validation thread should spawn"),
     })
 }
 
