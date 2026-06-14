@@ -7,8 +7,16 @@ mod lean_binding;
 fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_path = crate_root.join("../../lean/Lzvm/RetainedParentCheckpointOpening.lean");
-    let lean_source = std::fs::read_to_string(&lean_path)
+    let opening_source = std::fs::read_to_string(&lean_path)
         .expect("Lean retained parent checkpoint opening source should read");
+    let core_path = crate_root.join("../../lean/Lzvm/RetainedParentCheckpointOpening/Core.lean");
+    let core_source = std::fs::read_to_string(&core_path)
+        .expect("Lean retained parent checkpoint opening core source should read");
+    let contracts_path =
+        crate_root.join("../../lean/Lzvm/RetainedParentCheckpointOpening/Contracts.lean");
+    let contracts_source = std::fs::read_to_string(&contracts_path)
+        .expect("Lean retained parent checkpoint opening contracts source should read");
+    let lean_source = format!("{core_source}\n{contracts_source}");
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
@@ -275,6 +283,10 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
     assert!(
         top_level_source.contains("import Lzvm.RetainedParentCheckpointOpening"),
         "top-level Lean module should import retained parent checkpoint opening binding"
+    );
+    assert!(
+        opening_source.contains("import Lzvm.RetainedParentCheckpointOpening.Contracts"),
+        "retained parent checkpoint opening module should aggregate the contracts module"
     );
     assert!(
         merkle_source.contains("opening_path_prefix_for_source_row")
