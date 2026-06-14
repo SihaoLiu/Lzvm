@@ -1746,7 +1746,7 @@ where
 {
     layout: &'a WitnessTraceLayout,
     trace: Option<&'a WitnessTraceBuffer>,
-    fixed_columns: &'a mut WitnessFixedColumnsCache<L>,
+    fixed_columns: WitnessFixedColumnsSource<'a, L>,
     stage_traces: &'a mut WitnessStageTraceCache,
     #[cfg(feature = "cuda")]
     stage_source_devices: Option<&'a WitnessStageSourceDeviceCache>,
@@ -1777,6 +1777,41 @@ type WitnessFixedColumnsLoadResult =
     Result<crate::FixedColumnsMaterial, ProveWitnessCommitmentError>;
 type WitnessFixedColumnsLoader =
     fn(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult;
+
+enum WitnessFixedColumnsSource<'a, L = WitnessFixedColumnsLoader>
+where
+    L: FnMut(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult,
+{
+    Cache(&'a mut WitnessFixedColumnsCache<L>),
+    #[allow(dead_code)]
+    Material(&'a crate::FixedColumnsMaterial),
+}
+
+impl<L> WitnessFixedColumnsSource<'_, L>
+where
+    L: FnMut(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult,
+{
+    fn get_or_load(
+        &mut self,
+        unit_index: usize,
+        plan_unit: &ProveExecutionUnitArtifacts,
+        layout: &WitnessTraceLayout,
+    ) -> Result<&crate::FixedColumnsMaterial, ProveWitnessCommitmentError> {
+        match self {
+            Self::Cache(cache) => cache.get_or_load(unit_index, plan_unit, layout),
+            Self::Material(material) => {
+                validate_fixed_columns_shape(
+                    &material.fixed_columns,
+                    plan_unit.fixed_column_count,
+                    layout.row_count(),
+                    unit_index,
+                    &plan_unit.fixed_columns,
+                )?;
+                Ok(material)
+            }
+        }
+    }
+}
 
 struct WitnessFixedColumnsCache<L = WitnessFixedColumnsLoader>
 where
@@ -3856,7 +3891,7 @@ fn run_prove_witness_commitments_from_trace_inner(
         let mut regular_inputs = WitnessRegularTraceInputs {
             layout: &layout,
             trace: trace_ref,
-            fixed_columns,
+            fixed_columns: WitnessFixedColumnsSource::Cache(fixed_columns),
             stage_traces: &mut stage_trace_cache,
             #[cfg(feature = "cuda")]
             stage_source_devices: Some(&stage_source_device_cache),
@@ -4669,7 +4704,7 @@ fn validate_witness_regular_hints(
     let mut regular_inputs = WitnessRegularTraceInputs {
         layout,
         trace: Some(trace),
-        fixed_columns: &mut fixed_columns,
+        fixed_columns: WitnessFixedColumnsSource::Cache(&mut fixed_columns),
         stage_traces: &mut stage_trace_cache,
         #[cfg(feature = "cuda")]
         stage_source_devices: None,
@@ -5062,7 +5097,7 @@ mod tests {
         let mut regular_inputs = WitnessRegularTraceInputs {
             layout: &layout,
             trace: Some(&trace),
-            fixed_columns: &mut cache,
+            fixed_columns: WitnessFixedColumnsSource::Cache(&mut cache),
             stage_traces: &mut stage_trace_cache,
             #[cfg(feature = "cuda")]
             stage_source_devices: None,
@@ -5082,6 +5117,43 @@ mod tests {
         .expect("regular hints should accumulate");
 
         assert_eq!(loads.get(), 1);
+    }
+
+    #[test]
+    fn regular_checks_accept_preloaded_fixed_column_material() {
+        let plan_unit = fixed_lookup_plan_unit();
+        let schedule = source_lookup_schedule();
+        let layout = derive_witness_trace_layout(&schedule).expect("layout should derive");
+        let trace = source_lookup_trace(&[7, 1, 8, 2]);
+        let material = single_fixed_columns_material(&[3, 5]);
+        let mut stage_trace_cache = WitnessStageTraceCache::default();
+        let auxiliary_inputs = ProveWitnessAuxiliaryInputs::default();
+        let proof_inputs = WitnessProofInputs {
+            publics: &[],
+            auxiliary_inputs: &auxiliary_inputs,
+        };
+        let mut regular_inputs: WitnessRegularTraceInputs<'_, WitnessFixedColumnsLoader> =
+            WitnessRegularTraceInputs {
+                layout: &layout,
+                trace: Some(&trace),
+                fixed_columns: WitnessFixedColumnsSource::Material(&material),
+                stage_traces: &mut stage_trace_cache,
+                #[cfg(feature = "cuda")]
+                stage_source_devices: None,
+            };
+
+        validate_witness_regular_constraints(&plan_unit, 0, &mut regular_inputs, proof_inputs, 1)
+            .expect("constraint check should validate from preloaded fixed material");
+
+        let mut source_lookup_balance = SourceLookupBalance::default();
+        accumulate_witness_regular_hints(
+            &plan_unit,
+            0,
+            &mut regular_inputs,
+            proof_inputs,
+            &mut source_lookup_balance,
+        )
+        .expect("regular hints should use preloaded fixed material");
     }
 
     #[cfg(feature = "cuda")]
@@ -5112,7 +5184,7 @@ mod tests {
         let mut regular_inputs = WitnessRegularTraceInputs {
             layout: &layout,
             trace: None,
-            fixed_columns: &mut fixed_columns,
+            fixed_columns: WitnessFixedColumnsSource::Cache(&mut fixed_columns),
             stage_traces: &mut stage_trace_cache,
             stage_source_devices: Some(&stage_source_devices),
         };
