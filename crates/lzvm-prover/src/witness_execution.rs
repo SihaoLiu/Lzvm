@@ -3377,6 +3377,13 @@ impl GuestPcTraceSegmentCommitOutputCollector {
     }
 }
 
+struct GuestPcTraceSegmentCommitResult {
+    output: ProveWitnessTraceCommitments,
+    source_lookup_balance: SourceLookupBalance,
+    trace_timing: Option<ProveWitnessTraceTimingAccumulator>,
+    guest_segment_commit_duration: Option<Duration>,
+}
+
 struct GuestPcTraceSegmentCommitDriver<'a, 'b> {
     context: GuestPcTraceSegmentCommitContext<'a>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
@@ -3420,33 +3427,31 @@ impl<'a, 'b> GuestPcTraceSegmentCommitDriver<'a, 'b> {
         &mut self,
         segment_output: GuestPcTraceSegmentRunOutput,
     ) -> Result<(), ProveWitnessCommitmentError> {
-        let guest_segment_commit_started = self.collect_timing.then(Instant::now);
-        let mut segment_trace_timing = self
-            .collect_timing
-            .then(ProveWitnessTraceTimingAccumulator::default);
-        let mut segment_source_lookup_balance = SourceLookupBalance::default();
-        let regular_hint_mode = if self.source_lookup_balance.is_some() {
-            WitnessRegularHintMode::Balanced(&mut segment_source_lookup_balance)
-        } else {
-            WitnessRegularHintMode::AssignmentsOnly
-        };
-        let output = commit_guest_pc_trace_segment_output(GuestPcTraceSegmentCommitRequest {
-            context: self.context,
-            auxiliary_inputs: Arc::clone(&self.auxiliary_inputs),
+        let result = commit_guest_pc_trace_segment_with_scratch(
+            self.context,
+            Arc::clone(&self.auxiliary_inputs),
             segment_output,
-            regular_hint_mode,
-            scratch: &mut self.scratch,
-            timing: segment_trace_timing.as_mut(),
-        })?;
+            self.source_lookup_balance.is_some(),
+            self.collect_timing,
+            &mut self.scratch,
+        )?;
+        self.collect_committed_segment_result(result)
+    }
+
+    fn collect_committed_segment_result(
+        &mut self,
+        result: GuestPcTraceSegmentCommitResult,
+    ) -> Result<(), ProveWitnessCommitmentError> {
         if let Some(balance) = self.source_lookup_balance.as_deref_mut() {
-            balance.merge(segment_source_lookup_balance);
+            balance.merge(result.source_lookup_balance);
         }
-        if let Some(segment_trace_timing) = segment_trace_timing {
-            self.trace_timing.accumulate(segment_trace_timing);
+        if let Some(trace_timing) = result.trace_timing {
+            self.trace_timing.accumulate(trace_timing);
         }
-        self.output_collector.collect_committed_segment(output)?;
-        if let Some(started) = guest_segment_commit_started {
-            self.guest_segment_commit_duration += started.elapsed();
+        self.output_collector
+            .collect_committed_segment(result.output)?;
+        if let Some(duration) = result.guest_segment_commit_duration {
+            self.guest_segment_commit_duration += duration;
             self.segment_count += 1;
         }
         Ok(())
@@ -3460,6 +3465,39 @@ impl<'a, 'b> GuestPcTraceSegmentCommitDriver<'a, 'b> {
             segment_count: self.segment_count,
         })
     }
+}
+
+fn commit_guest_pc_trace_segment_with_scratch(
+    context: GuestPcTraceSegmentCommitContext<'_>,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    segment_output: GuestPcTraceSegmentRunOutput,
+    use_source_lookup_balance: bool,
+    collect_timing: bool,
+    scratch: &mut GuestPcTraceSegmentCommitScratch,
+) -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
+    let guest_segment_commit_started = collect_timing.then(Instant::now);
+    let mut trace_timing = collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
+    let mut segment_source_lookup_balance = SourceLookupBalance::default();
+    let regular_hint_mode = if use_source_lookup_balance {
+        WitnessRegularHintMode::Balanced(&mut segment_source_lookup_balance)
+    } else {
+        WitnessRegularHintMode::AssignmentsOnly
+    };
+    let output = commit_guest_pc_trace_segment_output(GuestPcTraceSegmentCommitRequest {
+        context,
+        auxiliary_inputs,
+        segment_output,
+        regular_hint_mode,
+        scratch,
+        timing: trace_timing.as_mut(),
+    })?;
+    Ok(GuestPcTraceSegmentCommitResult {
+        output,
+        source_lookup_balance: segment_source_lookup_balance,
+        trace_timing,
+        guest_segment_commit_duration: guest_segment_commit_started
+            .map(|started| started.elapsed()),
+    })
 }
 
 struct GuestPcTraceSegmentCommitRequest<'a, 'b> {
