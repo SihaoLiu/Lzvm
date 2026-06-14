@@ -635,4 +635,63 @@ theorem runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
               (And.intro friQueriesValid
                 (sound_witness_implies_verifier_core_contract soundWitness))))))
 
+theorem runtime_query_plan_binding_checked_acceptance_seeded_opening_and_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingSeededContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeQueryPlanBindingBoundContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingBoundContract
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.transcriptBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have seededContract :=
+    runtime_query_plan_binding_checked_acceptance_seeded_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingAndCore :=
+    runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact And.intro seededContract openingAndCore
+
 end Lzvm

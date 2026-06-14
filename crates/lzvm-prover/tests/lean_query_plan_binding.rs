@@ -62,6 +62,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_sound",
             "runtime_query_plan_binding_checked_acceptance_verifier_core_contract",
             "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
+            "runtime_query_plan_binding_checked_acceptance_seeded_opening_and_core_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -83,6 +84,29 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &[
             "RuntimeQueryPlanBindingCheckedAcceptance",
             "RuntimeQueryPlanBindingSeededContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_seeded_opening_and_core_contract",
+        &[
+            "RuntimeQueryPlanBindingCheckedAcceptance",
+            "RuntimeQueryPlanBindingSeededContract",
+            "RuntimeQueryPlanBindingBoundContract",
+            "RuntimeOpeningSegmentBindingBoundContract",
+            "RuntimeOpeningEvidence",
+            "system.transcriptBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_seeded_opening_and_core_contract",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_seeded_contract",
+            "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
