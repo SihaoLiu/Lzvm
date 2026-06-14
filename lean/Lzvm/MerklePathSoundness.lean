@@ -641,6 +641,132 @@ theorem different_leaf_same_position_verified_nary_openings_imply_merkle_compres
       otherVerified
       differentLeaf
 
+theorem
+  different_leaf_same_arity_two_index_verified_nary_paths_imply_merkle_compression_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest} :
+    forall root leaf path otherLeaf otherPath,
+      NAryMerklePathHasArity 2 path ->
+        NAryMerklePathHasArity 2 otherPath ->
+          NAryMerklePathIndex path = NAryMerklePathIndex otherPath ->
+            path.length = otherPath.length ->
+              NAryMerklePathVerifies compress root leaf path ->
+                NAryMerklePathVerifies compress root otherLeaf otherPath ->
+                  otherLeaf ≠ leaf ->
+                    Nonempty (NAryMerkleCompressionCollision compress) := by
+  intro root leaf path otherLeaf otherPath pathArity otherPathArity sameIndex
+    sameDepth verified otherVerified differentLeaf
+  exact
+    different_leaf_same_position_verified_nary_paths_imply_merkle_compression_collision
+      root
+      leaf
+      path
+      otherLeaf
+      otherPath
+      (nary_merkle_path_arity_two_index_implies_same_position
+        path
+        otherPath
+        pathArity
+        otherPathArity
+        sameIndex
+        sameDepth)
+      verified
+      otherVerified
+      differentLeaf
+
+theorem
+  different_leaf_same_arity_two_index_verified_nary_openings_imply_merkle_compression_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest} :
+    forall root opening otherOpening,
+      NAryMerklePathHasArity 2 opening.layers ->
+        NAryMerklePathHasArity 2 otherOpening.layers ->
+          NAryMerklePathOpeningVerifies compress root opening ->
+            NAryMerklePathOpeningVerifies compress root otherOpening ->
+              NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherOpening.layers ->
+                opening.layers.length = otherOpening.layers.length ->
+                  otherOpening.leaf ≠ opening.leaf ->
+                    Nonempty (NAryMerkleCompressionCollision compress) := by
+  intro root opening otherOpening openingArity otherOpeningArity verified
+    otherVerified sameIndex sameDepth differentLeaf
+  exact
+    different_leaf_same_arity_two_index_verified_nary_paths_imply_merkle_compression_collision
+      root
+      opening.leaf
+      opening.layers
+      otherOpening.leaf
+      otherOpening.layers
+      openingArity
+      otherOpeningArity
+      sameIndex
+      sameDepth
+      verified
+      otherVerified
+      differentLeaf
+
+theorem
+  different_leaf_same_arity_four_index_verified_nary_paths_imply_merkle_compression_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest} :
+    forall root leaf path otherLeaf otherPath,
+      NAryMerklePathHasArity 4 path ->
+        NAryMerklePathHasArity 4 otherPath ->
+          NAryMerklePathIndex path = NAryMerklePathIndex otherPath ->
+            path.length = otherPath.length ->
+              NAryMerklePathVerifies compress root leaf path ->
+                NAryMerklePathVerifies compress root otherLeaf otherPath ->
+                  otherLeaf ≠ leaf ->
+                    Nonempty (NAryMerkleCompressionCollision compress) := by
+  intro root leaf path otherLeaf otherPath pathArity otherPathArity sameIndex
+    sameDepth verified otherVerified differentLeaf
+  exact
+    different_leaf_same_position_verified_nary_paths_imply_merkle_compression_collision
+      root
+      leaf
+      path
+      otherLeaf
+      otherPath
+      (nary_merkle_path_arity_four_index_implies_same_position
+        path
+        otherPath
+        pathArity
+        otherPathArity
+        sameIndex
+        sameDepth)
+      verified
+      otherVerified
+      differentLeaf
+
+theorem
+  different_leaf_same_arity_four_index_verified_nary_openings_imply_merkle_compression_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest} :
+    forall root opening otherOpening,
+      NAryMerklePathHasArity 4 opening.layers ->
+        NAryMerklePathHasArity 4 otherOpening.layers ->
+          NAryMerklePathOpeningVerifies compress root opening ->
+            NAryMerklePathOpeningVerifies compress root otherOpening ->
+              NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherOpening.layers ->
+                opening.layers.length = otherOpening.layers.length ->
+                  otherOpening.leaf ≠ opening.leaf ->
+                    Nonempty (NAryMerkleCompressionCollision compress) := by
+  intro root opening otherOpening openingArity otherOpeningArity verified
+    otherVerified sameIndex sameDepth differentLeaf
+  exact
+    different_leaf_same_arity_four_index_verified_nary_paths_imply_merkle_compression_collision
+      root
+      opening.leaf
+      opening.layers
+      otherOpening.leaf
+      otherOpening.layers
+      openingArity
+      otherOpeningArity
+      sameIndex
+      sameDepth
+      verified
+      otherVerified
+      differentLeaf
+
 theorem concrete_nary_merkle_path_same_position_binding_from_no_collision
     {Digest : Type uDigest}
     {compress : List Digest -> Digest}
