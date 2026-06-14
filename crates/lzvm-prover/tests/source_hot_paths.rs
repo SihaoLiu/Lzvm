@@ -3085,7 +3085,8 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
     assert!(
         pool_body.contains("worker_state: GuestPcTraceSegmentCommitWorkerState")
             && pool_body.contains("fn new(scope:")
-            && pool_body.contains("worker_count: guest_pc_trace_segment_commit_worker_count()")
+            && pool_body.contains("input_byte_count: usize")
+            && pool_body.contains("worker_count: guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count)")
             && pool_body.contains("fn submit_segment(")
             && pool_body.contains("fn finish(")
             && pool_body.contains("self.worker_state.commit_segment("),
@@ -3140,11 +3141,13 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
         "segment commit worker pool should have queue and scoped-thread support"
     );
     assert!(
-        source.contains("fn guest_pc_trace_segment_commit_worker_count()")
+        source.contains("fn guest_pc_trace_segment_commit_worker_count_for_input(")
+            && source.contains("fn default_guest_pc_trace_segment_commit_worker_count_for_input(")
+            && source.contains("GUEST_PC_TRACE_SEGMENT_COMMIT_AUTO_WORKER_INPUT_BYTES")
             && source.contains("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS")
             && source.contains(".filter(|count| *count > 0)")
-            && source.contains(".unwrap_or(1)"),
-        "segment commit worker count should be an explicit nonzero env-controlled knob"
+            && source.contains("default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count)"),
+        "segment commit worker count should be an explicit nonzero env-controlled knob with a trace-start input-size default"
     );
 
     let pool_region = function_body(
@@ -3196,8 +3199,9 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
             && run_body
                 .matches("GuestPcTraceSegmentCommitDriver::new(")
                 .count()
-                >= 2,
-        "both streaming guest PC segment paths should create the commit driver inside a thread scope"
+                >= 2
+            && run_body.matches("shared_inputs.input.len()").count() >= 2,
+        "both streaming guest PC segment paths should create the commit driver inside a thread scope with a trace-start input size"
     );
 }
 

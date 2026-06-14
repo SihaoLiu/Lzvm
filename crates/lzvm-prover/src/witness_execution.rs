@@ -3428,10 +3428,10 @@ struct GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
 }
 
 impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
-    fn new(scope: &'scope thread::Scope<'scope, 'env>) -> Self {
+    fn new(scope: &'scope thread::Scope<'scope, 'env>, input_byte_count: usize) -> Self {
         Self {
             scope,
-            worker_count: guest_pc_trace_segment_commit_worker_count(),
+            worker_count: guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count),
             worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
             pending_workers: VecDeque::new(),
         }
@@ -3507,12 +3507,24 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
     }
 }
 
-fn guest_pc_trace_segment_commit_worker_count() -> usize {
+const GUEST_PC_TRACE_SEGMENT_COMMIT_AUTO_WORKER_INPUT_BYTES: usize = 8 * 1024 * 1024;
+
+fn default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
+    if input_byte_count >= GUEST_PC_TRACE_SEGMENT_COMMIT_AUTO_WORKER_INPUT_BYTES {
+        2
+    } else {
+        1
+    }
+}
+
+fn guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
     std::env::var("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|count| *count > 0)
-        .unwrap_or(1)
+        .unwrap_or_else(|| {
+            default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count)
+        })
 }
 
 fn join_guest_pc_trace_segment_commit_worker(
@@ -3547,6 +3559,7 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
         scope: &'scope thread::Scope<'scope, 'env>,
         context: GuestPcTraceSegmentCommitContext<'env>,
         auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+        input_byte_count: usize,
         source_lookup_balance: Option<&'b mut SourceLookupBalance>,
         collect_timing: bool,
     ) -> Self {
@@ -3559,7 +3572,7 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
             guest_segment_commit_duration: Duration::ZERO,
             trace_timing: ProveWitnessTraceTimingAccumulator::default(),
             segment_count: 0,
-            worker_pool: GuestPcTraceSegmentCommitWorkerPool::new(scope),
+            worker_pool: GuestPcTraceSegmentCommitWorkerPool::new(scope, input_byte_count),
         }
     }
 
@@ -3794,6 +3807,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 scope,
                 segment_commit_context,
                 auxiliary_inputs,
+                shared_inputs.input.len(),
                 source_lookup_balance,
                 collect_timing,
             );
@@ -3857,6 +3871,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             scope,
             segment_commit_context,
             auxiliary_inputs,
+            shared_inputs.input.len(),
             source_lookup_balance,
             collect_timing,
         );
@@ -5464,6 +5479,25 @@ mod tests {
                 "pool finish should drain every pending worker before returning an error"
             );
         });
+    }
+
+    #[test]
+    fn guest_pc_segment_commit_worker_count_uses_trace_start_input_size() {
+        let below_auto = GUEST_PC_TRACE_SEGMENT_COMMIT_AUTO_WORKER_INPUT_BYTES - 1;
+        let at_auto = GUEST_PC_TRACE_SEGMENT_COMMIT_AUTO_WORKER_INPUT_BYTES;
+
+        assert_eq!(
+            default_guest_pc_trace_segment_commit_worker_count_for_input(below_auto),
+            1
+        );
+        assert_eq!(
+            default_guest_pc_trace_segment_commit_worker_count_for_input(at_auto),
+            2
+        );
+        assert_eq!(
+            default_guest_pc_trace_segment_commit_worker_count_for_input(usize::MAX),
+            2
+        );
     }
 
     #[test]
