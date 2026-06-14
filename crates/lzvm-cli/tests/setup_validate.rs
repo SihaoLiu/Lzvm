@@ -6031,6 +6031,10 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     assert!(stderr.is_empty());
     let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("timing_guest_trace_stream_elapsed_ms="),
+        "{stdout}"
+    );
     assert!(stdout.contains("timing_guest_trace_stream_ms="), "{stdout}");
     assert!(stdout.contains("timing_guest_segment_count="), "{stdout}");
     assert!(

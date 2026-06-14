@@ -338,6 +338,7 @@ pub struct ProveWitnessAuxiliaryInputs {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveWitnessGuestPcTraceTiming {
     segment_count: usize,
+    guest_trace_stream_elapsed_duration: Duration,
     guest_trace_stream_duration: Duration,
     guest_segment_commit_duration: Duration,
     guest_trace_runner_duration: Duration,
@@ -455,6 +456,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
 impl ProveWitnessGuestPcTraceTiming {
     fn new(
         segment_count: usize,
+        guest_trace_stream_elapsed_duration: Duration,
         guest_trace_stream_duration: Duration,
         guest_segment_commit_duration: Duration,
         stream_timing: GuestPcTraceStreamTiming,
@@ -462,6 +464,7 @@ impl ProveWitnessGuestPcTraceTiming {
     ) -> Self {
         Self {
             segment_count,
+            guest_trace_stream_elapsed_duration,
             guest_trace_stream_duration,
             guest_segment_commit_duration,
             guest_trace_runner_duration: stream_timing.runner_duration(),
@@ -634,6 +637,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn segment_count(&self) -> usize {
         self.segment_count
+    }
+
+    pub fn guest_trace_stream_elapsed_duration(&self) -> Duration {
+        self.guest_trace_stream_elapsed_duration
     }
 
     pub fn guest_trace_stream_duration(&self) -> Duration {
@@ -3305,12 +3312,13 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         })?;
         let proof_values = stream_result.proof_values;
         if let Some(started) = guest_trace_stream_started {
-            let guest_trace_stream_duration = started
-                .elapsed()
-                .saturating_sub(guest_segment_commit_duration);
+            let guest_trace_stream_elapsed_duration = started.elapsed();
+            let guest_trace_stream_duration =
+                guest_trace_stream_elapsed_duration.saturating_sub(guest_segment_commit_duration);
             if let Some(observer) = timing_observer.as_deref_mut() {
                 observer(ProveWitnessGuestPcTraceTiming::new(
                     segment_count,
+                    guest_trace_stream_elapsed_duration,
                     guest_trace_stream_duration,
                     guest_segment_commit_duration,
                     stream_result.timing,
@@ -3447,12 +3455,13 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         GuestPcTraceSegmentStreamError::Emit(error) => error,
     })?;
     if let Some(started) = guest_trace_stream_started {
-        let guest_trace_stream_duration = started
-            .elapsed()
-            .saturating_sub(guest_segment_commit_duration);
+        let guest_trace_stream_elapsed_duration = started.elapsed();
+        let guest_trace_stream_duration =
+            guest_trace_stream_elapsed_duration.saturating_sub(guest_segment_commit_duration);
         if let Some(observer) = timing_observer {
             observer(ProveWitnessGuestPcTraceTiming::new(
                 segment_count,
+                guest_trace_stream_elapsed_duration,
                 guest_trace_stream_duration,
                 guest_segment_commit_duration,
                 stream_timing,

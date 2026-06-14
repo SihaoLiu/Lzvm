@@ -325,6 +325,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean guest PC timing summary should prove descriptor buffer retention attempt counts are verifier-core-neutral"
     );
     assert!(
+        lean_source.contains("guestTraceStreamElapsedMilliseconds")
+            && lean_source.contains("guest_pc_trace_stream_elapsed_timing_acceptance_sound")
+            && lean_source.contains(
+                "guest_pc_trace_stream_elapsed_timing_acceptance_verifier_core_contract"
+            ),
+        "Lean guest PC timing summary should prove stream elapsed timing metadata is verifier-core-neutral"
+    );
+    assert!(
         lean_source.contains("guest_pc_trace_report_timing_acceptance_sound")
             && lean_source
                 .contains("guest_pc_trace_report_timing_acceptance_verifier_core_contract"),
@@ -697,6 +705,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "rowValueSourceExtendMilliseconds",
         "rowValueSourceDownloadMilliseconds",
         "rowValueDeviceDownloadMilliseconds",
+        "guestTraceStreamElapsedMilliseconds",
         "guestTraceRunnerMilliseconds",
         "guestTraceLowererMilliseconds",
         "guestTraceLowerMilliseconds",
@@ -809,6 +818,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         );
     }
     for (line_name, accessor) in [
+        (
+            "\"guest_trace_stream_elapsed\"",
+            "guest_trace_stream_elapsed_duration()",
+        ),
         ("\"guest_trace_runner\"", "guest_trace_runner_duration()"),
         ("\"guest_trace_lowerer\"", "guest_trace_lowerer_duration()"),
         ("\"guest_trace_lower\"", "guest_trace_lower_duration()"),

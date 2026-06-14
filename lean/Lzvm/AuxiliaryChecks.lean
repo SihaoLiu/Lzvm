@@ -112,6 +112,7 @@ deriving DecidableEq, Repr
 
 structure GuestPcTraceTimingSummary where
   segmentCount : Nat
+  guestTraceStreamElapsedMilliseconds : Nat
   guestTraceStreamMilliseconds : Nat
   guestSegmentCommitMilliseconds : Nat
   guestTraceRunnerMilliseconds : Nat

@@ -58,6 +58,10 @@ pub(super) fn record_guest_pc_trace_timing(
     timing: ProveWitnessGuestPcTraceTiming,
 ) {
     timings.record_count("guest_segment_count", timing.segment_count());
+    timings.record(
+        "guest_trace_stream_elapsed",
+        timing.guest_trace_stream_elapsed_duration(),
+    );
     timings.record("guest_trace_stream", timing.guest_trace_stream_duration());
     timings.record(
         "guest_segment_commit",

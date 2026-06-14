@@ -118,6 +118,50 @@ theorem guest_pc_trace_timing_acceptance_verifier_core_contract
         proof
         observed)
 
+theorem guest_pc_trace_stream_elapsed_timing_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (elapsedMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some { summary with guestTraceStreamElapsedMilliseconds := elapsedMilliseconds })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_acceptance_sound
+      assumptions
+      (some { summary with guestTraceStreamElapsedMilliseconds := elapsedMilliseconds })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_stream_elapsed_timing_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (elapsedMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some { summary with guestTraceStreamElapsedMilliseconds := elapsedMilliseconds })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (guest_pc_trace_stream_elapsed_timing_acceptance_sound
+        assumptions
+        summary
+        elapsedMilliseconds
+        publicInput
+        proof
+        observed)
+
 theorem guest_pc_trace_descriptor_width_counts_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

@@ -4093,6 +4093,7 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
     );
 
     for field in [
+        "guest_trace_stream_elapsed_duration",
         "guest_trace_runner_duration",
         "guest_trace_lowerer_duration",
         "guest_trace_lower_duration",
@@ -4107,6 +4108,7 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
         );
     }
     for line_name in [
+        "\"guest_trace_stream_elapsed\"",
         "\"guest_trace_runner\"",
         "\"guest_trace_lowerer\"",
         "\"guest_trace_lower\"",
