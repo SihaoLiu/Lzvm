@@ -739,6 +739,28 @@ fn guest_pc_trace_default_runner_seed_snapshot_stays_disabled() {
 }
 
 #[test]
+fn trusted_runner_seed_snapshot_forces_reference_seed_when_validation_enabled() {
+    assert!(guest_pc_trace_needs_full_seed_advance(
+        true, true, true, false, true
+    ));
+    assert!(!guest_pc_trace_needs_full_seed_advance(
+        true, true, false, false, true
+    ));
+    assert!(guest_pc_trace_needs_full_seed_advance(
+        true, true, false, true, true
+    ));
+    assert!(guest_pc_trace_needs_full_seed_advance(
+        true, true, false, false, false
+    ));
+    assert!(guest_pc_trace_needs_full_seed_advance(
+        true, false, false, false, true
+    ));
+    assert!(!guest_pc_trace_needs_full_seed_advance(
+        false, true, true, false, true
+    ));
+}
+
+#[test]
 fn runner_boundary_seed_snapshot_carries_dma_prepare_scratch() {
     let mut current_seed = ZiskMainSegmentSeed::new();
     current_seed.initial_state.registers[5] = 0x1000;

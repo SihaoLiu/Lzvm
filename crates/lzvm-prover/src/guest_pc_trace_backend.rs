@@ -2458,6 +2458,8 @@ fn produce_guest_pc_trace_pending_slices(
         let seed = seed_mirror.clone();
         let runner_seed_snapshot_trusted =
             runner_seed_snapshot && guest_pc_trace_runner_seed_snapshot_trusted_enabled();
+        let validate_runner_seed_snapshot =
+            runner_seed_snapshot && guest_pc_trace_runner_seed_snapshot_validation_enabled();
         let runner_direct_next_seed = match (runner_seed_snapshot, segment.is_last_segment) {
             (true, false) => {
                 let current_seed = seed.as_ref().ok_or_else(|| {
@@ -2485,10 +2487,13 @@ fn produce_guest_pc_trace_pending_slices(
             }
             _ => None,
         };
-        let needs_full_seed_advance = seed.is_some()
-            && (!runner_seed_snapshot_trusted
-                || segment.is_last_segment
-                || runner_direct_next_seed.is_none());
+        let needs_full_seed_advance = guest_pc_trace_needs_full_seed_advance(
+            seed.is_some(),
+            runner_seed_snapshot_trusted,
+            validate_runner_seed_snapshot,
+            segment.is_last_segment,
+            runner_direct_next_seed.is_some(),
+        );
         let full_next_seed = if needs_full_seed_advance {
             let seed =
                 seed.as_ref()
@@ -2725,6 +2730,25 @@ fn guest_pc_trace_runner_seed_snapshot_enabled() -> bool {
 
 fn guest_pc_trace_runner_seed_snapshot_trusted_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED", false)
+}
+
+fn guest_pc_trace_runner_seed_snapshot_validation_enabled() -> bool {
+    cfg!(debug_assertions)
+        || env_flag_enabled("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_VALIDATE", false)
+}
+
+fn guest_pc_trace_needs_full_seed_advance(
+    seed_present: bool,
+    runner_seed_snapshot_trusted: bool,
+    validate_runner_seed_snapshot: bool,
+    is_last_segment: bool,
+    runner_direct_next_seed_present: bool,
+) -> bool {
+    seed_present
+        && (!runner_seed_snapshot_trusted
+            || validate_runner_seed_snapshot
+            || is_last_segment
+            || !runner_direct_next_seed_present)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
