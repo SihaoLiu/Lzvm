@@ -14,6 +14,28 @@ use lzvm_field::Felt;
 
 static GUEST_PC_TRACE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+struct TestEnvVarGuard {
+    name: &'static str,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl TestEnvVarGuard {
+    fn unset(name: &'static str) -> Self {
+        let previous = std::env::var_os(name);
+        std::env::remove_var(name);
+        Self { name, previous }
+    }
+}
+
+impl Drop for TestEnvVarGuard {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(value) => std::env::set_var(self.name, value),
+            None => std::env::remove_var(self.name),
+        }
+    }
+}
+
 #[test]
 fn guest_trace_detail_timing_sample_stride_uses_positive_env_values() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
@@ -547,6 +569,51 @@ fn guest_pc_trace_trusted_runner_seed_snapshot_produces_pending_seeds() {
     assert_eq!(pending.len(), 2);
     assert!(pending.iter().all(|segment| segment.seed.is_some()));
     assert_eq!(pending[1].seed.as_ref().unwrap().previous_c, 10);
+}
+
+#[test]
+fn guest_pc_trace_default_runner_seed_snapshot_stays_disabled() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEED_MIRROR");
+    let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
+    let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
+    let dir = repo_temp_dir("guest-pc-default-runner-seed-snapshot");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let mut pending = Vec::new();
+
+    produce_guest_pc_trace_pending_slices(
+        16,
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        &[],
+        layout.row_count(),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
+    )
+    .expect("default runner seed snapshot should stay optional");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(pending.len(), 2);
+    assert!(pending.iter().all(|segment| segment.seed.is_none()));
 }
 
 #[test]

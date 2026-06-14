@@ -4074,6 +4074,17 @@ fn guest_pc_trace_runner_seed_snapshot_has_trusted_boundary_gate() {
         "runner boundary seed snapshots should have an explicit trusted fast-path gate"
     );
     assert!(
+        backend_source
+            .contains("env_flag_enabled(\"LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT\", false)"),
+        "runner boundary seed snapshots should remain opt-in by default"
+    );
+    assert!(
+        backend_source.contains(
+            "env_flag_enabled(\"LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED\", false)"
+        ),
+        "direct runner boundary seed lifting should remain opt-in by default"
+    );
+    assert!(
         backend_source.contains("fn try_lift_zisk_main_next_segment_seed_from_runner_boundary"),
         "runner boundary seed snapshots should expose a fallible direct-lift helper"
     );
