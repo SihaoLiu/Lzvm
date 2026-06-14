@@ -3221,6 +3221,7 @@ fn guest_pc_trace_seed_mirror_enabled() -> bool {
 
 fn guest_pc_trace_runner_seed_snapshot_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT", false)
+        || guest_pc_trace_parallel_lower_enabled()
 }
 
 fn guest_pc_trace_runner_seed_snapshot_trusted_enabled() -> bool {
@@ -3233,7 +3234,7 @@ fn guest_pc_trace_runner_seed_snapshot_validation_enabled() -> bool {
 }
 
 fn guest_pc_trace_parallel_lower_worker_count() -> Option<usize> {
-    if !env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", false) {
+    if !guest_pc_trace_parallel_lower_enabled() {
         return None;
     }
     let configured = std::env::var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS")
@@ -3246,6 +3247,10 @@ fn guest_pc_trace_parallel_lower_worker_count() -> Option<usize> {
             .unwrap_or(1)
     });
     Some(worker_count.max(1))
+}
+
+fn guest_pc_trace_parallel_lower_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", false)
 }
 
 fn guest_pc_trace_needs_full_seed_advance(

@@ -4303,6 +4303,11 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
         backend_source.contains("fn lower_guest_pc_trace_seeded_pending_segments_with_timing"),
         "parallel guest PC trace lowering should use a seeded segment helper"
     );
+    assert!(
+        backend_source
+            .contains("|| guest_pc_trace_parallel_lower_enabled()"),
+        "parallel guest PC trace lowering should enable runner seed snapshots for its pending segments"
+    );
 
     let helper_body = function_body(
         &backend_source,

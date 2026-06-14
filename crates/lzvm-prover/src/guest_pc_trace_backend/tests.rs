@@ -781,7 +781,9 @@ fn parallel_lower_env_stream_matches_serial_segments() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
         .expect("guest PC trace env lock should not be poisoned");
-    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let _mirror_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEED_MIRROR");
+    let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
+    let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
     let _parallel_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", "1");
     let _worker_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS", "2");
     let dir = repo_temp_dir("guest-pc-parallel-lower-stream");
@@ -838,6 +840,7 @@ fn guest_pc_trace_default_runner_seed_snapshot_stays_disabled() {
     let _mirror_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEED_MIRROR");
     let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
     let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
+    let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
     let dir = repo_temp_dir("guest-pc-default-runner-seed-snapshot");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
