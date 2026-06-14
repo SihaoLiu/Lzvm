@@ -19,6 +19,9 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
         "wait_ratio",
         "OSRT_CALLCHAINS",
         "cuda_memcpy_callchain_hotspots",
+        "CUPTI_ACTIVITY_KIND_KERNEL",
+        "d2h_wait_preceding_kernel_hotspots",
+        "previous_kernel",
         "--cudabacktrace=memory:80000",
         "app_frame",
     ] {
@@ -51,6 +54,10 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
             && stdout.contains("copy_root_to_host")
             && stdout.contains("extract_opening_rows")
             && stdout.contains("app_frame")
+            && stdout.contains("d2h_wait_preceding_kernel_hotspots")
+            && stdout.contains("previous_kernel")
+            && stdout.contains("poseidon2_merkle_digest_parent_kernel")
+            && stdout.contains("pack_row_major_columns_strided_kernel")
             && stdout.contains("cuda_api_backtrace_hint"),
         "nsys CUDA copy summary should print D2H host/GPU wait correlation"
     );

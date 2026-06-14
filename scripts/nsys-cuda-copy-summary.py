@@ -7,6 +7,7 @@ from pathlib import Path
 
 RUNTIME_TABLE = "CUPTI_ACTIVITY_KIND_RUNTIME"
 MEMCPY_TABLE = "CUPTI_ACTIVITY_KIND_MEMCPY"
+KERNEL_TABLE = "CUPTI_ACTIVITY_KIND_KERNEL"
 MEMCPY_KIND_TABLE = "ENUM_CUDA_MEMCPY_OPER"
 STRING_TABLE = "StringIds"
 CALLCHAIN_TABLE = "OSRT_CALLCHAINS"
@@ -147,6 +148,79 @@ def memcpy_missing_callchain_summary(conn: sqlite3.Connection) -> sqlite3.Row:
     ).fetchone()
 
 
+def d2h_preceding_kernel_summary(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
+    if not table_exists(conn, KERNEL_TABLE):
+        return []
+    conn.executescript(
+        f"""
+        drop table if exists temp._lzvm_d2h_memcpy;
+        drop table if exists temp._lzvm_kernel_stream_end;
+        create temp table _lzvm_d2h_memcpy as
+            select
+                r.start as runtime_start,
+                r.end as runtime_end,
+                m.start as memcpy_start,
+                m.end as memcpy_end,
+                m.bytes as bytes,
+                m.streamId as stream_id
+            from {RUNTIME_TABLE} r
+            join {STRING_TABLE} api on api.id = r.nameId
+            join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
+            left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
+            where api.value like 'cudaMemcpy%'
+              and coalesce(e.label, 'copyKind=' || m.copyKind) = 'Device-to-Host';
+        create temp table _lzvm_kernel_stream_end as
+            select
+                streamId as stream_id,
+                end as kernel_end,
+                shortName as kernel_name_id
+            from {KERNEL_TABLE};
+        create index _lzvm_kernel_stream_end_idx
+            on _lzvm_kernel_stream_end(stream_id, kernel_end);
+        """
+    )
+    return conn.execute(
+        f"""
+        with d2h_with_kernel as (
+            select
+                d2h.rowid as d2h_rowid,
+                d2h.*,
+                (
+                    select k.kernel_name_id
+                    from _lzvm_kernel_stream_end k
+                    where k.stream_id = d2h.stream_id
+                      and k.kernel_end <= d2h.memcpy_start
+                    order by k.kernel_end desc
+                    limit 1
+                ) as previous_kernel_name_id,
+                (
+                    select k.kernel_end
+                    from _lzvm_kernel_stream_end k
+                    where k.stream_id = d2h.stream_id
+                      and k.kernel_end <= d2h.memcpy_start
+                    order by k.kernel_end desc
+                    limit 1
+                ) as previous_kernel_end
+            from _lzvm_d2h_memcpy d2h
+        )
+        select
+            bytes,
+            coalesce(kernel.value, 'unresolved') as previous_kernel,
+            count(*) as calls,
+            sum(runtime_end - runtime_start) as host_ns,
+            sum(memcpy_end - memcpy_start) as gpu_ns,
+            max(runtime_end - runtime_start) as max_host_ns,
+            avg(memcpy_start - previous_kernel_end) as avg_gap_ns
+        from d2h_with_kernel
+        left join {STRING_TABLE} kernel on kernel.id = previous_kernel_name_id
+        group by bytes, previous_kernel
+        order by host_ns desc, calls desc, bytes asc, previous_kernel asc
+        limit ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
 def callchain_frame_rows(
     conn: sqlite3.Connection,
     callchain_id: int,
@@ -270,6 +344,26 @@ def print_callchains(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> None:
         print("none,none,0,0,0.000,0.000,0.000,0,unavailable,unavailable")
 
 
+def print_d2h_preceding_kernels(rows: list[sqlite3.Row]) -> None:
+    print()
+    print("d2h_wait_preceding_kernel_hotspots")
+    print(
+        "bytes,previous_kernel,calls,host_api_ms,gpu_memcpy_ms,"
+        "max_host_api_ms,avg_kernel_to_copy_gap_us"
+    )
+    for row in rows:
+        host_ns = int(row["host_ns"] or 0)
+        gpu_ns = int(row["gpu_ns"] or 0)
+        avg_gap_ns = row["avg_gap_ns"]
+        print(
+            f"{int(row['bytes'] or 0)},{csv_cell(row['previous_kernel'])},"
+            f"{int(row['calls'] or 0)},{ms(host_ns):.3f},{ms(gpu_ns):.3f},"
+            f"{ms(row['max_host_ns']):.3f},{us(avg_gap_ns):.3f}"
+        )
+    if not rows:
+        print("0,unavailable,0,0.000,0.000,0.000,0.000")
+
+
 def print_callchain_hint(conn: sqlite3.Connection) -> None:
     missing = memcpy_missing_callchain_summary(conn)
     missing_calls = int(missing["calls"] or 0)
@@ -295,6 +389,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print_gpu(gpu_memcpy_summary(conn))
     print_correlated(correlated_memcpy_summary(conn, limit))
     print_callchains(conn, memcpy_callchain_summary(conn, limit))
+    print_d2h_preceding_kernels(d2h_preceding_kernel_summary(conn, limit))
     print_callchain_hint(conn)
 
 
@@ -315,7 +410,14 @@ def build_self_test_db() -> sqlite3.Connection:
             end integer,
             bytes integer,
             copyKind integer,
-            correlationId integer
+            correlationId integer,
+            streamId integer
+        );
+        create table {KERNEL_TABLE} (
+            start integer,
+            end integer,
+            streamId integer,
+            shortName integer
         );
         create table {CALLCHAIN_TABLE} (
             id integer,
@@ -333,7 +435,12 @@ def build_self_test_db() -> sqlite3.Connection:
     )
     conn.executemany(
         f"insert into {STRING_TABLE} (id, value) values (?, ?)",
-        [(1, "cudaMemcpy_v3020"), (2, "cudaMemcpyAsync_v3020")],
+        [
+            (1, "cudaMemcpy_v3020"),
+            (2, "cudaMemcpyAsync_v3020"),
+            (3, "poseidon2_merkle_digest_parent_kernel"),
+            (4, "pack_row_major_columns_strided_kernel"),
+        ],
     )
     conn.executemany(
         f"insert into {MEMCPY_KIND_TABLE} (id, label) values (?, ?)",
@@ -356,13 +463,23 @@ def build_self_test_db() -> sqlite3.Connection:
     )
     conn.executemany(
         f"""
-        insert into {MEMCPY_TABLE} (start, end, bytes, copyKind, correlationId)
-        values (?, ?, ?, ?, ?)
+        insert into {MEMCPY_TABLE} (start, end, bytes, copyKind, correlationId, streamId)
+        values (?, ?, ?, ?, ?, ?)
         """,
         [
-            (10_000, 10_500, 32, 2, 10),
-            (20_000, 20_700, 1152, 2, 11),
-            (30_000, 35_000, 4096, 1, 12),
+            (10_000, 10_500, 32, 2, 10, 7),
+            (20_000, 20_700, 1152, 2, 11, 7),
+            (30_000, 35_000, 4096, 1, 12, 7),
+        ],
+    )
+    conn.executemany(
+        f"""
+        insert into {KERNEL_TABLE} (start, end, streamId, shortName)
+        values (?, ?, ?, ?)
+        """,
+        [
+            (1_000, 8_000, 7, 3),
+            (12_000, 18_000, 7, 4),
         ],
     )
     conn.executemany(
