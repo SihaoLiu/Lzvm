@@ -4645,8 +4645,9 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
     );
     assert!(
         cli_source.contains("record_cuda_allocator_timing")
-            && cli_source.contains("cuda_allocator_stats()"),
-        "prove witness should record allocator stats before writing timing summaries"
+            && cli_source.contains("cuda_allocator_stats()")
+            && cli_source.contains("record_average_wait_ns"),
+        "prove witness should record allocator stats and average wait metrics before writing timing summaries"
     );
     for line_name in [
         "\"cuda_allocator_malloc_calls\"",
@@ -4664,14 +4665,17 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "\"cuda_allocator_copy_h2d_bytes\"",
         "\"cuda_allocator_copy_h2d_wait_ns\"",
         "\"cuda_allocator_copy_h2d_max_wait_ns\"",
+        "\"cuda_allocator_copy_h2d_avg_wait_per_call_ns\"",
         "\"cuda_allocator_copy_d2h_calls\"",
         "\"cuda_allocator_copy_d2h_bytes\"",
         "\"cuda_allocator_copy_d2h_wait_ns\"",
         "\"cuda_allocator_copy_d2h_max_wait_ns\"",
+        "\"cuda_allocator_copy_d2h_avg_wait_per_call_ns\"",
         "\"cuda_allocator_copy_d2d_calls\"",
         "\"cuda_allocator_copy_d2d_bytes\"",
         "\"cuda_allocator_copy_d2d_wait_ns\"",
         "\"cuda_allocator_copy_d2d_max_wait_ns\"",
+        "\"cuda_allocator_copy_d2d_avg_wait_per_call_ns\"",
         "\"cuda_allocator_cached_blocks\"",
         "\"cuda_allocator_cached_bytes\"",
         "\"cuda_allocator_event_query_calls\"",
@@ -4682,9 +4686,11 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "\"cuda_allocator_event_synchronize_max_bytes\"",
         "\"cuda_allocator_event_synchronize_wait_ns\"",
         "\"cuda_allocator_event_synchronize_max_wait_ns\"",
+        "\"cuda_allocator_event_synchronize_avg_wait_per_call_ns\"",
         "\"cuda_allocator_event_synchronize_hot_bytes\"",
         "\"cuda_allocator_event_synchronize_hot_count\"",
         "\"cuda_allocator_event_synchronize_hot_wait_ns\"",
+        "\"cuda_allocator_event_synchronize_hot_avg_wait_per_call_ns\"",
         "\"cuda_allocator_cached_reuse_count\"",
         "\"cuda_allocator_pending_reuse_count\"",
         "\"cuda_allocator_no_wait_bypass_count\"",

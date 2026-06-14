@@ -156,6 +156,12 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
         "cuda_allocator_copy_h2d_max_wait_ns",
         stats.cuda_copy_h2d_max_wait_ns,
     );
+    record_average_wait_ns(
+        timings,
+        "cuda_allocator_copy_h2d_avg_wait_per_call_ns",
+        stats.cuda_copy_h2d_wait_ns,
+        stats.cuda_copy_h2d_calls,
+    );
     timings.record_count("cuda_allocator_copy_d2h_calls", stats.cuda_copy_d2h_calls);
     timings.record_count("cuda_allocator_copy_d2h_bytes", stats.cuda_copy_d2h_bytes);
     timings.record_count(
@@ -166,6 +172,12 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
         "cuda_allocator_copy_d2h_max_wait_ns",
         stats.cuda_copy_d2h_max_wait_ns,
     );
+    record_average_wait_ns(
+        timings,
+        "cuda_allocator_copy_d2h_avg_wait_per_call_ns",
+        stats.cuda_copy_d2h_wait_ns,
+        stats.cuda_copy_d2h_calls,
+    );
     timings.record_count("cuda_allocator_copy_d2d_calls", stats.cuda_copy_d2d_calls);
     timings.record_count("cuda_allocator_copy_d2d_bytes", stats.cuda_copy_d2d_bytes);
     timings.record_count(
@@ -175,6 +187,12 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
     timings.record_count(
         "cuda_allocator_copy_d2d_max_wait_ns",
         stats.cuda_copy_d2d_max_wait_ns,
+    );
+    record_average_wait_ns(
+        timings,
+        "cuda_allocator_copy_d2d_avg_wait_per_call_ns",
+        stats.cuda_copy_d2d_wait_ns,
+        stats.cuda_copy_d2d_calls,
     );
     timings.record_count("cuda_allocator_cached_blocks", stats.cached_blocks);
     timings.record_count("cuda_allocator_cached_bytes", stats.cached_bytes);
@@ -210,6 +228,12 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
         "cuda_allocator_event_synchronize_max_wait_ns",
         stats.cuda_event_synchronize_max_wait_ns,
     );
+    record_average_wait_ns(
+        timings,
+        "cuda_allocator_event_synchronize_avg_wait_per_call_ns",
+        stats.cuda_event_synchronize_wait_ns,
+        stats.cuda_event_synchronize_calls,
+    );
     timings.record_count(
         "cuda_allocator_event_synchronize_hot_bytes",
         stats.cuda_event_synchronize_hot_bytes,
@@ -221,6 +245,12 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
     timings.record_count(
         "cuda_allocator_event_synchronize_hot_wait_ns",
         stats.cuda_event_synchronize_hot_wait_ns,
+    );
+    record_average_wait_ns(
+        timings,
+        "cuda_allocator_event_synchronize_hot_avg_wait_per_call_ns",
+        stats.cuda_event_synchronize_hot_wait_ns,
+        stats.cuda_event_synchronize_hot_count,
     );
     timings.record_count(
         "cuda_allocator_cached_reuse_count",
@@ -238,6 +268,21 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
         "cuda_allocator_no_wait_bypass_bytes",
         stats.no_wait_bypass_bytes,
     );
+}
+
+#[cfg(feature = "cuda")]
+fn record_average_wait_ns(
+    timings: &mut TimingRecorder,
+    name: &'static str,
+    wait_ns: usize,
+    call_count: usize,
+) {
+    let average = if call_count == 0 {
+        0
+    } else {
+        wait_ns / call_count
+    };
+    timings.record_count(name, average);
 }
 
 #[cfg(not(feature = "cuda"))]
