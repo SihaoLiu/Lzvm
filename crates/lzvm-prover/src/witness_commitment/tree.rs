@@ -2348,7 +2348,15 @@ mod tests {
         let checkpoint_parent_rows = 65536 + 16384 + 4096 + 1024 + 256 + 64 + 16 + 4 + 1;
         assert_eq!(
             batch_timing.path_parent_hash_row_count,
-            rows.len() * checkpoint_parent_rows
+            checkpoint_parent_rows
+        );
+        assert_eq!(
+            batch_timing.path_parent_hash_retained_parent_checkpoint_prefix_row_count,
+            0
+        );
+        assert_eq!(
+            batch_timing.path_parent_hash_retained_parent_checkpoint_suffix_row_count,
+            checkpoint_parent_rows
         );
     }
 
