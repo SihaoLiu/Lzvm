@@ -39,15 +39,12 @@ theorem timing_observation_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithTimings
   exact
-    abstract_verifier_sound
+    ignored_metadata_acceptance_sound
       assumptions
+      observations
       publicInput
       proof
-      (timing_observed_acceptance_projects_verifier_acceptance
-        observations
-        publicInput
-        proof
-        acceptedWithTimings)
+      acceptedWithTimings
 
 theorem timing_observation_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -58,13 +55,12 @@ theorem timing_observation_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof observed
   exact
-    sound_witness_implies_verifier_core_contract
-      (timing_observation_acceptance_sound
-        assumptions
-        observations
-        publicInput
-        proof
-        observed)
+    ignored_metadata_acceptance_verifier_core_contract
+      assumptions
+      observations
+      publicInput
+      proof
+      observed
 
 def GuestPcTraceTimingObservedAcceptance
     (system : VerifierModel)
@@ -91,15 +87,12 @@ theorem guest_pc_trace_timing_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithGuestPcTraceTimings
   exact
-    abstract_verifier_sound
+    ignored_metadata_acceptance_sound
       assumptions
+      summary
       publicInput
       proof
-      (guest_pc_trace_timing_observed_acceptance_projects_verifier_acceptance
-        summary
-        publicInput
-        proof
-        acceptedWithGuestPcTraceTimings)
+      acceptedWithGuestPcTraceTimings
 
 theorem guest_pc_trace_timing_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -110,13 +103,12 @@ theorem guest_pc_trace_timing_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof observed
   exact
-    sound_witness_implies_verifier_core_contract
-      (guest_pc_trace_timing_acceptance_sound
-        assumptions
-        summary
-        publicInput
-        proof
-        observed)
+    ignored_metadata_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
 
 theorem guest_pc_trace_stream_elapsed_timing_acceptance_sound
     {system : VerifierModel}

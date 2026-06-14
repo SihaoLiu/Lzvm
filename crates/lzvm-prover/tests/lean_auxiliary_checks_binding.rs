@@ -16,7 +16,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let timing_source =
         std::fs::read_to_string(&timing_path).expect("Lean timing checks should read");
     let proof_timing_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming.lean");
-    let proof_timing_source =
+    let lean_proof_timing_source =
         std::fs::read_to_string(&proof_timing_path).expect("Lean proof timing checks should read");
     let proof_timing_verifier_path =
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTimingVerifier.lean");
@@ -27,7 +27,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let runtime_performance_source = std::fs::read_to_string(&runtime_performance_path)
         .expect("Lean runtime performance checks should read");
     let lean_source = format!(
-        "{auxiliary_source}\n{gpu_runtime_source}\n{timing_source}\n{proof_timing_source}\n{proof_timing_verifier_source}\n{runtime_performance_source}"
+        "{auxiliary_source}\n{gpu_runtime_source}\n{timing_source}\n{lean_proof_timing_source}\n{proof_timing_verifier_source}\n{runtime_performance_source}"
     );
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
@@ -186,12 +186,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean fixed-column cache cached-contents projector should reuse checked-acceptance projectors"
     );
     assert!(
-        lean_source.contains(
-            "timing_observed_acceptance_projects_verifier_acceptance\n        observations\n        publicInput\n        proof\n        acceptedWithTimings"
-        ),
-        "Lean timing observation soundness should reuse the observed-acceptance verifier projector"
-    );
-    assert!(
         lean_source.contains("IgnoredMetadataObservedAcceptance")
             && lean_source
                 .contains("ignored_metadata_observed_acceptance_projects_verifier_acceptance")
@@ -208,36 +202,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 .contains("IgnoredMetadataObservedAcceptance system summary"),
         "Lean timing modules should instantiate the generic ignored-metadata wrapper"
     );
-    assert!(
-        lean_source.contains(
-            "guest_pc_trace_timing_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithGuestPcTraceTimings"
-        ),
-        "Lean guest PC trace timing soundness should reuse the observed-acceptance verifier projector"
-    );
-    assert!(
-        lean_source.contains(
-            "witness_opening_row_value_timing_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithRowValueTimings"
-        ),
-        "Lean row-value timing soundness should reuse the observed-acceptance verifier projector"
-    );
-    assert!(
-        lean_source.contains(
-            "constant_material_validation_timing_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithConstantMaterialTimings"
-        ),
-        "Lean constant material timing soundness should reuse the observed-acceptance verifier projector"
-    );
-    assert!(
-        lean_source.contains(
-            "cuda_allocator_timing_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithAllocatorTimings"
-        ),
-        "Lean CUDA allocator timing soundness should reuse the observed-acceptance verifier projector"
-    );
-    assert!(
-        lean_source.contains(
-            "proof_artifact_finish_timing_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithProofFinishTimings"
-        ),
-        "Lean proof finish timing soundness should reuse the observed-acceptance verifier projector"
-    );
+    for (module_name, module_source) in [
+        ("Timing", timing_source.as_str()),
+        ("ProofTiming", lean_proof_timing_source.as_str()),
+        ("RuntimePerformance", runtime_performance_source.as_str()),
+    ] {
+        assert!(
+            module_source.contains("ignored_metadata_acceptance_sound\n      assumptions")
+                && module_source.contains(
+                    "ignored_metadata_acceptance_verifier_core_contract\n      assumptions"
+                ),
+            "{module_name} should prove ignored metadata neutrality through the generic wrapper"
+        );
+        assert!(
+            !module_source.contains("abstract_verifier_sound"),
+            "{module_name} should not duplicate abstract verifier soundness for ignored metadata"
+        );
+    }
     let finish_summary_wrapper_uses = lean_source
         .matches(
             "proof_artifact_finish_timing_some_summary_acceptance_sound\n      assumptions\n      { summary with",
@@ -246,30 +227,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     assert!(
         finish_summary_wrapper_uses >= 10,
         "Lean proof finish timing specializations should reuse the some-summary soundness wrapper"
-    );
-    assert!(
-        lean_source.contains(
-            "runtime_performance_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithPerformanceObservations"
-        ),
-        "Lean runtime performance soundness should reuse the observed-acceptance verifier projector"
-    );
-    assert!(
-        lean_source.contains(
-            "prover_gpu_mode_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithGpuMode"
-        ),
-        "Lean prover GPU mode soundness should reuse the observed-acceptance verifier projector"
-    );
-    assert!(
-        lean_source.contains(
-            "gpu_run_options_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithGpuRunOptions"
-        ),
-        "Lean GPU run options soundness should reuse the observed-acceptance verifier projector"
-    );
-    assert!(
-        lean_source.contains(
-            "cuda_backend_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithCudaBackend"
-        ),
-        "Lean CUDA backend soundness should reuse the observed-acceptance verifier projector"
     );
     assert!(
         lean_source.contains("guestTraceDescriptorCompactRowCount")

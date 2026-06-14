@@ -37,15 +37,12 @@ theorem runtime_performance_observation_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithPerformanceObservations
   exact
-    abstract_verifier_sound
+    ignored_metadata_acceptance_sound
       assumptions
+      summary
       publicInput
       proof
-      (runtime_performance_observed_acceptance_projects_verifier_acceptance
-        summary
-        publicInput
-        proof
-        acceptedWithPerformanceObservations)
+      acceptedWithPerformanceObservations
 
 theorem runtime_performance_observation_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -56,13 +53,12 @@ theorem runtime_performance_observation_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof observed
   exact
-    sound_witness_implies_verifier_core_contract
-      (runtime_performance_observation_acceptance_sound
-        assumptions
-        summary
-        publicInput
-        proof
-        observed)
+    ignored_metadata_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
 
 theorem runtime_performance_observation_projects_timing_observations
     {system : VerifierModel}
