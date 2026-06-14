@@ -140,6 +140,16 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "RuntimeRetainedLeafDigestOpeningDigestContract",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_path_digest_contract_from_bundle",
+        &["runtime_retained_leaf_digest_nary_path_position_bound_from_bundle"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_path_digest_contract_from_bundle",
+        &["retainedLeafDigestOpeningAcceptedImpliesPathBound"],
+    );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "runtime_retained_leaf_digest_nary_opening_digest_contract_from_bundle",
@@ -149,6 +159,16 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "RuntimeRetainedLeafDigestNAryConcreteOpeningBinding",
             "RuntimeRetainedLeafDigestOpeningDigestContract",
         ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_digest_contract_from_bundle",
+        &["runtime_retained_leaf_digest_nary_opening_position_bound_from_bundle"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_digest_contract_from_bundle",
+        &["retainedLeafDigestOpeningAcceptedImpliesPathBound"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -179,6 +199,11 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "RuntimeRetainedLeafDigestOpeningDigestContract",
             "RuntimeVerifierCoreContract system publicInput proof",
         ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_path_opening_and_core_contract_from_bundle",
+        &["runtime_retained_leaf_digest_nary_path_digest_contract_from_bundle"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

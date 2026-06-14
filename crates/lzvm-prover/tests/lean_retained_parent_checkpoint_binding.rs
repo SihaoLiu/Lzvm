@@ -147,6 +147,16 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "RuntimeRetainedParentCheckpointOpeningDigestContract",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_path_digest_contract_from_bundle",
+        &["runtime_retained_parent_checkpoint_nary_path_position_bound_from_bundle"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_path_digest_contract_from_bundle",
+        &["retainedParentCheckpointOpeningAcceptedImpliesStitchedPathBound"],
+    );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_bundle",
@@ -156,6 +166,16 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "RuntimeRetainedParentCheckpointNAryConcreteOpeningBinding",
             "RuntimeRetainedParentCheckpointOpeningDigestContract",
         ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_bundle",
+        &["runtime_retained_parent_checkpoint_nary_opening_position_bound_from_bundle"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_bundle",
+        &["retainedParentCheckpointOpeningAcceptedImpliesStitchedPathBound"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
