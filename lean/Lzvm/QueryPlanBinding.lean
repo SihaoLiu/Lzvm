@@ -229,6 +229,37 @@ theorem runtime_query_plan_binding_evidence_implies_seeded_contract
   intro artifact publicInput proof evidence
   exact evidence.right
 
+theorem runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingSeededContract
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanSeedBindsWitnessTreeDigests artifact publicInput proof := by
+  intro artifact publicInput proof seeded
+  exact seeded.left
+
+theorem runtime_query_plan_binding_seeded_contract_implies_seeded_fri_opening_requirements_checked
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingSeededContract
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanSeededFriOpeningRequirementsChecked
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof seeded
+  exact seeded.right
+
 theorem runtime_query_plan_binding_checked_acceptance_challenge
     {system : VerifierModel}
     (validation : RuntimeQueryPlanBindingValidation system) :
@@ -340,6 +371,63 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_contract
       accepted
   exact
     And.intro seedBindsWitnessTreeDigests seededFriOpeningRequirementsChecked
+
+theorem runtime_query_plan_binding_checked_acceptance_seed_binds_witness_tree_digests
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanSeedBindsWitnessTreeDigests artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have seeded :=
+    runtime_query_plan_binding_checked_acceptance_seeded_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests
+      validation
+      artifact
+      publicInput
+      proof
+      seeded
+
+theorem runtime_query_plan_binding_checked_acceptance_seeded_fri_opening_requirements_checked
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanSeededFriOpeningRequirementsChecked
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have seeded :=
+    runtime_query_plan_binding_checked_acceptance_seeded_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_seeded_contract_implies_seeded_fri_opening_requirements_checked
+      validation
+      artifact
+      publicInput
+      proof
+      seeded
 
 theorem runtime_query_plan_binding_checked_acceptance_opening_segment_evidence
     {system : VerifierModel}

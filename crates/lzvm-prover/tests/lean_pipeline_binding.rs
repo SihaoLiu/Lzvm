@@ -67,6 +67,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract",
+            "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
+            "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_evidence",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_bound_contract",
@@ -583,6 +585,50 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("RuntimeQueryPlanBindingSeededContract"),
         "pipeline checked acceptance should project seeded query-plan constraints"
+    );
+    assert!(
+        {
+            let prefix = theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
+            );
+            prefix.contains(
+                "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
+            ) && prefix.contains("artifact")
+                && prefix.contains("publicInput")
+                && prefix.contains("proof")
+        },
+        "pipeline checked acceptance should expose the seeded query seed witness-tree digest binding"
+    );
+    assert!(
+        {
+            let prefix = theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
+            );
+            prefix.contains(
+                "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
+            ) && prefix.contains("artifact")
+                && prefix.contains("publicInput")
+                && prefix.contains("proof")
+        },
+        "pipeline checked acceptance should expose the seeded FRI opening requirement check"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract",
+            "runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract",
+            "runtime_query_plan_binding_seeded_contract_implies_seeded_fri_opening_requirements_checked",
+        ],
     );
     assert!(
         theorem_prefix(

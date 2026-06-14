@@ -54,8 +54,12 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &[
             "runtime_query_plan_binding_evidence_implies_bound_contract",
             "runtime_query_plan_binding_evidence_implies_seeded_contract",
+            "runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests",
+            "runtime_query_plan_binding_seeded_contract_implies_seeded_fri_opening_requirements_checked",
             "runtime_query_plan_binding_checked_acceptance_bound_contract",
             "runtime_query_plan_binding_checked_acceptance_seeded_contract",
+            "runtime_query_plan_binding_checked_acceptance_seed_binds_witness_tree_digests",
+            "runtime_query_plan_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
             "runtime_query_plan_binding_checked_acceptance_opening_segment_evidence",
             "runtime_query_plan_binding_checked_acceptance_opening_segment_bound_contract",
             "runtime_query_plan_binding_checked_acceptance_pcs_and_fri",
@@ -84,6 +88,44 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &[
             "RuntimeQueryPlanBindingCheckedAcceptance",
             "RuntimeQueryPlanBindingSeededContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests",
+        &[
+            "RuntimeQueryPlanBindingSeededContract",
+            "validation.queryPlanSeedBindsWitnessTreeDigests",
+            "artifact",
+            "publicInput",
+            "proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_seeded_contract_implies_seeded_fri_opening_requirements_checked",
+        &[
+            "RuntimeQueryPlanBindingSeededContract",
+            "validation.queryPlanSeededFriOpeningRequirementsChecked",
+            "artifact",
+            "publicInput",
+            "proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_seed_binds_witness_tree_digests",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_seeded_contract",
+            "runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_seeded_contract",
+            "runtime_query_plan_binding_seeded_contract_implies_seeded_fri_opening_requirements_checked",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

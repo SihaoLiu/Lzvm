@@ -469,6 +469,66 @@ theorem runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract
       proof
       queryAccepted
 
+theorem runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have seeded :=
+    runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      seeded
+
+theorem runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have seeded :=
+    runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_seeded_contract_implies_seeded_fri_opening_requirements_checked
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      seeded
+
 theorem runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
