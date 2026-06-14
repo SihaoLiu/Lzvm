@@ -17,6 +17,10 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
         "host_api_ms",
         "gpu_memcpy_ms",
         "wait_ratio",
+        "OSRT_CALLCHAINS",
+        "cuda_memcpy_callchain_hotspots",
+        "--cudabacktrace=memory:80000",
+        "app_frame",
     ] {
         assert!(
             script_source.contains(required),
@@ -40,7 +44,14 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
         stdout.contains("Device-to-Host")
             && stdout.contains("host_api_ms")
             && stdout.contains("gpu_memcpy_ms")
-            && stdout.contains("wait_ratio"),
+            && stdout.contains("wait_ratio")
+            && stdout.contains("cuda_memcpy_callchain_hotspots")
+            && stdout.contains("api,direction,bytes")
+            && stdout.contains("cudaMemcpy_v3020,Device-to-Host")
+            && stdout.contains("copy_root_to_host")
+            && stdout.contains("extract_opening_rows")
+            && stdout.contains("app_frame")
+            && stdout.contains("cuda_api_backtrace_hint"),
         "nsys CUDA copy summary should print D2H host/GPU wait correlation"
     );
 }

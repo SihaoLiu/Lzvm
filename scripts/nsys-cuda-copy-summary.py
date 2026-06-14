@@ -9,6 +9,7 @@ RUNTIME_TABLE = "CUPTI_ACTIVITY_KIND_RUNTIME"
 MEMCPY_TABLE = "CUPTI_ACTIVITY_KIND_MEMCPY"
 MEMCPY_KIND_TABLE = "ENUM_CUDA_MEMCPY_OPER"
 STRING_TABLE = "StringIds"
+CALLCHAIN_TABLE = "OSRT_CALLCHAINS"
 
 
 def ms(ns: int | float | None) -> float:
@@ -25,6 +26,10 @@ def ratio(host_ns: int | float | None, gpu_ns: int | float | None) -> str:
     if gpu == 0:
         return "inf" if host > 0 else "0.000"
     return f"{host / gpu:.3f}"
+
+
+def csv_cell(value: object) -> str:
+    return str(value).replace(",", " ").replace("\n", " ").replace("\r", " ")
 
 
 def table_exists(conn: sqlite3.Connection, name: str) -> bool:
@@ -99,6 +104,107 @@ def correlated_memcpy_summary(conn: sqlite3.Connection, limit: int) -> list[sqli
     ).fetchall()
 
 
+def memcpy_callchain_summary(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
+    if not table_exists(conn, CALLCHAIN_TABLE):
+        return []
+    return conn.execute(
+        f"""
+        select
+            coalesce(s.value, 'nameId=' || r.nameId) as api,
+            coalesce(e.label, 'copyKind=' || m.copyKind) as direction,
+            m.bytes as bytes,
+            r.callchainId as callchain_id,
+            count(*) as calls,
+            sum(r.end - r.start) as host_ns,
+            sum(m.end - m.start) as gpu_ns,
+            max(r.end - r.start) as max_host_ns
+        from {RUNTIME_TABLE} r
+        join {STRING_TABLE} s on s.id = r.nameId
+        join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
+        left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
+        where s.value like 'cudaMemcpy%'
+          and r.callchainId is not null
+        group by api, direction, m.bytes, r.callchainId
+        order by host_ns desc, calls desc, api asc, direction asc, m.bytes asc
+        limit ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def memcpy_missing_callchain_summary(conn: sqlite3.Connection) -> sqlite3.Row:
+    return conn.execute(
+        f"""
+        select
+            count(*) as calls,
+            sum(r.end - r.start) as host_ns
+        from {RUNTIME_TABLE} r
+        join {STRING_TABLE} s on s.id = r.nameId
+        join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
+        where s.value like 'cudaMemcpy%'
+          and r.callchainId is null
+        """
+    ).fetchone()
+
+
+def callchain_frame_rows(
+    conn: sqlite3.Connection,
+    callchain_id: int,
+) -> list[sqlite3.Row]:
+    if not table_exists(conn, CALLCHAIN_TABLE):
+        return []
+    return conn.execute(
+        f"""
+        select
+            c.stackDepth as stackDepth,
+            coalesce(sym.value, c.symbol, 'unknown') as symbol,
+            coalesce(mod.value, c.module, 'unknown') as module
+        from {CALLCHAIN_TABLE} c
+        left join {STRING_TABLE} sym on sym.id = c.symbol
+        left join {STRING_TABLE} mod on mod.id = c.module
+        where c.id = ?
+        order by c.stackDepth asc
+        """,
+        (callchain_id,),
+    ).fetchall()
+
+
+def callchain_frames(
+    conn: sqlite3.Connection,
+    callchain_id: int,
+    max_frames: int = 6,
+) -> str:
+    rows = callchain_frame_rows(conn, callchain_id)[:max_frames]
+    frames = []
+    for row in rows:
+        symbol = row["symbol"] or "unknown"
+        module = row["module"] or "unknown"
+        frames.append(f"{symbol}@{module}")
+    return " | ".join(frames) if frames else "unresolved"
+
+
+def first_application_frame(conn: sqlite3.Connection, callchain_id: int) -> str:
+    for row in callchain_frame_rows(conn, callchain_id):
+        symbol = str(row["symbol"] or "unknown")
+        module = str(row["module"] or "unknown")
+        lowered_module = module.lower()
+        if symbol.startswith("0x") or symbol == "__GI___ioctl":
+            continue
+        if any(
+            skipped in lowered_module
+            for skipped in [
+                "libcuda",
+                "libcudart",
+                "libc.so",
+                "libpthread",
+                "ld-linux",
+            ]
+        ):
+            continue
+        return f"{symbol}@{module}"
+    return "unresolved"
+
+
 def print_runtime(rows: list[sqlite3.Row]) -> None:
     print("runtime_cuda_memcpy_api")
     print("api,calls,host_api_ms,avg_host_api_us")
@@ -142,6 +248,45 @@ def print_correlated(rows: list[sqlite3.Row]) -> None:
         print("none,0,0,0.000,0.000,0.000")
 
 
+def print_callchains(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> None:
+    print()
+    print("cuda_memcpy_callchain_hotspots")
+    print(
+        "api,direction,bytes,calls,host_api_ms,gpu_memcpy_ms,max_host_api_ms,"
+        "callchain_id,app_frame,frames"
+    )
+    for row in rows:
+        callchain_id = int(row["callchain_id"])
+        host_ns = int(row["host_ns"] or 0)
+        gpu_ns = int(row["gpu_ns"] or 0)
+        print(
+            f"{row['api']},{row['direction']},{int(row['bytes'] or 0)},"
+            f"{int(row['calls'] or 0)},{ms(host_ns):.3f},{ms(gpu_ns):.3f},"
+            f"{ms(row['max_host_ns']):.3f},{callchain_id},"
+            f"{csv_cell(first_application_frame(conn, callchain_id))},"
+            f"{csv_cell(callchain_frames(conn, callchain_id))}"
+        )
+    if not rows:
+        print("none,none,0,0,0.000,0.000,0.000,0,unavailable,unavailable")
+
+
+def print_callchain_hint(conn: sqlite3.Connection) -> None:
+    missing = memcpy_missing_callchain_summary(conn)
+    missing_calls = int(missing["calls"] or 0)
+    missing_host_ns = int(missing["host_ns"] or 0)
+    print()
+    print("cuda_api_backtrace_hint")
+    print("missing_callchain_calls,missing_host_api_ms,recommended_nsys_options")
+    if missing_calls:
+        print(
+            f"{missing_calls},{ms(missing_host_ns):.3f},"
+            "--trace=cuda,nvtx,osrt --sample=process-tree "
+            "--cudabacktrace=memory:80000"
+        )
+    else:
+        print("0,0.000,none")
+
+
 def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     require_tables(conn)
     conn.row_factory = sqlite3.Row
@@ -149,6 +294,8 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print_runtime(runtime_memcpy_summary(conn))
     print_gpu(gpu_memcpy_summary(conn))
     print_correlated(correlated_memcpy_summary(conn, limit))
+    print_callchains(conn, memcpy_callchain_summary(conn, limit))
+    print_callchain_hint(conn)
 
 
 def build_self_test_db() -> sqlite3.Connection:
@@ -170,6 +317,18 @@ def build_self_test_db() -> sqlite3.Connection:
             copyKind integer,
             correlationId integer
         );
+        create table {CALLCHAIN_TABLE} (
+            id integer,
+            symbol text,
+            module text,
+            kernelMode integer,
+            thumbCode integer,
+            unresolved integer,
+            specialEntry integer,
+            originalIP integer,
+            unwindMethod integer,
+            stackDepth integer
+        );
         """
     )
     conn.executemany(
@@ -188,6 +347,13 @@ def build_self_test_db() -> sqlite3.Connection:
             (7_000_000, 8_000_000, 2, 12),
         ],
     )
+    conn.execute(f"alter table {RUNTIME_TABLE} add column callchainId integer")
+    conn.execute(
+        f"update {RUNTIME_TABLE} set callchainId = 100 where correlationId = 10"
+    )
+    conn.execute(
+        f"update {RUNTIME_TABLE} set callchainId = 101 where correlationId = 11"
+    )
     conn.executemany(
         f"""
         insert into {MEMCPY_TABLE} (start, end, bytes, copyKind, correlationId)
@@ -197,6 +363,20 @@ def build_self_test_db() -> sqlite3.Connection:
             (10_000, 10_500, 32, 2, 10),
             (20_000, 20_700, 1152, 2, 11),
             (30_000, 35_000, 4096, 1, 12),
+        ],
+    )
+    conn.executemany(
+        f"""
+        insert into {CALLCHAIN_TABLE}
+            (id, symbol, module, kernelMode, thumbCode, unresolved, specialEntry,
+             originalIP, unwindMethod, stackDepth)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (100, "copy_root_to_host", "lzvm", 0, 0, 0, 0, 0, 0, 0),
+            (100, "commit_stage_root", "lzvm", 0, 0, 0, 0, 0, 0, 1),
+            (101, "extract_opening_rows", "lzvm", 0, 0, 0, 0, 0, 0, 0),
+            (101, "finish_witness_opening", "lzvm", 0, 0, 0, 0, 0, 0, 1),
         ],
     )
     return conn
