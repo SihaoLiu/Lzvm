@@ -532,6 +532,72 @@ theorem
       otherVerified
       differentLeaf
 
+theorem
+  different_leaf_same_arity_two_index_verified_nary_openings_contradict_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root opening otherOpening,
+      NAryMerklePathHasArity 2 opening.layers ->
+        NAryMerklePathHasArity 2 otherOpening.layers ->
+          NAryMerklePathOpeningVerifies compress root opening ->
+            NAryMerklePathOpeningVerifies compress root otherOpening ->
+              NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherOpening.layers ->
+                opening.layers.length = otherOpening.layers.length ->
+                  otherOpening.leaf ≠ opening.leaf ->
+                    False := by
+  intro root opening otherOpening openingArity otherOpeningArity verified
+    otherVerified sameIndex sameDepth differentLeaf
+  have collisionWitness :
+      Nonempty (NAryMerkleCompressionCollision compress) :=
+    different_leaf_same_arity_two_index_verified_nary_openings_imply_merkle_compression_collision
+      root
+      opening
+      otherOpening
+      openingArity
+      otherOpeningArity
+      verified
+      otherVerified
+      sameIndex
+      sameDepth
+      differentLeaf
+  cases collisionWitness with
+  | intro collision =>
+      exact noCollision collision
+
+theorem
+  different_leaf_same_arity_four_index_verified_nary_openings_contradict_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root opening otherOpening,
+      NAryMerklePathHasArity 4 opening.layers ->
+        NAryMerklePathHasArity 4 otherOpening.layers ->
+          NAryMerklePathOpeningVerifies compress root opening ->
+            NAryMerklePathOpeningVerifies compress root otherOpening ->
+              NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherOpening.layers ->
+                opening.layers.length = otherOpening.layers.length ->
+                  otherOpening.leaf ≠ opening.leaf ->
+                    False := by
+  intro root opening otherOpening openingArity otherOpeningArity verified
+    otherVerified sameIndex sameDepth differentLeaf
+  have collisionWitness :
+      Nonempty (NAryMerkleCompressionCollision compress) :=
+    different_leaf_same_arity_four_index_verified_nary_openings_imply_merkle_compression_collision
+      root
+      opening
+      otherOpening
+      openingArity
+      otherOpeningArity
+      verified
+      otherVerified
+      sameIndex
+      sameDepth
+      differentLeaf
+  cases collisionWitness with
+  | intro collision =>
+      exact noCollision collision
+
 theorem concrete_nary_merkle_path_same_position_binding_from_no_collision
     {Digest : Type uDigest}
     {compress : List Digest -> Digest}
