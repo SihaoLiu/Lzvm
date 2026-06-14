@@ -450,11 +450,12 @@ impl RetainedCudaParentCheckpointLevel {
         self.level.opening_path_for_source_row(source_row)
     }
 
-    fn opening_path_siblings_for_source_row(
+    fn opening_path_siblings_batch_for_source_rows(
         &self,
-        source_row: usize,
-    ) -> Result<Vec<Vec<[Felt; HASH_WORDS]>>, crate::merkle_hash::MerkleHashError> {
-        self.level.opening_path_siblings_for_source_row(source_row)
+        source_rows: &[usize],
+    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, crate::merkle_hash::MerkleHashError> {
+        self.level
+            .opening_path_siblings_batch_for_source_rows(source_rows)
     }
 }
 
@@ -1955,30 +1956,38 @@ impl WitnessStageCompactTreeStorage {
         if lower_prefixes.len() != rows.len() {
             return Err(WitnessStageOpeningError::LengthOverflow);
         }
-        let mut openings = Vec::with_capacity(rows.len());
-        for (row, lower_prefix) in rows.iter().copied().zip(lower_prefixes.into_iter()) {
-            let upper_suffix = record_path_parent_hash_duration(
-                timing.as_deref_mut(),
+        let upper_suffixes = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+            || {
+                checkpoint
+                    .opening_path_siblings_batch_for_source_rows(rows)
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context("compact parent checkpoint suffix path", source)
+        })?;
+        if let (Some(timing), Some((row_count, byte_count, launch_count))) =
+            (timing.as_deref_mut(), upper_suffix_parent_work)
+        {
+            timing.record_path_parent_hash_work(
                 PathParentHashTimingKind::RetainedParentCheckpointSuffix,
-                || {
-                    checkpoint
-                        .opening_path_siblings_for_source_row(row)
-                        .map_err(WitnessStageOpeningError::from)
-                },
-            )
-            .map_err(|source| {
-                WitnessStageOpeningError::context("compact parent checkpoint suffix path", source)
-            })?;
-            if let (Some(timing), Some((row_count, byte_count, launch_count))) =
-                (timing.as_deref_mut(), upper_suffix_parent_work)
-            {
-                timing.record_path_parent_hash_work(
-                    PathParentHashTimingKind::RetainedParentCheckpointSuffix,
-                    row_count,
-                    byte_count,
-                    launch_count,
-                );
-            }
+                row_count,
+                byte_count,
+                launch_count,
+            );
+        }
+        if upper_suffixes.len() != rows.len() {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        let mut openings = Vec::with_capacity(rows.len());
+        for ((row, lower_prefix), upper_suffix) in rows
+            .iter()
+            .copied()
+            .zip(lower_prefixes.into_iter())
+            .zip(upper_suffixes.into_iter())
+        {
             let values = self
                 .copy_extended_row_values_from_device(output_buffer, row, timing.as_deref_mut())
                 .map_err(|source| {

@@ -322,6 +322,30 @@ impl CudaDigestLevel {
         self.opening_path_prefix_for_source_row(query_row, level_count)
     }
 
+    pub(crate) fn opening_path_siblings_batch(
+        &self,
+        query_rows: &[usize],
+    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, MerkleHashError> {
+        if query_rows.is_empty() {
+            return Ok(Vec::new());
+        }
+        if query_rows
+            .iter()
+            .any(|query_row| *query_row >= self.state_count)
+        {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let mut level_count = 0usize;
+        let mut state_count = self.state_count;
+        while state_count > 1 {
+            level_count = level_count
+                .checked_add(1)
+                .ok_or(MerkleHashError::LengthOverflow)?;
+            state_count = state_count.div_ceil(self.arity);
+        }
+        self.opening_path_prefix_batch_for_source_rows(query_rows, level_count)
+    }
+
     #[allow(dead_code)]
     pub(crate) fn opening_path_prefix_for_source_row(
         &self,
@@ -523,6 +547,27 @@ impl CudaDigestCheckpointLevel {
         let leaf_span = self.source_leaf_span()?;
         let checkpoint_row = source_row / leaf_span;
         self.level.opening_path_siblings(checkpoint_row)
+    }
+
+    pub(crate) fn opening_path_siblings_batch_for_source_rows(
+        &self,
+        source_rows: &[usize],
+    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, MerkleHashError> {
+        if source_rows.is_empty() {
+            return Ok(Vec::new());
+        }
+        if source_rows
+            .iter()
+            .any(|source_row| *source_row >= self.source_state_count)
+        {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let leaf_span = self.source_leaf_span()?;
+        let checkpoint_rows = source_rows
+            .iter()
+            .map(|source_row| source_row / leaf_span)
+            .collect::<Vec<_>>();
+        self.level.opening_path_siblings_batch(&checkpoint_rows)
     }
 
     fn source_leaf_span(&self) -> Result<usize, MerkleHashError> {
@@ -2047,6 +2092,47 @@ mod tests {
         let mut stitched_path = lower_prefix;
         stitched_path.extend(upper_suffix.siblings);
         assert_eq!(stitched_path, full_path.siblings);
+    }
+
+    #[test]
+    fn cuda_digest_checkpoint_batched_suffix_matches_per_row_suffixes() {
+        let level = (0..70)
+            .map(|index| {
+                digest([
+                    900 + index * 4,
+                    901 + index * 4,
+                    902 + index * 4,
+                    903 + index * 4,
+                ])
+            })
+            .collect::<Vec<_>>();
+        let query_rows = vec![0, 3, 16, 17, 35, 69];
+        let words = digest_words(&level);
+        let buffer = CudaDeviceBuffer::from_u64_words(&words).expect("digests should upload");
+        let digest_level = CudaDigestLevel::new(
+            buffer,
+            level.len(),
+            4,
+            cuda_poseidon2_width16_merkle_digest_root_device,
+        );
+        let checkpoint = digest_level
+            .parent_checkpoint_level(2)
+            .expect("checkpoint level should hash")
+            .expect("checkpoint should fold multiple levels");
+
+        let batched = checkpoint
+            .opening_path_siblings_batch_for_source_rows(&query_rows)
+            .expect("batched checkpoint suffix should hash");
+        let expected = query_rows
+            .iter()
+            .map(|query_row| {
+                checkpoint
+                    .opening_path_siblings_for_source_row(*query_row)
+                    .expect("single checkpoint suffix should hash")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(batched, expected);
     }
 
     #[test]
