@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::Command;
 
 #[test]
 fn cuda_row_major_hashing_copies_validated_bytes_without_host_word_repacking() {
@@ -1747,6 +1748,41 @@ fn improve_log_writer_uses_quoted_csv_rows() {
         script_source.contains("def validate_improve_log")
             && script_source.contains("len(row) != 5"),
         "improve-log writer should validate the schema remains five fields per row"
+    );
+}
+
+#[test]
+fn improve_log_check_rejects_unquoted_summary_field() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/append-improve-log.py");
+    let log_path = crate_root.join(format!(
+        "../../temp/improve-log-unquoted-summary-check-{}.csv",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+    std::fs::write(
+        &log_path,
+        "timestamp,commit,small_proof_time_s,large_proof_time_s,summary\n\
+2026-06-09T00:10:13-0700,badrow,,,Unquoted summary without commas\n",
+    )
+    .expect("temporary improve log should write");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--check")
+        .output()
+        .expect("improve-log writer check should run");
+    let _ = std::fs::remove_file(&log_path);
+
+    assert!(
+        !output.status.success(),
+        "improve-log check should reject an unquoted summary field"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("summary field must be double-quoted"),
+        "improve-log check should report the unquoted summary field"
     );
 }
 

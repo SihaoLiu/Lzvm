@@ -25,22 +25,55 @@ def timestamp_now() -> str:
     return datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
 
 
+def raw_csv_fields(record: str) -> list[str]:
+    fields: list[str] = []
+    start = 0
+    in_quotes = False
+    index = 0
+    while index < len(record):
+        char = record[index]
+        if char == '"':
+            if in_quotes and index + 1 < len(record) and record[index + 1] == '"':
+                index += 2
+                continue
+            in_quotes = not in_quotes
+        elif char == "," and not in_quotes:
+            fields.append(record[start:index])
+            start = index + 1
+        index += 1
+    fields.append(record[start:])
+    return fields
+
+
+def summary_field_is_double_quoted(record: str) -> bool:
+    raw_fields = raw_csv_fields(record)
+    if len(raw_fields) != len(HEADER):
+        return False
+    summary = raw_fields[-1]
+    return len(summary) >= 2 and summary[0] == '"' and summary[-1] == '"'
+
+
 def validate_improve_log(path: Path) -> None:
     if not path.exists():
         return
     with path.open(newline="") as source:
-        reader = csv.reader(source)
-        try:
-            header = next(reader)
-        except StopIteration as error:
-            raise SystemExit(f"{path}: empty improve log") from error
+        lines = source.readlines()
+        if not lines:
+            raise SystemExit(f"{path}: empty improve log")
+        header = next(csv.reader([lines[0]]))
         if header != HEADER:
             raise SystemExit(f"{path}: unexpected header: {header!r}")
-        for index, row in enumerate(reader, start=2):
+        for index, line in enumerate(lines[1:], start=2):
+            record = line.rstrip("\n")
+            if record.endswith("\r"):
+                record = record[:-1]
+            row = next(csv.reader([record]))
             if len(row) != 5:
                 raise SystemExit(
                     f"{path}:{index}: expected 5 CSV fields, found {len(row)}"
                 )
+            if not summary_field_is_double_quoted(record):
+                raise SystemExit(f"{path}:{index}: summary field must be double-quoted")
 
 
 def append_row(
