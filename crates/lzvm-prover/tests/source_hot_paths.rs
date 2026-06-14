@@ -1569,8 +1569,10 @@ fn guest_pc_trace_segments_have_device_trace_builder_ingress() {
         "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
         "fn merge_backend_unit_values",
     );
+    let driver_method_body = function_body(&execution_source, "fn commit_segment(", "fn finish(");
     assert!(
-        segment_body.contains("commit_guest_pc_trace_segment_output"),
+        segment_body.contains("commit_driver.commit_segment(segment_output)")
+            && driver_method_body.contains("commit_guest_pc_trace_segment_output"),
         "segmented guest PC commitments should route segment work through the shared helper"
     );
     let helper_body = function_body(
@@ -2092,12 +2094,20 @@ fn guest_pc_segment_commitments_reuse_leaf_workspace_cache_across_segments() {
         scratch_body.contains("leaf_workspace_cache: WitnessStageLeafWorkspaceCache"),
         "guest-PC segment scratch should own the per-worker leaf workspace cache"
     );
+    let driver_body = function_body(
+        &execution_source,
+        "struct GuestPcTraceSegmentCommitDriver",
+        "struct GuestPcTraceSegmentCommitDriverOutput",
+    );
+    let driver_impl_body = function_body(
+        &execution_source,
+        "impl<'a, 'b> GuestPcTraceSegmentCommitDriver",
+        "struct GuestPcTraceSegmentCommitRequest",
+    );
     assert!(
-        execution_source
-            .matches("let mut commit_scratch = GuestPcTraceSegmentCommitScratch::new();")
-            .count()
-            >= 2,
-        "guest-PC streaming paths should create commit scratch outside segment callbacks"
+        driver_body.contains("scratch: GuestPcTraceSegmentCommitScratch")
+            && driver_impl_body.contains("scratch: GuestPcTraceSegmentCommitScratch::new()"),
+        "guest-PC streaming paths should create driver-owned commit scratch outside segment callbacks"
     );
     let segment_helper_body = function_body(
         &execution_source,
@@ -2264,8 +2274,10 @@ fn witness_execution_prefers_guest_pc_device_material_before_host_trace_source()
         "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
         "fn merge_backend_unit_values",
     );
+    let driver_method_body = function_body(&execution_source, "fn commit_segment(", "fn finish(");
     assert!(
-        segment_body.contains("commit_guest_pc_trace_segment_output"),
+        segment_body.contains("commit_driver.commit_segment(segment_output)")
+            && driver_method_body.contains("commit_guest_pc_trace_segment_output"),
         "segmented guest PC commitment path should use the shared segment helper"
     );
     let segment_helper_body = function_body(
@@ -2805,13 +2817,21 @@ fn guest_pc_trace_segment_commit_has_single_helper() {
         "fn commit_guest_pc_trace_segment_output",
         "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
     );
+    let driver_method_body = function_body(&source, "fn commit_segment(", "fn finish(");
 
     assert_eq!(
-        run_body
+        driver_method_body
             .matches("commit_guest_pc_trace_segment_output(")
             .count(),
-        2,
-        "both guest PC trace paths should use the same segment commitment helper"
+        1,
+        "guest PC trace driver should use one segment commitment helper"
+    );
+    assert!(
+        run_body
+            .matches("commit_driver.commit_segment(segment_output)")
+            .count()
+            >= 2,
+        "both guest PC trace paths should dispatch through the segment commit driver"
     );
     assert!(
         !run_body.contains("run_prove_witness_commitments_from_trace_inner("),
@@ -2861,15 +2881,78 @@ fn guest_pc_trace_segment_commit_uses_worker_local_scratch() {
         "segment commit requests should not expose individual mutable caches"
     );
 
+    let driver_body = function_body(
+        &source,
+        "struct GuestPcTraceSegmentCommitDriver",
+        "struct GuestPcTraceSegmentCommitDriverOutput",
+    );
+    let commit_segment_body = function_body(&source, "fn commit_segment(", "fn finish(");
+    assert!(
+        driver_body.contains("scratch: GuestPcTraceSegmentCommitScratch")
+            && commit_segment_body.contains("scratch: &mut self.scratch"),
+        "sequential guest PC segment paths should reuse one scratch bundle through the driver until workers split it"
+    );
+
     let segment_body = function_body(
         &source,
         "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
         "fn merge_backend_unit_values",
     );
     assert!(
-        segment_body.contains("let mut commit_scratch = GuestPcTraceSegmentCommitScratch::new()")
-            && segment_body.matches("scratch: &mut commit_scratch").count() >= 2,
-        "sequential guest PC segment paths should reuse one scratch bundle until workers split it"
+        segment_body
+            .matches("GuestPcTraceSegmentCommitDriver::new")
+            .count()
+            >= 2,
+        "sequential guest PC segment paths should create driver-owned scratch outside callbacks"
+    );
+}
+
+#[test]
+fn guest_pc_trace_segment_commit_uses_single_driver_entrypoint() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_execution.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("witness execution source should read");
+
+    let driver_body = function_body(
+        &source,
+        "struct GuestPcTraceSegmentCommitDriver",
+        "struct GuestPcTraceSegmentCommitDriverOutput",
+    );
+    assert!(
+        driver_body.contains("scratch: GuestPcTraceSegmentCommitScratch")
+            && driver_body.contains("outputs: Vec<ProveWitnessTraceCommitments>")
+            && driver_body.contains("source_lookup_balance: Option<&'b mut SourceLookupBalance>"),
+        "guest PC segment commit driver should own per-worker scratch, output ordering, and source lookup balance state"
+    );
+
+    let commit_segment_body = function_body(&source, "fn commit_segment(", "fn finish(");
+    assert!(
+        commit_segment_body.contains("commit_guest_pc_trace_segment_output")
+            && commit_segment_body.contains("self.outputs.push(output.without_trace())")
+            && commit_segment_body.contains("self.scratch"),
+        "driver commit entrypoint should centralize segment commitment, scratch use, and ordered output collection"
+    );
+
+    let run_body = function_body(
+        &source,
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
+        "fn merge_backend_unit_values",
+    );
+    assert!(
+        run_body
+            .matches("GuestPcTraceSegmentCommitDriver::new")
+            .count()
+            >= 2
+            && run_body
+                .matches("commit_driver.commit_segment(segment_output)")
+                .count()
+                >= 2,
+        "both guest PC segment streaming paths should dispatch through the segment commit driver"
+    );
+    assert!(
+        !run_body.contains("outputs.push(output.without_trace())"),
+        "streaming callbacks should not inline segment output collection outside the driver"
     );
 }
 
@@ -5277,12 +5360,19 @@ fn guest_pc_trace_segments_reuse_fixed_columns_across_segments() {
         "fn merge_backend_unit_values",
     );
     assert!(
-        segment_body.contains("let mut commit_scratch = GuestPcTraceSegmentCommitScratch::new()"),
-        "guest PC trace segment commitments should keep one scratch cached across segments"
+        segment_body.matches("GuestPcTraceSegmentCommitDriver::new").count() >= 2,
+        "guest PC trace segment commitments should keep one driver-owned scratch cached across segments"
     );
+    let driver_body = function_body(
+        &source,
+        "struct GuestPcTraceSegmentCommitDriver",
+        "struct GuestPcTraceSegmentCommitDriverOutput",
+    );
+    let driver_method_body = function_body(&source, "fn commit_segment(", "fn finish(");
     assert!(
-        segment_body.contains("scratch: &mut commit_scratch"),
-        "each segment should borrow the shared scratch instead of reloading fixed columns"
+        driver_body.contains("scratch: GuestPcTraceSegmentCommitScratch")
+            && driver_method_body.contains("scratch: &mut self.scratch"),
+        "each segment should borrow the driver scratch instead of reloading fixed columns"
     );
     let helper_body = function_body(
         &source,
@@ -5322,29 +5412,25 @@ fn guest_pc_trace_segments_use_mergeable_source_lookup_balances() {
         "source lookup balances should expose a consuming merge API"
     );
 
-    let segment_body = function_body(
-        &execution_source,
-        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
-        "fn merge_backend_unit_values",
-    );
+    let driver_method_body = function_body(&execution_source, "fn commit_segment(", "fn finish(");
     assert!(
-        segment_body
+        driver_method_body
             .matches("let mut segment_source_lookup_balance = SourceLookupBalance::default()")
             .count()
-            >= 2,
-        "both guest PC segment commitment paths should accumulate source lookup hints locally"
+            == 1,
+        "guest PC segment commit driver should accumulate source lookup hints locally"
     );
     assert!(
-        segment_body.contains(
+        driver_method_body.contains(
             "WitnessRegularHintMode::Balanced(&mut segment_source_lookup_balance)"
         ),
         "guest PC segment commitments should pass local source lookup balances into hint evaluation"
     );
     assert!(
-        segment_body
+        driver_method_body
             .matches("balance.merge(segment_source_lookup_balance)")
             .count()
-            >= 2,
+            == 1,
         "guest PC segment commitments should merge local source lookup balances after successful commit"
     );
 }

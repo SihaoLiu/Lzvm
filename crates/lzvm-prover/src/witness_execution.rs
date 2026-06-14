@@ -3299,6 +3299,91 @@ impl GuestPcTraceSegmentCommitScratch {
     }
 }
 
+struct GuestPcTraceSegmentCommitDriver<'a, 'b> {
+    context: GuestPcTraceSegmentCommitContext<'a>,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    source_lookup_balance: Option<&'b mut SourceLookupBalance>,
+    collect_timing: bool,
+    outputs: Vec<ProveWitnessTraceCommitments>,
+    guest_segment_commit_duration: Duration,
+    trace_timing: ProveWitnessTraceTimingAccumulator,
+    segment_count: usize,
+    scratch: GuestPcTraceSegmentCommitScratch,
+}
+
+struct GuestPcTraceSegmentCommitDriverOutput {
+    outputs: Vec<ProveWitnessTraceCommitments>,
+    guest_segment_commit_duration: Duration,
+    trace_timing: ProveWitnessTraceTimingAccumulator,
+    segment_count: usize,
+}
+
+impl<'a, 'b> GuestPcTraceSegmentCommitDriver<'a, 'b> {
+    fn new(
+        context: GuestPcTraceSegmentCommitContext<'a>,
+        auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+        source_lookup_balance: Option<&'b mut SourceLookupBalance>,
+        collect_timing: bool,
+    ) -> Self {
+        Self {
+            context,
+            auxiliary_inputs,
+            source_lookup_balance,
+            collect_timing,
+            outputs: Vec::new(),
+            guest_segment_commit_duration: Duration::ZERO,
+            trace_timing: ProveWitnessTraceTimingAccumulator::default(),
+            segment_count: 0,
+            scratch: GuestPcTraceSegmentCommitScratch::new(),
+        }
+    }
+
+    fn commit_segment(
+        &mut self,
+        segment_output: GuestPcTraceSegmentRunOutput,
+    ) -> Result<(), ProveWitnessCommitmentError> {
+        let guest_segment_commit_started = self.collect_timing.then(Instant::now);
+        let mut segment_trace_timing = self
+            .collect_timing
+            .then(ProveWitnessTraceTimingAccumulator::default);
+        let mut segment_source_lookup_balance = SourceLookupBalance::default();
+        let regular_hint_mode = if self.source_lookup_balance.is_some() {
+            WitnessRegularHintMode::Balanced(&mut segment_source_lookup_balance)
+        } else {
+            WitnessRegularHintMode::AssignmentsOnly
+        };
+        let output = commit_guest_pc_trace_segment_output(GuestPcTraceSegmentCommitRequest {
+            context: self.context,
+            auxiliary_inputs: Arc::clone(&self.auxiliary_inputs),
+            segment_output,
+            regular_hint_mode,
+            scratch: &mut self.scratch,
+            timing: segment_trace_timing.as_mut(),
+        })?;
+        if let Some(balance) = self.source_lookup_balance.as_deref_mut() {
+            balance.merge(segment_source_lookup_balance);
+        }
+        if let Some(segment_trace_timing) = segment_trace_timing {
+            self.trace_timing.accumulate(segment_trace_timing);
+        }
+        self.outputs.push(output.without_trace());
+        if let Some(started) = guest_segment_commit_started {
+            self.guest_segment_commit_duration += started.elapsed();
+            self.segment_count += 1;
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> GuestPcTraceSegmentCommitDriverOutput {
+        GuestPcTraceSegmentCommitDriverOutput {
+            outputs: self.outputs,
+            guest_segment_commit_duration: self.guest_segment_commit_duration,
+            trace_timing: self.trace_timing,
+            segment_count: self.segment_count,
+        }
+    }
+}
+
 struct GuestPcTraceSegmentCommitRequest<'a, 'b> {
     context: GuestPcTraceSegmentCommitContext<'a>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
@@ -3439,50 +3524,19 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             &execution_unit.regular_hints,
         )
     {
-        let mut outputs = Vec::new();
-        let mut source_lookup_balance = source_lookup_balance;
         let collect_timing = timing_observer.is_some();
-        let mut guest_segment_commit_duration = Duration::ZERO;
-        let mut trace_timing = ProveWitnessTraceTimingAccumulator::default();
-        let mut segment_count = 0_usize;
-        let mut commit_scratch = GuestPcTraceSegmentCommitScratch::new();
+        let mut commit_driver = GuestPcTraceSegmentCommitDriver::new(
+            segment_commit_context,
+            auxiliary_inputs,
+            source_lookup_balance,
+            collect_timing,
+        );
         let guest_trace_stream_started = collect_timing.then(Instant::now);
         let stream_result = for_each_guest_pc_trace_segment_collecting_proof_values_with_context(
             &backend,
             context,
             layout.request(&shared_inputs.input[..]),
-            |segment_output| {
-                let guest_segment_commit_started = collect_timing.then(Instant::now);
-                let mut segment_trace_timing =
-                    collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
-                let mut segment_source_lookup_balance = SourceLookupBalance::default();
-                let regular_hint_mode = if source_lookup_balance.is_some() {
-                    WitnessRegularHintMode::Balanced(&mut segment_source_lookup_balance)
-                } else {
-                    WitnessRegularHintMode::AssignmentsOnly
-                };
-                let output =
-                    commit_guest_pc_trace_segment_output(GuestPcTraceSegmentCommitRequest {
-                        context: segment_commit_context,
-                        auxiliary_inputs: Arc::clone(&auxiliary_inputs),
-                        segment_output,
-                        regular_hint_mode,
-                        scratch: &mut commit_scratch,
-                        timing: segment_trace_timing.as_mut(),
-                    })?;
-                if let Some(balance) = source_lookup_balance.as_deref_mut() {
-                    balance.merge(segment_source_lookup_balance);
-                }
-                if let Some(segment_trace_timing) = segment_trace_timing {
-                    trace_timing.accumulate(segment_trace_timing);
-                }
-                outputs.push(output.without_trace());
-                if let Some(started) = guest_segment_commit_started {
-                    guest_segment_commit_duration += started.elapsed();
-                    segment_count += 1;
-                }
-                Ok(())
-            },
+            |segment_output| commit_driver.commit_segment(segment_output),
         )
         .map_err(|error| match error {
             GuestPcTraceSegmentStreamError::Trace(error) => {
@@ -3490,22 +3544,24 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             }
             GuestPcTraceSegmentStreamError::Emit(error) => error,
         })?;
+        let commit_output = commit_driver.finish();
         let proof_values = stream_result.proof_values;
         if let Some(started) = guest_trace_stream_started {
             let guest_trace_stream_elapsed_duration = started.elapsed();
-            let guest_trace_stream_duration =
-                guest_trace_stream_elapsed_duration.saturating_sub(guest_segment_commit_duration);
+            let guest_trace_stream_duration = guest_trace_stream_elapsed_duration
+                .saturating_sub(commit_output.guest_segment_commit_duration);
             if let Some(observer) = timing_observer.as_deref_mut() {
                 observer(ProveWitnessGuestPcTraceTiming::new(
-                    segment_count,
+                    commit_output.segment_count,
                     guest_trace_stream_elapsed_duration,
                     guest_trace_stream_duration,
-                    guest_segment_commit_duration,
+                    commit_output.guest_segment_commit_duration,
                     stream_result.timing,
-                    trace_timing,
+                    commit_output.trace_timing,
                 ));
             }
         }
+        let mut outputs = commit_output.outputs;
         for output in &mut outputs {
             output.auxiliary_inputs = merge_backend_proof_values(
                 unit_index,
@@ -3527,71 +3583,42 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         auxiliary_inputs,
         &proof_values,
     )?;
-    let mut outputs = Vec::new();
-    let mut source_lookup_balance = source_lookup_balance;
     let collect_timing = timing_observer.is_some();
-    let mut guest_segment_commit_duration = Duration::ZERO;
-    let mut trace_timing = ProveWitnessTraceTimingAccumulator::default();
-    let mut segment_count = 0_usize;
-    let mut commit_scratch = GuestPcTraceSegmentCommitScratch::new();
+    let mut commit_driver = GuestPcTraceSegmentCommitDriver::new(
+        segment_commit_context,
+        auxiliary_inputs,
+        source_lookup_balance,
+        collect_timing,
+    );
     let guest_trace_stream_started = collect_timing.then(Instant::now);
     let stream_timing = for_each_guest_pc_trace_segment_with_context(
         &backend,
         context,
         layout.request(&shared_inputs.input[..]),
         &proof_values,
-        |segment_output| {
-            let guest_segment_commit_started = collect_timing.then(Instant::now);
-            let mut segment_trace_timing =
-                collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
-            let mut segment_source_lookup_balance = SourceLookupBalance::default();
-            let regular_hint_mode = if source_lookup_balance.is_some() {
-                WitnessRegularHintMode::Balanced(&mut segment_source_lookup_balance)
-            } else {
-                WitnessRegularHintMode::AssignmentsOnly
-            };
-            let output = commit_guest_pc_trace_segment_output(GuestPcTraceSegmentCommitRequest {
-                context: segment_commit_context,
-                auxiliary_inputs: Arc::clone(&auxiliary_inputs),
-                segment_output,
-                regular_hint_mode,
-                scratch: &mut commit_scratch,
-                timing: segment_trace_timing.as_mut(),
-            })?;
-            if let Some(balance) = source_lookup_balance.as_deref_mut() {
-                balance.merge(segment_source_lookup_balance);
-            }
-            if let Some(segment_trace_timing) = segment_trace_timing {
-                trace_timing.accumulate(segment_trace_timing);
-            }
-            outputs.push(output.without_trace());
-            if let Some(started) = guest_segment_commit_started {
-                guest_segment_commit_duration += started.elapsed();
-                segment_count += 1;
-            }
-            Ok(())
-        },
+        |segment_output| commit_driver.commit_segment(segment_output),
     )
     .map_err(|error| match error {
         GuestPcTraceSegmentStreamError::Trace(error) => ProveWitnessCommitmentError::from(error),
         GuestPcTraceSegmentStreamError::Emit(error) => error,
     })?;
+    let commit_output = commit_driver.finish();
     if let Some(started) = guest_trace_stream_started {
         let guest_trace_stream_elapsed_duration = started.elapsed();
-        let guest_trace_stream_duration =
-            guest_trace_stream_elapsed_duration.saturating_sub(guest_segment_commit_duration);
+        let guest_trace_stream_duration = guest_trace_stream_elapsed_duration
+            .saturating_sub(commit_output.guest_segment_commit_duration);
         if let Some(observer) = timing_observer {
             observer(ProveWitnessGuestPcTraceTiming::new(
-                segment_count,
+                commit_output.segment_count,
                 guest_trace_stream_elapsed_duration,
                 guest_trace_stream_duration,
-                guest_segment_commit_duration,
+                commit_output.guest_segment_commit_duration,
                 stream_timing,
-                trace_timing,
+                commit_output.trace_timing,
             ));
         }
     }
-    Ok(outputs)
+    Ok(commit_output.outputs)
 }
 
 fn merge_backend_unit_values(
