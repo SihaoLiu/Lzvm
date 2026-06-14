@@ -2905,7 +2905,7 @@ fn guest_pc_trace_segment_commit_uses_worker_local_scratch() {
     );
     let commit_segment_body = function_body(
         &source,
-        "impl<'a, 'b> GuestPcTraceSegmentCommitDriver",
+        "impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver",
         "fn collect_committed_segment_result(",
     );
     assert!(
@@ -2942,7 +2942,7 @@ fn guest_pc_trace_segment_commit_uses_single_driver_entrypoint() {
         "struct GuestPcTraceSegmentCommitDriverOutput",
     );
     assert!(
-        driver_body.contains("worker_pool: GuestPcTraceSegmentCommitWorkerPool")
+        driver_body.contains("worker_pool: GuestPcTraceSegmentCommitWorkerPool<'scope, 'env>")
             && driver_body
                 .contains("output_collector: GuestPcTraceSegmentCommitOutputCollector")
             && driver_body.contains("source_lookup_balance: Option<&'b mut SourceLookupBalance>"),
@@ -3027,7 +3027,7 @@ fn guest_pc_trace_segment_commit_splits_work_result_collection() {
 
     let driver_commit_body = function_body(
         &source,
-        "impl<'a, 'b> GuestPcTraceSegmentCommitDriver",
+        "impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver",
         "fn collect_committed_segment_result(",
     );
     assert!(
@@ -3084,7 +3084,8 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
     );
     assert!(
         pool_body.contains("worker_state: GuestPcTraceSegmentCommitWorkerState")
-            && pool_body.contains("fn new() -> Self")
+            && pool_body.contains("fn new(scope:")
+            && pool_body.contains("worker_count: guest_pc_trace_segment_commit_worker_count()")
             && pool_body.contains("fn submit_segment(")
             && pool_body.contains("fn finish(")
             && pool_body.contains("self.worker_state.commit_segment("),
@@ -3097,7 +3098,7 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
         "struct GuestPcTraceSegmentCommitDriverOutput",
     );
     assert!(
-        driver_body.contains("worker_pool: GuestPcTraceSegmentCommitWorkerPool")
+        driver_body.contains("worker_pool: GuestPcTraceSegmentCommitWorkerPool<'scope, 'env>")
             && !driver_body.contains("worker_state: GuestPcTraceSegmentCommitWorkerState")
             && !driver_body.contains("scratch: GuestPcTraceSegmentCommitScratch"),
         "driver should own a worker pool instead of borrowing scratch or worker state directly"
@@ -3105,7 +3106,7 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
 
     let driver_commit_body = function_body(
         &source,
-        "impl<'a, 'b> GuestPcTraceSegmentCommitDriver",
+        "impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver",
         "fn collect_committed_segment_result(",
     );
     assert!(
@@ -3116,7 +3117,7 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
 
     let driver_impl_body = function_body(
         &source,
-        "impl<'a, 'b> GuestPcTraceSegmentCommitDriver",
+        "impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver",
         "fn commit_guest_pc_trace_segment_with_scratch(",
     );
     assert!(
@@ -3124,6 +3125,76 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
             && driver_impl_body.contains("for result in pending_results")
             && driver_impl_body.contains("self.collect_committed_segment_result(result)?"),
         "driver finish should drain pending pool results before returning ordered commitments"
+    );
+}
+
+#[test]
+fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_execution.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("witness execution source should read");
+
+    assert!(
+        source.contains("VecDeque") && source.contains("use std::thread;"),
+        "segment commit worker pool should have queue and scoped-thread support"
+    );
+    assert!(
+        source.contains("fn guest_pc_trace_segment_commit_worker_count()")
+            && source.contains("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS")
+            && source.contains(".filter(|count| *count > 0)")
+            && source.contains(".unwrap_or(1)"),
+        "segment commit worker count should be an explicit nonzero env-controlled knob"
+    );
+
+    let pool_region = function_body(
+        &source,
+        "type GuestPcTraceSegmentCommitWorkerHandle",
+        "struct GuestPcTraceSegmentCommitDriver",
+    );
+    assert!(
+        pool_region.contains("thread::Scope")
+            && pool_region.contains("thread::ScopedJoinHandle")
+            && pool_region.contains("pending_workers: VecDeque")
+            && pool_region.contains("worker_count: usize"),
+        "worker pool should own scoped pending segment commit workers with a bounded in-flight count"
+    );
+    assert!(
+        pool_region.contains("while self.pending_workers.len() >= self.worker_count")
+            && pool_region.contains("join_guest_pc_trace_segment_commit_worker")
+            && pool_region.contains("self.scope.spawn(move ||")
+            && pool_region.contains("GuestPcTraceSegmentCommitWorkerState::new()"),
+        "submit_segment should join the oldest saturated worker and spawn segment work on the scope"
+    );
+    assert!(
+        pool_region.contains("while let Some(handle) = self.pending_workers.pop_front()")
+            && pool_region
+                .contains("ready_results.push(join_guest_pc_trace_segment_commit_worker(handle)?)"),
+        "pool finish should drain every pending scoped worker result"
+    );
+
+    let driver_body = function_body(
+        &source,
+        "struct GuestPcTraceSegmentCommitDriver",
+        "struct GuestPcTraceSegmentCommitDriverOutput",
+    );
+    assert!(
+        driver_body.contains("GuestPcTraceSegmentCommitWorkerPool<'scope, 'env>"),
+        "driver should carry the scoped worker pool lifetime instead of a static thread pool"
+    );
+
+    let run_body = function_body(
+        &source,
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
+        "fn merge_backend_unit_values",
+    );
+    assert!(
+        run_body.matches("thread::scope(|scope|").count() >= 2
+            && run_body
+                .matches("GuestPcTraceSegmentCommitDriver::new(")
+                .count()
+                >= 2,
+        "both streaming guest PC segment paths should create the commit driver inside a thread scope"
     );
 }
 
