@@ -5258,6 +5258,48 @@ fn guest_pc_trace_segments_reuse_fixed_columns_across_segments() {
 }
 
 #[test]
+fn guest_pc_trace_segments_use_mergeable_source_lookup_balances() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let source_lookup_path = crate_root.join("src/source_lookup_hints.rs");
+    let source_lookup_source = std::fs::read_to_string(&source_lookup_path)
+        .expect("source lookup hint source should read");
+
+    assert!(
+        source_lookup_source.contains("pub(crate) fn merge(&mut self, other: Self)"),
+        "source lookup balances should expose a consuming merge API"
+    );
+
+    let segment_body = function_body(
+        &execution_source,
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
+        "fn merge_backend_unit_values",
+    );
+    assert!(
+        segment_body
+            .matches("let mut segment_source_lookup_balance = SourceLookupBalance::default()")
+            .count()
+            >= 2,
+        "both guest PC segment commitment paths should accumulate source lookup hints locally"
+    );
+    assert!(
+        segment_body.contains(
+            "WitnessRegularHintMode::Balanced(&mut segment_source_lookup_balance)"
+        ),
+        "guest PC segment commitments should pass local source lookup balances into hint evaluation"
+    );
+    assert!(
+        segment_body
+            .matches("balance.merge(segment_source_lookup_balance)")
+            .count()
+            >= 2,
+        "guest PC segment commitments should merge local source lookup balances after successful commit"
+    );
+}
+
+#[test]
 fn all_units_witness_reuses_shared_inputs_and_borrows_trace_bundle_bytes() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");

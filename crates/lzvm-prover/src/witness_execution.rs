@@ -3412,9 +3412,11 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 let guest_segment_commit_started = collect_timing.then(Instant::now);
                 let mut segment_trace_timing =
                     collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
-                let regular_hint_mode = match source_lookup_balance.as_deref_mut() {
-                    Some(balance) => WitnessRegularHintMode::Balanced(balance),
-                    None => WitnessRegularHintMode::AssignmentsOnly,
+                let mut segment_source_lookup_balance = SourceLookupBalance::default();
+                let regular_hint_mode = if source_lookup_balance.is_some() {
+                    WitnessRegularHintMode::Balanced(&mut segment_source_lookup_balance)
+                } else {
+                    WitnessRegularHintMode::AssignmentsOnly
                 };
                 let output =
                     commit_guest_pc_trace_segment_output(GuestPcTraceSegmentCommitRequest {
@@ -3429,6 +3431,9 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                         leaf_workspace_cache: Some(&mut leaf_workspace_cache),
                         timing: segment_trace_timing.as_mut(),
                     })?;
+                if let Some(balance) = source_lookup_balance.as_deref_mut() {
+                    balance.merge(segment_source_lookup_balance);
+                }
                 if let Some(segment_trace_timing) = segment_trace_timing {
                     trace_timing.accumulate(segment_trace_timing);
                 }
@@ -3504,9 +3509,11 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             let guest_segment_commit_started = collect_timing.then(Instant::now);
             let mut segment_trace_timing =
                 collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
-            let regular_hint_mode = match source_lookup_balance.as_deref_mut() {
-                Some(balance) => WitnessRegularHintMode::Balanced(balance),
-                None => WitnessRegularHintMode::AssignmentsOnly,
+            let mut segment_source_lookup_balance = SourceLookupBalance::default();
+            let regular_hint_mode = if source_lookup_balance.is_some() {
+                WitnessRegularHintMode::Balanced(&mut segment_source_lookup_balance)
+            } else {
+                WitnessRegularHintMode::AssignmentsOnly
             };
             let output = commit_guest_pc_trace_segment_output(GuestPcTraceSegmentCommitRequest {
                 context: segment_commit_context,
@@ -3520,6 +3527,9 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 leaf_workspace_cache: Some(&mut leaf_workspace_cache),
                 timing: segment_trace_timing.as_mut(),
             })?;
+            if let Some(balance) = source_lookup_balance.as_deref_mut() {
+                balance.merge(segment_source_lookup_balance);
+            }
             if let Some(segment_trace_timing) = segment_trace_timing {
                 trace_timing.accumulate(segment_trace_timing);
             }

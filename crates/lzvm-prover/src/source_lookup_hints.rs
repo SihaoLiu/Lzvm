@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{btree_map::Entry, BTreeMap};
 use std::fmt;
 
 use lzvm_artifacts::hint_program::{
@@ -35,6 +35,26 @@ enum SourceLookupPayload {
 }
 
 impl SourceLookupBalance {
+    pub(crate) fn merge(&mut self, other: Self) {
+        for (key, balance) in other.entries {
+            match self.entries.entry(key) {
+                Entry::Occupied(mut entry) => {
+                    let merged = *entry.get() + balance;
+                    if merged == Felt::ZERO {
+                        entry.remove_entry();
+                    } else {
+                        *entry.get_mut() = merged;
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    if balance != Felt::ZERO {
+                        entry.insert(balance);
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) fn absorb(
         &mut self,
         unit_index: usize,
@@ -553,6 +573,86 @@ mod tests {
             .expect_err("non-dynamic hints should require exact balance");
 
         assert!(error.to_string().contains("unbalanced lookup bus 5000"));
+    }
+
+    #[test]
+    fn merged_balances_preserve_cross_segment_cancellation() {
+        let mut proves = SourceLookupBalance::default();
+        proves
+            .absorb(
+                0,
+                0,
+                &[lookup_hint(
+                    SOURCE_LOOKUP_PROVES_HINT,
+                    &[48, 0, 0],
+                    "multiplicity",
+                    2,
+                    None,
+                )],
+            )
+            .expect("proves hint should absorb");
+        let mut assumes = SourceLookupBalance::default();
+        assumes
+            .absorb(
+                0,
+                1,
+                &[lookup_hint(
+                    SOURCE_LOOKUP_ASSUMES_HINT,
+                    &[48, 0, 0],
+                    "multiplicity",
+                    2,
+                    None,
+                )],
+            )
+            .expect("assumes hint should absorb");
+
+        let mut merged = SourceLookupBalance::default();
+        merged.merge(proves);
+        merged.merge(assumes);
+
+        merged
+            .validate_all_units()
+            .expect("merged segment balances should cancel");
+    }
+
+    #[test]
+    fn merged_balances_preserve_unbalanced_diagnostics() {
+        let mut left = SourceLookupBalance::default();
+        left.absorb(
+            0,
+            0,
+            &[lookup_hint(
+                SOURCE_LOOKUP_PROVES_HINT,
+                &[48, 0, 0],
+                "multiplicity",
+                2,
+                None,
+            )],
+        )
+        .expect("left hint should absorb");
+        let mut right = SourceLookupBalance::default();
+        right
+            .absorb(
+                0,
+                1,
+                &[lookup_hint(
+                    SOURCE_LOOKUP_PROVES_HINT,
+                    &[48, 0, 0],
+                    "multiplicity",
+                    3,
+                    None,
+                )],
+            )
+            .expect("right hint should absorb");
+
+        let mut merged = SourceLookupBalance::default();
+        merged.merge(left);
+        merged.merge(right);
+        let error = merged
+            .validate_all_units()
+            .expect_err("same-key merged proves should remain unbalanced");
+
+        assert!(error.to_string().contains("has net weight 5"));
     }
 
     #[test]
