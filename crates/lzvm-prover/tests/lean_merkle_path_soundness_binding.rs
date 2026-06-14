@@ -69,8 +69,12 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "different_leaf_same_index_verified_openings_imply_merkle_compression_collision",
             "different_leaf_same_position_verified_paths_imply_merkle_compression_collision",
             "different_leaf_same_position_verified_openings_imply_merkle_compression_collision",
+            "different_leaf_same_position_verified_paths_contradict_no_collision",
+            "different_leaf_same_position_verified_openings_contradict_no_collision",
             "different_leaf_same_position_verified_nary_paths_imply_merkle_compression_collision",
             "different_leaf_same_position_verified_nary_openings_imply_merkle_compression_collision",
+            "different_leaf_same_position_verified_nary_paths_contradict_no_collision",
+            "different_leaf_same_position_verified_nary_openings_contradict_no_collision",
             "different_leaf_same_arity_two_index_verified_nary_paths_imply_merkle_compression_collision",
             "different_leaf_same_arity_two_index_verified_nary_openings_imply_merkle_compression_collision",
             "different_leaf_same_arity_four_index_verified_nary_paths_imply_merkle_compression_collision",
@@ -172,6 +176,27 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "different_leaf_same_position_verified_openings_contradict_no_collision",
+        &[
+            "MerkleCompressionNoCollision compress",
+            "MerklePathOpeningVerifies compress root opening",
+            "MerklePathOpeningVerifies compress root otherOpening",
+            "MerklePathIndex opening.layers = MerklePathIndex otherOpening.layers",
+            "opening.layers.length = otherOpening.layers.length",
+            "otherOpening.leaf ≠ opening.leaf",
+            "False",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "different_leaf_same_position_verified_openings_contradict_no_collision",
+        &[
+            "different_leaf_same_position_verified_openings_imply_merkle_compression_collision",
+            "noCollision collision",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "different_leaf_same_position_verified_nary_openings_imply_merkle_compression_collision",
         &[
             "NAryMerklePathOpeningVerifies compress root opening",
@@ -185,6 +210,26 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
         &lean_source,
         "different_leaf_same_position_verified_nary_openings_imply_merkle_compression_collision",
         &["different_leaf_same_position_verified_nary_paths_imply_merkle_compression_collision"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "different_leaf_same_position_verified_nary_openings_contradict_no_collision",
+        &[
+            "NAryMerkleCompressionNoCollision compress",
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathOpeningVerifies compress root otherOpening",
+            "NAryMerklePathSamePosition opening.layers otherOpening.layers",
+            "otherOpening.leaf ≠ opening.leaf",
+            "False",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "different_leaf_same_position_verified_nary_openings_contradict_no_collision",
+        &[
+            "different_leaf_same_position_verified_nary_openings_imply_merkle_compression_collision",
+            "noCollision collision",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

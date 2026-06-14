@@ -641,6 +641,59 @@ theorem different_leaf_same_position_verified_nary_openings_imply_merkle_compres
       otherVerified
       differentLeaf
 
+theorem different_leaf_same_position_verified_nary_paths_contradict_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root leaf path otherLeaf otherPath,
+      NAryMerklePathSamePosition path otherPath ->
+        NAryMerklePathVerifies compress root leaf path ->
+          NAryMerklePathVerifies compress root otherLeaf otherPath ->
+            otherLeaf ≠ leaf ->
+              False := by
+  intro root leaf path otherLeaf otherPath samePosition verified otherVerified
+    differentLeaf
+  have collisionWitness :
+      Nonempty (NAryMerkleCompressionCollision compress) :=
+    different_leaf_same_position_verified_nary_paths_imply_merkle_compression_collision
+      root
+      leaf
+      path
+      otherLeaf
+      otherPath
+      samePosition
+      verified
+      otherVerified
+      differentLeaf
+  cases collisionWitness with
+  | intro collision =>
+      exact noCollision collision
+
+theorem different_leaf_same_position_verified_nary_openings_contradict_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root opening otherOpening,
+      NAryMerklePathSamePosition opening.layers otherOpening.layers ->
+        NAryMerklePathOpeningVerifies compress root opening ->
+          NAryMerklePathOpeningVerifies compress root otherOpening ->
+            otherOpening.leaf ≠ opening.leaf ->
+              False := by
+  intro root opening otherOpening samePosition verified otherVerified differentLeaf
+  have collisionWitness :
+      Nonempty (NAryMerkleCompressionCollision compress) :=
+    different_leaf_same_position_verified_nary_openings_imply_merkle_compression_collision
+      root
+      opening
+      otherOpening
+      samePosition
+      verified
+      otherVerified
+      differentLeaf
+  cases collisionWitness with
+  | intro collision =>
+      exact noCollision collision
+
 theorem
   different_leaf_same_arity_two_index_verified_nary_paths_imply_merkle_compression_collision
     {Digest : Type uDigest}
@@ -1706,6 +1759,63 @@ theorem different_leaf_same_position_verified_openings_imply_merkle_compression_
       verified
       otherVerified
       differentLeaf
+
+theorem different_leaf_same_position_verified_paths_contradict_no_collision
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (noCollision : MerkleCompressionNoCollision compress) :
+    forall root leaf path otherLeaf otherPath,
+      MerklePathIndex path = MerklePathIndex otherPath ->
+        path.length = otherPath.length ->
+          MerklePathVerifies compress root leaf path ->
+            MerklePathVerifies compress root otherLeaf otherPath ->
+              otherLeaf ≠ leaf ->
+                False := by
+  intro root leaf path otherLeaf otherPath samePosition sameDepth verified otherVerified
+    differentLeaf
+  have collisionWitness :
+      Nonempty (MerkleCompressionCollision compress) :=
+    different_leaf_same_position_verified_paths_imply_merkle_compression_collision
+      root
+      leaf
+      path
+      otherLeaf
+      otherPath
+      samePosition
+      sameDepth
+      verified
+      otherVerified
+      differentLeaf
+  cases collisionWitness with
+  | intro collision =>
+      exact noCollision collision
+
+theorem different_leaf_same_position_verified_openings_contradict_no_collision
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (noCollision : MerkleCompressionNoCollision compress) :
+    forall root opening otherOpening,
+      MerklePathIndex opening.layers = MerklePathIndex otherOpening.layers ->
+        opening.layers.length = otherOpening.layers.length ->
+          MerklePathOpeningVerifies compress root opening ->
+            MerklePathOpeningVerifies compress root otherOpening ->
+              otherOpening.leaf ≠ opening.leaf ->
+                False := by
+  intro root opening otherOpening samePosition sameDepth verified otherVerified differentLeaf
+  have collisionWitness :
+      Nonempty (MerkleCompressionCollision compress) :=
+    different_leaf_same_position_verified_openings_imply_merkle_compression_collision
+      root
+      opening
+      otherOpening
+      samePosition
+      sameDepth
+      verified
+      otherVerified
+      differentLeaf
+  cases collisionWitness with
+  | intro collision =>
+      exact noCollision collision
 
 theorem concrete_merkle_path_same_index_binding
     {Digest : Type uDigest}
