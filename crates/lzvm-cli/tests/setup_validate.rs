@@ -13682,6 +13682,55 @@ fn rejects_setup_aware_verify_preflight_with_unbound_pcs_fri_opening() {
 }
 
 #[test]
+fn rejects_setup_aware_verify_preflight_with_seeded_required_pcs_fri_opening_missing() {
+    let dir = temp_dir("verify-setup-preflight-seeded-fri-opening-missing");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_fri_quotient(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let proof = sample_proof_with_material(&public_values, &catalog);
+    assert!(!proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID));
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: missing PCS FRI opening segment\n"
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
     let dir = temp_dir("verify-setup-preflight-transcript-query");
     let _ = fs::remove_dir_all(&dir);
