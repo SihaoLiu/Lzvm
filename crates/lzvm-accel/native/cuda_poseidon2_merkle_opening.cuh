@@ -87,17 +87,15 @@ int run_poseidon2_merkle_opening_path_on_device(
         next = next == scratch_a.data() ? scratch_b.data() : scratch_a.data();
     }
 
-    LZVM_CUDA_RETURN_ON_ERROR(cudaMemcpy(
+    LZVM_CUDA_RETURN_ON_ERROR(record_direct_d2h_copy(
         root_out,
         current,
-        kPoseidon2DigestWords * sizeof(uint64_t),
-        cudaMemcpyDeviceToHost));
+        kPoseidon2DigestWords * sizeof(uint64_t)));
     if (sibling_word_count > 0) {
-        LZVM_CUDA_RETURN_ON_ERROR(cudaMemcpy(
+        LZVM_CUDA_RETURN_ON_ERROR(record_direct_d2h_copy(
             siblings_out,
             device_siblings.data(),
-            sibling_word_count * sizeof(uint64_t),
-            cudaMemcpyDeviceToHost));
+            sibling_word_count * sizeof(uint64_t)));
     }
     return 0;
 }

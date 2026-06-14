@@ -63,6 +63,11 @@ std::size_t g_cuda_copy_d2h_bytes = 0;
 std::size_t g_cuda_copy_d2h_wait_ns = 0;
 std::size_t g_cuda_copy_d2h_max_wait_ns = 0;
 SizeWaitStats g_cuda_copy_d2h_by_size[kCopyD2hSizeStatsSlots] = {};
+std::size_t g_cuda_direct_copy_d2h_calls = 0;
+std::size_t g_cuda_direct_copy_d2h_bytes = 0;
+std::size_t g_cuda_direct_copy_d2h_wait_ns = 0;
+std::size_t g_cuda_direct_copy_d2h_max_wait_ns = 0;
+SizeWaitStats g_cuda_direct_copy_d2h_by_size[kCopyD2hSizeStatsSlots] = {};
 std::size_t g_cuda_copy_d2d_calls = 0;
 std::size_t g_cuda_copy_d2d_bytes = 0;
 std::size_t g_cuda_copy_d2d_wait_ns = 0;
@@ -198,6 +203,47 @@ void pick_hot_size_wait(
     }
 }
 
+bool size_wait_precedes(const SizeWaitStats& candidate, std::size_t bytes,
+                        std::size_t wait_ns) {
+    return candidate.wait_ns > wait_ns ||
+           (candidate.wait_ns == wait_ns && candidate.bytes > bytes);
+}
+
+void pick_two_hot_size_waits(
+    const SizeWaitStats* stats,
+    std::size_t slots,
+    std::size_t* hot_bytes,
+    std::size_t* hot_count,
+    std::size_t* hot_wait_ns,
+    std::size_t* second_hot_bytes,
+    std::size_t* second_hot_count,
+    std::size_t* second_hot_wait_ns) {
+    *hot_bytes = *hot_count = *hot_wait_ns = 0;
+    *second_hot_bytes = *second_hot_count = *second_hot_wait_ns = 0;
+    for (std::size_t index = 0; index < slots; ++index) {
+        const SizeWaitStats& size_stats = stats[index];
+        if (size_stats.count == 0) {
+            continue;
+        }
+        if (size_wait_precedes(size_stats, *hot_bytes, *hot_wait_ns)) {
+            *second_hot_bytes = *hot_bytes;
+            *second_hot_count = *hot_count;
+            *second_hot_wait_ns = *hot_wait_ns;
+            *hot_bytes = size_stats.bytes;
+            *hot_count = size_stats.count;
+            *hot_wait_ns = size_stats.wait_ns;
+            continue;
+        }
+        if (size_stats.bytes != *hot_bytes &&
+            size_wait_precedes(size_stats, *second_hot_bytes,
+                               *second_hot_wait_ns)) {
+            *second_hot_bytes = size_stats.bytes;
+            *second_hot_count = size_stats.count;
+            *second_hot_wait_ns = size_stats.wait_ns;
+        }
+    }
+}
+
 void record_event_synchronize_wait(std::size_t bytes, std::size_t elapsed_ns) {
     g_cuda_event_synchronize_wait_ns =
         saturated_add(g_cuda_event_synchronize_wait_ns, elapsed_ns);
@@ -262,6 +308,21 @@ void record_cuda_copy_d2h_wait(std::size_t bytes, std::size_t elapsed_ns) {
         &g_cuda_copy_d2h_wait_ns, &g_cuda_copy_d2h_max_wait_ns);
     record_wait_by_size(
         g_cuda_copy_d2h_by_size, kCopyD2hSizeStatsSlots, bytes, elapsed_ns);
+}
+
+void record_cuda_direct_copy_d2h_wait(std::size_t bytes, std::size_t elapsed_ns) {
+    record_cuda_copy_wait(
+        bytes,
+        elapsed_ns,
+        &g_cuda_direct_copy_d2h_calls,
+        &g_cuda_direct_copy_d2h_bytes,
+        &g_cuda_direct_copy_d2h_wait_ns,
+        &g_cuda_direct_copy_d2h_max_wait_ns);
+    record_wait_by_size(
+        g_cuda_direct_copy_d2h_by_size,
+        kCopyD2hSizeStatsSlots,
+        bytes,
+        elapsed_ns);
 }
 
 void record_cuda_copy_d2d_wait(std::size_t bytes, std::size_t elapsed_ns) {
@@ -793,6 +854,10 @@ extern "C" int lzvm_cuda_allocator_clear_cache(void) {
             g_cuda_copy_d2h_bytes = 0;
             g_cuda_copy_d2h_wait_ns = 0;
             g_cuda_copy_d2h_max_wait_ns = 0;
+            g_cuda_direct_copy_d2h_calls = 0;
+            g_cuda_direct_copy_d2h_bytes = 0;
+            g_cuda_direct_copy_d2h_wait_ns = 0;
+            g_cuda_direct_copy_d2h_max_wait_ns = 0;
             g_cuda_copy_d2d_calls = 0;
             g_cuda_copy_d2d_bytes = 0;
             g_cuda_copy_d2d_wait_ns = 0;
@@ -808,6 +873,9 @@ extern "C" int lzvm_cuda_allocator_clear_cache(void) {
             g_cuda_event_synchronize_wait_ns = 0;
             g_cuda_event_synchronize_max_wait_ns = 0;
             for (SizeWaitStats& size_stats : g_cuda_copy_d2h_by_size) {
+                size_stats = SizeWaitStats{};
+            }
+            for (SizeWaitStats& size_stats : g_cuda_direct_copy_d2h_by_size) {
                 size_stats = SizeWaitStats{};
             }
             for (SizeWaitStats& size_stats : g_cuda_event_synchronize_by_size) {
@@ -849,10 +917,23 @@ extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out) {
         out->cuda_copy_d2h_bytes = g_cuda_copy_d2h_bytes;
         out->cuda_copy_d2h_wait_ns = g_cuda_copy_d2h_wait_ns;
         out->cuda_copy_d2h_max_wait_ns = g_cuda_copy_d2h_max_wait_ns;
-        pick_hot_size_wait(g_cuda_copy_d2h_by_size, kCopyD2hSizeStatsSlots,
-                           &out->cuda_copy_d2h_hot_bytes,
-                           &out->cuda_copy_d2h_hot_count,
-                           &out->cuda_copy_d2h_hot_wait_ns);
+        pick_two_hot_size_waits(
+            g_cuda_copy_d2h_by_size, kCopyD2hSizeStatsSlots,
+            &out->cuda_copy_d2h_hot_bytes, &out->cuda_copy_d2h_hot_count,
+            &out->cuda_copy_d2h_hot_wait_ns,
+            &out->cuda_copy_d2h_second_hot_bytes,
+            &out->cuda_copy_d2h_second_hot_count,
+            &out->cuda_copy_d2h_second_hot_wait_ns);
+        out->cuda_direct_copy_d2h_calls = g_cuda_direct_copy_d2h_calls;
+        out->cuda_direct_copy_d2h_bytes = g_cuda_direct_copy_d2h_bytes;
+        out->cuda_direct_copy_d2h_wait_ns = g_cuda_direct_copy_d2h_wait_ns;
+        out->cuda_direct_copy_d2h_max_wait_ns = g_cuda_direct_copy_d2h_max_wait_ns;
+        pick_hot_size_wait(
+            g_cuda_direct_copy_d2h_by_size,
+            kCopyD2hSizeStatsSlots,
+            &out->cuda_direct_copy_d2h_hot_bytes,
+            &out->cuda_direct_copy_d2h_hot_count,
+            &out->cuda_direct_copy_d2h_hot_wait_ns);
         out->cuda_copy_d2d_calls = g_cuda_copy_d2d_calls;
         out->cuda_copy_d2d_bytes = g_cuda_copy_d2d_bytes;
         out->cuda_copy_d2d_wait_ns = g_cuda_copy_d2d_wait_ns;
@@ -956,6 +1037,13 @@ extern "C" int lzvm_cuda_copy_d2h_bytes(void* dst, const void* src, std::size_t 
         record_cuda_copy_d2h_wait(bytes, saturated_nanoseconds_since(copy_started));
     }
     return status;
+}
+
+extern "C" void lzvm_cuda_record_direct_copy_d2h_wait(
+    std::size_t bytes,
+    std::size_t elapsed_ns) {
+    std::lock_guard<std::mutex> lock(g_allocator_mutex);
+    record_cuda_direct_copy_d2h_wait(bytes, elapsed_ns);
 }
 
 extern "C" int lzvm_cuda_copy_h2d_row_slice_words(

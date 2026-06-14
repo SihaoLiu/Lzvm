@@ -4597,6 +4597,16 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "cuda_copy_d2h_hot_bytes",
         "cuda_copy_d2h_hot_count",
         "cuda_copy_d2h_hot_wait_ns",
+        "cuda_copy_d2h_second_hot_bytes",
+        "cuda_copy_d2h_second_hot_count",
+        "cuda_copy_d2h_second_hot_wait_ns",
+        "cuda_direct_copy_d2h_calls",
+        "cuda_direct_copy_d2h_bytes",
+        "cuda_direct_copy_d2h_wait_ns",
+        "cuda_direct_copy_d2h_max_wait_ns",
+        "cuda_direct_copy_d2h_hot_bytes",
+        "cuda_direct_copy_d2h_hot_count",
+        "cuda_direct_copy_d2h_hot_wait_ns",
         "cuda_copy_d2d_calls",
         "cuda_copy_d2d_bytes",
         "cuda_copy_d2d_wait_ns",
@@ -4679,9 +4689,32 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
             && native_source.contains("record_cuda_copy_d2h_wait")
             && native_source.contains("cuda_copy_d2h_hot_bytes")
             && native_source.contains("cuda_copy_d2h_hot_count")
-            && native_source.contains("cuda_copy_d2h_hot_wait_ns"),
-        "D2H copy wait timing should expose the dominant copied size"
+            && native_source.contains("cuda_copy_d2h_hot_wait_ns")
+            && native_source.contains("cuda_copy_d2h_second_hot_bytes")
+            && native_source.contains("cuda_copy_d2h_second_hot_count")
+            && native_source.contains("cuda_copy_d2h_second_hot_wait_ns"),
+        "D2H copy wait timing should expose the dominant copied sizes"
     );
+    assert!(
+        native_header.contains("lzvm_cuda_record_direct_copy_d2h_wait")
+            && native_source.contains("record_cuda_direct_copy_d2h_wait")
+            && native_source.contains("g_cuda_direct_copy_d2h_by_size"),
+        "direct D2H memcpy waits should be recorded separately from allocator copies"
+    );
+    let merkle_digest_path =
+        crate_root.join("../lzvm-accel/native/cuda_poseidon2_merkle_digest.cuh");
+    let merkle_digest_source =
+        std::fs::read_to_string(&merkle_digest_path).expect("Merkle digest source should read");
+    let merkle_opening_path =
+        crate_root.join("../lzvm-accel/native/cuda_poseidon2_merkle_opening.cuh");
+    let merkle_opening_source =
+        std::fs::read_to_string(&merkle_opening_path).expect("Merkle opening source should read");
+    for source in [merkle_digest_source, merkle_opening_source] {
+        assert!(
+            source.contains("record_direct_d2h_copy") && !source.contains("cudaMemcpyDeviceToHost"),
+            "direct Merkle opening D2H copies should feed direct-copy timing"
+        );
+    }
     assert!(
         native_source.contains("g_cuda_event_synchronize_by_size")
             && native_source.contains("cuda_event_synchronize_hot_bytes")
@@ -4734,6 +4767,19 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "\"cuda_allocator_copy_d2h_hot_count\"",
         "\"cuda_allocator_copy_d2h_hot_wait_ns\"",
         "\"cuda_allocator_copy_d2h_hot_avg_wait_per_call_ns\"",
+        "\"cuda_allocator_copy_d2h_second_hot_bytes\"",
+        "\"cuda_allocator_copy_d2h_second_hot_count\"",
+        "\"cuda_allocator_copy_d2h_second_hot_wait_ns\"",
+        "\"cuda_allocator_copy_d2h_second_hot_avg_wait_per_call_ns\"",
+        "\"cuda_direct_copy_d2h_calls\"",
+        "\"cuda_direct_copy_d2h_bytes\"",
+        "\"cuda_direct_copy_d2h_wait_ns\"",
+        "\"cuda_direct_copy_d2h_max_wait_ns\"",
+        "\"cuda_direct_copy_d2h_avg_wait_per_call_ns\"",
+        "\"cuda_direct_copy_d2h_hot_bytes\"",
+        "\"cuda_direct_copy_d2h_hot_count\"",
+        "\"cuda_direct_copy_d2h_hot_wait_ns\"",
+        "\"cuda_direct_copy_d2h_hot_avg_wait_per_call_ns\"",
         "\"cuda_allocator_copy_d2d_calls\"",
         "\"cuda_allocator_copy_d2d_bytes\"",
         "\"cuda_allocator_copy_d2d_wait_ns\"",

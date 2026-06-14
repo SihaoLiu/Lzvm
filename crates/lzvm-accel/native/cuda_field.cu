@@ -1,6 +1,7 @@
 #include <cuda_runtime.h>
 #include <stdint.h>
 #include <algorithm>
+#include <chrono>
 #include <limits>
 #include <vector>
 
@@ -60,6 +61,21 @@ uint64_t host_pow_mod(uint64_t base, uint64_t exponent) {
         exponent >>= 1;
     }
     return result;
+}
+
+int record_direct_d2h_copy(void* dst, const void* src, size_t bytes) {
+    if (bytes == 0) {
+        return 0;
+    }
+    const auto copy_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToHost));
+    const auto elapsed = std::chrono::steady_clock::now() - copy_started;
+    const auto elapsed_ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
+    lzvm_cuda_record_direct_copy_d2h_wait(
+        bytes,
+        elapsed_ns > 0 ? static_cast<size_t>(elapsed_ns) : size_t{0});
+    return status;
 }
 
 __device__ uint64_t add_wrapping_modulus(uint64_t lhs, uint64_t rhs) {
