@@ -2083,19 +2083,21 @@ fn guest_pc_segment_commitments_reuse_leaf_workspace_cache_across_segments() {
             .contains("leaf_workspace_cache: Option<&'a mut WitnessStageLeafWorkspaceCache>"),
         "guest-PC segment observers should carry the leaf workspace cache"
     );
+    let scratch_body = function_body(
+        &execution_source,
+        "struct GuestPcTraceSegmentCommitScratch",
+        "struct GuestPcTraceSegmentCommitRequest",
+    );
     assert!(
-        execution_source
-            .matches("let mut leaf_workspace_cache = WitnessStageLeafWorkspaceCache::default();")
-            .count()
-            >= 2,
-        "guest-PC streaming paths should create leaf workspace caches outside segment callbacks"
+        scratch_body.contains("leaf_workspace_cache: WitnessStageLeafWorkspaceCache"),
+        "guest-PC segment scratch should own the per-worker leaf workspace cache"
     );
     assert!(
         execution_source
-            .matches("Some(&mut leaf_workspace_cache)")
+            .matches("let mut commit_scratch = GuestPcTraceSegmentCommitScratch::new();")
             .count()
             >= 2,
-        "guest-PC streaming paths should pass one leaf workspace cache through each segment helper call"
+        "guest-PC streaming paths should create commit scratch outside segment callbacks"
     );
     let segment_helper_body = function_body(
         &execution_source,
@@ -2103,8 +2105,9 @@ fn guest_pc_segment_commitments_reuse_leaf_workspace_cache_across_segments() {
         "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
     );
     assert!(
-        segment_helper_body.contains("leaf_workspace_cache,"),
-        "guest-PC segment helper should pass the borrowed leaf workspace cache into trace observers"
+        segment_helper_body
+            .contains("leaf_workspace_cache: Some(&mut scratch.leaf_workspace_cache)"),
+        "guest-PC segment helper should pass the scratch leaf workspace cache into trace observers"
     );
     assert!(
         execution_source
@@ -2820,6 +2823,53 @@ fn guest_pc_trace_segment_commit_has_single_helper() {
             && helper_body.contains("run_prove_witness_commitments_from_trace_inner")
             && helper_body.contains("output.commitments.identity.trace_instance_index"),
         "segment commitment helper should preserve source-device setup, commitment execution, and trace identity assignment"
+    );
+}
+
+#[test]
+fn guest_pc_trace_segment_commit_uses_worker_local_scratch() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_execution.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("witness execution source should read");
+
+    let scratch_body = function_body(
+        &source,
+        "struct GuestPcTraceSegmentCommitScratch",
+        "struct GuestPcTraceSegmentCommitRequest",
+    );
+    assert!(
+        scratch_body.contains("fixed_columns_cache: WitnessFixedColumnsCache")
+            && scratch_body.contains("stage_commitment_reuse_cache")
+            && scratch_body.contains("leaf_workspace_cache"),
+        "guest PC segment commit scratch should bundle mutable per-worker caches"
+    );
+
+    let request_body = function_body(
+        &source,
+        "struct GuestPcTraceSegmentCommitRequest",
+        "fn commit_guest_pc_trace_segment_output",
+    );
+    assert!(
+        request_body.contains("scratch: &'b mut GuestPcTraceSegmentCommitScratch"),
+        "segment commit requests should borrow one worker-local scratch bundle"
+    );
+    assert!(
+        !request_body.contains("fixed_columns_cache:")
+            && !request_body.contains("stage_commitment_reuse_cache:")
+            && !request_body.contains("leaf_workspace_cache:"),
+        "segment commit requests should not expose individual mutable caches"
+    );
+
+    let segment_body = function_body(
+        &source,
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
+        "fn merge_backend_unit_values",
+    );
+    assert!(
+        segment_body.contains("let mut commit_scratch = GuestPcTraceSegmentCommitScratch::new()")
+            && segment_body.matches("scratch: &mut commit_scratch").count() >= 2,
+        "sequential guest PC segment paths should reuse one scratch bundle until workers split it"
     );
 }
 
@@ -5227,12 +5277,12 @@ fn guest_pc_trace_segments_reuse_fixed_columns_across_segments() {
         "fn merge_backend_unit_values",
     );
     assert!(
-        segment_body.contains("let mut fixed_columns_cache = WitnessFixedColumnsCache::new()"),
-        "guest PC trace segment commitments should keep fixed columns cached across segments"
+        segment_body.contains("let mut commit_scratch = GuestPcTraceSegmentCommitScratch::new()"),
+        "guest PC trace segment commitments should keep one scratch cached across segments"
     );
     assert!(
-        segment_body.contains("&mut fixed_columns_cache"),
-        "each segment should borrow the shared fixed-column cache instead of reloading it"
+        segment_body.contains("scratch: &mut commit_scratch"),
+        "each segment should borrow the shared scratch instead of reloading fixed columns"
     );
     let helper_body = function_body(
         &source,
@@ -5240,8 +5290,8 @@ fn guest_pc_trace_segments_reuse_fixed_columns_across_segments() {
         "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
     );
     assert!(
-        helper_body.contains("fixed_columns_cache: Some(fixed_columns_cache)"),
-        "the segment helper should pass the borrowed fixed-column cache into trace commitment"
+        helper_body.contains("fixed_columns_cache: Some(&mut scratch.fixed_columns_cache)"),
+        "the segment helper should pass the scratch fixed-column cache into trace commitment"
     );
 
     let inner_body = function_body(

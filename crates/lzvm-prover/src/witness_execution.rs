@@ -3279,16 +3279,32 @@ struct GuestPcTraceSegmentCommitContext<'a> {
     shared_inputs: &'a WitnessSharedInputs,
 }
 
+struct GuestPcTraceSegmentCommitScratch {
+    fixed_columns_cache: WitnessFixedColumnsCache,
+    #[cfg(feature = "cuda")]
+    stage_commitment_reuse_cache: WitnessStageCommitmentReuseCache,
+    #[cfg(feature = "cuda")]
+    leaf_workspace_cache: WitnessStageLeafWorkspaceCache,
+}
+
+impl GuestPcTraceSegmentCommitScratch {
+    fn new() -> Self {
+        Self {
+            fixed_columns_cache: WitnessFixedColumnsCache::new(),
+            #[cfg(feature = "cuda")]
+            stage_commitment_reuse_cache: WitnessStageCommitmentReuseCache::default(),
+            #[cfg(feature = "cuda")]
+            leaf_workspace_cache: WitnessStageLeafWorkspaceCache::default(),
+        }
+    }
+}
+
 struct GuestPcTraceSegmentCommitRequest<'a, 'b> {
     context: GuestPcTraceSegmentCommitContext<'a>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     segment_output: GuestPcTraceSegmentRunOutput,
     regular_hint_mode: WitnessRegularHintMode<'b>,
-    fixed_columns_cache: &'b mut WitnessFixedColumnsCache,
-    #[cfg(feature = "cuda")]
-    stage_commitment_reuse_cache: Option<&'b mut WitnessStageCommitmentReuseCache>,
-    #[cfg(feature = "cuda")]
-    leaf_workspace_cache: Option<&'b mut WitnessStageLeafWorkspaceCache>,
+    scratch: &'b mut GuestPcTraceSegmentCommitScratch,
     timing: Option<&'b mut ProveWitnessTraceTimingAccumulator>,
 }
 
@@ -3300,11 +3316,7 @@ fn commit_guest_pc_trace_segment_output(
         auxiliary_inputs,
         segment_output,
         regular_hint_mode,
-        fixed_columns_cache,
-        #[cfg(feature = "cuda")]
-        stage_commitment_reuse_cache,
-        #[cfg(feature = "cuda")]
-        leaf_workspace_cache,
+        scratch,
         timing,
     } = request;
     let GuestPcTraceSegmentCommitContext {
@@ -3371,11 +3383,11 @@ fn commit_guest_pc_trace_segment_output(
         },
         regular_hint_mode,
         ProveWitnessTraceRunObservers {
-            fixed_columns_cache: Some(fixed_columns_cache),
+            fixed_columns_cache: Some(&mut scratch.fixed_columns_cache),
             #[cfg(feature = "cuda")]
-            stage_commitment_reuse_cache,
+            stage_commitment_reuse_cache: Some(&mut scratch.stage_commitment_reuse_cache),
             #[cfg(feature = "cuda")]
-            leaf_workspace_cache,
+            leaf_workspace_cache: Some(&mut scratch.leaf_workspace_cache),
             timing,
         },
     )?;
@@ -3433,11 +3445,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         let mut guest_segment_commit_duration = Duration::ZERO;
         let mut trace_timing = ProveWitnessTraceTimingAccumulator::default();
         let mut segment_count = 0_usize;
-        let mut fixed_columns_cache = WitnessFixedColumnsCache::new();
-        #[cfg(feature = "cuda")]
-        let mut stage_commitment_reuse_cache = WitnessStageCommitmentReuseCache::default();
-        #[cfg(feature = "cuda")]
-        let mut leaf_workspace_cache = WitnessStageLeafWorkspaceCache::default();
+        let mut commit_scratch = GuestPcTraceSegmentCommitScratch::new();
         let guest_trace_stream_started = collect_timing.then(Instant::now);
         let stream_result = for_each_guest_pc_trace_segment_collecting_proof_values_with_context(
             &backend,
@@ -3459,11 +3467,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                         auxiliary_inputs: Arc::clone(&auxiliary_inputs),
                         segment_output,
                         regular_hint_mode,
-                        fixed_columns_cache: &mut fixed_columns_cache,
-                        #[cfg(feature = "cuda")]
-                        stage_commitment_reuse_cache: Some(&mut stage_commitment_reuse_cache),
-                        #[cfg(feature = "cuda")]
-                        leaf_workspace_cache: Some(&mut leaf_workspace_cache),
+                        scratch: &mut commit_scratch,
                         timing: segment_trace_timing.as_mut(),
                     })?;
                 if let Some(balance) = source_lookup_balance.as_deref_mut() {
@@ -3529,11 +3533,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
     let mut guest_segment_commit_duration = Duration::ZERO;
     let mut trace_timing = ProveWitnessTraceTimingAccumulator::default();
     let mut segment_count = 0_usize;
-    let mut fixed_columns_cache = WitnessFixedColumnsCache::new();
-    #[cfg(feature = "cuda")]
-    let mut stage_commitment_reuse_cache = WitnessStageCommitmentReuseCache::default();
-    #[cfg(feature = "cuda")]
-    let mut leaf_workspace_cache = WitnessStageLeafWorkspaceCache::default();
+    let mut commit_scratch = GuestPcTraceSegmentCommitScratch::new();
     let guest_trace_stream_started = collect_timing.then(Instant::now);
     let stream_timing = for_each_guest_pc_trace_segment_with_context(
         &backend,
@@ -3555,11 +3555,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 auxiliary_inputs: Arc::clone(&auxiliary_inputs),
                 segment_output,
                 regular_hint_mode,
-                fixed_columns_cache: &mut fixed_columns_cache,
-                #[cfg(feature = "cuda")]
-                stage_commitment_reuse_cache: Some(&mut stage_commitment_reuse_cache),
-                #[cfg(feature = "cuda")]
-                leaf_workspace_cache: Some(&mut leaf_workspace_cache),
+                scratch: &mut commit_scratch,
                 timing: segment_trace_timing.as_mut(),
             })?;
             if let Some(balance) = source_lookup_balance.as_deref_mut() {
