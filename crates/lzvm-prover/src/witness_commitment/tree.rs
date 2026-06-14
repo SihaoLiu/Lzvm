@@ -1357,6 +1357,36 @@ mod tests {
     use crate::witness_layout::WitnessTraceStageValues;
     use lzvm_field::{coset_extend_evaluations, Felt, FieldError, MODULUS};
 
+    #[cfg(feature = "cuda")]
+    struct RetainedSourceDeviceBudgetGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    #[cfg(feature = "cuda")]
+    impl Drop for RetainedSourceDeviceBudgetGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var("LZVM_CUDA_RETAINED_SOURCE_BYTES", value),
+                None => std::env::remove_var("LZVM_CUDA_RETAINED_SOURCE_BYTES"),
+            }
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    fn retained_source_device_budget_for_test() -> RetainedSourceDeviceBudgetGuard {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let lock = LOCK
+            .lock()
+            .expect("retained source env lock should acquire");
+        let previous = std::env::var_os("LZVM_CUDA_RETAINED_SOURCE_BYTES");
+        std::env::set_var("LZVM_CUDA_RETAINED_SOURCE_BYTES", "1048576");
+        RetainedSourceDeviceBudgetGuard {
+            _lock: lock,
+            previous,
+        }
+    }
+
     #[test]
     fn rejects_malformed_witness_stage_leaf_byte_lengths() {
         let expected = 2 * 3 * WORD_BYTES;
@@ -1842,6 +1872,7 @@ mod tests {
     #[cfg(feature = "cuda")]
     #[test]
     fn device_source_compact_commitment_materializes_without_stage_values() {
+        let _retained_source_budget = retained_source_device_budget_for_test();
         let source_bits = 2;
         let target_bits = 3;
         let source_rows = 1_usize << source_bits;
@@ -1944,6 +1975,7 @@ mod tests {
     #[cfg(feature = "cuda")]
     #[test]
     fn compact_device_batch_opening_matches_individual_rows() {
+        let _retained_source_budget = retained_source_device_budget_for_test();
         let source_bits = 2;
         let target_bits = 3;
         let source_rows = 1_usize << source_bits;
@@ -2020,6 +2052,7 @@ mod tests {
     #[cfg(feature = "cuda")]
     #[test]
     fn compact_device_batch_opening_reuses_retained_leaf_digest_level() {
+        let _retained_source_budget = retained_source_device_budget_for_test();
         let source_bits = 2;
         let target_bits = 3;
         let source_rows = 1_usize << source_bits;
@@ -2107,6 +2140,7 @@ mod tests {
     #[cfg(feature = "cuda")]
     #[test]
     fn compact_device_commit_retains_parent_checkpoint_level() {
+        let _retained_source_budget = retained_source_device_budget_for_test();
         let source_bits = 2;
         let target_bits = 20;
         let source_rows = 1_usize << source_bits;
@@ -2163,6 +2197,7 @@ mod tests {
     #[cfg(feature = "cuda")]
     #[test]
     fn compact_device_parent_checkpoint_opening_matches_full_path_suffix() {
+        let _retained_source_budget = retained_source_device_budget_for_test();
         let source_bits = 2;
         let target_bits = 20;
         let source_rows = 1_usize << source_bits;
@@ -2223,6 +2258,7 @@ mod tests {
     #[cfg(feature = "cuda")]
     #[test]
     fn compact_device_batch_opening_uses_retained_parent_checkpoint_after_leaf_digest_drop() {
+        let _retained_source_budget = retained_source_device_budget_for_test();
         let source_bits = 2;
         let target_bits = 20;
         let source_rows = 1_usize << source_bits;
@@ -2319,6 +2355,7 @@ mod tests {
     #[cfg(feature = "cuda")]
     #[test]
     fn strided_device_source_compact_commitment_uses_full_trace_view() {
+        let _retained_source_budget = retained_source_device_budget_for_test();
         let source_bits = 2;
         let target_bits = 3;
         let source_rows = 1_usize << source_bits;
