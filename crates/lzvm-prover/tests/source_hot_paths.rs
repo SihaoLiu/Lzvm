@@ -2777,6 +2777,12 @@ fn cuda_source_device_commit_can_pipeline_stream_leaf_extensions() {
         depth_body.contains("LZVM_CUDA_SOURCE_DEVICE_STREAM_PIPELINE"),
         "stream source-device pipeline should be explicitly gated"
     );
+    assert!(
+        trace_source.contains("const MAX_SOURCE_DEVICE_STREAM_PIPELINE_DEPTH")
+            && depth_body.contains("MAX_SOURCE_DEVICE_STREAM_PIPELINE_DEPTH")
+            && !depth_body.contains("clamp(1, 2)"),
+        "stream source-device pipeline should allow an explicitly bounded numeric depth beyond two"
+    );
 }
 
 #[test]

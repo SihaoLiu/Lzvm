@@ -1000,6 +1000,9 @@ enum PendingWitnessStageCommitment {
 }
 
 #[cfg(feature = "cuda")]
+const MAX_SOURCE_DEVICE_STREAM_PIPELINE_DEPTH: usize = 8;
+
+#[cfg(feature = "cuda")]
 struct PendingSourceDeviceStreamLeaf {
     source_device: WitnessStageSourceDevice,
     retained_source_device: Option<WitnessStageSourceDeviceView>,
@@ -1022,7 +1025,7 @@ pub(crate) fn commit_witness_stage_source_devices_stream_pipeline_timing(
     WitnessTraceCommitmentError,
 > {
     let params = WitnessStageCommitParams::from_unit(unit)?;
-    let depth = depth.clamp(1, 2);
+    let depth = depth.clamp(1, MAX_SOURCE_DEVICE_STREAM_PIPELINE_DEPTH);
     let mut pending_commitments = Vec::with_capacity(source_devices.len());
     let mut pending_leaf_extensions = VecDeque::with_capacity(depth);
 
@@ -1105,7 +1108,7 @@ fn source_device_stream_pipeline_depth() -> usize {
         Ok(value) if matches!(value.as_str(), "0" | "false" | "no" | "off") => 1,
         Ok(value) => value
             .parse::<usize>()
-            .map(|depth| depth.clamp(1, 2))
+            .map(|depth| depth.clamp(1, MAX_SOURCE_DEVICE_STREAM_PIPELINE_DEPTH))
             .unwrap_or(1),
         Err(_) => 1,
     }
@@ -1802,7 +1805,7 @@ mod tests {
 
     #[test]
     fn cuda_stream_pipeline_source_device_commitments_match_trace_path() {
-        let unit = sample_unit(4, vec![2, 3]);
+        let unit = sample_unit(4, vec![1, 2, 2]);
         let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
         let value_count = 4 * 5;
         let values = (0..value_count)
@@ -1822,10 +1825,13 @@ mod tests {
         );
         let source_devices = vec![
             WitnessStageSourceDevice::from_row_major_column_window_with_known_zero(
-                1, 4, 2, 5, 0, false, &source,
+                1, 4, 1, 5, 0, false, &source,
             ),
             WitnessStageSourceDevice::from_row_major_column_window_with_known_zero(
-                2, 4, 3, 5, 2, false, &source,
+                2, 4, 2, 5, 1, false, &source,
+            ),
+            WitnessStageSourceDevice::from_row_major_column_window_with_known_zero(
+                3, 4, 2, 5, 3, false, &source,
             ),
         ];
 
@@ -1837,11 +1843,11 @@ mod tests {
             &unit,
             &mut pipeline_timing,
             true,
-            2,
+            3,
         )
         .expect("stream pipeline commitments should build");
 
-        assert_eq!(stage_timings.len(), 2);
+        assert_eq!(stage_timings.len(), 3);
         assert_eq!(pipeline.commitments().len(), default.commitments().len());
         for (actual, expected) in pipeline.commitments().iter().zip(default.commitments()) {
             assert_eq!(actual.stage_index(), expected.stage_index());
