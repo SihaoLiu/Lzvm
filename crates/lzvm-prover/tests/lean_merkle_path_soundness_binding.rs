@@ -66,7 +66,9 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
         &lean_source,
         &[
             "different_leaf_same_index_verified_paths_imply_merkle_compression_collision",
+            "different_leaf_same_index_verified_openings_imply_merkle_compression_collision",
             "different_leaf_same_position_verified_nary_paths_imply_merkle_compression_collision",
+            "different_leaf_same_position_verified_nary_openings_imply_merkle_compression_collision",
             "merkle_compression_collision_free_of_no_collision",
             "nary_merkle_compression_collision_free_of_no_collision",
             "centralized_merkle_compression_collision_free",
@@ -106,6 +108,38 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_no_collision",
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_bundle",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "different_leaf_same_index_verified_openings_imply_merkle_compression_collision",
+        &[
+            "MerklePathOpeningVerifies compress root opening",
+            "MerklePathOpeningVerifies compress root otherOpening",
+            "MerklePathSameIndex opening.layers otherOpening.layers",
+            "otherOpening.leaf ≠ opening.leaf",
+            "Nonempty (MerkleCompressionCollision compress)",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "different_leaf_same_index_verified_openings_imply_merkle_compression_collision",
+        &["different_leaf_same_index_verified_paths_imply_merkle_compression_collision"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "different_leaf_same_position_verified_nary_openings_imply_merkle_compression_collision",
+        &[
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathOpeningVerifies compress root otherOpening",
+            "NAryMerklePathSamePosition opening.layers otherOpening.layers",
+            "otherOpening.leaf ≠ opening.leaf",
+            "Nonempty (NAryMerkleCompressionCollision compress)",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "different_leaf_same_position_verified_nary_openings_imply_merkle_compression_collision",
+        &["different_leaf_same_position_verified_nary_paths_imply_merkle_compression_collision"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
