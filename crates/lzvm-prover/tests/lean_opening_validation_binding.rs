@@ -19,14 +19,17 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
     );
     assert!(
         lean_source.contains("RuntimeOpeningValidation")
+            && lean_source.contains("RuntimeOpeningBoundContract")
             && lean_source.contains("requiresExternalSource ->")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
-        "Lean opening validation should expose checked and required-source verifier core projections"
+        "Lean opening validation should expose compact opening-bound, checked, and required-source verifier core projections"
     );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_opening_evidence_implies_bound_contract",
+            "runtime_opening_checked_acceptance_bound_contract",
             "runtime_opening_evidence_implies_external_source_requirement",
             "runtime_opening_checked_acceptance_pcs_and_fri",
             "runtime_opening_checked_acceptance_sound",
@@ -52,6 +55,32 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             )
             .contains("validation.runtimeSoundnessValidation.sourceValidation"),
         "opening evidence should expose the external-source requirement carried by runtime soundness evidence"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_opening_evidence_implies_bound_contract"
+        )
+        .contains("RuntimeOpeningEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_opening_evidence_implies_bound_contract"
+            )
+            .contains("RuntimeOpeningBoundContract"),
+        "opening evidence should project compact constant, witness, and FRI opening bounds"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_opening_checked_acceptance_bound_contract"
+        )
+        .contains("RuntimeOpeningCheckedAcceptance")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_opening_checked_acceptance_bound_contract"
+            )
+            .contains("RuntimeOpeningBoundContract"),
+        "checked opening acceptance should project compact opening-bound evidence"
     );
     assert!(
         theorem_prefix(

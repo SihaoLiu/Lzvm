@@ -71,6 +71,16 @@ def RuntimeOpeningEvidence
     /\ system.pcsOpeningsValid publicInput proof
     /\ system.friQueriesValid publicInput proof
 
+def RuntimeOpeningBoundContract
+    (_system : VerifierModel)
+    (validation : RuntimeOpeningValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.constantOpeningsBound artifact publicInput proof
+    /\ validation.witnessOpeningsBound artifact publicInput proof
+    /\ validation.friOpeningBound artifact publicInput proof
+
 def RuntimeOpeningCheckedAcceptance
     (_system : VerifierModel)
     (validation : RuntimeOpeningValidation _system)
@@ -147,6 +157,49 @@ theorem runtime_opening_checked_acceptance_evidence
         (And.intro witnessOpenings
           (And.intro friOpening
             (And.intro pcsOpenings friQueries))))
+
+theorem runtime_opening_evidence_implies_bound_contract
+    {system : VerifierModel}
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeOpeningBoundContract system validation artifact publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  exact
+    And.intro evidence.right.left
+      (And.intro evidence.right.right.left evidence.right.right.right.left)
+
+theorem runtime_opening_checked_acceptance_bound_contract
+    {system : VerifierModel}
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeOpeningBoundContract system validation artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (validation.openingAcceptedImpliesConstantOpeningsBound
+        artifact
+        publicInput
+        proof
+        accepted)
+      (And.intro
+        (validation.openingAcceptedImpliesWitnessOpeningsBound
+          artifact
+          publicInput
+          proof
+          accepted)
+        (validation.openingAcceptedImpliesFriOpeningBound
+          artifact
+          publicInput
+          proof
+          accepted))
 
 theorem runtime_opening_evidence_implies_pcs_and_fri
     {system : VerifierModel}
