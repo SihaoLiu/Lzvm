@@ -710,6 +710,26 @@ theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_f
       opening.layers
       verified
 
+theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (collisionFree : MerkleCompressionCollisionFree compress) :
+    forall root opening,
+      MerklePathOpeningVerifies compress root opening ->
+        MerklePathRootCommitsToLeafAtIndex
+          compress
+          root
+          opening.leaf
+          opening.layers := by
+  intro root opening verified
+  exact
+    verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index
+      collisionFree
+      root
+      opening.leaf
+      opening.layers
+      verified
+
 theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_assumption
     {Digest : Type uDigest}
     (hashAssumptions : HashCollisionResistanceAssumption)
@@ -779,6 +799,34 @@ theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_positio
       opening.leaf
       opening.layers
       verified
+
+theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (collisionFree : MerkleCompressionCollisionFree compress) :
+    forall root opening,
+      MerklePathOpeningVerifies compress root opening ->
+        MerklePathRootCommitsToLeafAtPosition
+          compress
+          root
+          opening.leaf
+          opening.layers := by
+  intro root opening verified otherLeaf otherPath samePosition sameDepth otherVerified
+  exact
+    verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index
+      collisionFree
+      root
+      opening.leaf
+      opening.layers
+      verified
+      otherLeaf
+      otherPath
+      (merkle_path_same_position_implies_same_index
+        opening.layers
+        otherPath
+        samePosition
+        sameDepth)
+      otherVerified
 
 theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_assumption
     {Digest : Type uDigest}
