@@ -3162,15 +3162,18 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
     assert!(
         pool_region.contains("while self.pending_workers.len() >= self.worker_count")
             && pool_region.contains("join_guest_pc_trace_segment_commit_worker")
+            && pool_region.contains("let _ = self.finish()")
             && pool_region.contains("self.scope.spawn(move ||")
             && pool_region.contains("GuestPcTraceSegmentCommitWorkerState::new()"),
-        "submit_segment should join the oldest saturated worker and spawn segment work on the scope"
+        "submit_segment should join the oldest saturated worker, drain pending workers on error, and spawn segment work on the scope"
     );
     assert!(
         pool_region.contains("while let Some(handle) = self.pending_workers.pop_front()")
-            && pool_region
-                .contains("ready_results.push(join_guest_pc_trace_segment_commit_worker(handle)?)"),
-        "pool finish should drain every pending scoped worker result"
+            && pool_region.contains("let mut first_error = None")
+            && pool_region.contains("match join_guest_pc_trace_segment_commit_worker(handle)")
+            && pool_region.contains("first_error = Some(error)")
+            && pool_region.contains("if let Some(error) = first_error"),
+        "pool finish should drain every pending scoped worker before returning a join error"
     );
 
     let driver_body = function_body(

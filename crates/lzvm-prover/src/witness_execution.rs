@@ -3463,7 +3463,13 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
                     message: "segment commit worker queue unexpectedly empty".to_owned(),
                 }
             })?;
-            ready_results.push(join_guest_pc_trace_segment_commit_worker(handle)?);
+            match join_guest_pc_trace_segment_commit_worker(handle) {
+                Ok(result) => ready_results.push(result),
+                Err(error) => {
+                    let _ = self.finish();
+                    return Err(error);
+                }
+            }
         }
 
         self.pending_workers.push_back(self.scope.spawn(move || {
@@ -3483,8 +3489,19 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
         &mut self,
     ) -> Result<Vec<GuestPcTraceSegmentCommitResult>, ProveWitnessCommitmentError> {
         let mut ready_results = Vec::new();
+        let mut first_error = None;
         while let Some(handle) = self.pending_workers.pop_front() {
-            ready_results.push(join_guest_pc_trace_segment_commit_worker(handle)?);
+            match join_guest_pc_trace_segment_commit_worker(handle) {
+                Ok(result) => ready_results.push(result),
+                Err(error) => {
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+        if let Some(error) = first_error {
+            return Err(error);
         }
         Ok(ready_results)
     }
@@ -5407,6 +5424,46 @@ mod tests {
             .map(|output| output.commitments().trace_instance_index())
             .collect();
         assert_eq!(trace_instances, [0, 1, 2]);
+    }
+
+    #[test]
+    fn guest_pc_segment_commit_worker_pool_finish_drains_after_error() {
+        thread::scope(|scope| {
+            let first = scope.spawn(
+                || -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
+                    Err(ProveWitnessCommitmentError::SegmentCommitOutputOrder {
+                        message: "first worker failed".to_owned(),
+                    })
+                },
+            );
+            let second = scope.spawn(
+                || -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
+                    Err(ProveWitnessCommitmentError::SegmentCommitOutputOrder {
+                        message: "second worker failed".to_owned(),
+                    })
+                },
+            );
+            let mut pool = GuestPcTraceSegmentCommitWorkerPool {
+                scope,
+                worker_count: 2,
+                worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
+                pending_workers: VecDeque::from([first, second]),
+            };
+
+            let error = match pool.finish() {
+                Ok(_) => panic!("pool finish should report worker errors"),
+                Err(error) => error,
+            };
+
+            assert!(matches!(
+                error,
+                ProveWitnessCommitmentError::SegmentCommitOutputOrder { .. }
+            ));
+            assert!(
+                pool.pending_workers.is_empty(),
+                "pool finish should drain every pending worker before returning an error"
+            );
+        });
     }
 
     #[test]
