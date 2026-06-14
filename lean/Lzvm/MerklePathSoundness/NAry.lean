@@ -406,6 +406,62 @@ theorem different_leaf_same_position_verified_nary_openings_contradict_no_collis
   | intro collision =>
       exact noCollision collision
 
+theorem different_leaf_same_position_verified_nary_openings_contradict_assumption
+    {Digest : Type uDigest}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress) :
+    forall root opening otherOpening,
+      NAryMerklePathSamePosition opening.layers otherOpening.layers ->
+        NAryMerklePathOpeningVerifies compress root opening ->
+          NAryMerklePathOpeningVerifies compress root otherOpening ->
+            otherOpening.leaf ≠ opening.leaf ->
+              False := by
+  intro root opening otherOpening samePosition verified otherVerified differentLeaf
+  exact
+    different_leaf_same_position_verified_nary_openings_contradict_no_collision
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
+      root
+      opening
+      otherOpening
+      samePosition
+      verified
+      otherVerified
+      differentLeaf
+
+theorem different_leaf_same_position_verified_nary_openings_contradict_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root opening otherOpening,
+      NAryMerklePathSamePosition opening.layers otherOpening.layers ->
+        NAryMerklePathOpeningVerifies compress root opening ->
+          NAryMerklePathOpeningVerifies compress root otherOpening ->
+            otherOpening.leaf ≠ opening.leaf ->
+              False := by
+  intro root opening otherOpening samePosition verified otherVerified differentLeaf
+  exact
+    different_leaf_same_position_verified_nary_openings_contradict_assumption
+      assumptions.crypto.hashCollisionResistance
+      centralized
+      root
+      opening
+      otherOpening
+      samePosition
+      verified
+      otherVerified
+      differentLeaf
+
 theorem
   different_leaf_same_arity_two_index_verified_nary_paths_imply_merkle_compression_collision
     {Digest : Type uDigest}
@@ -597,6 +653,80 @@ theorem
   cases collisionWitness with
   | intro collision =>
       exact noCollision collision
+
+theorem
+  different_leaf_same_arity_two_index_verified_nary_openings_contradict_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root opening otherOpening,
+      NAryMerklePathHasArity 2 opening.layers ->
+        NAryMerklePathHasArity 2 otherOpening.layers ->
+          NAryMerklePathOpeningVerifies compress root opening ->
+            NAryMerklePathOpeningVerifies compress root otherOpening ->
+              NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherOpening.layers ->
+                opening.layers.length = otherOpening.layers.length ->
+                  otherOpening.leaf ≠ opening.leaf ->
+                    False := by
+  intro root opening otherOpening openingArity otherOpeningArity verified
+    otherVerified sameIndex sameDepth differentLeaf
+  exact
+    different_leaf_same_arity_two_index_verified_nary_openings_contradict_no_collision
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      root
+      opening
+      otherOpening
+      openingArity
+      otherOpeningArity
+      verified
+      otherVerified
+      sameIndex
+      sameDepth
+      differentLeaf
+
+theorem
+  different_leaf_same_arity_four_index_verified_nary_openings_contradict_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root opening otherOpening,
+      NAryMerklePathHasArity 4 opening.layers ->
+        NAryMerklePathHasArity 4 otherOpening.layers ->
+          NAryMerklePathOpeningVerifies compress root opening ->
+            NAryMerklePathOpeningVerifies compress root otherOpening ->
+              NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherOpening.layers ->
+                opening.layers.length = otherOpening.layers.length ->
+                  otherOpening.leaf ≠ opening.leaf ->
+                    False := by
+  intro root opening otherOpening openingArity otherOpeningArity verified
+    otherVerified sameIndex sameDepth differentLeaf
+  exact
+    different_leaf_same_arity_four_index_verified_nary_openings_contradict_no_collision
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      root
+      opening
+      otherOpening
+      openingArity
+      otherOpeningArity
+      verified
+      otherVerified
+      sameIndex
+      sameDepth
+      differentLeaf
 
 theorem concrete_nary_merkle_path_same_position_binding_from_no_collision
     {Digest : Type uDigest}

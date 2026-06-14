@@ -69,16 +69,22 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "different_leaf_same_position_verified_openings_imply_merkle_compression_collision",
             "different_leaf_same_position_verified_paths_contradict_no_collision",
             "different_leaf_same_position_verified_openings_contradict_no_collision",
+            "different_leaf_same_position_verified_openings_contradict_assumption",
+            "different_leaf_same_position_verified_openings_contradict_bundle",
             "different_leaf_same_position_verified_nary_paths_imply_merkle_compression_collision",
             "different_leaf_same_position_verified_nary_openings_imply_merkle_compression_collision",
             "different_leaf_same_position_verified_nary_paths_contradict_no_collision",
             "different_leaf_same_position_verified_nary_openings_contradict_no_collision",
+            "different_leaf_same_position_verified_nary_openings_contradict_assumption",
+            "different_leaf_same_position_verified_nary_openings_contradict_bundle",
             "different_leaf_same_arity_two_index_verified_nary_paths_imply_merkle_compression_collision",
             "different_leaf_same_arity_two_index_verified_nary_openings_imply_merkle_compression_collision",
             "different_leaf_same_arity_four_index_verified_nary_paths_imply_merkle_compression_collision",
             "different_leaf_same_arity_four_index_verified_nary_openings_imply_merkle_compression_collision",
             "different_leaf_same_arity_two_index_verified_nary_openings_contradict_no_collision",
             "different_leaf_same_arity_four_index_verified_nary_openings_contradict_no_collision",
+            "different_leaf_same_arity_two_index_verified_nary_openings_contradict_bundle",
+            "different_leaf_same_arity_four_index_verified_nary_openings_contradict_bundle",
             "merkle_compression_collision_free_of_no_collision",
             "nary_merkle_compression_collision_free_of_no_collision",
             "centralized_merkle_compression_collision_free",
@@ -197,6 +203,44 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "different_leaf_same_position_verified_openings_contradict_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedMerkleCompressionCollisionResistance",
+            "MerklePathOpeningVerifies compress root opening",
+            "MerklePathOpeningVerifies compress root otherOpening",
+            "MerklePathIndex opening.layers = MerklePathIndex otherOpening.layers",
+            "opening.layers.length = otherOpening.layers.length",
+            "otherOpening.leaf ≠ opening.leaf",
+            "False",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "different_leaf_same_position_verified_openings_contradict_assumption",
+        &[
+            "different_leaf_same_position_verified_openings_contradict_no_collision",
+            "hashAssumptions.merkleHashCollisionResistance.evidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "different_leaf_same_position_verified_openings_contradict_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedMerkleCompressionCollisionResistance",
+            "MerklePathOpeningVerifies compress root opening",
+            "MerklePathOpeningVerifies compress root otherOpening",
+            "False",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "different_leaf_same_position_verified_openings_contradict_bundle",
+        &["different_leaf_same_position_verified_openings_contradict_assumption"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "different_leaf_same_position_verified_nary_openings_imply_merkle_compression_collision",
         &[
             "NAryMerklePathOpeningVerifies compress root opening",
@@ -230,6 +274,43 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "different_leaf_same_position_verified_nary_openings_imply_merkle_compression_collision",
             "noCollision collision",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "different_leaf_same_position_verified_nary_openings_contradict_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathOpeningVerifies compress root otherOpening",
+            "NAryMerklePathSamePosition opening.layers otherOpening.layers",
+            "otherOpening.leaf ≠ opening.leaf",
+            "False",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "different_leaf_same_position_verified_nary_openings_contradict_assumption",
+        &[
+            "different_leaf_same_position_verified_nary_openings_contradict_no_collision",
+            "hashAssumptions.merkleHashCollisionResistance.evidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "different_leaf_same_position_verified_nary_openings_contradict_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathOpeningVerifies compress root otherOpening",
+            "False",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "different_leaf_same_position_verified_nary_openings_contradict_bundle",
+        &["different_leaf_same_position_verified_nary_openings_contradict_assumption"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -358,6 +439,48 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "different_leaf_same_arity_four_index_verified_nary_openings_imply_merkle_compression_collision",
             "noCollision collision",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "different_leaf_same_arity_two_index_verified_nary_openings_contradict_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathHasArity 2 opening.layers",
+            "NAryMerklePathHasArity 2 otherOpening.layers",
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathOpeningVerifies compress root otherOpening",
+            "NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherOpening.layers",
+            "opening.layers.length = otherOpening.layers.length",
+            "otherOpening.leaf ≠ opening.leaf",
+            "False",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "different_leaf_same_arity_two_index_verified_nary_openings_contradict_bundle",
+        &["different_leaf_same_arity_two_index_verified_nary_openings_contradict_no_collision"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "different_leaf_same_arity_four_index_verified_nary_openings_contradict_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathHasArity 4 opening.layers",
+            "NAryMerklePathHasArity 4 otherOpening.layers",
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathOpeningVerifies compress root otherOpening",
+            "NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherOpening.layers",
+            "opening.layers.length = otherOpening.layers.length",
+            "otherOpening.leaf ≠ opening.leaf",
+            "False",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "different_leaf_same_arity_four_index_verified_nary_openings_contradict_bundle",
+        &["different_leaf_same_arity_four_index_verified_nary_openings_contradict_no_collision"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
