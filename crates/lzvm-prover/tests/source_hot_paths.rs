@@ -4285,6 +4285,45 @@ fn guest_pc_trace_runner_seed_snapshot_tracks_boundary_inside_runner_slice() {
 }
 
 #[test]
+fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+
+    assert!(
+        backend_source.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
+        "parallel guest PC trace lowering should have an explicit runtime gate"
+    );
+    assert!(
+        backend_source.contains("env_flag_enabled(\"LZVM_GUEST_PC_TRACE_PARALLEL_LOWER\", false)"),
+        "parallel guest PC trace lowering should remain disabled by default"
+    );
+    assert!(
+        backend_source.contains("fn lower_guest_pc_trace_seeded_pending_segments_with_timing"),
+        "parallel guest PC trace lowering should use a seeded segment helper"
+    );
+
+    let helper_body = function_body(
+        &backend_source,
+        "fn lower_guest_pc_trace_seeded_pending_segments_with_timing",
+        "fn lower_guest_pc_trace_pending_segments",
+    );
+    assert!(
+        helper_body.contains("pending.seed.as_deref().ok_or_else"),
+        "parallel guest PC trace lowering should reject unseeded pending segments"
+    );
+    assert!(
+        helper_body.contains("validate_guest_pc_trace_pending_segment_seed"),
+        "parallel guest PC trace lowering should validate the ordered seed chain"
+    );
+    assert!(
+        helper_body.contains("thread::scope"),
+        "parallel guest PC trace lowering should lower seeded chunks on worker threads"
+    );
+}
+
+#[test]
 fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

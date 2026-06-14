@@ -700,6 +700,137 @@ fn seeded_pending_segment_lowers_without_prior_segment_state() {
 }
 
 #[test]
+fn seeded_pending_segments_parallel_lower_matches_serial_output() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-parallel-seeded-lower");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        riscv_addi(5, 4, 13),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let mut pending = Vec::new();
+
+    produce_guest_pc_trace_pending_slices(
+        32,
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        &[],
+        layout.row_count(),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
+    )
+    .expect("pending slices should produce");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(pending.len() >= 3);
+    assert!(pending.iter().all(|segment| segment.seed.is_some()));
+
+    let mut serial = Vec::new();
+    for segment in &pending {
+        let seed = segment
+            .seed
+            .as_deref()
+            .expect("seeded pending segment should carry its own seed");
+        serial.push(
+            lower_guest_pc_trace_seeded_pending_segment(&layout, segment, seed, None, None)
+                .expect("serial seeded segment should lower"),
+        );
+    }
+
+    let parallel =
+        lower_guest_pc_trace_seeded_pending_segments_with_workers(&layout, pending, None, 2)
+            .expect("parallel seeded segments should lower");
+
+    assert_eq!(parallel.len(), serial.len());
+    for (parallel, serial) in parallel.iter().zip(serial.iter()) {
+        assert_eq!(parallel.next_seed, serial.next_seed);
+        assert_eq!(
+            parallel.segment.trace_instance_index,
+            serial.segment.trace_instance_index
+        );
+        assert_eq!(
+            parallel.segment.trace_source_prefix_rows,
+            serial.segment.trace_source_prefix_rows
+        );
+        assert_eq!(parallel.segment.trace, serial.segment.trace);
+        assert_eq!(parallel.segment.unit_values, serial.segment.unit_values);
+        assert_eq!(parallel.segment.proof_values, serial.segment.proof_values);
+    }
+}
+
+#[test]
+fn parallel_lower_env_stream_matches_serial_segments() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let _parallel_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", "1");
+    let _worker_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS", "2");
+    let dir = repo_temp_dir("guest-pc-parallel-lower-stream");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        riscv_addi(5, 4, 13),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+
+    let serial = compute_guest_pc_trace_segments(32, context, &[])
+        .expect("serial guest PC trace should compute");
+    let mut parallel = Vec::new();
+    let stream = produce_guest_pc_trace_segments(32, context, &[], None, |segment| {
+        parallel.push(segment);
+        Ok(())
+    })
+    .expect("parallel guest PC trace stream should produce");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(serial.len() >= 3);
+    assert_eq!(parallel.len(), serial.len());
+    assert_eq!(stream.proof_values, serial[0].proof_values);
+    for (parallel, serial) in parallel.iter().zip(serial.iter()) {
+        assert_eq!(parallel.trace_instance_index, serial.trace_instance_index);
+        assert_eq!(
+            parallel.trace_source_prefix_rows,
+            serial.trace_source_prefix_rows
+        );
+        assert_eq!(parallel.trace, serial.trace);
+        assert_eq!(parallel.unit_values, serial.unit_values);
+    }
+}
+
+#[test]
 fn guest_pc_trace_default_runner_seed_snapshot_stays_disabled() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
