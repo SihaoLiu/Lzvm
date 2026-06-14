@@ -2905,6 +2905,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
                 &error,
             ) =>
         {
+            #[cfg(feature = "cuda")]
+            let _ = lzvm_accel::cuda_allocator_clear_cache();
             run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt(
                 plan,
                 unit_index,

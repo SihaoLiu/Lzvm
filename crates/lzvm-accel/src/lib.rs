@@ -22,7 +22,7 @@ mod cuda_setup;
 #[cfg(feature = "cuda")]
 mod cuda_stream;
 #[cfg(feature = "cuda")]
-pub use cuda_allocator::{cuda_allocator_stats, CudaAllocatorStats};
+pub use cuda_allocator::{cuda_allocator_clear_cache, cuda_allocator_stats, CudaAllocatorStats};
 #[cfg(feature = "cuda")]
 pub use cuda_buffer::CudaDeviceBuffer;
 #[cfg(feature = "cuda")]

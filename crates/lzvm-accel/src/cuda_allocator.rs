@@ -6,7 +6,6 @@ use super::{cuda_status, AccelError};
 unsafe extern "C" {
     fn lzvm_cuda_alloc_bytes(out: *mut *mut c_void, bytes: usize) -> i32;
     fn lzvm_cuda_free_bytes(ptr: *mut c_void);
-    #[cfg(test)]
     fn lzvm_cuda_allocator_clear_cache() -> i32;
     fn lzvm_cuda_allocator_stats(out: *mut CudaAllocatorStats) -> i32;
 }
@@ -91,22 +90,22 @@ pub fn cuda_allocator_stats() -> Result<CudaAllocatorStats, AccelError> {
     Ok(stats)
 }
 
+pub fn cuda_allocator_clear_cache() -> Result<(), AccelError> {
+    let code = unsafe { lzvm_cuda_allocator_clear_cache() };
+    cuda_status(code)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::CudaDeviceBuffer;
-
-    fn clear_allocator_cache() {
-        let code = unsafe { lzvm_cuda_allocator_clear_cache() };
-        cuda_status(code).expect("allocator cache should clear");
-    }
 
     #[test]
     fn cuda_device_buffer_reuses_freed_same_size_allocation_without_device_synchronizing() {
         let _guard = crate::CUDA_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        clear_allocator_cache();
+        cuda_allocator_clear_cache().expect("allocator cache should clear");
 
         {
             let _buffer = CudaDeviceBuffer::new(4096).expect("first allocation should succeed");
@@ -130,6 +129,6 @@ mod tests {
         assert_eq!(after_second.cached_reuse_count, 1);
         assert_eq!(after_second.cached_blocks, 1);
 
-        clear_allocator_cache();
+        cuda_allocator_clear_cache().expect("allocator cache should clear");
     }
 }

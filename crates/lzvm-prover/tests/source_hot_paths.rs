@@ -3205,6 +3205,35 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
 }
 
 #[test]
+fn guest_pc_segment_commit_oom_retry_clears_cuda_allocator_cache() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let witness_execution_path = crate_root.join("src/witness_execution.rs");
+    let witness_execution_source = std::fs::read_to_string(&witness_execution_path)
+        .expect("witness execution source should read");
+    let accel_path = crate_root.join("../lzvm-accel/src/cuda_allocator.rs");
+    let accel_source =
+        std::fs::read_to_string(&accel_path).expect("CUDA allocator source should read");
+    let accel_lib_path = crate_root.join("../lzvm-accel/src/lib.rs");
+    let accel_lib_source =
+        std::fs::read_to_string(&accel_lib_path).expect("accel lib source should read");
+
+    let retry_body = function_body(
+        &witness_execution_source,
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optional_timings",
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt",
+    );
+    assert!(
+        retry_body.contains("cuda_allocator_clear_cache()"),
+        "CUDA OOM retry should free cached allocator blocks before falling back to serial segment commits"
+    );
+    assert!(
+        accel_source.contains("pub fn cuda_allocator_clear_cache()")
+            && accel_lib_source.contains("cuda_allocator_clear_cache"),
+        "CUDA allocator cache clearing should be available outside tests"
+    );
+}
+
+#[test]
 fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");
