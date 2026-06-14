@@ -278,6 +278,35 @@ theorem runtime_opening_segment_binding_evidence_implies_pcs_and_fri
       friOpeningBound
   exact And.intro pcsOpenings friQueries
 
+theorem runtime_opening_segment_binding_evidence_implies_opening_bound_contract
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningBoundContract
+          system
+          validation.openingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof evidence
+  rcases evidence with
+    ⟨_queryPlanBound,
+      _constantSegments,
+      _witnessSegments,
+      _friSegments,
+      _friFolds,
+      _verifierQueries,
+      constantBound,
+      witnessBound,
+      friOpeningBound⟩
+  exact And.intro constantBound (And.intro witnessBound friOpeningBound)
+
 theorem runtime_opening_segment_binding_checked_acceptance_opening
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -328,6 +357,38 @@ theorem runtime_opening_segment_binding_checked_acceptance_bound_contract
       accepted
   exact
     runtime_opening_segment_binding_evidence_implies_bound_contract
+      validation
+      artifact
+      publicInput
+      proof
+      evidence
+
+theorem runtime_opening_segment_binding_checked_acceptance_opening_bound_contract
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningBoundContract
+          system
+          validation.openingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have evidence :=
+    runtime_opening_segment_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_segment_binding_evidence_implies_opening_bound_contract
       validation
       artifact
       publicInput
