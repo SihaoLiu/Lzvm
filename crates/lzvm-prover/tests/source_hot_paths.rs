@@ -2921,7 +2921,8 @@ fn guest_pc_trace_segment_commit_uses_single_driver_entrypoint() {
     );
     assert!(
         driver_body.contains("scratch: GuestPcTraceSegmentCommitScratch")
-            && driver_body.contains("outputs: Vec<ProveWitnessTraceCommitments>")
+            && driver_body
+                .contains("output_collector: GuestPcTraceSegmentCommitOutputCollector")
             && driver_body.contains("source_lookup_balance: Option<&'b mut SourceLookupBalance>"),
         "guest PC segment commit driver should own per-worker scratch, output ordering, and source lookup balance state"
     );
@@ -2929,7 +2930,7 @@ fn guest_pc_trace_segment_commit_uses_single_driver_entrypoint() {
     let commit_segment_body = function_body(&source, "fn commit_segment(", "fn finish(");
     assert!(
         commit_segment_body.contains("commit_guest_pc_trace_segment_output")
-            && commit_segment_body.contains("self.outputs.push(output.without_trace())")
+            && commit_segment_body.contains("self.output_collector.collect_committed_segment(output)")
             && commit_segment_body.contains("self.scratch"),
         "driver commit entrypoint should centralize segment commitment, scratch use, and ordered output collection"
     );

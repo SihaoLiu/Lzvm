@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 #[cfg(feature = "cuda")]
 use std::collections::HashSet;
 use std::fmt;
@@ -2443,6 +2444,9 @@ pub enum ProveWitnessCommitmentError {
     PreloadedStageSource {
         message: String,
     },
+    SegmentCommitOutputOrder {
+        message: String,
+    },
     RegularConstraintViolation {
         unit_index: usize,
         constraint_index: usize,
@@ -2618,6 +2622,10 @@ impl fmt::Display for ProveWitnessCommitmentError {
                 f,
                 "preloaded CUDA stage source failed for prove witness commitment: {message}"
             ),
+            Self::SegmentCommitOutputOrder { message } => write!(
+                f,
+                "guest PC segment commit output ordering failed: {message}"
+            ),
             Self::RegularConstraintViolation {
                 unit_index,
                 constraint_index,
@@ -2666,6 +2674,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             | Self::SourceAssignment { .. }
             | Self::SourceLookupSet { .. }
             | Self::PreloadedStageSource { .. }
+            | Self::SegmentCommitOutputOrder { .. }
             | Self::RegularConstraintViolation { .. } => None,
         }
     }
@@ -3299,12 +3308,81 @@ impl GuestPcTraceSegmentCommitScratch {
     }
 }
 
+struct GuestPcTraceSegmentCommitOutputCollector {
+    outputs: Vec<ProveWitnessTraceCommitments>,
+    pending_outputs: BTreeMap<u32, ProveWitnessTraceCommitments>,
+    next_output_trace_instance_index: u32,
+}
+
+impl GuestPcTraceSegmentCommitOutputCollector {
+    fn new() -> Self {
+        Self {
+            outputs: Vec::new(),
+            pending_outputs: BTreeMap::new(),
+            next_output_trace_instance_index: 0,
+        }
+    }
+
+    fn collect_committed_segment(
+        &mut self,
+        output: ProveWitnessTraceCommitments,
+    ) -> Result<(), ProveWitnessCommitmentError> {
+        let trace_instance_index = output.commitments().trace_instance_index();
+        if trace_instance_index < self.next_output_trace_instance_index {
+            return Err(ProveWitnessCommitmentError::SegmentCommitOutputOrder {
+                message: format!(
+                    "duplicate or stale trace instance {trace_instance_index}; next expected {}",
+                    self.next_output_trace_instance_index
+                ),
+            });
+        }
+        if self
+            .pending_outputs
+            .insert(trace_instance_index, output.without_trace())
+            .is_some()
+        {
+            return Err(ProveWitnessCommitmentError::SegmentCommitOutputOrder {
+                message: format!("duplicate trace instance {trace_instance_index}"),
+            });
+        }
+        self.drain_ordered_outputs()
+    }
+
+    fn drain_ordered_outputs(&mut self) -> Result<(), ProveWitnessCommitmentError> {
+        while let Some(output) = self
+            .pending_outputs
+            .remove(&self.next_output_trace_instance_index)
+        {
+            self.outputs.push(output);
+            self.next_output_trace_instance_index = self
+                .next_output_trace_instance_index
+                .checked_add(1)
+                .ok_or_else(|| ProveWitnessCommitmentError::SegmentCommitOutputOrder {
+                    message: "trace instance index overflow".to_owned(),
+                })?;
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
+        if let Some((&trace_instance_index, _)) = self.pending_outputs.first_key_value() {
+            return Err(ProveWitnessCommitmentError::SegmentCommitOutputOrder {
+                message: format!(
+                    "missing trace instance {} before pending trace instance {trace_instance_index}",
+                    self.next_output_trace_instance_index
+                ),
+            });
+        }
+        Ok(self.outputs)
+    }
+}
+
 struct GuestPcTraceSegmentCommitDriver<'a, 'b> {
     context: GuestPcTraceSegmentCommitContext<'a>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     source_lookup_balance: Option<&'b mut SourceLookupBalance>,
     collect_timing: bool,
-    outputs: Vec<ProveWitnessTraceCommitments>,
+    output_collector: GuestPcTraceSegmentCommitOutputCollector,
     guest_segment_commit_duration: Duration,
     trace_timing: ProveWitnessTraceTimingAccumulator,
     segment_count: usize,
@@ -3330,7 +3408,7 @@ impl<'a, 'b> GuestPcTraceSegmentCommitDriver<'a, 'b> {
             auxiliary_inputs,
             source_lookup_balance,
             collect_timing,
-            outputs: Vec::new(),
+            output_collector: GuestPcTraceSegmentCommitOutputCollector::new(),
             guest_segment_commit_duration: Duration::ZERO,
             trace_timing: ProveWitnessTraceTimingAccumulator::default(),
             segment_count: 0,
@@ -3366,7 +3444,7 @@ impl<'a, 'b> GuestPcTraceSegmentCommitDriver<'a, 'b> {
         if let Some(segment_trace_timing) = segment_trace_timing {
             self.trace_timing.accumulate(segment_trace_timing);
         }
-        self.outputs.push(output.without_trace());
+        self.output_collector.collect_committed_segment(output)?;
         if let Some(started) = guest_segment_commit_started {
             self.guest_segment_commit_duration += started.elapsed();
             self.segment_count += 1;
@@ -3374,13 +3452,13 @@ impl<'a, 'b> GuestPcTraceSegmentCommitDriver<'a, 'b> {
         Ok(())
     }
 
-    fn finish(self) -> GuestPcTraceSegmentCommitDriverOutput {
-        GuestPcTraceSegmentCommitDriverOutput {
-            outputs: self.outputs,
+    fn finish(self) -> Result<GuestPcTraceSegmentCommitDriverOutput, ProveWitnessCommitmentError> {
+        Ok(GuestPcTraceSegmentCommitDriverOutput {
+            outputs: self.output_collector.finish()?,
             guest_segment_commit_duration: self.guest_segment_commit_duration,
             trace_timing: self.trace_timing,
             segment_count: self.segment_count,
-        }
+        })
     }
 }
 
@@ -3544,7 +3622,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             }
             GuestPcTraceSegmentStreamError::Emit(error) => error,
         })?;
-        let commit_output = commit_driver.finish();
+        let commit_output = commit_driver.finish()?;
         let proof_values = stream_result.proof_values;
         if let Some(started) = guest_trace_stream_started {
             let guest_trace_stream_elapsed_duration = started.elapsed();
@@ -3602,7 +3680,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         GuestPcTraceSegmentStreamError::Trace(error) => ProveWitnessCommitmentError::from(error),
         GuestPcTraceSegmentStreamError::Emit(error) => error,
     })?;
-    let commit_output = commit_driver.finish();
+    let commit_output = commit_driver.finish()?;
     if let Some(started) = guest_trace_stream_started {
         let guest_trace_stream_elapsed_duration = started.elapsed();
         let guest_trace_stream_duration = guest_trace_stream_elapsed_duration
@@ -5097,6 +5175,60 @@ mod tests {
             0
         );
         assert_eq!(loads.get(), 1);
+    }
+
+    fn dummy_trace_commitment_output(trace_instance_index: u32) -> ProveWitnessTraceCommitments {
+        ProveWitnessTraceCommitments {
+            commitments: ProveWitnessCommitments {
+                identity: ProveTraceIdentity::new(0, trace_instance_index),
+                input_byte_count: 0,
+                trace_rows: 0,
+                trace_columns: 0,
+                stage_commitments: WitnessTraceCommitments::new(Vec::new()),
+            },
+            trace: None,
+            trace_constraint_checks: ProveWitnessTraceConstraintChecks {
+                regular_constraint_count: 0,
+                trace_extracted: true,
+                regular_constraints_evaluated: true,
+                witness_values_committed: true,
+                constraint_checker_conformant: true,
+            },
+            #[cfg(feature = "cuda")]
+            stage_source_devices: Vec::new(),
+            #[cfg(feature = "cuda")]
+            guest_pc_device_descriptor_buffer: None,
+            #[cfg(feature = "cuda")]
+            guest_pc_device_segment_material: None,
+            publics: Vec::new(),
+            auxiliary_inputs: Arc::new(ProveWitnessAuxiliaryInputs::default()),
+        }
+    }
+
+    #[test]
+    fn guest_pc_segment_commit_output_collector_drains_trace_instances_in_order() {
+        let mut collector = GuestPcTraceSegmentCommitOutputCollector::new();
+
+        collector
+            .collect_committed_segment(dummy_trace_commitment_output(1))
+            .expect("first out-of-order output should collect");
+        assert!(collector.outputs.is_empty());
+
+        collector
+            .collect_committed_segment(dummy_trace_commitment_output(0))
+            .expect("missing first output should drain pending outputs");
+        collector
+            .collect_committed_segment(dummy_trace_commitment_output(2))
+            .expect("following output should collect");
+
+        let output = collector
+            .finish()
+            .expect("collector should finish without pending gaps");
+        let trace_instances: Vec<_> = output
+            .into_iter()
+            .map(|output| output.commitments().trace_instance_index())
+            .collect();
+        assert_eq!(trace_instances, [0, 1, 2]);
     }
 
     #[test]
