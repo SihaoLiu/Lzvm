@@ -224,6 +224,21 @@ def NAryMerklePathSamePosition
         /\ NAryMerklePathSamePosition leftRest rightRest
   | _, _ => False
 
+def NAryMerklePathLayerHasArity
+    {Digest : Type uDigest}
+    (arity : Nat)
+    (layer : NAryMerklePathLayer Digest) : Prop :=
+  NAryMerklePathLayer.arity layer = arity
+
+def NAryMerklePathHasArity
+    {Digest : Type uDigest}
+    (arity : Nat) :
+    List (NAryMerklePathLayer Digest) -> Prop
+  | [] => True
+  | layer :: rest =>
+      NAryMerklePathLayerHasArity arity layer
+        /\ NAryMerklePathHasArity arity rest
+
 structure NAryMerkleCompressionCollision
     {Digest : Type uDigest}
     (compress : List Digest -> Digest) where
@@ -359,6 +374,144 @@ theorem nary_merkle_path_same_position_implies_index_depth_eq
               restBound.left,
             ]
           · simp [restBound.right]
+
+theorem nary_merkle_path_arity_two_index_implies_same_position
+    {Digest : Type uDigest} :
+    forall path otherPath : List (NAryMerklePathLayer Digest),
+      NAryMerklePathHasArity 2 path ->
+        NAryMerklePathHasArity 2 otherPath ->
+          NAryMerklePathIndex path = NAryMerklePathIndex otherPath ->
+            path.length = otherPath.length ->
+              NAryMerklePathSamePosition path otherPath := by
+  intro path
+  induction path with
+  | nil =>
+      intro otherPath _pathArity _otherArity _sameIndex sameDepth
+      cases otherPath with
+      | nil =>
+          simp [NAryMerklePathSamePosition]
+      | cons _ _ =>
+          simp at sameDepth
+  | cons layer rest ih =>
+      intro otherPath pathArity otherArity sameIndex sameDepth
+      cases otherPath with
+      | nil =>
+          simp at sameDepth
+      | cons otherLayer otherRest =>
+          have layerArity :
+              NAryMerklePathLayerHasArity 2 layer := by
+            exact pathArity.left
+          have restArity :
+              NAryMerklePathHasArity 2 rest := by
+            exact pathArity.right
+          have otherLayerArity :
+              NAryMerklePathLayerHasArity 2 otherLayer := by
+            exact otherArity.left
+          have otherRestArity :
+              NAryMerklePathHasArity 2 otherRest := by
+            exact otherArity.right
+          have indexEq := sameIndex
+          rw [NAryMerklePathIndex, NAryMerklePathIndex] at indexEq
+          rw [layerArity, otherLayerArity] at indexEq
+          simp [NAryMerklePathLayer.childSlot] at indexEq
+          have layerShape := layerArity
+          have otherLayerShape := otherLayerArity
+          simp [
+            NAryMerklePathLayerHasArity,
+            NAryMerklePathLayer.arity,
+          ] at layerShape otherLayerShape
+          have sameLeft :
+              layer.leftSiblings.length =
+                otherLayer.leftSiblings.length := by
+            omega
+          have sameRight :
+              layer.rightSiblings.length =
+                otherLayer.rightSiblings.length := by
+            omega
+          have sameRestIndex :
+              NAryMerklePathIndex rest =
+                NAryMerklePathIndex otherRest := by
+            omega
+          constructor
+          · exact sameLeft
+          · constructor
+            · exact sameRight
+            · exact
+                ih
+                  otherRest
+                  restArity
+                  otherRestArity
+                  sameRestIndex
+                  (Nat.succ.inj sameDepth)
+
+theorem nary_merkle_path_arity_four_index_implies_same_position
+    {Digest : Type uDigest} :
+    forall path otherPath : List (NAryMerklePathLayer Digest),
+      NAryMerklePathHasArity 4 path ->
+        NAryMerklePathHasArity 4 otherPath ->
+          NAryMerklePathIndex path = NAryMerklePathIndex otherPath ->
+            path.length = otherPath.length ->
+              NAryMerklePathSamePosition path otherPath := by
+  intro path
+  induction path with
+  | nil =>
+      intro otherPath _pathArity _otherArity _sameIndex sameDepth
+      cases otherPath with
+      | nil =>
+          simp [NAryMerklePathSamePosition]
+      | cons _ _ =>
+          simp at sameDepth
+  | cons layer rest ih =>
+      intro otherPath pathArity otherArity sameIndex sameDepth
+      cases otherPath with
+      | nil =>
+          simp at sameDepth
+      | cons otherLayer otherRest =>
+          have layerArity :
+              NAryMerklePathLayerHasArity 4 layer := by
+            exact pathArity.left
+          have restArity :
+              NAryMerklePathHasArity 4 rest := by
+            exact pathArity.right
+          have otherLayerArity :
+              NAryMerklePathLayerHasArity 4 otherLayer := by
+            exact otherArity.left
+          have otherRestArity :
+              NAryMerklePathHasArity 4 otherRest := by
+            exact otherArity.right
+          have indexEq := sameIndex
+          rw [NAryMerklePathIndex, NAryMerklePathIndex] at indexEq
+          rw [layerArity, otherLayerArity] at indexEq
+          simp [NAryMerklePathLayer.childSlot] at indexEq
+          have layerShape := layerArity
+          have otherLayerShape := otherLayerArity
+          simp [
+            NAryMerklePathLayerHasArity,
+            NAryMerklePathLayer.arity,
+          ] at layerShape otherLayerShape
+          have sameLeft :
+              layer.leftSiblings.length =
+                otherLayer.leftSiblings.length := by
+            omega
+          have sameRight :
+              layer.rightSiblings.length =
+                otherLayer.rightSiblings.length := by
+            omega
+          have sameRestIndex :
+              NAryMerklePathIndex rest =
+                NAryMerklePathIndex otherRest := by
+            omega
+          constructor
+          · exact sameLeft
+          · constructor
+            · exact sameRight
+            · exact
+                ih
+                  otherRest
+                  restArity
+                  otherRestArity
+                  sameRestIndex
+                  (Nat.succ.inj sameDepth)
 
 theorem nary_merkle_children_current_eq_of_eq
     {Digest : Type uDigest} :
@@ -556,6 +709,74 @@ theorem
       leaf
       path
       verified
+
+theorem
+  nary_merkle_path_arity_two_index_binding_from_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root leaf path,
+      NAryMerklePathHasArity 2 path ->
+        NAryMerklePathVerifies compress root leaf path ->
+          forall otherLeaf otherPath,
+            NAryMerklePathHasArity 2 otherPath ->
+              NAryMerklePathIndex path = NAryMerklePathIndex otherPath ->
+                path.length = otherPath.length ->
+                  NAryMerklePathVerifies compress root otherLeaf otherPath ->
+                    otherLeaf = leaf := by
+  intro root leaf path pathArity verified otherLeaf otherPath otherPathArity
+    sameIndex sameDepth otherVerified
+  exact
+    concrete_nary_merkle_path_same_position_binding_from_no_collision
+      noCollision
+      root
+      leaf
+      path
+      otherLeaf
+      otherPath
+      (nary_merkle_path_arity_two_index_implies_same_position
+        path
+        otherPath
+        pathArity
+        otherPathArity
+        sameIndex
+        sameDepth)
+      verified
+      otherVerified
+
+theorem
+  nary_merkle_path_arity_four_index_binding_from_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root leaf path,
+      NAryMerklePathHasArity 4 path ->
+        NAryMerklePathVerifies compress root leaf path ->
+          forall otherLeaf otherPath,
+            NAryMerklePathHasArity 4 otherPath ->
+              NAryMerklePathIndex path = NAryMerklePathIndex otherPath ->
+                path.length = otherPath.length ->
+                  NAryMerklePathVerifies compress root otherLeaf otherPath ->
+                    otherLeaf = leaf := by
+  intro root leaf path pathArity verified otherLeaf otherPath otherPathArity
+    sameIndex sameDepth otherVerified
+  exact
+    concrete_nary_merkle_path_same_position_binding_from_no_collision
+      noCollision
+      root
+      leaf
+      path
+      otherLeaf
+      otherPath
+      (nary_merkle_path_arity_four_index_implies_same_position
+        path
+        otherPath
+        pathArity
+        otherPathArity
+        sameIndex
+        sameDepth)
+      verified
+      otherVerified
 
 theorem verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_assumption
     {Digest : Type uDigest}
@@ -862,6 +1083,82 @@ theorem verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_po
       root
       opening
       verified
+
+theorem
+  nary_merkle_opening_arity_two_index_binding_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root opening,
+      NAryMerklePathHasArity 2 opening.layers ->
+        NAryMerklePathOpeningVerifies compress root opening ->
+          forall otherLeaf otherPath,
+            NAryMerklePathHasArity 2 otherPath ->
+              NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherPath ->
+                opening.layers.length = otherPath.length ->
+                  NAryMerklePathVerifies compress root otherLeaf otherPath ->
+                    otherLeaf = opening.leaf := by
+  intro root opening openingArity verified otherLeaf otherPath otherPathArity
+    sameIndex sameDepth otherVerified
+  exact
+    nary_merkle_path_arity_two_index_binding_from_no_collision
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      root
+      opening.leaf
+      opening.layers
+      openingArity
+      verified
+      otherLeaf
+      otherPath
+      otherPathArity
+      sameIndex
+      sameDepth
+      otherVerified
+
+theorem
+  nary_merkle_opening_arity_four_index_binding_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root opening,
+      NAryMerklePathHasArity 4 opening.layers ->
+        NAryMerklePathOpeningVerifies compress root opening ->
+          forall otherLeaf otherPath,
+            NAryMerklePathHasArity 4 otherPath ->
+              NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherPath ->
+                opening.layers.length = otherPath.length ->
+                  NAryMerklePathVerifies compress root otherLeaf otherPath ->
+                    otherLeaf = opening.leaf := by
+  intro root opening openingArity verified otherLeaf otherPath otherPathArity
+    sameIndex sameDepth otherVerified
+  exact
+    nary_merkle_path_arity_four_index_binding_from_no_collision
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      root
+      opening.leaf
+      opening.layers
+      openingArity
+      verified
+      otherLeaf
+      otherPath
+      otherPathArity
+      sameIndex
+      sameDepth
+      otherVerified
 
 theorem merkle_compression_collision_free_of_no_collision
     {Digest : Type uDigest}

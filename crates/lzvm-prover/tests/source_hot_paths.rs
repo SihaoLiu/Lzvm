@@ -5898,7 +5898,14 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
     let core_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core.lean");
     let core_source =
         std::fs::read_to_string(&core_path).expect("Lean pipeline core binding source should read");
-    let lean_source = format!("{core_source}\n{pipeline_source}");
+    let obligations_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Obligations.lean");
+    let obligations_source = std::fs::read_to_string(&obligations_path)
+        .expect("Lean pipeline obligations source should read");
+    let audited_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Audited.lean");
+    let audited_source =
+        std::fs::read_to_string(&audited_path).expect("Lean pipeline audited source should read");
+    let lean_source =
+        format!("{core_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}");
     let lean_root_path = crate_root.join("../../lean/Lzvm.lean");
     let lean_root_source =
         std::fs::read_to_string(&lean_root_path).expect("top-level Lean source should read");

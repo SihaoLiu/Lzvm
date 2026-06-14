@@ -57,8 +57,10 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             && lean_source.contains("def NAryMerklePathRootCommitsToLeafAtSamePositionIndex")
             && lean_source.contains("def NAryMerklePathRootCommitsToLeafAtIndex")
             && lean_source.contains("def NAryMerklePathRootCommitsToLeafAtPosition")
+            && lean_source.contains("def NAryMerklePathLayerHasArity")
+            && lean_source.contains("def NAryMerklePathHasArity")
             && lean_source.contains("def CentralizedNAryMerkleCompressionCollisionResistance"),
-        "Lean Merkle path model should also expose n-ary path data, same-position indexed binding, numeric position, and fold binding for runtime arity-2 and arity-4 opening paths"
+        "Lean Merkle path model should also expose n-ary path data, same-position indexed binding, numeric position, fixed-arity shape checks, and fold binding for runtime arity-2 and arity-4 opening paths"
     );
     lean_binding::assert_theorem_declarations(
         &lean_source,
@@ -86,6 +88,12 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle",
             "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_position_from_no_collision",
             "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_position_from_bundle",
+            "nary_merkle_path_arity_two_index_implies_same_position",
+            "nary_merkle_path_arity_four_index_implies_same_position",
+            "nary_merkle_path_arity_two_index_binding_from_no_collision",
+            "nary_merkle_path_arity_four_index_binding_from_no_collision",
+            "nary_merkle_opening_arity_two_index_binding_from_bundle",
+            "nary_merkle_opening_arity_four_index_binding_from_bundle",
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index",
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_assumption",
@@ -265,6 +273,47 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "NAryMerklePathSamePosition path otherPath",
             "NAryMerklePathIndex path = NAryMerklePathIndex otherPath",
             "path.length = otherPath.length",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "nary_merkle_path_arity_two_index_implies_same_position",
+        &[
+            "NAryMerklePathHasArity 2 path",
+            "NAryMerklePathHasArity 2 otherPath",
+            "NAryMerklePathIndex path = NAryMerklePathIndex otherPath",
+            "path.length = otherPath.length",
+            "NAryMerklePathSamePosition path otherPath",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "nary_merkle_path_arity_four_index_implies_same_position",
+        &[
+            "NAryMerklePathHasArity 4 path",
+            "NAryMerklePathHasArity 4 otherPath",
+            "NAryMerklePathIndex path = NAryMerklePathIndex otherPath",
+            "path.length = otherPath.length",
+            "NAryMerklePathSamePosition path otherPath",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "nary_merkle_path_arity_four_index_binding_from_no_collision",
+        &[
+            "NAryMerkleCompressionNoCollision compress",
+            "NAryMerklePathHasArity 4 path",
+            "NAryMerklePathVerifies compress root leaf path",
+            "NAryMerklePathIndex path = NAryMerklePathIndex otherPath",
+            "path.length = otherPath.length",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "nary_merkle_path_arity_four_index_binding_from_no_collision",
+        &[
+            "nary_merkle_path_arity_four_index_implies_same_position",
+            "concrete_nary_merkle_path_same_position_binding_from_no_collision",
         ],
     );
 }
