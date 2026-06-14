@@ -33,15 +33,17 @@ use lzvm_artifacts::witness_opening_segment::{
     WITNESS_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::witness_segment::{
-    encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
-    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    encode_witness_commitment_segment, parse_witness_commitment_segment, WitnessCommitmentSegment,
+    WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_field::{poseidon2_hash_16, Felt};
 use lzvm_prover::constant_tree_opening::{open_constant_tree_row, ConstantTreeOpening};
 use lzvm_prover::pcs_fri::{
     LoadPcsFriOpeningSegmentError, ValidateOptionalPcsFriOpeningProofSegmentsError,
 };
-use lzvm_prover::pcs_query_plan::build_pcs_query_plan_segment;
+use lzvm_prover::pcs_query_plan::{
+    build_pcs_query_plan_segment, ValidatePcsQueryPlanSegmentsError,
+};
 use lzvm_prover::proof_preflight::ProofPreflightError;
 use lzvm_prover::setup_preflight::{
     validate_setup_preflight, validate_setup_preflight_hashes, SetupPreflightError,
@@ -562,6 +564,19 @@ fn seeded_required_fri_proof_without_opening(
     }
 }
 
+fn tamper_first_witness_root(proof: &mut ProofArtifact) {
+    let witness_segment = proof
+        .segments
+        .iter_mut()
+        .find(|segment| segment.id == WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+        .expect("sample proof should contain a witness commitment segment");
+    let mut witness = parse_witness_commitment_segment(&witness_segment.data)
+        .expect("sample witness commitment should parse");
+    witness.stages[0].root[0] ^= 1;
+    witness_segment.data =
+        encode_witness_commitment_segment(&witness).expect("tampered witness should encode");
+}
+
 #[test]
 fn validates_setup_preflight_hashes() {
     let catalog = sample_catalog();
@@ -718,5 +733,22 @@ fn rejects_seeded_required_pcs_fri_unit_without_opening_segment() {
                 LoadPcsFriOpeningSegmentError::MissingSegment
             )
         )
+    );
+}
+
+#[test]
+fn rejects_seeded_proof_when_witness_root_is_forged_after_query_plan() {
+    let catalog = sample_catalog_with_fri_unit();
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_empty_public_values(setup_hash);
+    let mut proof = seeded_required_fri_proof_without_opening(&catalog, &public_values);
+    tamper_first_witness_root(&mut proof);
+
+    let error = validate_setup_preflight(&catalog, &proof, &public_values)
+        .expect_err("seeded proof should bind the query seed to witness roots");
+
+    assert_eq!(
+        error,
+        SetupPreflightError::PcsQueryPlan(ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch)
     );
 }
