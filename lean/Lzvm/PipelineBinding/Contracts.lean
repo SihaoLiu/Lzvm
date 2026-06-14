@@ -104,6 +104,45 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_contrac
       accepted
   exact And.intro auditedAssumptions fullContract
 
+theorem runtime_pipeline_binding_evidence_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RequiredCryptographicAssumptionStatements assumptions.crypto
+        /\ system.transcriptBound publicInput proof
+        /\ system.publicInputBound publicInput proof
+        /\ system.pcsOpeningsValid publicInput proof
+        /\ system.friQueriesValid publicInput proof
+        /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro evidence
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_crypto_evidence assumptions
+  have transcriptBound :=
+    runtime_pipeline_binding_evidence_implies_transcript_bound evidence
+  have publicInputBound :=
+    runtime_pipeline_binding_evidence_implies_public_input_bound evidence
+  have pcsAndFri :=
+    runtime_pipeline_binding_evidence_implies_pcs_and_fri evidence
+  have coreContract :=
+    runtime_pipeline_binding_evidence_implies_core_obligations evidence
+  exact
+    And.intro auditedAssumptions
+      (And.intro transcriptBound
+        (And.intro publicInputBound
+          (And.intro pcsAndFri.left
+            (And.intro pcsAndFri.right coreContract))))
+
 theorem runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

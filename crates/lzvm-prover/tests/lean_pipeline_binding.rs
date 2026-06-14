@@ -90,6 +90,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract",
+            "runtime_pipeline_binding_evidence_audited_core_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
             "runtime_pipeline_binding_required_external_source_verifier_core_contract",
@@ -473,6 +474,38 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             )
             .contains("RuntimeArtifactSoundnessObligations"),
         "compact proof-system core contract should not force callers to unpack full pipeline evidence or artifact obligations"
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_audited_core_contract",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_audited_core_contract",
+        &["RuntimePipelineBindingCheckedAcceptance"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_audited_core_contract",
+        &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "runtime_pipeline_binding_evidence_implies_pcs_and_fri",
+            "runtime_pipeline_binding_evidence_implies_core_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_audited_core_contract",
+        &["abstract_verifier_sound"],
     );
     assert!(
         theorem_prefix(
