@@ -1,0 +1,55 @@
+use std::path::Path;
+use std::process::Command;
+
+#[test]
+fn nsys_cuda_kernel_summary_reports_kernel_launch_and_stream_shape() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/nsys-cuda-kernel-summary.py");
+    let script_source =
+        std::fs::read_to_string(&script_path).expect("nsys CUDA kernel summary source should read");
+
+    for required in [
+        "CUPTI_ACTIVITY_KIND_KERNEL",
+        "CUPTI_ACTIVITY_KIND_RUNTIME",
+        "StringIds",
+        "cudaLaunchKernel",
+        "kernel_gpu_activity",
+        "runtime_cuda_kernel_launch_api",
+        "stream_kernel_activity",
+        "fusion_candidates",
+    ] {
+        assert!(
+            script_source.contains(required),
+            "nsys CUDA kernel summary should expose {required}"
+        );
+    }
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg("--self-test")
+        .output()
+        .expect("nsys CUDA kernel summary self-test should run");
+
+    assert!(
+        output.status.success(),
+        "nsys CUDA kernel summary self-test should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for required in [
+        "ntt_stage_kernel",
+        "poseidon2_width16_merkle_parent_kernel",
+        "cudaLaunchKernel_v7000",
+        "kernel_gpu_ms",
+        "launch_api_ms",
+        "avg_kernel_us",
+        "launch_to_kernel_ratio",
+        "stream_kernel_activity",
+        "fusion_candidates",
+    ] {
+        assert!(
+            stdout.contains(required),
+            "nsys CUDA kernel summary should print {required}"
+        );
+    }
+}
