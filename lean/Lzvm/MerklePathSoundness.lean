@@ -1453,6 +1453,58 @@ theorem different_leaf_same_index_verified_openings_imply_merkle_compression_col
       otherVerified
       differentLeaf
 
+theorem different_leaf_same_position_verified_paths_imply_merkle_compression_collision
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest} :
+    forall root leaf path otherLeaf otherPath,
+      MerklePathIndex path = MerklePathIndex otherPath ->
+        path.length = otherPath.length ->
+          MerklePathVerifies compress root leaf path ->
+            MerklePathVerifies compress root otherLeaf otherPath ->
+              otherLeaf ≠ leaf ->
+                Nonempty (MerkleCompressionCollision compress) := by
+  intro root leaf path otherLeaf otherPath samePosition sameDepth verified otherVerified
+    differentLeaf
+  exact
+    different_leaf_same_index_verified_paths_imply_merkle_compression_collision
+      root
+      leaf
+      path
+      otherLeaf
+      otherPath
+      (merkle_path_same_position_implies_same_index
+        path
+        otherPath
+        samePosition
+        sameDepth)
+      verified
+      otherVerified
+      differentLeaf
+
+theorem different_leaf_same_position_verified_openings_imply_merkle_compression_collision
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest} :
+    forall root opening otherOpening,
+      MerklePathIndex opening.layers = MerklePathIndex otherOpening.layers ->
+        opening.layers.length = otherOpening.layers.length ->
+          MerklePathOpeningVerifies compress root opening ->
+            MerklePathOpeningVerifies compress root otherOpening ->
+              otherOpening.leaf ≠ opening.leaf ->
+                Nonempty (MerkleCompressionCollision compress) := by
+  intro root opening otherOpening samePosition sameDepth verified otherVerified differentLeaf
+  exact
+    different_leaf_same_position_verified_paths_imply_merkle_compression_collision
+      root
+      opening.leaf
+      opening.layers
+      otherOpening.leaf
+      otherOpening.layers
+      samePosition
+      sameDepth
+      verified
+      otherVerified
+      differentLeaf
+
 theorem concrete_merkle_path_same_index_binding
     {Digest : Type uDigest}
     {compress : Digest -> Digest -> Digest}
