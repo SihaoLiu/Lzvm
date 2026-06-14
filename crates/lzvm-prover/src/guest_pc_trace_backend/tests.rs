@@ -20,6 +20,12 @@ struct TestEnvVarGuard {
 }
 
 impl TestEnvVarGuard {
+    fn set(name: &'static str, value: &str) -> Self {
+        let previous = std::env::var_os(name);
+        std::env::set_var(name, value);
+        Self { name, previous }
+    }
+
     fn unset(name: &'static str) -> Self {
         let previous = std::env::var_os(name);
         std::env::remove_var(name);
@@ -569,6 +575,69 @@ fn guest_pc_trace_trusted_runner_seed_snapshot_produces_pending_seeds() {
     assert_eq!(pending.len(), 2);
     assert!(pending.iter().all(|segment| segment.seed.is_some()));
     assert_eq!(pending[1].seed.as_ref().unwrap().previous_c, 10);
+}
+
+#[test]
+fn seeded_pending_segment_lowers_without_prior_segment_state() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-seeded-pending-lower");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let mut pending = Vec::new();
+
+    produce_guest_pc_trace_pending_slices(
+        16,
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        &[],
+        layout.row_count(),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
+    )
+    .expect("pending slices should produce");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(pending.len(), 2);
+    let second = &pending[1];
+    let second_seed = second
+        .seed
+        .as_deref()
+        .expect("second segment should carry its own seed");
+    let lowered =
+        lower_guest_pc_trace_seeded_pending_segment(&layout, second, second_seed, None, None)
+            .expect("seeded segment should lower independently");
+    let trace = lowered
+        .segment
+        .trace
+        .as_ref()
+        .expect("host trace should be built");
+    let pc_column = layout.column(1, "pc").expect("pc column").trace_column();
+
+    assert_eq!(lowered.segment.trace_instance_index, 1);
+    assert_eq!(
+        trace.value(0, pc_column),
+        Some(Felt::from_canonical(0x8000_0008).expect("canonical pc"))
+    );
+    assert_eq!(lowered.next_seed.previous_c, 15);
 }
 
 #[test]

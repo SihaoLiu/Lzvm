@@ -2507,6 +2507,54 @@ fn produce_guest_pc_trace_pending_slices(
     ))
 }
 
+struct GuestPcTraceLoweredSegment {
+    segment: GuestPcTraceSegmentTrace,
+    next_seed: ZiskMainSegmentSeed,
+}
+
+fn lower_guest_pc_trace_seeded_pending_segment(
+    layout: &WitnessTraceLayout,
+    pending: &GuestPcTracePendingSegmentSlice,
+    seed: &ZiskMainSegmentSeed,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    mut timing: Option<&mut GuestPcTraceStreamTiming>,
+) -> Result<GuestPcTraceLoweredSegment, GuestPcTraceBackendError> {
+    let lower_started = Instant::now();
+    let written = build_layout_zisk_main_trace_segment_for_segment_output(
+        layout,
+        &pending.reports,
+        pending.terminal_pc,
+        &seed.initial_state,
+        pending.lookahead_instruction,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: pending.trace_instance_index,
+            is_last_segment: pending.is_last_segment,
+            previous_c: seed.previous_c,
+        },
+        timing.as_deref_mut(),
+    )?
+    .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
+    if let Some(timing) = timing {
+        timing.trace_lower_duration += lower_started.elapsed();
+    }
+    let next_seed = ZiskMainSegmentSeed {
+        initial_state: written.continuation_state,
+        previous_c: written.final_state.last_c,
+    };
+    Ok(GuestPcTraceLoweredSegment {
+        segment: GuestPcTraceSegmentTrace {
+            trace_instance_index: pending.trace_instance_index,
+            trace_source_prefix_rows: written.trace_source_prefix_rows,
+            #[cfg(feature = "cuda")]
+            device_segment_material: written.device_segment_material,
+            trace: written.trace,
+            unit_values: written.output.unit_values,
+            proof_values: expected_proof_values.unwrap_or_default().to_vec(),
+        },
+        next_seed,
+    })
+}
+
 fn lower_guest_pc_trace_pending_segments(
     layout: &WitnessTraceLayout,
     pending_receiver: mpsc::Receiver<GuestPcTracePendingSegmentMessage>,
@@ -2514,8 +2562,7 @@ fn lower_guest_pc_trace_pending_segments(
     timing: &mut GuestPcTraceStreamTiming,
     emit: &mut impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<GuestPcTraceStreamResult, GuestPcTraceBackendError> {
-    let mut trace_state = ZiskMainTraceState::new();
-    let mut previous_c = 0_u64;
+    let mut current_seed = ZiskMainSegmentSeed::new();
     loop {
         let receive_started = Instant::now();
         let message = match pending_receiver.recv() {
@@ -2538,37 +2585,20 @@ fn lower_guest_pc_trace_pending_segments(
         validate_guest_pc_trace_pending_segment_seed(
             pending.trace_instance_index,
             pending.seed.as_deref(),
-            &trace_state,
-            previous_c,
+            &current_seed.initial_state,
+            current_seed.previous_c,
         )?;
-        let lower_started = Instant::now();
-        let written = build_layout_zisk_main_trace_segment_for_segment_output(
+        let segment_seed = pending.seed.as_deref().unwrap_or(&current_seed);
+        let lowered = lower_guest_pc_trace_seeded_pending_segment(
             layout,
-            &pending.reports,
-            pending.terminal_pc,
-            &trace_state,
-            pending.lookahead_instruction,
-            ZiskMainTraceSegmentInfo {
-                trace_instance_index: pending.trace_instance_index,
-                is_last_segment: pending.is_last_segment,
-                previous_c,
-            },
+            &pending,
+            segment_seed,
+            expected_proof_values,
             Some(timing),
-        )?
-        .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
-        timing.trace_lower_duration += lower_started.elapsed();
-        previous_c = written.final_state.last_c;
-        trace_state = written.continuation_state;
+        )?;
+        current_seed = lowered.next_seed;
         let emit_started = Instant::now();
-        emit(GuestPcTraceSegmentTrace {
-            trace_instance_index: pending.trace_instance_index,
-            trace_source_prefix_rows: written.trace_source_prefix_rows,
-            #[cfg(feature = "cuda")]
-            device_segment_material: written.device_segment_material,
-            trace: written.trace,
-            unit_values: written.output.unit_values,
-            proof_values: expected_proof_values.unwrap_or_default().to_vec(),
-        })?;
+        emit(lowered.segment)?;
         timing.trace_emit_duration += emit_started.elapsed();
     }
     Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
