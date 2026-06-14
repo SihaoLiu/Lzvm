@@ -216,6 +216,18 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         .contains("AssumptionBundle"),
         "pipeline seeded query-plan projection should not require cryptographic assumptions"
     );
+    for theorem in [
+        "runtime_pipeline_binding_evidence_implies_transcript_bound",
+        "runtime_pipeline_binding_evidence_implies_public_input_bound",
+        "runtime_pipeline_binding_evidence_implies_pcs_and_fri",
+        "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract",
+        "runtime_pipeline_binding_evidence_implies_external_source_requirements",
+        "runtime_pipeline_binding_evidence_implies_execution_obligations",
+        "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
+        "runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence",
+    ] {
+        lean_binding::assert_theorem_body_omits(&lean_source, theorem, &[".right.right.right"]);
+    }
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri",

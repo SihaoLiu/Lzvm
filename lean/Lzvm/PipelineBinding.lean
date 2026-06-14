@@ -35,7 +35,9 @@ theorem runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence
         proof
         requiresExternalSource := by
   intro evidence
-  exact evidence.right.right.right.right.right.right.right.right.left.left
+  rcases evidence with
+    ⟨_, _, _, _, _, _, _, _, openingEvidence, _, _, _, _⟩
+  exact openingEvidence.left
 
 theorem runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence
     {system : VerifierModel}
@@ -58,7 +60,9 @@ theorem runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence
         publicInput
         proof := by
   intro evidence
-  exact evidence.right.right.left
+  rcases evidence with
+    ⟨_, _, runtimeArtifactEvidence, _, _, _, _, _, _, _, _, _, _⟩
+  exact runtimeArtifactEvidence
 
 theorem runtime_pipeline_binding_required_external_source_sound
     {system : VerifierModel}

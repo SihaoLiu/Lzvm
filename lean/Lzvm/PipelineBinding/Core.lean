@@ -159,7 +159,21 @@ theorem runtime_pipeline_binding_evidence_implies_transcript_bound
         requiresExternalSource ->
       system.transcriptBound publicInput proof := by
   intro evidence
-  exact evidence.right.right.right.right.right.right.right.right.right.left
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      _traceConstraintEvidence,
+      _queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      _openingEvidence,
+      transcriptBound,
+      _publicInputBound,
+      _pcsOpeningsValid,
+      _friQueriesValid⟩
+  exact transcriptBound
 
 theorem runtime_pipeline_binding_evidence_implies_public_input_bound
     {system : VerifierModel}
@@ -177,7 +191,21 @@ theorem runtime_pipeline_binding_evidence_implies_public_input_bound
         requiresExternalSource ->
       system.publicInputBound publicInput proof := by
   intro evidence
-  exact evidence.right.right.right.right.right.right.right.right.right.right.left
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      _traceConstraintEvidence,
+      _queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      _openingEvidence,
+      _transcriptBound,
+      publicInputBound,
+      _pcsOpeningsValid,
+      _friQueriesValid⟩
+  exact publicInputBound
 
 theorem runtime_pipeline_binding_evidence_implies_pcs_and_fri
     {system : VerifierModel}
@@ -196,7 +224,21 @@ theorem runtime_pipeline_binding_evidence_implies_pcs_and_fri
       system.pcsOpeningsValid publicInput proof
         /\ system.friQueriesValid publicInput proof := by
   intro evidence
-  exact evidence.right.right.right.right.right.right.right.right.right.right.right
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      _traceConstraintEvidence,
+      _queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      _openingEvidence,
+      _transcriptBound,
+      _publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid⟩
+  exact And.intro pcsOpeningsValid friQueriesValid
 
 theorem runtime_pipeline_binding_evidence_implies_core_obligations
     {system : VerifierModel}
@@ -243,10 +285,29 @@ theorem runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract
           proof
         /\ RuntimeVerifierCoreContract system publicInput proof := by
   intro evidence
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      _traceConstraintEvidence,
+      _queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      _openingEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid⟩
+  have coreObligations :
+      RuntimeVerifierCoreContract system publicInput proof :=
+    And.intro transcriptBound
+      (And.intro publicInputBound
+        (And.intro pcsOpeningsValid friQueriesValid))
   exact
     And.intro
-      evidence.right.right.left
-      (runtime_pipeline_binding_evidence_implies_core_obligations evidence)
+      runtimeArtifactEvidence
+      coreObligations
 
 theorem runtime_pipeline_binding_evidence_implies_external_source_requirements
     {system : VerifierModel}
@@ -275,6 +336,20 @@ theorem runtime_pipeline_binding_evidence_implies_external_source_requirements
           proof
           requiresExternalSource := by
   intro evidence
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      traceConstraintEvidence,
+      _queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      openingEvidence,
+      _transcriptBound,
+      _publicInputBound,
+      _pcsOpeningsValid,
+      _friQueriesValid⟩
   exact
     And.intro
       (runtime_opening_evidence_implies_external_source_requirement
@@ -289,14 +364,14 @@ theorem runtime_pipeline_binding_evidence_implies_external_source_requirements
           publicInput
           proof
           requiresExternalSource
-          evidence.right.right.right.right.left))
+          traceConstraintEvidence))
       (runtime_opening_evidence_implies_external_source_requirement
         validation.queryPlanBindingValidation.openingValidation.openingValidation
         artifact
         publicInput
         proof
         requiresExternalSource
-        evidence.right.right.right.right.right.right.right.right.left)
+        openingEvidence)
 
 theorem runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract
     {system : VerifierModel}
@@ -360,7 +435,20 @@ theorem runtime_pipeline_binding_evidence_implies_execution_obligations
           /\ system.constraintsSatisfied constraints trace
           /\ system.witnessMatchesTrace witness trace := by
   intro evidence
-  have traceConstraintEvidence := evidence.right.right.right.right.left
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      traceConstraintEvidence,
+      _queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      _openingEvidence,
+      _transcriptBound,
+      _publicInputBound,
+      _pcsOpeningsValid,
+      _friQueriesValid⟩
   have traceWitnessEvidence :=
     runtime_trace_constraint_evidence_implies_trace_witness_evidence
       validation.traceBindingValidation.traceConstraintValidation
@@ -369,19 +457,23 @@ theorem runtime_pipeline_binding_evidence_implies_execution_obligations
       proof
       requiresExternalSource
       traceConstraintEvidence
-  cases traceWitnessEvidence with
-  | intro witness tail =>
-    cases tail with
-    | intro trace tail =>
-      cases tail with
-      | intro constraints tail =>
-        exact
-          Exists.intro witness
-            (Exists.intro trace
-              (Exists.intro constraints
-                (And.intro tail.right.right.right.right.left
-                  (And.intro tail.right.right.right.right.right.left
-                    tail.right.right.right.right.right.right))))
+  rcases traceWitnessEvidence with
+    ⟨witness,
+      trace,
+      constraints,
+      _traceExtracted,
+      _constraintsEvaluated,
+      _witnessExtracted,
+      _backendConformant,
+      traceConsistent,
+      constraintsSatisfied,
+      witnessMatchesTrace⟩
+  exact
+    Exists.intro witness
+      (Exists.intro trace
+        (Exists.intro constraints
+          (And.intro traceConsistent
+            (And.intro constraintsSatisfied witnessMatchesTrace))))
 
 def RuntimePipelineBindingCheckedAcceptance
     (_system : VerifierModel)
