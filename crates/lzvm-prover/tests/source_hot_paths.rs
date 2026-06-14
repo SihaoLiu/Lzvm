@@ -1515,17 +1515,26 @@ fn guest_pc_trace_segments_have_device_trace_builder_ingress() {
         "device-built trace sources need an explicit host-trace equivalence check before use"
     );
 
-    let commit_body = function_body(
+    let segment_body = function_body(
         &execution_source,
         "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
         "fn merge_backend_unit_values",
     );
     assert!(
-        commit_body.contains("build_preloaded_guest_pc_trace_stage_source_devices"),
+        segment_body.contains("commit_guest_pc_trace_segment_output"),
+        "segmented guest PC commitments should route segment work through the shared helper"
+    );
+    let helper_body = function_body(
+        &execution_source,
+        "fn commit_guest_pc_trace_segment_output",
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
+    );
+    assert!(
+        helper_body.contains("build_preloaded_guest_pc_trace_stage_source_devices"),
         "segmented guest PC commitments should try the CUDA device trace builder through the shared preloaded source helper"
     );
     assert!(
-        commit_body.contains("stage_source_devices: preloaded_stage_source_devices"),
+        helper_body.contains("stage_source_devices: preloaded_stage_source_devices"),
         "segmented guest PC commitments should pass preloaded CUDA stage sources into commitment input"
     );
 }
@@ -1999,10 +2008,19 @@ fn guest_pc_segment_commitments_reuse_leaf_workspace_cache_across_segments() {
     );
     assert!(
         execution_source
-            .matches("leaf_workspace_cache: Some(&mut leaf_workspace_cache)")
+            .matches("Some(&mut leaf_workspace_cache)")
             .count()
             >= 2,
-        "guest-PC streaming paths should pass one leaf workspace cache through each segment callback"
+        "guest-PC streaming paths should pass one leaf workspace cache through each segment helper call"
+    );
+    let segment_helper_body = function_body(
+        &execution_source,
+        "fn commit_guest_pc_trace_segment_output",
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
+    );
+    assert!(
+        segment_helper_body.contains("leaf_workspace_cache,"),
+        "guest-PC segment helper should pass the borrowed leaf workspace cache into trace observers"
     );
     assert!(
         execution_source
@@ -2121,7 +2139,16 @@ fn witness_execution_prefers_guest_pc_device_material_before_host_trace_source()
         "fn merge_backend_unit_values",
     );
     assert!(
-        segment_body.contains("build_preloaded_guest_pc_trace_stage_source_devices"),
+        segment_body.contains("commit_guest_pc_trace_segment_output"),
+        "segmented guest PC commitment path should use the shared segment helper"
+    );
+    let segment_helper_body = function_body(
+        &execution_source,
+        "fn commit_guest_pc_trace_segment_output",
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
+    );
+    assert!(
+        segment_helper_body.contains("build_preloaded_guest_pc_trace_stage_source_devices"),
         "segmented guest PC commitment path should use the shared preloaded source helper"
     );
 }
@@ -2630,6 +2657,44 @@ fn cuda_source_device_commit_can_pipeline_stream_leaf_extensions() {
 }
 
 #[test]
+fn guest_pc_trace_segment_commit_has_single_helper() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_execution.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("witness execution source should read");
+
+    let run_body = function_body(
+        &source,
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
+        "fn merge_backend_unit_values",
+    );
+    let helper_body = function_body(
+        &source,
+        "fn commit_guest_pc_trace_segment_output",
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
+    );
+
+    assert_eq!(
+        run_body
+            .matches("commit_guest_pc_trace_segment_output(")
+            .count(),
+        2,
+        "both guest PC trace paths should use the same segment commitment helper"
+    );
+    assert!(
+        !run_body.contains("run_prove_witness_commitments_from_trace_inner("),
+        "guest PC trace receiver should not inline the segment commitment body"
+    );
+    assert!(
+        helper_body.contains("build_preloaded_guest_pc_trace_stage_source_devices")
+            && helper_body.contains("guest_pc_segment_commitment_trace")
+            && helper_body.contains("run_prove_witness_commitments_from_trace_inner")
+            && helper_body.contains("output.commitments.identity.trace_instance_index"),
+        "segment commitment helper should preserve source-device setup, commitment execution, and trace identity assignment"
+    );
+}
+
+#[test]
 fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");
@@ -2964,14 +3029,14 @@ fn guest_pc_trace_timing_reports_device_source_build_work() {
         "trace timing accumulation should include preloaded CUDA source build work"
     );
 
-    let commit_body = function_body(
+    let helper_body = function_body(
         &execution_source,
+        "fn commit_guest_pc_trace_segment_output",
         "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
-        "fn merge_backend_unit_values",
     );
     assert!(
-        commit_body.contains("device_source_build_duration")
-            && commit_body.contains("build_preloaded_guest_pc_trace_stage_source_devices"),
+        helper_body.contains("device_source_build_duration")
+            && helper_body.contains("build_preloaded_guest_pc_trace_stage_source_devices"),
         "guest PC segment timing should wrap preloaded CUDA source construction"
     );
 
@@ -4798,8 +4863,17 @@ fn guest_pc_trace_segments_reuse_fixed_columns_across_segments() {
         "guest PC trace segment commitments should keep fixed columns cached across segments"
     );
     assert!(
-        segment_body.contains("fixed_columns_cache: Some(&mut fixed_columns_cache)"),
+        segment_body.contains("&mut fixed_columns_cache"),
         "each segment should borrow the shared fixed-column cache instead of reloading it"
+    );
+    let helper_body = function_body(
+        &source,
+        "fn commit_guest_pc_trace_segment_output",
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner",
+    );
+    assert!(
+        helper_body.contains("fixed_columns_cache: Some(fixed_columns_cache)"),
+        "the segment helper should pass the borrowed fixed-column cache into trace commitment"
     );
 
     let inner_body = function_body(

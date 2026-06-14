@@ -3161,6 +3161,119 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
     Ok(outputs)
 }
 
+#[derive(Clone, Copy)]
+struct GuestPcTraceSegmentCommitContext<'a> {
+    plan: &'a ProveExecutionPlan,
+    unit_index: usize,
+    unit: &'a ProveUnitSchedule,
+    layout: &'a WitnessTraceLayout,
+    shared_inputs: &'a WitnessSharedInputs,
+}
+
+struct GuestPcTraceSegmentCommitRequest<'a, 'b> {
+    context: GuestPcTraceSegmentCommitContext<'a>,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    segment_output: GuestPcTraceSegmentRunOutput,
+    regular_hint_mode: WitnessRegularHintMode<'b>,
+    fixed_columns_cache: &'b mut WitnessFixedColumnsCache,
+    #[cfg(feature = "cuda")]
+    stage_commitment_reuse_cache: Option<&'b mut WitnessStageCommitmentReuseCache>,
+    #[cfg(feature = "cuda")]
+    leaf_workspace_cache: Option<&'b mut WitnessStageLeafWorkspaceCache>,
+    timing: Option<&'b mut ProveWitnessTraceTimingAccumulator>,
+}
+
+fn commit_guest_pc_trace_segment_output(
+    request: GuestPcTraceSegmentCommitRequest<'_, '_>,
+) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
+    let GuestPcTraceSegmentCommitRequest {
+        context,
+        auxiliary_inputs,
+        segment_output,
+        regular_hint_mode,
+        fixed_columns_cache,
+        #[cfg(feature = "cuda")]
+        stage_commitment_reuse_cache,
+        #[cfg(feature = "cuda")]
+        leaf_workspace_cache,
+        timing,
+    } = request;
+    let GuestPcTraceSegmentCommitContext {
+        plan,
+        unit_index,
+        unit,
+        layout,
+        shared_inputs,
+    } = context;
+    #[cfg(feature = "cuda")]
+    let mut timing = timing;
+    let trace_instance_index = segment_output.trace_instance_index();
+    #[cfg(feature = "cuda")]
+    let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
+    #[cfg(feature = "cuda")]
+    let preloaded_stage_source_devices = match timing.as_mut() {
+        Some(timing) => {
+            let timing = &mut **timing;
+            let started = Instant::now();
+            let result = build_preloaded_guest_pc_trace_stage_source_devices(
+                layout,
+                &segment_output,
+                Some(timing),
+            );
+            timing.device_source_build_duration += started.elapsed();
+            result
+        }
+        None => build_preloaded_guest_pc_trace_stage_source_devices(layout, &segment_output, None),
+    }?;
+    #[cfg(feature = "cuda")]
+    let has_preloaded_stage_source_devices = preloaded_stage_source_devices.is_some();
+    #[cfg(feature = "cuda")]
+    let has_external_device_source_material =
+        has_preloaded_stage_source_devices && segment_output.device_segment_material().is_some();
+    #[cfg(not(feature = "cuda"))]
+    let has_external_device_source_material = false;
+    let merged_inputs = merge_backend_unit_values(
+        unit_index,
+        unit,
+        auxiliary_inputs,
+        segment_output.unit_values(),
+    )?;
+    #[cfg(feature = "cuda")]
+    let (trace, guest_pc_device_segment_material) =
+        guest_pc_segment_commitment_trace(segment_output, has_external_device_source_material)?;
+    #[cfg(not(feature = "cuda"))]
+    let trace =
+        guest_pc_segment_commitment_trace(segment_output, has_external_device_source_material)?;
+    let mut output = run_prove_witness_commitments_from_trace_inner(
+        plan,
+        unit_index,
+        shared_inputs,
+        merged_inputs,
+        WitnessTraceCommitmentInput {
+            unit,
+            layout: layout.clone(),
+            trace,
+            #[cfg(feature = "cuda")]
+            terminal_trace_source_prefix_rows: Some(trace_source_prefix_rows),
+            #[cfg(feature = "cuda")]
+            stage_source_devices: preloaded_stage_source_devices,
+            #[cfg(feature = "cuda")]
+            guest_pc_device_segment_material,
+        },
+        regular_hint_mode,
+        ProveWitnessTraceRunObservers {
+            fixed_columns_cache: Some(fixed_columns_cache),
+            #[cfg(feature = "cuda")]
+            stage_commitment_reuse_cache,
+            #[cfg(feature = "cuda")]
+            leaf_workspace_cache,
+            timing,
+        },
+    )?;
+    output.commitments.identity.trace_instance_index = trace_instance_index;
+    Ok(output)
+}
+
 fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
     plan: &ProveExecutionPlan,
     unit_index: usize,
@@ -3191,6 +3304,13 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         guest_image_info: Some(&plan.guest_image_info),
         trace_layout: Some(&layout),
     };
+    let segment_commit_context = GuestPcTraceSegmentCommitContext {
+        plan,
+        unit_index,
+        unit,
+        layout: &layout,
+        shared_inputs,
+    };
     if auxiliary_inputs.proof_values.is_empty()
         && !proof_value_dependency::regular_program_uses_proof_values(
             execution_unit.stage_count,
@@ -3218,84 +3338,26 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 let guest_segment_commit_started = collect_timing.then(Instant::now);
                 let mut segment_trace_timing =
                     collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
-                let trace_instance_index = segment_output.trace_instance_index();
-                #[cfg(feature = "cuda")]
-                let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
-                #[cfg(feature = "cuda")]
-                let preloaded_stage_source_devices =
-                    if let Some(timing) = segment_trace_timing.as_mut() {
-                        let started = Instant::now();
-                        let result = build_preloaded_guest_pc_trace_stage_source_devices(
-                            &layout,
-                            &segment_output,
-                            Some(timing),
-                        );
-                        timing.device_source_build_duration += started.elapsed();
-                        result
-                    } else {
-                        build_preloaded_guest_pc_trace_stage_source_devices(
-                            &layout,
-                            &segment_output,
-                            None,
-                        )
-                    }?;
-                #[cfg(feature = "cuda")]
-                let has_preloaded_stage_source_devices = preloaded_stage_source_devices.is_some();
-                #[cfg(feature = "cuda")]
-                let has_external_device_source_material = has_preloaded_stage_source_devices
-                    && segment_output.device_segment_material().is_some();
-                #[cfg(not(feature = "cuda"))]
-                let has_external_device_source_material = false;
-                let merged_inputs = merge_backend_unit_values(
-                    unit_index,
-                    unit,
-                    Arc::clone(&auxiliary_inputs),
-                    segment_output.unit_values(),
-                )?;
-                let regular_hint_mode = match source_lookup_balance {
-                    Some(ref mut balance) => WitnessRegularHintMode::Balanced(balance),
+                let regular_hint_mode = match source_lookup_balance.as_deref_mut() {
+                    Some(balance) => WitnessRegularHintMode::Balanced(balance),
                     None => WitnessRegularHintMode::AssignmentsOnly,
                 };
-                #[cfg(feature = "cuda")]
-                let (trace, guest_pc_device_segment_material) = guest_pc_segment_commitment_trace(
-                    segment_output,
-                    has_external_device_source_material,
-                )?;
-                #[cfg(not(feature = "cuda"))]
-                let trace = guest_pc_segment_commitment_trace(
-                    segment_output,
-                    has_external_device_source_material,
-                )?;
-                let mut output = run_prove_witness_commitments_from_trace_inner(
-                    plan,
-                    unit_index,
-                    shared_inputs,
-                    merged_inputs,
-                    WitnessTraceCommitmentInput {
-                        unit,
-                        layout: layout.clone(),
-                        trace,
-                        #[cfg(feature = "cuda")]
-                        terminal_trace_source_prefix_rows: Some(trace_source_prefix_rows),
-                        #[cfg(feature = "cuda")]
-                        stage_source_devices: preloaded_stage_source_devices,
-                        #[cfg(feature = "cuda")]
-                        guest_pc_device_segment_material,
-                    },
-                    regular_hint_mode,
-                    ProveWitnessTraceRunObservers {
-                        fixed_columns_cache: Some(&mut fixed_columns_cache),
+                let output =
+                    commit_guest_pc_trace_segment_output(GuestPcTraceSegmentCommitRequest {
+                        context: segment_commit_context,
+                        auxiliary_inputs: Arc::clone(&auxiliary_inputs),
+                        segment_output,
+                        regular_hint_mode,
+                        fixed_columns_cache: &mut fixed_columns_cache,
                         #[cfg(feature = "cuda")]
                         stage_commitment_reuse_cache: Some(&mut stage_commitment_reuse_cache),
                         #[cfg(feature = "cuda")]
                         leaf_workspace_cache: Some(&mut leaf_workspace_cache),
                         timing: segment_trace_timing.as_mut(),
-                    },
-                )?;
+                    })?;
                 if let Some(segment_trace_timing) = segment_trace_timing {
                     trace_timing.accumulate(segment_trace_timing);
                 }
-                output.commitments.identity.trace_instance_index = trace_instance_index;
                 outputs.push(output.without_trace());
                 if let Some(started) = guest_segment_commit_started {
                     guest_segment_commit_duration += started.elapsed();
@@ -3368,80 +3430,25 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             let guest_segment_commit_started = collect_timing.then(Instant::now);
             let mut segment_trace_timing =
                 collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
-            let trace_instance_index = segment_output.trace_instance_index();
-            #[cfg(feature = "cuda")]
-            let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
-            #[cfg(feature = "cuda")]
-            let preloaded_stage_source_devices = if let Some(timing) = segment_trace_timing.as_mut()
-            {
-                let started = Instant::now();
-                let result = build_preloaded_guest_pc_trace_stage_source_devices(
-                    &layout,
-                    &segment_output,
-                    Some(timing),
-                );
-                timing.device_source_build_duration += started.elapsed();
-                result
-            } else {
-                build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output, None)
-            }?;
-            #[cfg(feature = "cuda")]
-            let has_preloaded_stage_source_devices = preloaded_stage_source_devices.is_some();
-            #[cfg(feature = "cuda")]
-            let has_external_device_source_material = has_preloaded_stage_source_devices
-                && segment_output.device_segment_material().is_some();
-            #[cfg(not(feature = "cuda"))]
-            let has_external_device_source_material = false;
-            let merged_inputs = merge_backend_unit_values(
-                unit_index,
-                unit,
-                Arc::clone(&auxiliary_inputs),
-                segment_output.unit_values(),
-            )?;
-            let regular_hint_mode = match source_lookup_balance {
-                Some(ref mut balance) => WitnessRegularHintMode::Balanced(balance),
+            let regular_hint_mode = match source_lookup_balance.as_deref_mut() {
+                Some(balance) => WitnessRegularHintMode::Balanced(balance),
                 None => WitnessRegularHintMode::AssignmentsOnly,
             };
-            #[cfg(feature = "cuda")]
-            let (trace, guest_pc_device_segment_material) = guest_pc_segment_commitment_trace(
+            let output = commit_guest_pc_trace_segment_output(GuestPcTraceSegmentCommitRequest {
+                context: segment_commit_context,
+                auxiliary_inputs: Arc::clone(&auxiliary_inputs),
                 segment_output,
-                has_external_device_source_material,
-            )?;
-            #[cfg(not(feature = "cuda"))]
-            let trace = guest_pc_segment_commitment_trace(
-                segment_output,
-                has_external_device_source_material,
-            )?;
-            let mut output = run_prove_witness_commitments_from_trace_inner(
-                plan,
-                unit_index,
-                shared_inputs,
-                merged_inputs,
-                WitnessTraceCommitmentInput {
-                    unit,
-                    layout: layout.clone(),
-                    trace,
-                    #[cfg(feature = "cuda")]
-                    terminal_trace_source_prefix_rows: Some(trace_source_prefix_rows),
-                    #[cfg(feature = "cuda")]
-                    stage_source_devices: preloaded_stage_source_devices,
-                    #[cfg(feature = "cuda")]
-                    guest_pc_device_segment_material,
-                },
                 regular_hint_mode,
-                ProveWitnessTraceRunObservers {
-                    fixed_columns_cache: Some(&mut fixed_columns_cache),
-                    #[cfg(feature = "cuda")]
-                    stage_commitment_reuse_cache: Some(&mut stage_commitment_reuse_cache),
-                    #[cfg(feature = "cuda")]
-                    leaf_workspace_cache: Some(&mut leaf_workspace_cache),
-                    timing: segment_trace_timing.as_mut(),
-                },
-            )?;
+                fixed_columns_cache: &mut fixed_columns_cache,
+                #[cfg(feature = "cuda")]
+                stage_commitment_reuse_cache: Some(&mut stage_commitment_reuse_cache),
+                #[cfg(feature = "cuda")]
+                leaf_workspace_cache: Some(&mut leaf_workspace_cache),
+                timing: segment_trace_timing.as_mut(),
+            })?;
             if let Some(segment_trace_timing) = segment_trace_timing {
                 trace_timing.accumulate(segment_trace_timing);
             }
-            output.commitments.identity.trace_instance_index = trace_instance_index;
             outputs.push(output.without_trace());
             if let Some(started) = guest_segment_commit_started {
                 guest_segment_commit_duration += started.elapsed();
