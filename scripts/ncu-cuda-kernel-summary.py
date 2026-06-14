@@ -20,14 +20,36 @@ METRIC_BLOCK_LIMIT = "launch__occupancy_limit_blocks"
 METRIC_REGISTERS_PER_THREAD = "launch__registers_per_thread"
 METRIC_SHARED_MEM_PER_BLOCK = "launch__shared_mem_per_block"
 
+REQUIRED_METRIC_COLUMNS = [
+    METRIC_DURATION_US,
+    METRIC_SM_THROUGHPUT,
+    METRIC_DRAM_THROUGHPUT,
+    METRIC_MEMORY_THROUGHPUT,
+    METRIC_ISSUE_ACTIVE,
+    METRIC_ACTIVE_WARPS,
+    METRIC_REGISTER_LIMIT,
+    METRIC_SHARED_MEM_LIMIT,
+    METRIC_WARP_LIMIT,
+    METRIC_BLOCK_LIMIT,
+    METRIC_REGISTERS_PER_THREAD,
+    METRIC_SHARED_MEM_PER_BLOCK,
+]
+
 
 def metric_value(row: dict[str, str], metric: str) -> str | None:
+    key = metric_key(row, metric)
+    if key is not None:
+        return row[key]
+    return None
+
+
+def metric_key(row: dict[str, str], metric: str) -> str | None:
     if metric in row:
-        return row[metric]
+        return metric
     suffix = f".{metric}"
-    for name, value in row.items():
+    for name in row:
         if name.endswith(suffix):
-            return value
+            return name
     return None
 
 
@@ -103,6 +125,92 @@ def row_kernel_name(row: dict[str, str]) -> str:
     return (row.get("Kernel Name") or row.get("Kernel") or "").strip()
 
 
+def fieldnames_contain_metric(fieldnames: list[str], metric: str) -> bool:
+    suffix = f".{metric}"
+    return any(name == metric or name.endswith(suffix) for name in fieldnames)
+
+
+def scale_for_duration_unit(unit: str | None) -> float:
+    normalized = (unit or "").strip().lower()
+    if normalized in {"ns", "nanosecond", "nanoseconds"}:
+        return 0.001
+    if normalized in {"us", "usecond", "useconds", "microsecond", "microseconds"}:
+        return 1.0
+    if normalized in {"ms", "msecond", "mseconds", "millisecond", "milliseconds"}:
+        return 1000.0
+    if normalized in {"s", "sec", "second", "seconds"}:
+        return 1_000_000.0
+    return 1.0
+
+
+def scale_for_shared_mem_unit(unit: str | None) -> float:
+    normalized = (unit or "").strip().lower()
+    if normalized in {"byte", "bytes", "byte/block", "bytes/block"}:
+        return 1.0 / 1024.0
+    if normalized in {"kbyte", "kbytes", "kbyte/block", "kbytes/block", "kb", "kb/block"}:
+        return 1.0
+    if normalized in {"mbyte", "mbytes", "mbyte/block", "mbytes/block", "mb", "mb/block"}:
+        return 1024.0
+    return 1.0
+
+
+def scale_metric(row: dict[str, str], metric: str, scale: float) -> None:
+    if scale == 1.0:
+        return
+    key = metric_key(row, metric)
+    if key is None:
+        return
+    value = parse_float(row[key])
+    if value is None:
+        return
+    row[key] = f"{value * scale:.12g}"
+
+
+def normalize_ncu_metric_units(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    unit_row = next(
+        (
+            row
+            for row in rows
+            if not row_kernel_name(row) and metric_value(row, METRIC_DURATION_US)
+        ),
+        {},
+    )
+    duration_scale = scale_for_duration_unit(metric_value(unit_row, METRIC_DURATION_US))
+    shared_mem_scale = scale_for_shared_mem_unit(
+        metric_value(unit_row, METRIC_SHARED_MEM_PER_BLOCK)
+    )
+    for row in rows:
+        if not row_kernel_name(row):
+            continue
+        scale_metric(row, METRIC_DURATION_US, duration_scale)
+        scale_metric(row, METRIC_SHARED_MEM_PER_BLOCK, shared_mem_scale)
+    return rows
+
+
+def find_ncu_csv_header_offset(lines: list[str], path: Path) -> int:
+    for index, line in enumerate(lines):
+        if "Kernel Name" not in line:
+            continue
+        try:
+            fieldnames = next(csv.reader([line]))
+        except csv.Error:
+            continue
+        if "Kernel Name" in fieldnames:
+            return index
+    raise SystemExit(f"not an Nsight Compute CSV export: {path}")
+
+
+def missing_metric_message(path: Path, lines: list[str], missing: list[str]) -> str:
+    hint = "collect with --set basic --page raw --csv"
+    warning = next((line.strip() for line in lines if "No metrics to collect" in line), "")
+    if warning:
+        hint = f"{hint}; profiler warning: {warning}"
+    return (
+        f"NCU CSV export is missing required metric columns in {path}: "
+        f"{', '.join(missing)}; {hint}"
+    )
+
+
 def summarize_rows(rows: list[dict[str, str]]) -> list[KernelMetrics]:
     by_kernel: dict[str, KernelMetrics] = {}
     for row in rows:
@@ -118,11 +226,19 @@ def summarize_rows(rows: list[dict[str, str]]) -> list[KernelMetrics]:
 
 
 def read_ncu_csv(path: Path) -> list[dict[str, str]]:
-    with path.open(newline="") as handle:
-        reader = csv.DictReader(handle)
-        if not reader.fieldnames or "Kernel Name" not in reader.fieldnames:
-            raise SystemExit(f"not an Nsight Compute CSV export: {path}")
-        return list(reader)
+    lines = path.read_text().splitlines(keepends=True)
+    header_offset = find_ncu_csv_header_offset(lines, path)
+    reader = csv.DictReader(io.StringIO("".join(lines[header_offset:])))
+    if not reader.fieldnames or "Kernel Name" not in reader.fieldnames:
+        raise SystemExit(f"not an Nsight Compute CSV export: {path}")
+    missing = [
+        metric
+        for metric in REQUIRED_METRIC_COLUMNS
+        if not fieldnames_contain_metric(reader.fieldnames, metric)
+    ]
+    if missing:
+        raise SystemExit(missing_metric_message(path, lines, missing))
+    return normalize_ncu_metric_units(list(reader))
 
 
 def writerow(writer: csv.writer, values: list[object]) -> None:
