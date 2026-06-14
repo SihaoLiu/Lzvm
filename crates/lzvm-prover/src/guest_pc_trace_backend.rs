@@ -215,6 +215,12 @@ pub(crate) struct GuestPcTraceStreamTiming {
     segment_receive_wait_duration: Duration,
     seed_direct_lift_attempt_count: usize,
     seed_direct_lift_success_count: usize,
+    seed_direct_lift_empty_segment_count: usize,
+    seed_direct_lift_pending_dma_single_report_count: usize,
+    seed_direct_lift_amo_boundary_count: usize,
+    seed_direct_lift_store_conditional_boundary_count: usize,
+    seed_direct_lift_dma_prepare_missing_lookahead_count: usize,
+    seed_direct_lift_boundary_c_unavailable_count: usize,
     seed_full_advance_count: usize,
     trace_report_count: usize,
     trace_report_row_count: usize,
@@ -276,6 +282,16 @@ impl GuestPcTraceStreamTiming {
         self.segment_receive_wait_duration += other.segment_receive_wait_duration;
         self.seed_direct_lift_attempt_count += other.seed_direct_lift_attempt_count;
         self.seed_direct_lift_success_count += other.seed_direct_lift_success_count;
+        self.seed_direct_lift_empty_segment_count += other.seed_direct_lift_empty_segment_count;
+        self.seed_direct_lift_pending_dma_single_report_count +=
+            other.seed_direct_lift_pending_dma_single_report_count;
+        self.seed_direct_lift_amo_boundary_count += other.seed_direct_lift_amo_boundary_count;
+        self.seed_direct_lift_store_conditional_boundary_count +=
+            other.seed_direct_lift_store_conditional_boundary_count;
+        self.seed_direct_lift_dma_prepare_missing_lookahead_count +=
+            other.seed_direct_lift_dma_prepare_missing_lookahead_count;
+        self.seed_direct_lift_boundary_c_unavailable_count +=
+            other.seed_direct_lift_boundary_c_unavailable_count;
         self.seed_full_advance_count += other.seed_full_advance_count;
         self.trace_report_count += other.trace_report_count;
         self.trace_report_row_count += other.trace_report_row_count;
@@ -422,6 +438,53 @@ impl GuestPcTraceStreamTiming {
 
     pub fn seed_direct_lift_success_count(&self) -> usize {
         self.seed_direct_lift_success_count
+    }
+
+    fn record_seed_direct_lift_miss(&mut self, reason: ZiskMainDirectSeedLiftMissReason) {
+        match reason {
+            ZiskMainDirectSeedLiftMissReason::EmptySegment => {
+                self.seed_direct_lift_empty_segment_count += 1;
+            }
+            ZiskMainDirectSeedLiftMissReason::PendingDmaSingleReport => {
+                self.seed_direct_lift_pending_dma_single_report_count += 1;
+            }
+            ZiskMainDirectSeedLiftMissReason::AmoBoundary => {
+                self.seed_direct_lift_amo_boundary_count += 1;
+            }
+            ZiskMainDirectSeedLiftMissReason::StoreConditionalBoundary => {
+                self.seed_direct_lift_store_conditional_boundary_count += 1;
+            }
+            ZiskMainDirectSeedLiftMissReason::DmaPrepareMissingLookahead => {
+                self.seed_direct_lift_dma_prepare_missing_lookahead_count += 1;
+            }
+            ZiskMainDirectSeedLiftMissReason::BoundaryCUnavailable => {
+                self.seed_direct_lift_boundary_c_unavailable_count += 1;
+            }
+        }
+    }
+
+    pub fn seed_direct_lift_empty_segment_count(&self) -> usize {
+        self.seed_direct_lift_empty_segment_count
+    }
+
+    pub fn seed_direct_lift_pending_dma_single_report_count(&self) -> usize {
+        self.seed_direct_lift_pending_dma_single_report_count
+    }
+
+    pub fn seed_direct_lift_amo_boundary_count(&self) -> usize {
+        self.seed_direct_lift_amo_boundary_count
+    }
+
+    pub fn seed_direct_lift_store_conditional_boundary_count(&self) -> usize {
+        self.seed_direct_lift_store_conditional_boundary_count
+    }
+
+    pub fn seed_direct_lift_dma_prepare_missing_lookahead_count(&self) -> usize {
+        self.seed_direct_lift_dma_prepare_missing_lookahead_count
+    }
+
+    pub fn seed_direct_lift_boundary_c_unavailable_count(&self) -> usize {
+        self.seed_direct_lift_boundary_c_unavailable_count
     }
 
     pub fn seed_full_advance_count(&self) -> usize {
@@ -2521,10 +2584,16 @@ fn produce_guest_pc_trace_pending_slices(
                     },
                 )?;
                 timing.seed_direct_lift_duration += direct_lift_started.elapsed();
-                if next_seed.is_some() {
-                    timing.seed_direct_lift_success_count += 1;
+                match next_seed {
+                    Ok(next_seed) => {
+                        timing.seed_direct_lift_success_count += 1;
+                        Some(next_seed)
+                    }
+                    Err(reason) => {
+                        timing.record_seed_direct_lift_miss(reason);
+                        None
+                    }
                 }
-                next_seed
             }
             _ => None,
         };
@@ -3091,6 +3160,16 @@ struct ZiskMainRunnerBoundarySeedInput<'a> {
     runner_state: &'a GuestMachineState,
     current_seed: &'a ZiskMainSegmentSeed,
     boundary_snapshot: &'a ZiskMainRunnerBoundarySnapshot,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ZiskMainDirectSeedLiftMissReason {
+    EmptySegment,
+    PendingDmaSingleReport,
+    AmoBoundary,
+    StoreConditionalBoundary,
+    DmaPrepareMissingLookahead,
+    BoundaryCUnavailable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4663,7 +4742,8 @@ fn try_lift_zisk_main_next_segment_seed_from_runner_boundary(
     lookahead_instruction: Option<RiscvInstruction>,
     runner_state: &GuestMachineState,
     current_seed: &ZiskMainSegmentSeed,
-) -> Result<Option<ZiskMainSegmentSeed>, GuestPcTraceBackendError> {
+) -> Result<Result<ZiskMainSegmentSeed, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError>
+{
     let boundary_snapshot = zisk_main_runner_boundary_snapshot_from_reports(
         reports,
         lookahead_instruction,
@@ -4686,14 +4766,15 @@ fn try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
     input: ZiskMainRunnerBoundarySeedInput<'_>,
-) -> Result<Option<ZiskMainSegmentSeed>, GuestPcTraceBackendError> {
-    let Some(next_previous_c) = direct_zisk_main_segment_boundary_c(
+) -> Result<Result<ZiskMainSegmentSeed, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError>
+{
+    let next_previous_c = match direct_zisk_main_segment_boundary_c(
         input.reports,
         input.lookahead_instruction,
         input.current_seed,
-    )?
-    else {
-        return Ok(None);
+    )? {
+        Ok(next_previous_c) => next_previous_c,
+        Err(reason) => return Ok(Err(reason)),
     };
     lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
         row_count,
@@ -4701,7 +4782,7 @@ fn try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
         input,
         next_previous_c,
     )
-    .map(Some)
+    .map(Ok)
 }
 
 #[cfg(test)]
@@ -4754,7 +4835,7 @@ fn lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
             ),
         });
     }
-    if let Some(direct_c) = direct_zisk_main_segment_boundary_c(
+    if let Ok(direct_c) = direct_zisk_main_segment_boundary_c(
         input.reports,
         input.lookahead_instruction,
         input.current_seed,
@@ -6279,30 +6360,39 @@ fn direct_zisk_main_segment_boundary_c(
     reports: &[GuestMachineReport],
     lookahead_instruction: Option<RiscvInstruction>,
     current_seed: &ZiskMainSegmentSeed,
-) -> Result<Option<u64>, GuestPcTraceBackendError> {
+) -> Result<Result<u64, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError> {
     let Some(report) = reports.last() else {
-        return Ok(None);
+        return Ok(Err(ZiskMainDirectSeedLiftMissReason::EmptySegment));
     };
     if current_seed.initial_state.pending_dma.is_some() && reports.len() == 1 {
-        return Ok(None);
+        return Ok(Err(
+            ZiskMainDirectSeedLiftMissReason::PendingDmaSingleReport,
+        ));
+    }
+    if matches!(report.instruction, RiscvInstruction::Amo { .. }) {
+        return Ok(Err(ZiskMainDirectSeedLiftMissReason::AmoBoundary));
     }
     if matches!(
         report.instruction,
-        RiscvInstruction::Amo { .. } | RiscvInstruction::StoreConditional { .. }
+        RiscvInstruction::StoreConditional { .. }
     ) {
-        return Ok(None);
+        return Ok(Err(
+            ZiskMainDirectSeedLiftMissReason::StoreConditionalBoundary,
+        ));
     }
     if matches!(report.instruction, RiscvInstruction::ZiskDmaPrepare { .. })
         && lookahead_instruction.is_none()
     {
-        return Ok(None);
+        return Ok(Err(
+            ZiskMainDirectSeedLiftMissReason::DmaPrepareMissingLookahead,
+        ));
     }
 
     let lowered = lower_single_zisk_main_report_row(0, report, || lookahead_instruction)?;
-    Ok(direct_zisk_main_report_boundary_c(
-        report,
-        &lowered.instruction,
-    ))
+    Ok(
+        direct_zisk_main_report_boundary_c(report, &lowered.instruction)
+            .ok_or(ZiskMainDirectSeedLiftMissReason::BoundaryCUnavailable),
+    )
 }
 
 fn direct_zisk_main_report_boundary_c(

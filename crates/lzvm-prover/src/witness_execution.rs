@@ -371,6 +371,12 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_segment_receive_wait_duration: Duration,
     guest_trace_seed_direct_lift_attempt_count: usize,
     guest_trace_seed_direct_lift_success_count: usize,
+    guest_trace_seed_direct_lift_empty_segment_count: usize,
+    guest_trace_seed_direct_lift_pending_dma_single_report_count: usize,
+    guest_trace_seed_direct_lift_amo_boundary_count: usize,
+    guest_trace_seed_direct_lift_store_conditional_boundary_count: usize,
+    guest_trace_seed_direct_lift_dma_prepare_missing_lookahead_count: usize,
+    guest_trace_seed_direct_lift_boundary_c_unavailable_count: usize,
     guest_trace_seed_full_advance_count: usize,
     guest_trace_report_count: usize,
     guest_trace_report_row_count: usize,
@@ -517,6 +523,18 @@ impl ProveWitnessGuestPcTraceTiming {
                 .seed_direct_lift_attempt_count(),
             guest_trace_seed_direct_lift_success_count: stream_timing
                 .seed_direct_lift_success_count(),
+            guest_trace_seed_direct_lift_empty_segment_count: stream_timing
+                .seed_direct_lift_empty_segment_count(),
+            guest_trace_seed_direct_lift_pending_dma_single_report_count: stream_timing
+                .seed_direct_lift_pending_dma_single_report_count(),
+            guest_trace_seed_direct_lift_amo_boundary_count: stream_timing
+                .seed_direct_lift_amo_boundary_count(),
+            guest_trace_seed_direct_lift_store_conditional_boundary_count: stream_timing
+                .seed_direct_lift_store_conditional_boundary_count(),
+            guest_trace_seed_direct_lift_dma_prepare_missing_lookahead_count: stream_timing
+                .seed_direct_lift_dma_prepare_missing_lookahead_count(),
+            guest_trace_seed_direct_lift_boundary_c_unavailable_count: stream_timing
+                .seed_direct_lift_boundary_c_unavailable_count(),
             guest_trace_seed_full_advance_count: stream_timing.seed_full_advance_count(),
             guest_trace_report_count: stream_timing.trace_report_count(),
             guest_trace_report_row_count: stream_timing.trace_report_row_count(),
@@ -787,6 +805,30 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_seed_direct_lift_success_count(&self) -> usize {
         self.guest_trace_seed_direct_lift_success_count
+    }
+
+    pub fn guest_trace_seed_direct_lift_empty_segment_count(&self) -> usize {
+        self.guest_trace_seed_direct_lift_empty_segment_count
+    }
+
+    pub fn guest_trace_seed_direct_lift_pending_dma_single_report_count(&self) -> usize {
+        self.guest_trace_seed_direct_lift_pending_dma_single_report_count
+    }
+
+    pub fn guest_trace_seed_direct_lift_amo_boundary_count(&self) -> usize {
+        self.guest_trace_seed_direct_lift_amo_boundary_count
+    }
+
+    pub fn guest_trace_seed_direct_lift_store_conditional_boundary_count(&self) -> usize {
+        self.guest_trace_seed_direct_lift_store_conditional_boundary_count
+    }
+
+    pub fn guest_trace_seed_direct_lift_dma_prepare_missing_lookahead_count(&self) -> usize {
+        self.guest_trace_seed_direct_lift_dma_prepare_missing_lookahead_count
+    }
+
+    pub fn guest_trace_seed_direct_lift_boundary_c_unavailable_count(&self) -> usize {
+        self.guest_trace_seed_direct_lift_boundary_c_unavailable_count
     }
 
     pub fn guest_trace_seed_full_advance_count(&self) -> usize {

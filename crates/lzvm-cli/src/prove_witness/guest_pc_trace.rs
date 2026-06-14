@@ -161,6 +161,30 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_seed_direct_lift_success_count(),
     );
     timings.record_count(
+        "guest_trace_seed_direct_lift_empty_segments",
+        timing.guest_trace_seed_direct_lift_empty_segment_count(),
+    );
+    timings.record_count(
+        "guest_trace_seed_direct_lift_pending_dma_single_reports",
+        timing.guest_trace_seed_direct_lift_pending_dma_single_report_count(),
+    );
+    timings.record_count(
+        "guest_trace_seed_direct_lift_amo_boundaries",
+        timing.guest_trace_seed_direct_lift_amo_boundary_count(),
+    );
+    timings.record_count(
+        "guest_trace_seed_direct_lift_store_conditional_boundaries",
+        timing.guest_trace_seed_direct_lift_store_conditional_boundary_count(),
+    );
+    timings.record_count(
+        "guest_trace_seed_direct_lift_dma_prepare_missing_lookaheads",
+        timing.guest_trace_seed_direct_lift_dma_prepare_missing_lookahead_count(),
+    );
+    timings.record_count(
+        "guest_trace_seed_direct_lift_boundary_c_unavailable",
+        timing.guest_trace_seed_direct_lift_boundary_c_unavailable_count(),
+    );
+    timings.record_count(
         "guest_trace_seed_full_advances",
         timing.guest_trace_seed_full_advance_count(),
     );

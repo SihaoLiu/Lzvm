@@ -4383,6 +4383,12 @@ fn guest_pc_trace_timing_reports_seed_advance_work() {
         "seed_full_advance_duration",
         "seed_direct_lift_attempt_count",
         "seed_direct_lift_success_count",
+        "seed_direct_lift_empty_segment_count",
+        "seed_direct_lift_pending_dma_single_report_count",
+        "seed_direct_lift_amo_boundary_count",
+        "seed_direct_lift_store_conditional_boundary_count",
+        "seed_direct_lift_dma_prepare_missing_lookahead_count",
+        "seed_direct_lift_boundary_c_unavailable_count",
         "seed_full_advance_count",
     ] {
         assert!(
@@ -4397,8 +4403,14 @@ fn guest_pc_trace_timing_reports_seed_advance_work() {
     );
     assert!(
         produce_body.contains("seed_direct_lift_duration")
-            && produce_body.contains("seed_full_advance_duration"),
-        "pending slice production should time direct seed lifting and full seed advancement"
+            && produce_body.contains("seed_full_advance_duration")
+            && produce_body.contains("record_seed_direct_lift_miss"),
+        "pending slice production should time direct seed lifting, classify direct-lift misses, and time full seed advancement"
+    );
+    assert!(
+        backend_source.contains("enum ZiskMainDirectSeedLiftMissReason")
+            && backend_source.contains("fn direct_zisk_main_segment_boundary_c"),
+        "direct seed lifting should preserve a classified miss reason instead of exposing only a bare Option"
     );
 
     for field in [
@@ -4406,6 +4418,12 @@ fn guest_pc_trace_timing_reports_seed_advance_work() {
         "guest_trace_seed_full_advance_duration",
         "guest_trace_seed_direct_lift_attempt_count",
         "guest_trace_seed_direct_lift_success_count",
+        "guest_trace_seed_direct_lift_empty_segment_count",
+        "guest_trace_seed_direct_lift_pending_dma_single_report_count",
+        "guest_trace_seed_direct_lift_amo_boundary_count",
+        "guest_trace_seed_direct_lift_store_conditional_boundary_count",
+        "guest_trace_seed_direct_lift_dma_prepare_missing_lookahead_count",
+        "guest_trace_seed_direct_lift_boundary_c_unavailable_count",
         "guest_trace_seed_full_advance_count",
     ] {
         assert!(
@@ -4418,6 +4436,12 @@ fn guest_pc_trace_timing_reports_seed_advance_work() {
         "\"guest_trace_seed_full_advance\"",
         "\"guest_trace_seed_direct_lift_attempts\"",
         "\"guest_trace_seed_direct_lift_successes\"",
+        "\"guest_trace_seed_direct_lift_empty_segments\"",
+        "\"guest_trace_seed_direct_lift_pending_dma_single_reports\"",
+        "\"guest_trace_seed_direct_lift_amo_boundaries\"",
+        "\"guest_trace_seed_direct_lift_store_conditional_boundaries\"",
+        "\"guest_trace_seed_direct_lift_dma_prepare_missing_lookaheads\"",
+        "\"guest_trace_seed_direct_lift_boundary_c_unavailable\"",
         "\"guest_trace_seed_full_advances\"",
     ] {
         assert!(

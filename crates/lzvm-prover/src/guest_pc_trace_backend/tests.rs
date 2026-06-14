@@ -962,6 +962,15 @@ fn runner_boundary_seed_snapshot_derives_full_width_store_boundary() {
 }
 
 #[test]
+fn direct_seed_lift_classifies_empty_segment_miss() {
+    let miss = direct_zisk_main_segment_boundary_c(&[], None, &ZiskMainSegmentSeed::new())
+        .expect("direct boundary classification should evaluate")
+        .expect_err("empty segments cannot expose a direct boundary c");
+
+    assert_eq!(miss, ZiskMainDirectSeedLiftMissReason::EmptySegment);
+}
+
+#[test]
 #[cfg(feature = "cuda")]
 fn zisk_main_device_descriptor_uses_compact_words_when_values_fit() {
     let mut descriptors = ZiskMainDeviceTraceDescriptors::new(2, 39, 0x2000);
