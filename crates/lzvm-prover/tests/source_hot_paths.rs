@@ -2896,6 +2896,11 @@ fn guest_pc_trace_segment_commit_uses_worker_local_scratch() {
     let worker_body = function_body(
         &source,
         "struct GuestPcTraceSegmentCommitWorkerState",
+        "struct GuestPcTraceSegmentCommitWorkerPool",
+    );
+    let pool_body = function_body(
+        &source,
+        "struct GuestPcTraceSegmentCommitWorkerPool",
         "struct GuestPcTraceSegmentCommitDriver",
     );
     let commit_segment_body = function_body(
@@ -2905,8 +2910,9 @@ fn guest_pc_trace_segment_commit_uses_worker_local_scratch() {
     );
     assert!(
         worker_body.contains("scratch: GuestPcTraceSegmentCommitScratch")
-            && commit_segment_body.contains("self.worker_state.commit_segment("),
-        "sequential guest PC segment paths should reuse one worker-local scratch bundle until workers split it"
+            && pool_body.contains("worker_state: GuestPcTraceSegmentCommitWorkerState")
+            && commit_segment_body.contains("self.worker_pool.commit_segment("),
+        "sequential guest PC segment paths should route worker-local scratch through a pool boundary"
     );
 
     let segment_body = function_body(
@@ -2936,11 +2942,11 @@ fn guest_pc_trace_segment_commit_uses_single_driver_entrypoint() {
         "struct GuestPcTraceSegmentCommitDriverOutput",
     );
     assert!(
-        driver_body.contains("worker_state: GuestPcTraceSegmentCommitWorkerState")
+        driver_body.contains("worker_pool: GuestPcTraceSegmentCommitWorkerPool")
             && driver_body
                 .contains("output_collector: GuestPcTraceSegmentCommitOutputCollector")
             && driver_body.contains("source_lookup_balance: Option<&'b mut SourceLookupBalance>"),
-        "guest PC segment commit driver should own worker state, output ordering, and source lookup balance state"
+        "guest PC segment commit driver should own the worker pool, output ordering, and source lookup balance state"
     );
 
     let work_body = function_body(
@@ -2960,9 +2966,9 @@ fn guest_pc_trace_segment_commit_uses_single_driver_entrypoint() {
     );
     assert!(
         work_body.contains("commit_guest_pc_trace_segment_output")
-            && commit_segment_body.contains("self.worker_state.commit_segment(")
+            && commit_segment_body.contains("self.worker_pool.commit_segment(")
             && collect_body.contains("collect_committed_segment(result.output)"),
-        "driver commit entrypoint should centralize segment commitment, scratch use, and ordered output collection"
+        "driver commit entrypoint should centralize segment commitment dispatch and ordered output collection"
     );
 
     let run_body = function_body(
@@ -3025,7 +3031,7 @@ fn guest_pc_trace_segment_commit_splits_work_result_collection() {
         "fn collect_committed_segment_result(",
     );
     assert!(
-        driver_commit_body.contains("self.worker_state.commit_segment(")
+        driver_commit_body.contains("self.worker_pool.commit_segment(")
             && driver_commit_body.contains("self.collect_committed_segment_result(result)"),
         "driver commit_segment should only run segment work and hand the result to the collection path"
     );
@@ -3060,7 +3066,7 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
     let worker_body = function_body(
         &source,
         "struct GuestPcTraceSegmentCommitWorkerState",
-        "struct GuestPcTraceSegmentCommitDriver",
+        "struct GuestPcTraceSegmentCommitWorkerPool",
     );
     assert!(
         worker_body.contains("scratch: GuestPcTraceSegmentCommitScratch")
@@ -3070,15 +3076,29 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
         "worker state should own worker-local scratch and run one segment commit work item"
     );
 
+    let pool_body = function_body(
+        &source,
+        "struct GuestPcTraceSegmentCommitWorkerPool",
+        "struct GuestPcTraceSegmentCommitDriver",
+    );
+    assert!(
+        pool_body.contains("worker_state: GuestPcTraceSegmentCommitWorkerState")
+            && pool_body.contains("fn new() -> Self")
+            && pool_body.contains("fn commit_segment(")
+            && pool_body.contains("self.worker_state.commit_segment("),
+        "worker pool should provide the driver-facing segment dispatch boundary"
+    );
+
     let driver_body = function_body(
         &source,
         "struct GuestPcTraceSegmentCommitDriver",
         "struct GuestPcTraceSegmentCommitDriverOutput",
     );
     assert!(
-        driver_body.contains("worker_state: GuestPcTraceSegmentCommitWorkerState")
+        driver_body.contains("worker_pool: GuestPcTraceSegmentCommitWorkerPool")
+            && !driver_body.contains("worker_state: GuestPcTraceSegmentCommitWorkerState")
             && !driver_body.contains("scratch: GuestPcTraceSegmentCommitScratch"),
-        "driver should own a worker state instead of borrowing scratch directly"
+        "driver should own a worker pool instead of borrowing scratch or worker state directly"
     );
 
     let driver_commit_body = function_body(
@@ -3087,9 +3107,9 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
         "fn collect_committed_segment_result(",
     );
     assert!(
-        driver_commit_body.contains("self.worker_state.commit_segment(")
+        driver_commit_body.contains("self.worker_pool.commit_segment(")
             && !driver_commit_body.contains("&mut self.scratch"),
-        "sequential driver should dispatch segment work through the worker state"
+        "sequential driver should dispatch segment work through the worker pool"
     );
 }
 

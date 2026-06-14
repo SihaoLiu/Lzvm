@@ -3414,6 +3414,35 @@ impl GuestPcTraceSegmentCommitWorkerState {
     }
 }
 
+struct GuestPcTraceSegmentCommitWorkerPool {
+    worker_state: GuestPcTraceSegmentCommitWorkerState,
+}
+
+impl GuestPcTraceSegmentCommitWorkerPool {
+    fn new() -> Self {
+        Self {
+            worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
+        }
+    }
+
+    fn commit_segment(
+        &mut self,
+        context: GuestPcTraceSegmentCommitContext<'_>,
+        auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+        segment_output: GuestPcTraceSegmentRunOutput,
+        use_source_lookup_balance: bool,
+        collect_timing: bool,
+    ) -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
+        self.worker_state.commit_segment(
+            context,
+            auxiliary_inputs,
+            segment_output,
+            use_source_lookup_balance,
+            collect_timing,
+        )
+    }
+}
+
 struct GuestPcTraceSegmentCommitDriver<'a, 'b> {
     context: GuestPcTraceSegmentCommitContext<'a>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
@@ -3423,7 +3452,7 @@ struct GuestPcTraceSegmentCommitDriver<'a, 'b> {
     guest_segment_commit_duration: Duration,
     trace_timing: ProveWitnessTraceTimingAccumulator,
     segment_count: usize,
-    worker_state: GuestPcTraceSegmentCommitWorkerState,
+    worker_pool: GuestPcTraceSegmentCommitWorkerPool,
 }
 
 struct GuestPcTraceSegmentCommitDriverOutput {
@@ -3449,7 +3478,7 @@ impl<'a, 'b> GuestPcTraceSegmentCommitDriver<'a, 'b> {
             guest_segment_commit_duration: Duration::ZERO,
             trace_timing: ProveWitnessTraceTimingAccumulator::default(),
             segment_count: 0,
-            worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
+            worker_pool: GuestPcTraceSegmentCommitWorkerPool::new(),
         }
     }
 
@@ -3457,7 +3486,7 @@ impl<'a, 'b> GuestPcTraceSegmentCommitDriver<'a, 'b> {
         &mut self,
         segment_output: GuestPcTraceSegmentRunOutput,
     ) -> Result<(), ProveWitnessCommitmentError> {
-        let result = self.worker_state.commit_segment(
+        let result = self.worker_pool.commit_segment(
             self.context,
             Arc::clone(&self.auxiliary_inputs),
             segment_output,
