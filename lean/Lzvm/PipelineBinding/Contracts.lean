@@ -12,6 +12,38 @@ Compact proof-system contracts derived from runtime proof pipeline binding.
 
 namespace Lzvm
 
+theorem runtime_pipeline_binding_checked_acceptance_opening_bound_contract
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningBoundContract
+          system
+          validation.queryPlanBindingValidation.openingValidation.openingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have openingSegmentAccepted :=
+    runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_segment_binding_checked_acceptance_opening_bound_contract
+      validation.queryPlanBindingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

@@ -70,6 +70,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_evidence",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_bound_contract",
+            "runtime_pipeline_binding_checked_acceptance_opening_bound_contract",
             "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract",
             "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
@@ -618,6 +619,19 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             )
             .contains("RuntimeVerifierCoreContract system publicInput proof"),
         "pipeline checked acceptance should expose challenge, transcript, query, opening, and verifier core evidence"
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_opening_bound_contract",
+        &["RuntimeOpeningBoundContract"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_opening_bound_contract",
+        &[
+            "runtime_opening_segment_binding_checked_acceptance_opening_bound_contract",
+            "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
+        ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
