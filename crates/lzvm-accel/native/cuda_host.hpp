@@ -50,6 +50,9 @@ struct LzvmCudaAllocatorStats {
     std::size_t cuda_copy_d2h_bytes;
     std::size_t cuda_copy_d2h_wait_ns;
     std::size_t cuda_copy_d2h_max_wait_ns;
+    std::size_t cuda_copy_d2h_hot_bytes;
+    std::size_t cuda_copy_d2h_hot_count;
+    std::size_t cuda_copy_d2h_hot_wait_ns;
     std::size_t cuda_copy_d2d_calls;
     std::size_t cuda_copy_d2d_bytes;
     std::size_t cuda_copy_d2d_wait_ns;

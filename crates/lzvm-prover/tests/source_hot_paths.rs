@@ -4546,6 +4546,9 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "cuda_copy_d2h_bytes",
         "cuda_copy_d2h_wait_ns",
         "cuda_copy_d2h_max_wait_ns",
+        "cuda_copy_d2h_hot_bytes",
+        "cuda_copy_d2h_hot_count",
+        "cuda_copy_d2h_hot_wait_ns",
         "cuda_copy_d2d_calls",
         "cuda_copy_d2d_bytes",
         "cuda_copy_d2d_wait_ns",
@@ -4624,6 +4627,14 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "CUDA copy direction timing should be visible in CUDA timing stats"
     );
     assert!(
+        native_source.contains("g_cuda_copy_d2h_by_size")
+            && native_source.contains("record_cuda_copy_d2h_wait")
+            && native_source.contains("cuda_copy_d2h_hot_bytes")
+            && native_source.contains("cuda_copy_d2h_hot_count")
+            && native_source.contains("cuda_copy_d2h_hot_wait_ns"),
+        "D2H copy wait timing should expose the dominant copied size"
+    );
+    assert!(
         native_source.contains("g_cuda_event_synchronize_by_size")
             && native_source.contains("cuda_event_synchronize_hot_bytes")
             && native_source.contains("cuda_event_synchronize_hot_count")
@@ -4671,6 +4682,10 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "\"cuda_allocator_copy_d2h_wait_ns\"",
         "\"cuda_allocator_copy_d2h_max_wait_ns\"",
         "\"cuda_allocator_copy_d2h_avg_wait_per_call_ns\"",
+        "\"cuda_allocator_copy_d2h_hot_bytes\"",
+        "\"cuda_allocator_copy_d2h_hot_count\"",
+        "\"cuda_allocator_copy_d2h_hot_wait_ns\"",
+        "\"cuda_allocator_copy_d2h_hot_avg_wait_per_call_ns\"",
         "\"cuda_allocator_copy_d2d_calls\"",
         "\"cuda_allocator_copy_d2d_bytes\"",
         "\"cuda_allocator_copy_d2d_wait_ns\"",
