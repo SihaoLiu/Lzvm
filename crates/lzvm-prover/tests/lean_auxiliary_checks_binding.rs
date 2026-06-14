@@ -192,6 +192,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean timing observation soundness should reuse the observed-acceptance verifier projector"
     );
     assert!(
+        lean_source.contains("IgnoredMetadataObservedAcceptance")
+            && lean_source
+                .contains("ignored_metadata_observed_acceptance_projects_verifier_acceptance")
+            && lean_source.contains("ignored_metadata_acceptance_sound"),
+        "Lean auxiliary timing metadata should use one generic ignored-metadata acceptance wrapper"
+    );
+    assert!(
+        timing_source.contains("IgnoredMetadataObservedAcceptance system observations")
+            && lean_source
+                .matches("IgnoredMetadataObservedAcceptance system summary")
+                .count()
+                >= 8
+            && runtime_performance_source
+                .contains("IgnoredMetadataObservedAcceptance system summary"),
+        "Lean timing modules should instantiate the generic ignored-metadata wrapper"
+    );
+    assert!(
         lean_source.contains(
             "guest_pc_trace_timing_observed_acceptance_projects_verifier_acceptance\n        summary\n        publicInput\n        proof\n        acceptedWithGuestPcTraceTimings"
         ),

@@ -64,6 +64,64 @@ structure GpuMerkleDigestPrefixBatchValidation (system : VerifierModel) where
       gpuMerkleDigestPrefixBatchMatchesSinglePaths publicInput proof ->
         lowerPrefixesBound publicInput proof
 
+universe u
+
+def IgnoredMetadataObservedAcceptance
+    (system : VerifierModel)
+    {Metadata : Type u}
+    (_metadata : Metadata)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+
+theorem ignored_metadata_observed_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    {Metadata : Type u}
+    (metadata : Metadata) :
+    forall publicInput proof,
+      IgnoredMetadataObservedAcceptance system metadata publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof observed
+  exact observed
+
+theorem ignored_metadata_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {Metadata : Type u}
+    (metadata : Metadata) :
+    forall publicInput proof,
+      IgnoredMetadataObservedAcceptance system metadata publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      (ignored_metadata_observed_acceptance_projects_verifier_acceptance
+        metadata
+        publicInput
+        proof
+        observed)
+
+theorem ignored_metadata_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {Metadata : Type u}
+    (metadata : Metadata) :
+    forall publicInput proof,
+      IgnoredMetadataObservedAcceptance system metadata publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    sound_witness_implies_verifier_core_contract
+      (ignored_metadata_acceptance_sound
+        assumptions
+        metadata
+        publicInput
+        proof
+        observed)
+
 structure TimingObservation where
   label : Nat
   milliseconds : Nat

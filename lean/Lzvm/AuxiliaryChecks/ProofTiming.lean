@@ -14,10 +14,10 @@ namespace Lzvm
 
 def WitnessOpeningRowValueTimingObservedAcceptance
     (system : VerifierModel)
-    (_summary : Option WitnessOpeningRowValueTimingSummary)
+    (summary : Option WitnessOpeningRowValueTimingSummary)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
-  system.accepts publicInput proof
+  IgnoredMetadataObservedAcceptance system summary publicInput proof
 
 theorem witness_opening_row_value_timing_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
@@ -142,10 +142,10 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_verifier_core_cont
 
 def ConstantMaterialValidationTimingObservedAcceptance
     (system : VerifierModel)
-    (_summary : Option ConstantMaterialValidationTimingSummary)
+    (summary : Option ConstantMaterialValidationTimingSummary)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
-  system.accepts publicInput proof
+  IgnoredMetadataObservedAcceptance system summary publicInput proof
 
 theorem constant_material_validation_timing_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
@@ -256,10 +256,10 @@ theorem constant_material_validation_aggregate_timing_acceptance_verifier_core_c
 
 def ProverGpuModeObservedAcceptance
     (system : VerifierModel)
-    (_summary : Option ProverGpuModeSummary)
+    (summary : Option ProverGpuModeSummary)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
-  system.accepts publicInput proof
+  IgnoredMetadataObservedAcceptance system summary publicInput proof
 
 theorem prover_gpu_mode_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
@@ -308,10 +308,10 @@ theorem prover_gpu_mode_acceptance_verifier_core_contract
 
 def GpuRunOptionsObservedAcceptance
     (system : VerifierModel)
-    (_summary : Option GpuRunOptionsSummary)
+    (summary : Option GpuRunOptionsSummary)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
-  system.accepts publicInput proof
+  IgnoredMetadataObservedAcceptance system summary publicInput proof
 
 theorem gpu_run_options_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
@@ -360,10 +360,10 @@ theorem gpu_run_options_acceptance_verifier_core_contract
 
 def CudaBackendObservedAcceptance
     (system : VerifierModel)
-    (_summary : Option CudaBackendSummary)
+    (summary : Option CudaBackendSummary)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
-  system.accepts publicInput proof
+  IgnoredMetadataObservedAcceptance system summary publicInput proof
 
 theorem cuda_backend_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
@@ -412,10 +412,10 @@ theorem cuda_backend_acceptance_verifier_core_contract
 
 def CudaAllocatorTimingObservedAcceptance
     (system : VerifierModel)
-    (_summary : Option CudaAllocatorTimingSummary)
+    (summary : Option CudaAllocatorTimingSummary)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
-  system.accepts publicInput proof
+  IgnoredMetadataObservedAcceptance system summary publicInput proof
 
 theorem cuda_allocator_timing_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
@@ -730,10 +730,10 @@ theorem cuda_allocator_host_registration_timing_acceptance_verifier_core_contrac
 
 def ProofArtifactFinishTimingObservedAcceptance
     (system : VerifierModel)
-    (_summary : Option ProofArtifactFinishTimingSummary)
+    (summary : Option ProofArtifactFinishTimingSummary)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
-  system.accepts publicInput proof
+  IgnoredMetadataObservedAcceptance system summary publicInput proof
 
 theorem proof_artifact_finish_timing_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}

@@ -16,10 +16,10 @@ namespace Lzvm
 
 def TimingObservedAcceptance
     (system : VerifierModel)
-    (_observations : List TimingObservation)
+    (observations : List TimingObservation)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
-  system.accepts publicInput proof
+  IgnoredMetadataObservedAcceptance system observations publicInput proof
 
 theorem timing_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
@@ -68,10 +68,10 @@ theorem timing_observation_acceptance_verifier_core_contract
 
 def GuestPcTraceTimingObservedAcceptance
     (system : VerifierModel)
-    (_summary : Option GuestPcTraceTimingSummary)
+    (summary : Option GuestPcTraceTimingSummary)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
-  system.accepts publicInput proof
+  IgnoredMetadataObservedAcceptance system summary publicInput proof
 
 theorem guest_pc_trace_timing_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}

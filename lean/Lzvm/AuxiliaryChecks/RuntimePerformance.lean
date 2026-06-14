@@ -14,10 +14,10 @@ namespace Lzvm
 
 def RuntimePerformanceObservedAcceptance
     (system : VerifierModel)
-    (_summary : RuntimePerformanceObservationSummary)
+    (summary : RuntimePerformanceObservationSummary)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
-  system.accepts publicInput proof
+  IgnoredMetadataObservedAcceptance system summary publicInput proof
 
 theorem runtime_performance_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
