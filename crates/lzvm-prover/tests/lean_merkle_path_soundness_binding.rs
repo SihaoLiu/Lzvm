@@ -100,6 +100,8 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "nary_merkle_path_arity_four_index_implies_same_position",
             "nary_merkle_path_arity_two_index_binding_from_no_collision",
             "nary_merkle_path_arity_four_index_binding_from_no_collision",
+            "nary_merkle_path_arity_two_index_binding_from_bundle",
+            "nary_merkle_path_arity_four_index_binding_from_bundle",
             "nary_merkle_opening_arity_two_index_binding_from_bundle",
             "nary_merkle_opening_arity_four_index_binding_from_bundle",
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index",
@@ -474,5 +476,39 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "nary_merkle_path_arity_four_index_implies_same_position",
             "concrete_nary_merkle_path_same_position_binding_from_no_collision",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "nary_merkle_path_arity_two_index_binding_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathHasArity 2 path",
+            "NAryMerklePathVerifies compress root leaf path",
+            "NAryMerklePathIndex path = NAryMerklePathIndex otherPath",
+            "path.length = otherPath.length",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "nary_merkle_path_arity_two_index_binding_from_bundle",
+        &["nary_merkle_path_arity_two_index_binding_from_no_collision"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "nary_merkle_path_arity_four_index_binding_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathHasArity 4 path",
+            "NAryMerklePathVerifies compress root leaf path",
+            "NAryMerklePathIndex path = NAryMerklePathIndex otherPath",
+            "path.length = otherPath.length",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "nary_merkle_path_arity_four_index_binding_from_bundle",
+        &["nary_merkle_path_arity_four_index_binding_from_no_collision"],
     );
 }

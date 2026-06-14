@@ -926,6 +926,82 @@ theorem
       verified
       otherVerified
 
+theorem
+  nary_merkle_path_arity_two_index_binding_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root leaf path,
+      NAryMerklePathHasArity 2 path ->
+        NAryMerklePathVerifies compress root leaf path ->
+          forall otherLeaf otherPath,
+            NAryMerklePathHasArity 2 otherPath ->
+              NAryMerklePathIndex path = NAryMerklePathIndex otherPath ->
+                path.length = otherPath.length ->
+                  NAryMerklePathVerifies compress root otherLeaf otherPath ->
+                    otherLeaf = leaf := by
+  intro root leaf path pathArity verified otherLeaf otherPath otherPathArity
+    sameIndex sameDepth otherVerified
+  exact
+    nary_merkle_path_arity_two_index_binding_from_no_collision
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      root
+      leaf
+      path
+      pathArity
+      verified
+      otherLeaf
+      otherPath
+      otherPathArity
+      sameIndex
+      sameDepth
+      otherVerified
+
+theorem
+  nary_merkle_path_arity_four_index_binding_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root leaf path,
+      NAryMerklePathHasArity 4 path ->
+        NAryMerklePathVerifies compress root leaf path ->
+          forall otherLeaf otherPath,
+            NAryMerklePathHasArity 4 otherPath ->
+              NAryMerklePathIndex path = NAryMerklePathIndex otherPath ->
+                path.length = otherPath.length ->
+                  NAryMerklePathVerifies compress root otherLeaf otherPath ->
+                    otherLeaf = leaf := by
+  intro root leaf path pathArity verified otherLeaf otherPath otherPathArity
+    sameIndex sameDepth otherVerified
+  exact
+    nary_merkle_path_arity_four_index_binding_from_no_collision
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      root
+      leaf
+      path
+      pathArity
+      verified
+      otherLeaf
+      otherPath
+      otherPathArity
+      sameIndex
+      sameDepth
+      otherVerified
+
 theorem verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_assumption
     {Digest : Type uDigest}
     (hashAssumptions : HashCollisionResistanceAssumption)
