@@ -12,8 +12,13 @@ use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::setup_info::CommitmentColumn;
 use lzvm_field::Felt;
 
+static GUEST_PC_TRACE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn guest_trace_detail_timing_sample_stride_uses_positive_env_values() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
     struct EnvGuard {
         name: &'static str,
         previous: Option<std::ffi::OsString>,
@@ -338,6 +343,9 @@ fn direct_boundary_c_uses_branch_next_pc_outcome() {
 
 #[test]
 fn guest_pc_trace_seed_mirror_attaches_pending_segment_seeds_when_enabled() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
     struct EnvGuard {
         name: &'static str,
         previous: Option<std::ffi::OsString>,
@@ -410,6 +418,9 @@ fn guest_pc_trace_seed_mirror_attaches_pending_segment_seeds_when_enabled() {
 
 #[test]
 fn guest_pc_trace_runner_seed_snapshot_matches_mirror_when_enabled() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
     struct EnvGuard {
         name: &'static str,
         previous: Option<std::ffi::OsString>,
@@ -469,6 +480,73 @@ fn guest_pc_trace_runner_seed_snapshot_matches_mirror_when_enabled() {
 
     assert_eq!(pending.len(), 2);
     assert!(pending.iter().all(|segment| segment.seed.is_some()));
+}
+
+#[test]
+fn guest_pc_trace_trusted_runner_seed_snapshot_produces_pending_seeds() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    struct EnvGuard {
+        name: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn new(name: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(name);
+            std::env::set_var(name, value);
+            Self { name, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
+
+    let _snapshot_env = EnvGuard::new("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT", "1");
+    let _trusted_env = EnvGuard::new("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED", "1");
+    let dir = repo_temp_dir("guest-pc-trusted-runner-seed-snapshot");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let mut pending = Vec::new();
+
+    produce_guest_pc_trace_pending_slices(
+        16,
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        &[],
+        layout.row_count(),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
+    )
+    .expect("trusted runner seed snapshot should produce pending slices");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(pending.len(), 2);
+    assert!(pending.iter().all(|segment| segment.seed.is_some()));
+    assert_eq!(pending[1].seed.as_ref().unwrap().previous_c, 10);
 }
 
 #[test]
@@ -564,6 +642,63 @@ fn runner_boundary_seed_snapshot_rejects_direct_previous_c_mismatch() {
     .expect_err("directly derivable boundary c mismatch should reject");
 
     assert!(error.to_string().contains("direct boundary c"));
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_derives_full_width_store_boundary() {
+    let mut current_seed = ZiskMainSegmentSeed::new();
+    current_seed.initial_state.registers[1] = 0x1000;
+    current_seed.initial_state.registers[2] = 0xfeed_face_cafe_babe;
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Store {
+            kind: RiscvStoreKind::Sd,
+            rs1: 1,
+            rs2: 2,
+            offset: 8,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: Vec::new().into(),
+        memory_accesses: vec![GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address: 0x1008,
+            byte_len: 8,
+            value: 0xfeed_face_cafe_babe,
+        }]
+        .into(),
+        precompile_memory_accesses: Vec::new(),
+        precompile_result: None,
+    };
+    let mut runner_state = GuestMachineState::new(report.next_pc);
+    runner_state
+        .set_register(1, 0x1000)
+        .expect("base register should set");
+    runner_state
+        .set_register(2, 0xfeed_face_cafe_babe)
+        .expect("source register should set");
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary(
+        2,
+        segment,
+        std::slice::from_ref(&report),
+        None,
+        &runner_state,
+        &current_seed,
+    )
+    .expect("runner boundary seed should lift")
+    .expect("full-width store boundary should be direct");
+
+    assert_eq!(lifted.previous_c, 0xfeed_face_cafe_babe);
+    assert_eq!(lifted.initial_state.last_c, 0xfeed_face_cafe_babe);
+    assert_eq!(lifted.initial_state.next_pc, report.next_pc);
+    assert_eq!(lifted.initial_state.registers[1], 0x1000);
+    assert_eq!(lifted.initial_state.registers[2], 0xfeed_face_cafe_babe);
 }
 
 #[test]

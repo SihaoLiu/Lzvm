@@ -2384,8 +2384,38 @@ fn produce_guest_pc_trace_pending_slices(
                 .unwrap_or_default(),
         };
         let seed = seed_mirror.clone();
-        let next_seed = match seed.as_ref() {
-            Some(seed) => Some(
+        let runner_seed_snapshot_trusted =
+            runner_seed_snapshot && guest_pc_trace_runner_seed_snapshot_trusted_enabled();
+        let runner_direct_next_seed = match (runner_seed_snapshot, segment.is_last_segment) {
+            (true, false) => {
+                let current_seed = seed.as_ref().ok_or_else(|| {
+                    GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace runner seed snapshot missing current seed"
+                            .to_owned(),
+                    }
+                })?;
+                try_lift_zisk_main_next_segment_seed_from_runner_boundary(
+                    row_count,
+                    segment,
+                    &slice.reports,
+                    lookahead_instruction,
+                    &state,
+                    current_seed,
+                )?
+            }
+            _ => None,
+        };
+        let needs_full_seed_advance = seed.is_some()
+            && (!runner_seed_snapshot_trusted
+                || segment.is_last_segment
+                || runner_direct_next_seed.is_none());
+        let full_next_seed = if needs_full_seed_advance {
+            let seed =
+                seed.as_ref()
+                    .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace seed advancement missing current seed".to_owned(),
+                    })?;
+            Some(
                 advance_zisk_main_segment_seed(
                     layout,
                     &slice.reports,
@@ -2395,30 +2425,39 @@ fn produce_guest_pc_trace_pending_slices(
                     segment,
                 )?
                 .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?,
-            ),
-            None => None,
+            )
+        } else {
+            None
         };
-        if runner_seed_snapshot && !segment.is_last_segment {
+        let next_seed = if runner_seed_snapshot_trusted && !segment.is_last_segment {
+            runner_direct_next_seed.clone().or(full_next_seed.clone())
+        } else {
+            full_next_seed.clone()
+        };
+        if runner_seed_snapshot && !segment.is_last_segment && full_next_seed.is_some() {
             let current_seed =
                 seed.as_ref()
                     .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
                         message: "guest PC trace runner seed snapshot missing current seed"
                             .to_owned(),
                     })?;
-            let expected_next_seed = next_seed.as_ref().ok_or_else(|| {
+            let expected_next_seed = full_next_seed.as_ref().ok_or_else(|| {
                 GuestPcTraceBackendError::InvalidPcTraceLayout {
                     message: "guest PC trace runner seed snapshot missing mirror seed".to_owned(),
                 }
             })?;
-            let runner_next_seed = lift_zisk_main_next_segment_seed_from_runner_boundary(
-                row_count,
-                segment,
-                &slice.reports,
-                lookahead_instruction,
-                &state,
-                current_seed,
-                expected_next_seed.previous_c,
-            )?;
+            let runner_next_seed = match runner_direct_next_seed {
+                Some(seed) => seed,
+                None => lift_zisk_main_next_segment_seed_from_runner_boundary(
+                    row_count,
+                    segment,
+                    &slice.reports,
+                    lookahead_instruction,
+                    &state,
+                    current_seed,
+                    expected_next_seed.previous_c,
+                )?,
+            };
             if runner_next_seed != *expected_next_seed {
                 return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
                     message: format!(
@@ -2562,6 +2601,10 @@ fn guest_pc_trace_seed_mirror_enabled() -> bool {
 
 fn guest_pc_trace_runner_seed_snapshot_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT", false)
+}
+
+fn guest_pc_trace_runner_seed_snapshot_trusted_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED", false)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4371,6 +4414,31 @@ fn advance_zisk_main_segment_seed(
         initial_state: continuation_state,
         previous_c: state.last_c,
     }))
+}
+
+fn try_lift_zisk_main_next_segment_seed_from_runner_boundary(
+    row_count: usize,
+    segment: ZiskMainTraceSegmentInfo,
+    reports: &[GuestMachineReport],
+    lookahead_instruction: Option<RiscvInstruction>,
+    runner_state: &GuestMachineState,
+    current_seed: &ZiskMainSegmentSeed,
+) -> Result<Option<ZiskMainSegmentSeed>, GuestPcTraceBackendError> {
+    let Some(next_previous_c) =
+        direct_zisk_main_segment_boundary_c(reports, lookahead_instruction, current_seed)?
+    else {
+        return Ok(None);
+    };
+    lift_zisk_main_next_segment_seed_from_runner_boundary(
+        row_count,
+        segment,
+        reports,
+        lookahead_instruction,
+        runner_state,
+        current_seed,
+        next_previous_c,
+    )
+    .map(Some)
 }
 
 fn lift_zisk_main_next_segment_seed_from_runner_boundary(

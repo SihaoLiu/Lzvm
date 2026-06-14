@@ -4063,6 +4063,43 @@ fn guest_pc_trace_segments_split_runner_and_lowerer_with_bounded_pending_queue()
 }
 
 #[test]
+fn guest_pc_trace_runner_seed_snapshot_has_trusted_boundary_gate() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+
+    assert!(
+        backend_source.contains("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED"),
+        "runner boundary seed snapshots should have an explicit trusted fast-path gate"
+    );
+    assert!(
+        backend_source.contains("fn try_lift_zisk_main_next_segment_seed_from_runner_boundary"),
+        "runner boundary seed snapshots should expose a fallible direct-lift helper"
+    );
+
+    let produce_body = function_body(
+        &backend_source,
+        "fn produce_guest_pc_trace_pending_slices",
+        "fn lower_guest_pc_trace_pending_segments",
+    );
+    let direct_position = produce_body
+        .find("try_lift_zisk_main_next_segment_seed_from_runner_boundary")
+        .expect("pending slice production should attempt runner boundary seed lifting");
+    let fallback_position = produce_body
+        .find("advance_zisk_main_segment_seed")
+        .expect("pending slice production should keep full seed advancement as fallback");
+    assert!(
+        direct_position < fallback_position,
+        "trusted runner boundary seed lifting should be considered before full seed advancement fallback"
+    );
+    assert!(
+        produce_body.contains("runner_seed_snapshot_trusted"),
+        "pending slice production should keep the trusted runner seed fast path explicitly gated"
+    );
+}
+
+#[test]
 fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
