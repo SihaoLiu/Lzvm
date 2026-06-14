@@ -2025,7 +2025,7 @@ fn run_guest_pc_trace_segment_slice_inner<const TRACK_BOUNDARY: bool>(
             if let (Some(snapshot), Some(report)) =
                 (boundary_snapshot.as_deref_mut(), reports.last())
             {
-                snapshot.record_report(report, Some(current))?;
+                snapshot.record_report(report, Some(current), state.registers())?;
             }
         }
         if current == RiscvInstruction::Ecall {
@@ -2095,7 +2095,7 @@ fn run_guest_pc_trace_segment_slice_inner<const TRACK_BOUNDARY: bool>(
                 if let (Some(snapshot), Some(report)) =
                     (boundary_snapshot.as_deref_mut(), reports.last())
                 {
-                    snapshot.record_report(report, lookahead_instruction)?;
+                    snapshot.record_report(report, lookahead_instruction, state.registers())?;
                 }
             }
             let status = if current == RiscvInstruction::Ecall {
@@ -3543,14 +3543,12 @@ impl ZiskMainSegmentSeed {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ZiskMainRunnerBoundarySnapshot {
     internal_memory: BTreeMap<u64, u64>,
-    registers: [u64; 32],
 }
 
 impl ZiskMainRunnerBoundarySnapshot {
     fn new(seed: &ZiskMainSegmentSeed) -> Self {
         Self {
             internal_memory: seed.initial_state.internal_memory.clone(),
-            registers: seed.initial_state.registers,
         }
     }
 
@@ -3558,18 +3556,14 @@ impl ZiskMainRunnerBoundarySnapshot {
         &mut self,
         report: &GuestMachineReport,
         next_instruction: Option<RiscvInstruction>,
+        registers: &[u64; 32],
     ) -> Result<(), GuestPcTraceBackendError> {
         record_zisk_main_runner_scratch_update(
             &mut self.internal_memory,
-            &self.registers,
+            registers,
             report,
             next_instruction,
         )?;
-        for write in &report.register_writes {
-            if write.index != 0 {
-                self.registers[usize::from(write.index)] = write.value;
-            }
-        }
         Ok(())
     }
 }
@@ -5168,6 +5162,7 @@ fn try_lift_zisk_main_next_segment_seed_from_runner_boundary(
     let boundary_snapshot = zisk_main_runner_boundary_snapshot_from_reports(
         reports,
         lookahead_instruction,
+        runner_state,
         current_seed,
     )?;
     try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
@@ -5193,7 +5188,7 @@ fn try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
         input.reports,
         input.lookahead_instruction,
         input.current_seed,
-        Some(input.boundary_snapshot),
+        Some(input.runner_state.registers()),
     )? {
         Ok(next_previous_c) => next_previous_c,
         Err(reason) => return Ok(Err(reason)),
@@ -5220,6 +5215,7 @@ fn lift_zisk_main_next_segment_seed_from_runner_boundary(
     let boundary_snapshot = zisk_main_runner_boundary_snapshot_from_reports(
         reports,
         lookahead_instruction,
+        runner_state,
         current_seed,
     )?;
     lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
@@ -5249,19 +5245,11 @@ fn lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
         });
     }
 
-    if &input.boundary_snapshot.registers != input.runner_state.registers() {
-        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-            message: format!(
-                "runner boundary register snapshot mismatch after segment {}",
-                segment.trace_instance_index
-            ),
-        });
-    }
     if let Ok(direct_c) = direct_zisk_main_segment_boundary_c(
         input.reports,
         input.lookahead_instruction,
         input.current_seed,
-        Some(input.boundary_snapshot),
+        Some(input.runner_state.registers()),
     )? {
         if direct_c != next_previous_c {
             return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -5301,13 +5289,23 @@ fn lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
 fn zisk_main_runner_boundary_snapshot_from_reports(
     reports: &[GuestMachineReport],
     lookahead_instruction: Option<RiscvInstruction>,
+    runner_state: &GuestMachineState,
     current_seed: &ZiskMainSegmentSeed,
 ) -> Result<ZiskMainRunnerBoundarySnapshot, GuestPcTraceBackendError> {
     let mut snapshot = ZiskMainRunnerBoundarySnapshot::new(current_seed);
+    let mut registers = current_seed.initial_state.registers;
     for (report_index, report) in reports.iter().enumerate() {
+        for write in &report.register_writes {
+            if write.index != 0 {
+                registers[usize::from(write.index)] = write.value;
+            }
+        }
+        if report_index + 1 == reports.len() {
+            registers = *runner_state.registers();
+        }
         let next_instruction =
             guest_report_next_instruction(reports, report_index, lookahead_instruction);
-        snapshot.record_report(report, next_instruction)?;
+        snapshot.record_report(report, next_instruction, &registers)?;
     }
     Ok(snapshot)
 }
@@ -6783,7 +6781,7 @@ fn direct_zisk_main_segment_boundary_c(
     reports: &[GuestMachineReport],
     lookahead_instruction: Option<RiscvInstruction>,
     current_seed: &ZiskMainSegmentSeed,
-    boundary_snapshot: Option<&ZiskMainRunnerBoundarySnapshot>,
+    boundary_registers: Option<&[u64; 32]>,
 ) -> Result<Result<u64, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError> {
     let Some(report) = reports.last() else {
         return Ok(Err(ZiskMainDirectSeedLiftMissReason::EmptySegment));
@@ -6811,7 +6809,7 @@ fn direct_zisk_main_segment_boundary_c(
             ZiskMainDirectSeedLiftMissReason::DmaPrepareMissingLookahead,
         ));
     }
-    if let Some(boundary_c) = direct_zisk_main_store_boundary_c(report, boundary_snapshot) {
+    if let Some(boundary_c) = direct_zisk_main_store_boundary_c(report, boundary_registers) {
         return Ok(Ok(boundary_c));
     }
 
@@ -6824,7 +6822,7 @@ fn direct_zisk_main_segment_boundary_c(
 
 fn direct_zisk_main_store_boundary_c(
     report: &GuestMachineReport,
-    boundary_snapshot: Option<&ZiskMainRunnerBoundarySnapshot>,
+    boundary_registers: Option<&[u64; 32]>,
 ) -> Option<u64> {
     let RiscvInstruction::Store { rs2, .. } = report.instruction else {
         return None;
@@ -6832,7 +6830,7 @@ fn direct_zisk_main_store_boundary_c(
     if rs2 == 0 {
         return Some(0);
     }
-    boundary_snapshot.map(|snapshot| snapshot.registers[usize::from(rs2)])
+    boundary_registers.map(|registers| registers[usize::from(rs2)])
 }
 
 fn direct_zisk_main_report_boundary_c(

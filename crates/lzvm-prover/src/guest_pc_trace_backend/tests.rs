@@ -1007,11 +1007,10 @@ fn runner_boundary_snapshot_records_dma_prepare_scratch_incrementally() {
                 rs1: 8,
                 rs2: 6,
             }),
+            &current_seed.initial_state.registers,
         )
         .expect("boundary snapshot should record DMA scratch");
 
-    assert_eq!(snapshot.registers[5], 0x1000);
-    assert_eq!(snapshot.registers[6], 0x20);
     assert_eq!(
         snapshot
             .internal_memory
@@ -1107,7 +1106,7 @@ fn runner_boundary_seed_snapshot_derives_full_width_store_boundary() {
 }
 
 #[test]
-fn runner_boundary_seed_snapshot_derives_narrow_store_boundary_from_snapshot_register() {
+fn runner_boundary_seed_snapshot_derives_narrow_store_boundary_from_runner_register() {
     let mut current_seed = ZiskMainSegmentSeed::new();
     current_seed.initial_state.registers[10] = 0x1000;
     current_seed.initial_state.registers[12] = 0x1234_5678_9abc_def0;
@@ -1154,12 +1153,69 @@ fn runner_boundary_seed_snapshot_derives_narrow_store_boundary_from_snapshot_reg
         &current_seed,
     )
     .expect("runner boundary seed lift should evaluate")
-    .expect("narrow store boundary c should come from the source register snapshot");
+    .expect("narrow store boundary c should come from the runner source register");
 
     assert_eq!(lifted.previous_c, 0x1234_5678_9abc_def0);
     assert_eq!(lifted.initial_state.last_c, 0x1234_5678_9abc_def0);
     assert_eq!(lifted.initial_state.next_pc, report.next_pc);
     assert_eq!(lifted.initial_state.registers[10], 0x1000);
+    assert_eq!(lifted.initial_state.registers[12], 0x1234_5678_9abc_def0);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_runner_registers_for_narrow_store() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Store {
+            kind: RiscvStoreKind::Sb,
+            rs1: 10,
+            rs2: 12,
+            offset: 17,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: Vec::new().into(),
+        memory_accesses: vec![GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address: 0x1011,
+            byte_len: 1,
+            value: 0xf0,
+        }]
+        .into(),
+        precompile_memory_accesses: Vec::new(),
+        precompile_result: None,
+    };
+    let mut runner_state = GuestMachineState::new(report.next_pc);
+    runner_state
+        .set_register(10, 0x1000)
+        .expect("base register should set");
+    runner_state
+        .set_register(12, 0x1234_5678_9abc_def0)
+        .expect("source register should set");
+    let boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+
+    let lifted = lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        1,
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: std::slice::from_ref(&report),
+            lookahead_instruction: None,
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+        0x1234_5678_9abc_def0,
+    )
+    .expect("narrow store boundary c should come from runner state registers");
+
+    assert_eq!(lifted.previous_c, 0x1234_5678_9abc_def0);
+    assert_eq!(lifted.initial_state.last_c, 0x1234_5678_9abc_def0);
     assert_eq!(lifted.initial_state.registers[12], 0x1234_5678_9abc_def0);
 }
 
