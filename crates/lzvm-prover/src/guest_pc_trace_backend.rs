@@ -4772,6 +4772,7 @@ fn try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
         input.reports,
         input.lookahead_instruction,
         input.current_seed,
+        Some(input.boundary_snapshot),
     )? {
         Ok(next_previous_c) => next_previous_c,
         Err(reason) => return Ok(Err(reason)),
@@ -4839,6 +4840,7 @@ fn lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
         input.reports,
         input.lookahead_instruction,
         input.current_seed,
+        Some(input.boundary_snapshot),
     )? {
         if direct_c != next_previous_c {
             return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -6360,6 +6362,7 @@ fn direct_zisk_main_segment_boundary_c(
     reports: &[GuestMachineReport],
     lookahead_instruction: Option<RiscvInstruction>,
     current_seed: &ZiskMainSegmentSeed,
+    boundary_snapshot: Option<&ZiskMainRunnerBoundarySnapshot>,
 ) -> Result<Result<u64, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError> {
     let Some(report) = reports.last() else {
         return Ok(Err(ZiskMainDirectSeedLiftMissReason::EmptySegment));
@@ -6387,12 +6390,28 @@ fn direct_zisk_main_segment_boundary_c(
             ZiskMainDirectSeedLiftMissReason::DmaPrepareMissingLookahead,
         ));
     }
+    if let Some(boundary_c) = direct_zisk_main_store_boundary_c(report, boundary_snapshot) {
+        return Ok(Ok(boundary_c));
+    }
 
     let lowered = lower_single_zisk_main_report_row(0, report, || lookahead_instruction)?;
     Ok(
         direct_zisk_main_report_boundary_c(report, &lowered.instruction)
             .ok_or(ZiskMainDirectSeedLiftMissReason::BoundaryCUnavailable),
     )
+}
+
+fn direct_zisk_main_store_boundary_c(
+    report: &GuestMachineReport,
+    boundary_snapshot: Option<&ZiskMainRunnerBoundarySnapshot>,
+) -> Option<u64> {
+    let RiscvInstruction::Store { rs2, .. } = report.instruction else {
+        return None;
+    };
+    if rs2 == 0 {
+        return Some(0);
+    }
+    boundary_snapshot.map(|snapshot| snapshot.registers[usize::from(rs2)])
 }
 
 fn direct_zisk_main_report_boundary_c(
