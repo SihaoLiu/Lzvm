@@ -1139,9 +1139,9 @@ fn cuda_compact_opening_avoids_redundant_path_root_downloads() {
         "fn open_batch_with_retained_leaf_digest_level_cuda",
     );
     assert!(
-        checkpoint_body.contains("opening_path_siblings_for_source_row(row)")
-            && !checkpoint_body.contains("opening_path_for_source_row(row)")
-            && !checkpoint_body.contains("upper_suffix.root != expected_root"),
+        checkpoint_body.contains("opening_path_siblings_batch_for_source_rows(rows)")
+            && !checkpoint_body.contains("opening_path_for_source_row(")
+            && !checkpoint_body.contains("upper_suffix.root !="),
         "retained checkpoint openings should avoid downloading an upper suffix root"
     );
 }
@@ -3084,9 +3084,12 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
     );
     assert!(
         pool_body.contains("worker_state: GuestPcTraceSegmentCommitWorkerState")
-            && pool_body.contains("fn new(scope:")
+            && pool_body.contains("fn new(")
+            && pool_body.contains("scope:")
             && pool_body.contains("input_byte_count: usize")
-            && pool_body.contains("worker_count: guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count)")
+            && pool_body.contains("worker_count_override: Option<usize>")
+            && pool_body
+                .contains("guest_pc_trace_segment_commit_worker_count_for_input_with_override")
             && pool_body.contains("fn submit_segment(")
             && pool_body.contains("fn finish(")
             && pool_body.contains("self.worker_state.commit_segment("),
@@ -3596,6 +3599,80 @@ fn guest_pc_trace_timing_reports_device_source_build_work() {
             && cli_source.contains("guest_device_source_build_duration()"),
         "CLI timing output should include device source build work"
     );
+}
+
+#[test]
+fn guest_pc_trace_timing_reports_segment_commit_cuda_memory_headroom() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source =
+        std::fs::read_to_string(&cli_path).expect("guest PC CLI timing source should read");
+
+    let timing_fields = function_body(
+        &execution_source,
+        "pub struct ProveWitnessGuestPcTraceTiming",
+        "impl ProveWitnessGuestPcTraceTiming",
+    );
+    for required in [
+        "guest_segment_commit_cuda_memory_total_byte_count",
+        "guest_segment_commit_cuda_memory_initial_free_byte_count",
+        "guest_segment_commit_cuda_memory_effective_free_byte_count",
+        "guest_segment_commit_cuda_memory_min_free_byte_count",
+        "guest_segment_commit_cuda_allocator_initial_cached_byte_count",
+        "guest_segment_commit_cuda_allocator_effective_cached_byte_count",
+    ] {
+        assert!(
+            timing_fields.contains(required),
+            "guest PC timing should carry {required}"
+        );
+    }
+
+    let run_body = function_body(
+        &execution_source,
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optional_timings",
+        "struct GuestPcTraceSegmentCommitAttemptOptions",
+    );
+    assert!(
+        run_body.contains("sample_guest_pc_segment_commit_cuda_memory()")
+            && run_body.contains("observe_attempt_start")
+            && run_body.contains("segment_commit_memory_timing"),
+        "segment commit timing should sample CUDA memory headroom across retry attempts"
+    );
+
+    for (timing_name, accessor) in [
+        (
+            "\"guest_segment_commit_cuda_memory_total_bytes\"",
+            "guest_segment_commit_cuda_memory_total_byte_count()",
+        ),
+        (
+            "\"guest_segment_commit_cuda_memory_initial_free_bytes\"",
+            "guest_segment_commit_cuda_memory_initial_free_byte_count()",
+        ),
+        (
+            "\"guest_segment_commit_cuda_memory_effective_free_bytes\"",
+            "guest_segment_commit_cuda_memory_effective_free_byte_count()",
+        ),
+        (
+            "\"guest_segment_commit_cuda_memory_min_free_bytes\"",
+            "guest_segment_commit_cuda_memory_min_free_byte_count()",
+        ),
+        (
+            "\"guest_segment_commit_cuda_allocator_initial_cached_bytes\"",
+            "guest_segment_commit_cuda_allocator_initial_cached_byte_count()",
+        ),
+        (
+            "\"guest_segment_commit_cuda_allocator_effective_cached_bytes\"",
+            "guest_segment_commit_cuda_allocator_effective_cached_byte_count()",
+        ),
+    ] {
+        assert!(
+            cli_source.contains(timing_name) && cli_source.contains(accessor),
+            "CLI guest PC timing should emit {timing_name} from {accessor}"
+        );
+    }
 }
 
 #[test]

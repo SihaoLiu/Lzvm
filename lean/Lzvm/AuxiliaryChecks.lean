@@ -176,6 +176,12 @@ structure GuestPcTraceTimingSummary where
   guestSegmentCommitInitialWorkerCount : Nat
   guestSegmentCommitEffectiveWorkerCount : Nat
   guestSegmentCommitOomRetryCount : Nat
+  guestSegmentCommitCudaMemoryTotalByteCount : Nat
+  guestSegmentCommitCudaMemoryInitialFreeByteCount : Nat
+  guestSegmentCommitCudaMemoryEffectiveFreeByteCount : Nat
+  guestSegmentCommitCudaMemoryMinFreeByteCount : Nat
+  guestSegmentCommitCudaAllocatorInitialCachedByteCount : Nat
+  guestSegmentCommitCudaAllocatorEffectiveCachedByteCount : Nat
   guestTraceRunnerMilliseconds : Nat
   guestTraceLowererMilliseconds : Nat
   guestTraceLowerMilliseconds : Nat

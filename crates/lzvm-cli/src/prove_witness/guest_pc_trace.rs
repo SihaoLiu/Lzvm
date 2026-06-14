@@ -79,6 +79,30 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_segment_commit_oom_retries",
         timing.guest_segment_commit_oom_retry_count(),
     );
+    timings.record_count(
+        "guest_segment_commit_cuda_memory_total_bytes",
+        timing.guest_segment_commit_cuda_memory_total_byte_count(),
+    );
+    timings.record_count(
+        "guest_segment_commit_cuda_memory_initial_free_bytes",
+        timing.guest_segment_commit_cuda_memory_initial_free_byte_count(),
+    );
+    timings.record_count(
+        "guest_segment_commit_cuda_memory_effective_free_bytes",
+        timing.guest_segment_commit_cuda_memory_effective_free_byte_count(),
+    );
+    timings.record_count(
+        "guest_segment_commit_cuda_memory_min_free_bytes",
+        timing.guest_segment_commit_cuda_memory_min_free_byte_count(),
+    );
+    timings.record_count(
+        "guest_segment_commit_cuda_allocator_initial_cached_bytes",
+        timing.guest_segment_commit_cuda_allocator_initial_cached_byte_count(),
+    );
+    timings.record_count(
+        "guest_segment_commit_cuda_allocator_effective_cached_bytes",
+        timing.guest_segment_commit_cuda_allocator_effective_cached_byte_count(),
+    );
     timings.record("guest_trace_runner", timing.guest_trace_runner_duration());
     timings.record("guest_trace_lowerer", timing.guest_trace_lowerer_duration());
     timings.record("guest_trace_lower", timing.guest_trace_lower_duration());

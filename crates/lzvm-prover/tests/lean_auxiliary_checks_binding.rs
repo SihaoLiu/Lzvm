@@ -732,6 +732,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestSegmentCommitInitialWorkerCount",
         "guestSegmentCommitEffectiveWorkerCount",
         "guestSegmentCommitOomRetryCount",
+        "guestSegmentCommitCudaMemoryTotalByteCount",
+        "guestSegmentCommitCudaMemoryInitialFreeByteCount",
+        "guestSegmentCommitCudaMemoryEffectiveFreeByteCount",
+        "guestSegmentCommitCudaMemoryMinFreeByteCount",
+        "guestSegmentCommitCudaAllocatorInitialCachedByteCount",
+        "guestSegmentCommitCudaAllocatorEffectiveCachedByteCount",
         "guestDeviceSourceBuildMilliseconds",
         "guestDeviceSourceDescriptorUploadMilliseconds",
         "guestDeviceSourceDescriptorUploadByteCount",
@@ -982,6 +988,30 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_segment_commit_oom_retries\"",
             "guest_segment_commit_oom_retry_count()",
+        ),
+        (
+            "\"guest_segment_commit_cuda_memory_total_bytes\"",
+            "guest_segment_commit_cuda_memory_total_byte_count()",
+        ),
+        (
+            "\"guest_segment_commit_cuda_memory_initial_free_bytes\"",
+            "guest_segment_commit_cuda_memory_initial_free_byte_count()",
+        ),
+        (
+            "\"guest_segment_commit_cuda_memory_effective_free_bytes\"",
+            "guest_segment_commit_cuda_memory_effective_free_byte_count()",
+        ),
+        (
+            "\"guest_segment_commit_cuda_memory_min_free_bytes\"",
+            "guest_segment_commit_cuda_memory_min_free_byte_count()",
+        ),
+        (
+            "\"guest_segment_commit_cuda_allocator_initial_cached_bytes\"",
+            "guest_segment_commit_cuda_allocator_initial_cached_byte_count()",
+        ),
+        (
+            "\"guest_segment_commit_cuda_allocator_effective_cached_bytes\"",
+            "guest_segment_commit_cuda_allocator_effective_cached_byte_count()",
         ),
         (
             "\"guest_device_source_build\"",
