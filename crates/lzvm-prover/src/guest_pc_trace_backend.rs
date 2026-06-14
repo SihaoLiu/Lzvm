@@ -2294,15 +2294,27 @@ fn produce_guest_pc_trace_segments(
             let _ = pending_sender.send(message);
         });
 
-        let lowerer_started = Instant::now();
         let mut timing = GuestPcTraceStreamTiming::default();
-        let result = lower_guest_pc_trace_pending_segments(
-            layout,
-            pending_receiver,
-            expected_proof_values,
-            &mut timing,
-            &mut emit,
-        );
+        let lowerer_started = Instant::now();
+        let worker_count = guest_pc_trace_parallel_lowerer_count();
+        let result = if worker_count > 1 {
+            lower_guest_pc_trace_seeded_pending_segments_parallel(
+                layout,
+                pending_receiver,
+                expected_proof_values,
+                &mut timing,
+                &mut emit,
+                worker_count,
+            )
+        } else {
+            lower_guest_pc_trace_pending_segments(
+                layout,
+                pending_receiver,
+                expected_proof_values,
+                &mut timing,
+                &mut emit,
+            )
+        };
         timing.lowerer_duration += lowerer_started.elapsed();
         if let Err(payload) = runner.join() {
             std::panic::resume_unwind(payload);
@@ -2332,7 +2344,8 @@ fn produce_guest_pc_trace_pending_slices(
     let (mut memory, mut state, mut fcall_handler) = load_guest_pc_trace_machine(context, input)?;
     let mut executed_instructions = 0_u64;
     let mut trace_instance_count = 0_usize;
-    let runner_seed_snapshot = guest_pc_trace_runner_seed_snapshot_enabled();
+    let runner_seed_snapshot = guest_pc_trace_runner_seed_snapshot_enabled()
+        || guest_pc_trace_parallel_lowerer_count() > 1;
     let mut seed_mirror = (guest_pc_trace_seed_mirror_enabled() || runner_seed_snapshot)
         .then(ZiskMainSegmentSeed::new);
     loop {
@@ -2512,6 +2525,12 @@ struct GuestPcTraceLoweredSegment {
     next_seed: ZiskMainSegmentSeed,
 }
 
+struct GuestPcTraceParallelLoweredSegment {
+    seed: ZiskMainSegmentSeed,
+    lowered: GuestPcTraceLoweredSegment,
+    timing: GuestPcTraceStreamTiming,
+}
+
 fn lower_guest_pc_trace_seeded_pending_segment(
     layout: &WitnessTraceLayout,
     pending: &GuestPcTracePendingSegmentSlice,
@@ -2555,6 +2574,223 @@ fn lower_guest_pc_trace_seeded_pending_segment(
     })
 }
 
+fn lower_guest_pc_trace_seeded_pending_segments_parallel(
+    layout: &WitnessTraceLayout,
+    pending_receiver: mpsc::Receiver<GuestPcTracePendingSegmentMessage>,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    timing: &mut GuestPcTraceStreamTiming,
+    emit: &mut impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceBackendError>,
+    worker_count: usize,
+) -> Result<GuestPcTraceStreamResult, GuestPcTraceBackendError> {
+    let worker_count = worker_count.max(1);
+    thread::scope(|scope| {
+        let (done_sender, done_receiver) = mpsc::sync_channel(worker_count.saturating_mul(2));
+        let mut work_senders = Vec::with_capacity(worker_count);
+        for _ in 0..worker_count {
+            let (work_sender, work_receiver) = mpsc::sync_channel(1);
+            work_senders.push(work_sender);
+            let done_sender = done_sender.clone();
+            scope.spawn(move || {
+                while let Ok(pending) = work_receiver.recv() {
+                    let result = lower_guest_pc_trace_seeded_pending_segment_worker(
+                        layout,
+                        pending,
+                        expected_proof_values,
+                    );
+                    if done_sender.send(result).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        drop(done_sender);
+
+        let mut next_worker = 0_usize;
+        let mut in_flight = 0_usize;
+        let mut stream_result = None;
+        let mut next_emit_index = 0_u32;
+        let mut next_seed = ZiskMainSegmentSeed::new();
+        let mut ready = BTreeMap::new();
+
+        loop {
+            drain_parallel_lowered_segments(&done_receiver, &mut ready, &mut in_flight, timing)?;
+            emit_ready_parallel_lowered_segments(
+                &mut ready,
+                &mut next_emit_index,
+                &mut next_seed,
+                timing,
+                emit,
+            )?;
+
+            if stream_result.is_some() {
+                if in_flight == 0 {
+                    return Ok(stream_result
+                        .take()
+                        .expect("parallel lowerer stream result should be present"));
+                }
+                let completed = done_receiver.recv().map_err(|_| {
+                    GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace parallel lowerer stopped".to_owned(),
+                    }
+                })?;
+                record_parallel_lowered_segment(completed, &mut ready, &mut in_flight, timing)?;
+                continue;
+            }
+
+            let receive_started = Instant::now();
+            let message = match pending_receiver.recv() {
+                Ok(message) => message,
+                Err(_) => break,
+            };
+            timing.pending_receive_wait_duration += receive_started.elapsed();
+            let pending = match message {
+                GuestPcTracePendingSegmentMessage::Segment(pending) => pending,
+                GuestPcTracePendingSegmentMessage::Complete(stream) => {
+                    work_senders.clear();
+                    stream_result = Some(*stream);
+                    continue;
+                }
+                GuestPcTracePendingSegmentMessage::Error(error) => return Err(error),
+            };
+            record_pending_segment_buffer_timing(timing, &pending);
+            let worker_index = next_worker % work_senders.len();
+            work_senders[worker_index].send(pending).map_err(|_| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace parallel lowerer worker stopped".to_owned(),
+                }
+            })?;
+            in_flight = in_flight.checked_add(1).ok_or_else(|| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace parallel lowerer in-flight count overflow".to_owned(),
+                }
+            })?;
+            next_worker = next_worker.checked_add(1).ok_or_else(|| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace parallel lowerer worker index overflow".to_owned(),
+                }
+            })?;
+        }
+
+        Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "guest PC trace pending segment runner stopped".to_owned(),
+        })
+    })
+}
+
+fn lower_guest_pc_trace_seeded_pending_segment_worker(
+    layout: &WitnessTraceLayout,
+    pending: GuestPcTracePendingSegmentSlice,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+) -> Result<GuestPcTraceParallelLoweredSegment, GuestPcTraceBackendError> {
+    let seed = pending
+        .seed
+        .as_deref()
+        .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "guest PC trace parallel lowering missing seed at segment {}",
+                pending.trace_instance_index
+            ),
+        })?
+        .clone();
+    let mut timing = GuestPcTraceStreamTiming::default();
+    let lowered = lower_guest_pc_trace_seeded_pending_segment(
+        layout,
+        &pending,
+        &seed,
+        expected_proof_values,
+        Some(&mut timing),
+    )?;
+    Ok(GuestPcTraceParallelLoweredSegment {
+        seed,
+        lowered,
+        timing,
+    })
+}
+
+fn drain_parallel_lowered_segments(
+    done_receiver: &mpsc::Receiver<
+        Result<GuestPcTraceParallelLoweredSegment, GuestPcTraceBackendError>,
+    >,
+    ready: &mut BTreeMap<u32, GuestPcTraceParallelLoweredSegment>,
+    in_flight: &mut usize,
+    timing: &mut GuestPcTraceStreamTiming,
+) -> Result<(), GuestPcTraceBackendError> {
+    loop {
+        match done_receiver.try_recv() {
+            Ok(completed) => {
+                record_parallel_lowered_segment(completed, ready, in_flight, timing)?;
+            }
+            Err(mpsc::TryRecvError::Empty) => return Ok(()),
+            Err(mpsc::TryRecvError::Disconnected) => return Ok(()),
+        }
+    }
+}
+
+fn record_parallel_lowered_segment(
+    completed: Result<GuestPcTraceParallelLoweredSegment, GuestPcTraceBackendError>,
+    ready: &mut BTreeMap<u32, GuestPcTraceParallelLoweredSegment>,
+    in_flight: &mut usize,
+    timing: &mut GuestPcTraceStreamTiming,
+) -> Result<(), GuestPcTraceBackendError> {
+    *in_flight =
+        in_flight
+            .checked_sub(1)
+            .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace parallel lowerer in-flight count underflow".to_owned(),
+            })?;
+    let completed = completed?;
+    timing.add(completed.timing);
+    let trace_instance_index = completed.lowered.segment.trace_instance_index;
+    if ready.insert(trace_instance_index, completed).is_some() {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "guest PC trace parallel lowerer duplicate segment {trace_instance_index}"
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn emit_ready_parallel_lowered_segments(
+    ready: &mut BTreeMap<u32, GuestPcTraceParallelLoweredSegment>,
+    next_emit_index: &mut u32,
+    next_seed: &mut ZiskMainSegmentSeed,
+    timing: &mut GuestPcTraceStreamTiming,
+    emit: &mut impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<(), GuestPcTraceBackendError> {
+    while let Some(completed) = ready.remove(next_emit_index) {
+        validate_guest_pc_trace_pending_segment_seed(
+            completed.lowered.segment.trace_instance_index,
+            Some(&completed.seed),
+            &next_seed.initial_state,
+            next_seed.previous_c,
+        )?;
+        *next_seed = completed.lowered.next_seed;
+        let emit_started = Instant::now();
+        emit(completed.lowered.segment)?;
+        timing.trace_emit_duration += emit_started.elapsed();
+        *next_emit_index = next_emit_index.checked_add(1).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace parallel lowerer emit index overflow".to_owned(),
+            }
+        })?;
+    }
+    Ok(())
+}
+
+fn record_pending_segment_buffer_timing(
+    timing: &mut GuestPcTraceStreamTiming,
+    pending: &GuestPcTracePendingSegmentSlice,
+) {
+    timing.trace_report_buffer_capacity += pending.report_capacity;
+    timing.trace_report_buffer_max_capacity = timing
+        .trace_report_buffer_max_capacity
+        .max(pending.report_capacity);
+    timing.trace_report_buffer_excess_capacity += pending
+        .report_capacity
+        .saturating_sub(pending.reports.len());
+}
+
 fn lower_guest_pc_trace_pending_segments(
     layout: &WitnessTraceLayout,
     pending_receiver: mpsc::Receiver<GuestPcTracePendingSegmentMessage>,
@@ -2575,13 +2811,7 @@ fn lower_guest_pc_trace_pending_segments(
             GuestPcTracePendingSegmentMessage::Complete(stream) => return Ok(*stream),
             GuestPcTracePendingSegmentMessage::Error(error) => return Err(error),
         };
-        timing.trace_report_buffer_capacity += pending.report_capacity;
-        timing.trace_report_buffer_max_capacity = timing
-            .trace_report_buffer_max_capacity
-            .max(pending.report_capacity);
-        timing.trace_report_buffer_excess_capacity += pending
-            .report_capacity
-            .saturating_sub(pending.reports.len());
+        record_pending_segment_buffer_timing(timing, &pending);
         validate_guest_pc_trace_pending_segment_seed(
             pending.trace_instance_index,
             pending.seed.as_deref(),
@@ -2635,6 +2865,14 @@ fn guest_pc_trace_runner_seed_snapshot_enabled() -> bool {
 
 fn guest_pc_trace_runner_seed_snapshot_trusted_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED", false)
+}
+
+fn guest_pc_trace_parallel_lowerer_count() -> usize {
+    std::env::var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWERERS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|count| *count > 1)
+        .unwrap_or(1)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
