@@ -4367,6 +4367,67 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
 }
 
 #[test]
+fn guest_pc_trace_timing_reports_seed_advance_work() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source = std::fs::read_to_string(&cli_path).expect("guest PC CLI source should read");
+
+    for field in [
+        "seed_direct_lift_duration",
+        "seed_full_advance_duration",
+        "seed_direct_lift_attempt_count",
+        "seed_direct_lift_success_count",
+        "seed_full_advance_count",
+    ] {
+        assert!(
+            backend_source.contains(field),
+            "guest PC backend stream timing should include {field}"
+        );
+    }
+    let produce_body = function_body(
+        &backend_source,
+        "fn produce_guest_pc_trace_pending_slices",
+        "struct GuestPcTraceLoweredSegment",
+    );
+    assert!(
+        produce_body.contains("seed_direct_lift_duration")
+            && produce_body.contains("seed_full_advance_duration"),
+        "pending slice production should time direct seed lifting and full seed advancement"
+    );
+
+    for field in [
+        "guest_trace_seed_direct_lift_duration",
+        "guest_trace_seed_full_advance_duration",
+        "guest_trace_seed_direct_lift_attempt_count",
+        "guest_trace_seed_direct_lift_success_count",
+        "guest_trace_seed_full_advance_count",
+    ] {
+        assert!(
+            execution_source.contains(field),
+            "guest PC proof timing should expose {field}"
+        );
+    }
+    for line_name in [
+        "\"guest_trace_seed_direct_lift\"",
+        "\"guest_trace_seed_full_advance\"",
+        "\"guest_trace_seed_direct_lift_attempts\"",
+        "\"guest_trace_seed_direct_lift_successes\"",
+        "\"guest_trace_seed_full_advances\"",
+    ] {
+        assert!(
+            cli_source.contains(line_name),
+            "guest PC CLI timing should record {line_name}"
+        );
+    }
+}
+
+#[test]
 fn cuda_allocator_timing_reports_pending_wait_shape() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let native_header_path = crate_root.join("../lzvm-accel/native/cuda_host.hpp");

@@ -363,10 +363,15 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_emit_duration: Duration,
     guest_trace_descriptor_duration: Duration,
     guest_trace_report_detail_sample_count: usize,
+    guest_trace_seed_direct_lift_duration: Duration,
+    guest_trace_seed_full_advance_duration: Duration,
     guest_trace_pending_send_wait_duration: Duration,
     guest_trace_pending_receive_wait_duration: Duration,
     guest_trace_segment_send_wait_duration: Duration,
     guest_trace_segment_receive_wait_duration: Duration,
+    guest_trace_seed_direct_lift_attempt_count: usize,
+    guest_trace_seed_direct_lift_success_count: usize,
+    guest_trace_seed_full_advance_count: usize,
     guest_trace_report_count: usize,
     guest_trace_report_row_count: usize,
     guest_trace_report_buffer_capacity: usize,
@@ -500,12 +505,19 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_descriptor_duration: stream_timing.trace_descriptor_duration(),
             guest_trace_report_detail_sample_count: stream_timing
                 .trace_report_detail_sample_count(),
+            guest_trace_seed_direct_lift_duration: stream_timing.seed_direct_lift_duration(),
+            guest_trace_seed_full_advance_duration: stream_timing.seed_full_advance_duration(),
             guest_trace_pending_send_wait_duration: stream_timing.pending_send_wait_duration(),
             guest_trace_pending_receive_wait_duration: stream_timing
                 .pending_receive_wait_duration(),
             guest_trace_segment_send_wait_duration: stream_timing.segment_send_wait_duration(),
             guest_trace_segment_receive_wait_duration: stream_timing
                 .segment_receive_wait_duration(),
+            guest_trace_seed_direct_lift_attempt_count: stream_timing
+                .seed_direct_lift_attempt_count(),
+            guest_trace_seed_direct_lift_success_count: stream_timing
+                .seed_direct_lift_success_count(),
+            guest_trace_seed_full_advance_count: stream_timing.seed_full_advance_count(),
             guest_trace_report_count: stream_timing.trace_report_count(),
             guest_trace_report_row_count: stream_timing.trace_report_row_count(),
             guest_trace_report_buffer_capacity: stream_timing.trace_report_buffer_capacity(),
@@ -745,6 +757,14 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_trace_report_detail_sample_count
     }
 
+    pub fn guest_trace_seed_direct_lift_duration(&self) -> Duration {
+        self.guest_trace_seed_direct_lift_duration
+    }
+
+    pub fn guest_trace_seed_full_advance_duration(&self) -> Duration {
+        self.guest_trace_seed_full_advance_duration
+    }
+
     pub fn guest_trace_pending_send_wait_duration(&self) -> Duration {
         self.guest_trace_pending_send_wait_duration
     }
@@ -759,6 +779,18 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_segment_receive_wait_duration(&self) -> Duration {
         self.guest_trace_segment_receive_wait_duration
+    }
+
+    pub fn guest_trace_seed_direct_lift_attempt_count(&self) -> usize {
+        self.guest_trace_seed_direct_lift_attempt_count
+    }
+
+    pub fn guest_trace_seed_direct_lift_success_count(&self) -> usize {
+        self.guest_trace_seed_direct_lift_success_count
+    }
+
+    pub fn guest_trace_seed_full_advance_count(&self) -> usize {
+        self.guest_trace_seed_full_advance_count
     }
 
     pub fn guest_trace_report_count(&self) -> usize {

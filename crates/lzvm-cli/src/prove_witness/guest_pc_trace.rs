@@ -144,6 +144,26 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_report_detail_samples",
         timing.guest_trace_report_detail_sample_count(),
     );
+    timings.record(
+        "guest_trace_seed_direct_lift",
+        timing.guest_trace_seed_direct_lift_duration(),
+    );
+    timings.record(
+        "guest_trace_seed_full_advance",
+        timing.guest_trace_seed_full_advance_duration(),
+    );
+    timings.record_count(
+        "guest_trace_seed_direct_lift_attempts",
+        timing.guest_trace_seed_direct_lift_attempt_count(),
+    );
+    timings.record_count(
+        "guest_trace_seed_direct_lift_successes",
+        timing.guest_trace_seed_direct_lift_success_count(),
+    );
+    timings.record_count(
+        "guest_trace_seed_full_advances",
+        timing.guest_trace_seed_full_advance_count(),
+    );
     timings.record_count("guest_trace_reports", timing.guest_trace_report_count());
     timings.record_count(
         "guest_trace_report_rows",

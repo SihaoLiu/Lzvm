@@ -207,10 +207,15 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_emit_duration: Duration,
     trace_descriptor_duration: Duration,
     trace_report_detail_sample_count: usize,
+    seed_direct_lift_duration: Duration,
+    seed_full_advance_duration: Duration,
     pending_send_wait_duration: Duration,
     pending_receive_wait_duration: Duration,
     segment_send_wait_duration: Duration,
     segment_receive_wait_duration: Duration,
+    seed_direct_lift_attempt_count: usize,
+    seed_direct_lift_success_count: usize,
+    seed_full_advance_count: usize,
     trace_report_count: usize,
     trace_report_row_count: usize,
     trace_report_buffer_capacity: usize,
@@ -263,10 +268,15 @@ impl GuestPcTraceStreamTiming {
         self.trace_emit_duration += other.trace_emit_duration;
         self.trace_descriptor_duration += other.trace_descriptor_duration;
         self.trace_report_detail_sample_count += other.trace_report_detail_sample_count;
+        self.seed_direct_lift_duration += other.seed_direct_lift_duration;
+        self.seed_full_advance_duration += other.seed_full_advance_duration;
         self.pending_send_wait_duration += other.pending_send_wait_duration;
         self.pending_receive_wait_duration += other.pending_receive_wait_duration;
         self.segment_send_wait_duration += other.segment_send_wait_duration;
         self.segment_receive_wait_duration += other.segment_receive_wait_duration;
+        self.seed_direct_lift_attempt_count += other.seed_direct_lift_attempt_count;
+        self.seed_direct_lift_success_count += other.seed_direct_lift_success_count;
+        self.seed_full_advance_count += other.seed_full_advance_count;
         self.trace_report_count += other.trace_report_count;
         self.trace_report_row_count += other.trace_report_row_count;
         self.trace_report_buffer_capacity += other.trace_report_buffer_capacity;
@@ -382,6 +392,14 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_detail_sample_count
     }
 
+    pub fn seed_direct_lift_duration(&self) -> Duration {
+        self.seed_direct_lift_duration
+    }
+
+    pub fn seed_full_advance_duration(&self) -> Duration {
+        self.seed_full_advance_duration
+    }
+
     pub fn pending_send_wait_duration(&self) -> Duration {
         self.pending_send_wait_duration
     }
@@ -396,6 +414,18 @@ impl GuestPcTraceStreamTiming {
 
     pub fn segment_receive_wait_duration(&self) -> Duration {
         self.segment_receive_wait_duration
+    }
+
+    pub fn seed_direct_lift_attempt_count(&self) -> usize {
+        self.seed_direct_lift_attempt_count
+    }
+
+    pub fn seed_direct_lift_success_count(&self) -> usize {
+        self.seed_direct_lift_success_count
+    }
+
+    pub fn seed_full_advance_count(&self) -> usize {
+        self.seed_full_advance_count
     }
 
     pub fn trace_report_count(&self) -> usize {
@@ -2327,15 +2357,13 @@ fn produce_guest_pc_trace_segments(
                 },
             );
             let message = match produced {
-                Ok(proof_values) => {
-                    let timing = GuestPcTraceStreamTiming {
-                        runner_duration: runner_started.elapsed(),
-                        pending_send_wait_duration,
-                        ..GuestPcTraceStreamTiming::default()
-                    };
+                Ok(produced) => {
+                    let mut timing = produced.timing;
+                    timing.runner_duration += runner_started.elapsed();
+                    timing.pending_send_wait_duration += pending_send_wait_duration;
                     GuestPcTracePendingSegmentMessage::Complete(Box::new(
                         GuestPcTraceStreamResult {
-                            proof_values,
+                            proof_values: produced.proof_values,
                             timing,
                         },
                     ))
@@ -2370,19 +2398,25 @@ fn produce_guest_pc_trace_segments(
     })
 }
 
+struct GuestPcTracePendingSliceProduction {
+    proof_values: Vec<WitnessTraceProofValue>,
+    timing: GuestPcTraceStreamTiming,
+}
+
 fn produce_guest_pc_trace_pending_slices(
     instruction_limit: u64,
     context: WitnessComputeContext<'_>,
     input: &[u8],
     row_count: usize,
     mut emit: impl FnMut(GuestPcTracePendingSegmentSlice) -> Result<(), GuestPcTraceBackendError>,
-) -> Result<Vec<WitnessTraceProofValue>, GuestPcTraceBackendError> {
+) -> Result<GuestPcTracePendingSliceProduction, GuestPcTraceBackendError> {
     let layout = context
         .trace_layout
         .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
     let (mut memory, mut state, mut fcall_handler) = load_guest_pc_trace_machine(context, input)?;
     let mut executed_instructions = 0_u64;
     let mut trace_instance_count = 0_usize;
+    let mut timing = GuestPcTraceStreamTiming::default();
     let runner_seed_snapshot = guest_pc_trace_runner_seed_snapshot_enabled();
     let mut seed_mirror = (guest_pc_trace_seed_mirror_enabled() || runner_seed_snapshot)
         .then(ZiskMainSegmentSeed::new);
@@ -2473,7 +2507,9 @@ fn produce_guest_pc_trace_pending_slices(
                         message: "guest PC trace runner boundary snapshot missing".to_owned(),
                     }
                 })?;
-                try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+                let direct_lift_started = Instant::now();
+                timing.seed_direct_lift_attempt_count += 1;
+                let next_seed = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
                     row_count,
                     segment,
                     ZiskMainRunnerBoundarySeedInput {
@@ -2483,7 +2519,12 @@ fn produce_guest_pc_trace_pending_slices(
                         current_seed,
                         boundary_snapshot,
                     },
-                )?
+                )?;
+                timing.seed_direct_lift_duration += direct_lift_started.elapsed();
+                if next_seed.is_some() {
+                    timing.seed_direct_lift_success_count += 1;
+                }
+                next_seed
             }
             _ => None,
         };
@@ -2500,17 +2541,19 @@ fn produce_guest_pc_trace_pending_slices(
                     .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
                         message: "guest PC trace seed advancement missing current seed".to_owned(),
                     })?;
-            Some(
-                advance_zisk_main_segment_seed(
-                    layout,
-                    &slice.reports,
-                    terminal_pc,
-                    seed,
-                    lookahead_instruction,
-                    segment,
-                )?
-                .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?,
-            )
+            let full_advance_started = Instant::now();
+            timing.seed_full_advance_count += 1;
+            let next_seed = advance_zisk_main_segment_seed(
+                layout,
+                &slice.reports,
+                terminal_pc,
+                seed,
+                lookahead_instruction,
+                segment,
+            )?
+            .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
+            timing.seed_full_advance_duration += full_advance_started.elapsed();
+            Some(next_seed)
         } else {
             None
         };
@@ -2595,11 +2638,14 @@ fn produce_guest_pc_trace_pending_slices(
         }
     }
 
-    Ok(zisk_runtime_proof_values(
-        executed_instructions != 0,
-        fcall_handler.input_data_was_mapped(),
-        state.dma_proof_value_flags(),
-    ))
+    Ok(GuestPcTracePendingSliceProduction {
+        proof_values: zisk_runtime_proof_values(
+            executed_instructions != 0,
+            fcall_handler.input_data_was_mapped(),
+            state.dma_proof_value_flags(),
+        ),
+        timing,
+    })
 }
 
 struct GuestPcTraceLoweredSegment {

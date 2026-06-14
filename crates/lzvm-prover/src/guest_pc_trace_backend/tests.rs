@@ -466,7 +466,7 @@ fn guest_pc_trace_seed_mirror_attaches_pending_segment_seeds_when_enabled() {
     let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
     let mut pending = Vec::new();
 
-    produce_guest_pc_trace_pending_slices(
+    let produced = produce_guest_pc_trace_pending_slices(
         16,
         WitnessComputeContext {
             guest_image: Some(&guest_image),
@@ -485,6 +485,9 @@ fn guest_pc_trace_seed_mirror_attaches_pending_segment_seeds_when_enabled() {
 
     assert_eq!(pending.len(), 2);
     assert!(pending.iter().all(|segment| segment.seed.is_some()));
+    assert_eq!(produced.timing.seed_direct_lift_attempt_count(), 0);
+    assert_eq!(produced.timing.seed_direct_lift_success_count(), 0);
+    assert_eq!(produced.timing.seed_full_advance_count(), pending.len());
     assert_eq!(pending[0].seed.as_ref().unwrap().previous_c, 0);
     assert_eq!(pending[1].seed.as_ref().unwrap().previous_c, 10);
     assert_eq!(
@@ -608,7 +611,7 @@ fn guest_pc_trace_trusted_runner_seed_snapshot_produces_pending_seeds() {
     let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
     let mut pending = Vec::new();
 
-    produce_guest_pc_trace_pending_slices(
+    let produced = produce_guest_pc_trace_pending_slices(
         16,
         WitnessComputeContext {
             guest_image: Some(&guest_image),
@@ -628,6 +631,9 @@ fn guest_pc_trace_trusted_runner_seed_snapshot_produces_pending_seeds() {
     assert_eq!(pending.len(), 2);
     assert!(pending.iter().all(|segment| segment.seed.is_some()));
     assert_eq!(pending[1].seed.as_ref().unwrap().previous_c, 10);
+    assert_eq!(produced.timing.seed_direct_lift_attempt_count(), 1);
+    assert_eq!(produced.timing.seed_direct_lift_success_count(), 1);
+    assert_eq!(produced.timing.seed_full_advance_count(), pending.len());
 }
 
 #[test]
