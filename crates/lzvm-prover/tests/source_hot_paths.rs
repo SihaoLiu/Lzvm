@@ -2069,6 +2069,45 @@ fn guest_pc_trace_device_material_builder_does_not_construct_host_trace() {
 }
 
 #[test]
+fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+
+    let descriptor_factory = function_body(
+        &backend_source,
+        "fn main_device_trace_descriptors",
+        "#[cfg(feature = \"cuda\")]\nfn main_segment_descriptor_words",
+    );
+    assert!(
+        descriptor_factory.contains("main_device_trace_layout_supported(layout, columns)"),
+        "device material descriptors should only exist after the supported layout check"
+    );
+
+    let device_material_body = function_body(
+        &backend_source,
+        "fn build_layout_zisk_main_trace_segment_device_material",
+        "fn build_layout_zisk_main_trace_segment_from_device_material",
+    );
+    assert!(
+        device_material_body.contains("ZiskMainReportValidationContext {\n                columns: None,"),
+        "device material lowering should not repeat per-row trace-column validation after layout support is known"
+    );
+
+    let host_write_body = function_body(
+        &backend_source,
+        "fn write_zisk_main_report_columns",
+        "fn write_zisk_main_row_columns",
+    );
+    assert!(
+        host_write_body
+            .contains("ZiskMainReportValidationContext {\n            columns: Some(columns),"),
+        "host trace lowering should retain per-row trace-column validation for generic layouts"
+    );
+}
+
+#[test]
 fn guest_pc_trace_device_material_builds_stage_sources_without_host_trace() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

@@ -4221,7 +4221,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
             &mut || guest_report_next_instruction(reports, report_index, lookahead_instruction),
             &mut state,
             ZiskMainReportValidationContext {
-                columns: Some(&columns),
+                columns: None,
                 row_count: layout.row_count(),
                 segment,
             },
