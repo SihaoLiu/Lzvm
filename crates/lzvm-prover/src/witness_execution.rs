@@ -3384,6 +3384,36 @@ struct GuestPcTraceSegmentCommitResult {
     guest_segment_commit_duration: Option<Duration>,
 }
 
+struct GuestPcTraceSegmentCommitWorkerState {
+    scratch: GuestPcTraceSegmentCommitScratch,
+}
+
+impl GuestPcTraceSegmentCommitWorkerState {
+    fn new() -> Self {
+        Self {
+            scratch: GuestPcTraceSegmentCommitScratch::new(),
+        }
+    }
+
+    fn commit_segment(
+        &mut self,
+        context: GuestPcTraceSegmentCommitContext<'_>,
+        auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+        segment_output: GuestPcTraceSegmentRunOutput,
+        use_source_lookup_balance: bool,
+        collect_timing: bool,
+    ) -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
+        commit_guest_pc_trace_segment_with_scratch(
+            context,
+            auxiliary_inputs,
+            segment_output,
+            use_source_lookup_balance,
+            collect_timing,
+            &mut self.scratch,
+        )
+    }
+}
+
 struct GuestPcTraceSegmentCommitDriver<'a, 'b> {
     context: GuestPcTraceSegmentCommitContext<'a>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
@@ -3393,7 +3423,7 @@ struct GuestPcTraceSegmentCommitDriver<'a, 'b> {
     guest_segment_commit_duration: Duration,
     trace_timing: ProveWitnessTraceTimingAccumulator,
     segment_count: usize,
-    scratch: GuestPcTraceSegmentCommitScratch,
+    worker_state: GuestPcTraceSegmentCommitWorkerState,
 }
 
 struct GuestPcTraceSegmentCommitDriverOutput {
@@ -3419,7 +3449,7 @@ impl<'a, 'b> GuestPcTraceSegmentCommitDriver<'a, 'b> {
             guest_segment_commit_duration: Duration::ZERO,
             trace_timing: ProveWitnessTraceTimingAccumulator::default(),
             segment_count: 0,
-            scratch: GuestPcTraceSegmentCommitScratch::new(),
+            worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
         }
     }
 
@@ -3427,13 +3457,12 @@ impl<'a, 'b> GuestPcTraceSegmentCommitDriver<'a, 'b> {
         &mut self,
         segment_output: GuestPcTraceSegmentRunOutput,
     ) -> Result<(), ProveWitnessCommitmentError> {
-        let result = commit_guest_pc_trace_segment_with_scratch(
+        let result = self.worker_state.commit_segment(
             self.context,
             Arc::clone(&self.auxiliary_inputs),
             segment_output,
             self.source_lookup_balance.is_some(),
             self.collect_timing,
-            &mut self.scratch,
         )?;
         self.collect_committed_segment_result(result)
     }
