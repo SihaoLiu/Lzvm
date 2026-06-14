@@ -2911,7 +2911,7 @@ fn guest_pc_trace_segment_commit_uses_worker_local_scratch() {
     assert!(
         worker_body.contains("scratch: GuestPcTraceSegmentCommitScratch")
             && pool_body.contains("worker_state: GuestPcTraceSegmentCommitWorkerState")
-            && commit_segment_body.contains("self.worker_pool.commit_segment("),
+            && commit_segment_body.contains("self.worker_pool.submit_segment("),
         "sequential guest PC segment paths should route worker-local scratch through a pool boundary"
     );
 
@@ -2966,7 +2966,7 @@ fn guest_pc_trace_segment_commit_uses_single_driver_entrypoint() {
     );
     assert!(
         work_body.contains("commit_guest_pc_trace_segment_output")
-            && commit_segment_body.contains("self.worker_pool.commit_segment(")
+            && commit_segment_body.contains("self.worker_pool.submit_segment(")
             && collect_body.contains("collect_committed_segment(result.output)"),
         "driver commit entrypoint should centralize segment commitment dispatch and ordered output collection"
     );
@@ -3031,9 +3031,10 @@ fn guest_pc_trace_segment_commit_splits_work_result_collection() {
         "fn collect_committed_segment_result(",
     );
     assert!(
-        driver_commit_body.contains("self.worker_pool.commit_segment(")
-            && driver_commit_body.contains("self.collect_committed_segment_result(result)"),
-        "driver commit_segment should only run segment work and hand the result to the collection path"
+        driver_commit_body.contains("self.worker_pool.submit_segment(")
+            && driver_commit_body.contains("for result in ready_results")
+            && driver_commit_body.contains("self.collect_committed_segment_result(result)?"),
+        "driver commit_segment should submit segment work and collect all ready pool results"
     );
     assert!(
         !driver_commit_body.contains("balance.merge(segment_source_lookup_balance)")
@@ -3084,7 +3085,8 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
     assert!(
         pool_body.contains("worker_state: GuestPcTraceSegmentCommitWorkerState")
             && pool_body.contains("fn new() -> Self")
-            && pool_body.contains("fn commit_segment(")
+            && pool_body.contains("fn submit_segment(")
+            && pool_body.contains("fn finish(")
             && pool_body.contains("self.worker_state.commit_segment("),
         "worker pool should provide the driver-facing segment dispatch boundary"
     );
@@ -3107,9 +3109,21 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
         "fn collect_committed_segment_result(",
     );
     assert!(
-        driver_commit_body.contains("self.worker_pool.commit_segment(")
+        driver_commit_body.contains("self.worker_pool.submit_segment(")
             && !driver_commit_body.contains("&mut self.scratch"),
         "sequential driver should dispatch segment work through the worker pool"
+    );
+
+    let driver_impl_body = function_body(
+        &source,
+        "impl<'a, 'b> GuestPcTraceSegmentCommitDriver",
+        "fn commit_guest_pc_trace_segment_with_scratch(",
+    );
+    assert!(
+        driver_impl_body.contains("self.worker_pool.finish()?")
+            && driver_impl_body.contains("for result in pending_results")
+            && driver_impl_body.contains("self.collect_committed_segment_result(result)?"),
+        "driver finish should drain pending pool results before returning ordered commitments"
     );
 }
 

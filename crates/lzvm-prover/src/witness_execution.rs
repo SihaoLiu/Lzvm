@@ -3425,21 +3425,28 @@ impl GuestPcTraceSegmentCommitWorkerPool {
         }
     }
 
-    fn commit_segment(
+    fn submit_segment(
         &mut self,
         context: GuestPcTraceSegmentCommitContext<'_>,
         auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
         segment_output: GuestPcTraceSegmentRunOutput,
         use_source_lookup_balance: bool,
         collect_timing: bool,
-    ) -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
-        self.worker_state.commit_segment(
+    ) -> Result<Vec<GuestPcTraceSegmentCommitResult>, ProveWitnessCommitmentError> {
+        let result = self.worker_state.commit_segment(
             context,
             auxiliary_inputs,
             segment_output,
             use_source_lookup_balance,
             collect_timing,
-        )
+        )?;
+        Ok(vec![result])
+    }
+
+    fn finish(
+        &mut self,
+    ) -> Result<Vec<GuestPcTraceSegmentCommitResult>, ProveWitnessCommitmentError> {
+        Ok(Vec::new())
     }
 }
 
@@ -3486,14 +3493,17 @@ impl<'a, 'b> GuestPcTraceSegmentCommitDriver<'a, 'b> {
         &mut self,
         segment_output: GuestPcTraceSegmentRunOutput,
     ) -> Result<(), ProveWitnessCommitmentError> {
-        let result = self.worker_pool.commit_segment(
+        let ready_results = self.worker_pool.submit_segment(
             self.context,
             Arc::clone(&self.auxiliary_inputs),
             segment_output,
             self.source_lookup_balance.is_some(),
             self.collect_timing,
         )?;
-        self.collect_committed_segment_result(result)
+        for result in ready_results {
+            self.collect_committed_segment_result(result)?;
+        }
+        Ok(())
     }
 
     fn collect_committed_segment_result(
@@ -3515,7 +3525,13 @@ impl<'a, 'b> GuestPcTraceSegmentCommitDriver<'a, 'b> {
         Ok(())
     }
 
-    fn finish(self) -> Result<GuestPcTraceSegmentCommitDriverOutput, ProveWitnessCommitmentError> {
+    fn finish(
+        mut self,
+    ) -> Result<GuestPcTraceSegmentCommitDriverOutput, ProveWitnessCommitmentError> {
+        let pending_results = self.worker_pool.finish()?;
+        for result in pending_results {
+            self.collect_committed_segment_result(result)?;
+        }
         Ok(GuestPcTraceSegmentCommitDriverOutput {
             outputs: self.output_collector.finish()?,
             guest_segment_commit_duration: self.guest_segment_commit_duration,
