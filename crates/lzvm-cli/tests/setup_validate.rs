@@ -6042,6 +6042,18 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
         "{stdout}"
     );
     assert!(
+        stdout.contains("timing_guest_segment_commit_initial_workers=1"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_segment_commit_effective_workers=1"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_segment_commit_oom_retries=0"),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains("timing_guest_device_source_build_ms="),
         "{stdout}"
     );

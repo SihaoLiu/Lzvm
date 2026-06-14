@@ -343,6 +343,9 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_stream_elapsed_duration: Duration,
     guest_trace_stream_duration: Duration,
     guest_segment_commit_duration: Duration,
+    guest_segment_commit_initial_worker_count: usize,
+    guest_segment_commit_effective_worker_count: usize,
+    guest_segment_commit_oom_retry_count: usize,
     guest_trace_runner_duration: Duration,
     guest_trace_lowerer_duration: Duration,
     guest_trace_lower_duration: Duration,
@@ -472,6 +475,7 @@ impl ProveWitnessGuestPcTraceTiming {
         guest_trace_stream_elapsed_duration: Duration,
         guest_trace_stream_duration: Duration,
         guest_segment_commit_duration: Duration,
+        segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming,
         stream_timing: GuestPcTraceStreamTiming,
         trace_timing: ProveWitnessTraceTimingAccumulator,
     ) -> Self {
@@ -480,6 +484,11 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_stream_elapsed_duration,
             guest_trace_stream_duration,
             guest_segment_commit_duration,
+            guest_segment_commit_initial_worker_count: segment_commit_worker_timing
+                .initial_worker_count,
+            guest_segment_commit_effective_worker_count: segment_commit_worker_timing
+                .effective_worker_count,
+            guest_segment_commit_oom_retry_count: segment_commit_worker_timing.oom_retry_count,
             guest_trace_runner_duration: stream_timing.runner_duration(),
             guest_trace_lowerer_duration: stream_timing.lowerer_duration(),
             guest_trace_lower_duration: stream_timing.trace_lower_duration(),
@@ -681,6 +690,18 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_segment_commit_duration(&self) -> Duration {
         self.guest_segment_commit_duration
+    }
+
+    pub fn guest_segment_commit_initial_worker_count(&self) -> usize {
+        self.guest_segment_commit_initial_worker_count
+    }
+
+    pub fn guest_segment_commit_effective_worker_count(&self) -> usize {
+        self.guest_segment_commit_effective_worker_count
+    }
+
+    pub fn guest_segment_commit_oom_retry_count(&self) -> usize {
+        self.guest_segment_commit_oom_retry_count
     }
 
     pub fn guest_trace_runner_duration(&self) -> Duration {
@@ -2885,18 +2906,33 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
     let shared_inputs = load_witness_shared_inputs(plan)?;
     let auxiliary_inputs = Arc::new(auxiliary_inputs);
     let mut timing_observer = timing_observer;
+    let initial_worker_count =
+        guest_pc_trace_segment_commit_worker_count_for_input(shared_inputs.input.len());
     let mut worker_count_override = None;
+    let mut oom_retry_count = 0;
     loop {
+        let segment_commit_worker_timing = GuestPcTraceSegmentCommitWorkerTiming {
+            initial_worker_count,
+            effective_worker_count:
+                guest_pc_trace_segment_commit_worker_count_for_input_with_override(
+                    shared_inputs.input.len(),
+                    worker_count_override,
+                ),
+            oom_retry_count,
+        };
         let result = run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt(
             plan,
             unit_index,
             &shared_inputs,
             Arc::clone(&auxiliary_inputs),
             instruction_limit,
-            timing_observer
-                .as_mut()
-                .map(|observer| &mut **observer as &mut dyn FnMut(ProveWitnessGuestPcTraceTiming)),
-            worker_count_override,
+            GuestPcTraceSegmentCommitAttemptOptions {
+                timing_observer: timing_observer.as_mut().map(|observer| {
+                    &mut **observer as &mut dyn FnMut(ProveWitnessGuestPcTraceTiming)
+                }),
+                segment_commit_worker_count_override: worker_count_override,
+                segment_commit_worker_timing,
+            },
         );
         match result {
             Ok(outputs) => return Ok(outputs),
@@ -2910,10 +2946,17 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
                 };
                 #[cfg(feature = "cuda")]
                 let _ = lzvm_accel::cuda_allocator_clear_cache();
+                oom_retry_count += 1;
                 worker_count_override = Some(next_worker_count);
             }
         }
     }
+}
+
+struct GuestPcTraceSegmentCommitAttemptOptions<'timing> {
+    timing_observer: Option<&'timing mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
+    segment_commit_worker_count_override: Option<usize>,
+    segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming,
 }
 
 fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt(
@@ -2922,9 +2965,13 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt
     shared_inputs: &WitnessSharedInputs,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     instruction_limit: u64,
-    timing_observer: Option<&mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
-    segment_commit_worker_count_override: Option<usize>,
+    options: GuestPcTraceSegmentCommitAttemptOptions<'_>,
 ) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
+    let GuestPcTraceSegmentCommitAttemptOptions {
+        timing_observer,
+        segment_commit_worker_count_override,
+        segment_commit_worker_timing,
+    } = options;
     let mut source_lookup_balance = SourceLookupBalance::default();
     let defer_cross_unit_source_lookup = should_defer_cross_unit_source_lookup(plan, unit_index);
     let outputs = if defer_cross_unit_source_lookup {
@@ -2938,6 +2985,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt
                 source_lookup_balance: None,
                 timing_observer,
                 segment_commit_worker_count_override,
+                segment_commit_worker_timing,
             },
         )?
     } else {
@@ -2951,6 +2999,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt
                 source_lookup_balance: Some(&mut source_lookup_balance),
                 timing_observer,
                 segment_commit_worker_count_override,
+                segment_commit_worker_timing,
             },
         )?;
         let global_auxiliary_inputs =
@@ -3637,6 +3686,13 @@ fn join_guest_pc_trace_segment_commit_worker(
     })?
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GuestPcTraceSegmentCommitWorkerTiming {
+    initial_worker_count: usize,
+    effective_worker_count: usize,
+    oom_retry_count: usize,
+}
+
 struct GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
     context: GuestPcTraceSegmentCommitContext<'env>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
@@ -3869,6 +3925,7 @@ struct GuestPcTraceSegmentCommitRunOptions<'shared, 'balance, 'timing> {
     source_lookup_balance: Option<&'balance mut SourceLookupBalance>,
     timing_observer: Option<&'timing mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
     segment_commit_worker_count_override: Option<usize>,
+    segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming,
 }
 
 fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
@@ -3883,6 +3940,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         source_lookup_balance,
         mut timing_observer,
         segment_commit_worker_count_override,
+        segment_commit_worker_timing,
     } = options;
     let unit_count = plan.run_plan.schedule.units.len();
     let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
@@ -3956,6 +4014,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                         guest_trace_stream_elapsed_duration,
                         guest_trace_stream_duration,
                         commit_output.guest_segment_commit_duration,
+                        segment_commit_worker_timing,
                         stream_result.timing,
                         commit_output.trace_timing,
                     ));
@@ -4020,6 +4079,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                     guest_trace_stream_elapsed_duration,
                     guest_trace_stream_duration,
                     commit_output.guest_segment_commit_duration,
+                    segment_commit_worker_timing,
                     stream_timing,
                     commit_output.trace_timing,
                 ));

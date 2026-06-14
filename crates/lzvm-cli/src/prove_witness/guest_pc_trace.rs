@@ -67,6 +67,18 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_segment_commit",
         timing.guest_segment_commit_duration(),
     );
+    timings.record_count(
+        "guest_segment_commit_initial_workers",
+        timing.guest_segment_commit_initial_worker_count(),
+    );
+    timings.record_count(
+        "guest_segment_commit_effective_workers",
+        timing.guest_segment_commit_effective_worker_count(),
+    );
+    timings.record_count(
+        "guest_segment_commit_oom_retries",
+        timing.guest_segment_commit_oom_retry_count(),
+    );
     timings.record("guest_trace_runner", timing.guest_trace_runner_duration());
     timings.record("guest_trace_lowerer", timing.guest_trace_lowerer_duration());
     timings.record("guest_trace_lower", timing.guest_trace_lower_duration());
