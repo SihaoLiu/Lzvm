@@ -2885,41 +2885,34 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
     let shared_inputs = load_witness_shared_inputs(plan)?;
     let auxiliary_inputs = Arc::new(auxiliary_inputs);
     let mut timing_observer = timing_observer;
-    let result = run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt(
-        plan,
-        unit_index,
-        &shared_inputs,
-        Arc::clone(&auxiliary_inputs),
-        instruction_limit,
-        timing_observer
-            .as_mut()
-            .map(|observer| &mut **observer as &mut dyn FnMut(ProveWitnessGuestPcTraceTiming)),
-        None,
-    );
-    match result {
-        Ok(outputs) => Ok(outputs),
-        Err(error)
-            if should_retry_guest_pc_segment_commit_with_serial_worker(
-                shared_inputs.input.len(),
-                None,
-                &error,
-            ) =>
-        {
-            #[cfg(feature = "cuda")]
-            let _ = lzvm_accel::cuda_allocator_clear_cache();
-            run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt(
-                plan,
-                unit_index,
-                &shared_inputs,
-                auxiliary_inputs,
-                instruction_limit,
-                timing_observer.as_mut().map(|observer| {
-                    &mut **observer as &mut dyn FnMut(ProveWitnessGuestPcTraceTiming)
-                }),
-                Some(1),
-            )
+    let mut worker_count_override = None;
+    loop {
+        let result = run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt(
+            plan,
+            unit_index,
+            &shared_inputs,
+            Arc::clone(&auxiliary_inputs),
+            instruction_limit,
+            timing_observer
+                .as_mut()
+                .map(|observer| &mut **observer as &mut dyn FnMut(ProveWitnessGuestPcTraceTiming)),
+            worker_count_override,
+        );
+        match result {
+            Ok(outputs) => return Ok(outputs),
+            Err(error) => {
+                let Some(next_worker_count) = next_guest_pc_segment_commit_worker_count_after_oom(
+                    shared_inputs.input.len(),
+                    worker_count_override,
+                    &error,
+                ) else {
+                    return Err(error);
+                };
+                #[cfg(feature = "cuda")]
+                let _ = lzvm_accel::cuda_allocator_clear_cache();
+                worker_count_override = Some(next_worker_count);
+            }
         }
-        Err(error) => Err(error),
     }
 }
 
@@ -3568,8 +3561,13 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
     }
 }
 
-fn default_guest_pc_trace_segment_commit_worker_count_for_input(_input_byte_count: usize) -> usize {
-    1
+fn default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
+    const PARALLEL_COMMIT_INPUT_THRESHOLD_BYTES: usize = 8 * 1024 * 1024;
+    if input_byte_count >= PARALLEL_COMMIT_INPUT_THRESHOLD_BYTES {
+        3
+    } else {
+        1
+    }
 }
 
 fn guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
@@ -3591,16 +3589,19 @@ fn guest_pc_trace_segment_commit_worker_count_for_input_with_override(
         .unwrap_or_else(|| guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count))
 }
 
-fn should_retry_guest_pc_segment_commit_with_serial_worker(
+fn next_guest_pc_segment_commit_worker_count_after_oom(
     input_byte_count: usize,
     worker_count_override: Option<usize>,
     error: &ProveWitnessCommitmentError,
-) -> bool {
-    guest_pc_trace_segment_commit_worker_count_for_input_with_override(
+) -> Option<usize> {
+    if !prove_witness_commitment_error_is_cuda_out_of_memory(error) {
+        return None;
+    }
+    let worker_count = guest_pc_trace_segment_commit_worker_count_for_input_with_override(
         input_byte_count,
         worker_count_override,
-    ) > 1
-        && prove_witness_commitment_error_is_cuda_out_of_memory(error)
+    );
+    worker_count.checked_sub(1).filter(|count| *count > 0)
 }
 
 #[cfg(feature = "cuda")]
@@ -5601,18 +5602,18 @@ mod tests {
     }
 
     #[test]
-    fn guest_pc_segment_commit_worker_count_uses_conservative_large_default() {
+    fn guest_pc_segment_commit_worker_count_uses_large_input_parallel_default() {
         assert_eq!(
             default_guest_pc_trace_segment_commit_worker_count_for_input(0),
             1
         );
         assert_eq!(
             default_guest_pc_trace_segment_commit_worker_count_for_input(8 * 1024 * 1024),
-            1
+            3
         );
         assert_eq!(
             default_guest_pc_trace_segment_commit_worker_count_for_input(usize::MAX),
-            1
+            3
         );
     }
 
@@ -5642,21 +5643,34 @@ mod tests {
         assert!(!prove_witness_commitment_error_is_cuda_out_of_memory(
             &layout_error
         ));
-        assert!(should_retry_guest_pc_segment_commit_with_serial_worker(
-            8 * 1024 * 1024,
-            Some(3),
-            &oom_error
-        ));
-        assert!(!should_retry_guest_pc_segment_commit_with_serial_worker(
-            8 * 1024 * 1024,
-            Some(1),
-            &oom_error
-        ));
-        assert!(!should_retry_guest_pc_segment_commit_with_serial_worker(
-            8 * 1024 * 1024,
-            Some(3),
-            &other_cuda_error
-        ));
+        assert_eq!(
+            next_guest_pc_segment_commit_worker_count_after_oom(8 * 1024 * 1024, None, &oom_error),
+            Some(2)
+        );
+        assert_eq!(
+            next_guest_pc_segment_commit_worker_count_after_oom(
+                8 * 1024 * 1024,
+                Some(2),
+                &oom_error
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            next_guest_pc_segment_commit_worker_count_after_oom(
+                8 * 1024 * 1024,
+                Some(1),
+                &oom_error
+            ),
+            None
+        );
+        assert_eq!(
+            next_guest_pc_segment_commit_worker_count_after_oom(
+                8 * 1024 * 1024,
+                Some(3),
+                &other_cuda_error
+            ),
+            None
+        );
     }
 
     #[test]

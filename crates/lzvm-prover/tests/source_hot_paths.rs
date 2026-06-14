@@ -3146,7 +3146,7 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
             && source.contains("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS")
             && source.contains(".filter(|count| *count > 0)")
             && source.contains("default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count)"),
-        "segment commit worker count should be an explicit nonzero env-controlled knob with a conservative default"
+        "segment commit worker count should be an explicit nonzero env-controlled knob with a large-input parallel default"
     );
 
     let pool_region = function_body(
@@ -3223,8 +3223,20 @@ fn guest_pc_segment_commit_oom_retry_clears_cuda_allocator_cache() {
         "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt",
     );
     assert!(
-        retry_body.contains("cuda_allocator_clear_cache()"),
-        "CUDA OOM retry should free cached allocator blocks before falling back to serial segment commits"
+        retry_body.contains("loop {")
+            && retry_body.contains("next_guest_pc_segment_commit_worker_count_after_oom")
+            && retry_body.contains("cuda_allocator_clear_cache()")
+            && retry_body.contains("worker_count_override = Some(next_worker_count)"),
+        "CUDA OOM retry should free cached allocator blocks before retrying with fewer segment commit workers"
+    );
+    let retry_policy_body = function_body(
+        &witness_execution_source,
+        "fn next_guest_pc_segment_commit_worker_count_after_oom",
+        "#[cfg(feature = \"cuda\")]",
+    );
+    assert!(
+        retry_policy_body.contains("checked_sub(1)") && retry_policy_body.contains("*count > 0"),
+        "CUDA OOM retry policy should step worker count down without retrying below one worker"
     );
     assert!(
         accel_source.contains("pub fn cuda_allocator_clear_cache()")
