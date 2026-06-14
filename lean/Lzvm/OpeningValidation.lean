@@ -217,9 +217,51 @@ theorem runtime_opening_evidence_implies_pcs_and_fri
   intro artifact publicInput proof requiresExternalSource evidence
   exact evidence.right.right.right.right
 
+theorem runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions
+    {system : VerifierModel}
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  have constantOpenings :=
+    validation.openingAcceptedImpliesConstantOpeningsBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have witnessOpenings :=
+    validation.openingAcceptedImpliesWitnessOpeningsBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have friOpening :=
+    validation.openingAcceptedImpliesFriOpeningBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have pcsOpenings :=
+    validation.openingChecksImplyPcsOpeningsValid
+      artifact
+      publicInput
+      proof
+      constantOpenings
+      witnessOpenings
+      friOpening
+  have friQueries :=
+    validation.friOpeningImpliesFriQueriesValid
+      artifact
+      publicInput
+      proof
+      friOpening
+  exact And.intro pcsOpenings friQueries
+
 theorem runtime_opening_checked_acceptance_pcs_and_fri
     {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
+    (_assumptions : AssumptionBundle system)
     (validation : RuntimeOpeningValidation system) :
     forall artifact publicInput proof,
       RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
@@ -227,20 +269,12 @@ theorem runtime_opening_checked_acceptance_pcs_and_fri
           /\ system.friQueriesValid publicInput proof := by
   intro artifact publicInput proof accepted
   exact
-    runtime_opening_evidence_implies_pcs_and_fri
+    runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions
       validation
       artifact
       publicInput
       proof
-      False
-      (runtime_opening_checked_acceptance_evidence
-        assumptions
-        validation
-        artifact
-        publicInput
-        proof
-        False
-        accepted)
+      accepted
 
 theorem runtime_opening_evidence_implies_external_source_requirement
     {system : VerifierModel}

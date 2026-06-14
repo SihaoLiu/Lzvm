@@ -31,6 +31,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "runtime_opening_evidence_implies_bound_contract",
             "runtime_opening_checked_acceptance_bound_contract",
             "runtime_opening_evidence_implies_external_source_requirement",
+            "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_opening_checked_acceptance_pcs_and_fri",
             "runtime_opening_checked_acceptance_sound",
             "runtime_opening_checked_acceptance_verifier_core_contract",
@@ -94,6 +95,34 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             )
             .contains("system.friQueriesValid publicInput proof"),
         "checked opening acceptance should directly expose PCS opening and FRI query validity"
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
+        &[
+            "RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
+        &[
+            "validation.openingAcceptedImpliesConstantOpeningsBound",
+            "validation.openingChecksImplyPcsOpeningsValid",
+            "validation.friOpeningImpliesFriQueriesValid",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
+        &["runtime_opening_checked_acceptance_evidence"],
     );
 }
 
