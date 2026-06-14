@@ -3143,11 +3143,10 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
     assert!(
         source.contains("fn guest_pc_trace_segment_commit_worker_count_for_input(")
             && source.contains("fn default_guest_pc_trace_segment_commit_worker_count_for_input(")
-            && source.contains("GUEST_PC_TRACE_SEGMENT_COMMIT_AUTO_WORKER_INPUT_BYTES")
             && source.contains("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS")
             && source.contains(".filter(|count| *count > 0)")
             && source.contains("default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count)"),
-        "segment commit worker count should be an explicit nonzero env-controlled knob with a trace-start input-size default"
+        "segment commit worker count should be an explicit nonzero env-controlled knob with a conservative default"
     );
 
     let pool_region = function_body(
@@ -3201,7 +3200,7 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
                 .count()
                 >= 2
             && run_body.matches("shared_inputs.input.len()").count() >= 2,
-        "both streaming guest PC segment paths should create the commit driver inside a thread scope with a trace-start input size"
+        "both streaming guest PC segment paths should create the commit driver inside a thread scope with the trace-start input size available to the worker selector"
     );
 }
 

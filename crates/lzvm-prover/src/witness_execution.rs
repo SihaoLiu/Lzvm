@@ -3507,14 +3507,8 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
     }
 }
 
-const GUEST_PC_TRACE_SEGMENT_COMMIT_AUTO_WORKER_INPUT_BYTES: usize = 8 * 1024 * 1024;
-
-fn default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
-    if input_byte_count >= GUEST_PC_TRACE_SEGMENT_COMMIT_AUTO_WORKER_INPUT_BYTES {
-        3
-    } else {
-        1
-    }
+fn default_guest_pc_trace_segment_commit_worker_count_for_input(_input_byte_count: usize) -> usize {
+    1
 }
 
 fn guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
@@ -5482,21 +5476,18 @@ mod tests {
     }
 
     #[test]
-    fn guest_pc_segment_commit_worker_count_uses_trace_start_input_size() {
-        let below_auto = GUEST_PC_TRACE_SEGMENT_COMMIT_AUTO_WORKER_INPUT_BYTES - 1;
-        let at_auto = GUEST_PC_TRACE_SEGMENT_COMMIT_AUTO_WORKER_INPUT_BYTES;
-
+    fn guest_pc_segment_commit_worker_count_uses_conservative_large_default() {
         assert_eq!(
-            default_guest_pc_trace_segment_commit_worker_count_for_input(below_auto),
+            default_guest_pc_trace_segment_commit_worker_count_for_input(0),
             1
         );
         assert_eq!(
-            default_guest_pc_trace_segment_commit_worker_count_for_input(at_auto),
-            3
+            default_guest_pc_trace_segment_commit_worker_count_for_input(8 * 1024 * 1024),
+            1
         );
         assert_eq!(
             default_guest_pc_trace_segment_commit_worker_count_for_input(usize::MAX),
-            3
+            1
         );
     }
 
