@@ -2979,6 +2979,34 @@ enum GuestPcTraceParallelLowerMessage {
     },
 }
 
+fn dispatch_guest_pc_trace_parallel_lower_job<T>(
+    job_senders: &[mpsc::SyncSender<T>],
+    next_worker: &mut usize,
+    mut job: T,
+) -> Result<(), T> {
+    let worker_count = job_senders.len();
+    if worker_count == 0 {
+        return Err(job);
+    }
+    let start = *next_worker % worker_count;
+    for offset in 0..worker_count {
+        let worker = (start + offset) % worker_count;
+        match job_senders[worker].try_send(job) {
+            Ok(()) => {
+                *next_worker = (worker + 1) % worker_count;
+                return Ok(());
+            }
+            Err(mpsc::TrySendError::Full(returned_job))
+            | Err(mpsc::TrySendError::Disconnected(returned_job)) => {
+                job = returned_job;
+            }
+        }
+    }
+    job_senders[start].send(job).map_err(|error| error.0)?;
+    *next_worker = (start + 1) % worker_count;
+    Ok(())
+}
+
 fn lower_guest_pc_trace_pending_segments_parallel(
     layout: &WitnessTraceLayout,
     pending_receiver: mpsc::Receiver<GuestPcTracePendingSegmentMessage>,
@@ -3069,7 +3097,13 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         dispatcher_timing.trace_report_buffer_excess_capacity += pending
                             .report_capacity
                             .saturating_sub(pending.reports.len());
-                        if job_senders[next_worker].send(pending).is_err() {
+                        if dispatch_guest_pc_trace_parallel_lower_job(
+                            &job_senders,
+                            &mut next_worker,
+                            pending,
+                        )
+                        .is_err()
+                        {
                             let _ =
                                 dispatcher_sender.send(GuestPcTraceParallelLowerMessage::Error {
                                     error: GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -3082,7 +3116,6 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                             break;
                         }
                         dispatched_count = dispatched_count.saturating_add(1);
-                        next_worker = (next_worker + 1) % job_senders.len();
                     }
                     GuestPcTracePendingSegmentMessage::Complete(stream) => {
                         let _ =

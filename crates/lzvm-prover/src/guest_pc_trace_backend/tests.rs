@@ -890,6 +890,27 @@ fn parallel_lower_implies_trusted_runner_seed_snapshot() {
 }
 
 #[test]
+fn parallel_lower_job_dispatch_skips_full_worker_queue() {
+    let (first_sender, first_receiver) = std::sync::mpsc::sync_channel(1);
+    let (second_sender, second_receiver) = std::sync::mpsc::sync_channel(1);
+    first_sender
+        .send(10_u32)
+        .expect("first worker queue should accept setup job");
+    let mut next_worker = 0_usize;
+
+    dispatch_guest_pc_trace_parallel_lower_job(
+        &[first_sender, second_sender],
+        &mut next_worker,
+        20_u32,
+    )
+    .expect("dispatcher should skip a full worker queue");
+
+    assert_eq!(first_receiver.try_recv(), Ok(10));
+    assert_eq!(second_receiver.try_recv(), Ok(20));
+    assert_eq!(next_worker, 0);
+}
+
+#[test]
 fn trusted_runner_seed_snapshot_forces_reference_seed_when_validation_enabled() {
     assert!(guest_pc_trace_needs_full_seed_advance(
         true, true, true, false, true
