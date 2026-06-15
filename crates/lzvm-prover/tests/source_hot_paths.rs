@@ -5238,6 +5238,25 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
 }
 
 #[test]
+fn guest_pc_trace_parallel_lowerer_bounds_result_queue() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+
+    let parallel_body = function_body(
+        &backend_source,
+        "fn lower_guest_pc_trace_pending_segments_parallel",
+        "fn validate_guest_pc_trace_pending_segment_seed",
+    );
+    assert!(
+        parallel_body.contains("mpsc::sync_channel")
+            && parallel_body.contains("guest_pc_trace_parallel_lower_result_queue_capacity"),
+        "parallel guest PC trace lowering should bound lowered-result buffering before emit/commit"
+    );
+}
+
+#[test]
 fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

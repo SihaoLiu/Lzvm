@@ -3207,7 +3207,9 @@ fn lower_guest_pc_trace_pending_segments_parallel(
     thread::scope(|scope| {
         let worker_count = worker_count.max(2);
         timing.parallel_lower_worker_count = timing.parallel_lower_worker_count.max(worker_count);
-        let (result_sender, result_receiver) = mpsc::channel();
+        let (result_sender, result_receiver) = mpsc::sync_channel(
+            guest_pc_trace_parallel_lower_result_queue_capacity(worker_count),
+        );
         let mut worker_handles = Vec::with_capacity(worker_count);
         let mut job_senders = Vec::with_capacity(worker_count);
 
@@ -3508,6 +3510,10 @@ fn guest_pc_trace_parallel_lower_worker_count() -> Option<usize> {
             .unwrap_or(1)
     });
     Some(worker_count.max(1))
+}
+
+fn guest_pc_trace_parallel_lower_result_queue_capacity(worker_count: usize) -> usize {
+    worker_count.max(1)
 }
 
 fn guest_pc_trace_parallel_lower_enabled() -> bool {
