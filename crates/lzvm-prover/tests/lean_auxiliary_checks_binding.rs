@@ -758,6 +758,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestDescriptorBufferRetentionRejectedCount",
         "guestDescriptorBufferRetentionRetainedByteCount",
         "guestDescriptorBufferRetentionRejectedByteCount",
+        "guestDescriptorBufferRetentionLimitByteCount",
         "guestStageLeafExtendWorkMilliseconds",
         "guestStageLeafSetupWorkMilliseconds",
         "guestStageLeafSetupPrepareMilliseconds",
@@ -1189,6 +1190,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_descriptor_buffer_retention_rejected_bytes\"",
             "guest_descriptor_buffer_retention_rejected_byte_count()",
+        ),
+        (
+            "\"guest_descriptor_buffer_retention_limit_bytes\"",
+            "guest_descriptor_buffer_retention_limit_byte_count()",
         ),
         (
             "\"guest_stage_tree_commit_work\"",

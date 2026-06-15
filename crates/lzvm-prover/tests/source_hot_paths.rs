@@ -4924,6 +4924,7 @@ fn guest_pc_trace_timing_reports_descriptor_buffer_retention_budget() {
         "descriptor_buffer_retention_rejected_count",
         "descriptor_buffer_retention_retained_byte_count",
         "descriptor_buffer_retention_rejected_byte_count",
+        "descriptor_buffer_retention_limit_byte_count",
     ] {
         assert!(
             accumulator_fields.contains(field),
@@ -4938,8 +4939,9 @@ fn guest_pc_trace_timing_reports_descriptor_buffer_retention_budget() {
     );
     assert!(
         cache_body.contains("retained_descriptor_buffer_byte_len")
+            && cache_body.contains("retained_descriptor_buffer_limit()")
             && cache_body.contains("add_descriptor_buffer_retention"),
-        "descriptor fallback retention should record retained and rejected bytes"
+        "descriptor fallback retention should record retained, rejected, and limit bytes"
     );
 
     for (line_name, accessor) in [
@@ -4962,6 +4964,10 @@ fn guest_pc_trace_timing_reports_descriptor_buffer_retention_budget() {
         (
             "\"guest_descriptor_buffer_retention_rejected_bytes\"",
             "guest_descriptor_buffer_retention_rejected_byte_count()",
+        ),
+        (
+            "\"guest_descriptor_buffer_retention_limit_bytes\"",
+            "guest_descriptor_buffer_retention_limit_byte_count()",
         ),
     ] {
         assert!(

@@ -793,7 +793,7 @@ fn default_retained_source_device_limit() -> usize {
 }
 
 #[cfg(feature = "cuda")]
-fn retained_descriptor_buffer_limit() -> usize {
+pub(crate) fn retained_descriptor_buffer_limit() -> usize {
     std::env::var("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())

@@ -65,10 +65,11 @@ use crate::witness_commitment::{
     commit_witness_stage_values_with_source_devices_and_workers,
     commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing,
     commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_workers,
-    retain_descriptor_device_buffer, retained_source_device_limit,
-    PendingWitnessTraceStageCommitments, WitnessRetainedDeviceBuffer, WitnessStageCommitmentError,
-    WitnessStageCommitmentReuseCache, WitnessStageLeafError, WitnessStageLeafWorkspaceCache,
-    WitnessStageRetainedSourceDevice, WitnessStageSourceDevice, WitnessStageSourceDeviceView,
+    retain_descriptor_device_buffer, retained_descriptor_buffer_limit,
+    retained_source_device_limit, PendingWitnessTraceStageCommitments, WitnessRetainedDeviceBuffer,
+    WitnessStageCommitmentError, WitnessStageCommitmentReuseCache, WitnessStageLeafError,
+    WitnessStageLeafWorkspaceCache, WitnessStageRetainedSourceDevice, WitnessStageSourceDevice,
+    WitnessStageSourceDeviceView,
 };
 #[cfg(not(feature = "cuda"))]
 use crate::witness_commitment::{
@@ -491,6 +492,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_descriptor_buffer_retention_rejected_count: usize,
     guest_descriptor_buffer_retention_retained_byte_count: usize,
     guest_descriptor_buffer_retention_rejected_byte_count: usize,
+    guest_descriptor_buffer_retention_limit_byte_count: usize,
     guest_regular_constraint_duration: Duration,
     guest_regular_hint_duration: Duration,
     guest_stage_commit_duration: Duration,
@@ -708,6 +710,8 @@ impl ProveWitnessGuestPcTraceTiming {
                 .descriptor_buffer_retention_retained_byte_count,
             guest_descriptor_buffer_retention_rejected_byte_count: trace_timing
                 .descriptor_buffer_retention_rejected_byte_count,
+            guest_descriptor_buffer_retention_limit_byte_count: trace_timing
+                .descriptor_buffer_retention_limit_byte_count,
             guest_regular_constraint_duration: trace_timing.regular_constraint_duration,
             guest_regular_hint_duration: trace_timing.regular_hint_duration,
             guest_stage_commit_duration: trace_timing.stage_commit_duration,
@@ -1164,6 +1168,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_descriptor_buffer_retention_rejected_byte_count(&self) -> usize {
         self.guest_descriptor_buffer_retention_rejected_byte_count
+    }
+
+    pub fn guest_descriptor_buffer_retention_limit_byte_count(&self) -> usize {
+        self.guest_descriptor_buffer_retention_limit_byte_count
     }
 
     pub fn guest_regular_constraint_duration(&self) -> Duration {
@@ -1696,6 +1704,7 @@ struct ProveWitnessTraceTimingAccumulator {
     descriptor_buffer_retention_rejected_count: usize,
     descriptor_buffer_retention_retained_byte_count: usize,
     descriptor_buffer_retention_rejected_byte_count: usize,
+    descriptor_buffer_retention_limit_byte_count: usize,
     regular_constraint_duration: Duration,
     regular_hint_duration: Duration,
     stage_commit_duration: Duration,
@@ -1778,6 +1787,9 @@ impl ProveWitnessTraceTimingAccumulator {
             other.descriptor_buffer_retention_retained_byte_count;
         self.descriptor_buffer_retention_rejected_byte_count +=
             other.descriptor_buffer_retention_rejected_byte_count;
+        self.descriptor_buffer_retention_limit_byte_count = self
+            .descriptor_buffer_retention_limit_byte_count
+            .max(other.descriptor_buffer_retention_limit_byte_count);
         self.regular_constraint_duration += other.regular_constraint_duration;
         self.regular_hint_duration += other.regular_hint_duration;
         self.stage_commit_duration += other.stage_commit_duration;
@@ -1888,7 +1900,12 @@ impl ProveWitnessTraceTimingAccumulator {
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
-    fn add_descriptor_buffer_retention(&mut self, retained_byte_len: usize, retained: bool) {
+    fn add_descriptor_buffer_retention(
+        &mut self,
+        retained_byte_len: usize,
+        retained: bool,
+        limit_byte_count: usize,
+    ) {
         self.descriptor_buffer_retention_attempt_count += 1;
         if retained {
             self.descriptor_buffer_retention_retained_count += 1;
@@ -1901,6 +1918,9 @@ impl ProveWitnessTraceTimingAccumulator {
                 .descriptor_buffer_retention_rejected_byte_count
                 .saturating_add(retained_byte_len);
         }
+        self.descriptor_buffer_retention_limit_byte_count = self
+            .descriptor_buffer_retention_limit_byte_count
+            .max(limit_byte_count);
     }
 }
 
@@ -2428,11 +2448,13 @@ impl WitnessStageSourceDeviceCache {
     ) -> Option<WitnessRetainedDeviceBuffer> {
         let buffer = self.guest_pc_device_descriptor_buffer.as_ref()?;
         let retained_descriptor_buffer_byte_len = buffer.len();
+        let retention_limit = retained_descriptor_buffer_limit();
         let retained = retain_descriptor_device_buffer(buffer);
         if let Some(timing) = timing {
             timing.add_descriptor_buffer_retention(
                 retained_descriptor_buffer_byte_len,
                 retained.is_some(),
+                retention_limit,
             );
         }
         retained

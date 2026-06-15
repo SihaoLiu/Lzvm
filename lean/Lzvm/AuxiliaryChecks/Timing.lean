@@ -1083,14 +1083,15 @@ theorem guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
     (summary : GuestPcTraceTimingSummary)
-    (retainedBytes rejectedBytes : Nat) :
+    (retainedBytes rejectedBytes limitBytes : Nat) :
     forall publicInput proof,
       GuestPcTraceTimingObservedAcceptance
         system
         (some
           { summary with
             guestDescriptorBufferRetentionRetainedByteCount := retainedBytes
-            guestDescriptorBufferRetentionRejectedByteCount := rejectedBytes })
+            guestDescriptorBufferRetentionRejectedByteCount := rejectedBytes
+            guestDescriptorBufferRetentionLimitByteCount := limitBytes })
         publicInput
         proof ->
         SoundWitness system publicInput proof := by
@@ -1101,7 +1102,8 @@ theorem guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_sound
       (some
         { summary with
           guestDescriptorBufferRetentionRetainedByteCount := retainedBytes
-          guestDescriptorBufferRetentionRejectedByteCount := rejectedBytes })
+          guestDescriptorBufferRetentionRejectedByteCount := rejectedBytes
+          guestDescriptorBufferRetentionLimitByteCount := limitBytes })
       publicInput
       proof
       observed
@@ -1110,14 +1112,15 @@ theorem guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_verifi
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
     (summary : GuestPcTraceTimingSummary)
-    (retainedBytes rejectedBytes : Nat) :
+    (retainedBytes rejectedBytes limitBytes : Nat) :
     forall publicInput proof,
       GuestPcTraceTimingObservedAcceptance
         system
         (some
           { summary with
             guestDescriptorBufferRetentionRetainedByteCount := retainedBytes
-            guestDescriptorBufferRetentionRejectedByteCount := rejectedBytes })
+            guestDescriptorBufferRetentionRejectedByteCount := rejectedBytes
+            guestDescriptorBufferRetentionLimitByteCount := limitBytes })
         publicInput
         proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
@@ -1129,6 +1132,7 @@ theorem guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_verifi
         summary
         retainedBytes
         rejectedBytes
+        limitBytes
         publicInput
         proof
         observed)

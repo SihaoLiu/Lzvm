@@ -249,6 +249,7 @@ structure GuestPcTraceTimingSummary where
   guestDescriptorBufferRetentionRejectedCount : Nat
   guestDescriptorBufferRetentionRetainedByteCount : Nat
   guestDescriptorBufferRetentionRejectedByteCount : Nat
+  guestDescriptorBufferRetentionLimitByteCount : Nat
   guestRegularConstraintsMilliseconds : Nat
   guestRegularHintsMilliseconds : Nat
   guestStageCommitMilliseconds : Nat

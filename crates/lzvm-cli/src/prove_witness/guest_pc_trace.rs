@@ -478,6 +478,10 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_descriptor_buffer_retention_rejected_bytes",
         timing.guest_descriptor_buffer_retention_rejected_byte_count(),
     );
+    timings.record_count(
+        "guest_descriptor_buffer_retention_limit_bytes",
+        timing.guest_descriptor_buffer_retention_limit_byte_count(),
+    );
     timings.record(
         "guest_regular_constraints",
         timing.guest_regular_constraint_duration(),
