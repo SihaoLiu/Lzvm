@@ -182,13 +182,7 @@ pub(super) fn record_guest_pc_trace_timing(
     record_guest_trace_sampled_duration_counts(
         timings,
         "guest_trace_report",
-        timing.guest_trace_report_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_validation",
-        timing.guest_trace_report_validation_duration(),
+        timing.guest_trace_report_sample_duration(),
         detail_sample_count,
     );
     record_guest_trace_sampled_duration_counts(
@@ -249,12 +243,6 @@ pub(super) fn record_guest_pc_trace_timing(
         timings,
         "guest_trace_report_visit",
         timing.guest_trace_report_visit_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_emit",
-        timing.guest_trace_emit_duration(),
         detail_sample_count,
     );
     record_guest_trace_sampled_duration_counts(

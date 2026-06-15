@@ -2875,6 +2875,51 @@ fn guest_pc_segment_commit_can_gate_cross_segment_pending_roots() {
 }
 
 #[test]
+fn guest_trace_detail_timing_keeps_aggregate_report_and_sampled_fields_separate() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source =
+        std::fs::read_to_string(&cli_path).expect("guest PC trace timing source should read");
+
+    let function_names = [
+        format!(
+            "fn build_layout_{}_main_trace_segment_device_material",
+            concat!("zi", "sk")
+        ),
+        format!("fn build_layout_{}_main_trace_segment", concat!("zi", "sk")),
+    ];
+    for function_name in function_names {
+        let body = function_body(&backend_source, &function_name, "fn guest_pc_trace");
+        assert!(
+            body.contains("trace_report_sample_duration += duration")
+                && !body.contains(".filter(|_| !detail_timing)"),
+            "{function_name} should keep aggregate report timing even when detail sampling is enabled and place sampled report time in a separate counter"
+        );
+    }
+
+    let cli_body = function_body(
+        &cli_source,
+        "pub(super) fn record_guest_pc_trace_timing",
+        "fn record_guest_stage_root_materialization_shape",
+    );
+    assert!(
+        cli_body.contains("timing.guest_trace_report_sample_duration()"),
+        "CLI sampled report nanos should use the sampled report counter, not the aggregate report duration"
+    );
+    assert!(
+        !cli_body.contains(
+            "record_guest_trace_sampled_duration_counts(\n        timings,\n        \"guest_trace_report_validation\""
+        ) && !cli_body.contains(
+            "record_guest_trace_sampled_duration_counts(\n        timings,\n        \"guest_trace_emit\""
+        ),
+        "CLI sampled detail nanos should not label aggregate validation or segment-level emit timing as sampled report detail"
+    );
+}
+
+#[test]
 fn cuda_source_device_commit_can_pipeline_stream_leaf_extensions() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let trace_path = crate_root.join("src/witness_commitment/trace.rs");
@@ -5865,7 +5910,7 @@ fn guest_pc_trace_register_mem_steps_use_single_lookup_updates() {
 }
 
 #[test]
-fn guest_pc_trace_lower_records_aggregate_report_timing_without_detail_timers() {
+fn guest_pc_trace_lower_records_aggregate_report_timing_alongside_detail_timers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
     let backend_source =
@@ -5913,18 +5958,19 @@ fn guest_pc_trace_lower_records_aggregate_report_timing_without_detail_timers() 
     ] {
         assert!(
             body.contains("let aggregate_report_started")
-                && body.contains("filter(|_| !detail_timing)")
+                && body.contains("let aggregate_report_started = timing.as_ref().map(|_| Instant::now());")
                 && body.contains("Instant::now()"),
-            "guest PC {label} lowerer should start one aggregate report-loop timer when detail timing is off"
+            "guest PC {label} lowerer should start one aggregate report-loop timer even when sampled detail timing is enabled"
         );
         assert!(
             body.contains("let detail_sample_stride = guest_pc_trace_detail_timing_sample_stride();")
                 && body.contains(
                     "let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;"
                 )
+                && body.contains("trace_report_sample_duration += duration")
                 && body.contains("row_timing,")
                 && body.contains("report_detail_timing"),
-            "guest PC {label} lowerer should support sampled detail timing without changing the default aggregate timer"
+            "guest PC {label} lowerer should store sampled detail timing separately from the aggregate report timer"
         );
         assert!(
             body.contains("record_aggregate_trace_report_duration(")

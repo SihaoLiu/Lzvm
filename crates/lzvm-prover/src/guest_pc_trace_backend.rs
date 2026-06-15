@@ -189,6 +189,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     lowerer_duration: Duration,
     trace_lower_duration: Duration,
     trace_report_duration: Duration,
+    trace_report_sample_duration: Duration,
     trace_single_row_report_duration: Duration,
     trace_multi_row_report_duration: Duration,
     trace_pending_dma_report_duration: Duration,
@@ -253,6 +254,7 @@ impl GuestPcTraceStreamTiming {
         self.lowerer_duration += other.lowerer_duration;
         self.trace_lower_duration += other.trace_lower_duration;
         self.trace_report_duration += other.trace_report_duration;
+        self.trace_report_sample_duration += other.trace_report_sample_duration;
         self.trace_single_row_report_duration += other.trace_single_row_report_duration;
         self.trace_multi_row_report_duration += other.trace_multi_row_report_duration;
         self.trace_pending_dma_report_duration += other.trace_pending_dma_report_duration;
@@ -334,6 +336,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_duration(&self) -> Duration {
         self.trace_report_duration
+    }
+
+    pub fn trace_report_sample_duration(&self) -> Duration {
+        self.trace_report_sample_duration
     }
 
     pub fn trace_single_row_report_duration(&self) -> Duration {
@@ -4934,10 +4940,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
     let shape_timing = guest_pc_trace_shape_timing_enabled();
     let detail_sample_stride = guest_pc_trace_detail_timing_sample_stride();
     let row_timing_enabled = detail_timing || shape_timing;
-    let aggregate_report_started = timing
-        .as_ref()
-        .filter(|_| !detail_timing)
-        .map(|_| Instant::now());
+    let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
     for (report_index, report) in reports.iter().enumerate() {
         let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;
         let report_started = timing
@@ -4993,7 +4996,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
             if let Some(started) = report_started {
                 timing.trace_report_detail_sample_count += 1;
                 let duration = started.elapsed();
-                timing.trace_report_duration += duration;
+                timing.trace_report_sample_duration += duration;
                 record_trace_report_duration(
                     timing,
                     report,
@@ -5446,10 +5449,7 @@ fn build_layout_zisk_main_trace_segment(
     let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
     let shape_timing = guest_pc_trace_shape_timing_enabled();
     let detail_sample_stride = guest_pc_trace_detail_timing_sample_stride();
-    let aggregate_report_started = timing
-        .as_ref()
-        .filter(|_| !detail_timing)
-        .map(|_| Instant::now());
+    let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
     for (report_index, report) in reports.iter().enumerate() {
         let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;
         let report_started = timing
@@ -5490,7 +5490,7 @@ fn build_layout_zisk_main_trace_segment(
             if let Some(started) = report_started {
                 timing.trace_report_detail_sample_count += 1;
                 let duration = started.elapsed();
-                timing.trace_report_duration += duration;
+                timing.trace_report_sample_duration += duration;
                 record_trace_report_duration(
                     timing,
                     report,
