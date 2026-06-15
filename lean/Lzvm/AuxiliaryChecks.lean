@@ -168,6 +168,7 @@ structure GuestPcTraceStageTimingSummary where
   treeCommitRetainWorkMilliseconds : Nat
 deriving DecidableEq, Repr
 
+set_option maxRecDepth 2048 in
 structure GuestPcTraceTimingSummary where
   segmentCount : Nat
   guestTraceStreamElapsedMilliseconds : Nat
@@ -290,6 +291,8 @@ structure GuestPcTraceTimingSummary where
   guestStageTreeCommitRootWorkMilliseconds : Nat
   guestStageTreeCommitRootCount : Nat
   guestStageTreeCommitRootByteCount : Nat
+  guestStageTreeCommitRootMaterializationGroupCount : Nat
+  guestStageTreeCommitRootMaterializationMaxGroupSize : Nat
   guestStageTreeCommitRetainWorkMilliseconds : Nat
   stageTimings : List GuestPcTraceStageTimingSummary
 deriving DecidableEq, Repr

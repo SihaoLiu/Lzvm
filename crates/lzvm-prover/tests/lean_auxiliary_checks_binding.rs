@@ -793,6 +793,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestStageTreeCommitRootWorkMilliseconds",
         "guestStageTreeCommitRootCount",
         "guestStageTreeCommitRootByteCount",
+        "guestStageTreeCommitRootMaterializationGroupCount",
+        "guestStageTreeCommitRootMaterializationMaxGroupSize",
         "guestStageTreeCommitRetainWorkMilliseconds",
     ] {
         assert!(
@@ -1204,6 +1206,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_stage_tree_commit_root_bytes\"",
             "guest_stage_tree_commit_root_byte_count()",
+        ),
+        (
+            "\"guest_stage_tree_commit_root_materialization_groups\"",
+            "guest_stage_tree_commit_root_materialization_group_count()",
+        ),
+        (
+            "\"guest_stage_tree_commit_root_materialization_max_group_size\"",
+            "guest_stage_tree_commit_root_materialization_max_group_size()",
         ),
         (
             "\"guest_stage_tree_commit_retain_work\"",

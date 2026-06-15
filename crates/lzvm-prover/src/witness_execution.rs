@@ -471,6 +471,8 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_stage_tree_commit_root_work_duration: Duration,
     guest_stage_tree_commit_root_count: usize,
     guest_stage_tree_commit_root_byte_count: usize,
+    guest_stage_tree_commit_root_materialization_group_count: usize,
+    guest_stage_tree_commit_root_materialization_max_group_size: usize,
     guest_stage_tree_commit_retain_work_duration: Duration,
     guest_stage_timings: Vec<ProveWitnessGuestStageTiming>,
 }
@@ -697,6 +699,10 @@ impl ProveWitnessGuestPcTraceTiming {
                 .stage_tree_commit_root_work_duration,
             guest_stage_tree_commit_root_count: trace_timing.stage_tree_commit_root_count,
             guest_stage_tree_commit_root_byte_count: trace_timing.stage_tree_commit_root_byte_count,
+            guest_stage_tree_commit_root_materialization_group_count: trace_timing
+                .stage_tree_commit_root_materialization_group_count,
+            guest_stage_tree_commit_root_materialization_max_group_size: trace_timing
+                .stage_tree_commit_root_materialization_max_group_size,
             guest_stage_tree_commit_retain_work_duration: trace_timing
                 .stage_tree_commit_retain_work_duration,
             guest_stage_timings: trace_timing.stage_timings,
@@ -1237,6 +1243,14 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_stage_tree_commit_root_byte_count
     }
 
+    pub fn guest_stage_tree_commit_root_materialization_group_count(&self) -> usize {
+        self.guest_stage_tree_commit_root_materialization_group_count
+    }
+
+    pub fn guest_stage_tree_commit_root_materialization_max_group_size(&self) -> usize {
+        self.guest_stage_tree_commit_root_materialization_max_group_size
+    }
+
     pub fn guest_stage_tree_commit_retain_work_duration(&self) -> Duration {
         self.guest_stage_tree_commit_retain_work_duration
     }
@@ -1287,6 +1301,8 @@ pub struct ProveWitnessGuestStageTiming {
     tree_commit_root_duration: Duration,
     tree_commit_root_count: usize,
     tree_commit_root_byte_count: usize,
+    tree_commit_root_materialization_group_count: usize,
+    tree_commit_root_materialization_max_group_size: usize,
     tree_commit_retain_duration: Duration,
 }
 
@@ -1339,6 +1355,10 @@ impl ProveWitnessGuestStageTiming {
             tree_commit_root_duration: timing_value.tree_commit_root_duration(),
             tree_commit_root_count: timing_value.tree_commit_root_count(),
             tree_commit_root_byte_count: timing_value.tree_commit_root_byte_count(),
+            tree_commit_root_materialization_group_count: timing_value
+                .tree_commit_root_materialization_group_count(),
+            tree_commit_root_materialization_max_group_size: timing_value
+                .tree_commit_root_materialization_max_group_size(),
             tree_commit_retain_duration: timing_value.tree_commit_retain_duration(),
         }
     }
@@ -1388,6 +1408,11 @@ impl ProveWitnessGuestStageTiming {
         self.tree_commit_root_duration += other.tree_commit_root_duration;
         self.tree_commit_root_count += other.tree_commit_root_count;
         self.tree_commit_root_byte_count += other.tree_commit_root_byte_count;
+        self.tree_commit_root_materialization_group_count +=
+            other.tree_commit_root_materialization_group_count;
+        self.tree_commit_root_materialization_max_group_size = self
+            .tree_commit_root_materialization_max_group_size
+            .max(other.tree_commit_root_materialization_max_group_size);
         self.tree_commit_retain_duration += other.tree_commit_retain_duration;
     }
 
@@ -1547,6 +1572,14 @@ impl ProveWitnessGuestStageTiming {
         self.tree_commit_root_byte_count
     }
 
+    pub fn tree_commit_root_materialization_group_count(&self) -> usize {
+        self.tree_commit_root_materialization_group_count
+    }
+
+    pub fn tree_commit_root_materialization_max_group_size(&self) -> usize {
+        self.tree_commit_root_materialization_max_group_size
+    }
+
     pub fn tree_commit_retain_work_duration(&self) -> Duration {
         self.tree_commit_retain_duration
     }
@@ -1613,6 +1646,8 @@ struct ProveWitnessTraceTimingAccumulator {
     stage_tree_commit_root_work_duration: Duration,
     stage_tree_commit_root_count: usize,
     stage_tree_commit_root_byte_count: usize,
+    stage_tree_commit_root_materialization_group_count: usize,
+    stage_tree_commit_root_materialization_max_group_size: usize,
     stage_tree_commit_retain_work_duration: Duration,
     stage_timings: Vec<ProveWitnessGuestStageTiming>,
 }
@@ -1705,6 +1740,11 @@ impl ProveWitnessTraceTimingAccumulator {
         self.stage_tree_commit_root_work_duration += other.stage_tree_commit_root_work_duration;
         self.stage_tree_commit_root_count += other.stage_tree_commit_root_count;
         self.stage_tree_commit_root_byte_count += other.stage_tree_commit_root_byte_count;
+        self.stage_tree_commit_root_materialization_group_count +=
+            other.stage_tree_commit_root_materialization_group_count;
+        self.stage_tree_commit_root_materialization_max_group_size = self
+            .stage_tree_commit_root_materialization_max_group_size
+            .max(other.stage_tree_commit_root_materialization_max_group_size);
         self.stage_tree_commit_retain_work_duration += other.stage_tree_commit_retain_work_duration;
         for stage_timing in other.stage_timings {
             self.accumulate_stage_timing(stage_timing);
@@ -4714,6 +4754,11 @@ fn run_prove_witness_commitments_from_trace_inner(
         timing.stage_tree_commit_root_work_duration += stage_timing.tree_commit_root_duration();
         timing.stage_tree_commit_root_count += stage_timing.tree_commit_root_count();
         timing.stage_tree_commit_root_byte_count += stage_timing.tree_commit_root_byte_count();
+        timing.stage_tree_commit_root_materialization_group_count +=
+            stage_timing.tree_commit_root_materialization_group_count();
+        timing.stage_tree_commit_root_materialization_max_group_size = timing
+            .stage_tree_commit_root_materialization_max_group_size
+            .max(stage_timing.tree_commit_root_materialization_max_group_size());
         timing.stage_tree_commit_retain_work_duration += stage_timing.tree_commit_retain_duration();
         for stage_timing in stage_timings {
             timing.accumulate_indexed_stage_timing(stage_timing);

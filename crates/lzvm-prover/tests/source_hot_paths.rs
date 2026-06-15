@@ -3819,6 +3819,8 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         "tree_commit_retain_duration",
         "tree_commit_root_count",
         "tree_commit_root_byte_count",
+        "tree_commit_root_materialization_group_count",
+        "tree_commit_root_materialization_max_group_size",
     ] {
         assert!(
             stage_timing_body.contains(field),
@@ -3923,6 +3925,14 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "\"guest_stage_tree_commit_root_bytes\"",
             "guest_stage_tree_commit_root_byte_count()",
+        ),
+        (
+            "\"guest_stage_tree_commit_root_materialization_groups\"",
+            "guest_stage_tree_commit_root_materialization_group_count()",
+        ),
+        (
+            "\"guest_stage_tree_commit_root_materialization_max_group_size\"",
+            "guest_stage_tree_commit_root_materialization_max_group_size()",
         ),
         (
             "\"guest_stage_tree_commit_retain_work\"",

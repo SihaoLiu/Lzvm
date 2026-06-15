@@ -34,6 +34,8 @@ pub(crate) struct WitnessStageTreeCommitTiming {
     pub(crate) root_duration: Duration,
     pub(crate) root_count: usize,
     pub(crate) root_byte_count: usize,
+    pub(crate) root_materialization_group_count: usize,
+    pub(crate) root_materialization_max_group_size: usize,
     pub(crate) retain_duration: Duration,
 }
 
@@ -69,6 +71,9 @@ impl PendingCudaWitnessStageCommitment {
         })?;
         timing.root_count += 1;
         timing.root_byte_count += HASH_WORDS * WORD_BYTES;
+        timing.root_materialization_group_count += 1;
+        timing.root_materialization_max_group_size =
+            timing.root_materialization_max_group_size.max(1);
         let (retained_parent_checkpoint_level, retained_leaf_digest_level, retained_source_device) =
             record_stage_tree_commit_duration(Some(&mut timing.retain_duration), || {
                 let validated_level = self.leaf_level.into_validated_level();

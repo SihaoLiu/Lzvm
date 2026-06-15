@@ -1582,7 +1582,8 @@ theorem guest_pc_trace_tree_commit_timing_acceptance_sound
     (assumptions : AssumptionBundle system)
     (summary : GuestPcTraceTimingSummary)
     (workMilliseconds checkpointMilliseconds rootMilliseconds rootCount
-      rootByteCount retainMilliseconds : Nat) :
+      rootByteCount rootMaterializationGroupCount rootMaterializationMaxGroupSize
+      retainMilliseconds : Nat) :
     forall publicInput proof,
       GuestPcTraceTimingObservedAcceptance
         system
@@ -1593,6 +1594,10 @@ theorem guest_pc_trace_tree_commit_timing_acceptance_sound
             guestStageTreeCommitRootWorkMilliseconds := rootMilliseconds
             guestStageTreeCommitRootCount := rootCount
             guestStageTreeCommitRootByteCount := rootByteCount
+            guestStageTreeCommitRootMaterializationGroupCount :=
+              rootMaterializationGroupCount
+            guestStageTreeCommitRootMaterializationMaxGroupSize :=
+              rootMaterializationMaxGroupSize
             guestStageTreeCommitRetainWorkMilliseconds := retainMilliseconds })
         publicInput
         proof ->
@@ -1608,6 +1613,10 @@ theorem guest_pc_trace_tree_commit_timing_acceptance_sound
           guestStageTreeCommitRootWorkMilliseconds := rootMilliseconds
           guestStageTreeCommitRootCount := rootCount
           guestStageTreeCommitRootByteCount := rootByteCount
+          guestStageTreeCommitRootMaterializationGroupCount :=
+            rootMaterializationGroupCount
+          guestStageTreeCommitRootMaterializationMaxGroupSize :=
+            rootMaterializationMaxGroupSize
           guestStageTreeCommitRetainWorkMilliseconds := retainMilliseconds })
       publicInput
       proof
@@ -1618,7 +1627,8 @@ theorem guest_pc_trace_tree_commit_timing_acceptance_verifier_core_contract
     (assumptions : AssumptionBundle system)
     (summary : GuestPcTraceTimingSummary)
     (workMilliseconds checkpointMilliseconds rootMilliseconds rootCount
-      rootByteCount retainMilliseconds : Nat) :
+      rootByteCount rootMaterializationGroupCount rootMaterializationMaxGroupSize
+      retainMilliseconds : Nat) :
     forall publicInput proof,
       GuestPcTraceTimingObservedAcceptance
         system
@@ -1629,6 +1639,10 @@ theorem guest_pc_trace_tree_commit_timing_acceptance_verifier_core_contract
             guestStageTreeCommitRootWorkMilliseconds := rootMilliseconds
             guestStageTreeCommitRootCount := rootCount
             guestStageTreeCommitRootByteCount := rootByteCount
+            guestStageTreeCommitRootMaterializationGroupCount :=
+              rootMaterializationGroupCount
+            guestStageTreeCommitRootMaterializationMaxGroupSize :=
+              rootMaterializationMaxGroupSize
             guestStageTreeCommitRetainWorkMilliseconds := retainMilliseconds })
         publicInput
         proof ->
@@ -1644,6 +1658,8 @@ theorem guest_pc_trace_tree_commit_timing_acceptance_verifier_core_contract
         rootMilliseconds
         rootCount
         rootByteCount
+        rootMaterializationGroupCount
+        rootMaterializationMaxGroupSize
         retainMilliseconds
         publicInput
         proof

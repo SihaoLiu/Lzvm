@@ -553,6 +553,14 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_stage_tree_commit_root_bytes",
         timing.guest_stage_tree_commit_root_byte_count(),
     );
+    timings.record_count(
+        "guest_stage_tree_commit_root_materialization_groups",
+        timing.guest_stage_tree_commit_root_materialization_group_count(),
+    );
+    timings.record_count(
+        "guest_stage_tree_commit_root_materialization_max_group_size",
+        timing.guest_stage_tree_commit_root_materialization_max_group_size(),
+    );
     timings.record(
         "guest_stage_tree_commit_retain_work",
         timing.guest_stage_tree_commit_retain_work_duration(),

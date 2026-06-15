@@ -54,6 +54,8 @@ pub(crate) struct WitnessStageCommitTiming {
     tree_commit_root_duration: Duration,
     tree_commit_root_count: usize,
     tree_commit_root_byte_count: usize,
+    tree_commit_root_materialization_group_count: usize,
+    tree_commit_root_materialization_max_group_size: usize,
     tree_commit_retain_duration: Duration,
 }
 
@@ -283,6 +285,11 @@ impl WitnessStageCommitTiming {
         self.tree_commit_root_duration += other.tree_commit_root_duration;
         self.tree_commit_root_count += other.tree_commit_root_count;
         self.tree_commit_root_byte_count += other.tree_commit_root_byte_count;
+        self.tree_commit_root_materialization_group_count +=
+            other.tree_commit_root_materialization_group_count;
+        self.tree_commit_root_materialization_max_group_size = self
+            .tree_commit_root_materialization_max_group_size
+            .max(other.tree_commit_root_materialization_max_group_size);
         self.tree_commit_retain_duration += other.tree_commit_retain_duration;
     }
 
@@ -296,6 +303,11 @@ impl WitnessStageCommitTiming {
         self.tree_commit_root_duration += timing.root_duration;
         self.tree_commit_root_count += timing.root_count;
         self.tree_commit_root_byte_count += timing.root_byte_count;
+        self.tree_commit_root_materialization_group_count +=
+            timing.root_materialization_group_count;
+        self.tree_commit_root_materialization_max_group_size = self
+            .tree_commit_root_materialization_max_group_size
+            .max(timing.root_materialization_max_group_size);
         self.tree_commit_retain_duration += timing.retain_duration;
     }
 
@@ -317,6 +329,14 @@ impl WitnessStageCommitTiming {
 
     pub(crate) fn tree_commit_root_byte_count(&self) -> usize {
         self.tree_commit_root_byte_count
+    }
+
+    pub(crate) fn tree_commit_root_materialization_group_count(&self) -> usize {
+        self.tree_commit_root_materialization_group_count
+    }
+
+    pub(crate) fn tree_commit_root_materialization_max_group_size(&self) -> usize {
+        self.tree_commit_root_materialization_max_group_size
     }
 
     pub(crate) fn tree_commit_retain_duration(&self) -> Duration {
