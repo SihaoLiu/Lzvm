@@ -63,6 +63,17 @@ def RuntimeTranscriptBindingEvidence
     /\ validation.queryPlanBound artifact publicInput proof
     /\ validation.transcriptPayloadMatchesProof artifact publicInput proof
 
+def RuntimeTranscriptBindingPayloadContract
+    (system : VerifierModel)
+    (validation : RuntimeTranscriptBindingValidation system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.challengeSegmentBound artifact publicInput proof
+    /\ validation.queryPlanBound artifact publicInput proof
+    /\ validation.transcriptPayloadMatchesProof artifact publicInput proof
+    /\ system.transcriptBound publicInput proof
+
 def RuntimeTranscriptBindingCheckedAcceptance
     (_system : VerifierModel)
     (validation : RuntimeTranscriptBindingValidation _system)
@@ -143,6 +154,35 @@ theorem runtime_transcript_binding_evidence_implies_transcript_bound
       evidence.right.right.left
       evidence.right.right.right
 
+theorem runtime_transcript_binding_evidence_implies_payload_contract
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTranscriptBindingPayloadContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof evidence
+  have transcriptBound :=
+    runtime_transcript_binding_evidence_implies_transcript_bound
+      validation
+      artifact
+      publicInput
+      proof
+      evidence
+  exact
+    And.intro evidence.right.left
+      (And.intro evidence.right.right.left
+        (And.intro evidence.right.right.right transcriptBound))
+
 theorem runtime_transcript_binding_checked_acceptance_transcript_bound
     {system : VerifierModel}
     (validation : RuntimeTranscriptBindingValidation system) :
@@ -157,6 +197,36 @@ theorem runtime_transcript_binding_checked_acceptance_transcript_bound
   intro artifact publicInput proof accepted
   exact
     runtime_transcript_binding_evidence_implies_transcript_bound
+      validation
+      artifact
+      publicInput
+      proof
+      (runtime_transcript_binding_checked_acceptance_evidence
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+
+theorem runtime_transcript_binding_checked_acceptance_payload_contract
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTranscriptBindingPayloadContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_transcript_binding_evidence_implies_payload_contract
       validation
       artifact
       publicInput
