@@ -117,6 +117,69 @@ theorem runtime_challenge_segment_binding_checked_acceptance_transcript
       proof
       accepted
 
+theorem runtime_challenge_segment_binding_checked_acceptance_transcript_payload_contract
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeChallengeSegmentBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTranscriptBindingEvidence
+            system
+            validation.transcriptValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.transcriptValidation.artifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTranscriptBindingPayloadContract
+            system
+            validation.transcriptValidation
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have challengeEvidence :=
+    runtime_challenge_segment_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have transcriptContracts :=
+    runtime_transcript_binding_checked_acceptance_artifact_payload_contract
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+  exact
+    And.intro challengeEvidence
+      (And.intro transcriptContracts.left
+        (And.intro
+          transcriptContracts.right.left
+          transcriptContracts.right.right))
+
 theorem runtime_challenge_segment_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

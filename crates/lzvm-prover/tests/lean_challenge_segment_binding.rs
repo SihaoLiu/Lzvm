@@ -29,10 +29,31 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_challenge_segment_binding_checked_acceptance_transcript_payload_contract",
             "runtime_challenge_segment_binding_checked_acceptance_sound",
             "runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract",
             "runtime_challenge_segment_binding_checked_acceptance_challenge_and_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_transcript_payload_contract",
+        &[
+            "RuntimeChallengeSegmentBindingEvidence",
+            "RuntimeTranscriptBindingEvidence",
+            "RuntimeArtifactEvidence",
+            "RuntimeTranscriptBindingPayloadContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_transcript_payload_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_transcript_payload_contract",
+        &["abstract_verifier_sound"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
