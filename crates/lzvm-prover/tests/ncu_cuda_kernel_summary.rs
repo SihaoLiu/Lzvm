@@ -148,6 +148,61 @@ fn ncu_cuda_kernel_summary_skips_profiler_preamble_and_rejects_metricless_export
 }
 
 #[test]
+fn ncu_cuda_kernel_summary_allows_missing_auxiliary_occupancy_metrics() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/ncu-cuda-kernel-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("workspace temp directory should exist");
+
+    let partial_csv = temp_file(&temp_dir, "ncu-prefix-partial-metrics.csv");
+    std::fs::write(
+        &partial_csv,
+        concat!(
+            "==PROF== Connected to process 1\n",
+            "\"Kernel Name\",\"gpu__time_duration.sum\",",
+            "\"sm__throughput.avg.pct_of_peak_sustained_elapsed\",",
+            "\"gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed\",",
+            "\"gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed\",",
+            "\"sm__issue_active.avg.pct_of_peak_sustained_elapsed\",",
+            "\"launch__occupancy_limit_registers\",",
+            "\"launch__occupancy_limit_shared_mem\",",
+            "\"launch__occupancy_limit_blocks\",",
+            "\"launch__registers_per_thread\",",
+            "\"launch__shared_mem_per_block\"\n",
+            "\"\",\"us\",\"%\",\"%\",\"%\",\"%\",\"block\",\"block\",\"block\",\"register/thread\",\"Kbyte/block\"\n",
+            "\"ntt_stage_block_twiddle_kernel\",\"45.0\",\"60.0\",\"58.0\",\"58.0\",\"53.0\",\"6\",\"14\",\"24\",\"38\",\"1.104\"\n",
+        ),
+    )
+    .expect("partial NCU sample should write");
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&partial_csv)
+        .output()
+        .expect("ncu CUDA kernel summary should run on partial sample");
+    let _ = std::fs::remove_file(&partial_csv);
+
+    assert!(
+        output.status.success(),
+        "partial NCU CSV should parse with missing auxiliary metrics: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("ntt_stage_block_twiddle_kernel,1,0.045,45.000"),
+        "partial NCU CSV should still summarize duration: {stdout}"
+    );
+    assert!(
+        stdout.contains("53.000,na,38.000"),
+        "missing active warps should be printed as na: {stdout}"
+    );
+    assert!(
+        stdout.contains("split_or_reduce_register_pressure"),
+        "available occupancy limits should still drive separation hints: {stdout}"
+    );
+}
+
+#[test]
 fn ncu_cuda_kernel_summary_imports_binary_reports_through_ncu() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root.join("../..");

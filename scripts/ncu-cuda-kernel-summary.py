@@ -22,8 +22,7 @@ METRIC_BLOCK_LIMIT = "launch__occupancy_limit_blocks"
 METRIC_REGISTERS_PER_THREAD = "launch__registers_per_thread"
 METRIC_SHARED_MEM_PER_BLOCK = "launch__shared_mem_per_block"
 
-REQUIRED_METRIC_COLUMNS = [
-    METRIC_DURATION_US,
+OPTIONAL_METRIC_COLUMNS = [
     METRIC_SM_THROUGHPUT,
     METRIC_DRAM_THROUGHPUT,
     METRIC_MEMORY_THROUGHPUT,
@@ -35,6 +34,10 @@ REQUIRED_METRIC_COLUMNS = [
     METRIC_BLOCK_LIMIT,
     METRIC_REGISTERS_PER_THREAD,
     METRIC_SHARED_MEM_PER_BLOCK,
+]
+
+REQUIRED_METRIC_COLUMNS = [
+    METRIC_DURATION_US,
 ]
 
 
@@ -93,19 +96,7 @@ class KernelMetrics:
     def add_row(self, row: dict[str, str]) -> None:
         self.profiles += 1
         self.duration_us += parse_float(metric_value(row, METRIC_DURATION_US)) or 0.0
-        for name in [
-            METRIC_SM_THROUGHPUT,
-            METRIC_DRAM_THROUGHPUT,
-            METRIC_MEMORY_THROUGHPUT,
-            METRIC_ISSUE_ACTIVE,
-            METRIC_ACTIVE_WARPS,
-            METRIC_REGISTER_LIMIT,
-            METRIC_SHARED_MEM_LIMIT,
-            METRIC_WARP_LIMIT,
-            METRIC_BLOCK_LIMIT,
-            METRIC_REGISTERS_PER_THREAD,
-            METRIC_SHARED_MEM_PER_BLOCK,
-        ]:
+        for name in OPTIONAL_METRIC_COLUMNS:
             self.add_sample(name, parse_float(metric_value(row, name)))
 
     def limiting_factors(self) -> str:
