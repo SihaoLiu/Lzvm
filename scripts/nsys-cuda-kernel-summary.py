@@ -174,6 +174,33 @@ def fusion_candidate_summary(conn: sqlite3.Connection, limit: int) -> list[sqlit
     ).fetchall()
 
 
+def graph_shape_candidate_summary(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        f"""
+        select
+            {kernel_name_expr()} as kernel,
+            k.gridX as grid_x,
+            k.blockX as block_x,
+            count(distinct k.streamId) as streams,
+            count(*) as calls,
+            sum(r.end - r.start) as launch_ns,
+            sum(k.end - k.start) as gpu_ns
+        from {RUNTIME_TABLE} r
+        join {STRING_TABLE} api on api.id = r.nameId
+        join {KERNEL_TABLE} k on k.correlationId = r.correlationId
+        left join {STRING_TABLE} short on short.id = k.shortName
+        left join {STRING_TABLE} demangled on demangled.id = k.demangledName
+        where api.value like 'cudaLaunchKernel%'
+           or api.value like 'cudaGraphLaunch%'
+        group by kernel, k.gridX, k.blockX
+        having calls >= 2
+        order by launch_ns desc, calls desc, gpu_ns desc, kernel asc, grid_x desc, block_x desc
+        limit ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
 def kernel_launch_timeline(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         f"""
@@ -330,6 +357,27 @@ def print_fusion_candidates(rows: list[sqlite3.Row]) -> None:
         print("none,0,0.000,0.000,0.000,0.000")
 
 
+def print_graph_shape_candidates(rows: list[sqlite3.Row]) -> None:
+    print()
+    print("graph_shape_candidates")
+    print(
+        "kernel,grid_x,block_x,streams,calls,launch_api_ms,kernel_gpu_ms,"
+        "avg_kernel_us,launch_to_kernel_ratio"
+    )
+    for row in rows:
+        calls = int(row["calls"] or 0)
+        launch_ns = int(row["launch_ns"] or 0)
+        gpu_ns = int(row["gpu_ns"] or 0)
+        avg = gpu_ns / calls if calls else 0
+        print(
+            f"{row['kernel']},{int(row['grid_x'] or 0)},{int(row['block_x'] or 0)},"
+            f"{int(row['streams'] or 0)},{calls},{ms(launch_ns):.3f},"
+            f"{ms(gpu_ns):.3f},{us(avg):.3f},{ratio(launch_ns, gpu_ns)}"
+        )
+    if not rows:
+        print("none,0,0,0,0,0.000,0.000,0.000,0.000")
+
+
 def print_kernel_adjacency(rows: list[dict[str, object]]) -> None:
     print()
     print("kernel_adjacency_candidates")
@@ -365,12 +413,14 @@ def print_direction_triage(
     sync_rows: list[sqlite3.Row],
     stream_rows: list[sqlite3.Row],
     fusion_rows: list[sqlite3.Row],
+    graph_shape_rows: list[sqlite3.Row],
     adjacency_rows: list[dict[str, object]],
 ) -> None:
     launch_ns = sum_rows_ns(launch_rows, "launch_ns")
     sync_ns = sum_rows_ns(sync_rows, "sync_ns")
     stream_count = len(stream_rows)
     top_fusion = fusion_rows[0] if fusion_rows else None
+    top_shape = graph_shape_rows[0] if graph_shape_rows else None
     top_pair = adjacency_rows[0] if adjacency_rows else None
     print()
     print("cuda_graph_fusion_separation_triage")
@@ -394,6 +444,16 @@ def print_direction_triage(
             f"calls={int(top_fusion['calls'] or 0)} "
             f"launch_api_ms={ms(top_fusion['launch_ns']):.3f}"
         )
+    if top_shape is None:
+        print("top_graph_shape,none,no repeated same-shape launch candidate")
+    else:
+        print(
+            f"top_graph_shape,{top_shape['kernel']},"
+            f"grid_x={int(top_shape['grid_x'] or 0)} "
+            f"block_x={int(top_shape['block_x'] or 0)} "
+            f"calls={int(top_shape['calls'] or 0)} "
+            f"launch_api_ms={ms(top_shape['launch_ns']):.3f}"
+        )
     if top_pair is None:
         print("top_same_stream_pair,none,no same-stream adjacency candidate")
     else:
@@ -416,6 +476,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     sync_rows = sync_api_summary(conn)
     stream_rows = stream_kernel_summary(conn, limit)
     fusion_rows = fusion_candidate_summary(conn, limit)
+    graph_shape_rows = graph_shape_candidate_summary(conn, limit)
     adjacency_rows = kernel_adjacency_summary(conn, limit)
     print(f"profile={label}")
     print_kernel_gpu(kernel_gpu_summary(conn, limit))
@@ -424,8 +485,16 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print_correlated_launch(correlated_launch_summary(conn, limit))
     print_streams(stream_rows)
     print_fusion_candidates(fusion_rows)
+    print_graph_shape_candidates(graph_shape_rows)
     print_kernel_adjacency(adjacency_rows)
-    print_direction_triage(launch_rows, sync_rows, stream_rows, fusion_rows, adjacency_rows)
+    print_direction_triage(
+        launch_rows,
+        sync_rows,
+        stream_rows,
+        fusion_rows,
+        graph_shape_rows,
+        adjacency_rows,
+    )
 
 
 def build_self_test_db() -> sqlite3.Connection:
@@ -487,6 +556,7 @@ def build_self_test_db() -> sqlite3.Connection:
             (50_000, 90_000, 0, 0, 11, 1, 0, 0),
             (100_000, 150_000, 0, 0, 12, 1, 0, 0),
             (160_000, 230_000, 0, 0, 0, 4, 0, 0),
+            (240_000, 260_000, 0, 0, 13, 1, 0, 0),
         ],
     )
     conn.executemany(
@@ -502,6 +572,7 @@ def build_self_test_db() -> sqlite3.Connection:
             (1_000, 11_000, 0, 0, 7, 10, 2, 2, 64, 32, 1, 1, 256, 1, 1, 0, 0, 0, 0, 1),
             (51_000, 71_000, 0, 0, 7, 11, 2, 2, 64, 64, 1, 1, 256, 1, 1, 0, 0, 0, 0, 2),
             (101_000, 151_000, 0, 0, 9, 12, 3, 3, 96, 8, 1, 1, 128, 1, 1, 0, 0, 0, 0, 3),
+            (241_000, 261_000, 0, 0, 7, 13, 2, 2, 64, 64, 1, 1, 256, 1, 1, 0, 0, 0, 0, 4),
         ],
     )
     return conn
