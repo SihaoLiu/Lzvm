@@ -60,14 +60,15 @@ use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
 use crate::witness_commitment::{
     commit_witness_stage_source_devices_and_indexed_timing_external_source_with_leaf_workspace_cache,
     commit_witness_stage_source_devices_and_indexed_timing_with_leaf_workspace_cache,
+    commit_witness_stage_source_devices_pending_timing,
     commit_witness_stage_values_with_source_devices_and_indexed_timing,
     commit_witness_stage_values_with_source_devices_and_workers,
     commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing,
     commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_workers,
-    retain_device_buffer, retained_source_device_limit, WitnessRetainedDeviceBuffer,
-    WitnessStageCommitmentError, WitnessStageCommitmentReuseCache, WitnessStageLeafError,
-    WitnessStageLeafWorkspaceCache, WitnessStageRetainedSourceDevice, WitnessStageSourceDevice,
-    WitnessStageSourceDeviceView,
+    retain_device_buffer, retained_source_device_limit, PendingWitnessTraceStageCommitments,
+    WitnessRetainedDeviceBuffer, WitnessStageCommitmentError, WitnessStageCommitmentReuseCache,
+    WitnessStageLeafError, WitnessStageLeafWorkspaceCache, WitnessStageRetainedSourceDevice,
+    WitnessStageSourceDevice, WitnessStageSourceDeviceView,
 };
 #[cfg(not(feature = "cuda"))]
 use crate::witness_commitment::{
@@ -170,6 +171,23 @@ pub struct ProveWitnessTraceCommitments {
     guest_pc_device_segment_material: Option<GuestPcTraceDeviceSegmentMaterial>,
     publics: Vec<Felt>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+}
+
+#[cfg(feature = "cuda")]
+struct ProveWitnessTracePendingCommitments {
+    identity: ProveTraceIdentity,
+    input_byte_count: usize,
+    trace_rows: usize,
+    trace_columns: usize,
+    pending_stage_commitments: Option<PendingWitnessTraceStageCommitments>,
+    trace: Option<WitnessTraceBuffer>,
+    trace_constraint_checks: ProveWitnessTraceConstraintChecks,
+    stage_source_devices: Vec<WitnessStageRetainedSourceDevice>,
+    guest_pc_device_descriptor_buffer: Option<WitnessRetainedDeviceBuffer>,
+    guest_pc_device_segment_material: Option<GuestPcTraceDeviceSegmentMaterial>,
+    publics: Vec<Felt>,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    stage_commit_duration_before_root_materialization: Duration,
 }
 
 impl PartialEq for ProveWitnessTraceCommitments {
@@ -325,6 +343,45 @@ impl ProveWitnessTraceCommitments {
     fn without_trace(mut self) -> Self {
         self.trace = None;
         self
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl ProveWitnessTracePendingCommitments {
+    fn set_trace_instance_index(&mut self, trace_instance_index: u32) {
+        self.identity.trace_instance_index = trace_instance_index;
+    }
+
+    fn take_pending_stage_commitments(
+        &mut self,
+    ) -> Result<PendingWitnessTraceStageCommitments, ProveWitnessCommitmentError> {
+        self.pending_stage_commitments
+            .take()
+            .ok_or(ProveWitnessCommitmentError::Commit(
+                WitnessTraceCommitmentError::LengthOverflow,
+            ))
+    }
+
+    fn into_materialized(
+        self,
+        stage_commitments: WitnessTraceCommitments,
+    ) -> ProveWitnessTraceCommitments {
+        ProveWitnessTraceCommitments {
+            commitments: ProveWitnessCommitments {
+                identity: self.identity,
+                input_byte_count: self.input_byte_count,
+                trace_rows: self.trace_rows,
+                trace_columns: self.trace_columns,
+                stage_commitments,
+            },
+            trace: self.trace,
+            trace_constraint_checks: self.trace_constraint_checks,
+            stage_source_devices: self.stage_source_devices,
+            guest_pc_device_descriptor_buffer: self.guest_pc_device_descriptor_buffer,
+            guest_pc_device_segment_material: self.guest_pc_device_segment_material,
+            publics: self.publics,
+            auxiliary_inputs: self.auxiliary_inputs,
+        }
     }
 }
 
@@ -3572,8 +3629,26 @@ impl GuestPcTraceSegmentCommitOutputCollector {
     }
 }
 
+enum GuestPcTraceSegmentCommitOutput {
+    Ready(ProveWitnessTraceCommitments),
+    #[cfg(feature = "cuda")]
+    Pending(ProveWitnessTracePendingCommitments),
+}
+
+impl GuestPcTraceSegmentCommitOutput {
+    fn set_trace_instance_index(&mut self, trace_instance_index: u32) {
+        match self {
+            Self::Ready(output) => {
+                output.commitments.identity.trace_instance_index = trace_instance_index;
+            }
+            #[cfg(feature = "cuda")]
+            Self::Pending(output) => output.set_trace_instance_index(trace_instance_index),
+        }
+    }
+}
+
 struct GuestPcTraceSegmentCommitResult {
-    output: ProveWitnessTraceCommitments,
+    output: GuestPcTraceSegmentCommitOutput,
     source_lookup_balance: SourceLookupBalance,
     trace_timing: Option<ProveWitnessTraceTimingAccumulator>,
     guest_segment_commit_duration: Option<Duration>,
@@ -3870,6 +3945,8 @@ struct GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
     source_lookup_balance: Option<&'b mut SourceLookupBalance>,
     collect_timing: bool,
     output_collector: GuestPcTraceSegmentCommitOutputCollector,
+    #[cfg(feature = "cuda")]
+    pending_segment_results: Vec<GuestPcTraceSegmentCommitResult>,
     guest_segment_commit_duration: Duration,
     trace_timing: ProveWitnessTraceTimingAccumulator,
     segment_count: usize,
@@ -3899,6 +3976,8 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
             source_lookup_balance,
             collect_timing,
             output_collector: GuestPcTraceSegmentCommitOutputCollector::new(),
+            #[cfg(feature = "cuda")]
+            pending_segment_results: Vec::new(),
             guest_segment_commit_duration: Duration::ZERO,
             trace_timing: ProveWitnessTraceTimingAccumulator::default(),
             segment_count: 0,
@@ -3931,15 +4010,47 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
         &mut self,
         result: GuestPcTraceSegmentCommitResult,
     ) -> Result<(), ProveWitnessCommitmentError> {
-        if let Some(balance) = self.source_lookup_balance.as_deref_mut() {
-            balance.merge(result.source_lookup_balance);
+        match result.output {
+            GuestPcTraceSegmentCommitOutput::Ready(output) => self.collect_ready_segment_result(
+                output,
+                result.source_lookup_balance,
+                result.trace_timing,
+                result.guest_segment_commit_duration,
+            ),
+            #[cfg(feature = "cuda")]
+            GuestPcTraceSegmentCommitOutput::Pending(output) => {
+                self.pending_segment_results
+                    .push(GuestPcTraceSegmentCommitResult {
+                        output: GuestPcTraceSegmentCommitOutput::Pending(output),
+                        source_lookup_balance: result.source_lookup_balance,
+                        trace_timing: result.trace_timing,
+                        guest_segment_commit_duration: result.guest_segment_commit_duration,
+                    });
+                if self.pending_segment_results.len()
+                    >= guest_pc_cross_segment_root_materialization_window()
+                {
+                    self.materialize_pending_guest_pc_segment_commitments()?;
+                }
+                Ok(())
+            }
         }
-        if let Some(trace_timing) = result.trace_timing {
+    }
+
+    fn collect_ready_segment_result(
+        &mut self,
+        output: ProveWitnessTraceCommitments,
+        source_lookup_balance: SourceLookupBalance,
+        trace_timing: Option<ProveWitnessTraceTimingAccumulator>,
+        guest_segment_commit_duration: Option<Duration>,
+    ) -> Result<(), ProveWitnessCommitmentError> {
+        if let Some(balance) = self.source_lookup_balance.as_deref_mut() {
+            balance.merge(source_lookup_balance);
+        }
+        if let Some(trace_timing) = trace_timing {
             self.trace_timing.accumulate(trace_timing);
         }
-        self.output_collector
-            .collect_committed_segment(result.output)?;
-        if let Some(duration) = result.guest_segment_commit_duration {
+        self.output_collector.collect_committed_segment(output)?;
+        if let Some(duration) = guest_segment_commit_duration {
             self.guest_segment_commit_duration += duration;
             self.segment_count += 1;
         }
@@ -3953,6 +4064,8 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
         for result in pending_results {
             self.collect_committed_segment_result(result)?;
         }
+        #[cfg(feature = "cuda")]
+        self.materialize_pending_guest_pc_segment_commitments()?;
         Ok(GuestPcTraceSegmentCommitDriverOutput {
             outputs: self.output_collector.finish()?,
             guest_segment_commit_duration: self.guest_segment_commit_duration,
@@ -3960,6 +4073,117 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
             segment_count: self.segment_count,
         })
     }
+
+    #[cfg(feature = "cuda")]
+    fn materialize_pending_guest_pc_segment_commitments(
+        &mut self,
+    ) -> Result<(), ProveWitnessCommitmentError> {
+        let pending_results = std::mem::take(&mut self.pending_segment_results);
+        if pending_results.is_empty() {
+            return Ok(());
+        }
+        let materialize_started = Instant::now();
+        let mut pending_groups = Vec::with_capacity(pending_results.len());
+        let mut pending_outputs = Vec::with_capacity(pending_results.len());
+        for result in pending_results {
+            let GuestPcTraceSegmentCommitOutput::Pending(mut output) = result.output else {
+                return Err(ProveWitnessCommitmentError::Commit(
+                    WitnessTraceCommitmentError::LengthOverflow,
+                ));
+            };
+            pending_groups.push(output.take_pending_stage_commitments()?);
+            pending_outputs.push((
+                output,
+                result.source_lookup_balance,
+                result.trace_timing,
+                result.guest_segment_commit_duration,
+            ));
+        }
+
+        let mut materialize_timing = WitnessStageCommitTiming::default();
+        let materialized = PendingWitnessTraceStageCommitments::materialize_all(
+            pending_groups,
+            &mut materialize_timing,
+        )
+        .map_err(ProveWitnessCommitmentError::from)?;
+        let materialize_duration = materialize_started.elapsed();
+
+        if materialized.len() != pending_outputs.len() {
+            return Err(ProveWitnessCommitmentError::Commit(
+                WitnessTraceCommitmentError::LengthOverflow,
+            ));
+        }
+        for (
+            index,
+            (
+                (pending, source_lookup_balance, mut trace_timing, guest_duration),
+                (stage_commitments, stage_timings),
+            ),
+        ) in pending_outputs
+            .into_iter()
+            .zip(materialized.into_iter())
+            .enumerate()
+        {
+            if let Some(timing) = trace_timing.as_mut() {
+                let mut stage_timing = WitnessStageCommitTiming::default();
+                for stage_timing_entry in &stage_timings {
+                    stage_timing.accumulate(stage_timing_entry.timing());
+                }
+                let stage_commit_duration = pending
+                    .stage_commit_duration_before_root_materialization
+                    .saturating_add(if index == 0 {
+                        materialize_duration
+                    } else {
+                        Duration::ZERO
+                    });
+                accumulate_trace_stage_commit_timing(
+                    timing,
+                    stage_commit_duration,
+                    stage_timing,
+                    stage_timings,
+                );
+            }
+            let guest_duration = guest_duration.map(|duration| {
+                duration.saturating_add(if index == 0 {
+                    materialize_duration
+                } else {
+                    Duration::ZERO
+                })
+            });
+            self.collect_ready_segment_result(
+                pending.into_materialized(stage_commitments),
+                source_lookup_balance,
+                trace_timing,
+                guest_duration,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_cross_segment_root_materialization_enabled() -> bool {
+    !matches!(
+        std::env::var("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS").as_deref(),
+        Ok("0" | "false" | "no" | "off")
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_cross_segment_root_materialization_window() -> usize {
+    std::env::var("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|window| *window > 0)
+        .unwrap_or(24)
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_cross_segment_root_materialization_supported_for_input(
+    input_byte_count: usize,
+) -> bool {
+    const SUPPORTED_INPUT_BYTE_LIMIT: usize = 8 * 1024 * 1024;
+    input_byte_count < SUPPORTED_INPUT_BYTE_LIMIT
 }
 
 fn commit_guest_pc_trace_segment_with_scratch(
@@ -3971,6 +4195,7 @@ fn commit_guest_pc_trace_segment_with_scratch(
     scratch: &mut GuestPcTraceSegmentCommitScratch,
 ) -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
     let guest_segment_commit_started = collect_timing.then(Instant::now);
+    let trace_instance_index = segment_output.trace_instance_index();
     let mut trace_timing = collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
     let mut segment_source_lookup_balance = SourceLookupBalance::default();
     let regular_hint_mode = if use_source_lookup_balance {
@@ -3978,7 +4203,7 @@ fn commit_guest_pc_trace_segment_with_scratch(
     } else {
         WitnessRegularHintMode::AssignmentsOnly
     };
-    let output = commit_guest_pc_trace_segment_output(GuestPcTraceSegmentCommitRequest {
+    let mut output = commit_guest_pc_trace_segment_output(GuestPcTraceSegmentCommitRequest {
         context,
         auxiliary_inputs,
         segment_output,
@@ -3986,6 +4211,7 @@ fn commit_guest_pc_trace_segment_with_scratch(
         scratch,
         timing: trace_timing.as_mut(),
     })?;
+    output.set_trace_instance_index(trace_instance_index);
     Ok(GuestPcTraceSegmentCommitResult {
         output,
         source_lookup_balance: segment_source_lookup_balance,
@@ -4006,7 +4232,7 @@ struct GuestPcTraceSegmentCommitRequest<'a, 'b> {
 
 fn commit_guest_pc_trace_segment_output(
     request: GuestPcTraceSegmentCommitRequest<'_, '_>,
-) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
+) -> Result<GuestPcTraceSegmentCommitOutput, ProveWitnessCommitmentError> {
     let GuestPcTraceSegmentCommitRequest {
         context,
         auxiliary_inputs,
@@ -4024,7 +4250,6 @@ fn commit_guest_pc_trace_segment_output(
     } = context;
     #[cfg(feature = "cuda")]
     let mut timing = timing;
-    let trace_instance_index = segment_output.trace_instance_index();
     #[cfg(feature = "cuda")]
     let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
     #[cfg(feature = "cuda")]
@@ -4061,7 +4286,38 @@ fn commit_guest_pc_trace_segment_output(
     #[cfg(not(feature = "cuda"))]
     let trace =
         guest_pc_segment_commitment_trace(segment_output, has_external_device_source_material)?;
-    let mut output = run_prove_witness_commitments_from_trace_inner(
+    #[cfg(feature = "cuda")]
+    if guest_pc_cross_segment_root_materialization_enabled()
+        && guest_pc_cross_segment_root_materialization_supported_for_input(
+            shared_inputs.input.len(),
+        )
+        && timing.is_some()
+        && has_external_device_source_material
+    {
+        return run_prove_witness_commitments_from_trace_pending_inner(
+            plan,
+            unit_index,
+            shared_inputs,
+            merged_inputs,
+            WitnessTraceCommitmentInput {
+                unit,
+                layout: layout.clone(),
+                trace,
+                terminal_trace_source_prefix_rows: Some(trace_source_prefix_rows),
+                stage_source_devices: preloaded_stage_source_devices,
+                guest_pc_device_segment_material,
+            },
+            regular_hint_mode,
+            ProveWitnessTraceRunObservers {
+                fixed_columns_cache: Some(&mut scratch.fixed_columns_cache),
+                stage_commitment_reuse_cache: Some(&mut scratch.stage_commitment_reuse_cache),
+                leaf_workspace_cache: Some(&mut scratch.leaf_workspace_cache),
+                timing,
+            },
+        )
+        .map(GuestPcTraceSegmentCommitOutput::Pending);
+    }
+    let output = run_prove_witness_commitments_from_trace_inner(
         plan,
         unit_index,
         shared_inputs,
@@ -4087,8 +4343,7 @@ fn commit_guest_pc_trace_segment_output(
             timing,
         },
     )?;
-    output.commitments.identity.trace_instance_index = trace_instance_index;
-    Ok(output)
+    Ok(GuestPcTraceSegmentCommitOutput::Ready(output))
 }
 
 struct GuestPcTraceSegmentCommitRunOptions<'shared, 'balance, 'timing> {
@@ -4489,6 +4744,160 @@ fn run_prove_witness_commitments_with_trace_bytes_inner(
     )
 }
 
+#[cfg(feature = "cuda")]
+fn run_prove_witness_commitments_from_trace_pending_inner(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    shared_inputs: &WitnessSharedInputs,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    input: WitnessTraceCommitmentInput<'_>,
+    regular_hint_mode: WitnessRegularHintMode<'_>,
+    mut observers: ProveWitnessTraceRunObservers<'_>,
+) -> Result<ProveWitnessTracePendingCommitments, ProveWitnessCommitmentError> {
+    let timing = observers
+        .timing
+        .as_deref_mut()
+        .ok_or(ProveWitnessCommitmentError::Commit(
+            WitnessTraceCommitmentError::LengthOverflow,
+        ))?;
+    let WitnessTraceCommitmentInput {
+        unit,
+        layout,
+        trace,
+        terminal_trace_source_prefix_rows,
+        stage_source_devices,
+        guest_pc_device_segment_material,
+    } = input;
+    if guest_pc_device_segment_material.is_none() {
+        return Err(ProveWitnessCommitmentError::Commit(
+            WitnessTraceCommitmentError::LengthOverflow,
+        ));
+    }
+    let input_byte_count = shared_inputs.input.len();
+    let execution_unit =
+        plan.units
+            .get(unit_index)
+            .ok_or(ProveWitnessCommitmentError::UnitIndexOutOfRange {
+                unit_index,
+                unit_count: plan.units.len(),
+            })?;
+    let mut local_fixed_columns = WitnessFixedColumnsCache::new();
+    let fixed_columns = observers
+        .fixed_columns_cache
+        .as_deref_mut()
+        .unwrap_or(&mut local_fixed_columns);
+    let mut stage_trace_cache = WitnessStageTraceCache::default();
+    let mut stage_source_device_cache = WitnessStageSourceDeviceCache::default();
+    let proof_inputs = WitnessProofInputs {
+        publics: &shared_inputs.publics,
+        auxiliary_inputs: auxiliary_inputs.as_ref(),
+    };
+    let trace_ref = trace.as_ref();
+    let regular_constraint_count = execution_unit.regular_constraints.entries.len();
+    let trace_extracted = trace_ref.is_some()
+        || stage_source_devices.is_some()
+        || guest_pc_device_segment_material.is_some();
+
+    stage_source_device_cache.upload_from_trace_or_preloaded_if_empty(
+        &layout,
+        trace_ref,
+        stage_source_devices,
+        terminal_trace_source_prefix_rows,
+    )?;
+    {
+        let mut regular_inputs = WitnessRegularTraceInputs {
+            layout: &layout,
+            trace: trace_ref,
+            fixed_columns: WitnessFixedColumnsSource::Cache(fixed_columns),
+            stage_traces: &mut stage_trace_cache,
+            stage_source_devices: Some(&stage_source_device_cache),
+        };
+        record_optional_duration(Some(&mut timing.regular_constraint_duration), || {
+            validate_witness_regular_constraints(
+                execution_unit,
+                unit_index,
+                &mut regular_inputs,
+                proof_inputs,
+                plan.run_plan.gpu.witness_thread_pools,
+            )
+        })?;
+        record_optional_duration(
+            Some(&mut timing.regular_hint_duration),
+            || match regular_hint_mode {
+                WitnessRegularHintMode::Balanced(source_lookup_balance) => {
+                    accumulate_witness_regular_hints(
+                        execution_unit,
+                        unit_index,
+                        &mut regular_inputs,
+                        proof_inputs,
+                        source_lookup_balance,
+                    )
+                }
+                WitnessRegularHintMode::AssignmentsOnly => {
+                    validate_witness_regular_source_assignments(
+                        execution_unit,
+                        unit_index,
+                        &mut regular_inputs,
+                        proof_inputs,
+                    )
+                }
+            },
+        )?;
+    }
+    if stage_trace_cache.is_extracted() {
+        return Err(ProveWitnessCommitmentError::Commit(
+            WitnessTraceCommitmentError::LengthOverflow,
+        ));
+    }
+
+    let trace_rows = layout.row_count();
+    let trace_columns = layout.column_count();
+    let source_devices = stage_source_device_cache.descriptors();
+    let stage_commit_started = Instant::now();
+    let pending_stage_commitments = commit_witness_stage_source_devices_pending_timing(
+        &source_devices,
+        unit,
+        true,
+        observers.leaf_workspace_cache.as_deref_mut(),
+    )?;
+    let stage_commit_duration_before_root_materialization = stage_commit_started.elapsed();
+
+    let retain_stage_sources = retain_fri_stage_source_devices();
+    let retained_stage_source_devices = if retain_stage_sources {
+        stage_source_device_cache.retained_descriptors(Some(&mut *timing))
+    } else {
+        Vec::new()
+    };
+    let guest_pc_device_descriptor_buffer = if retain_stage_sources
+        && retained_stage_source_devices.len() < stage_source_device_cache.stage_count()
+    {
+        stage_source_device_cache.retained_guest_pc_device_descriptor_buffer(Some(&mut *timing))
+    } else {
+        None
+    };
+    Ok(ProveWitnessTracePendingCommitments {
+        identity: ProveTraceIdentity::new(unit_index, 0),
+        input_byte_count,
+        trace_rows,
+        trace_columns,
+        pending_stage_commitments: Some(pending_stage_commitments),
+        trace,
+        trace_constraint_checks: ProveWitnessTraceConstraintChecks {
+            regular_constraint_count,
+            trace_extracted,
+            regular_constraints_evaluated: true,
+            witness_values_committed: true,
+            constraint_checker_conformant: true,
+        },
+        stage_source_devices: retained_stage_source_devices,
+        guest_pc_device_descriptor_buffer,
+        guest_pc_device_segment_material,
+        publics: shared_inputs.publics.clone(),
+        auxiliary_inputs,
+        stage_commit_duration_before_root_materialization,
+    })
+}
+
 fn run_prove_witness_commitments_from_trace_inner(
     plan: &ProveExecutionPlan,
     unit_index: usize,
@@ -4706,71 +5115,12 @@ fn run_prove_witness_commitments_from_trace_inner(
             };
             Ok::<_, ProveWitnessCommitmentError>((stage_commitments, stage_timing, stage_timings))
         })()?;
-        timing.stage_commit_duration += stage_commit_started.elapsed();
-        timing.stage_leaf_extend_work_duration += stage_timing.leaf_extend_duration();
-        timing.stage_leaf_setup_work_duration += stage_timing.leaf_setup_duration();
-        timing.stage_leaf_setup_prepare_duration += stage_timing.leaf_setup_prepare_duration();
-        timing.stage_leaf_setup_output_alloc_duration +=
-            stage_timing.leaf_setup_output_alloc_duration();
-        timing.stage_leaf_setup_workspace_alloc_duration +=
-            stage_timing.leaf_setup_workspace_alloc_duration();
-        timing.stage_leaf_setup_output_alloc_byte_count +=
-            stage_timing.leaf_setup_output_alloc_byte_count();
-        timing.stage_leaf_setup_workspace_alloc_byte_count +=
-            stage_timing.leaf_setup_workspace_alloc_byte_count();
-        timing.stage_leaf_setup_output_alloc_count += stage_timing.leaf_setup_output_alloc_count();
-        timing.stage_leaf_output_cache_hit_count += stage_timing.leaf_output_cache_hit_count();
-        timing.stage_leaf_output_cache_miss_count += stage_timing.leaf_output_cache_miss_count();
-        timing.stage_leaf_setup_workspace_alloc_count +=
-            stage_timing.leaf_setup_workspace_alloc_count();
-        timing.stage_leaf_upload_work_duration += stage_timing.leaf_upload_duration();
-        timing.stage_leaf_kernel_work_duration += stage_timing.leaf_kernel_duration();
-        timing.stage_leaf_download_work_duration += stage_timing.leaf_download_duration();
-        timing.stage_leaf_validate_work_duration += stage_timing.leaf_validate_duration();
-        timing.stage_leaf_hash_work_duration += stage_timing.leaf_hash_duration();
-        timing.stage_leaf_hash_row_count += stage_timing.leaf_hash_row_count();
-        timing.stage_leaf_hash_byte_count += stage_timing.leaf_hash_byte_count();
-        timing.stage_leaf_hash_arity2_row_count += stage_timing.leaf_hash_arity2_row_count();
-        timing.stage_leaf_hash_arity2_byte_count += stage_timing.leaf_hash_arity2_byte_count();
-        timing.stage_leaf_hash_arity4_row_count += stage_timing.leaf_hash_arity4_row_count();
-        timing.stage_leaf_hash_arity4_byte_count += stage_timing.leaf_hash_arity4_byte_count();
-        timing.stage_leaf_coset_extend_call_count += stage_timing.leaf_coset_extend_call_count();
-        timing.stage_leaf_coset_extend_output_byte_count +=
-            stage_timing.leaf_coset_extend_output_byte_count();
-        timing.stage_leaf_coset_extend_column_count +=
-            stage_timing.leaf_coset_extend_column_count();
-        timing.stage_leaf_coset_extend_max_column_count = timing
-            .stage_leaf_coset_extend_max_column_count
-            .max(stage_timing.leaf_coset_extend_max_column_count());
-        timing.stage_leaf_coset_extend_ntt_launch_count +=
-            stage_timing.leaf_coset_extend_ntt_launch_count();
-        timing.stage_leaf_coset_extend_bit_reverse_launch_count +=
-            stage_timing.leaf_coset_extend_bit_reverse_launch_count();
-        timing.stage_leaf_coset_extend_ntt_stage_launch_count +=
-            stage_timing.leaf_coset_extend_ntt_stage_launch_count();
-        timing.stage_leaf_coset_extend_ntt_block_twiddle_launch_count +=
-            stage_timing.leaf_coset_extend_ntt_block_twiddle_launch_count();
-        timing.stage_leaf_coset_extend_normalize_launch_count +=
-            stage_timing.leaf_coset_extend_normalize_launch_count();
-        timing.stage_leaf_coset_extend_pack_launch_count +=
-            stage_timing.leaf_coset_extend_pack_launch_count();
-        timing.stage_leaf_coset_extend_unpack_launch_count +=
-            stage_timing.leaf_coset_extend_unpack_launch_count();
-        timing.stage_tree_commit_work_duration += stage_timing.tree_commit_duration();
-        timing.stage_tree_commit_checkpoint_work_duration +=
-            stage_timing.tree_commit_checkpoint_duration();
-        timing.stage_tree_commit_root_work_duration += stage_timing.tree_commit_root_duration();
-        timing.stage_tree_commit_root_count += stage_timing.tree_commit_root_count();
-        timing.stage_tree_commit_root_byte_count += stage_timing.tree_commit_root_byte_count();
-        timing.stage_tree_commit_root_materialization_group_count +=
-            stage_timing.tree_commit_root_materialization_group_count();
-        timing.stage_tree_commit_root_materialization_max_group_size = timing
-            .stage_tree_commit_root_materialization_max_group_size
-            .max(stage_timing.tree_commit_root_materialization_max_group_size());
-        timing.stage_tree_commit_retain_work_duration += stage_timing.tree_commit_retain_duration();
-        for stage_timing in stage_timings {
-            timing.accumulate_indexed_stage_timing(stage_timing);
-        }
+        accumulate_trace_stage_commit_timing(
+            timing,
+            stage_commit_started.elapsed(),
+            stage_timing,
+            stage_timings,
+        );
         stage_commitments
     } else if stage_trace_cache.is_extracted() {
         let stage_traces = stage_trace_cache.get_or_extract_optional(
@@ -4919,6 +5269,78 @@ fn debug_fri_stage_source_devices() -> bool {
         std::env::var("LZVM_CUDA_FRI_STAGE_SOURCE_DEBUG").as_deref(),
         Ok("1") | Ok("true") | Ok("yes")
     )
+}
+
+fn accumulate_trace_stage_commit_timing(
+    timing: &mut ProveWitnessTraceTimingAccumulator,
+    stage_commit_duration: Duration,
+    stage_timing: WitnessStageCommitTiming,
+    stage_timings: Vec<WitnessIndexedStageCommitTiming>,
+) {
+    timing.stage_commit_duration += stage_commit_duration;
+    timing.stage_leaf_extend_work_duration += stage_timing.leaf_extend_duration();
+    timing.stage_leaf_setup_work_duration += stage_timing.leaf_setup_duration();
+    timing.stage_leaf_setup_prepare_duration += stage_timing.leaf_setup_prepare_duration();
+    timing.stage_leaf_setup_output_alloc_duration +=
+        stage_timing.leaf_setup_output_alloc_duration();
+    timing.stage_leaf_setup_workspace_alloc_duration +=
+        stage_timing.leaf_setup_workspace_alloc_duration();
+    timing.stage_leaf_setup_output_alloc_byte_count +=
+        stage_timing.leaf_setup_output_alloc_byte_count();
+    timing.stage_leaf_setup_workspace_alloc_byte_count +=
+        stage_timing.leaf_setup_workspace_alloc_byte_count();
+    timing.stage_leaf_setup_output_alloc_count += stage_timing.leaf_setup_output_alloc_count();
+    timing.stage_leaf_output_cache_hit_count += stage_timing.leaf_output_cache_hit_count();
+    timing.stage_leaf_output_cache_miss_count += stage_timing.leaf_output_cache_miss_count();
+    timing.stage_leaf_setup_workspace_alloc_count +=
+        stage_timing.leaf_setup_workspace_alloc_count();
+    timing.stage_leaf_upload_work_duration += stage_timing.leaf_upload_duration();
+    timing.stage_leaf_kernel_work_duration += stage_timing.leaf_kernel_duration();
+    timing.stage_leaf_download_work_duration += stage_timing.leaf_download_duration();
+    timing.stage_leaf_validate_work_duration += stage_timing.leaf_validate_duration();
+    timing.stage_leaf_hash_work_duration += stage_timing.leaf_hash_duration();
+    timing.stage_leaf_hash_row_count += stage_timing.leaf_hash_row_count();
+    timing.stage_leaf_hash_byte_count += stage_timing.leaf_hash_byte_count();
+    timing.stage_leaf_hash_arity2_row_count += stage_timing.leaf_hash_arity2_row_count();
+    timing.stage_leaf_hash_arity2_byte_count += stage_timing.leaf_hash_arity2_byte_count();
+    timing.stage_leaf_hash_arity4_row_count += stage_timing.leaf_hash_arity4_row_count();
+    timing.stage_leaf_hash_arity4_byte_count += stage_timing.leaf_hash_arity4_byte_count();
+    timing.stage_leaf_coset_extend_call_count += stage_timing.leaf_coset_extend_call_count();
+    timing.stage_leaf_coset_extend_output_byte_count +=
+        stage_timing.leaf_coset_extend_output_byte_count();
+    timing.stage_leaf_coset_extend_column_count += stage_timing.leaf_coset_extend_column_count();
+    timing.stage_leaf_coset_extend_max_column_count = timing
+        .stage_leaf_coset_extend_max_column_count
+        .max(stage_timing.leaf_coset_extend_max_column_count());
+    timing.stage_leaf_coset_extend_ntt_launch_count +=
+        stage_timing.leaf_coset_extend_ntt_launch_count();
+    timing.stage_leaf_coset_extend_bit_reverse_launch_count +=
+        stage_timing.leaf_coset_extend_bit_reverse_launch_count();
+    timing.stage_leaf_coset_extend_ntt_stage_launch_count +=
+        stage_timing.leaf_coset_extend_ntt_stage_launch_count();
+    timing.stage_leaf_coset_extend_ntt_block_twiddle_launch_count +=
+        stage_timing.leaf_coset_extend_ntt_block_twiddle_launch_count();
+    timing.stage_leaf_coset_extend_normalize_launch_count +=
+        stage_timing.leaf_coset_extend_normalize_launch_count();
+    timing.stage_leaf_coset_extend_pack_launch_count +=
+        stage_timing.leaf_coset_extend_pack_launch_count();
+    timing.stage_leaf_coset_extend_unpack_launch_count +=
+        stage_timing.leaf_coset_extend_unpack_launch_count();
+    timing.stage_tree_commit_work_duration += stage_timing.tree_commit_duration();
+    timing.stage_tree_commit_checkpoint_work_duration +=
+        stage_timing.tree_commit_checkpoint_duration();
+    timing.stage_tree_commit_root_work_duration += stage_timing.tree_commit_root_duration();
+    timing.stage_tree_commit_root_count += stage_timing.tree_commit_root_count();
+    timing.stage_tree_commit_root_byte_count += stage_timing.tree_commit_root_byte_count();
+    timing.stage_tree_commit_root_materialization_group_count +=
+        stage_timing.tree_commit_root_materialization_group_count();
+    timing.stage_tree_commit_root_materialization_max_group_size = timing
+        .stage_tree_commit_root_materialization_max_group_size
+        .max(stage_timing.tree_commit_root_materialization_max_group_size());
+    timing.stage_tree_commit_retain_work_duration += stage_timing.tree_commit_retain_duration();
+    for stage_timing in stage_timings {
+        timing.accumulate_indexed_stage_timing(stage_timing);
+    }
 }
 
 fn record_optional_duration<T>(

@@ -2772,6 +2772,88 @@ fn cuda_source_device_commit_defers_root_downloads_until_batch_end() {
 }
 
 #[test]
+fn guest_pc_segment_commit_can_gate_cross_segment_pending_roots() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+
+    assert!(
+        execution_source.contains("fn guest_pc_cross_segment_root_materialization_enabled"),
+        "guest-PC cross-segment root materialization should be explicitly gated"
+    );
+    let gate_body = function_body(
+        &execution_source,
+        "fn guest_pc_cross_segment_root_materialization_enabled",
+        "fn commit_guest_pc_trace_segment_with_scratch",
+    );
+    assert!(
+        gate_body.contains("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS")
+            && gate_body.contains("Ok(\"0\" | \"false\" | \"no\" | \"off\")")
+            && gate_body.contains("!matches!"),
+        "cross-segment root batching should be enabled for supported inputs with an environment opt-out"
+    );
+    assert!(
+        execution_source.contains("fn guest_pc_cross_segment_root_materialization_window"),
+        "cross-segment root batching should be bounded to avoid unbounded device residency"
+    );
+    assert!(
+        execution_source
+            .contains("fn guest_pc_cross_segment_root_materialization_supported_for_input"),
+        "cross-segment root batching should have an input-size support gate"
+    );
+    let window_body = function_body(
+        &execution_source,
+        "fn guest_pc_cross_segment_root_materialization_window",
+        "fn commit_guest_pc_trace_segment_with_scratch",
+    );
+    assert!(
+        window_body.contains("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW")
+            && window_body.contains("unwrap_or(24)"),
+        "cross-segment root batching should expose a conservative default window"
+    );
+
+    let segment_result_body = function_body(
+        &execution_source,
+        "enum GuestPcTraceSegmentCommitOutput",
+        "struct GuestPcTraceSegmentCommitResult",
+    );
+    assert!(
+        segment_result_body.contains("Ready(ProveWitnessTraceCommitments)")
+            && segment_result_body.contains("Pending(ProveWitnessTracePendingCommitments)"),
+        "segment commit results should carry either ready or pending commitments"
+    );
+
+    let commit_helper_body = function_body(
+        &execution_source,
+        "fn commit_guest_pc_trace_segment_output",
+        "struct GuestPcTraceSegmentCommitRunOptions",
+    );
+    assert!(
+        commit_helper_body.contains("guest_pc_cross_segment_root_materialization_enabled()")
+            && commit_helper_body
+                .contains("guest_pc_cross_segment_root_materialization_supported_for_input")
+            && commit_helper_body.contains("shared_inputs.input.len()")
+            && commit_helper_body.contains("run_prove_witness_commitments_from_trace_pending_inner")
+            && commit_helper_body.contains("GuestPcTraceSegmentCommitOutput::Pending"),
+        "the gated segment helper should return pending roots instead of materializing each segment immediately"
+    );
+
+    let driver_body = function_body(
+        &execution_source,
+        "impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b>",
+        "fn commit_guest_pc_trace_segment_with_scratch",
+    );
+    assert!(
+        driver_body.contains("materialize_pending_guest_pc_segment_commitments")
+            && driver_body.contains("guest_pc_cross_segment_root_materialization_window")
+            && driver_body.contains("self.pending_segment_results.len()")
+            && driver_body.contains("PendingWitnessTraceStageCommitments::materialize_all"),
+        "driver should batch materialize pending segment roots without letting the queue grow without bound"
+    );
+}
+
+#[test]
 fn cuda_source_device_commit_can_pipeline_stream_leaf_extensions() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let trace_path = crate_root.join("src/witness_commitment/trace.rs");
