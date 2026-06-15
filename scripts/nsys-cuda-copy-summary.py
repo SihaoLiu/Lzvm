@@ -112,6 +112,26 @@ def runtime_memcpy_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def runtime_host_registration_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        f"""
+        select
+            coalesce(s.value, 'nameId=' || r.nameId) as api,
+            count(*) as calls,
+            sum(r.end - r.start) as host_ns,
+            max(r.end - r.start) as max_host_ns
+        from {RUNTIME_TABLE} r
+        left join {STRING_TABLE} s on s.id = r.nameId
+        where s.value like 'cudaHostRegister%'
+           or s.value like 'cudaHostUnregister%'
+           or s.value like 'cudaHostAlloc%'
+           or s.value like 'cudaFreeHost%'
+        group by api
+        order by host_ns desc, calls desc, api asc
+        """
+    ).fetchall()
+
+
 def gpu_memcpy_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         f"""
@@ -518,6 +538,22 @@ def print_runtime(rows: list[sqlite3.Row]) -> None:
         print("none,0,0.000,0.000")
 
 
+def print_host_registration(rows: list[sqlite3.Row]) -> None:
+    print()
+    print("runtime_cuda_host_registration_api")
+    print("api,calls,host_api_ms,avg_host_api_ms,max_host_api_ms")
+    for row in rows:
+        calls = int(row["calls"] or 0)
+        host_ns = int(row["host_ns"] or 0)
+        avg_ns = host_ns / calls if calls else 0
+        print(
+            f"{row['api']},{calls},{ms(host_ns):.3f},"
+            f"{ms(avg_ns):.3f},{ms(row['max_host_ns']):.3f}"
+        )
+    if not rows:
+        print("none,0,0.000,0.000,0.000")
+
+
 def print_gpu(rows: list[sqlite3.Row]) -> None:
     print()
     print("gpu_cuda_memcpy_activity")
@@ -703,12 +739,14 @@ def top_direction(waits: dict[str, int]) -> tuple[str, int]:
 
 def print_transfer_triage(
     runtime_rows: list[sqlite3.Row],
+    host_registration_rows: list[sqlite3.Row],
     gpu_rows: list[sqlite3.Row],
     correlated_rows: list[sqlite3.Row],
     d2h_rows: list[sqlite3.Row],
     top_h2d_bulk: sqlite3.Row | None,
 ) -> None:
     host_ns = sum_rows_ns(runtime_rows, "host_ns")
+    host_registration_ns = sum_rows_ns(host_registration_rows, "host_ns")
     gpu_ns = sum_rows_ns(gpu_rows, "gpu_ns")
     host_direction, host_direction_ns = top_direction(direction_host_waits(correlated_rows))
     gpu_direction, gpu_direction_ns = top_direction(direction_gpu_waits(gpu_rows))
@@ -720,6 +758,20 @@ def print_transfer_triage(
         f"host_memcpy_api_ms,{ms(host_ns):.3f},"
         "host time spent inside cudaMemcpy APIs"
     )
+    print(
+        f"host_registration_api_ms,{ms(host_registration_ns):.3f},"
+        "host time spent registering or allocating page-locked host memory"
+    )
+    if host_registration_ns > 0 and host_registration_ns * 4 >= max(host_ns, 1):
+        print(
+            "host_registration_hint,cache_or_reuse_pinned_host_memory,"
+            "host registration overhead is a meaningful transfer-side cost"
+        )
+    else:
+        print(
+            "host_registration_hint,none,"
+            "host registration overhead is not a dominant transfer-side cost"
+        )
     print(f"gpu_memcpy_ms,{ms(gpu_ns):.3f},GPU copy engine activity")
     print(
         f"dominant_transfer_wait,{csv_cell(host_direction)},"
@@ -796,6 +848,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     conn.row_factory = sqlite3.Row
     prepare_runtime_memcpy_table(conn)
     runtime_rows = runtime_memcpy_summary(conn)
+    host_registration_rows = runtime_host_registration_summary(conn)
     gpu_rows = gpu_memcpy_summary(conn)
     correlated_rows = correlated_memcpy_summary(conn, limit)
     callchain_rows = memcpy_callchain_summary(conn, limit)
@@ -812,6 +865,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     h2d_bulk_quality_rows = h2d_bulk_callchain_quality_summary(conn, limit)
     print(f"profile={label}")
     print_runtime(runtime_rows)
+    print_host_registration(host_registration_rows)
     print_gpu(gpu_rows)
     print_correlated(correlated_rows)
     print_callchains(conn, callchain_rows)
@@ -820,7 +874,14 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print_h2d_bulk_app_frames(h2d_bulk_app_frame_rows)
     print_callchain_quality(h2d_bulk_quality_rows)
     print_d2h_preceding_kernels(d2h_rows)
-    print_transfer_triage(runtime_rows, gpu_rows, correlated_rows, d2h_rows, top_h2d_bulk)
+    print_transfer_triage(
+        runtime_rows,
+        host_registration_rows,
+        gpu_rows,
+        correlated_rows,
+        d2h_rows,
+        top_h2d_bulk,
+    )
     print_callchain_hint(conn)
 
 

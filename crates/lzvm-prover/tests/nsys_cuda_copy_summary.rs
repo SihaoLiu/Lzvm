@@ -442,6 +442,136 @@ conn.close()
 }
 
 #[test]
+fn nsys_cuda_copy_summary_reports_host_registration_overhead() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/nsys-cuda-copy-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("temp directory should be creatable");
+    let sqlite_path = temp_dir.join(format!(
+        "nsys-copy-summary-host-register-test-{}.sqlite",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    let setup = r#"
+import sqlite3
+import sys
+
+path = sys.argv[1]
+conn = sqlite3.connect(path)
+conn.executescript("""
+create table StringIds (id integer primary key, value text);
+create table ENUM_CUDA_MEMCPY_OPER (id integer primary key, label text);
+create table CUPTI_ACTIVITY_KIND_RUNTIME (
+    start integer,
+    end integer,
+    eventClass integer,
+    globalTid integer,
+    correlationId integer,
+    nameId integer,
+    returnValue integer,
+    callchainId integer
+);
+create table CUPTI_ACTIVITY_KIND_MEMCPY (
+    start integer,
+    end integer,
+    deviceId integer,
+    contextId integer,
+    greenContextId integer,
+    streamId integer,
+    correlationId integer,
+    globalPid integer,
+    bytes integer,
+    copyKind integer,
+    deprecatedSrcId integer,
+    srcKind integer,
+    dstKind integer,
+    srcDeviceId integer,
+    srcContextId integer,
+    dstDeviceId integer,
+    dstContextId integer,
+    migrationCause integer,
+    graphNodeId integer,
+    virtualAddress integer,
+    copyCount integer
+);
+""")
+conn.executemany("insert into StringIds (id, value) values (?, ?)", [
+    (1, "cudaMemcpy_v3020"),
+    (2, "cudaHostRegister_v3020"),
+    (3, "cudaHostUnregister_v3020"),
+])
+conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", [
+    (1, "Host-to-Device"),
+])
+conn.executemany("""
+insert into CUPTI_ACTIVITY_KIND_RUNTIME
+    (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
+values (?, ?, 0, 7, ?, ?, 0, null)
+""", [
+    (0, 10_000_000, 10, 1),
+    (20_000_000, 24_000_000, None, 2),
+    (30_000_000, 37_000_000, None, 2),
+    (40_000_000, 43_000_000, None, 3),
+])
+conn.execute("""
+insert into CUPTI_ACTIVITY_KIND_MEMCPY
+    (start, end, deviceId, contextId, greenContextId, streamId, correlationId,
+     globalPid, bytes, copyKind, deprecatedSrcId, srcKind, dstKind, srcDeviceId,
+     srcContextId, dstDeviceId, dstContextId, migrationCause, graphNodeId,
+     virtualAddress, copyCount)
+values (1000, 9000, 0, 0, null, 3, 10, 1, 2097152, 1, null, null, null,
+        null, null, null, null, null, null, null, 1)
+""")
+conn.commit()
+conn.close()
+"#;
+
+    let setup_output = Command::new("python3")
+        .arg("-c")
+        .arg(setup)
+        .arg(&sqlite_path)
+        .output()
+        .expect("host-register test database should be created");
+    assert!(
+        setup_output.status.success(),
+        "host-register test database creation should succeed: stderr={}",
+        String::from_utf8_lossy(&setup_output.stderr)
+    );
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&sqlite_path)
+        .output()
+        .expect("nsys CUDA copy summary should run on host-register test database");
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    assert!(
+        output.status.success(),
+        "nsys CUDA copy summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("runtime_cuda_host_registration_api"),
+        "host registration API summary should be printed: {stdout}"
+    );
+    assert!(
+        stdout.contains("cudaHostRegister_v3020,2,11.000,5.500,7.000"),
+        "host register calls should report total, average, and max host API time: {stdout}"
+    );
+    assert!(
+        stdout.contains("cudaHostUnregister_v3020,1,3.000,3.000,3.000"),
+        "host unregister calls should report total, average, and max host API time: {stdout}"
+    );
+    assert!(
+        stdout.contains("host_registration_hint,cache_or_reuse_pinned_host_memory"),
+        "transfer triage should flag large host registration overhead: {stdout}"
+    );
+}
+
+#[test]
 fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/nsys-cuda-copy-summary.py");
