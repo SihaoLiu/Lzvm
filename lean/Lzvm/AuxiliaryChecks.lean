@@ -173,6 +173,7 @@ structure GuestPcTraceTimingSummary where
   segmentCount : Nat
   guestTraceStreamElapsedMilliseconds : Nat
   guestTraceStreamMilliseconds : Nat
+  guestTraceProofValuePrerunMilliseconds : Nat
   guestSegmentCommitMilliseconds : Nat
   guestSegmentCommitInitialWorkerCount : Nat
   guestSegmentCommitEffectiveWorkerCount : Nat

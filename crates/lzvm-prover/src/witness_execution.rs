@@ -400,6 +400,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     segment_count: usize,
     guest_trace_stream_elapsed_duration: Duration,
     guest_trace_stream_duration: Duration,
+    guest_trace_proof_value_prerun_duration: Duration,
     guest_segment_commit_duration: Duration,
     guest_segment_commit_initial_worker_count: usize,
     guest_segment_commit_effective_worker_count: usize,
@@ -546,47 +547,62 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_stage_timings: Vec<ProveWitnessGuestStageTiming>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GuestPcTraceRunTiming {
+    segment_count: usize,
+    guest_trace_stream_elapsed_duration: Duration,
+    guest_trace_stream_duration: Duration,
+    guest_trace_proof_value_prerun_duration: Duration,
+    guest_segment_commit_duration: Duration,
+    segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming,
+}
+
 impl ProveWitnessGuestPcTraceTiming {
     fn new(
-        segment_count: usize,
-        guest_trace_stream_elapsed_duration: Duration,
-        guest_trace_stream_duration: Duration,
-        guest_segment_commit_duration: Duration,
-        segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming,
+        run_timing: GuestPcTraceRunTiming,
         stream_timing: GuestPcTraceStreamTiming,
         trace_timing: ProveWitnessTraceTimingAccumulator,
     ) -> Self {
         Self {
-            segment_count,
-            guest_trace_stream_elapsed_duration,
-            guest_trace_stream_duration,
-            guest_segment_commit_duration,
-            guest_segment_commit_initial_worker_count: segment_commit_worker_timing
+            segment_count: run_timing.segment_count,
+            guest_trace_stream_elapsed_duration: run_timing.guest_trace_stream_elapsed_duration,
+            guest_trace_stream_duration: run_timing.guest_trace_stream_duration,
+            guest_trace_proof_value_prerun_duration: run_timing
+                .guest_trace_proof_value_prerun_duration,
+            guest_segment_commit_duration: run_timing.guest_segment_commit_duration,
+            guest_segment_commit_initial_worker_count: run_timing
+                .segment_commit_worker_timing
                 .initial_worker_count,
-            guest_segment_commit_effective_worker_count: segment_commit_worker_timing
+            guest_segment_commit_effective_worker_count: run_timing
+                .segment_commit_worker_timing
                 .effective_worker_count,
-            guest_segment_commit_oom_retry_count: segment_commit_worker_timing.oom_retry_count,
-            guest_segment_commit_cuda_memory_total_byte_count: segment_commit_worker_timing
+            guest_segment_commit_oom_retry_count: run_timing
+                .segment_commit_worker_timing
+                .oom_retry_count,
+            guest_segment_commit_cuda_memory_total_byte_count: run_timing
+                .segment_commit_worker_timing
                 .memory_timing
                 .cuda_memory_total_byte_count,
-            guest_segment_commit_cuda_memory_initial_free_byte_count: segment_commit_worker_timing
+            guest_segment_commit_cuda_memory_initial_free_byte_count: run_timing
+                .segment_commit_worker_timing
                 .memory_timing
                 .cuda_memory_initial_free_byte_count,
-            guest_segment_commit_cuda_memory_effective_free_byte_count:
-                segment_commit_worker_timing
-                    .memory_timing
-                    .cuda_memory_effective_free_byte_count,
-            guest_segment_commit_cuda_memory_min_free_byte_count: segment_commit_worker_timing
+            guest_segment_commit_cuda_memory_effective_free_byte_count: run_timing
+                .segment_commit_worker_timing
+                .memory_timing
+                .cuda_memory_effective_free_byte_count,
+            guest_segment_commit_cuda_memory_min_free_byte_count: run_timing
+                .segment_commit_worker_timing
                 .memory_timing
                 .cuda_memory_min_free_byte_count,
-            guest_segment_commit_cuda_allocator_initial_cached_byte_count:
-                segment_commit_worker_timing
-                    .memory_timing
-                    .cuda_allocator_initial_cached_byte_count,
-            guest_segment_commit_cuda_allocator_effective_cached_byte_count:
-                segment_commit_worker_timing
-                    .memory_timing
-                    .cuda_allocator_effective_cached_byte_count,
+            guest_segment_commit_cuda_allocator_initial_cached_byte_count: run_timing
+                .segment_commit_worker_timing
+                .memory_timing
+                .cuda_allocator_initial_cached_byte_count,
+            guest_segment_commit_cuda_allocator_effective_cached_byte_count: run_timing
+                .segment_commit_worker_timing
+                .memory_timing
+                .cuda_allocator_effective_cached_byte_count,
             guest_trace_runner_duration: stream_timing.runner_duration(),
             guest_trace_lowerer_duration: stream_timing.lowerer_duration(),
             guest_trace_lower_duration: stream_timing.trace_lower_duration(),
@@ -807,6 +823,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_stream_duration(&self) -> Duration {
         self.guest_trace_stream_duration
+    }
+
+    pub fn guest_trace_proof_value_prerun_duration(&self) -> Duration {
+        self.guest_trace_proof_value_prerun_duration
     }
 
     pub fn guest_segment_commit_duration(&self) -> Duration {
@@ -4549,11 +4569,15 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                     .saturating_sub(commit_output.guest_segment_commit_duration);
                 if let Some(observer) = timing_observer.as_deref_mut() {
                     observer(ProveWitnessGuestPcTraceTiming::new(
-                        commit_output.segment_count,
-                        guest_trace_stream_elapsed_duration,
-                        guest_trace_stream_duration,
-                        commit_output.guest_segment_commit_duration,
-                        segment_commit_worker_timing,
+                        GuestPcTraceRunTiming {
+                            segment_count: commit_output.segment_count,
+                            guest_trace_stream_elapsed_duration,
+                            guest_trace_stream_duration,
+                            guest_trace_proof_value_prerun_duration: Duration::ZERO,
+                            guest_segment_commit_duration: commit_output
+                                .guest_segment_commit_duration,
+                            segment_commit_worker_timing,
+                        },
                         stream_result.timing,
                         commit_output.trace_timing,
                     ));
@@ -4571,11 +4595,15 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             Ok(outputs)
         });
     }
+    let proof_value_prerun_started = timing_observer.is_some().then(Instant::now);
     let proof_values = run_guest_pc_trace_runtime_proof_values_with_context(
         &backend,
         context,
         &shared_inputs.input,
     )?;
+    let guest_trace_proof_value_prerun_duration = proof_value_prerun_started
+        .map(|started| started.elapsed())
+        .unwrap_or(Duration::ZERO);
     let auxiliary_inputs = merge_backend_proof_values(
         unit_index,
         &plan.global_info,
@@ -4614,11 +4642,14 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 .saturating_sub(commit_output.guest_segment_commit_duration);
             if let Some(observer) = timing_observer {
                 observer(ProveWitnessGuestPcTraceTiming::new(
-                    commit_output.segment_count,
-                    guest_trace_stream_elapsed_duration,
-                    guest_trace_stream_duration,
-                    commit_output.guest_segment_commit_duration,
-                    segment_commit_worker_timing,
+                    GuestPcTraceRunTiming {
+                        segment_count: commit_output.segment_count,
+                        guest_trace_stream_elapsed_duration,
+                        guest_trace_stream_duration,
+                        guest_trace_proof_value_prerun_duration,
+                        guest_segment_commit_duration: commit_output.guest_segment_commit_duration,
+                        segment_commit_worker_timing,
+                    },
                     stream_timing,
                     commit_output.trace_timing,
                 ));

@@ -65,6 +65,10 @@ pub(super) fn record_guest_pc_trace_timing(
     );
     timings.record("guest_trace_stream", timing.guest_trace_stream_duration());
     timings.record(
+        "guest_trace_proof_value_prerun",
+        timing.guest_trace_proof_value_prerun_duration(),
+    );
+    timings.record(
         "guest_segment_commit",
         timing.guest_segment_commit_duration(),
     );

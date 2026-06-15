@@ -688,6 +688,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "rowValueSourceDownloadMilliseconds",
         "rowValueDeviceDownloadMilliseconds",
         "guestTraceStreamElapsedMilliseconds",
+        "guestTraceProofValuePrerunMilliseconds",
         "guestTraceRunnerMilliseconds",
         "guestTraceLowererMilliseconds",
         "guestTraceLowerMilliseconds",
@@ -820,6 +821,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_trace_stream_elapsed\"",
             "guest_trace_stream_elapsed_duration()",
+        ),
+        (
+            "\"guest_trace_proof_value_prerun\"",
+            "guest_trace_proof_value_prerun_duration()",
         ),
         ("\"guest_trace_runner\"", "guest_trace_runner_duration()"),
         ("\"guest_trace_lowerer\"", "guest_trace_lowerer_duration()"),
