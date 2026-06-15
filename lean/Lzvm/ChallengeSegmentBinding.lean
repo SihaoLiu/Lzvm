@@ -93,6 +93,48 @@ theorem runtime_challenge_segment_binding_checked_acceptance_evidence
     And.intro payloadValid
       (And.intro segmentMatchesTranscript challengeSegmentBound)
 
+theorem runtime_challenge_segment_binding_evidence_implies_payload_valid
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.challengeSegmentPayloadValid artifact publicInput proof := by
+  intro artifact publicInput proof evidence
+  exact evidence.left
+
+theorem runtime_challenge_segment_binding_evidence_implies_segment_matches_transcript
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.challengeSegmentMatchesTranscript artifact publicInput proof := by
+  intro artifact publicInput proof evidence
+  exact evidence.right.left
+
+theorem runtime_challenge_segment_binding_evidence_implies_challenge_segment_bound
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.transcriptValidation.challengeSegmentBound artifact publicInput proof := by
+  intro artifact publicInput proof evidence
+  exact evidence.right.right
+
 theorem runtime_challenge_segment_binding_checked_acceptance_transcript
     {system : VerifierModel}
     (validation : RuntimeChallengeSegmentBindingValidation system) :
@@ -116,6 +158,76 @@ theorem runtime_challenge_segment_binding_checked_acceptance_transcript
       publicInput
       proof
       accepted
+
+theorem runtime_challenge_segment_binding_checked_acceptance_payload_valid
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.challengeSegmentPayloadValid artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.challengeBindingAcceptedImpliesPayloadValid
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_challenge_segment_binding_checked_acceptance_segment_matches_transcript
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.challengeSegmentMatchesTranscript artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.challengeBindingAcceptedImpliesSegmentMatchesTranscript
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_challenge_segment_binding_checked_acceptance_challenge_segment_bound
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.transcriptValidation.challengeSegmentBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have payloadValid :=
+    validation.challengeBindingAcceptedImpliesPayloadValid
+      artifact
+      publicInput
+      proof
+      accepted
+  have segmentMatchesTranscript :=
+    validation.challengeBindingAcceptedImpliesSegmentMatchesTranscript
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    validation.challengeSegmentChecksImplyBound
+      artifact
+      publicInput
+      proof
+      payloadValid
+      segmentMatchesTranscript
 
 theorem runtime_challenge_segment_binding_checked_acceptance_transcript_payload_contract
     {system : VerifierModel}

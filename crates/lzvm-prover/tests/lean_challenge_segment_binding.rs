@@ -29,11 +29,59 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_challenge_segment_binding_evidence_implies_payload_valid",
+            "runtime_challenge_segment_binding_evidence_implies_segment_matches_transcript",
+            "runtime_challenge_segment_binding_evidence_implies_challenge_segment_bound",
+            "runtime_challenge_segment_binding_checked_acceptance_payload_valid",
+            "runtime_challenge_segment_binding_checked_acceptance_segment_matches_transcript",
+            "runtime_challenge_segment_binding_checked_acceptance_challenge_segment_bound",
             "runtime_challenge_segment_binding_checked_acceptance_transcript_payload_contract",
             "runtime_challenge_segment_binding_checked_acceptance_sound",
             "runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract",
             "runtime_challenge_segment_binding_checked_acceptance_challenge_and_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_evidence_implies_payload_valid",
+        &[
+            "RuntimeChallengeSegmentBindingEvidence",
+            "validation.challengeSegmentPayloadValid artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_evidence_implies_segment_matches_transcript",
+        &[
+            "RuntimeChallengeSegmentBindingEvidence",
+            "validation.challengeSegmentMatchesTranscript artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_evidence_implies_challenge_segment_bound",
+        &[
+            "RuntimeChallengeSegmentBindingEvidence",
+            "validation.transcriptValidation.challengeSegmentBound artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_challenge_segment_bound",
+        &[
+            "RuntimeChallengeSegmentBindingCheckedAcceptance",
+            "validation.transcriptValidation.challengeSegmentBound artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_challenge_segment_bound",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_challenge_segment_bound",
+        &["validation.challengeSegmentChecksImplyBound"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
