@@ -300,6 +300,148 @@ conn.close()
 }
 
 #[test]
+fn nsys_cuda_copy_summary_flags_meminfo_polluted_h2d_bulk_callchains() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/nsys-cuda-copy-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("temp directory should be creatable");
+    let sqlite_path = temp_dir.join(format!(
+        "nsys-copy-summary-callchain-quality-test-{}.sqlite",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    let setup = r#"
+import sqlite3
+import sys
+
+path = sys.argv[1]
+conn = sqlite3.connect(path)
+conn.executescript("""
+create table StringIds (id integer primary key, value text);
+create table ENUM_CUDA_MEMCPY_OPER (id integer primary key, label text);
+create table CUPTI_ACTIVITY_KIND_RUNTIME (
+    start integer,
+    end integer,
+    eventClass integer,
+    globalTid integer,
+    correlationId integer,
+    nameId integer,
+    returnValue integer,
+    callchainId integer
+);
+create table CUPTI_ACTIVITY_KIND_MEMCPY (
+    start integer,
+    end integer,
+    deviceId integer,
+    contextId integer,
+    greenContextId integer,
+    streamId integer,
+    correlationId integer,
+    globalPid integer,
+    bytes integer,
+    copyKind integer,
+    deprecatedSrcId integer,
+    srcKind integer,
+    dstKind integer,
+    srcDeviceId integer,
+    srcContextId integer,
+    dstDeviceId integer,
+    dstContextId integer,
+    migrationCause integer,
+    graphNodeId integer,
+    virtualAddress integer,
+    copyCount integer
+);
+create table OSRT_CALLCHAINS (
+    id integer,
+    symbol text,
+    module text,
+    kernelMode integer,
+    thumbCode integer,
+    unresolved integer,
+    specialEntry integer,
+    originalIP integer,
+    unwindMethod integer,
+    stackDepth integer
+);
+""")
+conn.executemany("insert into StringIds (id, value) values (?, ?)", [
+    (1, "cudaMemcpy_v3020"),
+])
+conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", [
+    (1, "Host-to-Device"),
+])
+conn.execute("""
+insert into CUPTI_ACTIVITY_KIND_RUNTIME
+    (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
+values (0, 18_000_000, 0, 7, 30, 1, 0, 200)
+""")
+conn.execute("""
+insert into CUPTI_ACTIVITY_KIND_MEMCPY
+    (start, end, deviceId, contextId, greenContextId, streamId, correlationId,
+     globalPid, bytes, copyKind, deprecatedSrcId, srcKind, dstKind, srcDeviceId,
+     srcContextId, dstDeviceId, dstContextId, migrationCause, graphNodeId,
+     virtualAddress, copyCount)
+values (1000, 17_000_000, 0, 0, null, 3, 30, 1, 2097152, 1, null, null, null,
+        null, null, null, null, null, null, null, 1)
+""")
+conn.executemany("""
+insert into OSRT_CALLCHAINS
+    (id, symbol, module, kernelMode, thumbCode, unresolved, specialEntry,
+     originalIP, unwindMethod, stackDepth)
+values (?, ?, ?, 0, 0, 0, 0, 0, 0, ?)
+""", [
+    (200, "__GI___ioctl", "libc.so.6", 0),
+    (200, "cudaMemGetInfo", "libcudart.so", 1),
+    (200, "lzvm_cuda_memory_info", "lzvm", 2),
+])
+conn.commit()
+conn.close()
+"#;
+
+    let setup_output = Command::new("python3")
+        .arg("-c")
+        .arg(setup)
+        .arg(&sqlite_path)
+        .output()
+        .expect("callchain quality test database should be created");
+    assert!(
+        setup_output.status.success(),
+        "callchain quality test database creation should succeed: stderr={}",
+        String::from_utf8_lossy(&setup_output.stderr)
+    );
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&sqlite_path)
+        .output()
+        .expect("nsys CUDA copy summary should run on callchain quality test database");
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    assert!(
+        output.status.success(),
+        "nsys CUDA copy summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("cuda_memcpy_callchain_quality"),
+        "callchain quality summary should be printed: {stdout}"
+    );
+    assert!(
+        stdout.contains("h2d_bulk_meminfo_frame_calls,1,"),
+        "meminfo-polluted H2D bulk callchains should be counted: {stdout}"
+    );
+    assert!(
+        stdout.contains("example_callchain_id=200")
+            && stdout.contains("app_frame=lzvm_cuda_memory_info@lzvm"),
+        "quality summary should point at the suspect callchain and apparent app frame: {stdout}"
+    );
+}
+
+#[test]
 fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/nsys-cuda-copy-summary.py");
@@ -320,6 +462,8 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
         "d2h_cuda_memcpy_callchain_hotspots",
         "top_h2d_bulk_callchain_hotspots",
         "h2d_bulk_app_frame_hotspots",
+        "cuda_memcpy_callchain_quality",
+        "h2d_bulk_meminfo_frame_calls",
         "CUPTI_ACTIVITY_KIND_KERNEL",
         "d2h_wait_preceding_kernel_hotspots",
         "previous_kernel",
@@ -361,6 +505,8 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
             && stdout.contains("api,bytes,calls")
             && stdout.contains("top_h2d_bulk_callchain_hotspots")
             && stdout.contains("h2d_bulk_app_frame_hotspots")
+            && stdout.contains("cuda_memcpy_callchain_quality")
+            && stdout.contains("h2d_bulk_meminfo_frame_calls")
             && stdout.contains("cudaMemcpy_v3020,2097152")
             && stdout.contains("upload_trace_source_to_device")
             && stdout.contains("cudaMemcpy_v3020,Device-to-Host")
