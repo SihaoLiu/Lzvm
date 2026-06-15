@@ -5,12 +5,15 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.Assumptions
+import Lzvm.MerklePathSoundness.Binary
 
 /-!
 Auditable accessors for the centralized cryptographic assumption bundle.
 -/
 
 namespace Lzvm
+
+universe uDigest
 
 structure RequiredCryptographicAssumptionGroups (system : VerifierModel) where
   hashCollisionResistance : HashCollisionResistanceAssumption
@@ -56,6 +59,40 @@ theorem required_crypto_assumptions_merkle_hash_collision_resistance
       _randomOracleModel, _fiatShamirTranscriptBinding, _pcsBinding,
       _pcsOpeningSoundness, _friLowDegreeSoundness, _friQuerySoundness⟩
   exact merkleHashCollisionResistance
+
+theorem required_crypto_assumptions_merkle_compression_no_collision
+    {system : VerifierModel}
+    {assumptions : CryptographicAssumptions system}
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (required : RequiredCryptographicAssumptionStatements assumptions)
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        assumptions.hashCollisionResistance
+        compress) :
+    MerkleCompressionNoCollision compress := by
+  exact
+    Eq.mp
+      centralized
+      (required_crypto_assumptions_merkle_hash_collision_resistance
+        required)
+
+theorem required_crypto_assumptions_merkle_compression_collision_free
+    {system : VerifierModel}
+    {assumptions : CryptographicAssumptions system}
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (required : RequiredCryptographicAssumptionStatements assumptions)
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        assumptions.hashCollisionResistance
+        compress) :
+    MerkleCompressionCollisionFree compress := by
+  exact
+    merkle_compression_collision_free_of_no_collision
+      (required_crypto_assumptions_merkle_compression_no_collision
+        required
+        centralized)
 
 theorem required_crypto_assumptions_transcript_hash_collision_resistance
     {system : VerifierModel}
@@ -159,5 +196,35 @@ theorem assumption_bundle_carries_required_crypto_evidence
     (assumptions : AssumptionBundle system) :
     RequiredCryptographicAssumptionStatements assumptions.crypto := by
   exact cryptographic_assumptions_carry_required_evidence assumptions.crypto
+
+theorem assumption_bundle_merkle_compression_no_collision
+    {system : VerifierModel}
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (assumptions : AssumptionBundle system)
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    MerkleCompressionNoCollision compress := by
+  exact
+    required_crypto_assumptions_merkle_compression_no_collision
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      centralized
+
+theorem assumption_bundle_merkle_compression_collision_free
+    {system : VerifierModel}
+    {Digest : Type uDigest}
+    {compress : Digest -> Digest -> Digest}
+    (assumptions : AssumptionBundle system)
+    (centralized :
+      CentralizedMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    MerkleCompressionCollisionFree compress := by
+  exact
+    required_crypto_assumptions_merkle_compression_collision_free
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      centralized
 
 end Lzvm
