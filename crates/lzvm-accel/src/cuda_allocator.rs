@@ -41,6 +41,12 @@ pub struct CudaAllocatorStats {
     pub cuda_copy_h2d_bytes: usize,
     pub cuda_copy_h2d_wait_ns: usize,
     pub cuda_copy_h2d_max_wait_ns: usize,
+    pub cuda_copy_h2d_hot_bytes: usize,
+    pub cuda_copy_h2d_hot_count: usize,
+    pub cuda_copy_h2d_hot_wait_ns: usize,
+    pub cuda_copy_h2d_second_hot_bytes: usize,
+    pub cuda_copy_h2d_second_hot_count: usize,
+    pub cuda_copy_h2d_second_hot_wait_ns: usize,
     pub cuda_copy_d2h_calls: usize,
     pub cuda_copy_d2h_bytes: usize,
     pub cuda_copy_d2h_wait_ns: usize,
@@ -130,6 +136,47 @@ mod tests {
         assert_eq!(after_second.cuda_device_synchronize_calls, 0);
         assert_eq!(after_second.cached_reuse_count, 1);
         assert_eq!(after_second.cached_blocks, 1);
+
+        cuda_allocator_clear_cache().expect("allocator cache should clear");
+    }
+
+    #[test]
+    fn cuda_allocator_stats_reports_h2d_hot_copy_sizes() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        cuda_allocator_clear_cache().expect("allocator cache should clear");
+
+        let mut small = CudaDeviceBuffer::new(32).expect("small allocation should succeed");
+        small
+            .copy_from(&[1_u8; 32])
+            .expect("small H2D copy should succeed");
+        let mut large = CudaDeviceBuffer::new(64).expect("large allocation should succeed");
+        large
+            .copy_from(&[2_u8; 64])
+            .expect("first large H2D copy should succeed");
+        large
+            .copy_from(&[3_u8; 64])
+            .expect("second large H2D copy should succeed");
+
+        let stats = cuda_allocator_stats().expect("allocator stats should load");
+        assert_eq!(stats.cuda_copy_h2d_calls, 3);
+        assert_eq!(stats.cuda_copy_h2d_bytes, 160);
+        let hot_sizes = [
+            (stats.cuda_copy_h2d_hot_bytes, stats.cuda_copy_h2d_hot_count),
+            (
+                stats.cuda_copy_h2d_second_hot_bytes,
+                stats.cuda_copy_h2d_second_hot_count,
+            ),
+        ];
+        assert!(
+            hot_sizes.contains(&(64, 2)),
+            "64-byte H2D copies should be represented in hot sizes: {hot_sizes:?}"
+        );
+        assert!(
+            hot_sizes.contains(&(32, 1)),
+            "32-byte H2D copy should be represented in hot sizes: {hot_sizes:?}"
+        );
 
         cuda_allocator_clear_cache().expect("allocator cache should clear");
     }

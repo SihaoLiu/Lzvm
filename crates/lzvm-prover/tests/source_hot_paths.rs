@@ -5208,6 +5208,12 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "cuda_copy_h2d_bytes",
         "cuda_copy_h2d_wait_ns",
         "cuda_copy_h2d_max_wait_ns",
+        "cuda_copy_h2d_hot_bytes",
+        "cuda_copy_h2d_hot_count",
+        "cuda_copy_h2d_hot_wait_ns",
+        "cuda_copy_h2d_second_hot_bytes",
+        "cuda_copy_h2d_second_hot_count",
+        "cuda_copy_h2d_second_hot_wait_ns",
         "cuda_copy_d2h_calls",
         "cuda_copy_d2h_bytes",
         "cuda_copy_d2h_wait_ns",
@@ -5319,6 +5325,17 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "CUDA device synchronization waits should be measured at the synchronization boundary"
     );
     assert!(
+        native_source.contains("g_cuda_copy_h2d_by_size")
+            && native_source.contains("record_cuda_copy_h2d_wait")
+            && native_source.contains("cuda_copy_h2d_hot_bytes")
+            && native_source.contains("cuda_copy_h2d_hot_count")
+            && native_source.contains("cuda_copy_h2d_hot_wait_ns")
+            && native_source.contains("cuda_copy_h2d_second_hot_bytes")
+            && native_source.contains("cuda_copy_h2d_second_hot_count")
+            && native_source.contains("cuda_copy_h2d_second_hot_wait_ns"),
+        "H2D copy wait timing should expose the dominant copied sizes"
+    );
+    assert!(
         native_source.contains("g_cuda_copy_d2h_by_size")
             && native_source.contains("record_cuda_copy_d2h_wait")
             && native_source.contains("cuda_copy_d2h_hot_bytes")
@@ -5392,6 +5409,14 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "\"cuda_allocator_copy_h2d_wait_ns\"",
         "\"cuda_allocator_copy_h2d_max_wait_ns\"",
         "\"cuda_allocator_copy_h2d_avg_wait_per_call_ns\"",
+        "\"cuda_allocator_copy_h2d_hot_bytes\"",
+        "\"cuda_allocator_copy_h2d_hot_count\"",
+        "\"cuda_allocator_copy_h2d_hot_wait_ns\"",
+        "\"cuda_allocator_copy_h2d_hot_avg_wait_per_call_ns\"",
+        "\"cuda_allocator_copy_h2d_second_hot_bytes\"",
+        "\"cuda_allocator_copy_h2d_second_hot_count\"",
+        "\"cuda_allocator_copy_h2d_second_hot_wait_ns\"",
+        "\"cuda_allocator_copy_h2d_second_hot_avg_wait_per_call_ns\"",
         "\"cuda_allocator_copy_d2h_calls\"",
         "\"cuda_allocator_copy_d2h_bytes\"",
         "\"cuda_allocator_copy_d2h_wait_ns\"",

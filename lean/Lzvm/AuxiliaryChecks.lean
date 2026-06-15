@@ -358,6 +358,12 @@ structure CudaAllocatorTimingSummary where
   cudaAllocatorCopyH2DByteCount : Nat
   cudaAllocatorCopyH2DWaitNanoseconds : Nat
   cudaAllocatorCopyH2DMaxWaitNanoseconds : Nat
+  cudaAllocatorCopyH2DHotByteCount : Nat
+  cudaAllocatorCopyH2DHotCount : Nat
+  cudaAllocatorCopyH2DHotWaitNanoseconds : Nat
+  cudaAllocatorCopyH2DSecondHotByteCount : Nat
+  cudaAllocatorCopyH2DSecondHotCount : Nat
+  cudaAllocatorCopyH2DSecondHotWaitNanoseconds : Nat
   cudaAllocatorCopyD2HCallCount : Nat
   cudaAllocatorCopyD2HByteCount : Nat
   cudaAllocatorCopyD2HWaitNanoseconds : Nat

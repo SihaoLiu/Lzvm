@@ -37,6 +37,7 @@ constexpr std::size_t kPinnedCopyThreshold = std::size_t{1} << 20;
 constexpr std::size_t kPendingCacheNoWaitBytes = std::size_t{1} << 20;
 constexpr const char* kPendingCacheNoWaitBytesEnv =
     "LZVM_CUDA_PENDING_CACHE_NO_WAIT_BYTES";
+constexpr std::size_t kCopyH2dSizeStatsSlots = 64;
 constexpr std::size_t kCopyD2hSizeStatsSlots = 64;
 constexpr std::size_t kEventSynchronizeSizeStatsSlots = 64;
 
@@ -58,6 +59,7 @@ std::size_t g_cuda_copy_h2d_calls = 0;
 std::size_t g_cuda_copy_h2d_bytes = 0;
 std::size_t g_cuda_copy_h2d_wait_ns = 0;
 std::size_t g_cuda_copy_h2d_max_wait_ns = 0;
+SizeWaitStats g_cuda_copy_h2d_by_size[kCopyH2dSizeStatsSlots] = {};
 std::size_t g_cuda_copy_d2h_calls = 0;
 std::size_t g_cuda_copy_d2h_bytes = 0;
 std::size_t g_cuda_copy_d2h_wait_ns = 0;
@@ -302,6 +304,8 @@ void record_cuda_copy_h2d_wait(std::size_t bytes, std::size_t elapsed_ns) {
     record_cuda_copy_wait(
         bytes, elapsed_ns, &g_cuda_copy_h2d_calls, &g_cuda_copy_h2d_bytes,
         &g_cuda_copy_h2d_wait_ns, &g_cuda_copy_h2d_max_wait_ns);
+    record_wait_by_size(
+        g_cuda_copy_h2d_by_size, kCopyH2dSizeStatsSlots, bytes, elapsed_ns);
 }
 
 void record_cuda_copy_d2h_wait(std::size_t bytes, std::size_t elapsed_ns) {
@@ -784,6 +788,9 @@ extern "C" int lzvm_cuda_allocator_clear_cache(void) {
             g_cuda_event_synchronize_max_bytes = 0;
             g_cuda_event_synchronize_wait_ns = 0;
             g_cuda_event_synchronize_max_wait_ns = 0;
+            for (SizeWaitStats& size_stats : g_cuda_copy_h2d_by_size) {
+                size_stats = SizeWaitStats{};
+            }
             for (SizeWaitStats& size_stats : g_cuda_copy_d2h_by_size) {
                 size_stats = SizeWaitStats{};
             }
@@ -825,6 +832,13 @@ extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out) {
         out->cuda_copy_h2d_bytes = g_cuda_copy_h2d_bytes;
         out->cuda_copy_h2d_wait_ns = g_cuda_copy_h2d_wait_ns;
         out->cuda_copy_h2d_max_wait_ns = g_cuda_copy_h2d_max_wait_ns;
+        pick_two_hot_size_waits(
+            g_cuda_copy_h2d_by_size, kCopyH2dSizeStatsSlots,
+            &out->cuda_copy_h2d_hot_bytes, &out->cuda_copy_h2d_hot_count,
+            &out->cuda_copy_h2d_hot_wait_ns,
+            &out->cuda_copy_h2d_second_hot_bytes,
+            &out->cuda_copy_h2d_second_hot_count,
+            &out->cuda_copy_h2d_second_hot_wait_ns);
         out->cuda_copy_d2h_calls = g_cuda_copy_d2h_calls;
         out->cuda_copy_d2h_bytes = g_cuda_copy_d2h_bytes;
         out->cuda_copy_d2h_wait_ns = g_cuda_copy_d2h_wait_ns;
