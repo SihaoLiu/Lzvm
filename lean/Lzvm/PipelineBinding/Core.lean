@@ -75,6 +75,12 @@ def runtime_pipeline_transcript_validation
     RuntimeTranscriptBindingValidation system :=
   (runtime_pipeline_challenge_validation validation).transcriptValidation
 
+def runtime_pipeline_transcript_runtime_validation
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    RuntimeConformanceValidation system :=
+  (runtime_pipeline_transcript_validation validation).artifactBindingValidation.runtimeValidation
+
 def RuntimePipelineBindingEvidence
     (system : VerifierModel)
     (validation : RuntimePipelineBindingValidation system)
