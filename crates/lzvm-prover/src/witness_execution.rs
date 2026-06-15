@@ -439,6 +439,11 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_pending_receive_wait_duration: Duration,
     guest_trace_segment_send_wait_duration: Duration,
     guest_trace_segment_receive_wait_duration: Duration,
+    guest_trace_parallel_lower_worker_count: usize,
+    guest_trace_parallel_lower_dispatched_count: usize,
+    guest_trace_parallel_lower_received_count: usize,
+    guest_trace_parallel_lower_emitted_count: usize,
+    guest_trace_parallel_lower_max_reorder_count: usize,
     guest_trace_seed_direct_lift_attempt_count: usize,
     guest_trace_seed_direct_lift_success_count: usize,
     guest_trace_seed_direct_lift_empty_segment_count: usize,
@@ -624,6 +629,14 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_segment_send_wait_duration: stream_timing.segment_send_wait_duration(),
             guest_trace_segment_receive_wait_duration: stream_timing
                 .segment_receive_wait_duration(),
+            guest_trace_parallel_lower_worker_count: stream_timing.parallel_lower_worker_count(),
+            guest_trace_parallel_lower_dispatched_count: stream_timing
+                .parallel_lower_dispatched_count(),
+            guest_trace_parallel_lower_received_count: stream_timing
+                .parallel_lower_received_count(),
+            guest_trace_parallel_lower_emitted_count: stream_timing.parallel_lower_emitted_count(),
+            guest_trace_parallel_lower_max_reorder_count: stream_timing
+                .parallel_lower_max_reorder_count(),
             guest_trace_seed_direct_lift_attempt_count: stream_timing
                 .seed_direct_lift_attempt_count(),
             guest_trace_seed_direct_lift_success_count: stream_timing
@@ -956,6 +969,26 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_segment_receive_wait_duration(&self) -> Duration {
         self.guest_trace_segment_receive_wait_duration
+    }
+
+    pub fn guest_trace_parallel_lower_worker_count(&self) -> usize {
+        self.guest_trace_parallel_lower_worker_count
+    }
+
+    pub fn guest_trace_parallel_lower_dispatched_count(&self) -> usize {
+        self.guest_trace_parallel_lower_dispatched_count
+    }
+
+    pub fn guest_trace_parallel_lower_received_count(&self) -> usize {
+        self.guest_trace_parallel_lower_received_count
+    }
+
+    pub fn guest_trace_parallel_lower_emitted_count(&self) -> usize {
+        self.guest_trace_parallel_lower_emitted_count
+    }
+
+    pub fn guest_trace_parallel_lower_max_reorder_count(&self) -> usize {
+        self.guest_trace_parallel_lower_max_reorder_count
     }
 
     pub fn guest_trace_seed_direct_lift_attempt_count(&self) -> usize {

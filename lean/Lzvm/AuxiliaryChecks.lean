@@ -232,6 +232,11 @@ structure GuestPcTraceTimingSummary where
   guestTracePendingReceiveWaitMilliseconds : Nat
   guestTraceSegmentSendWaitMilliseconds : Nat
   guestTraceSegmentReceiveWaitMilliseconds : Nat
+  guestTraceParallelLowerWorkerCount : Nat
+  guestTraceParallelLowerDispatchedCount : Nat
+  guestTraceParallelLowerReceivedCount : Nat
+  guestTraceParallelLowerEmittedCount : Nat
+  guestTraceParallelLowerMaxReorderCount : Nat
   guestDeviceSourceBuildMilliseconds : Nat
   guestDeviceSourceDescriptorUploadMilliseconds : Nat
   guestDeviceSourceDescriptorUploadByteCount : Nat

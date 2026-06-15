@@ -214,6 +214,11 @@ pub(crate) struct GuestPcTraceStreamTiming {
     pending_receive_wait_duration: Duration,
     segment_send_wait_duration: Duration,
     segment_receive_wait_duration: Duration,
+    parallel_lower_worker_count: usize,
+    parallel_lower_dispatched_count: usize,
+    parallel_lower_received_count: usize,
+    parallel_lower_emitted_count: usize,
+    parallel_lower_max_reorder_count: usize,
     seed_direct_lift_attempt_count: usize,
     seed_direct_lift_success_count: usize,
     seed_direct_lift_empty_segment_count: usize,
@@ -285,6 +290,15 @@ impl GuestPcTraceStreamTiming {
         self.pending_receive_wait_duration += other.pending_receive_wait_duration;
         self.segment_send_wait_duration += other.segment_send_wait_duration;
         self.segment_receive_wait_duration += other.segment_receive_wait_duration;
+        self.parallel_lower_worker_count = self
+            .parallel_lower_worker_count
+            .max(other.parallel_lower_worker_count);
+        self.parallel_lower_dispatched_count += other.parallel_lower_dispatched_count;
+        self.parallel_lower_received_count += other.parallel_lower_received_count;
+        self.parallel_lower_emitted_count += other.parallel_lower_emitted_count;
+        self.parallel_lower_max_reorder_count = self
+            .parallel_lower_max_reorder_count
+            .max(other.parallel_lower_max_reorder_count);
         self.seed_direct_lift_attempt_count += other.seed_direct_lift_attempt_count;
         self.seed_direct_lift_success_count += other.seed_direct_lift_success_count;
         self.seed_direct_lift_empty_segment_count += other.seed_direct_lift_empty_segment_count;
@@ -444,6 +458,26 @@ impl GuestPcTraceStreamTiming {
 
     pub fn segment_receive_wait_duration(&self) -> Duration {
         self.segment_receive_wait_duration
+    }
+
+    pub fn parallel_lower_worker_count(&self) -> usize {
+        self.parallel_lower_worker_count
+    }
+
+    pub fn parallel_lower_dispatched_count(&self) -> usize {
+        self.parallel_lower_dispatched_count
+    }
+
+    pub fn parallel_lower_received_count(&self) -> usize {
+        self.parallel_lower_received_count
+    }
+
+    pub fn parallel_lower_emitted_count(&self) -> usize {
+        self.parallel_lower_emitted_count
+    }
+
+    pub fn parallel_lower_max_reorder_count(&self) -> usize {
+        self.parallel_lower_max_reorder_count
     }
 
     pub fn seed_direct_lift_attempt_count(&self) -> usize {
@@ -3172,6 +3206,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
 ) -> Result<GuestPcTraceStreamResult, GuestPcTraceBackendError> {
     thread::scope(|scope| {
         let worker_count = worker_count.max(2);
+        timing.parallel_lower_worker_count = timing.parallel_lower_worker_count.max(worker_count);
         let (result_sender, result_receiver) = mpsc::channel();
         let mut worker_handles = Vec::with_capacity(worker_count);
         let mut job_senders = Vec::with_capacity(worker_count);
@@ -3273,6 +3308,12 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         dispatched_count = dispatched_count.saturating_add(1);
                     }
                     GuestPcTracePendingSegmentMessage::Complete(stream) => {
+                        dispatcher_timing.parallel_lower_worker_count = dispatcher_timing
+                            .parallel_lower_worker_count
+                            .max(worker_count);
+                        dispatcher_timing.parallel_lower_dispatched_count = dispatcher_timing
+                            .parallel_lower_dispatched_count
+                            .saturating_add(dispatched_count);
                         let _ =
                             dispatcher_sender.send(GuestPcTraceParallelLowerMessage::Complete {
                                 stream,
@@ -3282,6 +3323,12 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         break;
                     }
                     GuestPcTracePendingSegmentMessage::Error(error) => {
+                        dispatcher_timing.parallel_lower_worker_count = dispatcher_timing
+                            .parallel_lower_worker_count
+                            .max(worker_count);
+                        dispatcher_timing.parallel_lower_dispatched_count = dispatcher_timing
+                            .parallel_lower_dispatched_count
+                            .saturating_add(dispatched_count);
                         let _ = dispatcher_sender.send(GuestPcTraceParallelLowerMessage::Error {
                             error,
                             dispatched_count,
@@ -3319,9 +3366,13 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                 } => {
                     timing.add(worker_timing);
                     received_count = received_count.saturating_add(1);
+                    timing.parallel_lower_received_count =
+                        timing.parallel_lower_received_count.saturating_add(1);
                     match *result {
                         Ok(lowered) if first_error.is_none() => {
                             reorder.insert(trace_instance_index, lowered);
+                            timing.parallel_lower_max_reorder_count =
+                                timing.parallel_lower_max_reorder_count.max(reorder.len());
                             while let Some(lowered) = reorder.remove(&next_emit_index) {
                                 if let Err(error) = validate_guest_pc_trace_pending_segment_seed(
                                     lowered.lowered.segment.trace_instance_index,
@@ -3340,6 +3391,8 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                                 }
                                 timing.trace_emit_duration += emit_started.elapsed();
                                 emitted_count = emitted_count.saturating_add(1);
+                                timing.parallel_lower_emitted_count =
+                                    timing.parallel_lower_emitted_count.saturating_add(1);
                                 next_emit_index =
                                     next_emit_index.checked_add(1).ok_or_else(|| {
                                         GuestPcTraceBackendError::InvalidPcTraceLayout {

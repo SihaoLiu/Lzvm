@@ -821,6 +821,14 @@ fn parallel_lower_env_stream_matches_serial_segments() {
     assert!(serial.len() >= 3);
     assert_eq!(parallel.len(), serial.len());
     assert_eq!(stream.proof_values, serial[0].proof_values);
+    assert_eq!(stream.timing.parallel_lower_worker_count(), 2);
+    assert_eq!(
+        stream.timing.parallel_lower_dispatched_count(),
+        serial.len()
+    );
+    assert_eq!(stream.timing.parallel_lower_received_count(), serial.len());
+    assert_eq!(stream.timing.parallel_lower_emitted_count(), serial.len());
+    assert!(stream.timing.parallel_lower_max_reorder_count() <= serial.len());
     for (parallel, serial) in parallel.iter().zip(serial.iter()) {
         assert_eq!(parallel.trace_instance_index, serial.trace_instance_index);
         assert_eq!(

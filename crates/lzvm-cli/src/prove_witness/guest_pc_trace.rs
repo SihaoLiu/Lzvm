@@ -406,6 +406,26 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_segment_receive_wait",
         timing.guest_trace_segment_receive_wait_duration(),
     );
+    timings.record_count(
+        "guest_trace_parallel_lower_workers",
+        timing.guest_trace_parallel_lower_worker_count(),
+    );
+    timings.record_count(
+        "guest_trace_parallel_lower_dispatched",
+        timing.guest_trace_parallel_lower_dispatched_count(),
+    );
+    timings.record_count(
+        "guest_trace_parallel_lower_received",
+        timing.guest_trace_parallel_lower_received_count(),
+    );
+    timings.record_count(
+        "guest_trace_parallel_lower_emitted",
+        timing.guest_trace_parallel_lower_emitted_count(),
+    );
+    timings.record_count(
+        "guest_trace_parallel_lower_max_reorder",
+        timing.guest_trace_parallel_lower_max_reorder_count(),
+    );
     timings.record(
         "guest_device_source_build",
         timing.guest_device_source_build_duration(),

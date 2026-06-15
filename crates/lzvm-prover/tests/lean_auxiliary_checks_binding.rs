@@ -344,6 +344,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("guestTracePendingReceiveWaitMilliseconds")
             && lean_source.contains("guestTraceSegmentSendWaitMilliseconds")
             && lean_source.contains("guestTraceSegmentReceiveWaitMilliseconds")
+            && lean_source.contains("guestTraceParallelLowerWorkerCount")
+            && lean_source.contains("guestTraceParallelLowerDispatchedCount")
+            && lean_source.contains("guestTraceParallelLowerReceivedCount")
+            && lean_source.contains("guestTraceParallelLowerEmittedCount")
+            && lean_source.contains("guestTraceParallelLowerMaxReorderCount")
             && lean_source.contains("guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound")
             && lean_source.contains(
                 "guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_contract"
@@ -732,6 +737,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestTracePendingReceiveWaitMilliseconds",
         "guestTraceSegmentSendWaitMilliseconds",
         "guestTraceSegmentReceiveWaitMilliseconds",
+        "guestTraceParallelLowerWorkerCount",
+        "guestTraceParallelLowerDispatchedCount",
+        "guestTraceParallelLowerReceivedCount",
+        "guestTraceParallelLowerEmittedCount",
+        "guestTraceParallelLowerMaxReorderCount",
         "guestSegmentCommitInitialWorkerCount",
         "guestSegmentCommitEffectiveWorkerCount",
         "guestSegmentCommitOomRetryCount",
@@ -982,6 +992,26 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_trace_segment_receive_wait\"",
             "guest_trace_segment_receive_wait_duration()",
+        ),
+        (
+            "\"guest_trace_parallel_lower_workers\"",
+            "guest_trace_parallel_lower_worker_count()",
+        ),
+        (
+            "\"guest_trace_parallel_lower_dispatched\"",
+            "guest_trace_parallel_lower_dispatched_count()",
+        ),
+        (
+            "\"guest_trace_parallel_lower_received\"",
+            "guest_trace_parallel_lower_received_count()",
+        ),
+        (
+            "\"guest_trace_parallel_lower_emitted\"",
+            "guest_trace_parallel_lower_emitted_count()",
+        ),
+        (
+            "\"guest_trace_parallel_lower_max_reorder\"",
+            "guest_trace_parallel_lower_max_reorder_count()",
         ),
         (
             "\"guest_segment_commit_initial_workers\"",

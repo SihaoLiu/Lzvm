@@ -5261,6 +5261,11 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
         "pending_receive_wait_duration",
         "segment_send_wait_duration",
         "segment_receive_wait_duration",
+        "parallel_lower_worker_count",
+        "parallel_lower_dispatched_count",
+        "parallel_lower_received_count",
+        "parallel_lower_emitted_count",
+        "parallel_lower_max_reorder_count",
     ] {
         assert!(
             backend_source.contains(field),
@@ -5296,6 +5301,11 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
         "guest_trace_pending_receive_wait_duration",
         "guest_trace_segment_send_wait_duration",
         "guest_trace_segment_receive_wait_duration",
+        "guest_trace_parallel_lower_worker_count",
+        "guest_trace_parallel_lower_dispatched_count",
+        "guest_trace_parallel_lower_received_count",
+        "guest_trace_parallel_lower_emitted_count",
+        "guest_trace_parallel_lower_max_reorder_count",
     ] {
         assert!(
             execution_source.contains(field),
@@ -5311,6 +5321,11 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
         "\"guest_trace_pending_receive_wait\"",
         "\"guest_trace_segment_send_wait\"",
         "\"guest_trace_segment_receive_wait\"",
+        "\"guest_trace_parallel_lower_workers\"",
+        "\"guest_trace_parallel_lower_dispatched\"",
+        "\"guest_trace_parallel_lower_received\"",
+        "\"guest_trace_parallel_lower_emitted\"",
+        "\"guest_trace_parallel_lower_max_reorder\"",
     ] {
         assert!(
             cli_source.contains(line_name),
