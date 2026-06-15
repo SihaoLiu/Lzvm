@@ -14,6 +14,8 @@ mod cuda_canonical;
 #[cfg(feature = "cuda")]
 mod cuda_device;
 #[cfg(feature = "cuda")]
+mod cuda_graph_extension;
+#[cfg(feature = "cuda")]
 mod cuda_regular_constraints;
 #[cfg(feature = "cuda")]
 mod cuda_row_selected;
@@ -33,6 +35,8 @@ pub use cuda_canonical::{
 };
 #[cfg(feature = "cuda")]
 pub use cuda_device::{cuda_device_synchronize, cuda_memory_info, CudaMemoryInfo};
+#[cfg(feature = "cuda")]
+pub use cuda_graph_extension::CudaRowMajorCosetExtensionGraphRunner;
 #[cfg(feature = "cuda")]
 pub use cuda_regular_constraints::{
     cuda_regular_constraints_base, CudaRegularConstraintEntry, CudaRegularConstraintInputs,
