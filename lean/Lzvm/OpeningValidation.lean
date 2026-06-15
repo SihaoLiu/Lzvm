@@ -303,6 +303,85 @@ theorem runtime_opening_checked_acceptance_pcs_and_fri
       proof
       accepted
 
+structure RuntimeConstantOpeningNAryConcreteBinding
+    (system : VerifierModel)
+    (validation : RuntimeOpeningValidation system)
+    (Digest : Type uDigest)
+    (compress : List Digest -> Digest) where
+  root : RuntimeArtifact -> PublicInput -> Proof -> Digest
+  opening :
+    RuntimeArtifact ->
+      PublicInput ->
+        Proof ->
+          NAryMerklePathOpening Digest
+  concreteOpeningVerifies :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        NAryMerklePathOpeningVerifies
+          compress
+          (root artifact publicInput proof)
+          (opening artifact publicInput proof)
+  constantRootCommitsToLeafImpliesConstantOpeningsBound :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        NAryMerklePathRootCommitsToLeafAtIndex
+          compress
+          (root artifact publicInput proof)
+          ((opening artifact publicInput proof).leaf)
+          ((opening artifact publicInput proof).layers) ->
+            validation.constantOpeningsBound artifact publicInput proof
+
+theorem runtime_constant_opening_nary_checked_acceptance_constant_bound_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        validation.constantOpeningsBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have verified :=
+    binding.concreteOpeningVerifies
+      artifact
+      publicInput
+      proof
+      accepted
+  have rootCommitsToLeaf :=
+    verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle
+      assumptions
+      centralized
+      (binding.root artifact publicInput proof)
+      (binding.opening artifact publicInput proof)
+      verified
+  exact
+    binding.constantRootCommitsToLeafImpliesConstantOpeningsBound
+      artifact
+      publicInput
+      proof
+      accepted
+      rootCommitsToLeaf
+
 structure RuntimeWitnessOpeningNAryConcreteBinding
     (system : VerifierModel)
     (validation : RuntimeOpeningValidation system)

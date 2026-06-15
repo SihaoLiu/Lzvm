@@ -49,6 +49,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "runtime_opening_checked_acceptance_verifier_core_contract",
             "runtime_opening_required_external_source_sound",
             "runtime_opening_required_external_source_verifier_core_contract",
+            "runtime_constant_opening_nary_checked_acceptance_constant_bound_from_bundle",
             "runtime_witness_opening_arity_two_same_index_leaf_binding_from_bundle",
             "runtime_witness_opening_arity_four_same_index_leaf_binding_from_bundle",
             "runtime_witness_opening_arity_two_root_commits_to_leaf_at_index_from_bundle",
@@ -59,6 +60,35 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
     assert!(
         lean_source.contains("structure RuntimeWitnessOpeningNAryConcreteBinding"),
         "Lean opening validation should model concrete runtime witness openings separately from abstract witnessOpeningsBound fields"
+    );
+    assert!(
+        lean_source.contains("structure RuntimeConstantOpeningNAryConcreteBinding"),
+        "Lean opening validation should model concrete runtime constant openings separately from abstract constantOpeningsBound fields"
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_constant_opening_nary_checked_acceptance_constant_bound_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof",
+            "validation.constantOpeningsBound artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_constant_opening_nary_checked_acceptance_constant_bound_from_bundle",
+        &[
+            "binding.concreteOpeningVerifies",
+            "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle",
+            "binding.constantRootCommitsToLeafImpliesConstantOpeningsBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_constant_opening_nary_checked_acceptance_constant_bound_from_bundle",
+        &["validation.openingAcceptedImpliesConstantOpeningsBound"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
