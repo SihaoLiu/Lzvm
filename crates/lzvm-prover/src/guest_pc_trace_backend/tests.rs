@@ -1264,6 +1264,27 @@ fn zisk_main_device_descriptor_uses_compact_words_when_values_fit() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn zisk_main_device_descriptor_counts_unpaired_high_words() {
+    let mut descriptors = ZiskMainDeviceTraceDescriptors::new(3, 39, 0x2000);
+    let low_values = zisk_main_descriptor_trace_values(0x1000, 5, 6, 21, 22, 23, 24, 7);
+    append_main_device_trace_descriptor(&mut descriptors, &low_values)
+        .expect("low descriptor row should append");
+
+    let mut high_values =
+        zisk_main_descriptor_trace_values(0x1004, 5, 6, 21, 22, 23, 0x1_0000_0001, 0x2_0000_0002);
+    high_values.a = 0x3_0000_0003;
+    high_values.instruction.a = ZiskMainSource::Immediate(0x4_0000_0004);
+    high_values.instruction.store = ZiskMainStore::Memory(0x5_0000_0005);
+    append_main_device_trace_descriptor(&mut descriptors, &high_values)
+        .expect("high descriptor row should append");
+
+    assert_eq!(descriptors.unpaired_value_count(), 14);
+    assert_eq!(descriptors.unpaired_high32_nonzero_count(), 5);
+    assert_eq!(descriptors.unpaired_high32_nonzero_row_count(), 1);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn main_descriptor_width_tracks_segment_mem_step_capacity() {
     assert_eq!(
         main_segment_descriptor_words(120_000_000, 0),

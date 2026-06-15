@@ -6175,6 +6175,18 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
         "{stdout}"
     );
     assert!(
+        stdout.contains("timing_guest_trace_descriptor_unpaired_values="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_trace_descriptor_unpaired_high32_nonzero_values="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_guest_trace_descriptor_unpaired_high32_nonzero_rows="),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains("timing_guest_device_source_trace_expand_ms="),
         "{stdout}"
     );

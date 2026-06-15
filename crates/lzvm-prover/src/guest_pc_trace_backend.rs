@@ -231,6 +231,9 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_descriptor_row_count: usize,
     trace_descriptor_compact_row_count: usize,
     trace_descriptor_wide_row_count: usize,
+    trace_descriptor_unpaired_value_count: usize,
+    trace_descriptor_unpaired_high32_nonzero_count: usize,
+    trace_descriptor_unpaired_high32_nonzero_row_count: usize,
     trace_single_row_report_count: usize,
     trace_multi_row_report_count: usize,
     trace_pending_dma_report_count: usize,
@@ -305,6 +308,11 @@ impl GuestPcTraceStreamTiming {
         self.trace_descriptor_row_count += other.trace_descriptor_row_count;
         self.trace_descriptor_compact_row_count += other.trace_descriptor_compact_row_count;
         self.trace_descriptor_wide_row_count += other.trace_descriptor_wide_row_count;
+        self.trace_descriptor_unpaired_value_count += other.trace_descriptor_unpaired_value_count;
+        self.trace_descriptor_unpaired_high32_nonzero_count +=
+            other.trace_descriptor_unpaired_high32_nonzero_count;
+        self.trace_descriptor_unpaired_high32_nonzero_row_count +=
+            other.trace_descriptor_unpaired_high32_nonzero_row_count;
         self.trace_single_row_report_count += other.trace_single_row_report_count;
         self.trace_multi_row_report_count += other.trace_multi_row_report_count;
         self.trace_pending_dma_report_count += other.trace_pending_dma_report_count;
@@ -527,6 +535,18 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_descriptor_wide_row_count(&self) -> usize {
         self.trace_descriptor_wide_row_count
+    }
+
+    pub fn trace_descriptor_unpaired_value_count(&self) -> usize {
+        self.trace_descriptor_unpaired_value_count
+    }
+
+    pub fn trace_descriptor_unpaired_high32_nonzero_count(&self) -> usize {
+        self.trace_descriptor_unpaired_high32_nonzero_count
+    }
+
+    pub fn trace_descriptor_unpaired_high32_nonzero_row_count(&self) -> usize {
+        self.trace_descriptor_unpaired_high32_nonzero_row_count
     }
 
     pub fn trace_single_row_report_count(&self) -> usize {
@@ -859,6 +879,9 @@ impl GuestPcDeviceSourceBuildTiming {
 pub(crate) struct ZiskMainDeviceTraceDescriptors {
     descriptor_words: usize,
     descriptor_rows: usize,
+    unpaired_value_count: usize,
+    unpaired_high32_nonzero_count: usize,
+    unpaired_high32_nonzero_row_count: usize,
     row_count: usize,
     column_count: usize,
     terminal_pc: u64,
@@ -902,6 +925,9 @@ impl ZiskMainDeviceTraceDescriptors {
         Self {
             descriptor_words,
             descriptor_rows: 0,
+            unpaired_value_count: 0,
+            unpaired_high32_nonzero_count: 0,
+            unpaired_high32_nonzero_row_count: 0,
             row_count,
             column_count,
             terminal_pc,
@@ -915,6 +941,18 @@ impl ZiskMainDeviceTraceDescriptors {
 
     pub(crate) fn descriptor_word_count(&self) -> usize {
         self.descriptor_words
+    }
+
+    pub(crate) fn unpaired_value_count(&self) -> usize {
+        self.unpaired_value_count
+    }
+
+    pub(crate) fn unpaired_high32_nonzero_count(&self) -> usize {
+        self.unpaired_high32_nonzero_count
+    }
+
+    pub(crate) fn unpaired_high32_nonzero_row_count(&self) -> usize {
+        self.unpaired_high32_nonzero_row_count
     }
 
     pub(crate) fn row_count(&self) -> usize {
@@ -931,6 +969,18 @@ impl ZiskMainDeviceTraceDescriptors {
 
     pub(crate) fn words(&self) -> &[u64] {
         &self.words
+    }
+
+    fn record_unpaired_high32_stats(&mut self, values: [u64; 7]) {
+        let high32_nonzero_count = values
+            .iter()
+            .filter(|&&value| zisk_main_high32_nonzero(value))
+            .count();
+        self.unpaired_value_count += values.len();
+        self.unpaired_high32_nonzero_count += high32_nonzero_count;
+        if high32_nonzero_count != 0 {
+            self.unpaired_high32_nonzero_row_count += 1;
+        }
     }
 }
 
@@ -1101,6 +1151,13 @@ fn append_main_device_trace_descriptor(
     let b_prev_mem_step = values.register_accesses.b_prev_mem_step.unwrap_or(0);
     let store_prev_mem_step = values.register_accesses.store_prev_mem_step.unwrap_or(0);
     let store_prev_value = values.register_accesses.store_prev_value.unwrap_or(0);
+    descriptors.record_unpaired_high32_stats(zisk_main_unpaired_descriptor_values(
+        values,
+        a_payload,
+        b_payload,
+        store_payload,
+        store_prev_value,
+    ));
     if descriptors.descriptor_words == ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS {
         if let Some(compact_words) = zisk_main_compact_device_trace_descriptor_words(
             values,
@@ -1145,6 +1202,30 @@ fn append_main_device_trace_descriptor(
         },
     )?;
     Ok(())
+}
+
+#[cfg(feature = "cuda")]
+fn zisk_main_unpaired_descriptor_values(
+    values: &ZiskMainReportTraceValues,
+    a_payload: u64,
+    b_payload: u64,
+    store_payload: u64,
+    store_prev_value: u64,
+) -> [u64; 7] {
+    [
+        values.a,
+        values.b,
+        values.c,
+        a_payload,
+        b_payload,
+        store_payload,
+        store_prev_value,
+    ]
+}
+
+#[cfg(feature = "cuda")]
+fn zisk_main_high32_nonzero(value: u64) -> bool {
+    value >> 32 != 0
 }
 
 #[cfg(feature = "cuda")]
@@ -4180,6 +4261,11 @@ fn record_trace_descriptor_width_counts(
         }
         _ => {}
     }
+    timing.trace_descriptor_unpaired_value_count += descriptors.unpaired_value_count();
+    timing.trace_descriptor_unpaired_high32_nonzero_count +=
+        descriptors.unpaired_high32_nonzero_count();
+    timing.trace_descriptor_unpaired_high32_nonzero_row_count +=
+        descriptors.unpaired_high32_nonzero_row_count();
 }
 
 fn record_trace_lowered_row_shape(

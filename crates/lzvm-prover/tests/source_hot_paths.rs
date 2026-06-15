@@ -4001,6 +4001,41 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         "guest PC backend timing should carry descriptor upload bytes, words, and rows"
     );
 
+    let stream_timing_fields = function_body(
+        &backend_source,
+        "struct GuestPcTraceStreamTiming",
+        "impl GuestPcTraceStreamTiming",
+    );
+    assert!(
+        stream_timing_fields.contains("trace_descriptor_unpaired_value_count")
+            && stream_timing_fields.contains("trace_descriptor_unpaired_high32_nonzero_count")
+            && stream_timing_fields.contains("trace_descriptor_unpaired_high32_nonzero_row_count"),
+        "guest PC stream timing should carry descriptor high-word occupancy"
+    );
+
+    let descriptor_fields = function_body(
+        &backend_source,
+        "struct ZiskMainDeviceTraceDescriptors",
+        "struct GuestPcTraceDeviceTraceStage",
+    );
+    assert!(
+        descriptor_fields.contains("unpaired_value_count")
+            && descriptor_fields.contains("unpaired_high32_nonzero_count")
+            && descriptor_fields.contains("unpaired_high32_nonzero_row_count"),
+        "guest PC descriptors should retain high-word occupancy counters"
+    );
+
+    let append_descriptor_body = function_body(
+        &backend_source,
+        "fn append_main_device_trace_descriptor",
+        "#[cfg(feature = \"cuda\")]\n#[allow(clippy::too_many_arguments)]",
+    );
+    assert!(
+        append_descriptor_body.contains("record_unpaired_high32_stats")
+            && append_descriptor_body.contains("zisk_main_unpaired_descriptor_values"),
+        "guest PC descriptor append should record high-word occupancy from unpaired descriptor fields"
+    );
+
     let material_body = function_body(
         &backend_source,
         "fn build_guest_pc_trace_stage_source_devices_from_device_material",
@@ -4027,6 +4062,20 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             && accumulator_fields.contains("device_source_descriptor_upload_word_count")
             && accumulator_fields.contains("device_source_descriptor_upload_row_count"),
         "trace timing accumulation should retain descriptor upload byte, word, and row counts"
+    );
+
+    let proof_trace_timing_fields = function_body(
+        &execution_source,
+        "pub struct ProveWitnessGuestPcTraceTiming",
+        "impl ProveWitnessGuestPcTraceTiming",
+    );
+    assert!(
+        proof_trace_timing_fields.contains("guest_trace_descriptor_unpaired_value_count")
+            && proof_trace_timing_fields
+                .contains("guest_trace_descriptor_unpaired_high32_nonzero_count")
+            && proof_trace_timing_fields
+                .contains("guest_trace_descriptor_unpaired_high32_nonzero_row_count"),
+        "proof guest PC timing should retain descriptor high-word occupancy"
     );
 
     let stage_timing_body = function_body(
@@ -4062,6 +4111,18 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "\"guest_device_source_descriptor_upload_rows\"",
             "guest_device_source_descriptor_upload_row_count()",
+        ),
+        (
+            "\"guest_trace_descriptor_unpaired_values\"",
+            "guest_trace_descriptor_unpaired_value_count()",
+        ),
+        (
+            "\"guest_trace_descriptor_unpaired_high32_nonzero_values\"",
+            "guest_trace_descriptor_unpaired_high32_nonzero_count()",
+        ),
+        (
+            "\"guest_trace_descriptor_unpaired_high32_nonzero_rows\"",
+            "guest_trace_descriptor_unpaired_high32_nonzero_row_count()",
         ),
         (
             "\"guest_stage_leaf_hash_rows\"",

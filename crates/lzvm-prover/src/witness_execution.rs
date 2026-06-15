@@ -455,6 +455,9 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_descriptor_row_count: usize,
     guest_trace_descriptor_compact_row_count: usize,
     guest_trace_descriptor_wide_row_count: usize,
+    guest_trace_descriptor_unpaired_value_count: usize,
+    guest_trace_descriptor_unpaired_high32_nonzero_count: usize,
+    guest_trace_descriptor_unpaired_high32_nonzero_row_count: usize,
     guest_trace_single_row_report_count: usize,
     guest_trace_multi_row_report_count: usize,
     guest_trace_pending_dma_report_count: usize,
@@ -647,6 +650,12 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_descriptor_compact_row_count: stream_timing
                 .trace_descriptor_compact_row_count(),
             guest_trace_descriptor_wide_row_count: stream_timing.trace_descriptor_wide_row_count(),
+            guest_trace_descriptor_unpaired_value_count: stream_timing
+                .trace_descriptor_unpaired_value_count(),
+            guest_trace_descriptor_unpaired_high32_nonzero_count: stream_timing
+                .trace_descriptor_unpaired_high32_nonzero_count(),
+            guest_trace_descriptor_unpaired_high32_nonzero_row_count: stream_timing
+                .trace_descriptor_unpaired_high32_nonzero_row_count(),
             guest_trace_single_row_report_count: stream_timing.trace_single_row_report_count(),
             guest_trace_multi_row_report_count: stream_timing.trace_multi_row_report_count(),
             guest_trace_pending_dma_report_count: stream_timing.trace_pending_dma_report_count(),
@@ -1011,6 +1020,18 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_descriptor_wide_row_count(&self) -> usize {
         self.guest_trace_descriptor_wide_row_count
+    }
+
+    pub fn guest_trace_descriptor_unpaired_value_count(&self) -> usize {
+        self.guest_trace_descriptor_unpaired_value_count
+    }
+
+    pub fn guest_trace_descriptor_unpaired_high32_nonzero_count(&self) -> usize {
+        self.guest_trace_descriptor_unpaired_high32_nonzero_count
+    }
+
+    pub fn guest_trace_descriptor_unpaired_high32_nonzero_row_count(&self) -> usize {
+        self.guest_trace_descriptor_unpaired_high32_nonzero_row_count
     }
 
     pub fn guest_trace_single_row_report_count(&self) -> usize {
