@@ -51,6 +51,50 @@ fn cuda_host_exposes_async_device_to_pinned_host_copy() {
 }
 
 #[test]
+fn cuda_host_exposes_graph_capture_replay_runtime() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let runtime_source = std::fs::read_to_string(crate_root.join("native/cuda_host_runtime.cpp"))
+        .expect("cuda host runtime source should read");
+    let header_source = std::fs::read_to_string(crate_root.join("native/cuda_host.hpp"))
+        .expect("cuda host header should read");
+    let rust_source = std::fs::read_to_string(crate_root.join("src/cuda_stream.rs"))
+        .expect("CUDA stream source should read");
+
+    for symbol in [
+        "cudaStreamBeginCapture",
+        "cudaStreamEndCapture",
+        "cudaGraphInstantiate",
+        "cudaGraphLaunch",
+        "cudaGraphDestroy",
+        "cudaGraphExecDestroy",
+    ] {
+        assert!(
+            runtime_source.contains(symbol),
+            "CUDA runtime layer should expose {symbol}"
+        );
+    }
+
+    for symbol in [
+        "lzvm_cuda_stream_begin_capture",
+        "lzvm_cuda_stream_end_capture",
+        "lzvm_cuda_graph_destroy",
+        "lzvm_cuda_graph_instantiate",
+        "lzvm_cuda_graph_exec_destroy",
+        "lzvm_cuda_graph_launch",
+    ] {
+        assert!(
+            header_source.contains(symbol) && rust_source.contains(symbol),
+            "CUDA graph wrapper should bind {symbol}"
+        );
+    }
+
+    assert!(
+        rust_source.contains("CudaGraph") && rust_source.contains("CudaGraphExec"),
+        "CUDA graph handles should have Rust RAII wrappers"
+    );
+}
+
+#[test]
 fn allocator_does_not_wait_to_reuse_pending_small_blocks() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("native/cuda_host.cpp");

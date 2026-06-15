@@ -59,6 +59,90 @@ extern "C" int lzvm_cuda_stream_synchronize(void* stream) {
     }
 }
 
+extern "C" int lzvm_cuda_stream_begin_capture(void* stream) {
+    try {
+        if (stream == nullptr) {
+            return -1;
+        }
+        return static_cast<int>(cudaStreamBeginCapture(
+            static_cast<cudaStream_t>(stream), cudaStreamCaptureModeThreadLocal));
+    } catch (...) {
+        return -1;
+    }
+}
+
+extern "C" int lzvm_cuda_stream_end_capture(void* stream, void** graph_out) {
+    try {
+        if (stream == nullptr || graph_out == nullptr) {
+            return -1;
+        }
+        *graph_out = nullptr;
+        cudaGraph_t graph = nullptr;
+        const int status = static_cast<int>(
+            cudaStreamEndCapture(static_cast<cudaStream_t>(stream), &graph));
+        if (status == 0) {
+            *graph_out = graph;
+        } else if (graph != nullptr) {
+            (void)cudaGraphDestroy(graph);
+        }
+        return status;
+    } catch (...) {
+        return -1;
+    }
+}
+
+extern "C" int lzvm_cuda_graph_destroy(void* graph) {
+    try {
+        if (graph == nullptr) {
+            return 0;
+        }
+        return static_cast<int>(cudaGraphDestroy(static_cast<cudaGraph_t>(graph)));
+    } catch (...) {
+        return -1;
+    }
+}
+
+extern "C" int lzvm_cuda_graph_instantiate(void* graph, void** exec_out) {
+    try {
+        if (graph == nullptr || exec_out == nullptr) {
+            return -1;
+        }
+        *exec_out = nullptr;
+        cudaGraphExec_t exec = nullptr;
+        const int status = static_cast<int>(
+            cudaGraphInstantiate(&exec, static_cast<cudaGraph_t>(graph), 0));
+        if (status == 0) {
+            *exec_out = exec;
+        }
+        return status;
+    } catch (...) {
+        return -1;
+    }
+}
+
+extern "C" int lzvm_cuda_graph_exec_destroy(void* exec) {
+    try {
+        if (exec == nullptr) {
+            return 0;
+        }
+        return static_cast<int>(cudaGraphExecDestroy(static_cast<cudaGraphExec_t>(exec)));
+    } catch (...) {
+        return -1;
+    }
+}
+
+extern "C" int lzvm_cuda_graph_launch(void* exec, void* stream) {
+    try {
+        if (exec == nullptr || stream == nullptr) {
+            return -1;
+        }
+        return static_cast<int>(
+            cudaGraphLaunch(static_cast<cudaGraphExec_t>(exec), static_cast<cudaStream_t>(stream)));
+    } catch (...) {
+        return -1;
+    }
+}
+
 extern "C" int lzvm_cuda_event_create(void** out) {
     try {
         if (out == nullptr) {
