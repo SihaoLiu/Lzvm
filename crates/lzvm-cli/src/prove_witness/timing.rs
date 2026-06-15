@@ -424,6 +424,12 @@ pub(super) fn record_cuda_copy_site_timing_entries(
         timings.record_count_dynamic(format!("{prefix}_calls"), stat.calls);
         timings.record_count_dynamic(format!("{prefix}_bytes"), stat.bytes);
         timings.record_count_dynamic(format!("{prefix}_max_bytes"), stat.max_bytes);
+        timings.record_count_dynamic(format!("{prefix}_wait_ns"), stat.wait_ns);
+        timings.record_count_dynamic(format!("{prefix}_max_wait_ns"), stat.max_wait_ns);
+        timings.record_count_dynamic(
+            format!("{prefix}_avg_wait_per_call_ns"),
+            average_wait_ns(stat.wait_ns, stat.calls),
+        );
     }
 }
 
@@ -466,12 +472,16 @@ fn record_average_wait_ns(
     wait_ns: usize,
     call_count: usize,
 ) {
-    let average = if call_count == 0 {
+    timings.record_count(name, average_wait_ns(wait_ns, call_count));
+}
+
+#[cfg(feature = "cuda")]
+fn average_wait_ns(wait_ns: usize, call_count: usize) -> usize {
+    if call_count == 0 {
         0
     } else {
         wait_ns / call_count
-    };
-    timings.record_count(name, average);
+    }
 }
 
 #[cfg(not(feature = "cuda"))]

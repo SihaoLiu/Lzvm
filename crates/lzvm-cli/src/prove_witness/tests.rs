@@ -179,6 +179,8 @@ fn writes_cuda_copy_site_timing_summary_lines() {
                 calls: 2,
                 bytes: 128,
                 max_bytes: 64,
+                wait_ns: 15,
+                max_wait_ns: 9,
             },
             lzvm_prover::CudaCopySiteStat {
                 label: "copy_prefix_from_u64_words",
@@ -187,6 +189,8 @@ fn writes_cuda_copy_site_timing_summary_lines() {
                 calls: 3,
                 bytes: 96,
                 max_bytes: 32,
+                wait_ns: 21,
+                max_wait_ns: 8,
             },
         ],
     );
@@ -199,9 +203,15 @@ fn writes_cuda_copy_site_timing_summary_lines() {
         "timing_cuda_copy_site_h2d_top_1_copy_from_upload_rs_37_calls=2\n",
         "timing_cuda_copy_site_h2d_top_1_copy_from_upload_rs_37_bytes=128\n",
         "timing_cuda_copy_site_h2d_top_1_copy_from_upload_rs_37_max_bytes=64\n",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_upload_rs_37_wait_ns=15\n",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_upload_rs_37_max_wait_ns=9\n",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_upload_rs_37_avg_wait_per_call_ns=7\n",
         "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_calls=3\n",
         "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_bytes=96\n",
         "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_max_bytes=32\n",
+        "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_wait_ns=21\n",
+        "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_max_wait_ns=8\n",
+        "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_avg_wait_per_call_ns=7\n",
     ] {
         assert!(stdout.contains(expected), "missing {expected} in {stdout}");
     }

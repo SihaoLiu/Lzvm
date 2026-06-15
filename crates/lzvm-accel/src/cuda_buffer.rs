@@ -935,10 +935,16 @@ impl CudaDeviceBuffer {
         }
         #[cfg(target_endian = "little")]
         {
-            super::cuda_copy_sites::record_h2d_copy_site("copy_from_u64_words", self.len);
-            let code =
-                unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, words.as_ptr().cast(), self.len) };
-            cuda_status(code)
+            super::cuda_copy_sites::record_h2d_copy_site_timing(
+                "copy_from_u64_words",
+                self.len,
+                || {
+                    let code = unsafe {
+                        lzvm_cuda_copy_h2d_bytes(self.ptr, words.as_ptr().cast(), self.len)
+                    };
+                    cuda_status(code)
+                },
+            )
         }
         #[cfg(not(target_endian = "little"))]
         {
@@ -972,16 +978,21 @@ impl CudaDeviceBuffer {
         }
         #[cfg(target_endian = "little")]
         {
-            super::cuda_copy_sites::record_h2d_copy_site("copy_from_u64_words_on_stream", self.len);
-            let code = unsafe {
-                lzvm_cuda_copy_h2d_bytes_on_stream(
-                    self.ptr,
-                    words.as_ptr().cast(),
-                    self.len,
-                    stream.as_raw(),
-                )
-            };
-            cuda_status(code)
+            super::cuda_copy_sites::record_h2d_copy_site_timing(
+                "copy_from_u64_words_on_stream",
+                self.len,
+                || {
+                    let code = unsafe {
+                        lzvm_cuda_copy_h2d_bytes_on_stream(
+                            self.ptr,
+                            words.as_ptr().cast(),
+                            self.len,
+                            stream.as_raw(),
+                        )
+                    };
+                    cuda_status(code)
+                },
+            )
         }
         #[cfg(not(target_endian = "little"))]
         {
@@ -1003,10 +1014,16 @@ impl CudaDeviceBuffer {
         }
         #[cfg(target_endian = "little")]
         {
-            super::cuda_copy_sites::record_h2d_copy_site("copy_prefix_from_u64_words", copy_len);
-            let code =
-                unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, words.as_ptr().cast(), copy_len) };
-            cuda_status(code)
+            super::cuda_copy_sites::record_h2d_copy_site_timing(
+                "copy_prefix_from_u64_words",
+                copy_len,
+                || {
+                    let code = unsafe {
+                        lzvm_cuda_copy_h2d_bytes(self.ptr, words.as_ptr().cast(), copy_len)
+                    };
+                    cuda_status(code)
+                },
+            )
         }
         #[cfg(not(target_endian = "little"))]
         {
@@ -1017,10 +1034,16 @@ impl CudaDeviceBuffer {
                     rhs: bytes.len(),
                 });
             }
-            super::cuda_copy_sites::record_h2d_copy_site("copy_prefix_from_u64_words", copy_len);
-            let code =
-                unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, bytes.as_ptr().cast(), copy_len) };
-            cuda_status(code)
+            super::cuda_copy_sites::record_h2d_copy_site_timing(
+                "copy_prefix_from_u64_words",
+                copy_len,
+                || {
+                    let code = unsafe {
+                        lzvm_cuda_copy_h2d_bytes(self.ptr, bytes.as_ptr().cast(), copy_len)
+                    };
+                    cuda_status(code)
+                },
+            )
         }
     }
 
@@ -1040,10 +1063,16 @@ impl CudaDeviceBuffer {
         {
             let input =
                 unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<u8>(), copy_len) };
-            super::cuda_copy_sites::record_h2d_copy_site("copy_prefix_from_u32_words", copy_len);
-            let code =
-                unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, input.as_ptr().cast(), copy_len) };
-            cuda_status(code)
+            super::cuda_copy_sites::record_h2d_copy_site_timing(
+                "copy_prefix_from_u32_words",
+                copy_len,
+                || {
+                    let code = unsafe {
+                        lzvm_cuda_copy_h2d_bytes(self.ptr, input.as_ptr().cast(), copy_len)
+                    };
+                    cuda_status(code)
+                },
+            )
         }
         #[cfg(not(target_endian = "little"))]
         {
@@ -1051,10 +1080,16 @@ impl CudaDeviceBuffer {
             for word in words {
                 bytes.extend_from_slice(&word.to_le_bytes());
             }
-            super::cuda_copy_sites::record_h2d_copy_site("copy_prefix_from_u32_words", copy_len);
-            let code =
-                unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, bytes.as_ptr().cast(), copy_len) };
-            cuda_status(code)
+            super::cuda_copy_sites::record_h2d_copy_site_timing(
+                "copy_prefix_from_u32_words",
+                copy_len,
+                || {
+                    let code = unsafe {
+                        lzvm_cuda_copy_h2d_bytes(self.ptr, bytes.as_ptr().cast(), copy_len)
+                    };
+                    cuda_status(code)
+                },
+            )
         }
     }
 
@@ -1179,18 +1214,23 @@ impl CudaDeviceBuffer {
         }
         #[cfg(target_endian = "little")]
         {
-            super::cuda_copy_sites::record_h2d_copy_site("copy_from_row_major_u64_slice", self.len);
-            let code = unsafe {
-                lzvm_cuda_copy_h2d_row_slice_words(
-                    self.ptr,
-                    words.as_ptr().cast(),
-                    row_count,
-                    source_width_words,
-                    start_word,
-                    slice_width_words,
-                )
-            };
-            cuda_status(code)
+            super::cuda_copy_sites::record_h2d_copy_site_timing(
+                "copy_from_row_major_u64_slice",
+                self.len,
+                || {
+                    let code = unsafe {
+                        lzvm_cuda_copy_h2d_row_slice_words(
+                            self.ptr,
+                            words.as_ptr().cast(),
+                            row_count,
+                            source_width_words,
+                            start_word,
+                            slice_width_words,
+                        )
+                    };
+                    cuda_status(code)
+                },
+            )
         }
         #[cfg(not(target_endian = "little"))]
         {
@@ -1425,9 +1465,11 @@ impl CudaDeviceBuffer {
         if self.len == 0 {
             return Ok(());
         }
-        super::cuda_copy_sites::record_h2d_copy_site("copy_from", self.len);
-        let code = unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, input.as_ptr().cast(), self.len) };
-        cuda_status(code)
+        super::cuda_copy_sites::record_h2d_copy_site_timing("copy_from", self.len, || {
+            let code =
+                unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, input.as_ptr().cast(), self.len) };
+            cuda_status(code)
+        })
     }
 
     pub fn copy_to(&self, output: &mut [u8]) -> Result<(), AccelError> {

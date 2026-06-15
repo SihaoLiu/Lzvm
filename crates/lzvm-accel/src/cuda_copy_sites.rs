@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::panic::Location;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 const COPY_SITE_STATS_ENV: &str = "LZVM_CUDA_COPY_SITE_STATS";
 const ENABLED_UNKNOWN: u8 = 0;
@@ -27,6 +28,8 @@ pub struct CudaCopySiteStat {
     pub calls: usize,
     pub bytes: usize,
     pub max_bytes: usize,
+    pub wait_ns: usize,
+    pub max_wait_ns: usize,
 }
 
 fn copy_site_stats() -> &'static Mutex<BTreeMap<CudaCopySiteKey, CudaCopySiteStat>> {
@@ -57,11 +60,12 @@ fn copy_site_stats_enabled() -> bool {
     }
 }
 
+fn duration_ns(duration: Duration) -> usize {
+    usize::try_from(duration.as_nanos()).unwrap_or(usize::MAX)
+}
+
 #[track_caller]
-pub(crate) fn record_h2d_copy_site(label: &'static str, bytes: usize) {
-    if !copy_site_stats_enabled() {
-        return;
-    }
+fn record_h2d_copy_site(label: &'static str, bytes: usize, wait_ns: usize) {
     let location = Location::caller();
     let key = CudaCopySiteKey {
         label,
@@ -78,10 +82,29 @@ pub(crate) fn record_h2d_copy_site(label: &'static str, bytes: usize) {
         calls: 0,
         bytes: 0,
         max_bytes: 0,
+        wait_ns: 0,
+        max_wait_ns: 0,
     });
     entry.calls = entry.calls.saturating_add(1);
     entry.bytes = entry.bytes.saturating_add(bytes);
     entry.max_bytes = entry.max_bytes.max(bytes);
+    entry.wait_ns = entry.wait_ns.saturating_add(wait_ns);
+    entry.max_wait_ns = entry.max_wait_ns.max(wait_ns);
+}
+
+#[track_caller]
+pub(crate) fn record_h2d_copy_site_timing<T>(
+    label: &'static str,
+    bytes: usize,
+    run: impl FnOnce() -> T,
+) -> T {
+    if !copy_site_stats_enabled() {
+        return run();
+    }
+    let started = Instant::now();
+    let result = run();
+    record_h2d_copy_site(label, bytes, duration_ns(started.elapsed()));
+    result
 }
 
 pub fn cuda_copy_site_stats_snapshot() -> Vec<CudaCopySiteStat> {

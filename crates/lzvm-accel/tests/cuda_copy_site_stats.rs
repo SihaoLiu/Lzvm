@@ -61,6 +61,18 @@ fn cuda_copy_site_stats_records_enabled_h2d_upload_callers() {
     assert_eq!(stat.calls, 2);
     assert_eq!(stat.bytes, 128);
     assert_eq!(stat.max_bytes, 64);
+    assert!(
+        stat.wait_ns > 0,
+        "copy-site stat should record host API wait time: {stat:?}"
+    );
+    assert!(
+        stat.max_wait_ns > 0,
+        "copy-site stat should record max host API wait time: {stat:?}"
+    );
+    assert!(
+        stat.wait_ns >= stat.max_wait_ns,
+        "total wait should dominate max wait: {stat:?}"
+    );
     assert!(stat.line > 0);
     assert!(
         stat.file.ends_with("cuda_copy_site_stats.rs"),
