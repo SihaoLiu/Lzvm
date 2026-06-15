@@ -20,6 +20,7 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
         "OSRT_CALLCHAINS",
         "cuda_memcpy_callchain_hotspots",
         "d2h_cuda_memcpy_callchain_hotspots",
+        "top_h2d_bulk_callchain_hotspots",
         "CUPTI_ACTIVITY_KIND_KERNEL",
         "d2h_wait_preceding_kernel_hotspots",
         "previous_kernel",
@@ -59,6 +60,9 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
             && stdout.contains("api,direction,bytes")
             && stdout.contains("d2h_cuda_memcpy_callchain_hotspots")
             && stdout.contains("api,bytes,calls")
+            && stdout.contains("top_h2d_bulk_callchain_hotspots")
+            && stdout.contains("cudaMemcpy_v3020,2097152")
+            && stdout.contains("upload_trace_source_to_device")
             && stdout.contains("cudaMemcpy_v3020,Device-to-Host")
             && stdout.contains("copy_root_to_host")
             && stdout.contains("extract_opening_rows")

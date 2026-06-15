@@ -272,6 +272,39 @@ def top_h2d_bulk_upload_summary(conn: sqlite3.Connection) -> sqlite3.Row | None:
     ).fetchone()
 
 
+def h2d_bulk_callchain_summary(
+    conn: sqlite3.Connection,
+    bulk_bytes: int | None,
+    limit: int,
+) -> list[sqlite3.Row]:
+    if bulk_bytes is None or not table_exists(conn, CALLCHAIN_TABLE):
+        return []
+    return conn.execute(
+        f"""
+        select
+            coalesce(s.value, 'nameId=' || r.nameId) as api,
+            m.bytes as bytes,
+            r.callchainId as callchain_id,
+            count(*) as calls,
+            sum(r.end - r.start) as host_ns,
+            sum(m.end - m.start) as gpu_ns,
+            max(r.end - r.start) as max_host_ns
+        from {RUNTIME_TABLE} r
+        join {STRING_TABLE} s on s.id = r.nameId
+        join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
+        left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
+        where s.value like 'cudaMemcpy%'
+          and coalesce(e.label, 'copyKind=' || m.copyKind) = 'Host-to-Device'
+          and m.bytes = ?
+          and r.callchainId is not null
+        group by api, m.bytes, r.callchainId
+        order by host_ns desc, calls desc, api asc, m.bytes asc
+        limit ?
+        """,
+        (bulk_bytes, limit),
+    ).fetchall()
+
+
 def callchain_frame_rows(
     conn: sqlite3.Connection,
     callchain_id: int,
@@ -415,6 +448,35 @@ def print_d2h_callchains(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> N
         )
     if not rows:
         print("none,0,0,0.000,0.000,0.000,0,unavailable,unavailable")
+
+
+def print_h2d_bulk_callchains(
+    conn: sqlite3.Connection,
+    rows: list[sqlite3.Row],
+    bulk_bytes: int | None,
+) -> None:
+    print()
+    print("top_h2d_bulk_callchain_hotspots")
+    print(
+        "api,bytes,calls,host_api_ms,gpu_memcpy_ms,max_host_api_ms,"
+        "callchain_id,app_frame,frames"
+    )
+    for row in rows:
+        callchain_id = int(row["callchain_id"])
+        host_ns = int(row["host_ns"] or 0)
+        gpu_ns = int(row["gpu_ns"] or 0)
+        print(
+            f"{row['api']},{int(row['bytes'] or 0)},"
+            f"{int(row['calls'] or 0)},{ms(host_ns):.3f},{ms(gpu_ns):.3f},"
+            f"{ms(row['max_host_ns']):.3f},{callchain_id},"
+            f"{csv_cell(first_application_frame(conn, callchain_id))},"
+            f"{csv_cell(callchain_frames(conn, callchain_id, max_frames=12))}"
+        )
+    if not rows:
+        print(
+            f"none,{int(bulk_bytes or 0)},0,0.000,0.000,0.000,"
+            "0,unavailable,unavailable"
+        )
 
 
 def print_d2h_preceding_kernels(rows: list[sqlite3.Row]) -> None:
@@ -563,12 +625,19 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     d2h_callchain_rows = d2h_memcpy_callchain_summary(conn, limit)
     d2h_rows = d2h_preceding_kernel_summary(conn, limit)
     top_h2d_bulk = top_h2d_bulk_upload_summary(conn)
+    top_h2d_bulk_bytes = int(top_h2d_bulk["bytes"]) if top_h2d_bulk else None
+    h2d_bulk_callchain_rows = h2d_bulk_callchain_summary(
+        conn,
+        top_h2d_bulk_bytes,
+        limit,
+    )
     print(f"profile={label}")
     print_runtime(runtime_rows)
     print_gpu(gpu_rows)
     print_correlated(correlated_rows)
     print_callchains(conn, callchain_rows)
     print_d2h_callchains(conn, d2h_callchain_rows)
+    print_h2d_bulk_callchains(conn, h2d_bulk_callchain_rows, top_h2d_bulk_bytes)
     print_d2h_preceding_kernels(d2h_rows)
     print_transfer_triage(runtime_rows, gpu_rows, correlated_rows, d2h_rows, top_h2d_bulk)
     print_callchain_hint(conn)
@@ -643,6 +712,9 @@ def build_self_test_db() -> sqlite3.Connection:
     conn.execute(
         f"update {RUNTIME_TABLE} set callchainId = 101 where correlationId = 11"
     )
+    conn.execute(
+        f"update {RUNTIME_TABLE} set callchainId = 102 where correlationId = 13"
+    )
     conn.executemany(
         f"""
         insert into {MEMCPY_TABLE} (start, end, bytes, copyKind, correlationId, streamId)
@@ -677,6 +749,8 @@ def build_self_test_db() -> sqlite3.Connection:
             (100, "commit_stage_root", "lzvm", 0, 0, 0, 0, 0, 0, 1),
             (101, "extract_opening_rows", "lzvm", 0, 0, 0, 0, 0, 0, 0),
             (101, "finish_witness_opening", "lzvm", 0, 0, 0, 0, 0, 0, 1),
+            (102, "upload_trace_source_to_device", "lzvm", 0, 0, 0, 0, 0, 0, 0),
+            (102, "commit_stage_inputs", "lzvm", 0, 0, 0, 0, 0, 0, 1),
         ],
     )
     return conn
