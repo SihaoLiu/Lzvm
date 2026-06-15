@@ -405,6 +405,49 @@ fn cuda_expands_zisk_main_trace_descriptors_on_stream() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_expands_trace_descriptors_from_host_on_stream() {
+    const WORDS_PER_DESCRIPTOR: usize = 11;
+    let descriptors = (0..(WORDS_PER_DESCRIPTOR * 2))
+        .map(|word| (word as u64 + 3) * 5)
+        .collect::<Vec<_>>();
+    let expected = CudaDeviceBuffer::from_zisk_main_trace_descriptors(
+        &descriptors,
+        WORDS_PER_DESCRIPTOR,
+        2,
+        4,
+        39,
+        0x4000,
+    )
+    .expect("default-stream host descriptor expansion should run")
+    .to_u64_words()
+    .expect("default-stream expanded trace should download");
+    let stream = CudaStream::new().expect("stream should create");
+
+    let pending = unsafe {
+        CudaDeviceBuffer::begin_trace_descriptor_expansion_on_stream(
+            &descriptors,
+            WORDS_PER_DESCRIPTOR,
+            2,
+            4,
+            39,
+            0x4000,
+            &stream,
+        )
+    }
+    .expect("stream host descriptor expansion should enqueue");
+    stream
+        .synchronize()
+        .expect("stream host descriptor expansion should finish");
+    let actual = pending
+        .into_output()
+        .to_u64_words()
+        .expect("stream-expanded trace should download");
+
+    assert_same_words(&actual, &expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_rejects_mismatched_vector_lengths() {
     let error = cuda_goldilocks_add(&[1, 2, 3], &[4, 5]).expect_err("lengths should be checked");
 

@@ -411,6 +411,26 @@ pub struct CudaDeviceBuffer {
     len: usize,
 }
 
+#[derive(Debug)]
+pub struct CudaPendingTraceDescriptorExpansion {
+    descriptor_buffer: CudaDeviceBuffer,
+    output_buffer: CudaDeviceBuffer,
+}
+
+impl CudaPendingTraceDescriptorExpansion {
+    pub fn output(&self) -> &CudaDeviceBuffer {
+        &self.output_buffer
+    }
+
+    pub fn into_output(self) -> CudaDeviceBuffer {
+        self.output_buffer
+    }
+
+    pub fn descriptor_buffer_len(&self) -> usize {
+        self.descriptor_buffer.len()
+    }
+}
+
 // Device memory ownership is tied to this handle; shared Rust references do not
 // expose host-side mutation, and CUDA kernels/copies synchronize through the
 // CUDA runtime wrappers used by this crate.
@@ -829,6 +849,52 @@ impl CudaDeviceBuffer {
         };
         cuda_status(code)?;
         Ok(buffer)
+    }
+
+    /// Enqueues host descriptor upload followed by descriptor expansion on `stream`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep `descriptors`, the returned pending object, and
+    /// `stream` alive until the stream has completed the queued copy and
+    /// kernel, and must not read the pending output before synchronizing the
+    /// stream or an event recorded after this call.
+    pub unsafe fn begin_trace_descriptor_expansion_on_stream(
+        descriptors: &[u64],
+        descriptor_words: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        stream: &CudaStream,
+    ) -> Result<CudaPendingTraceDescriptorExpansion, AccelError> {
+        let descriptor_byte_len = u64_word_byte_len(descriptors.len())?;
+        validate_zisk_main_trace_descriptor_device_shape(
+            descriptor_byte_len,
+            descriptor_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+        )?;
+        let mut descriptor_buffer = Self::new(descriptor_byte_len)?;
+        unsafe {
+            descriptor_buffer.copy_from_u64_words_on_stream(descriptors, stream)?;
+        }
+        let output_buffer = unsafe {
+            Self::from_zisk_main_trace_descriptors_device_on_stream(
+                &descriptor_buffer,
+                descriptor_words,
+                descriptor_count,
+                row_count,
+                row_width_words,
+                terminal_pc,
+                stream,
+            )?
+        };
+        Ok(CudaPendingTraceDescriptorExpansion {
+            descriptor_buffer,
+            output_buffer,
+        })
     }
 
     pub fn from_state_prefix_u64_words(
