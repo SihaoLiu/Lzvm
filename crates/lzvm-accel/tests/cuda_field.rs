@@ -43,7 +43,7 @@ use lzvm_accel::{
     cuda_poseidon2_width8_merkle_digest_selected_parent_device,
     cuda_poseidon2_width8_merkle_opening_path_device, cuda_poseidon2_width8_merkle_parent_device,
     cuda_poseidon2_width8_merkle_root_device, cuda_setup_init, AccelError, CudaDeviceBuffer,
-    CudaRowMajorColumnView,
+    CudaRowMajorColumnView, CudaStream,
 };
 #[cfg(feature = "cuda")]
 use lzvm_crypto::keccak256;
@@ -355,6 +355,50 @@ fn cuda_expands_zisk_main_trace_descriptors() {
         expected[base + 13] = 1;
         expected[base + 20] = 1;
     }
+
+    assert_same_words(&actual, &expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_expands_zisk_main_trace_descriptors_on_stream() {
+    const WORDS_PER_DESCRIPTOR: usize = 11;
+    let descriptors = (0..(WORDS_PER_DESCRIPTOR * 2))
+        .map(|word| word as u64)
+        .collect::<Vec<_>>();
+    let descriptor_buffer =
+        CudaDeviceBuffer::from_u64_words(&descriptors).expect("descriptors should upload");
+    let expected = CudaDeviceBuffer::from_zisk_main_trace_descriptors_device(
+        &descriptor_buffer,
+        WORDS_PER_DESCRIPTOR,
+        2,
+        4,
+        39,
+        0x3000,
+    )
+    .expect("default-stream descriptor expansion should run")
+    .to_u64_words()
+    .expect("default-stream expanded trace should download");
+    let stream = CudaStream::new().expect("stream should create");
+
+    let actual_buffer = unsafe {
+        CudaDeviceBuffer::from_zisk_main_trace_descriptors_device_on_stream(
+            &descriptor_buffer,
+            WORDS_PER_DESCRIPTOR,
+            2,
+            4,
+            39,
+            0x3000,
+            &stream,
+        )
+    }
+    .expect("stream descriptor expansion should launch");
+    stream
+        .synchronize()
+        .expect("stream descriptor expansion should finish");
+    let actual = actual_buffer
+        .to_u64_words()
+        .expect("stream-expanded trace should download");
 
     assert_same_words(&actual, &expected);
 }

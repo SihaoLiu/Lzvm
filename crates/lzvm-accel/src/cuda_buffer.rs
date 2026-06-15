@@ -134,6 +134,16 @@ unsafe extern "C" {
         row_width_words: usize,
         terminal_pc: u64,
     ) -> i32;
+    fn lzvm_cuda_expand_zisk_main_trace_descriptors_on_stream(
+        dst: *mut u64,
+        descriptors: *const u64,
+        descriptor_words: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        stream: *mut c_void,
+    ) -> i32;
 }
 
 #[cfg(not(target_endian = "little"))]
@@ -148,6 +158,45 @@ fn u64_words_to_bytes(words: &[u64]) -> Vec<u8> {
 fn zisk_main_trace_descriptor_words_supported(descriptor_words: usize) -> bool {
     descriptor_words == ZISK_MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS
         || descriptor_words == ZISK_MAIN_TRACE_WIDE_DESCRIPTOR_WORDS
+}
+
+fn validate_zisk_main_trace_descriptor_device_shape(
+    descriptor_byte_len: usize,
+    descriptor_words: usize,
+    descriptor_count: usize,
+    row_count: usize,
+    row_width_words: usize,
+) -> Result<usize, AccelError> {
+    if !zisk_main_trace_descriptor_words_supported(descriptor_words)
+        || row_width_words != ZISK_MAIN_TRACE_WIDTH_WORDS
+        || descriptor_count > row_count
+    {
+        return Err(AccelError::InvalidDomain {
+            bits: descriptor_words,
+            len: descriptor_count,
+        });
+    }
+    let expected_descriptor_words =
+        descriptor_count
+            .checked_mul(descriptor_words)
+            .ok_or(AccelError::InvalidDomain {
+                bits: descriptor_words,
+                len: descriptor_count,
+            })?;
+    let expected_descriptor_len = u64_word_byte_len(expected_descriptor_words)?;
+    if descriptor_byte_len != expected_descriptor_len {
+        return Err(AccelError::LengthMismatch {
+            lhs: descriptor_byte_len,
+            rhs: expected_descriptor_len,
+        });
+    }
+    let output_words = row_count
+        .checked_mul(row_width_words)
+        .ok_or(AccelError::InvalidDomain {
+            bits: row_width_words,
+            len: row_count,
+        })?;
+    u64_word_byte_len(output_words)
 }
 
 #[cfg(not(target_endian = "little"))]
@@ -712,37 +761,14 @@ impl CudaDeviceBuffer {
         row_width_words: usize,
         terminal_pc: u64,
     ) -> Result<Self, AccelError> {
-        if !zisk_main_trace_descriptor_words_supported(descriptor_words)
-            || row_width_words != ZISK_MAIN_TRACE_WIDTH_WORDS
-            || descriptor_count > row_count
-        {
-            return Err(AccelError::InvalidDomain {
-                bits: descriptor_words,
-                len: descriptor_count,
-            });
-        }
-        let expected_descriptor_words =
-            descriptor_count
-                .checked_mul(descriptor_words)
-                .ok_or(AccelError::InvalidDomain {
-                    bits: descriptor_words,
-                    len: descriptor_count,
-                })?;
-        let expected_descriptor_len = u64_word_byte_len(expected_descriptor_words)?;
-        if descriptors.len() != expected_descriptor_len {
-            return Err(AccelError::LengthMismatch {
-                lhs: descriptors.len(),
-                rhs: expected_descriptor_len,
-            });
-        }
-        let output_words =
-            row_count
-                .checked_mul(row_width_words)
-                .ok_or(AccelError::InvalidDomain {
-                    bits: row_width_words,
-                    len: row_count,
-                })?;
-        let buffer = Self::new(u64_word_byte_len(output_words)?)?;
+        let output_byte_len = validate_zisk_main_trace_descriptor_device_shape(
+            descriptors.len(),
+            descriptor_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+        )?;
+        let buffer = Self::new(output_byte_len)?;
         if row_count == 0 {
             return Ok(buffer);
         }
@@ -755,6 +781,50 @@ impl CudaDeviceBuffer {
                 row_count,
                 row_width_words,
                 terminal_pc,
+            )
+        };
+        cuda_status(code)?;
+        Ok(buffer)
+    }
+
+    /// Enqueues descriptor expansion on `stream`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep `descriptors` and the returned buffer alive until
+    /// the stream has completed the queued kernel, and must not read the
+    /// returned buffer before synchronizing the stream or an event recorded
+    /// after this call.
+    pub unsafe fn from_zisk_main_trace_descriptors_device_on_stream(
+        descriptors: &Self,
+        descriptor_words: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        stream: &CudaStream,
+    ) -> Result<Self, AccelError> {
+        let output_byte_len = validate_zisk_main_trace_descriptor_device_shape(
+            descriptors.len(),
+            descriptor_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+        )?;
+        let buffer = Self::new(output_byte_len)?;
+        if row_count == 0 {
+            return Ok(buffer);
+        }
+        let code = unsafe {
+            lzvm_cuda_expand_zisk_main_trace_descriptors_on_stream(
+                buffer.ptr.cast(),
+                descriptors.ptr.cast(),
+                descriptor_words,
+                descriptor_count,
+                row_count,
+                row_width_words,
+                terminal_pc,
+                stream.as_raw(),
             )
         };
         cuda_status(code)?;

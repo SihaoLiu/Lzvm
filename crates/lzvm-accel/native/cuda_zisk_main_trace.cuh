@@ -248,14 +248,15 @@ __global__ void expand_zisk_main_trace_descriptors_kernel(
     row[38] = 0;
 }
 
-extern "C" int lzvm_cuda_expand_zisk_main_trace_descriptors(
+int launch_expand_zisk_main_trace_descriptors(
     uint64_t* dst,
     const uint64_t* descriptors,
     size_t descriptor_words,
     size_t descriptor_count,
     size_t row_count,
     size_t row_width_words,
-    uint64_t terminal_pc) {
+    uint64_t terminal_pc,
+    cudaStream_t stream) {
     if (row_count == 0) {
         return 0;
     }
@@ -274,8 +275,47 @@ extern "C" int lzvm_cuda_expand_zisk_main_trace_descriptors(
     if (blocks > static_cast<size_t>(std::numeric_limits<int>::max())) {
         return -2;
     }
-    expand_zisk_main_trace_descriptors_kernel<<<static_cast<int>(blocks), kThreads>>>(
+    expand_zisk_main_trace_descriptors_kernel<<<static_cast<int>(blocks), kThreads, 0, stream>>>(
         dst, descriptors, descriptor_words, descriptor_count, row_count, terminal_pc);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
     return 0;
+}
+
+extern "C" int lzvm_cuda_expand_zisk_main_trace_descriptors(
+    uint64_t* dst,
+    const uint64_t* descriptors,
+    size_t descriptor_words,
+    size_t descriptor_count,
+    size_t row_count,
+    size_t row_width_words,
+    uint64_t terminal_pc) {
+    return launch_expand_zisk_main_trace_descriptors(
+        dst,
+        descriptors,
+        descriptor_words,
+        descriptor_count,
+        row_count,
+        row_width_words,
+        terminal_pc,
+        nullptr);
+}
+
+extern "C" int lzvm_cuda_expand_zisk_main_trace_descriptors_on_stream(
+    uint64_t* dst,
+    const uint64_t* descriptors,
+    size_t descriptor_words,
+    size_t descriptor_count,
+    size_t row_count,
+    size_t row_width_words,
+    uint64_t terminal_pc,
+    void* stream_raw) {
+    return launch_expand_zisk_main_trace_descriptors(
+        dst,
+        descriptors,
+        descriptor_words,
+        descriptor_count,
+        row_count,
+        row_width_words,
+        terminal_pc,
+        static_cast<cudaStream_t>(stream_raw));
 }

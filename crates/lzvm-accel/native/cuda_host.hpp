@@ -223,6 +223,15 @@ extern "C" int lzvm_cuda_expand_zisk_main_trace_descriptors(
     std::size_t row_count,
     std::size_t row_width_words,
     std::uint64_t terminal_pc);
+extern "C" int lzvm_cuda_expand_zisk_main_trace_descriptors_on_stream(
+    std::uint64_t* dst,
+    const std::uint64_t* descriptors,
+    std::size_t descriptor_words,
+    std::size_t descriptor_count,
+    std::size_t row_count,
+    std::size_t row_width_words,
+    std::uint64_t terminal_pc,
+    void* stream);
 extern "C" int lzvm_cuda_check_launch(void);
 extern "C" int lzvm_cuda_synchronize(void);
 extern "C" int lzvm_cuda_goldilocks_validate_canonical_words_device(
