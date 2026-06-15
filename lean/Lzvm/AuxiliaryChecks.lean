@@ -831,8 +831,10 @@ structure GpuRetainedLeafDigestLimitValidation where
 
 structure GpuRetainedDeviceCacheBudget where
   sourceBytes : Nat
+  descriptorBytes : Nat
   leafDigestBytes : Nat
   sourceLimit : Nat
+  descriptorLimit : Nat
   leafDigestLimit : Nat
   combinedLimit : Option Nat
 deriving DecidableEq, Repr
@@ -840,9 +842,11 @@ deriving DecidableEq, Repr
 def GpuRetainedDeviceCacheBudgetWithinLimits
     (budget : GpuRetainedDeviceCacheBudget) : Prop :=
   budget.sourceBytes <= budget.sourceLimit
+    /\ budget.descriptorBytes <= budget.descriptorLimit
     /\ budget.leafDigestBytes <= budget.leafDigestLimit
     /\ match budget.combinedLimit with
-      | some limit => budget.sourceBytes + budget.leafDigestBytes <= limit
+      | some limit =>
+          budget.sourceBytes + budget.descriptorBytes + budget.leafDigestBytes <= limit
       | none => True
 
 structure GpuRetainedDeviceCacheBudgetValidation where

@@ -1244,9 +1244,16 @@ fn cuda_compact_opening_reuses_retained_stage_source_device_buffer() {
     );
     assert!(
         values_source.contains("RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES")
-            && values_source.contains("retained_combined_device_cache_allows(next, leaf_bytes)")
-            && values_source.contains("retained_combined_device_cache_allows(source_bytes, next)"),
-        "retained source and leaf digest caches should keep a shared CUDA memory reserve for openings"
+            && values_source.contains(
+                "retained_combined_device_cache_allows(next, descriptor_bytes, leaf_bytes)"
+            )
+            && values_source.contains(
+                "retained_combined_device_cache_allows(source_bytes, next, leaf_bytes)"
+            )
+            && values_source.contains(
+                "retained_combined_device_cache_allows(source_bytes, descriptor_bytes, next)"
+            ),
+        "retained source, descriptor, and leaf digest caches should keep a shared CUDA memory reserve for openings"
     );
     assert!(
         values_source.contains("RETAINED_SOURCE_DEVICE_REGISTRY")
@@ -2703,10 +2710,24 @@ fn retained_cache_defaults_prioritize_leaf_digest_reuse() {
         "default leaf-digest retention should use the measured 22GB cap for opening reuse"
     );
     assert!(
+        values_source.contains(
+            "const DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize = 10_000_000_000"
+        ) && values_source.contains("const MAX_DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize")
+            && values_source.contains("DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES"),
+        "default descriptor-buffer retention should use the measured 10GB cap for small input reuse"
+    );
+    assert!(
         values_source.contains("RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES")
-            && values_source.contains("retained_combined_device_cache_allows(next, leaf_bytes)")
-            && values_source.contains("retained_combined_device_cache_allows(source_bytes, next)"),
-        "source and leaf digest defaults should remain bounded by the shared device-memory reserve"
+            && values_source.contains(
+                "retained_combined_device_cache_allows(next, descriptor_bytes, leaf_bytes)"
+            )
+            && values_source.contains(
+                "retained_combined_device_cache_allows(source_bytes, next, leaf_bytes)"
+            )
+            && values_source.contains(
+                "retained_combined_device_cache_allows(source_bytes, descriptor_bytes, next)"
+            ),
+        "source, descriptor, and leaf digest defaults should remain bounded by the shared device-memory reserve"
     );
 }
 
@@ -2953,7 +2974,7 @@ fn guest_pc_trace_segment_commit_has_single_helper() {
         helper_body.contains("build_preloaded_guest_pc_trace_stage_source_devices")
             && helper_body.contains("guest_pc_segment_commitment_trace")
             && helper_body.contains("run_prove_witness_commitments_from_trace_inner")
-            && helper_body.contains("output.commitments.identity.trace_instance_index"),
+            && work_body.contains("output.set_trace_instance_index(trace_instance_index)"),
         "segment commitment helper should preserve source-device setup, commitment execution, and trace identity assignment"
     );
 }
@@ -3062,12 +3083,15 @@ fn guest_pc_trace_segment_commit_uses_single_driver_entrypoint() {
     let collect_body = function_body(
         &source,
         "fn collect_committed_segment_result(",
-        "fn finish(",
+        "fn collect_ready_segment_result(",
     );
+    let ready_body = function_body(&source, "fn collect_ready_segment_result(", "fn finish(");
     assert!(
         work_body.contains("commit_guest_pc_trace_segment_output")
             && commit_segment_body.contains("self.worker_pool.submit_segment(")
-            && collect_body.contains("collect_committed_segment(result.output)"),
+            && collect_body.contains("GuestPcTraceSegmentCommitOutput::Ready(output)")
+            && collect_body.contains("self.collect_ready_segment_result(")
+            && ready_body.contains("self.output_collector.collect_committed_segment(output)"),
         "driver commit entrypoint should centralize segment commitment dispatch and ordered output collection"
     );
 
@@ -3106,7 +3130,7 @@ fn guest_pc_trace_segment_commit_splits_work_result_collection() {
         "struct GuestPcTraceSegmentCommitDriver",
     );
     assert!(
-        result_body.contains("output: ProveWitnessTraceCommitments")
+        result_body.contains("output: GuestPcTraceSegmentCommitOutput")
             && result_body.contains("source_lookup_balance: SourceLookupBalance")
             && result_body.contains("trace_timing: Option<ProveWitnessTraceTimingAccumulator>")
             && result_body.contains("guest_segment_commit_duration: Option<Duration>"),
@@ -3146,13 +3170,16 @@ fn guest_pc_trace_segment_commit_splits_work_result_collection() {
     let collect_body = function_body(
         &source,
         "fn collect_committed_segment_result(",
-        "fn finish(",
+        "fn collect_ready_segment_result(",
     );
+    let ready_body = function_body(&source, "fn collect_ready_segment_result(", "fn finish(");
     assert!(
-        collect_body.contains("balance.merge(result.source_lookup_balance)")
-            && collect_body.contains("self.trace_timing.accumulate(trace_timing)")
-            && collect_body.contains("self.output_collector")
-            && collect_body.contains("collect_committed_segment(result.output)"),
+        collect_body.contains("GuestPcTraceSegmentCommitOutput::Ready(output)")
+            && collect_body.contains("self.collect_ready_segment_result(")
+            && ready_body.contains("balance.merge(source_lookup_balance)")
+            && ready_body.contains("self.trace_timing.accumulate(trace_timing)")
+            && ready_body.contains("self.output_collector")
+            && ready_body.contains("collect_committed_segment(output)"),
         "driver result collection should merge local balance, timing, and ordered output state"
     );
 }
@@ -4790,6 +4817,55 @@ fn guest_pc_trace_timing_reports_descriptor_buffer_retention_budget() {
 }
 
 #[test]
+fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+
+    assert!(
+        execution_source.contains("fn guest_pc_descriptor_buffer_retention_enabled("),
+        "descriptor buffer retention should have an explicit input-size gate"
+    );
+    let gate_body = function_body(
+        &execution_source,
+        "fn guest_pc_descriptor_buffer_retention_enabled",
+        "fn commit_guest_pc_trace_segment_with_scratch",
+    );
+    assert!(
+        gate_body.contains("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES")
+            && gate_body.contains(
+                "guest_pc_cross_segment_root_materialization_supported_for_input(input_byte_count)"
+            ),
+        "descriptor buffer retention should default to the small-input policy while allowing an explicit env override"
+    );
+
+    let pending_commit_body = function_body(
+        &execution_source,
+        "fn commit_guest_pc_trace_segment_with_scratch",
+        "fn run_prove_witness_commitments_from_trace_inner",
+    );
+    assert!(
+        pending_commit_body
+            .contains("guest_pc_descriptor_buffer_retention_enabled(input_byte_count)")
+            && pending_commit_body.contains("retained_guest_pc_device_descriptor_buffer"),
+        "pending trace commitments should use the descriptor retention gate"
+    );
+
+    let direct_commit_body = function_body(
+        &execution_source,
+        "fn run_prove_witness_commitments_from_trace_inner",
+        "fn retain_fri_stage_source_devices",
+    );
+    assert!(
+        direct_commit_body
+            .contains("guest_pc_descriptor_buffer_retention_enabled(input_byte_count)")
+            && direct_commit_body.contains("retained_guest_pc_device_descriptor_buffer"),
+        "direct trace commitments should use the descriptor retention gate"
+    );
+}
+
+#[test]
 fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let execution_path = crate_root.join("src/witness_execution.rs");
@@ -5947,7 +6023,7 @@ fn guest_pc_trace_segments_use_mergeable_source_lookup_balances() {
     );
     let collect_body = function_body(
         &execution_source,
-        "fn collect_committed_segment_result(",
+        "fn collect_ready_segment_result(",
         "fn finish(",
     );
     assert!(
@@ -5965,7 +6041,7 @@ fn guest_pc_trace_segments_use_mergeable_source_lookup_balances() {
     );
     assert!(
         collect_body
-            .matches("balance.merge(result.source_lookup_balance)")
+            .matches("balance.merge(source_lookup_balance)")
             .count()
             == 1,
         "guest PC segment commitments should merge local source lookup balances after successful commit"

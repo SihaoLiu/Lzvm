@@ -593,8 +593,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     assert!(
         lean_source.contains("GpuRetainedDeviceCacheBudget")
             && lean_source.contains("sourceBytes")
+            && lean_source.contains("descriptorBytes")
             && lean_source.contains("leafDigestBytes")
             && lean_source.contains("sourceLimit")
+            && lean_source.contains("descriptorLimit")
             && lean_source.contains("leafDigestLimit")
             && lean_source.contains("combinedLimit")
             && lean_source.contains("GpuRetainedDeviceCacheBudgetWithinLimits")
@@ -602,8 +604,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("retainedDeviceCacheBudgetImpliesWithinLimits")
             && witness_values_source.contains("retained_combined_device_cache_allows")
             && witness_values_source.contains("reserve_retained_device_bytes")
+            && witness_values_source.contains("reserve_retained_descriptor_buffer_bytes")
             && witness_values_source.contains("reserve_retained_leaf_digest_bytes"),
-        "Lean auxiliary checks should bind retained source and leaf digest cache retention to runtime budget limits"
+        "Lean auxiliary checks should bind retained source, descriptor, and leaf digest cache retention to runtime budget limits"
     );
     assert!(
         lean_source.contains("defaultLeafDigestLimitBytes")

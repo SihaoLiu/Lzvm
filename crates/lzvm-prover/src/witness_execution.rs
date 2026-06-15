@@ -65,10 +65,10 @@ use crate::witness_commitment::{
     commit_witness_stage_values_with_source_devices_and_workers,
     commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing,
     commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_workers,
-    retain_device_buffer, retained_source_device_limit, PendingWitnessTraceStageCommitments,
-    WitnessRetainedDeviceBuffer, WitnessStageCommitmentError, WitnessStageCommitmentReuseCache,
-    WitnessStageLeafError, WitnessStageLeafWorkspaceCache, WitnessStageRetainedSourceDevice,
-    WitnessStageSourceDevice, WitnessStageSourceDeviceView,
+    retain_descriptor_device_buffer, retained_source_device_limit,
+    PendingWitnessTraceStageCommitments, WitnessRetainedDeviceBuffer, WitnessStageCommitmentError,
+    WitnessStageCommitmentReuseCache, WitnessStageLeafError, WitnessStageLeafWorkspaceCache,
+    WitnessStageRetainedSourceDevice, WitnessStageSourceDevice, WitnessStageSourceDeviceView,
 };
 #[cfg(not(feature = "cuda"))]
 use crate::witness_commitment::{
@@ -2391,7 +2391,7 @@ impl WitnessStageSourceDeviceCache {
     ) -> Option<WitnessRetainedDeviceBuffer> {
         let buffer = self.guest_pc_device_descriptor_buffer.as_ref()?;
         let retained_descriptor_buffer_byte_len = buffer.len();
-        let retained = retain_device_buffer(buffer);
+        let retained = retain_descriptor_device_buffer(buffer);
         if let Some(timing) = timing {
             timing.add_descriptor_buffer_retention(
                 retained_descriptor_buffer_byte_len,
@@ -4178,6 +4178,22 @@ fn guest_pc_cross_segment_root_materialization_supported_for_input(
     input_byte_count < SUPPORTED_INPUT_BYTE_LIMIT
 }
 
+#[cfg(feature = "cuda")]
+fn guest_pc_descriptor_buffer_retention_enabled(input_byte_count: usize) -> bool {
+    match std::env::var("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES") {
+        Ok(value) => {
+            let value = value.trim();
+            let normalized = value.to_ascii_lowercase();
+            match normalized.as_str() {
+                "0" | "false" | "no" | "off" | "" => false,
+                "1" | "true" | "yes" | "on" => true,
+                _ => value.parse::<usize>().is_ok_and(|bytes| bytes > 0),
+            }
+        }
+        Err(_) => guest_pc_cross_segment_root_materialization_supported_for_input(input_byte_count),
+    }
+}
+
 fn commit_guest_pc_trace_segment_with_scratch(
     context: GuestPcTraceSegmentCommitContext<'_>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
@@ -4860,7 +4876,10 @@ fn run_prove_witness_commitments_from_trace_pending_inner(
     } else {
         Vec::new()
     };
+    let retain_guest_pc_device_descriptor_buffer =
+        guest_pc_descriptor_buffer_retention_enabled(input_byte_count);
     let guest_pc_device_descriptor_buffer = if retain_stage_sources
+        && retain_guest_pc_device_descriptor_buffer
         && retained_stage_source_devices.len() < stage_source_device_cache.stage_count()
     {
         stage_source_device_cache.retained_guest_pc_device_descriptor_buffer(Some(&mut *timing))
@@ -5219,7 +5238,11 @@ fn run_prove_witness_commitments_from_trace_inner(
         Vec::new()
     };
     #[cfg(feature = "cuda")]
+    let retain_guest_pc_device_descriptor_buffer =
+        guest_pc_descriptor_buffer_retention_enabled(input_byte_count);
+    #[cfg(feature = "cuda")]
     let guest_pc_device_descriptor_buffer = if retain_stage_sources
+        && retain_guest_pc_device_descriptor_buffer
         && retained_stage_source_devices.len() < stage_source_device_cache.stage_count()
     {
         stage_source_device_cache.retained_guest_pc_device_descriptor_buffer(timing)
@@ -6100,8 +6123,52 @@ mod tests {
     use lzvm_artifacts::trace_bundle::{TraceBundle, TraceBundleUnit};
     use sha2::{Digest, Sha256};
     use std::cell::Cell;
+    #[cfg(feature = "cuda")]
+    use std::ffi::OsString;
     use std::fs;
+    #[cfg(feature = "cuda")]
+    use std::sync::MutexGuard;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[cfg(feature = "cuda")]
+    struct TestEnvVarGuard {
+        _lock: MutexGuard<'static, ()>,
+        name: &'static str,
+        previous: Option<OsString>,
+    }
+
+    #[cfg(feature = "cuda")]
+    impl TestEnvVarGuard {
+        fn new(name: &'static str) -> Self {
+            let lock = crate::CUDA_TEST_ENV_LOCK
+                .lock()
+                .expect("test env lock should acquire");
+            let previous = std::env::var_os(name);
+            Self {
+                _lock: lock,
+                name,
+                previous,
+            }
+        }
+
+        fn set(&self, value: &str) {
+            std::env::set_var(self.name, value);
+        }
+
+        fn unset(&self) {
+            std::env::remove_var(self.name);
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    impl Drop for TestEnvVarGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
 
     #[test]
     fn rejects_trace_bundles_with_unexpected_units() {
@@ -7015,6 +7082,37 @@ mod tests {
                 },
             ],
         }
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn descriptor_buffer_retention_gate_defaults_to_small_inputs() {
+        let env = TestEnvVarGuard::new("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES");
+        env.unset();
+
+        assert!(guest_pc_descriptor_buffer_retention_enabled(0));
+        assert!(guest_pc_descriptor_buffer_retention_enabled(
+            (8 * 1024 * 1024) - 1
+        ));
+        assert!(!guest_pc_descriptor_buffer_retention_enabled(
+            8 * 1024 * 1024
+        ));
+
+        env.set("64");
+        assert!(guest_pc_descriptor_buffer_retention_enabled(
+            64 * 1024 * 1024
+        ));
+
+        env.set("0");
+        assert!(!guest_pc_descriptor_buffer_retention_enabled(0));
+
+        env.set("true");
+        assert!(guest_pc_descriptor_buffer_retention_enabled(
+            64 * 1024 * 1024
+        ));
+
+        env.set("not-a-number");
+        assert!(!guest_pc_descriptor_buffer_retention_enabled(0));
     }
 
     fn source_assignment_hint(target: HintOperand, value: HintOperand) -> Hint {

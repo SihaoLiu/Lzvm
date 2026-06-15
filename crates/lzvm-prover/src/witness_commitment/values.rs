@@ -343,6 +343,17 @@ static RETAINED_SOURCE_DEVICE_BYTES: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "cuda")]
 static RETAINED_SOURCE_DEVICE_LIMIT: OnceLock<usize> = OnceLock::new();
 #[cfg(feature = "cuda")]
+const DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize = 10_000_000_000;
+#[cfg(feature = "cuda")]
+const RETAINED_DESCRIPTOR_BUFFER_RESERVE_BYTES: usize = 10 * 1024 * 1024 * 1024;
+#[cfg(feature = "cuda")]
+const MAX_DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize =
+    DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES;
+#[cfg(feature = "cuda")]
+static RETAINED_DESCRIPTOR_BUFFER_BYTES: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "cuda")]
+static RETAINED_DESCRIPTOR_BUFFER_LIMIT: OnceLock<usize> = OnceLock::new();
+#[cfg(feature = "cuda")]
 static RETAINED_COMBINED_DEVICE_CACHE_LIMIT: OnceLock<Option<usize>> = OnceLock::new();
 #[cfg(feature = "cuda")]
 static RETAINED_SOURCE_DEVICE_REGISTRY: OnceLock<Mutex<HashMap<usize, RetainedSourceDeviceEntry>>> =
@@ -363,6 +374,13 @@ static RETAINED_LEAF_DIGEST_LIMIT: OnceLock<usize> = OnceLock::new();
 pub(crate) struct RetainedCudaSourceDevice {
     view: WitnessStageSourceDeviceView,
     key: usize,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug)]
+pub(crate) struct RetainedCudaDeviceBuffer {
+    buffer: Arc<CudaDeviceBuffer>,
+    bytes: usize,
 }
 
 #[cfg(feature = "cuda")]
@@ -395,9 +413,23 @@ impl RetainedCudaSourceDevice {
 }
 
 #[cfg(feature = "cuda")]
+impl RetainedCudaDeviceBuffer {
+    pub(crate) fn buffer(&self) -> &CudaDeviceBuffer {
+        self.buffer.as_ref()
+    }
+}
+
+#[cfg(feature = "cuda")]
 impl Drop for RetainedCudaSourceDevice {
     fn drop(&mut self) {
         release_retained_device_buffer(self.key);
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl Drop for RetainedCudaDeviceBuffer {
+    fn drop(&mut self) {
+        release_retained_descriptor_buffer_bytes(self.bytes);
     }
 }
 
@@ -562,6 +594,15 @@ pub(crate) fn retain_source_device_view(
 }
 
 #[cfg(feature = "cuda")]
+pub(crate) fn retain_raw_descriptor_device_buffer(
+    buffer: Arc<CudaDeviceBuffer>,
+) -> Option<Arc<RetainedCudaDeviceBuffer>> {
+    let bytes = buffer.len();
+    reserve_retained_descriptor_buffer_bytes(bytes)?;
+    Some(Arc::new(RetainedCudaDeviceBuffer { buffer, bytes }))
+}
+
+#[cfg(feature = "cuda")]
 pub(crate) fn retain_leaf_digest_level(
     level: CudaDigestLevel,
     column_count: usize,
@@ -638,8 +679,9 @@ fn reserve_retained_device_bytes(bytes: usize) -> Option<()> {
         if next > limit {
             return None;
         }
+        let descriptor_bytes = RETAINED_DESCRIPTOR_BUFFER_BYTES.load(Ordering::Acquire);
         let leaf_bytes = RETAINED_LEAF_DIGEST_BYTES.load(Ordering::Acquire);
-        retained_combined_device_cache_allows(next, leaf_bytes)?;
+        retained_combined_device_cache_allows(next, descriptor_bytes, leaf_bytes)?;
         match RETAINED_SOURCE_DEVICE_BYTES.compare_exchange_weak(
             current,
             next,
@@ -658,6 +700,41 @@ fn release_retained_device_bytes(bytes: usize) {
 }
 
 #[cfg(feature = "cuda")]
+fn reserve_retained_descriptor_buffer_bytes(bytes: usize) -> Option<()> {
+    if bytes == 0 {
+        return Some(());
+    }
+    let limit = retained_descriptor_buffer_limit();
+    if bytes > limit {
+        return None;
+    }
+    let mut current = RETAINED_DESCRIPTOR_BUFFER_BYTES.load(Ordering::Acquire);
+    loop {
+        let next = current.checked_add(bytes)?;
+        if next > limit {
+            return None;
+        }
+        let source_bytes = RETAINED_SOURCE_DEVICE_BYTES.load(Ordering::Acquire);
+        let leaf_bytes = RETAINED_LEAF_DIGEST_BYTES.load(Ordering::Acquire);
+        retained_combined_device_cache_allows(source_bytes, next, leaf_bytes)?;
+        match RETAINED_DESCRIPTOR_BUFFER_BYTES.compare_exchange_weak(
+            current,
+            next,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => return Some(()),
+            Err(observed) => current = observed,
+        }
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn release_retained_descriptor_buffer_bytes(bytes: usize) {
+    RETAINED_DESCRIPTOR_BUFFER_BYTES.fetch_sub(bytes, Ordering::AcqRel);
+}
+
+#[cfg(feature = "cuda")]
 fn reserve_retained_leaf_digest_bytes(bytes: usize) -> Option<()> {
     if bytes == 0 {
         return Some(());
@@ -673,7 +750,8 @@ fn reserve_retained_leaf_digest_bytes(bytes: usize) -> Option<()> {
             return None;
         }
         let source_bytes = RETAINED_SOURCE_DEVICE_BYTES.load(Ordering::Acquire);
-        retained_combined_device_cache_allows(source_bytes, next)?;
+        let descriptor_bytes = RETAINED_DESCRIPTOR_BUFFER_BYTES.load(Ordering::Acquire);
+        retained_combined_device_cache_allows(source_bytes, descriptor_bytes, next)?;
         match RETAINED_LEAF_DIGEST_BYTES.compare_exchange_weak(
             current,
             next,
@@ -715,6 +793,29 @@ fn default_retained_source_device_limit() -> usize {
 }
 
 #[cfg(feature = "cuda")]
+fn retained_descriptor_buffer_limit() -> usize {
+    std::env::var("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or_else(|| {
+            *RETAINED_DESCRIPTOR_BUFFER_LIMIT.get_or_init(default_retained_descriptor_buffer_limit)
+        })
+}
+
+#[cfg(feature = "cuda")]
+fn default_retained_descriptor_buffer_limit() -> usize {
+    cuda_memory_info()
+        .ok()
+        .map(|info| {
+            info.total_bytes
+                .saturating_sub(RETAINED_DESCRIPTOR_BUFFER_RESERVE_BYTES)
+                .min(MAX_DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES)
+        })
+        .filter(|limit| *limit > 0)
+        .unwrap_or(DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES)
+}
+
+#[cfg(feature = "cuda")]
 fn retained_leaf_digest_limit() -> usize {
     std::env::var("LZVM_CUDA_RETAINED_LEAF_DIGEST_BYTES")
         .ok()
@@ -751,9 +852,15 @@ fn retained_combined_device_cache_limit() -> Option<usize> {
 }
 
 #[cfg(feature = "cuda")]
-fn retained_combined_device_cache_allows(source_bytes: usize, leaf_bytes: usize) -> Option<()> {
+fn retained_combined_device_cache_allows(
+    source_bytes: usize,
+    descriptor_bytes: usize,
+    leaf_bytes: usize,
+) -> Option<()> {
     if let Some(limit) = retained_combined_device_cache_limit() {
-        let combined = source_bytes.checked_add(leaf_bytes)?;
+        let combined = source_bytes
+            .checked_add(descriptor_bytes)?
+            .checked_add(leaf_bytes)?;
         if combined > limit {
             return None;
         }

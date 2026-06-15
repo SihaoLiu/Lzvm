@@ -35,6 +35,9 @@ use crate::setup_preflight::{validate_public_values_metadata, SetupPreflightErro
 #[cfg(feature = "cuda")]
 pub use lzvm_accel::{cuda_allocator_stats, CudaAllocatorStats};
 
+#[cfg(all(test, feature = "cuda"))]
+pub(crate) static CUDA_TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub mod constant_opening;
 pub mod constant_tree_opening;
 pub mod contribution;

@@ -32,9 +32,10 @@ use super::{
     compact_witness_stage_leaf_hash_level_from_source_device_view_with_workspace_cache_timing,
     compact_witness_stage_leaf_hash_level_with_source_device_timing,
     extend_witness_stage_leaves_from_source_device_view,
-    record_cuda_witness_stage_root_materialization_group, retain_source_device_view,
-    synchronize_cuda_witness_stage_root_materializations, PendingCudaLeafExtension,
-    PendingCudaWitnessStageCommitment, PendingCudaWitnessStageCommitmentMaterialization,
+    record_cuda_witness_stage_root_materialization_group, retain_raw_descriptor_device_buffer,
+    retain_source_device_view, synchronize_cuda_witness_stage_root_materializations,
+    PendingCudaLeafExtension, PendingCudaWitnessStageCommitment,
+    PendingCudaWitnessStageCommitmentMaterialization, RetainedCudaDeviceBuffer,
     RetainedCudaSourceDevice, WitnessStageCommitment, WitnessStageCommitmentError,
     WitnessStageDeviceCompactCommitInput, WitnessStageLeafError, WitnessStageLeafWorkspaceCache,
     WitnessStageSourceDeviceView, WitnessStageTreeCommitTiming, WORD_BYTES,
@@ -153,7 +154,7 @@ pub(crate) struct WitnessStageRetainedSourceDevice {
 #[cfg(feature = "cuda")]
 #[derive(Debug, Clone)]
 pub(crate) struct WitnessRetainedDeviceBuffer {
-    source_device: Arc<RetainedCudaSourceDevice>,
+    buffer: Arc<RetainedCudaDeviceBuffer>,
 }
 
 #[cfg(feature = "cuda")]
@@ -170,26 +171,19 @@ impl WitnessStageRetainedSourceDevice {
 #[cfg(feature = "cuda")]
 impl WitnessRetainedDeviceBuffer {
     pub(crate) fn buffer(&self) -> &CudaDeviceBuffer {
-        self.source_device.source_view().buffer()
+        self.buffer.buffer()
     }
 }
 
 #[cfg(feature = "cuda")]
-pub(crate) fn retain_device_buffer(
+pub(crate) fn retain_descriptor_device_buffer(
     buffer: &Arc<CudaDeviceBuffer>,
 ) -> Option<WitnessRetainedDeviceBuffer> {
     if !buffer.len().is_multiple_of(WORD_BYTES) {
         return None;
     }
-    let word_count = buffer.len() / WORD_BYTES;
-    retain_source_device_view(WitnessStageSourceDeviceView::new(
-        1,
-        word_count,
-        word_count,
-        0,
-        Arc::clone(buffer),
-    ))
-    .map(|source_device| WitnessRetainedDeviceBuffer { source_device })
+    retain_raw_descriptor_device_buffer(Arc::clone(buffer))
+        .map(|buffer| WitnessRetainedDeviceBuffer { buffer })
 }
 
 #[cfg(feature = "cuda")]
@@ -1966,8 +1960,9 @@ mod tests {
         commit_extended_witness_stage, commit_witness_stage_source_devices_pending_timing,
         commit_witness_stage_source_devices_stream_pipeline_timing,
         commit_witness_stage_values_with_workers, commit_witness_trace_stages_with_workers,
-        extend_witness_stage_leaves, PendingWitnessTraceStageCommitments, WitnessStageCommitParams,
-        WitnessStageCommitTiming, WitnessStageSourceDevice,
+        extend_witness_stage_leaves, retain_descriptor_device_buffer,
+        PendingWitnessTraceStageCommitments, WitnessStageCommitParams, WitnessStageCommitTiming,
+        WitnessStageSourceDevice,
     };
     use crate::witness_commitment::commit_witness_stage_leaves;
     use crate::witness_layout::derive_witness_trace_layout;
@@ -1975,7 +1970,44 @@ mod tests {
     use crate::{KeyUnitKind, PcsFriLayer, ProveUnitSchedule};
     use lzvm_accel::CudaDeviceBuffer;
     use lzvm_field::Felt;
-    use std::sync::Arc;
+    use std::ffi::OsString;
+    use std::sync::{Arc, MutexGuard};
+
+    struct RetainedDescriptorBudgetGuard {
+        _lock: MutexGuard<'static, ()>,
+        previous_source: Option<OsString>,
+        previous_descriptor: Option<OsString>,
+    }
+
+    impl RetainedDescriptorBudgetGuard {
+        fn new(source_budget: &str, descriptor_budget: &str) -> Self {
+            let lock = crate::CUDA_TEST_ENV_LOCK
+                .lock()
+                .expect("retained descriptor env lock should acquire");
+            let previous_source = std::env::var_os("LZVM_CUDA_RETAINED_SOURCE_BYTES");
+            let previous_descriptor = std::env::var_os("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES");
+            std::env::set_var("LZVM_CUDA_RETAINED_SOURCE_BYTES", source_budget);
+            std::env::set_var("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES", descriptor_budget);
+            Self {
+                _lock: lock,
+                previous_source,
+                previous_descriptor,
+            }
+        }
+    }
+
+    impl Drop for RetainedDescriptorBudgetGuard {
+        fn drop(&mut self) {
+            match &self.previous_source {
+                Some(value) => std::env::set_var("LZVM_CUDA_RETAINED_SOURCE_BYTES", value),
+                None => std::env::remove_var("LZVM_CUDA_RETAINED_SOURCE_BYTES"),
+            }
+            match &self.previous_descriptor {
+                Some(value) => std::env::set_var("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES", value),
+                None => std::env::remove_var("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES"),
+            }
+        }
+    }
 
     #[test]
     fn cuda_combined_witness_stage_commitment_matches_separate_path() {
@@ -2006,6 +2038,20 @@ mod tests {
             .expect("trace commitments should build");
 
         assert_eq!(cached, trace_based);
+    }
+
+    #[test]
+    fn descriptor_buffer_retention_uses_independent_budget() {
+        let _env = RetainedDescriptorBudgetGuard::new("0", "64");
+
+        let buffer = Arc::new(
+            CudaDeviceBuffer::from_u64_words(&[1, 2, 3, 4])
+                .expect("descriptor buffer should upload"),
+        );
+        let retained = retain_descriptor_device_buffer(&buffer)
+            .expect("descriptor buffer should ignore the stage source budget");
+
+        assert_eq!(retained.buffer().len(), buffer.len());
     }
 
     #[test]

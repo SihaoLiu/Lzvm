@@ -1468,8 +1468,7 @@ mod tests {
 
     #[cfg(feature = "cuda")]
     fn retained_source_device_budget_for_test() -> RetainedSourceDeviceBudgetGuard {
-        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let lock = LOCK
+        let lock = crate::CUDA_TEST_ENV_LOCK
             .lock()
             .expect("retained source env lock should acquire");
         let previous = std::env::var_os("LZVM_CUDA_RETAINED_SOURCE_BYTES");
