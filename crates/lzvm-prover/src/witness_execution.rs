@@ -6396,6 +6396,17 @@ mod tests {
             ProveWitnessCommitmentError::Commit(WitnessTraceCommitmentError::StageCommitment(
                 WitnessStageCommitmentError::LengthOverflow,
             ));
+        let merkle_oom_error =
+            ProveWitnessCommitmentError::Commit(WitnessTraceCommitmentError::StageCommitment(
+                WitnessStageCommitmentError::from(crate::merkle_hash::MerkleHashError::Accel(
+                    lzvm_accel::AccelError::Cuda { code: 2 },
+                )),
+            ));
+        let merkle_length_overflow = ProveWitnessCommitmentError::Commit(
+            WitnessTraceCommitmentError::StageCommitment(WitnessStageCommitmentError::from(
+                crate::merkle_hash::MerkleHashError::LengthOverflow,
+            )),
+        );
         let layout_error = ProveWitnessCommitmentError::SegmentCommitOutputOrder {
             message: "not a CUDA allocation failure".to_owned(),
         };
@@ -6412,8 +6423,22 @@ mod tests {
         assert!(!prove_witness_commitment_error_is_cuda_out_of_memory(
             &structural_length_overflow
         ));
+        assert!(prove_witness_commitment_error_is_cuda_out_of_memory(
+            &merkle_oom_error
+        ));
+        assert!(!prove_witness_commitment_error_is_cuda_out_of_memory(
+            &merkle_length_overflow
+        ));
         assert_eq!(
             next_guest_pc_segment_commit_worker_count_after_oom(8 * 1024 * 1024, None, &oom_error),
+            Some(2)
+        );
+        assert_eq!(
+            next_guest_pc_segment_commit_worker_count_after_oom(
+                8 * 1024 * 1024,
+                None,
+                &merkle_oom_error
+            ),
             Some(2)
         );
         assert_eq!(

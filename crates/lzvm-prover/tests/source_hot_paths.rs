@@ -3421,6 +3421,55 @@ fn guest_pc_segment_commit_oom_retry_clears_cuda_allocator_cache() {
 }
 
 #[test]
+fn merkle_cuda_errors_remain_visible_to_segment_commit_oom_retry() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let merkle_path = crate_root.join("src/merkle_hash.rs");
+    let merkle_source =
+        std::fs::read_to_string(&merkle_path).expect("Merkle hash source should read");
+    let errors_path = crate_root.join("src/witness_commitment/errors.rs");
+    let errors_source = std::fs::read_to_string(&errors_path)
+        .expect("witness commitment errors source should read");
+
+    let merkle_error_body = function_body(
+        &merkle_source,
+        "pub(crate) enum MerkleHashError",
+        "impl fmt::Display for MerkleHashError",
+    );
+    assert!(
+        merkle_error_body.contains("Accel(lzvm_accel::AccelError)"),
+        "Merkle hash errors should preserve CUDA backend errors instead of collapsing them into length overflow"
+    );
+
+    let merkle_error_source_body = function_body(
+        &merkle_source,
+        "impl std::error::Error for MerkleHashError",
+        "pub(crate) struct MerkleParentLevel",
+    );
+    assert!(
+        merkle_error_source_body.contains("Self::Accel(error) => Some(error)"),
+        "Merkle hash errors should expose CUDA backend errors through std::error::Error::source"
+    );
+
+    let stage_commit_from_merkle_body = function_body(
+        &errors_source,
+        "impl From<MerkleHashError> for WitnessStageCommitmentError",
+        "impl From<FieldError> for WitnessStageOpeningError",
+    );
+    assert!(
+        stage_commit_from_merkle_body.contains(
+            "MerkleHashError::Accel(error) => Self::Leaf(WitnessStageLeafError::Accel(error))"
+        ),
+        "witness stage commitment errors should keep Merkle CUDA errors in the leaf error chain"
+    );
+
+    assert!(
+        merkle_source.contains("CudaDeviceBuffer::new(")
+            && merkle_source.contains(".map_err(MerkleHashError::Accel)?"),
+        "Merkle CUDA allocation sites should preserve allocation failures as accelerator errors"
+    );
+}
+
+#[test]
 fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");

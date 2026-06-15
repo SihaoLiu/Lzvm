@@ -55,13 +55,26 @@ impl ConstantTreeOpening {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConstantTreeOpeningError {
     UnsupportedHash,
-    UnsupportedArity { arity: usize },
+    UnsupportedArity {
+        arity: usize,
+    },
     EmptyValues,
-    RowIndexOutOfRange { row_index: u64, row_count: u64 },
-    InvalidTreeLength { expected: usize, found: usize },
-    InvalidSiblingWidth { expected: usize, found: usize },
+    RowIndexOutOfRange {
+        row_index: u64,
+        row_count: u64,
+    },
+    InvalidTreeLength {
+        expected: usize,
+        found: usize,
+    },
+    InvalidSiblingWidth {
+        expected: usize,
+        found: usize,
+    },
     ConstantTree(ConstantTreeError),
     Field(FieldError),
+    #[cfg(feature = "cuda")]
+    Accel(lzvm_accel::AccelError),
     LengthOverflow,
 }
 
@@ -90,6 +103,8 @@ impl fmt::Display for ConstantTreeOpeningError {
             ),
             Self::ConstantTree(error) => write!(f, "constant tree opening file error: {error}"),
             Self::Field(error) => write!(f, "constant tree opening field error: {error}"),
+            #[cfg(feature = "cuda")]
+            Self::Accel(error) => write!(f, "constant tree opening cuda error: {error}"),
             Self::LengthOverflow => write!(f, "constant tree opening length overflow"),
         }
     }
@@ -100,6 +115,8 @@ impl std::error::Error for ConstantTreeOpeningError {
         match self {
             Self::ConstantTree(error) => Some(error),
             Self::Field(error) => Some(error),
+            #[cfg(feature = "cuda")]
+            Self::Accel(error) => Some(error),
             Self::UnsupportedHash
             | Self::UnsupportedArity { .. }
             | Self::EmptyValues
@@ -131,6 +148,8 @@ impl From<MerkleHashError> for ConstantTreeOpeningError {
                 Self::InvalidSiblingWidth { expected, found }
             }
             MerkleHashError::Field(error) => Self::Field(error),
+            #[cfg(feature = "cuda")]
+            MerkleHashError::Accel(error) => Self::Accel(error),
             MerkleHashError::LengthOverflow => Self::LengthOverflow,
         }
     }

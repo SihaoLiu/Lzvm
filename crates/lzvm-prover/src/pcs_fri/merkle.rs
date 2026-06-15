@@ -12,12 +12,22 @@ use super::errors::PcsFriOpeningBuildError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsFriMerkleError {
-    UnsupportedArity { arity: usize },
+    UnsupportedArity {
+        arity: usize,
+    },
     EmptyValues,
     EmptyLastLevel,
-    InvalidSiblingCount { expected: usize, found: usize },
-    LastLevelIndexOutOfRange { index: u64, node_count: usize },
+    InvalidSiblingCount {
+        expected: usize,
+        found: usize,
+    },
+    LastLevelIndexOutOfRange {
+        index: u64,
+        node_count: usize,
+    },
     Field(FieldError),
+    #[cfg(feature = "cuda")]
+    Accel(lzvm_accel::AccelError),
     LengthOverflow,
 }
 
@@ -38,6 +48,8 @@ impl fmt::Display for PcsFriMerkleError {
                 "PCS FRI Merkle last-level index {index} is outside node count {node_count}"
             ),
             Self::Field(error) => write!(f, "PCS FRI Merkle field error: {error}"),
+            #[cfg(feature = "cuda")]
+            Self::Accel(error) => write!(f, "PCS FRI Merkle cuda error: {error}"),
             Self::LengthOverflow => write!(f, "PCS FRI Merkle length overflow"),
         }
     }
@@ -47,6 +59,8 @@ impl std::error::Error for PcsFriMerkleError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Field(error) => Some(error),
+            #[cfg(feature = "cuda")]
+            Self::Accel(error) => Some(error),
             Self::UnsupportedArity { .. }
             | Self::EmptyValues
             | Self::EmptyLastLevel
@@ -65,6 +79,8 @@ impl From<MerkleHashError> for PcsFriMerkleError {
                 Self::InvalidSiblingCount { expected, found }
             }
             MerkleHashError::Field(error) => Self::Field(error),
+            #[cfg(feature = "cuda")]
+            MerkleHashError::Accel(error) => Self::Accel(error),
             MerkleHashError::LengthOverflow => Self::LengthOverflow,
         }
     }

@@ -308,6 +308,8 @@ impl From<MerkleHashError> for WitnessStageCommitmentError {
             MerkleHashError::UnsupportedArity { arity } => Self::UnsupportedArity { arity },
             MerkleHashError::InvalidChildCount { .. } => Self::LengthOverflow,
             MerkleHashError::Field(error) => Self::Field(error),
+            #[cfg(feature = "cuda")]
+            MerkleHashError::Accel(error) => Self::Leaf(WitnessStageLeafError::Accel(error)),
             MerkleHashError::LengthOverflow => Self::LengthOverflow,
         }
     }
@@ -329,6 +331,10 @@ impl From<MerkleHashError> for WitnessStageOpeningError {
                 Self::InvalidSiblingCount { expected, found }
             }
             MerkleHashError::Field(error) => Self::Field(error),
+            #[cfg(feature = "cuda")]
+            MerkleHashError::Accel(error) => Self::Commitment(WitnessStageCommitmentError::Leaf(
+                WitnessStageLeafError::Accel(error),
+            )),
             MerkleHashError::LengthOverflow => Self::LengthOverflow,
         }
     }
