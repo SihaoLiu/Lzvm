@@ -161,9 +161,9 @@ fn cuda_witness_commit_has_stream_capable_row_major_extension() {
     let host_header_path = crate_root.join("../lzvm-accel/native/cuda_host.hpp");
     let host_header =
         std::fs::read_to_string(&host_header_path).expect("CUDA host header should read");
-    let host_source_path = crate_root.join("../lzvm-accel/native/cuda_host.cpp");
-    let host_source =
-        std::fs::read_to_string(&host_source_path).expect("CUDA host source should read");
+    let host_runtime_path = crate_root.join("../lzvm-accel/native/cuda_host_runtime.cpp");
+    let host_runtime_source =
+        std::fs::read_to_string(&host_runtime_path).expect("CUDA host runtime source should read");
     let field_source_path = crate_root.join("../lzvm-accel/native/cuda_field.cu");
     let field_source =
         std::fs::read_to_string(&field_source_path).expect("CUDA field source should read");
@@ -175,9 +175,9 @@ fn cuda_witness_commit_has_stream_capable_row_major_extension() {
 
     assert!(
         host_header.contains("lzvm_cuda_stream_create")
-            && host_source.contains("cudaStreamCreateWithFlags")
-            && host_source.contains("cudaStreamDestroy")
-            && host_source.contains("cudaStreamSynchronize"),
+            && host_runtime_source.contains("cudaStreamCreateWithFlags")
+            && host_runtime_source.contains("cudaStreamDestroy")
+            && host_runtime_source.contains("cudaStreamSynchronize"),
         "CUDA host layer should expose owned stream create/destroy/synchronize operations"
     );
     assert!(
@@ -438,14 +438,17 @@ fn cuda_buffer_has_stream_zero_and_state_prefix_primitives() {
     let host_source_path = crate_root.join("../lzvm-accel/native/cuda_host.cpp");
     let host_source =
         std::fs::read_to_string(&host_source_path).expect("CUDA host source should read");
+    let host_runtime_path = crate_root.join("../lzvm-accel/native/cuda_host_runtime.cpp");
+    let host_runtime_source =
+        std::fs::read_to_string(&host_runtime_path).expect("CUDA host runtime source should read");
     let buffer_path = crate_root.join("../lzvm-accel/src/cuda_buffer.rs");
     let buffer_source =
         std::fs::read_to_string(&buffer_path).expect("CUDA buffer source should read");
 
     assert!(
         host_header.contains("lzvm_cuda_memset_zero_bytes_on_stream")
-            && host_source.contains("cudaMemsetAsync")
-            && host_source.contains("lzvm_cuda_memset_zero_bytes_on_stream"),
+            && host_runtime_source.contains("cudaMemsetAsync")
+            && host_runtime_source.contains("lzvm_cuda_memset_zero_bytes_on_stream"),
         "CUDA host layer should expose stream-ordered memset"
     );
     assert!(
@@ -5076,6 +5079,9 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
     let native_source_path = crate_root.join("../lzvm-accel/native/cuda_host.cpp");
     let native_source =
         std::fs::read_to_string(&native_source_path).expect("CUDA host source should read");
+    let native_runtime_path = crate_root.join("../lzvm-accel/native/cuda_host_runtime.cpp");
+    let native_runtime_source = std::fs::read_to_string(&native_runtime_path)
+        .expect("CUDA host runtime source should read");
     let accel_path = crate_root.join("../lzvm-accel/src/cuda_allocator.rs");
     let accel_source =
         std::fs::read_to_string(&accel_path).expect("CUDA allocator source should read");
@@ -5126,6 +5132,9 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "cuda_copy_d2d_bytes",
         "cuda_copy_d2d_wait_ns",
         "cuda_copy_d2d_max_wait_ns",
+        "cuda_device_synchronize_calls",
+        "cuda_device_synchronize_wait_ns",
+        "cuda_device_synchronize_max_wait_ns",
         "cuda_event_query_calls",
         "cuda_event_query_ready_count",
         "cuda_event_query_not_ready_count",
@@ -5198,6 +5207,19 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
             && native_source.contains("g_cuda_copy_d2h_wait_ns")
             && native_source.contains("g_cuda_copy_d2d_wait_ns"),
         "CUDA copy direction timing should be visible in CUDA timing stats"
+    );
+    assert!(
+        native_source.contains("record_cuda_device_synchronize_wait")
+            && native_source.contains("g_cuda_device_synchronize_wait_ns")
+            && native_source.contains("g_cuda_device_synchronize_max_wait_ns"),
+        "CUDA device synchronization waits should be visible in CUDA timing stats"
+    );
+    assert!(
+        native_runtime_source.contains("cudaDeviceSynchronize()")
+            && native_runtime_source.contains("sync_started")
+            && native_runtime_source.contains("saturated_nanoseconds_since(sync_started)")
+            && native_runtime_source.contains("lzvm_cuda_record_device_synchronize_wait"),
+        "CUDA device synchronization waits should be measured at the synchronization boundary"
     );
     assert!(
         native_source.contains("g_cuda_copy_d2h_by_size")
@@ -5300,6 +5322,10 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "\"cuda_allocator_copy_d2d_wait_ns\"",
         "\"cuda_allocator_copy_d2d_max_wait_ns\"",
         "\"cuda_allocator_copy_d2d_avg_wait_per_call_ns\"",
+        "\"cuda_allocator_device_synchronize_calls\"",
+        "\"cuda_allocator_device_synchronize_wait_ns\"",
+        "\"cuda_allocator_device_synchronize_max_wait_ns\"",
+        "\"cuda_allocator_device_synchronize_avg_wait_per_call_ns\"",
         "\"cuda_allocator_cached_blocks\"",
         "\"cuda_allocator_cached_bytes\"",
         "\"cuda_allocator_event_query_calls\"",

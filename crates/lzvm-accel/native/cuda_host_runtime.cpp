@@ -2,6 +2,26 @@
 
 #include <cuda_runtime.h>
 
+#include <chrono>
+#include <limits>
+
+namespace {
+
+std::size_t saturated_nanoseconds_since(std::chrono::steady_clock::time_point started) {
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
+    if (ns <= 0) {
+        return 0;
+    }
+    const auto max = std::numeric_limits<std::size_t>::max();
+    if (static_cast<unsigned long long>(ns) > max) {
+        return max;
+    }
+    return static_cast<std::size_t>(ns);
+}
+
+}  // namespace
+
 extern "C" int lzvm_cuda_stream_create(void** out) {
     try {
         if (out == nullptr) {
@@ -168,5 +188,8 @@ extern "C" int lzvm_cuda_check_launch(void) {
 }
 
 extern "C" int lzvm_cuda_synchronize(void) {
-    return static_cast<int>(cudaDeviceSynchronize());
+    const auto sync_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(cudaDeviceSynchronize());
+    lzvm_cuda_record_device_synchronize_wait(saturated_nanoseconds_since(sync_started));
+    return status;
 }

@@ -366,6 +366,9 @@ structure CudaAllocatorTimingSummary where
   cudaAllocatorCopyD2DByteCount : Nat
   cudaAllocatorCopyD2DWaitNanoseconds : Nat
   cudaAllocatorCopyD2DMaxWaitNanoseconds : Nat
+  cudaAllocatorDeviceSynchronizeCallCount : Nat
+  cudaAllocatorDeviceSynchronizeWaitNanoseconds : Nat
+  cudaAllocatorDeviceSynchronizeMaxWaitNanoseconds : Nat
   cudaAllocatorCachedBlockCount : Nat
   cudaAllocatorCachedByteCount : Nat
   cudaAllocatorEventQueryCallCount : Nat

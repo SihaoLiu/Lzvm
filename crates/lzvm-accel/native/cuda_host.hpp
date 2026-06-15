@@ -69,6 +69,8 @@ struct LzvmCudaAllocatorStats {
     std::size_t cuda_copy_d2d_max_wait_ns;
     std::size_t cuda_free_calls;
     std::size_t cuda_device_synchronize_calls;
+    std::size_t cuda_device_synchronize_wait_ns;
+    std::size_t cuda_device_synchronize_max_wait_ns;
     std::size_t cached_blocks;
     std::size_t cached_bytes;
     std::size_t cuda_event_query_calls;
@@ -127,6 +129,7 @@ extern "C" int lzvm_cuda_copy_d2h_bytes_on_default_stream(
 extern "C" void lzvm_cuda_record_direct_copy_d2h_wait(
     std::size_t bytes,
     std::size_t elapsed_ns);
+extern "C" void lzvm_cuda_record_device_synchronize_wait(std::size_t elapsed_ns);
 extern "C" int lzvm_cuda_copy_h2d_row_slice_words(
     void* dst,
     const void* src,

@@ -74,6 +74,8 @@ std::size_t g_cuda_copy_d2d_wait_ns = 0;
 std::size_t g_cuda_copy_d2d_max_wait_ns = 0;
 std::size_t g_cuda_free_calls = 0;
 std::size_t g_cuda_device_synchronize_calls = 0;
+std::size_t g_cuda_device_synchronize_wait_ns = 0;
+std::size_t g_cuda_device_synchronize_max_wait_ns = 0;
 std::size_t g_cuda_event_query_calls = 0;
 std::size_t g_cuda_event_query_ready_count = 0;
 std::size_t g_cuda_event_query_not_ready_count = 0;
@@ -329,6 +331,15 @@ void record_cuda_copy_d2d_wait(std::size_t bytes, std::size_t elapsed_ns) {
     record_cuda_copy_wait(
         bytes, elapsed_ns, &g_cuda_copy_d2d_calls, &g_cuda_copy_d2d_bytes,
         &g_cuda_copy_d2d_wait_ns, &g_cuda_copy_d2d_max_wait_ns);
+}
+
+void record_cuda_device_synchronize_wait(std::size_t elapsed_ns) {
+    g_cuda_device_synchronize_calls = saturated_add(g_cuda_device_synchronize_calls, 1);
+    g_cuda_device_synchronize_wait_ns =
+        saturated_add(g_cuda_device_synchronize_wait_ns, elapsed_ns);
+    if (elapsed_ns > g_cuda_device_synchronize_max_wait_ns) {
+        g_cuda_device_synchronize_max_wait_ns = elapsed_ns;
+    }
 }
 
 int set_allocation_device(int device, int* previous_device) {
@@ -763,6 +774,8 @@ extern "C" int lzvm_cuda_allocator_clear_cache(void) {
             g_cuda_copy_d2d_max_wait_ns = 0;
             g_cuda_free_calls = 0;
             g_cuda_device_synchronize_calls = 0;
+            g_cuda_device_synchronize_wait_ns = 0;
+            g_cuda_device_synchronize_max_wait_ns = 0;
             g_cuda_event_query_calls = 0;
             g_cuda_event_query_ready_count = 0;
             g_cuda_event_query_not_ready_count = 0;
@@ -839,6 +852,9 @@ extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out) {
         out->cuda_copy_d2d_max_wait_ns = g_cuda_copy_d2d_max_wait_ns;
         out->cuda_free_calls = g_cuda_free_calls;
         out->cuda_device_synchronize_calls = g_cuda_device_synchronize_calls;
+        out->cuda_device_synchronize_wait_ns = g_cuda_device_synchronize_wait_ns;
+        out->cuda_device_synchronize_max_wait_ns =
+            g_cuda_device_synchronize_max_wait_ns;
         out->cached_blocks = g_cached_allocations.size();
         out->cached_bytes = cached_bytes_locked();
         out->cuda_event_query_calls = g_cuda_event_query_calls;
@@ -965,6 +981,11 @@ extern "C" void lzvm_cuda_record_direct_copy_d2h_wait(
     std::size_t elapsed_ns) {
     std::lock_guard<std::mutex> lock(g_allocator_mutex);
     record_cuda_direct_copy_d2h_wait(bytes, elapsed_ns);
+}
+
+extern "C" void lzvm_cuda_record_device_synchronize_wait(std::size_t elapsed_ns) {
+    std::lock_guard<std::mutex> lock(g_allocator_mutex);
+    record_cuda_device_synchronize_wait(elapsed_ns);
 }
 
 extern "C" int lzvm_cuda_copy_h2d_row_slice_words(

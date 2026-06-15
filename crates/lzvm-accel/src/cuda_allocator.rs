@@ -64,6 +64,8 @@ pub struct CudaAllocatorStats {
     pub cuda_copy_d2d_max_wait_ns: usize,
     pub cuda_free_calls: usize,
     pub cuda_device_synchronize_calls: usize,
+    pub cuda_device_synchronize_wait_ns: usize,
+    pub cuda_device_synchronize_max_wait_ns: usize,
     pub cached_blocks: usize,
     pub cached_bytes: usize,
     pub cuda_event_query_calls: usize,

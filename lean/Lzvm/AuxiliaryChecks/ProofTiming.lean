@@ -446,7 +446,8 @@ theorem cuda_allocator_aggregate_timing_acceptance_sound
       hostRegisterCalls hostRegisterBytes hostRegisterWaitNanoseconds
       hostRegisterMaxWaitNanoseconds hostUnregisterCalls
       hostUnregisterWaitNanoseconds hostUnregisterMaxWaitNanoseconds
-      cachedBlocks cachedBytes eventQueryCalls
+      deviceSynchronizeCalls deviceSynchronizeWaitNanoseconds
+      deviceSynchronizeMaxWaitNanoseconds cachedBlocks cachedBytes eventQueryCalls
       eventQueryReadyCount eventQueryNotReadyCount eventSynchronizeCalls
       eventSynchronizeBytes eventSynchronizeMaxBytes eventSynchronizeWaitNanoseconds
       eventSynchronizeMaxWaitNanoseconds eventSynchronizeHotBytes
@@ -469,6 +470,11 @@ theorem cuda_allocator_aggregate_timing_acceptance_sound
             cudaAllocatorHostUnregisterWaitNanoseconds := hostUnregisterWaitNanoseconds
             cudaAllocatorHostUnregisterMaxWaitNanoseconds :=
               hostUnregisterMaxWaitNanoseconds
+            cudaAllocatorDeviceSynchronizeCallCount := deviceSynchronizeCalls
+            cudaAllocatorDeviceSynchronizeWaitNanoseconds :=
+              deviceSynchronizeWaitNanoseconds
+            cudaAllocatorDeviceSynchronizeMaxWaitNanoseconds :=
+              deviceSynchronizeMaxWaitNanoseconds
             cudaAllocatorCachedBlockCount := cachedBlocks
             cudaAllocatorCachedByteCount := cachedBytes
             cudaAllocatorEventQueryCallCount := eventQueryCalls
@@ -509,6 +515,11 @@ theorem cuda_allocator_aggregate_timing_acceptance_sound
           cudaAllocatorHostUnregisterWaitNanoseconds := hostUnregisterWaitNanoseconds
           cudaAllocatorHostUnregisterMaxWaitNanoseconds :=
             hostUnregisterMaxWaitNanoseconds
+          cudaAllocatorDeviceSynchronizeCallCount := deviceSynchronizeCalls
+          cudaAllocatorDeviceSynchronizeWaitNanoseconds :=
+            deviceSynchronizeWaitNanoseconds
+          cudaAllocatorDeviceSynchronizeMaxWaitNanoseconds :=
+            deviceSynchronizeMaxWaitNanoseconds
           cudaAllocatorCachedBlockCount := cachedBlocks
           cudaAllocatorCachedByteCount := cachedBytes
           cudaAllocatorEventQueryCallCount := eventQueryCalls
@@ -540,7 +551,8 @@ theorem cuda_allocator_aggregate_timing_acceptance_verifier_core_contract
       hostRegisterCalls hostRegisterBytes hostRegisterWaitNanoseconds
       hostRegisterMaxWaitNanoseconds hostUnregisterCalls
       hostUnregisterWaitNanoseconds hostUnregisterMaxWaitNanoseconds
-      cachedBlocks cachedBytes eventQueryCalls
+      deviceSynchronizeCalls deviceSynchronizeWaitNanoseconds
+      deviceSynchronizeMaxWaitNanoseconds cachedBlocks cachedBytes eventQueryCalls
       eventQueryReadyCount eventQueryNotReadyCount eventSynchronizeCalls
       eventSynchronizeBytes eventSynchronizeMaxBytes eventSynchronizeWaitNanoseconds
       eventSynchronizeMaxWaitNanoseconds eventSynchronizeHotBytes
@@ -563,6 +575,11 @@ theorem cuda_allocator_aggregate_timing_acceptance_verifier_core_contract
             cudaAllocatorHostUnregisterWaitNanoseconds := hostUnregisterWaitNanoseconds
             cudaAllocatorHostUnregisterMaxWaitNanoseconds :=
               hostUnregisterMaxWaitNanoseconds
+            cudaAllocatorDeviceSynchronizeCallCount := deviceSynchronizeCalls
+            cudaAllocatorDeviceSynchronizeWaitNanoseconds :=
+              deviceSynchronizeWaitNanoseconds
+            cudaAllocatorDeviceSynchronizeMaxWaitNanoseconds :=
+              deviceSynchronizeMaxWaitNanoseconds
             cudaAllocatorCachedBlockCount := cachedBlocks
             cudaAllocatorCachedByteCount := cachedBytes
             cudaAllocatorEventQueryCallCount := eventQueryCalls
@@ -602,6 +619,9 @@ theorem cuda_allocator_aggregate_timing_acceptance_verifier_core_contract
         hostUnregisterCalls
         hostUnregisterWaitNanoseconds
         hostUnregisterMaxWaitNanoseconds
+        deviceSynchronizeCalls
+        deviceSynchronizeWaitNanoseconds
+        deviceSynchronizeMaxWaitNanoseconds
         cachedBlocks
         cachedBytes
         eventQueryCalls

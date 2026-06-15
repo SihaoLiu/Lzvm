@@ -270,6 +270,24 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
         stats.cuda_copy_d2d_wait_ns,
         stats.cuda_copy_d2d_calls,
     );
+    timings.record_count(
+        "cuda_allocator_device_synchronize_calls",
+        stats.cuda_device_synchronize_calls,
+    );
+    timings.record_count(
+        "cuda_allocator_device_synchronize_wait_ns",
+        stats.cuda_device_synchronize_wait_ns,
+    );
+    timings.record_count(
+        "cuda_allocator_device_synchronize_max_wait_ns",
+        stats.cuda_device_synchronize_max_wait_ns,
+    );
+    record_average_wait_ns(
+        timings,
+        "cuda_allocator_device_synchronize_avg_wait_per_call_ns",
+        stats.cuda_device_synchronize_wait_ns,
+        stats.cuda_device_synchronize_calls,
+    );
     timings.record_count("cuda_allocator_cached_blocks", stats.cached_blocks);
     timings.record_count("cuda_allocator_cached_bytes", stats.cached_bytes);
     timings.record_count(
