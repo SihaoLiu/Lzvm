@@ -364,6 +364,86 @@ def print_d2h_preceding_kernels(rows: list[sqlite3.Row]) -> None:
         print("0,unavailable,0,0.000,0.000,0.000,0.000")
 
 
+def sum_rows_ns(rows: list[sqlite3.Row], column: str) -> int:
+    return sum(int(row[column] or 0) for row in rows)
+
+
+def direction_host_waits(rows: list[sqlite3.Row]) -> dict[str, int]:
+    waits: dict[str, int] = {}
+    for row in rows:
+        direction = str(row["direction"] or "unknown")
+        waits[direction] = waits.get(direction, 0) + int(row["host_ns"] or 0)
+    return waits
+
+
+def direction_gpu_waits(rows: list[sqlite3.Row]) -> dict[str, int]:
+    waits: dict[str, int] = {}
+    for row in rows:
+        direction = str(row["direction"] or "unknown")
+        waits[direction] = waits.get(direction, 0) + int(row["gpu_ns"] or 0)
+    return waits
+
+
+def top_direction(waits: dict[str, int]) -> tuple[str, int]:
+    if not waits:
+        return ("none", 0)
+    return max(waits.items(), key=lambda item: (item[1], item[0]))
+
+
+def print_transfer_triage(
+    runtime_rows: list[sqlite3.Row],
+    gpu_rows: list[sqlite3.Row],
+    correlated_rows: list[sqlite3.Row],
+    d2h_rows: list[sqlite3.Row],
+) -> None:
+    host_ns = sum_rows_ns(runtime_rows, "host_ns")
+    gpu_ns = sum_rows_ns(gpu_rows, "gpu_ns")
+    host_direction, host_direction_ns = top_direction(direction_host_waits(correlated_rows))
+    gpu_direction, gpu_direction_ns = top_direction(direction_gpu_waits(gpu_rows))
+    top_d2h = d2h_rows[0] if d2h_rows else None
+    print()
+    print("cuda_transfer_triage")
+    print("metric,value,detail")
+    print(
+        f"host_memcpy_api_ms,{ms(host_ns):.3f},"
+        "host time spent inside cudaMemcpy APIs"
+    )
+    print(f"gpu_memcpy_ms,{ms(gpu_ns):.3f},GPU copy engine activity")
+    print(
+        f"dominant_transfer_wait,{csv_cell(host_direction)},"
+        f"host_api_ms={ms(host_direction_ns):.3f}"
+    )
+    print(
+        f"dominant_gpu_copy,{csv_cell(gpu_direction)},"
+        f"gpu_memcpy_ms={ms(gpu_direction_ns):.3f}"
+    )
+    if top_d2h is None:
+        print("top_d2h_wait,none,no D2H memcpy activity")
+        print("gpu_residency_hint,none,no D2H hotspot")
+        return
+    top_host_ns = int(top_d2h["host_ns"] or 0)
+    top_gpu_ns = int(top_d2h["gpu_ns"] or 0)
+    top_bytes = int(top_d2h["bytes"] or 0)
+    print(
+        f"top_d2h_wait,{top_bytes},"
+        f"previous_kernel={csv_cell(top_d2h['previous_kernel'])} "
+        f"calls={int(top_d2h['calls'] or 0)} "
+        f"host_api_ms={ms(top_host_ns):.3f} "
+        f"gpu_memcpy_ms={ms(top_gpu_ns):.3f} "
+        f"wait_ratio={ratio(top_host_ns, top_gpu_ns)}"
+    )
+    if top_bytes <= 4096 and top_host_ns > top_gpu_ns * 100:
+        hint = "batch_or_keep_small_d2h_on_device"
+    elif host_direction == "Host-to-Device" and host_direction_ns > gpu_direction_ns:
+        hint = "prefer_reused_device_residency_for_h2d_inputs"
+    else:
+        hint = "inspect_callchains_before_copy_refactor"
+    print(
+        f"gpu_residency_hint,{hint},"
+        "prioritize changes that remove host round trips without changing verifier outputs"
+    )
+
+
 def print_callchain_hint(conn: sqlite3.Connection) -> None:
     missing = memcpy_missing_callchain_summary(conn)
     missing_calls = int(missing["calls"] or 0)
@@ -384,12 +464,18 @@ def print_callchain_hint(conn: sqlite3.Connection) -> None:
 def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     require_tables(conn)
     conn.row_factory = sqlite3.Row
+    runtime_rows = runtime_memcpy_summary(conn)
+    gpu_rows = gpu_memcpy_summary(conn)
+    correlated_rows = correlated_memcpy_summary(conn, limit)
+    callchain_rows = memcpy_callchain_summary(conn, limit)
+    d2h_rows = d2h_preceding_kernel_summary(conn, limit)
     print(f"profile={label}")
-    print_runtime(runtime_memcpy_summary(conn))
-    print_gpu(gpu_memcpy_summary(conn))
-    print_correlated(correlated_memcpy_summary(conn, limit))
-    print_callchains(conn, memcpy_callchain_summary(conn, limit))
-    print_d2h_preceding_kernels(d2h_preceding_kernel_summary(conn, limit))
+    print_runtime(runtime_rows)
+    print_gpu(gpu_rows)
+    print_correlated(correlated_rows)
+    print_callchains(conn, callchain_rows)
+    print_d2h_preceding_kernels(d2h_rows)
+    print_transfer_triage(runtime_rows, gpu_rows, correlated_rows, d2h_rows)
     print_callchain_hint(conn)
 
 
