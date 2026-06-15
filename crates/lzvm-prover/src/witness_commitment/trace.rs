@@ -991,6 +991,63 @@ fn commit_witness_stage_source_devices_and_indexed_timing_inner(
         );
     }
 
+    let pending = commit_witness_stage_source_devices_pending_timing(
+        source_devices,
+        unit,
+        external_source_required,
+        leaf_workspace_cache,
+    )?;
+    pending.materialize(timing)
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) struct PendingWitnessTraceStageCommitments {
+    pending_commitments: Vec<(
+        usize,
+        PendingWitnessStageCommitment,
+        WitnessStageCommitTiming,
+    )>,
+}
+
+#[cfg(feature = "cuda")]
+impl PendingWitnessTraceStageCommitments {
+    pub(crate) fn materialize(
+        self,
+        timing: &mut WitnessStageCommitTiming,
+    ) -> Result<
+        (
+            WitnessTraceCommitments,
+            Vec<WitnessIndexedStageCommitTiming>,
+        ),
+        WitnessTraceCommitmentError,
+    > {
+        materialize_pending_cuda_witness_stage_commitment_groups(vec![self], timing)?
+            .pop()
+            .ok_or(WitnessTraceCommitmentError::LengthOverflow)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn materialize_all(
+        pending_groups: Vec<Self>,
+        timing: &mut WitnessStageCommitTiming,
+    ) -> Result<
+        Vec<(
+            WitnessTraceCommitments,
+            Vec<WitnessIndexedStageCommitTiming>,
+        )>,
+        WitnessTraceCommitmentError,
+    > {
+        materialize_pending_cuda_witness_stage_commitment_groups(pending_groups, timing)
+    }
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn commit_witness_stage_source_devices_pending_timing(
+    source_devices: &[WitnessStageSourceDevice],
+    unit: &ProveUnitSchedule,
+    external_source_required: bool,
+    leaf_workspace_cache: Option<&mut WitnessStageLeafWorkspaceCache>,
+) -> Result<PendingWitnessTraceStageCommitments, WitnessTraceCommitmentError> {
     let params = WitnessStageCommitParams::from_unit(unit)?;
     let mut pending_commitments = Vec::with_capacity(source_devices.len());
     let mut local_leaf_workspace_cache = WitnessStageLeafWorkspaceCache::default();
@@ -1010,9 +1067,9 @@ fn commit_witness_stage_source_devices_and_indexed_timing_inner(
         )?;
         pending_commitments.push((source_device.stage_index(), commitment, stage_timing));
     }
-    let (commitments, stage_timings) =
-        materialize_pending_cuda_witness_stage_commitments(pending_commitments, timing)?;
-    Ok((commitments, stage_timings))
+    Ok(PendingWitnessTraceStageCommitments {
+        pending_commitments,
+    })
 }
 
 #[cfg(feature = "cuda")]
@@ -1120,7 +1177,10 @@ pub(crate) fn commit_witness_stage_source_devices_stream_pipeline_timing(
         pending_commitments.push(finished);
     }
 
-    materialize_pending_cuda_witness_stage_commitments(pending_commitments, timing)
+    PendingWitnessTraceStageCommitments {
+        pending_commitments,
+    }
+    .materialize(timing)
 }
 
 #[cfg(feature = "cuda")]
@@ -1231,35 +1291,27 @@ fn finish_source_device_stream_pending_leaf(
 }
 
 #[cfg(feature = "cuda")]
-fn materialize_pending_cuda_witness_stage_commitments(
+enum PendingStageMaterialization {
+    Cuda {
+        stage_index: usize,
+        pending: PendingCudaWitnessStageCommitmentMaterialization,
+        stage_timing: WitnessStageCommitTiming,
+    },
+    Ready {
+        stage_index: usize,
+        commitment: WitnessStageCommitment,
+        stage_timing: WitnessStageCommitTiming,
+    },
+}
+
+#[cfg(feature = "cuda")]
+fn begin_pending_cuda_witness_stage_commitments(
     mut pending_commitments: Vec<(
         usize,
         PendingWitnessStageCommitment,
         WitnessStageCommitTiming,
     )>,
-    timing: &mut WitnessStageCommitTiming,
-) -> Result<
-    (
-        WitnessTraceCommitments,
-        Vec<WitnessIndexedStageCommitTiming>,
-    ),
-    WitnessTraceCommitmentError,
-> {
-    enum PendingStageMaterialization {
-        Cuda {
-            stage_index: usize,
-            pending: PendingCudaWitnessStageCommitmentMaterialization,
-            stage_timing: WitnessStageCommitTiming,
-        },
-        Ready {
-            stage_index: usize,
-            commitment: WitnessStageCommitment,
-            stage_timing: WitnessStageCommitTiming,
-        },
-    }
-
-    let mut commitments = Vec::with_capacity(pending_commitments.len());
-    let mut stage_timings = Vec::with_capacity(pending_commitments.len());
+) -> Result<(Vec<PendingStageMaterialization>, usize), WitnessTraceCommitmentError> {
     let mut materializations = Vec::with_capacity(pending_commitments.len());
     let mut cuda_materialization_count = 0_usize;
     pending_commitments.sort_by_key(|(stage_index, _, _)| *stage_index);
@@ -1290,7 +1342,15 @@ fn materialize_pending_cuda_witness_stage_commitments(
             }
         }
     }
+    Ok((materializations, cuda_materialization_count))
+}
 
+#[cfg(feature = "cuda")]
+fn attach_pending_cuda_root_sync_timing(
+    materialization_groups: &mut [Vec<PendingStageMaterialization>],
+    cuda_materialization_count: usize,
+) -> Result<(), WitnessTraceCommitmentError> {
+    let mut sync_timing = WitnessStageCommitTiming::default();
     if cuda_materialization_count > 0 {
         let mut tree_timing = WitnessStageTreeCommitTiming::default();
         let started = Instant::now();
@@ -1301,16 +1361,35 @@ fn materialize_pending_cuda_witness_stage_commitments(
             &mut tree_timing,
             cuda_materialization_count,
         );
-        if let Some(PendingStageMaterialization::Cuda { stage_timing, .. }) =
-            materializations.iter_mut().find(|materialization| {
-                matches!(materialization, PendingStageMaterialization::Cuda { .. })
-            })
-        {
-            stage_timing.tree_commit_duration += sync_duration;
-            stage_timing.accumulate_tree_commit_timing(tree_timing);
+        sync_timing.tree_commit_duration += sync_duration;
+        sync_timing.accumulate_tree_commit_timing(tree_timing);
+        for materializations in materialization_groups {
+            if let Some(PendingStageMaterialization::Cuda { stage_timing, .. }) =
+                materializations.iter_mut().find(|materialization| {
+                    matches!(materialization, PendingStageMaterialization::Cuda { .. })
+                })
+            {
+                stage_timing.accumulate(sync_timing);
+                break;
+            }
         }
     }
+    Ok(())
+}
 
+#[cfg(feature = "cuda")]
+fn finish_pending_cuda_witness_stage_materializations(
+    materializations: Vec<PendingStageMaterialization>,
+    timing: &mut WitnessStageCommitTiming,
+) -> Result<
+    (
+        WitnessTraceCommitments,
+        Vec<WitnessIndexedStageCommitTiming>,
+    ),
+    WitnessTraceCommitmentError,
+> {
+    let mut commitments = Vec::with_capacity(materializations.len());
+    let mut stage_timings = Vec::with_capacity(materializations.len());
     for materialization in materializations {
         let (stage_index, commitment, stage_timing) = match materialization {
             PendingStageMaterialization::Cuda {
@@ -1343,6 +1422,38 @@ fn materialize_pending_cuda_witness_stage_commitments(
     }
     stage_timings.sort_by_key(|timing| timing.stage_index());
     Ok((WitnessTraceCommitments::new(commitments), stage_timings))
+}
+
+#[cfg(feature = "cuda")]
+fn materialize_pending_cuda_witness_stage_commitment_groups(
+    pending_groups: Vec<PendingWitnessTraceStageCommitments>,
+    timing: &mut WitnessStageCommitTiming,
+) -> Result<
+    Vec<(
+        WitnessTraceCommitments,
+        Vec<WitnessIndexedStageCommitTiming>,
+    )>,
+    WitnessTraceCommitmentError,
+> {
+    let mut materialization_groups = Vec::with_capacity(pending_groups.len());
+    let mut cuda_materialization_count = 0_usize;
+    for pending_group in pending_groups {
+        let (materializations, group_cuda_count) =
+            begin_pending_cuda_witness_stage_commitments(pending_group.pending_commitments)?;
+        cuda_materialization_count += group_cuda_count;
+        materialization_groups.push(materializations);
+    }
+
+    attach_pending_cuda_root_sync_timing(&mut materialization_groups, cuda_materialization_count)?;
+
+    let mut outputs = Vec::with_capacity(materialization_groups.len());
+    for materializations in materialization_groups {
+        outputs.push(finish_pending_cuda_witness_stage_materializations(
+            materializations,
+            timing,
+        )?);
+    }
+    Ok(outputs)
 }
 
 #[cfg(feature = "cuda")]
@@ -1852,10 +1963,11 @@ fn debug_fri_stage_source_devices() -> bool {
 #[cfg(all(test, feature = "cuda"))]
 mod tests {
     use super::{
-        commit_extended_witness_stage, commit_witness_stage_source_devices_stream_pipeline_timing,
+        commit_extended_witness_stage, commit_witness_stage_source_devices_pending_timing,
+        commit_witness_stage_source_devices_stream_pipeline_timing,
         commit_witness_stage_values_with_workers, commit_witness_trace_stages_with_workers,
-        extend_witness_stage_leaves, WitnessStageCommitParams, WitnessStageCommitTiming,
-        WitnessStageSourceDevice,
+        extend_witness_stage_leaves, PendingWitnessTraceStageCommitments, WitnessStageCommitParams,
+        WitnessStageCommitTiming, WitnessStageSourceDevice,
     };
     use crate::witness_commitment::commit_witness_stage_leaves;
     use crate::witness_layout::derive_witness_trace_layout;
@@ -1954,6 +2066,74 @@ mod tests {
             assert_eq!(actual.stage_index(), expected.stage_index());
             assert_eq!(actual.root(), expected.root());
             assert_eq!(actual.tree_byte_count(), expected.tree_byte_count());
+        }
+    }
+
+    #[test]
+    fn cuda_pending_source_device_commitment_groups_materialize_with_one_root_sync() {
+        let unit = sample_unit(4, vec![1, 2, 2]);
+        let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+        let value_count = 4 * 5;
+        let values = (0..value_count)
+            .map(|value| Felt::from_u64((value as u64 + 5) * 17))
+            .collect::<Vec<_>>();
+        let trace =
+            WitnessTraceBuffer::from_values(4, 5, values).expect("trace shape should be valid");
+        let stages = layout
+            .stages()
+            .iter()
+            .map(|stage| layout.stage_trace(&trace, stage.stage_index))
+            .collect::<Result<Vec<_>, _>>()
+            .expect("stages should extract");
+        let source = Arc::new(
+            CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(trace.values()))
+                .expect("trace source should upload"),
+        );
+        let source_devices = vec![
+            WitnessStageSourceDevice::from_row_major_column_window_with_known_zero(
+                1, 4, 1, 5, 0, false, &source,
+            ),
+            WitnessStageSourceDevice::from_row_major_column_window_with_known_zero(
+                2, 4, 2, 5, 1, false, &source,
+            ),
+            WitnessStageSourceDevice::from_row_major_column_window_with_known_zero(
+                3, 4, 2, 5, 3, false, &source,
+            ),
+        ];
+
+        let default = commit_witness_stage_values_with_workers(&stages, &unit, 1)
+            .expect("default commitments should build");
+        let first_pending =
+            commit_witness_stage_source_devices_pending_timing(&source_devices, &unit, true, None)
+                .expect("first pending commitments should build");
+        let second_pending =
+            commit_witness_stage_source_devices_pending_timing(&source_devices, &unit, true, None)
+                .expect("second pending commitments should build");
+        let mut batch_timing = WitnessStageCommitTiming::default();
+
+        let outputs = PendingWitnessTraceStageCommitments::materialize_all(
+            vec![first_pending, second_pending],
+            &mut batch_timing,
+        )
+        .expect("pending groups should materialize");
+
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(
+            batch_timing.tree_commit_root_materialization_group_count(),
+            1
+        );
+        assert_eq!(
+            batch_timing.tree_commit_root_materialization_max_group_size(),
+            6
+        );
+        for (commitments, stage_timings) in outputs {
+            assert_eq!(stage_timings.len(), 3);
+            assert_eq!(commitments.commitments().len(), default.commitments().len());
+            for (actual, expected) in commitments.commitments().iter().zip(default.commitments()) {
+                assert_eq!(actual.stage_index(), expected.stage_index());
+                assert_eq!(actual.root(), expected.root());
+                assert_eq!(actual.tree_byte_count(), expected.tree_byte_count());
+            }
         }
     }
 

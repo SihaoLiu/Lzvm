@@ -2728,21 +2728,35 @@ fn cuda_source_device_commit_defers_root_downloads_until_batch_end() {
         "fn commit_witness_stage_source_devices_and_indexed_timing_inner",
         "#[cfg(feature = \"cuda\")]\nfn commit_witness_stage_values_with_workers_and_timing_inner",
     );
-    let loop_index = source_device_body
-        .find("for source_device in source_devices")
-        .expect("source-device commitment should iterate stages");
-    let materialize_index = source_device_body
-        .find("materialize_pending_cuda_witness_stage_commitments")
-        .expect("source-device commitment should batch materialize pending root downloads");
-
     assert!(
-        source_device_body.contains("PendingCudaWitnessStageCommitment")
-            && source_device_body.contains("commit_extended_witness_stage_source_device_pending"),
-        "source-device commitment should collect pending CUDA roots before host materialization"
+        source_device_body.contains("PendingWitnessTraceStageCommitments")
+            && source_device_body.contains("commit_witness_stage_source_devices_pending_timing")
+            && source_device_body.contains(".materialize(timing)"),
+        "source-device commitment should return a pending group before host materialization"
+    );
+    let pending_builder_body = function_body(
+        &trace_source,
+        "fn commit_witness_stage_source_devices_pending_timing",
+        "#[cfg(feature = \"cuda\")]\nenum PendingWitnessStageCommitment",
     );
     assert!(
-        materialize_index > loop_index,
-        "source-device commitment should download roots after queueing all stage root kernels"
+        pending_builder_body.contains("for source_device in source_devices")
+            && pending_builder_body.contains("pending_commitments.push")
+            && pending_builder_body
+                .contains("commit_extended_witness_stage_source_device_pending")
+            && !pending_builder_body.contains("begin_materialize_with_timing"),
+        "pending source-device commitment builder should collect CUDA roots without downloading them"
+    );
+    let group_materializer_body = function_body(
+        &trace_source,
+        "fn materialize_pending_cuda_witness_stage_commitment_groups",
+        "#[cfg(feature = \"cuda\")]\nfn commit_witness_stage_values_with_workers_and_timing_inner",
+    );
+    assert!(
+        group_materializer_body.contains("begin_pending_cuda_witness_stage_commitments")
+            && group_materializer_body.contains("attach_pending_cuda_root_sync_timing")
+            && group_materializer_body.contains("finish_pending_cuda_witness_stage_materializations"),
+        "group-capable materializer should begin all pending roots, synchronize once, then finish each group"
     );
     assert!(
         tree_source.contains("struct PendingCudaWitnessStageCommitment")
