@@ -209,6 +209,20 @@ theorem runtime_opening_segment_binding_evidence_implies_bound_contract
   intro artifact publicInput proof evidence
   exact evidence
 
+theorem runtime_opening_segment_binding_evidence_implies_query_plan_bound
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanBound artifact publicInput proof := by
+  intro artifact publicInput proof evidence
+  exact evidence.left
+
 theorem runtime_opening_segment_binding_evidence_implies_fri_opening_checks
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -326,6 +340,25 @@ theorem runtime_opening_segment_binding_checked_acceptance_opening
   intro artifact publicInput proof accepted
   exact
     validation.openingSegmentBindingAcceptedImpliesOpeningAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_opening_segment_binding_checked_acceptance_query_plan_bound
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.openingSegmentBindingAcceptedImpliesQueryPlanBound
       artifact
       publicInput
       proof
