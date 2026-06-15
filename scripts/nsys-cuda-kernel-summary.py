@@ -7,6 +7,8 @@ from pathlib import Path
 
 RUNTIME_TABLE = "CUPTI_ACTIVITY_KIND_RUNTIME"
 KERNEL_TABLE = "CUPTI_ACTIVITY_KIND_KERNEL"
+MEMCPY_TABLE = "CUPTI_ACTIVITY_KIND_MEMCPY"
+MEMCPY_KIND_TABLE = "ENUM_CUDA_MEMCPY_OPER"
 STRING_TABLE = "StringIds"
 
 
@@ -24,6 +26,10 @@ def ratio(host_ns: int | float | None, gpu_ns: int | float | None) -> str:
     if gpu == 0:
         return "inf" if host > 0 else "0.000"
     return f"{host / gpu:.3f}"
+
+
+def csv_cell(value: object) -> str:
+    return str(value).replace(",", " ").replace("\n", " ").replace("\r", " ")
 
 
 def table_exists(conn: sqlite3.Connection, name: str) -> bool:
@@ -199,6 +205,89 @@ def graph_shape_candidate_summary(conn: sqlite3.Connection, limit: int) -> list[
         """,
         (limit,),
     ).fetchall()
+
+
+def memcpy_tables_available(conn: sqlite3.Connection) -> bool:
+    return table_exists(conn, MEMCPY_TABLE) and table_exists(conn, MEMCPY_KIND_TABLE)
+
+
+def memcpy_direction_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    if not memcpy_tables_available(conn):
+        return []
+    return conn.execute(
+        f"""
+        select
+            coalesce(e.label, 'copyKind=' || m.copyKind) as direction,
+            count(*) as calls,
+            sum(m.bytes) as bytes,
+            sum(m.end - m.start) as gpu_ns,
+            sum(coalesce(r.end - r.start, 0)) as host_ns
+        from {MEMCPY_TABLE} m
+        left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
+        left join {RUNTIME_TABLE} r on r.correlationId = m.correlationId
+        group by direction
+        order by host_ns desc, gpu_ns desc, bytes desc, calls desc, direction asc
+        """
+    ).fetchall()
+
+
+def d2h_preceding_kernel_summary(conn: sqlite3.Connection) -> sqlite3.Row | None:
+    if not memcpy_tables_available(conn):
+        return None
+    conn.executescript(
+        f"""
+        drop table if exists temp._lzvm_kernel_summary_d2h_memcpy;
+        drop table if exists temp._lzvm_kernel_summary_stream_end;
+        create temp table _lzvm_kernel_summary_d2h_memcpy as
+            select
+                coalesce(r.start, m.start) as runtime_start,
+                coalesce(r.end, m.end) as runtime_end,
+                m.start as memcpy_start,
+                m.end as memcpy_end,
+                m.bytes as bytes,
+                m.streamId as stream_id
+            from {MEMCPY_TABLE} m
+            left join {RUNTIME_TABLE} r on r.correlationId = m.correlationId
+            left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
+            where coalesce(e.label, 'copyKind=' || m.copyKind) = 'Device-to-Host';
+        create temp table _lzvm_kernel_summary_stream_end as
+            select
+                streamId as stream_id,
+                end as kernel_end,
+                shortName as kernel_name_id
+            from {KERNEL_TABLE};
+        create index _lzvm_kernel_summary_stream_end_idx
+            on _lzvm_kernel_summary_stream_end(stream_id, kernel_end);
+        """
+    )
+    return conn.execute(
+        f"""
+        with d2h_with_kernel as (
+            select
+                d2h.*,
+                (
+                    select k.kernel_name_id
+                    from _lzvm_kernel_summary_stream_end k
+                    where k.stream_id = d2h.stream_id
+                      and k.kernel_end <= d2h.memcpy_start
+                    order by k.kernel_end desc
+                    limit 1
+                ) as previous_kernel_name_id
+            from _lzvm_kernel_summary_d2h_memcpy d2h
+        )
+        select
+            bytes,
+            coalesce(kernel.value, 'unresolved') as previous_kernel,
+            count(*) as calls,
+            sum(runtime_end - runtime_start) as host_ns,
+            sum(memcpy_end - memcpy_start) as gpu_ns
+        from d2h_with_kernel
+        left join {STRING_TABLE} kernel on kernel.id = previous_kernel_name_id
+        group by bytes, previous_kernel
+        order by host_ns desc, calls desc, bytes asc, previous_kernel asc
+        limit 1
+        """
+    ).fetchone()
 
 
 def kernel_launch_timeline(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -437,6 +526,8 @@ def print_direction_triage(
     fusion_rows: list[sqlite3.Row],
     graph_shape_rows: list[sqlite3.Row],
     adjacency_rows: list[dict[str, object]],
+    memcpy_rows: list[sqlite3.Row],
+    top_d2h: sqlite3.Row | None,
 ) -> None:
     launch_ns = sum_rows_ns(launch_rows, "launch_ns")
     sync_ns = sum_rows_ns(sync_rows, "sync_ns")
@@ -499,6 +590,42 @@ def print_direction_triage(
         "kernel_separation_hint,use_ncu_occupancy_before_splitting,"
         "nsys identifies launch and sync shape but not resource limits"
     )
+    host_memcpy_ns = sum_rows_ns(memcpy_rows, "host_ns")
+    gpu_memcpy_ns = sum_rows_ns(memcpy_rows, "gpu_ns")
+    print(
+        f"host_memcpy_api_ms,{ms(host_memcpy_ns):.3f},"
+        "host time spent inside cudaMemcpy APIs"
+    )
+    print(f"gpu_memcpy_ms,{ms(gpu_memcpy_ns):.3f},GPU copy engine activity")
+    if top_d2h is None:
+        if memcpy_rows:
+            detail = "no Device-to-Host copy hotspot in this profile"
+        else:
+            detail = "nsys export lacks CUDA memcpy tables"
+        print(f"top_d2h_wait,none,{detail}")
+        print("transfer_residency_hint,none,no D2H hotspot visible to this summary")
+        return
+    top_host_ns = int(top_d2h["host_ns"] or 0)
+    top_gpu_ns = int(top_d2h["gpu_ns"] or 0)
+    top_bytes = int(top_d2h["bytes"] or 0)
+    print(
+        f"top_d2h_wait,{top_bytes},"
+        f"previous_kernel={csv_cell(top_d2h['previous_kernel'])} "
+        f"calls={int(top_d2h['calls'] or 0)} "
+        f"host_api_ms={ms(top_host_ns):.3f} "
+        f"gpu_memcpy_ms={ms(top_gpu_ns):.3f} "
+        f"wait_ratio={ratio(top_host_ns, top_gpu_ns)}"
+    )
+    if top_bytes <= 4096 and top_host_ns > top_gpu_ns * 100:
+        hint = "batch_or_keep_small_d2h_on_device"
+    elif host_memcpy_ns > gpu_memcpy_ns * 5:
+        hint = "reduce_host_round_trips_before_launch_fusion"
+    else:
+        hint = "inspect_transfer_callchains_before_copy_refactor"
+    print(
+        f"transfer_residency_hint,{hint},"
+        "prioritize data residency before relying on Graph or fusion speedups"
+    )
 
 
 def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
@@ -510,6 +637,8 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     fusion_rows = fusion_candidate_summary(conn, limit)
     graph_shape_rows = graph_shape_candidate_summary(conn, limit)
     adjacency_rows = kernel_adjacency_summary(conn, limit)
+    memcpy_rows = memcpy_direction_summary(conn)
+    top_d2h = d2h_preceding_kernel_summary(conn)
     print(f"profile={label}")
     print_kernel_gpu(kernel_gpu_summary(conn, limit))
     print_launch_api(launch_rows)
@@ -526,6 +655,8 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
         fusion_rows,
         graph_shape_rows,
         adjacency_rows,
+        memcpy_rows,
+        top_d2h,
     )
 
 
@@ -534,6 +665,7 @@ def build_self_test_db() -> sqlite3.Connection:
     conn.executescript(
         f"""
         create table {STRING_TABLE} (id integer primary key, value text);
+        create table {MEMCPY_KIND_TABLE} (id integer primary key, label text);
         create table {RUNTIME_TABLE} (
             start integer,
             end integer,
@@ -566,6 +698,14 @@ def build_self_test_db() -> sqlite3.Connection:
             localMemoryTotal integer not null,
             gridId integer not null
         );
+        create table {MEMCPY_TABLE} (
+            start integer,
+            end integer,
+            bytes integer,
+            copyKind integer,
+            correlationId integer,
+            streamId integer
+        );
         """
     )
     conn.executemany(
@@ -575,6 +715,14 @@ def build_self_test_db() -> sqlite3.Connection:
             (2, "ntt_stage_kernel"),
             (3, "poseidon2_width16_merkle_parent_kernel"),
             (4, "cudaDeviceSynchronize_v3020"),
+            (5, "cudaMemcpyAsync_v3020"),
+        ],
+    )
+    conn.executemany(
+        f"insert into {MEMCPY_KIND_TABLE} (id, label) values (?, ?)",
+        [
+            (1, "Host-to-Device"),
+            (2, "Device-to-Host"),
         ],
     )
     conn.executemany(
@@ -589,6 +737,7 @@ def build_self_test_db() -> sqlite3.Connection:
             (100_000, 150_000, 0, 0, 12, 1, 0, 0),
             (160_000, 230_000, 0, 0, 0, 4, 0, 0),
             (240_000, 260_000, 0, 0, 13, 1, 0, 0),
+            (262_000, 1_862_000, 0, 0, 20, 5, 0, 0),
         ],
     )
     conn.executemany(
@@ -605,6 +754,16 @@ def build_self_test_db() -> sqlite3.Connection:
             (51_000, 71_000, 0, 0, 7, 11, 2, 2, 64, 64, 1, 1, 256, 1, 1, 0, 0, 0, 0, 2),
             (101_000, 151_000, 0, 0, 9, 12, 3, 3, 96, 8, 1, 1, 128, 1, 1, 0, 0, 0, 0, 3),
             (241_000, 261_000, 0, 0, 7, 13, 2, 2, 64, 64, 1, 1, 256, 1, 1, 0, 0, 0, 0, 4),
+        ],
+    )
+    conn.executemany(
+        f"""
+        insert into {MEMCPY_TABLE}
+            (start, end, bytes, copyKind, correlationId, streamId)
+        values (?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (262_100, 262_600, 1152, 2, 20, 7),
         ],
     )
     return conn

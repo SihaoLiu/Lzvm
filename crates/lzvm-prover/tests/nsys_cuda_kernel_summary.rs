@@ -11,6 +11,8 @@ fn nsys_cuda_kernel_summary_reports_kernel_launch_and_stream_shape() {
     for required in [
         "CUPTI_ACTIVITY_KIND_KERNEL",
         "CUPTI_ACTIVITY_KIND_RUNTIME",
+        "CUPTI_ACTIVITY_KIND_MEMCPY",
+        "ENUM_CUDA_MEMCPY_OPER",
         "StringIds",
         "cudaLaunchKernel",
         "kernel_gpu_activity",
@@ -21,6 +23,8 @@ fn nsys_cuda_kernel_summary_reports_kernel_launch_and_stream_shape() {
         "kernel_adjacency_candidates",
         "runtime_cuda_sync_api",
         "cuda_graph_fusion_separation_triage",
+        "transfer_residency_hint",
+        "top_d2h_wait",
     ] {
         assert!(
             script_source.contains(required),
@@ -64,6 +68,9 @@ fn nsys_cuda_kernel_summary_reports_kernel_launch_and_stream_shape() {
         "next_action_hint",
         "top_graph_shape",
         "top_same_stream_pair",
+        "transfer_residency_hint",
+        "batch_or_keep_small_d2h_on_device",
+        "top_d2h_wait,1152",
     ] {
         assert!(
             stdout.contains(required),
