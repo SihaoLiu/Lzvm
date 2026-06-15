@@ -25,6 +25,11 @@ unsafe extern "C" {
         bytes: usize,
         stream: *mut c_void,
     ) -> i32;
+    fn lzvm_cuda_copy_d2h_bytes_on_default_stream(
+        dst: *mut c_void,
+        src: *const c_void,
+        bytes: usize,
+    ) -> i32;
     fn lzvm_cuda_copy_h2d_row_slice_words(
         dst: *mut c_void,
         src: *const c_void,
@@ -1318,6 +1323,26 @@ impl CudaDeviceBuffer {
         unsafe { self.copy_range_to_pinned_on_stream(0, output, stream) }
     }
 
+    /// Enqueues a device-to-page-locked-host copy on the legacy default stream.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep `self` and `output` alive until the copy has
+    /// completed, and must not read `output` until the device or default stream
+    /// has been synchronized.
+    pub unsafe fn copy_to_pinned_on_default_stream(
+        &self,
+        output: &mut CudaPinnedHostBuffer,
+    ) -> Result<(), AccelError> {
+        if output.len() != self.len {
+            return Err(AccelError::LengthMismatch {
+                lhs: self.len,
+                rhs: output.len(),
+            });
+        }
+        unsafe { self.copy_range_to_pinned_on_default_stream(0, output) }
+    }
+
     pub fn copy_range_to(&self, byte_offset: usize, output: &mut [u8]) -> Result<(), AccelError> {
         let end = byte_offset
             .checked_add(output.len())
@@ -1337,6 +1362,45 @@ impl CudaDeviceBuffer {
         let source = unsafe { (self.ptr as *const u8).add(byte_offset).cast() };
         let code =
             unsafe { lzvm_cuda_copy_d2h_bytes(output.as_mut_ptr().cast(), source, output.len()) };
+        cuda_status(code)
+    }
+
+    /// Enqueues a device range to page-locked host memory on the legacy default
+    /// stream.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep `self` and `output` alive until the copy has
+    /// completed, and must not read `output` until the device or default stream
+    /// has been synchronized.
+    pub unsafe fn copy_range_to_pinned_on_default_stream(
+        &self,
+        byte_offset: usize,
+        output: &mut CudaPinnedHostBuffer,
+    ) -> Result<(), AccelError> {
+        let end = byte_offset
+            .checked_add(output.len())
+            .ok_or(AccelError::LengthMismatch {
+                lhs: self.len,
+                rhs: output.len(),
+            })?;
+        if end > self.len {
+            return Err(AccelError::LengthMismatch {
+                lhs: self.len.saturating_sub(byte_offset.min(self.len)),
+                rhs: output.len(),
+            });
+        }
+        if output.is_empty() {
+            return Ok(());
+        }
+        let source = unsafe { (self.ptr as *const u8).add(byte_offset).cast() };
+        let code = unsafe {
+            lzvm_cuda_copy_d2h_bytes_on_default_stream(
+                output.as_mut_raw_ptr(),
+                source,
+                output.len(),
+            )
+        };
         cuda_status(code)
     }
 

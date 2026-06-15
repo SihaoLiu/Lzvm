@@ -120,6 +120,10 @@ extern "C" int lzvm_cuda_copy_d2h_bytes_on_stream(
     const void* src,
     std::size_t bytes,
     void* stream);
+extern "C" int lzvm_cuda_copy_d2h_bytes_on_default_stream(
+    void* dst,
+    const void* src,
+    std::size_t bytes);
 extern "C" void lzvm_cuda_record_direct_copy_d2h_wait(
     std::size_t bytes,
     std::size_t elapsed_ns);

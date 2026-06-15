@@ -138,3 +138,35 @@ extern "C" void lzvm_cuda_pinned_host_free(void* ptr) {
         (void)cudaFreeHost(ptr);
     }
 }
+
+extern "C" int lzvm_cuda_memset_zero_bytes(void* dst, std::size_t bytes) {
+    if (bytes == 0) {
+        return 0;
+    }
+    if (dst == nullptr) {
+        return -1;
+    }
+    return static_cast<int>(cudaMemset(dst, 0, bytes));
+}
+
+extern "C" int lzvm_cuda_memset_zero_bytes_on_stream(
+    void* dst,
+    std::size_t bytes,
+    void* stream_raw) {
+    if (bytes == 0) {
+        return 0;
+    }
+    if (dst == nullptr || stream_raw == nullptr) {
+        return -1;
+    }
+    return static_cast<int>(
+        cudaMemsetAsync(dst, 0, bytes, static_cast<cudaStream_t>(stream_raw)));
+}
+
+extern "C" int lzvm_cuda_check_launch(void) {
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int lzvm_cuda_synchronize(void) {
+    return static_cast<int>(cudaDeviceSynchronize());
+}

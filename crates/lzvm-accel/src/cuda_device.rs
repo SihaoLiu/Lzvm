@@ -15,6 +15,7 @@ pub struct CudaMemoryInfo {
 
 unsafe extern "C" {
     fn lzvm_cuda_memory_info(out: *mut LzvmCudaMemoryInfo) -> i32;
+    fn lzvm_cuda_synchronize() -> i32;
 }
 
 pub fn cuda_memory_info() -> Result<CudaMemoryInfo, AccelError> {
@@ -25,4 +26,9 @@ pub fn cuda_memory_info() -> Result<CudaMemoryInfo, AccelError> {
         free_bytes: raw.free_bytes,
         total_bytes: raw.total_bytes,
     })
+}
+
+pub fn cuda_device_synchronize() -> Result<(), AccelError> {
+    let code = unsafe { lzvm_cuda_synchronize() };
+    cuda_status(code)
 }

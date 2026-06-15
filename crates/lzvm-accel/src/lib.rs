@@ -32,7 +32,7 @@ pub use cuda_canonical::{
     cuda_goldilocks_validate_canonical_words_device, CudaCanonicalCheck,
 };
 #[cfg(feature = "cuda")]
-pub use cuda_device::{cuda_memory_info, CudaMemoryInfo};
+pub use cuda_device::{cuda_device_synchronize, cuda_memory_info, CudaMemoryInfo};
 #[cfg(feature = "cuda")]
 pub use cuda_regular_constraints::{
     cuda_regular_constraints_base, CudaRegularConstraintEntry, CudaRegularConstraintInputs,

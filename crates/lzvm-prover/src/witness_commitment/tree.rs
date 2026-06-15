@@ -9,7 +9,10 @@ use crate::merkle_hash::{
     linear_hash, linear_hashes_from_row_major_bytes, parent_hash, parent_levels_from_digest_level,
 };
 #[cfg(feature = "cuda")]
-use crate::merkle_hash::{CudaDigestCheckpointLevel, CudaDigestRoot};
+use crate::merkle_hash::{
+    synchronize_cuda_digest_root_materializations, CudaDigestCheckpointLevel, CudaDigestRoot,
+    PendingCudaDigestRootMaterialization,
+};
 use crate::witness_layout::WitnessTraceStageValues;
 
 #[cfg(feature = "cuda")]
@@ -59,21 +62,84 @@ pub(crate) struct PendingCudaWitnessStageCommitment {
 }
 
 #[cfg(feature = "cuda")]
+pub(crate) struct PendingCudaWitnessStageCommitmentMaterialization {
+    stage_index: usize,
+    arity: usize,
+    root: PendingCudaDigestRootMaterialization,
+    leaf_level: PendingCanonicalCudaDigestLevel,
+    parent_checkpoint: Option<CudaDigestCheckpointLevel>,
+    retained_source_device: Option<WitnessStageSourceDeviceView>,
+    source_rows: usize,
+    extended_rows: usize,
+    columns: usize,
+    source_bits: usize,
+    target_bits: usize,
+    raw_leaf_bytes: usize,
+    logical_tree_bytes: usize,
+    external_source_required: bool,
+    expected_source_bytes: usize,
+}
+
+#[cfg(feature = "cuda")]
 impl PendingCudaWitnessStageCommitment {
-    pub(crate) fn materialize_with_timing(
+    pub(crate) fn begin_materialize_with_timing(
+        self,
+        timing: &mut WitnessStageTreeCommitTiming,
+    ) -> Result<PendingCudaWitnessStageCommitmentMaterialization, WitnessStageCommitmentError> {
+        let Self {
+            stage_index,
+            arity,
+            root,
+            leaf_level,
+            parent_checkpoint,
+            retained_source_device,
+            source_rows,
+            extended_rows,
+            columns,
+            source_bits,
+            target_bits,
+            raw_leaf_bytes,
+            logical_tree_bytes,
+            external_source_required,
+            expected_source_bytes,
+        } = self;
+        let root = record_stage_tree_commit_duration(Some(&mut timing.root_duration), || {
+            root.begin_materialize_on_default_stream()
+                .map_err(WitnessStageCommitmentError::from)
+        })?;
+        timing.root_count += 1;
+        timing.root_byte_count += HASH_WORDS * WORD_BYTES;
+        Ok(PendingCudaWitnessStageCommitmentMaterialization {
+            stage_index,
+            arity,
+            root,
+            leaf_level,
+            parent_checkpoint,
+            retained_source_device,
+            source_rows,
+            extended_rows,
+            columns,
+            source_bits,
+            target_bits,
+            raw_leaf_bytes,
+            logical_tree_bytes,
+            external_source_required,
+            expected_source_bytes,
+        })
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl PendingCudaWitnessStageCommitmentMaterialization {
+    pub(crate) fn finish_after_root_synchronize(
         self,
         timing: &mut WitnessStageTreeCommitTiming,
     ) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
         let root = record_stage_tree_commit_duration(Some(&mut timing.root_duration), || {
             self.root
-                .materialize()
+                .finish_after_device_synchronize()
                 .map_err(WitnessStageCommitmentError::from)
         })?;
-        timing.root_count += 1;
-        timing.root_byte_count += HASH_WORDS * WORD_BYTES;
-        timing.root_materialization_group_count += 1;
-        timing.root_materialization_max_group_size =
-            timing.root_materialization_max_group_size.max(1);
         let (retained_parent_checkpoint_level, retained_leaf_digest_level, retained_source_device) =
             record_stage_tree_commit_duration(Some(&mut timing.retain_duration), || {
                 let validated_level = self.leaf_level.into_validated_level();
@@ -125,6 +191,28 @@ impl PendingCudaWitnessStageCommitment {
             },
         ))
     }
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn synchronize_cuda_witness_stage_root_materializations(
+    timing: &mut WitnessStageTreeCommitTiming,
+) -> Result<(), WitnessStageCommitmentError> {
+    record_stage_tree_commit_duration(Some(&mut timing.root_duration), || {
+        synchronize_cuda_digest_root_materializations().map_err(WitnessStageCommitmentError::from)
+    })
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn record_cuda_witness_stage_root_materialization_group(
+    timing: &mut WitnessStageTreeCommitTiming,
+    group_size: usize,
+) {
+    if group_size == 0 {
+        return;
+    }
+    timing.root_materialization_group_count += 1;
+    timing.root_materialization_max_group_size =
+        timing.root_materialization_max_group_size.max(group_size);
 }
 
 pub fn commit_witness_stage_leaves(

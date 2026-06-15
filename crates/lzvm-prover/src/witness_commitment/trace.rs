@@ -31,11 +31,13 @@ use super::{
     commit_witness_stage_zero_compact,
     compact_witness_stage_leaf_hash_level_from_source_device_view_with_workspace_cache_timing,
     compact_witness_stage_leaf_hash_level_with_source_device_timing,
-    extend_witness_stage_leaves_from_source_device_view, retain_source_device_view,
-    PendingCudaLeafExtension, PendingCudaWitnessStageCommitment, RetainedCudaSourceDevice,
-    WitnessStageCommitment, WitnessStageCommitmentError, WitnessStageDeviceCompactCommitInput,
-    WitnessStageLeafError, WitnessStageLeafWorkspaceCache, WitnessStageSourceDeviceView,
-    WitnessStageTreeCommitTiming, WORD_BYTES,
+    extend_witness_stage_leaves_from_source_device_view,
+    record_cuda_witness_stage_root_materialization_group, retain_source_device_view,
+    synchronize_cuda_witness_stage_root_materializations, PendingCudaLeafExtension,
+    PendingCudaWitnessStageCommitment, PendingCudaWitnessStageCommitmentMaterialization,
+    RetainedCudaSourceDevice, WitnessStageCommitment, WitnessStageCommitmentError,
+    WitnessStageDeviceCompactCommitInput, WitnessStageLeafError, WitnessStageLeafWorkspaceCache,
+    WitnessStageSourceDeviceView, WitnessStageTreeCommitTiming, WORD_BYTES,
 };
 use super::{
     decode_witness_stage_leaf_values, extend_witness_stage_leaves, WitnessStageExtendedValues,
@@ -1243,23 +1245,94 @@ fn materialize_pending_cuda_witness_stage_commitments(
     ),
     WitnessTraceCommitmentError,
 > {
+    enum PendingStageMaterialization {
+        Cuda {
+            stage_index: usize,
+            pending: PendingCudaWitnessStageCommitmentMaterialization,
+            stage_timing: WitnessStageCommitTiming,
+        },
+        Ready {
+            stage_index: usize,
+            commitment: WitnessStageCommitment,
+            stage_timing: WitnessStageCommitTiming,
+        },
+    }
+
     let mut commitments = Vec::with_capacity(pending_commitments.len());
     let mut stage_timings = Vec::with_capacity(pending_commitments.len());
+    let mut materializations = Vec::with_capacity(pending_commitments.len());
+    let mut cuda_materialization_count = 0_usize;
     pending_commitments.sort_by_key(|(stage_index, _, _)| *stage_index);
     for (stage_index, pending, mut stage_timing) in pending_commitments {
-        let commitment = match pending {
+        match pending {
             PendingWitnessStageCommitment::Cuda(pending) => {
+                let mut tree_timing = WitnessStageTreeCommitTiming::default();
+                let pending =
+                    record_optional_duration(Some(&mut stage_timing.tree_commit_duration), || {
+                        pending
+                            .begin_materialize_with_timing(&mut tree_timing)
+                            .map_err(WitnessTraceCommitmentError::from)
+                    })?;
+                stage_timing.accumulate_tree_commit_timing(tree_timing);
+                cuda_materialization_count += 1;
+                materializations.push(PendingStageMaterialization::Cuda {
+                    stage_index,
+                    pending,
+                    stage_timing,
+                });
+            }
+            PendingWitnessStageCommitment::Ready(commitment) => {
+                materializations.push(PendingStageMaterialization::Ready {
+                    stage_index,
+                    commitment,
+                    stage_timing,
+                });
+            }
+        }
+    }
+
+    if cuda_materialization_count > 0 {
+        let mut tree_timing = WitnessStageTreeCommitTiming::default();
+        let started = Instant::now();
+        synchronize_cuda_witness_stage_root_materializations(&mut tree_timing)
+            .map_err(WitnessTraceCommitmentError::from)?;
+        let sync_duration = started.elapsed();
+        record_cuda_witness_stage_root_materialization_group(
+            &mut tree_timing,
+            cuda_materialization_count,
+        );
+        if let Some(PendingStageMaterialization::Cuda { stage_timing, .. }) =
+            materializations.iter_mut().find(|materialization| {
+                matches!(materialization, PendingStageMaterialization::Cuda { .. })
+            })
+        {
+            stage_timing.tree_commit_duration += sync_duration;
+            stage_timing.accumulate_tree_commit_timing(tree_timing);
+        }
+    }
+
+    for materialization in materializations {
+        let (stage_index, commitment, stage_timing) = match materialization {
+            PendingStageMaterialization::Cuda {
+                stage_index,
+                pending,
+                mut stage_timing,
+            } => {
                 let mut tree_timing = WitnessStageTreeCommitTiming::default();
                 let commitment =
                     record_optional_duration(Some(&mut stage_timing.tree_commit_duration), || {
                         pending
-                            .materialize_with_timing(&mut tree_timing)
+                            .finish_after_root_synchronize(&mut tree_timing)
                             .map_err(WitnessTraceCommitmentError::from)
                     })?;
                 stage_timing.accumulate_tree_commit_timing(tree_timing);
-                commitment
+                (stage_index, commitment, stage_timing)
             }
-            PendingWitnessStageCommitment::Ready(commitment) => commitment,
+            PendingStageMaterialization::Ready {
+                stage_index,
+                commitment,
+                stage_timing,
+            } => (stage_index, commitment, stage_timing),
         };
         timing.accumulate(stage_timing);
         stage_timings.push(WitnessIndexedStageCommitTiming::new(
@@ -1868,6 +1941,14 @@ mod tests {
         .expect("stream pipeline commitments should build");
 
         assert_eq!(stage_timings.len(), 3);
+        assert_eq!(
+            pipeline_timing.tree_commit_root_materialization_group_count(),
+            1
+        );
+        assert_eq!(
+            pipeline_timing.tree_commit_root_materialization_max_group_size(),
+            3
+        );
         assert_eq!(pipeline.commitments().len(), default.commitments().len());
         for (actual, expected) in pipeline.commitments().iter().zip(default.commitments()) {
             assert_eq!(actual.stage_index(), expected.stage_index());

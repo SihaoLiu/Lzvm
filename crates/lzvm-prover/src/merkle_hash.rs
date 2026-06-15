@@ -2,6 +2,7 @@ use std::fmt;
 
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
+    cuda_device_synchronize,
     cuda_poseidon2_begin_width16_linear_round_row_major_digest_device_on_stream,
     cuda_poseidon2_begin_width8_linear_round_row_major_digest_device_on_stream,
     cuda_poseidon2_width16_linear_round_device,
@@ -22,7 +23,7 @@ use lzvm_accel::{
     cuda_poseidon2_width8_merkle_digest_root_device,
     cuda_poseidon2_width8_merkle_digest_root_device_buffer,
     cuda_poseidon2_width8_merkle_digest_selected_parent_device,
-    cuda_poseidon2_width8_merkle_parent_device, CudaDeviceBuffer, CudaStream,
+    cuda_poseidon2_width8_merkle_parent_device, CudaDeviceBuffer, CudaPinnedHostBuffer, CudaStream,
 };
 #[cfg(all(test, feature = "cuda"))]
 use lzvm_accel::{cuda_poseidon2_width16_device, cuda_poseidon2_width8_device};
@@ -94,18 +95,60 @@ pub(crate) struct CudaDigestRoot {
 }
 
 #[cfg(feature = "cuda")]
+pub(crate) struct PendingCudaDigestRootMaterialization {
+    _root: CudaDigestRoot,
+    output: CudaPinnedHostBuffer,
+}
+
+#[cfg(feature = "cuda")]
 impl CudaDigestRoot {
     fn new(root: CudaDeviceBuffer) -> Self {
         Self { root }
     }
 
-    pub(crate) fn materialize(&self) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
-        let root_words = self
-            .root
-            .to_u64_words()
+    pub(crate) fn begin_materialize_on_default_stream(
+        self,
+    ) -> Result<PendingCudaDigestRootMaterialization, MerkleHashError> {
+        let mut output = CudaPinnedHostBuffer::new(HASH_WORDS * std::mem::size_of::<u64>())
             .map_err(|_| MerkleHashError::LengthOverflow)?;
-        digest_from_state_words(&root_words)
+        unsafe {
+            self.root
+                .copy_to_pinned_on_default_stream(&mut output)
+                .map_err(|_| MerkleHashError::LengthOverflow)?;
+        }
+        Ok(PendingCudaDigestRootMaterialization {
+            _root: self,
+            output,
+        })
     }
+}
+
+#[cfg(feature = "cuda")]
+impl PendingCudaDigestRootMaterialization {
+    pub(crate) fn finish_after_device_synchronize(
+        self,
+    ) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
+        digest_from_state_bytes(unsafe { self.output.as_bytes() })
+    }
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn synchronize_cuda_digest_root_materializations() -> Result<(), MerkleHashError> {
+    cuda_device_synchronize().map_err(|_| MerkleHashError::LengthOverflow)
+}
+
+#[cfg(feature = "cuda")]
+fn digest_from_state_bytes(bytes: &[u8]) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
+    if bytes.len() != HASH_WORDS * std::mem::size_of::<u64>() {
+        return Err(MerkleHashError::LengthOverflow);
+    }
+    let mut words = [0_u64; HASH_WORDS];
+    for (word, chunk) in words.iter_mut().zip(bytes.chunks_exact(8)) {
+        let mut raw = [0_u8; 8];
+        raw.copy_from_slice(chunk);
+        *word = u64::from_le_bytes(raw);
+    }
+    digest_from_state_words(&words)
 }
 
 #[cfg(feature = "cuda")]

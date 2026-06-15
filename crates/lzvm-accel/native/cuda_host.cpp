@@ -940,6 +940,26 @@ extern "C" int lzvm_cuda_copy_d2h_bytes_on_stream(
     return status;
 }
 
+extern "C" int lzvm_cuda_copy_d2h_bytes_on_default_stream(
+    void* dst,
+    const void* src,
+    std::size_t bytes) {
+    if (bytes == 0) {
+        return 0;
+    }
+    if (dst == nullptr || src == nullptr) {
+        return -1;
+    }
+    const auto copy_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(cudaMemcpyAsync(
+        dst, src, bytes, cudaMemcpyDeviceToHost, cudaStreamLegacy));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        record_cuda_copy_d2h_wait(bytes, saturated_nanoseconds_since(copy_started));
+    }
+    return status;
+}
+
 extern "C" void lzvm_cuda_record_direct_copy_d2h_wait(
     std::size_t bytes,
     std::size_t elapsed_ns) {
@@ -1253,36 +1273,4 @@ extern "C" int lzvm_cuda_expand_state_prefix_words_device_to_device_on_stream(
             saturated_nanoseconds_since(copy_started));
     }
     return status;
-}
-
-extern "C" int lzvm_cuda_memset_zero_bytes(void* dst, std::size_t bytes) {
-    if (bytes == 0) {
-        return 0;
-    }
-    if (dst == nullptr) {
-        return -1;
-    }
-    return static_cast<int>(cudaMemset(dst, 0, bytes));
-}
-
-extern "C" int lzvm_cuda_memset_zero_bytes_on_stream(
-    void* dst,
-    std::size_t bytes,
-    void* stream_raw) {
-    if (bytes == 0) {
-        return 0;
-    }
-    if (dst == nullptr || stream_raw == nullptr) {
-        return -1;
-    }
-    return static_cast<int>(
-        cudaMemsetAsync(dst, 0, bytes, static_cast<cudaStream_t>(stream_raw)));
-}
-
-extern "C" int lzvm_cuda_check_launch(void) {
-    return static_cast<int>(cudaGetLastError());
-}
-
-extern "C" int lzvm_cuda_synchronize(void) {
-    return static_cast<int>(cudaDeviceSynchronize());
 }
