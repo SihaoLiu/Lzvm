@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(feature = "cuda")]
+use std::sync::Mutex;
 
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment, CHALLENGE_VALUES_SEGMENT_ID,
@@ -93,6 +95,8 @@ use lzvm_prover::pcs_transcript::{
     derive_pcs_final_query_challenge_from_segments, derive_pcs_transcript_challenges,
     PcsTranscriptInputs, PcsTranscriptSegmentInputs,
 };
+#[cfg(feature = "cuda")]
+use lzvm_prover::run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_with_timings;
 use lzvm_prover::unit_values::ProveUnitValues;
 use lzvm_prover::witness_commitment::commit_witness_trace_stages;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
@@ -122,6 +126,34 @@ use lzvm_prover::{
     ProveWitnessCommitmentError, ProveWitnessSegmentError,
 };
 use sha2::{Digest, Sha256};
+
+#[cfg(feature = "cuda")]
+static PROVE_WITNESS_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(feature = "cuda")]
+struct TestEnvVarGuard {
+    name: &'static str,
+    previous: Option<std::ffi::OsString>,
+}
+
+#[cfg(feature = "cuda")]
+impl TestEnvVarGuard {
+    fn unset(name: &'static str) -> Self {
+        let previous = std::env::var_os(name);
+        std::env::remove_var(name);
+        Self { name, previous }
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl Drop for TestEnvVarGuard {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(value) => std::env::set_var(self.name, value),
+            None => std::env::remove_var(self.name),
+        }
+    }
+}
 
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-prover-witness-{}-{name}", std::process::id()))
@@ -1067,6 +1099,46 @@ fn zisk_main_commitment_columns() -> Vec<CommitmentColumn> {
     ]
 }
 
+#[cfg(feature = "cuda")]
+fn zisk_main_device_trace_commitment_columns() -> Vec<CommitmentColumn> {
+    vec![
+        commitment_column("a", 0, 2),
+        commitment_column("b", 2, 2),
+        commitment_column("c", 4, 2),
+        commitment_column("flag", 6, 1),
+        commitment_column("pc", 7, 1),
+        commitment_column("a_src_imm", 8, 1),
+        commitment_column("a_src_mem", 9, 1),
+        commitment_column("a_offset_imm0", 10, 1),
+        commitment_column("air.a_imm1", 11, 1),
+        commitment_column("is_precompiled", 12, 1),
+        commitment_column("b_src_imm", 13, 1),
+        commitment_column("b_src_mem", 14, 1),
+        commitment_column("b_offset_imm0", 15, 1),
+        commitment_column("air.b_imm1", 16, 1),
+        commitment_column("b_src_ind", 17, 1),
+        commitment_column("ind_width", 18, 1),
+        commitment_column("is_external_op", 19, 1),
+        commitment_column("op", 20, 1),
+        commitment_column("store_pc", 21, 1),
+        commitment_column("store_mem", 22, 1),
+        commitment_column("store_ind", 23, 1),
+        commitment_column("store_offset", 24, 1),
+        commitment_column("set_pc", 25, 1),
+        commitment_column("jmp_offset1", 26, 1),
+        commitment_column("jmp_offset2", 27, 1),
+        commitment_column("m32", 28, 1),
+        commitment_column("air.addr1", 29, 1),
+        commitment_column("a_reg_prev_mem_step", 30, 1),
+        commitment_column("b_reg_prev_mem_step", 31, 1),
+        commitment_column("store_reg_prev_mem_step", 32, 1),
+        commitment_column("store_reg_prev_value", 33, 2),
+        commitment_column("a_src_reg", 35, 1),
+        commitment_column("b_src_reg", 36, 1),
+        commitment_column("store_reg", 37, 1),
+    ]
+}
+
 fn commitment_column(name: &str, stage_position: u32, dimension: u32) -> CommitmentColumn {
     CommitmentColumn {
         name: name.to_owned(),
@@ -1732,6 +1804,181 @@ fn runs_segmented_guest_pc_trace_commitments_without_retaining_traces() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(proof.setup_hash, setup_hash);
+}
+
+#[cfg(feature = "cuda")]
+#[test]
+fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
+    const ROOTS_ENV: &str = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS";
+    const WINDOW_ENV: &str = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW";
+
+    struct ParityRun {
+        proof_bytes: Vec<u8>,
+        witness_segment_bytes: Vec<(u32, Vec<u8>)>,
+        stage_roots: Vec<Vec<[u64; 4]>>,
+        root_materialization_groups: usize,
+        max_root_materialization_group_size: usize,
+    }
+
+    let _env_lock = PROVE_WITNESS_ENV_LOCK
+        .lock()
+        .expect("prove witness env lock should not be poisoned");
+    let _roots_guard = TestEnvVarGuard::unset(ROOTS_ENV);
+    let _window_guard = TestEnvVarGuard::unset(WINDOW_ENV);
+
+    let dir = temp_dir("segmented-guest-pc-pending-root-parity");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    )
+    .expect("guest image should be written");
+
+    let mut unit = sample_zisk_main_unit();
+    unit.metadata
+        .setup
+        .section_widths
+        .insert("cm1".to_owned(), 39);
+    unit.metadata.setup.commitment_columns = zisk_main_device_trace_commitment_columns();
+    unit.pcs_plan = derive_pcs_setup_plan(&unit.metadata.setup).expect("PCS plan should derive");
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
+    let catalog = sample_catalog(unit);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: Vec::new(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let run = |label: &str| -> ParityRun {
+        let mut timing_groups = None;
+        let outputs =
+            run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_with_timings(
+                &plan,
+                0,
+                ProveWitnessAuxiliaryInputs::default(),
+                16,
+                &mut |timing| {
+                    timing_groups = Some((
+                        timing.guest_stage_tree_commit_root_materialization_group_count(),
+                        timing.guest_stage_tree_commit_root_materialization_max_group_size(),
+                    ));
+                },
+            )
+            .unwrap_or_else(|error| {
+                panic!("{label} segmented guest PC commitments should run: {error}")
+            });
+        let (root_materialization_groups, max_root_materialization_group_size) =
+            timing_groups.expect("timed segmented run should report root materialization shape");
+
+        let witness_segments = outputs
+            .iter()
+            .map(|output| {
+                build_witness_commitment_segment_for_schedule(
+                    plan.run_plan.schedule.units.len(),
+                    output.commitments(),
+                )
+                .unwrap_or_else(|error| {
+                    panic!("{label} witness commitment segment should build: {error}")
+                })
+            })
+            .collect::<Vec<_>>();
+        let witness_segment_bytes = witness_segments
+            .iter()
+            .map(|segment| (segment.id, segment.data.clone()))
+            .collect::<Vec<_>>();
+        let stage_roots = witness_segments
+            .iter()
+            .map(|proof_segment| {
+                let segment =
+                    parse_witness_commitment_segment(&proof_segment.data).unwrap_or_else(|error| {
+                        panic!("{label} witness commitment segment should parse: {error}")
+                    });
+                segment
+                    .stages
+                    .iter()
+                    .map(|stage| stage.root)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
+            &lzvm_prover::WitnessAllUnitsProofRequest {
+                catalog: &catalog,
+                schedule: &plan.run_plan.schedule,
+                constant_tree_material_summaries: None,
+                execution_units: &plan.units,
+                gpu_streams: plan.run_plan.gpu.max_streams,
+                public_values: Some(&public_values),
+                outputs: &outputs,
+                auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+                unit_values: &[],
+                evaluation_values_segment: None,
+                verify_outputs: false,
+                program_image_cache: None,
+                eth_block_input: None,
+                challenge_values_segment: None,
+                include_contribution_segment: false,
+            },
+        )
+        .unwrap_or_else(|error| panic!("{label} proof artifact should build: {error}"))
+        .expect("proof artifact should exist");
+        let proof_bytes = encode_proof_artifact(&proof)
+            .unwrap_or_else(|error| panic!("{label} proof artifact should encode: {error}"));
+
+        ParityRun {
+            proof_bytes,
+            witness_segment_bytes,
+            stage_roots,
+            root_materialization_groups,
+            max_root_materialization_group_size,
+        }
+    };
+
+    let default_run = run("default");
+    std::env::set_var(ROOTS_ENV, "0");
+    let immediate_run = run("immediate");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(
+        default_run.max_root_materialization_group_size > 1,
+        "default run should exercise cross-segment pending root materialization: groups={}, max_group={}",
+        default_run.root_materialization_groups,
+        default_run.max_root_materialization_group_size
+    );
+    assert_eq!(
+        immediate_run.max_root_materialization_group_size, 1,
+        "opt-out run should materialize roots one segment at a time"
+    );
+    assert!(
+        default_run.root_materialization_groups < immediate_run.root_materialization_groups,
+        "default run should use fewer root materialization groups than the immediate path"
+    );
+    assert_eq!(default_run.stage_roots, immediate_run.stage_roots);
+    assert_eq!(
+        default_run.witness_segment_bytes,
+        immediate_run.witness_segment_bytes
+    );
+    assert_eq!(default_run.proof_bytes, immediate_run.proof_bytes);
 }
 
 #[test]
