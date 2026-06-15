@@ -3756,6 +3756,14 @@ fn prove_witness_commitment_error_is_cuda_out_of_memory(
     error: &ProveWitnessCommitmentError,
 ) -> bool {
     const CUDA_ERROR_OUT_OF_MEMORY: i32 = 2;
+    if matches!(
+        error,
+        ProveWitnessCommitmentError::Commit(WitnessTraceCommitmentError::StageCommitment(
+            WitnessStageCommitmentError::LengthOverflow
+        ))
+    ) {
+        return true;
+    }
     let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
     while let Some(error) = source {
         if matches!(
@@ -5858,6 +5866,10 @@ mod tests {
                 WitnessStageLeafError::Accel(lzvm_accel::AccelError::Cuda { code: 700 }),
             )),
         );
+        let mapped_cuda_allocation_error =
+            ProveWitnessCommitmentError::Commit(WitnessTraceCommitmentError::StageCommitment(
+                WitnessStageCommitmentError::LengthOverflow,
+            ));
         let layout_error = ProveWitnessCommitmentError::SegmentCommitOutputOrder {
             message: "not a CUDA allocation failure".to_owned(),
         };
@@ -5871,8 +5883,19 @@ mod tests {
         assert!(!prove_witness_commitment_error_is_cuda_out_of_memory(
             &layout_error
         ));
+        assert!(prove_witness_commitment_error_is_cuda_out_of_memory(
+            &mapped_cuda_allocation_error
+        ));
         assert_eq!(
             next_guest_pc_segment_commit_worker_count_after_oom(8 * 1024 * 1024, None, &oom_error),
+            Some(2)
+        );
+        assert_eq!(
+            next_guest_pc_segment_commit_worker_count_after_oom(
+                8 * 1024 * 1024,
+                None,
+                &mapped_cuda_allocation_error
+            ),
             Some(2)
         );
         assert_eq!(
