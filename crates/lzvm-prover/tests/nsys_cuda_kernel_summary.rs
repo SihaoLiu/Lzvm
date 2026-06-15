@@ -17,6 +17,7 @@ fn nsys_cuda_kernel_summary_reports_kernel_launch_and_stream_shape() {
         "runtime_cuda_kernel_launch_api",
         "stream_kernel_activity",
         "fusion_candidates",
+        "kernel_adjacency_candidates",
     ] {
         assert!(
             script_source.contains(required),
@@ -46,6 +47,8 @@ fn nsys_cuda_kernel_summary_reports_kernel_launch_and_stream_shape() {
         "launch_to_kernel_ratio",
         "stream_kernel_activity",
         "fusion_candidates",
+        "kernel_adjacency_candidates",
+        "previous_kernel,next_kernel",
     ] {
         assert!(
             stdout.contains(required),

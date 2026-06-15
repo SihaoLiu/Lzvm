@@ -154,6 +154,67 @@ def fusion_candidate_summary(conn: sqlite3.Connection, limit: int) -> list[sqlit
     ).fetchall()
 
 
+def kernel_launch_timeline(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        f"""
+        select
+            k.streamId as stream_id,
+            k.start as kernel_start_ns,
+            {kernel_name_expr()} as kernel,
+            coalesce(r.end - r.start, 0) as launch_ns,
+            k.end - k.start as gpu_ns
+        from {KERNEL_TABLE} k
+        left join {RUNTIME_TABLE} r on r.correlationId = k.correlationId
+        left join {STRING_TABLE} api on api.id = r.nameId
+        left join {STRING_TABLE} short on short.id = k.shortName
+        left join {STRING_TABLE} demangled on demangled.id = k.demangledName
+        where api.value is null
+           or api.value like 'cudaLaunchKernel%'
+           or api.value like 'cudaGraphLaunch%'
+        order by k.streamId asc, k.start asc, k.end asc
+        """
+    ).fetchall()
+
+
+def kernel_adjacency_summary(conn: sqlite3.Connection, limit: int) -> list[dict[str, object]]:
+    pairs: dict[tuple[str, str], dict[str, object]] = {}
+    previous_by_stream: dict[int, sqlite3.Row] = {}
+    for row in kernel_launch_timeline(conn):
+        stream_id = int(row["stream_id"] or 0)
+        previous = previous_by_stream.get(stream_id)
+        if previous is not None:
+            key = (str(previous["kernel"]), str(row["kernel"]))
+            entry = pairs.setdefault(
+                key,
+                {
+                    "previous_kernel": key[0],
+                    "next_kernel": key[1],
+                    "calls": 0,
+                    "launch_ns": 0,
+                    "gpu_ns": 0,
+                },
+            )
+            entry["calls"] = int(entry["calls"]) + 1
+            entry["launch_ns"] = int(entry["launch_ns"]) + int(previous["launch_ns"] or 0) + int(
+                row["launch_ns"] or 0
+            )
+            entry["gpu_ns"] = int(entry["gpu_ns"]) + int(previous["gpu_ns"] or 0) + int(
+                row["gpu_ns"] or 0
+            )
+        previous_by_stream[stream_id] = row
+    rows = list(pairs.values())
+    rows.sort(
+        key=lambda row: (
+            -int(row["launch_ns"]),
+            -int(row["calls"]),
+            -int(row["gpu_ns"]),
+            str(row["previous_kernel"]),
+            str(row["next_kernel"]),
+        )
+    )
+    return rows[:limit]
+
+
 def print_kernel_gpu(rows: list[sqlite3.Row]) -> None:
     print("kernel_gpu_activity")
     print("kernel,calls,kernel_gpu_ms,avg_kernel_us,max_kernel_us,grid_x_range,block_x_range")
@@ -233,6 +294,24 @@ def print_fusion_candidates(rows: list[sqlite3.Row]) -> None:
         print("none,0,0.000,0.000,0.000,0.000")
 
 
+def print_kernel_adjacency(rows: list[dict[str, object]]) -> None:
+    print()
+    print("kernel_adjacency_candidates")
+    print(
+        "previous_kernel,next_kernel,calls,pair_launch_api_ms,"
+        "pair_kernel_gpu_ms,launch_to_kernel_ratio"
+    )
+    for row in rows:
+        launch_ns = int(row["launch_ns"])
+        gpu_ns = int(row["gpu_ns"])
+        print(
+            f"{row['previous_kernel']},{row['next_kernel']},{int(row['calls'])},"
+            f"{ms(launch_ns):.3f},{ms(gpu_ns):.3f},{ratio(launch_ns, gpu_ns)}"
+        )
+    if not rows:
+        print("none,none,0,0.000,0.000,0.000")
+
+
 def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     require_tables(conn)
     conn.row_factory = sqlite3.Row
@@ -242,6 +321,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print_correlated_launch(correlated_launch_summary(conn, limit))
     print_streams(stream_kernel_summary(conn, limit))
     print_fusion_candidates(fusion_candidate_summary(conn, limit))
+    print_kernel_adjacency(kernel_adjacency_summary(conn, limit))
 
 
 def build_self_test_db() -> sqlite3.Connection:
