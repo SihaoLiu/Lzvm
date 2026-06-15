@@ -120,6 +120,19 @@ extern "C" int lzvm_cuda_graph_instantiate(void* graph, void** exec_out) {
     }
 }
 
+extern "C" int lzvm_cuda_graph_exec_update(void* exec, void* graph) {
+    try {
+        if (exec == nullptr || graph == nullptr) {
+            return -1;
+        }
+        cudaGraphExecUpdateResultInfo result_info{};
+        return static_cast<int>(cudaGraphExecUpdate(
+            static_cast<cudaGraphExec_t>(exec), static_cast<cudaGraph_t>(graph), &result_info));
+    } catch (...) {
+        return -1;
+    }
+}
+
 extern "C" int lzvm_cuda_graph_exec_destroy(void* exec) {
     try {
         if (exec == nullptr) {

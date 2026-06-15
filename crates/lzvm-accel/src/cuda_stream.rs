@@ -11,6 +11,7 @@ unsafe extern "C" {
     fn lzvm_cuda_stream_end_capture(stream: *mut c_void, graph_out: *mut *mut c_void) -> i32;
     fn lzvm_cuda_graph_destroy(graph: *mut c_void) -> i32;
     fn lzvm_cuda_graph_instantiate(graph: *mut c_void, exec_out: *mut *mut c_void) -> i32;
+    fn lzvm_cuda_graph_exec_update(exec: *mut c_void, graph: *mut c_void) -> i32;
     fn lzvm_cuda_graph_exec_destroy(exec: *mut c_void) -> i32;
     fn lzvm_cuda_graph_launch(exec: *mut c_void, stream: *mut c_void) -> i32;
     fn lzvm_cuda_event_create(out: *mut *mut c_void) -> i32;
@@ -116,6 +117,11 @@ impl CudaGraph {
 }
 
 impl CudaGraphExec {
+    pub fn update(&mut self, graph: &CudaGraph) -> Result<(), AccelError> {
+        let code = unsafe { lzvm_cuda_graph_exec_update(self.raw, graph.raw) };
+        cuda_status(code)
+    }
+
     pub fn launch(&self, stream: &CudaStream) -> Result<(), AccelError> {
         let code = unsafe { lzvm_cuda_graph_launch(self.raw, stream.raw) };
         cuda_status(code)

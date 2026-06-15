@@ -104,6 +104,7 @@ extern "C" int lzvm_cuda_stream_begin_capture(void* stream);
 extern "C" int lzvm_cuda_stream_end_capture(void* stream, void** graph_out);
 extern "C" int lzvm_cuda_graph_destroy(void* graph);
 extern "C" int lzvm_cuda_graph_instantiate(void* graph, void** exec_out);
+extern "C" int lzvm_cuda_graph_exec_update(void* exec, void* graph);
 extern "C" int lzvm_cuda_graph_exec_destroy(void* exec);
 extern "C" int lzvm_cuda_graph_launch(void* exec, void* stream);
 extern "C" int lzvm_cuda_event_create(void** out);

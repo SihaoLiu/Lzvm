@@ -4488,6 +4488,105 @@ mod tests {
     }
 
     #[test]
+    fn row_major_coset_extension_graph_update_retargets_output_buffer() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let source_bits = 2;
+        let target_bits = 3;
+        let column_count = 3;
+        let source_rows = 1_usize << source_bits;
+        let values = (0..source_rows * column_count)
+            .map(|index| (index as u64 + 1) * 19)
+            .collect::<Vec<_>>();
+        let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+            values.len(),
+            column_count,
+            source_bits,
+            target_bits,
+        )
+        .expect("output shape should be valid");
+
+        let source = CudaDeviceBuffer::from_u64_words(&values).expect("source should upload");
+        let mut default_out =
+            CudaDeviceBuffer::new(out_byte_count).expect("default output should allocate");
+        cuda_goldilocks_coset_extend_row_major_columns_device(
+            &source,
+            &mut default_out,
+            column_count,
+            source_bits,
+            target_bits,
+        )
+        .expect("default stream extension should run");
+
+        let stream = CudaStream::new().expect("CUDA stream should create");
+        let mut first_out =
+            CudaDeviceBuffer::new(out_byte_count).expect("first output should allocate");
+        let mut first_workspace =
+            CudaDeviceBuffer::new(out_byte_count).expect("first workspace should allocate");
+        let first_capture = stream
+            .begin_capture()
+            .expect("first CUDA graph capture should begin");
+        unsafe {
+            cuda_goldilocks_begin_coset_extend_row_major_columns_device_on_stream(
+                &source,
+                &mut first_out,
+                &mut first_workspace,
+                column_count,
+                source_bits,
+                target_bits,
+                &stream,
+            )
+        }
+        .expect("first extension should enqueue during capture");
+        let first_graph = first_capture
+            .end()
+            .expect("first CUDA graph capture should end");
+        let mut exec = first_graph
+            .instantiate()
+            .expect("first CUDA graph should instantiate");
+
+        let mut second_out =
+            CudaDeviceBuffer::new(out_byte_count).expect("second output should allocate");
+        let mut second_workspace =
+            CudaDeviceBuffer::new(out_byte_count).expect("second workspace should allocate");
+        let second_capture = stream
+            .begin_capture()
+            .expect("second CUDA graph capture should begin");
+        unsafe {
+            cuda_goldilocks_begin_coset_extend_row_major_columns_device_on_stream(
+                &source,
+                &mut second_out,
+                &mut second_workspace,
+                column_count,
+                source_bits,
+                target_bits,
+                &stream,
+            )
+        }
+        .expect("second extension should enqueue during capture");
+        let second_graph = second_capture
+            .end()
+            .expect("second CUDA graph capture should end");
+        exec.update(&second_graph)
+            .expect("CUDA graph exec should accept same-topology update");
+        exec.launch(&stream)
+            .expect("updated CUDA graph should launch");
+        stream
+            .synchronize()
+            .expect("updated CUDA graph should finish");
+
+        assert_eq!(
+            second_out
+                .to_u64_words()
+                .expect("updated graph output should download"),
+            default_out
+                .to_u64_words()
+                .expect("default output should download")
+        );
+    }
+
+    #[test]
     fn strided_row_major_coset_extension_on_stream_matches_default_stream() {
         let _guard = crate::CUDA_TEST_LOCK
             .lock()

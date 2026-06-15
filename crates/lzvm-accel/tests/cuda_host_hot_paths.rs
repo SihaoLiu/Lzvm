@@ -64,6 +64,7 @@ fn cuda_host_exposes_graph_capture_replay_runtime() {
         "cudaStreamBeginCapture",
         "cudaStreamEndCapture",
         "cudaGraphInstantiate",
+        "cudaGraphExecUpdate",
         "cudaGraphLaunch",
         "cudaGraphDestroy",
         "cudaGraphExecDestroy",
@@ -79,6 +80,7 @@ fn cuda_host_exposes_graph_capture_replay_runtime() {
         "lzvm_cuda_stream_end_capture",
         "lzvm_cuda_graph_destroy",
         "lzvm_cuda_graph_instantiate",
+        "lzvm_cuda_graph_exec_update",
         "lzvm_cuda_graph_exec_destroy",
         "lzvm_cuda_graph_launch",
     ] {
