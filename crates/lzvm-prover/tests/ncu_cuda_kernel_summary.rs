@@ -277,6 +277,73 @@ fn ncu_cuda_kernel_summary_imports_binary_reports_through_ncu() {
     );
 }
 
+#[test]
+fn ncu_cuda_kernel_summary_discovers_cuda_home_ncu_for_binary_reports() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/ncu-cuda-kernel-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("workspace temp directory should exist");
+
+    let report_path = temp_file(&temp_dir, "ncu-cuda-home-import-sample.ncu-rep");
+    std::fs::write(&report_path, [0xfe, 0x4e, 0x43, 0x55]).expect("fake NCU report should write");
+    let fake_cuda_home = temp_dir.join(format!(
+        "{}-{}-fake-cuda-home",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    let fake_cuda_bin = fake_cuda_home.join("bin");
+    std::fs::create_dir_all(&fake_cuda_bin).expect("fake CUDA bin should exist");
+    let fake_ncu_path = fake_cuda_bin.join("ncu");
+    std::fs::write(
+        &fake_ncu_path,
+        concat!(
+            "#!/usr/bin/env bash\n",
+            "set -euo pipefail\n",
+            "if [[ \"$1\" != \"--import\" ]]; then echo \"missing import\" >&2; exit 9; fi\n",
+            "if [[ \"$2\" != *\".ncu-rep\" ]]; then echo \"missing report\" >&2; exit 9; fi\n",
+            "if [[ \"$3\" != \"--csv\" ]]; then echo \"missing csv\" >&2; exit 9; fi\n",
+            "if [[ \"$4\" != \"--page\" || \"$5\" != \"raw\" ]]; then echo \"missing raw page\" >&2; exit 9; fi\n",
+            "cat <<'CSV'\n",
+            "\"Kernel Name\",\"gpu__time_duration.sum\"\n",
+            "\"\",\"us\"\n",
+            "\"ntt_stage_kernel\",\"25.0\"\n",
+            "CSV\n",
+        ),
+    )
+    .expect("fake CUDA_HOME ncu should write");
+    #[cfg(unix)]
+    {
+        let mut permissions = std::fs::metadata(&fake_ncu_path)
+            .expect("fake CUDA_HOME ncu metadata should read")
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&fake_ncu_path, permissions)
+            .expect("fake CUDA_HOME ncu should be executable");
+    }
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&report_path)
+        .env("CUDA_HOME", &fake_cuda_home)
+        .env_remove("LZVM_NCU_COMMAND")
+        .output()
+        .expect("ncu CUDA kernel summary should run with CUDA_HOME discovery");
+    let _ = std::fs::remove_file(&report_path);
+    let _ = std::fs::remove_dir_all(&fake_cuda_home);
+
+    assert!(
+        output.status.success(),
+        "CUDA_HOME ncu should be discovered for binary report imports: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("ntt_stage_kernel,1,0.025,25.000"),
+        "CUDA_HOME-imported report should produce a kernel summary: {stdout}"
+    );
+}
+
 fn temp_file(temp_dir: &Path, name: &str) -> PathBuf {
     temp_dir.join(format!(
         "{}-{}-{}",

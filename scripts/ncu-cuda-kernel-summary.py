@@ -3,6 +3,7 @@ import argparse
 import csv
 import io
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -267,6 +268,47 @@ def read_ncu_report(path: Path, ncu_command: str) -> list[dict[str, str]]:
             f"failed to import NCU report {path} with {ncu_command}: {detail}"
         )
     return parse_ncu_csv_lines(path, completed.stdout.splitlines(keepends=True))
+
+
+def executable_file(path: Path) -> bool:
+    return path.is_file() and os.access(path, os.X_OK)
+
+
+def existing_ncu_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    for env_name in ["CUDA_HOME", "CUDA_PATH"]:
+        cuda_root = os.environ.get(env_name)
+        if cuda_root:
+            candidates.append(Path(cuda_root) / "bin" / "ncu")
+    path_ncu = shutil.which("ncu")
+    if path_ncu:
+        candidates.append(Path(path_ncu))
+    candidates.append(Path("/usr/local/cuda/bin/ncu"))
+    candidates.extend(
+        sorted(Path("/usr/local").glob("cuda-*/bin/ncu"), reverse=True)
+    )
+
+    seen: set[str] = set()
+    resolved: list[Path] = []
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen or not executable_file(candidate):
+            continue
+        seen.add(key)
+        resolved.append(candidate)
+    return resolved
+
+
+def resolve_ncu_command(explicit_command: str | None) -> str:
+    if explicit_command:
+        return explicit_command
+    env_command = os.environ.get("LZVM_NCU_COMMAND")
+    if env_command:
+        return env_command
+    candidates = existing_ncu_candidates()
+    if candidates:
+        return str(candidates[0])
+    return "ncu"
 
 
 def read_ncu_profile(path: Path, ncu_command: str) -> list[dict[str, str]]:
@@ -592,7 +634,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top", type=int, default=16, help="rows to print per summary")
     parser.add_argument(
         "--ncu-command",
-        default=os.environ.get("LZVM_NCU_COMMAND", "ncu"),
+        default=None,
         help="Nsight Compute command used to import .ncu-rep reports",
     )
     parser.add_argument("--self-test", action="store_true", help="run against an in-memory sample")
@@ -609,7 +651,8 @@ def main() -> int:
     path = Path(args.profile)
     if not path.exists():
         raise SystemExit(f"NCU profile export does not exist: {path}")
-    summarize(read_ncu_profile(path, args.ncu_command), str(path), max(args.top, 1))
+    ncu_command = resolve_ncu_command(args.ncu_command)
+    summarize(read_ncu_profile(path, ncu_command), str(path), max(args.top, 1))
     return 0
 
 
