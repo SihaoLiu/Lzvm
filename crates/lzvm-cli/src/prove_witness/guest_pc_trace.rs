@@ -7,6 +7,7 @@ use lzvm_prover::{
 };
 
 use super::timing::TimingRecorder;
+use std::time::Duration;
 
 pub(super) struct GuestPcTraceWitnessRun {
     pub(super) outputs: Vec<ProveWitnessTraceCommitments>,
@@ -176,9 +177,91 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_descriptor",
         timing.guest_trace_descriptor_duration(),
     );
-    timings.record_count(
-        "guest_trace_report_detail_samples",
-        timing.guest_trace_report_detail_sample_count(),
+    let detail_sample_count = timing.guest_trace_report_detail_sample_count();
+    timings.record_count("guest_trace_report_detail_samples", detail_sample_count);
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report",
+        timing.guest_trace_report_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_validation",
+        timing.guest_trace_report_validation_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_lowering",
+        timing.guest_trace_report_lowering_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_row_validation",
+        timing.guest_trace_report_row_validation_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_source_values",
+        timing.guest_trace_report_source_values_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_precompile_memory",
+        timing.guest_trace_report_precompile_memory_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_instruction_result",
+        timing.guest_trace_report_instruction_result_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_next_pc",
+        timing.guest_trace_report_next_pc_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_register_access",
+        timing.guest_trace_report_register_access_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_memory_access",
+        timing.guest_trace_report_memory_access_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_store_apply",
+        timing.guest_trace_report_store_apply_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_visit",
+        timing.guest_trace_report_visit_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_emit",
+        timing.guest_trace_emit_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_descriptor",
+        timing.guest_trace_descriptor_duration(),
+        detail_sample_count,
     );
     timings.record(
         "guest_trace_seed_direct_lift",
@@ -747,10 +830,31 @@ fn record_guest_stage_root_materialization_shape(
     );
 }
 
+fn record_guest_trace_sampled_duration_counts(
+    timings: &mut TimingRecorder,
+    name: &'static str,
+    duration: Duration,
+    sample_count: usize,
+) {
+    if sample_count == 0 {
+        return;
+    }
+    let sampled_ns = duration_ns(duration);
+    timings.record_count_dynamic(format!("{name}_sampled_ns"), sampled_ns);
+    timings.record_count_dynamic(format!("{name}_avg_sample_ns"), sampled_ns / sample_count);
+}
+
+fn duration_ns(duration: Duration) -> usize {
+    usize::try_from(duration.as_nanos()).unwrap_or(usize::MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::timing::{write_timing_summary, TimingRecorder};
-    use super::record_guest_stage_root_materialization_shape;
+    use super::{
+        record_guest_stage_root_materialization_shape, record_guest_trace_sampled_duration_counts,
+    };
+    use std::time::Duration;
 
     #[test]
     fn guest_root_materialization_shape_flags_cross_segment_pipeline_need() {
@@ -786,5 +890,47 @@ mod tests {
         ] {
             assert!(stdout.contains(expected), "missing {expected} in {stdout}");
         }
+    }
+
+    #[test]
+    fn guest_trace_sampled_detail_counts_keep_submillisecond_resolution() {
+        let mut timings = TimingRecorder::new(true);
+
+        record_guest_trace_sampled_duration_counts(
+            &mut timings,
+            "guest_trace_report",
+            Duration::from_nanos(750),
+            3,
+        );
+
+        let mut stdout = Vec::new();
+        write_timing_summary(&mut stdout, &timings);
+        let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+        for expected in [
+            "timing_guest_trace_report_sampled_ns=750\n",
+            "timing_guest_trace_report_avg_sample_ns=250\n",
+        ] {
+            assert!(stdout.contains(expected), "missing {expected} in {stdout}");
+        }
+    }
+
+    #[test]
+    fn guest_trace_sampled_detail_counts_skip_without_samples() {
+        let mut timings = TimingRecorder::new(true);
+
+        record_guest_trace_sampled_duration_counts(
+            &mut timings,
+            "guest_trace_report",
+            Duration::from_nanos(750),
+            0,
+        );
+
+        let mut stdout = Vec::new();
+        write_timing_summary(&mut stdout, &timings);
+        let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+        assert!(!stdout.contains("guest_trace_report_sampled_ns"));
+        assert!(!stdout.contains("guest_trace_report_avg_sample_ns"));
     }
 }
