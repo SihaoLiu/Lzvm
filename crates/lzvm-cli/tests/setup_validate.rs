@@ -436,6 +436,13 @@ fn assert_has_no_contribution_segment(proof: &ProofArtifact) {
         .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID));
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct GuestPcTraceProofRun {
+    proof_bytes: Vec<u8>,
+    stage_roots: Vec<(u32, u32, u32, [u64; 4])>,
+    transcript_segments: Vec<(u32, Vec<u8>)>,
+}
+
 fn sample_proof_with_material(
     public_values: &PublicValues,
     catalog: &lzvm_artifacts::key_directory::KeyDirectoryCatalog,
@@ -1477,6 +1484,100 @@ fn sample_witness_library() -> Vec<u8> {
 
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-cli-{}-{name}", std::process::id()))
+}
+
+fn run_lzvm_segmented_guest_pc_proof_with_cross_segment_roots_env(
+    setup_dir: &Path,
+    output_dir: &Path,
+    guest_image: &Path,
+    public_values: &Path,
+    cross_segment_roots: Option<&str>,
+) -> GuestPcTraceProofRun {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lzvm"));
+    command
+        .arg("prove")
+        .arg("witness")
+        .arg("--timings")
+        .arg("--guest-pc-trace")
+        .arg("16")
+        .arg(setup_dir)
+        .arg(output_dir)
+        .arg(guest_image)
+        .arg(public_values);
+    match cross_segment_roots {
+        Some(value) => {
+            command.env("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS", value);
+        }
+        None => {
+            command.env_remove("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS");
+        }
+    }
+    let output = command.output().expect("lzvm prove witness should run");
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("verify_outputs=true\n"), "{stdout}");
+    assert!(stdout.contains("trace_instance_index=0\n"), "{stdout}");
+    assert!(stdout.contains("trace_instance_index=1\n"), "{stdout}");
+
+    let proof_bytes = fs::read(output_dir.join("proof.bin")).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    GuestPcTraceProofRun {
+        proof_bytes,
+        stage_roots: witness_stage_root_sequence(&proof),
+        transcript_segments: transcript_relevant_proof_segments(&proof),
+    }
+}
+
+fn witness_stage_root_sequence(proof: &ProofArtifact) -> Vec<(u32, u32, u32, [u64; 4])> {
+    let mut roots = Vec::new();
+    for segment in &proof.segments {
+        if segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID
+            || segment.id >= PCS_MATERIAL_MANIFEST_SEGMENT_ID
+        {
+            continue;
+        }
+        let witness = parse_witness_commitment_segment(&segment.data)
+            .expect("witness commitment segment should parse");
+        for stage in witness.stages {
+            roots.push((
+                segment.id,
+                witness.unit_index,
+                stage.stage_index,
+                stage.root,
+            ));
+        }
+    }
+    roots.sort_unstable_by_key(|(segment_id, unit_index, stage_index, root)| {
+        (*segment_id, *unit_index, *stage_index, *root)
+    });
+    roots
+}
+
+fn transcript_relevant_proof_segments(proof: &ProofArtifact) -> Vec<(u32, Vec<u8>)> {
+    proof
+        .segments
+        .iter()
+        .filter(|segment| {
+            matches!(
+                segment.id,
+                PCS_QUERY_PLAN_SEGMENT_ID
+                    | CONSTANT_OPENING_SEGMENT_ID
+                    | WITNESS_OPENING_SEGMENT_ID
+                    | PCS_FRI_OPENING_SEGMENT_ID
+                    | PCS_QUERY_NONCE_SEGMENT_ID
+                    | PCS_EVALUATION_SEGMENT_ID
+                    | PCS_PROOF_VALUES_SEGMENT_ID
+                    | CHALLENGE_VALUES_SEGMENT_ID
+            )
+        })
+        .map(|segment| (segment.id, segment.data.clone()))
+        .collect()
 }
 
 fn write_bytes(path: &Path, value: impl AsRef<[u8]>) {
@@ -6391,6 +6492,56 @@ fn builds_segmented_guest_pc_trace_proof_output() {
     assert!(String::from_utf8(verify_stdout)
         .expect("verify stdout should be utf-8")
         .contains("status=ok\n"));
+}
+
+#[test]
+fn segmented_guest_pc_cross_segment_roots_match_immediate_proof_bytes() {
+    let dir = temp_dir("prove-witness-segmented-guest-pc-root-parity");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_main_trace_unit(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let default_output_dir = dir.join("proof-default");
+    let immediate_output_dir = dir.join("proof-immediate");
+    let guest_image = dir.join("guest.elf");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&sample_public_values(setup_hash))
+            .expect("public values should encode"),
+    );
+
+    let default_run = run_lzvm_segmented_guest_pc_proof_with_cross_segment_roots_env(
+        &dir,
+        &default_output_dir,
+        &guest_image,
+        &public_values_path,
+        None,
+    );
+    let immediate_run = run_lzvm_segmented_guest_pc_proof_with_cross_segment_roots_env(
+        &dir,
+        &immediate_output_dir,
+        &guest_image,
+        &public_values_path,
+        Some("0"),
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(default_run.stage_roots, immediate_run.stage_roots);
+    assert_eq!(
+        default_run.transcript_segments,
+        immediate_run.transcript_segments
+    );
+    assert_eq!(default_run.proof_bytes, immediate_run.proof_bytes);
 }
 
 #[test]
