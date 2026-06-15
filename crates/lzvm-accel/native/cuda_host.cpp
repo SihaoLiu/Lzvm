@@ -749,61 +749,33 @@ extern "C" int lzvm_cuda_allocator_clear_cache(void) {
         std::lock_guard<std::mutex> lock(g_allocator_mutex);
         const int status = release_cached_blocks_locked();
         if (status == 0) {
-            g_cuda_malloc_calls = 0;
-            g_cuda_malloc_bytes = 0;
-            g_cuda_malloc_wait_ns = 0;
-            g_cuda_malloc_max_wait_ns = 0;
-            g_cuda_host_register_calls = 0;
-            g_cuda_host_register_bytes = 0;
-            g_cuda_host_register_wait_ns = 0;
-            g_cuda_host_register_max_wait_ns = 0;
-            g_cuda_host_unregister_calls = 0;
-            g_cuda_host_unregister_wait_ns = 0;
-            g_cuda_host_unregister_max_wait_ns = 0;
-            g_cuda_copy_h2d_calls = 0;
-            g_cuda_copy_h2d_bytes = 0;
-            g_cuda_copy_h2d_wait_ns = 0;
-            g_cuda_copy_h2d_max_wait_ns = 0;
-            g_cuda_copy_d2h_calls = 0;
-            g_cuda_copy_d2h_bytes = 0;
-            g_cuda_copy_d2h_wait_ns = 0;
-            g_cuda_copy_d2h_max_wait_ns = 0;
-            g_cuda_direct_copy_d2h_calls = 0;
-            g_cuda_direct_copy_d2h_bytes = 0;
-            g_cuda_direct_copy_d2h_wait_ns = 0;
-            g_cuda_direct_copy_d2h_max_wait_ns = 0;
-            g_cuda_copy_d2d_calls = 0;
-            g_cuda_copy_d2d_bytes = 0;
-            g_cuda_copy_d2d_wait_ns = 0;
-            g_cuda_copy_d2d_max_wait_ns = 0;
-            g_cuda_free_calls = 0;
-            g_cuda_device_synchronize_calls = 0;
-            g_cuda_device_synchronize_wait_ns = 0;
-            g_cuda_device_synchronize_max_wait_ns = 0;
-            g_cuda_event_query_calls = 0;
-            g_cuda_event_query_ready_count = 0;
-            g_cuda_event_query_not_ready_count = 0;
-            g_cuda_event_synchronize_calls = 0;
-            g_cuda_event_synchronize_bytes = 0;
-            g_cuda_event_synchronize_max_bytes = 0;
-            g_cuda_event_synchronize_wait_ns = 0;
-            g_cuda_event_synchronize_max_wait_ns = 0;
-            for (SizeWaitStats& size_stats : g_cuda_copy_h2d_by_size) {
-                size_stats = SizeWaitStats{};
-            }
-            for (SizeWaitStats& size_stats : g_cuda_copy_d2h_by_size) {
-                size_stats = SizeWaitStats{};
-            }
-            for (SizeWaitStats& size_stats : g_cuda_direct_copy_d2h_by_size) {
-                size_stats = SizeWaitStats{};
-            }
-            for (SizeWaitStats& size_stats : g_cuda_event_synchronize_by_size) {
-                size_stats = SizeWaitStats{};
-            }
-            g_cuda_cached_reuse_count = 0;
-            g_cuda_pending_reuse_count = 0;
-            g_cuda_no_wait_bypass_count = 0;
-            g_cuda_no_wait_bypass_bytes = 0;
+            g_cuda_malloc_calls = g_cuda_malloc_bytes = g_cuda_malloc_wait_ns =
+                g_cuda_malloc_max_wait_ns = 0;
+            g_cuda_host_register_calls = g_cuda_host_register_bytes =
+                g_cuda_host_register_wait_ns = g_cuda_host_register_max_wait_ns = 0;
+            g_cuda_host_unregister_calls = g_cuda_host_unregister_wait_ns =
+                g_cuda_host_unregister_max_wait_ns = 0;
+            g_cuda_copy_h2d_calls = g_cuda_copy_h2d_bytes = g_cuda_copy_h2d_wait_ns =
+                g_cuda_copy_h2d_max_wait_ns = 0;
+            g_cuda_copy_d2h_calls = g_cuda_copy_d2h_bytes = g_cuda_copy_d2h_wait_ns =
+                g_cuda_copy_d2h_max_wait_ns = 0;
+            g_cuda_direct_copy_d2h_calls = g_cuda_direct_copy_d2h_bytes =
+                g_cuda_direct_copy_d2h_wait_ns = g_cuda_direct_copy_d2h_max_wait_ns = 0;
+            g_cuda_copy_d2d_calls = g_cuda_copy_d2d_bytes = g_cuda_copy_d2d_wait_ns =
+                g_cuda_copy_d2d_max_wait_ns = 0;
+            g_cuda_free_calls = g_cuda_device_synchronize_calls =
+                g_cuda_device_synchronize_wait_ns = g_cuda_device_synchronize_max_wait_ns = 0;
+            g_cuda_event_query_calls = g_cuda_event_query_ready_count =
+                g_cuda_event_query_not_ready_count = 0;
+            g_cuda_event_synchronize_calls = g_cuda_event_synchronize_bytes =
+                g_cuda_event_synchronize_max_bytes = g_cuda_event_synchronize_wait_ns =
+                    g_cuda_event_synchronize_max_wait_ns = 0;
+            for (SizeWaitStats& size_stats : g_cuda_copy_h2d_by_size) size_stats = SizeWaitStats{};
+            for (SizeWaitStats& size_stats : g_cuda_copy_d2h_by_size) size_stats = SizeWaitStats{};
+            for (SizeWaitStats& size_stats : g_cuda_direct_copy_d2h_by_size) size_stats = SizeWaitStats{};
+            for (SizeWaitStats& size_stats : g_cuda_event_synchronize_by_size) size_stats = SizeWaitStats{};
+            g_cuda_cached_reuse_count = g_cuda_pending_reuse_count =
+                g_cuda_no_wait_bypass_count = g_cuda_no_wait_bypass_bytes = 0;
         }
         return status;
     } catch (...) {
@@ -910,6 +882,22 @@ extern "C" int lzvm_cuda_copy_h2d_bytes(void* dst, const void* src, std::size_t 
     }
     const int unregister_status = unregister_host_copy(registered);
     return first_status(status, unregister_status);
+}
+
+extern "C" int lzvm_cuda_copy_h2d_pinned_bytes(void* dst, const void* src, std::size_t bytes) {
+    if (bytes == 0) {
+        return 0;
+    }
+    if (dst == nullptr || src == nullptr) {
+        return -1;
+    }
+    const auto copy_started = std::chrono::steady_clock::now();
+    const int status = static_cast<int>(cudaMemcpy(dst, src, bytes, cudaMemcpyHostToDevice));
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        record_cuda_copy_h2d_wait(bytes, saturated_nanoseconds_since(copy_started));
+    }
+    return status;
 }
 
 extern "C" int lzvm_cuda_copy_h2d_bytes_on_stream(
