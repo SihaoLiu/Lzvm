@@ -426,6 +426,10 @@ impl CudaPendingTraceDescriptorExpansion {
         self.output_buffer
     }
 
+    pub fn into_parts(self) -> (CudaDeviceBuffer, CudaDeviceBuffer) {
+        (self.descriptor_buffer, self.output_buffer)
+    }
+
     pub fn descriptor_buffer_len(&self) -> usize {
         self.descriptor_buffer.len()
     }

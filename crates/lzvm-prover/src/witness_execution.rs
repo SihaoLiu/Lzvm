@@ -475,6 +475,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_device_source_descriptor_upload_byte_count: usize,
     guest_device_source_descriptor_upload_word_count: usize,
     guest_device_source_descriptor_upload_row_count: usize,
+    guest_device_source_descriptor_stream_ingress_count: usize,
     guest_device_source_trace_expand_duration: Duration,
     guest_stage_source_retention_attempt_count: usize,
     guest_stage_source_retention_retained_count: usize,
@@ -672,6 +673,8 @@ impl ProveWitnessGuestPcTraceTiming {
                 .device_source_descriptor_upload_word_count,
             guest_device_source_descriptor_upload_row_count: trace_timing
                 .device_source_descriptor_upload_row_count,
+            guest_device_source_descriptor_stream_ingress_count: trace_timing
+                .device_source_descriptor_stream_ingress_count,
             guest_device_source_trace_expand_duration: trace_timing
                 .device_source_trace_expand_duration,
             guest_stage_source_retention_attempt_count: trace_timing
@@ -1088,6 +1091,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_device_source_descriptor_upload_row_count(&self) -> usize {
         self.guest_device_source_descriptor_upload_row_count
+    }
+
+    pub fn guest_device_source_descriptor_stream_ingress_count(&self) -> usize {
+        self.guest_device_source_descriptor_stream_ingress_count
     }
 
     pub fn guest_device_source_trace_expand_duration(&self) -> Duration {
@@ -1655,6 +1662,7 @@ struct ProveWitnessTraceTimingAccumulator {
     device_source_descriptor_upload_byte_count: usize,
     device_source_descriptor_upload_word_count: usize,
     device_source_descriptor_upload_row_count: usize,
+    device_source_descriptor_stream_ingress_count: usize,
     device_source_trace_expand_duration: Duration,
     stage_source_retention_attempt_count: usize,
     stage_source_retention_retained_count: usize,
@@ -1726,6 +1734,8 @@ impl ProveWitnessTraceTimingAccumulator {
             other.device_source_descriptor_upload_word_count;
         self.device_source_descriptor_upload_row_count +=
             other.device_source_descriptor_upload_row_count;
+        self.device_source_descriptor_stream_ingress_count +=
+            other.device_source_descriptor_stream_ingress_count;
         self.device_source_trace_expand_duration += other.device_source_trace_expand_duration;
         self.stage_source_retention_attempt_count += other.stage_source_retention_attempt_count;
         self.stage_source_retention_retained_count += other.stage_source_retention_retained_count;
@@ -3353,6 +3363,8 @@ fn build_preloaded_guest_pc_trace_stage_source_devices(
                 source_timing.descriptor_upload_word_count();
             timing.device_source_descriptor_upload_row_count +=
                 source_timing.descriptor_upload_row_count();
+            timing.device_source_descriptor_stream_ingress_count +=
+                source_timing.descriptor_stream_ingress_count();
             timing.device_source_trace_expand_duration += source_timing.trace_expand_duration();
         }
         return Ok(Some(

@@ -1981,6 +1981,154 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
     assert_eq!(default_run.proof_bytes, immediate_run.proof_bytes);
 }
 
+#[cfg(feature = "cuda")]
+#[test]
+fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
+    const STREAM_ENV: &str = "LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS";
+    const ROOTS_ENV: &str = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS";
+
+    struct StreamRun {
+        proof_bytes: Vec<u8>,
+        witness_segment_bytes: Vec<(u32, Vec<u8>)>,
+        stream_ingress_count: usize,
+    }
+
+    let _env_lock = PROVE_WITNESS_ENV_LOCK
+        .lock()
+        .expect("prove witness env lock should not be poisoned");
+    let _stream_guard = TestEnvVarGuard::unset(STREAM_ENV);
+    let _roots_guard = TestEnvVarGuard::unset(ROOTS_ENV);
+    std::env::set_var(ROOTS_ENV, "0");
+
+    let dir = temp_dir("segmented-guest-pc-stream-descriptor-ingress");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(
+        &guest_image,
+        sample_guest_image_with_words(&[
+            riscv_addi(1, 0, 7),
+            riscv_addi(2, 1, 3),
+            riscv_addi(3, 2, 5),
+            0x0000_0073,
+        ]),
+    )
+    .expect("guest image should be written");
+
+    let mut unit = sample_zisk_main_unit();
+    unit.metadata
+        .setup
+        .section_widths
+        .insert("cm1".to_owned(), 39);
+    unit.metadata.setup.commitment_columns = zisk_main_device_trace_commitment_columns();
+    unit.pcs_plan = derive_pcs_setup_plan(&unit.metadata.setup).expect("PCS plan should derive");
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
+    let catalog = sample_catalog(unit);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: Vec::new(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let run = |label: &str| -> StreamRun {
+        let mut stream_ingress_count = None;
+        let outputs =
+            run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_with_timings(
+                &plan,
+                0,
+                ProveWitnessAuxiliaryInputs::default(),
+                16,
+                &mut |timing| {
+                    stream_ingress_count =
+                        Some(timing.guest_device_source_descriptor_stream_ingress_count());
+                },
+            )
+            .unwrap_or_else(|error| {
+                panic!("{label} segmented guest PC commitments should run: {error}")
+            });
+        let stream_ingress_count =
+            stream_ingress_count.expect("timed run should report stream ingress count");
+        let witness_segments = outputs
+            .iter()
+            .map(|output| {
+                build_witness_commitment_segment_for_schedule(
+                    plan.run_plan.schedule.units.len(),
+                    output.commitments(),
+                )
+                .unwrap_or_else(|error| {
+                    panic!("{label} witness commitment segment should build: {error}")
+                })
+            })
+            .collect::<Vec<_>>();
+        let witness_segment_bytes = witness_segments
+            .iter()
+            .map(|segment| (segment.id, segment.data.clone()))
+            .collect::<Vec<_>>();
+        let proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
+            &lzvm_prover::WitnessAllUnitsProofRequest {
+                catalog: &catalog,
+                schedule: &plan.run_plan.schedule,
+                constant_tree_material_summaries: None,
+                execution_units: &plan.units,
+                gpu_streams: plan.run_plan.gpu.max_streams,
+                public_values: Some(&public_values),
+                outputs: &outputs,
+                auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+                unit_values: &[],
+                evaluation_values_segment: None,
+                verify_outputs: false,
+                program_image_cache: None,
+                eth_block_input: None,
+                challenge_values_segment: None,
+                include_contribution_segment: false,
+            },
+        )
+        .unwrap_or_else(|error| panic!("{label} proof artifact should build: {error}"))
+        .expect("proof artifact should exist");
+        let proof_bytes = encode_proof_artifact(&proof)
+            .unwrap_or_else(|error| panic!("{label} proof artifact should encode: {error}"));
+
+        StreamRun {
+            proof_bytes,
+            witness_segment_bytes,
+            stream_ingress_count,
+        }
+    };
+
+    let default_run = run("default");
+    std::env::set_var(STREAM_ENV, "1");
+    let stream_run = run("stream");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        default_run.stream_ingress_count, 0,
+        "default path should not use stream descriptor ingress"
+    );
+    assert!(
+        stream_run.stream_ingress_count > 0,
+        "opt-in path should use stream descriptor ingress"
+    );
+    assert_eq!(
+        default_run.witness_segment_bytes,
+        stream_run.witness_segment_bytes
+    );
+    assert_eq!(default_run.proof_bytes, stream_run.proof_bytes);
+}
+
 #[test]
 fn compact_segmented_guest_pc_trace_rejects_single_unit_transcript_without_trace() {
     let dir = temp_dir("segmented-guest-pc-compact-single-unit-transcript");

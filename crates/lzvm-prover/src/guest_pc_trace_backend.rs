@@ -30,7 +30,7 @@ use crate::zisk_main::{
     ZiskMainStore, ZISK_EXTRA_PARAMS_ADDRESS,
 };
 #[cfg(feature = "cuda")]
-use lzvm_accel::CudaDeviceBuffer;
+use lzvm_accel::{CudaDeviceBuffer, CudaStream};
 use lzvm_field::{Felt, FieldError};
 
 use crate::zisk_fcalls::{ZiskInputFcallError, ZiskInputFcallHandler, ZISK_INPUT_ADDRESS};
@@ -823,6 +823,7 @@ pub(crate) struct GuestPcDeviceSourceBuildTiming {
     descriptor_upload_byte_count: usize,
     descriptor_upload_word_count: usize,
     descriptor_upload_row_count: usize,
+    descriptor_stream_ingress_count: usize,
     trace_expand_duration: Duration,
 }
 
@@ -842,6 +843,10 @@ impl GuestPcDeviceSourceBuildTiming {
 
     pub(crate) fn descriptor_upload_row_count(&self) -> usize {
         self.descriptor_upload_row_count
+    }
+
+    pub(crate) fn descriptor_stream_ingress_count(&self) -> usize {
+        self.descriptor_stream_ingress_count
     }
 
     pub(crate) fn trace_expand_duration(&self) -> Duration {
@@ -1340,6 +1345,64 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
     let descriptor_upload_byte_count =
         descriptor_upload_word_count.saturating_mul(std::mem::size_of::<u64>());
     let descriptor_upload_row_count = descriptors.descriptor_rows();
+
+    if guest_pc_descriptor_stream_ingress_enabled() {
+        let stream = CudaStream::new().map_err(|error| {
+            guest_pc_device_trace_source_error(format!(
+                "CUDA trace descriptor stream creation failed: {error}"
+            ))
+        })?;
+        let pending = record_device_source_build_duration(
+            timing
+                .as_mut()
+                .map(|timing| &mut timing.descriptor_upload_duration),
+            || unsafe {
+                CudaDeviceBuffer::begin_trace_descriptor_expansion_on_stream(
+                    descriptors.words(),
+                    descriptors.descriptor_word_count(),
+                    descriptors.descriptor_rows(),
+                    descriptors.row_count(),
+                    descriptors.column_count(),
+                    descriptors.terminal_pc(),
+                    &stream,
+                )
+                .map_err(|error| {
+                    guest_pc_device_trace_source_error(format!(
+                        "CUDA trace descriptor stream ingress failed: {error}"
+                    ))
+                })
+            },
+        )?;
+        record_device_source_build_duration(
+            timing
+                .as_mut()
+                .map(|timing| &mut timing.trace_expand_duration),
+            || {
+                stream.synchronize().map_err(|error| {
+                    guest_pc_device_trace_source_error(format!(
+                        "CUDA trace descriptor stream synchronization failed: {error}"
+                    ))
+                })
+            },
+        )?;
+        let (descriptor_buffer, trace_device) = pending.into_parts();
+        let descriptor_buffer = Arc::new(descriptor_buffer);
+        if let Some(timing) = timing.as_mut() {
+            timing.descriptor_upload_byte_count += descriptor_upload_byte_count;
+            timing.descriptor_upload_word_count += descriptor_upload_word_count;
+            timing.descriptor_upload_row_count += descriptor_upload_row_count;
+            timing.descriptor_stream_ingress_count += 1;
+        }
+        let builder = guest_pc_device_trace_builder_from_layout_with_descriptor_source(
+            layout,
+            trace_device,
+            Some(descriptor_buffer),
+            true,
+        );
+        validate_guest_pc_trace_device_source_matches_layout(layout, &builder)?;
+        return Ok(builder);
+    }
+
     let descriptor_buffer = Arc::new(record_device_source_build_duration(
         timing
             .as_mut()
@@ -1365,6 +1428,11 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
     )?;
     builder.device_trace_descriptor_buffer = Some(descriptor_buffer);
     Ok(builder)
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_descriptor_stream_ingress_enabled() -> bool {
+    env_flag_enabled("LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS", false)
 }
 
 #[cfg(feature = "cuda")]

@@ -6171,6 +6171,10 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
         "{stdout}"
     );
     assert!(
+        stdout.contains("timing_guest_device_source_descriptor_stream_ingress="),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains("timing_guest_device_source_trace_expand_ms="),
         "{stdout}"
     );
