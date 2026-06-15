@@ -249,6 +249,29 @@ def d2h_preceding_kernel_summary(conn: sqlite3.Connection, limit: int) -> list[s
     ).fetchall()
 
 
+def top_h2d_bulk_upload_summary(conn: sqlite3.Connection) -> sqlite3.Row | None:
+    return conn.execute(
+        f"""
+        select
+            m.bytes as bytes,
+            count(*) as calls,
+            sum(r.end - r.start) as host_ns,
+            sum(m.end - m.start) as gpu_ns,
+            max(r.end - r.start) as max_host_ns
+        from {RUNTIME_TABLE} r
+        join {STRING_TABLE} s on s.id = r.nameId
+        join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
+        left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
+        where s.value like 'cudaMemcpy%'
+          and coalesce(e.label, 'copyKind=' || m.copyKind) = 'Host-to-Device'
+          and m.bytes >= 1048576
+        group by m.bytes
+        order by host_ns desc, calls desc, m.bytes desc
+        limit 1
+        """
+    ).fetchone()
+
+
 def callchain_frame_rows(
     conn: sqlite3.Connection,
     callchain_id: int,
@@ -445,6 +468,7 @@ def print_transfer_triage(
     gpu_rows: list[sqlite3.Row],
     correlated_rows: list[sqlite3.Row],
     d2h_rows: list[sqlite3.Row],
+    top_h2d_bulk: sqlite3.Row | None,
 ) -> None:
     host_ns = sum_rows_ns(runtime_rows, "host_ns")
     gpu_ns = sum_rows_ns(gpu_rows, "gpu_ns")
@@ -467,6 +491,24 @@ def print_transfer_triage(
         f"dominant_gpu_copy,{csv_cell(gpu_direction)},"
         f"gpu_memcpy_ms={ms(gpu_direction_ns):.3f}"
     )
+    if top_h2d_bulk is None:
+        print("top_h2d_bulk_upload,none,no H2D copy at or above 1MiB")
+        print("h2d_residency_hint,none,no bulk H2D hotspot")
+    else:
+        bulk_host_ns = int(top_h2d_bulk["host_ns"] or 0)
+        bulk_gpu_ns = int(top_h2d_bulk["gpu_ns"] or 0)
+        bulk_bytes = int(top_h2d_bulk["bytes"] or 0)
+        print(
+            f"top_h2d_bulk_upload,{bulk_bytes},"
+            f"calls={int(top_h2d_bulk['calls'] or 0)} "
+            f"host_api_ms={ms(bulk_host_ns):.3f} "
+            f"gpu_memcpy_ms={ms(bulk_gpu_ns):.3f} "
+            f"max_host_api_ms={ms(top_h2d_bulk['max_host_ns']):.3f}"
+        )
+        print(
+            "h2d_residency_hint,reduce_bulk_h2d_source_uploads,"
+            "prefer GPU-resident lowering or reusable device inputs before kernel fusion"
+        )
     if top_d2h is None:
         print("top_d2h_wait,none,no D2H memcpy activity")
         print("gpu_residency_hint,none,no D2H hotspot")
@@ -520,6 +562,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     callchain_rows = memcpy_callchain_summary(conn, limit)
     d2h_callchain_rows = d2h_memcpy_callchain_summary(conn, limit)
     d2h_rows = d2h_preceding_kernel_summary(conn, limit)
+    top_h2d_bulk = top_h2d_bulk_upload_summary(conn)
     print(f"profile={label}")
     print_runtime(runtime_rows)
     print_gpu(gpu_rows)
@@ -527,7 +570,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print_callchains(conn, callchain_rows)
     print_d2h_callchains(conn, d2h_callchain_rows)
     print_d2h_preceding_kernels(d2h_rows)
-    print_transfer_triage(runtime_rows, gpu_rows, correlated_rows, d2h_rows)
+    print_transfer_triage(runtime_rows, gpu_rows, correlated_rows, d2h_rows, top_h2d_bulk)
     print_callchain_hint(conn)
 
 
@@ -590,6 +633,7 @@ def build_self_test_db() -> sqlite3.Connection:
             (0, 2_000_000, 1, 10),
             (3_000_000, 6_500_000, 1, 11),
             (7_000_000, 8_000_000, 2, 12),
+            (9_000_000, 13_000_000, 1, 13),
         ],
     )
     conn.execute(f"alter table {RUNTIME_TABLE} add column callchainId integer")
@@ -608,6 +652,7 @@ def build_self_test_db() -> sqlite3.Connection:
             (10_000, 10_500, 32, 2, 10, 7),
             (20_000, 20_700, 1152, 2, 11, 7),
             (30_000, 35_000, 4096, 1, 12, 7),
+            (40_000, 43_500, 2_097_152, 1, 13, 7),
         ],
     )
     conn.executemany(

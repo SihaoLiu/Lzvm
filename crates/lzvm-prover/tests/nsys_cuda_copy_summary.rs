@@ -26,7 +26,9 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
         "cuda_transfer_triage",
         "dominant_transfer_wait",
         "top_d2h_wait",
+        "top_h2d_bulk_upload",
         "gpu_residency_hint",
+        "h2d_residency_hint",
         "--cudabacktrace=memory:80000",
         "app_frame",
     ] {
@@ -68,8 +70,11 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
             && stdout.contains("cuda_transfer_triage")
             && stdout.contains("dominant_transfer_wait")
             && stdout.contains("top_d2h_wait")
+            && stdout.contains("top_h2d_bulk_upload")
             && stdout.contains("gpu_residency_hint")
+            && stdout.contains("h2d_residency_hint")
             && stdout.contains("batch_or_keep_small_d2h_on_device")
+            && stdout.contains("reduce_bulk_h2d_source_uploads")
             && stdout.contains("cuda_api_backtrace_hint"),
         "nsys CUDA copy summary should print D2H host/GPU wait correlation"
     );
