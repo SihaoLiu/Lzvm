@@ -49,8 +49,10 @@ use lzvm_artifacts::pcs_fri_segment::{
     PCS_FRI_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_material::PcsSetupMaterial;
+#[cfg(feature = "cuda")]
+use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 use lzvm_artifacts::pcs_material_segment::{
-    parse_pcs_material_manifest_segment, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+    parse_pcs_material_manifest_segment, PcsMaterialManifestUnit,
 };
 use lzvm_artifacts::pcs_nonce_segment::{
     parse_pcs_query_nonce_segment, PCS_QUERY_NONCE_SEGMENT_ID,
