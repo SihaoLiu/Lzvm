@@ -1887,7 +1887,7 @@ impl WitnessStageCompactTreeStorage {
                 timing.as_deref_mut(),
             ) {
                 Ok(openings) => return Ok(openings),
-                Err(WitnessStageOpeningError::LengthOverflow) => {}
+                Err(error) if error.is_length_overflow() => {}
                 Err(error) => {
                     return Err(WitnessStageOpeningError::context(
                         "compact retained leaf digest",
@@ -1947,7 +1947,7 @@ impl WitnessStageCompactTreeStorage {
                 timing.as_deref_mut(),
             ) {
                 Ok(openings) => return Ok(openings),
-                Err(WitnessStageOpeningError::LengthOverflow) => {}
+                Err(error) if error.is_length_overflow() => {}
                 Err(error) => {
                     return Err(WitnessStageOpeningError::context(
                         "compact parent checkpoint",

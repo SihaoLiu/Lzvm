@@ -287,6 +287,43 @@ impl WitnessStageOpeningError {
             source: Box::new(source),
         }
     }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn is_length_overflow(&self) -> bool {
+        match self {
+            Self::LengthOverflow => true,
+            Self::Context { source, .. } => source.is_length_overflow(),
+            _ => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WitnessStageOpeningError;
+
+    #[test]
+    fn contexted_length_overflow_keeps_length_overflow_classification() {
+        let error = WitnessStageOpeningError::context(
+            "outer",
+            WitnessStageOpeningError::context("inner", WitnessStageOpeningError::LengthOverflow),
+        );
+
+        assert!(error.is_length_overflow());
+    }
+
+    #[test]
+    fn contexted_non_length_error_is_not_length_overflow() {
+        let error = WitnessStageOpeningError::context(
+            "outer",
+            WitnessStageOpeningError::RowOutOfRange {
+                row_index: 4,
+                row_count: 3,
+            },
+        );
+
+        assert!(!error.is_length_overflow());
+    }
 }
 
 impl From<FieldError> for WitnessStageCommitmentError {

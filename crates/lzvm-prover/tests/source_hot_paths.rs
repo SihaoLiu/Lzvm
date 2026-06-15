@@ -994,8 +994,8 @@ fn cuda_compact_witness_opening_uses_retained_parent_checkpoint_after_leaf_diges
         "retained parent checkpoint opening should be an optional fast path"
     );
     assert!(
-        recompute_body.contains("Err(WitnessStageOpeningError::LengthOverflow)"),
-        "structurally unusable retained parent checkpoints should fall back to full leaf-level openings"
+        recompute_body.contains("Err(error) if error.is_length_overflow()"),
+        "structurally unusable retained parent checkpoints should fall back to full leaf-level openings even after operation context is attached"
     );
     assert!(
         recompute_body.contains("Err(error) => {")
@@ -3532,8 +3532,8 @@ fn compact_opening_falls_back_when_retained_leaf_digest_is_structurally_unusable
         "retained leaf digest opening should be an optional fast path"
     );
     assert!(
-        recompute_body.contains("Err(WitnessStageOpeningError::LengthOverflow)"),
-        "structurally unusable retained leaf digests should fall back to recomputing the leaf level"
+        recompute_body.contains("Err(error) if error.is_length_overflow()"),
+        "structurally unusable retained leaf digests should fall back to recomputing the leaf level even after operation context is attached"
     );
     assert!(
         recompute_body.contains("Err(error) => {")
