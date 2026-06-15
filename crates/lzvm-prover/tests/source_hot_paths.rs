@@ -7327,6 +7327,35 @@ fn guest_machine_fetch_uses_specialized_memory_path() {
 }
 
 #[test]
+fn guest_machine_run_loop_reuses_prepared_instruction_for_advance() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let body = function_body(
+        &source,
+        "fn run_guest_machine_inner",
+        "pub fn advance_guest_machine",
+    );
+
+    assert!(
+        body.contains("prepare_current_guest_instruction(memory, state.pc())"),
+        "guest machine run loop should fetch and decode each current instruction once"
+    );
+    assert!(
+        body.contains("advance_guest_machine_prepared_inner"),
+        "guest machine run loop should advance with the prepared instruction"
+    );
+    assert!(
+        !body.contains("decode_current_guest_instruction(memory, state.pc())"),
+        "guest machine run loop should not decode once for halt detection and again for advance"
+    );
+    assert!(
+        !body.contains("advance_guest_machine(memory, state)"),
+        "guest machine run loop should not refetch the already prepared instruction"
+    );
+}
+
+#[test]
 fn guest_pc_trace_slice_reuses_prepared_instruction_for_advance() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");

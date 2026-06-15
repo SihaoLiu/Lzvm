@@ -714,8 +714,8 @@ fn run_guest_machine_inner(
 ) -> Result<GuestMachineRunReport, GuestMachineRunError> {
     let mut executed_instructions = 0_u64;
     loop {
-        let current = decode_current_guest_instruction(memory, state.pc())?;
-        if current == RiscvInstruction::Ecall {
+        let prepared = prepare_current_guest_instruction(memory, state.pc())?;
+        if prepared.instruction == RiscvInstruction::Ecall {
             return Ok(GuestMachineRunReport {
                 executed_instructions,
                 halt: GuestMachineHalt::Ecall {
@@ -730,8 +730,10 @@ fn run_guest_machine_inner(
             });
         }
         let report = match handler.as_deref_mut() {
-            Some(handler) => advance_guest_machine_with_fcalls(memory, state, handler)?,
-            None => advance_guest_machine(memory, state)?,
+            Some(handler) => {
+                advance_guest_machine_prepared_inner(memory, state, Some(handler), prepared)?
+            }
+            None => advance_guest_machine_prepared_inner(memory, state, None, prepared)?,
         };
         if let Some(reports) = reports.as_deref_mut() {
             reports.push(report);
