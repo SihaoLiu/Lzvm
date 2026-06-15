@@ -4,7 +4,8 @@ use lzvm_prover::guest_instruction::{
     RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::{
-    advance_guest_machine, GuestMachineError, GuestMachineMemory, GuestMachineState,
+    advance_guest_machine, run_guest_machine, GuestMachineError, GuestMachineHalt,
+    GuestMachineMemory, GuestMachineState,
 };
 use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryError, GuestMemoryImage};
 
@@ -339,6 +340,13 @@ fn auipc(rd: u8, immediate: u32) -> u32 {
     assert_register(rd);
     assert_eq!(immediate & 0x0fff, 0);
     (immediate & 0xffff_f000) | (u32::from(rd) << 7) | 0x17
+}
+
+fn csrrs(rd: u8, csr: u16, rs1: u8) -> u32 {
+    assert!(csr < 4096);
+    assert_register(rs1);
+    assert_register(rd);
+    (u32::from(csr) << 20) | (u32::from(rs1) << 15) | (2 << 12) | (u32::from(rd) << 7) | 0x73
 }
 
 fn add(rd: u8, rs1: u8, rs2: u8) -> u32 {
@@ -1245,6 +1253,70 @@ fn fetches_instruction_bytes_written_by_guest_store() {
     );
     assert_eq!(state.register(3), Some(7));
     assert_eq!(state.pc(), ENTRY + 8);
+}
+
+#[test]
+fn runner_fetches_instruction_bytes_written_after_prior_decode() {
+    let replacement = jal(0, 12);
+    let mut memory =
+        guest_machine_memory_with_words(&[addi(3, 0, 1), sw(1, 2, 0), jal(0, -8), 0x0000_0073]);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(1, ENTRY)
+        .expect("register write should be valid");
+    state
+        .set_register(2, u64::from(replacement))
+        .expect("register write should be valid");
+
+    let report = run_guest_machine(&mut memory, &mut state, 8).expect("program should halt");
+
+    assert_eq!(report.executed_instructions, 4);
+    assert_eq!(
+        report.halt,
+        GuestMachineHalt::Ecall {
+            address: ENTRY + 12,
+        }
+    );
+    assert_eq!(state.register(3), Some(1));
+}
+
+#[test]
+fn runner_fetches_instruction_bytes_written_by_dma_after_prior_decode() {
+    let data_offset = 64;
+    let data_address = ENTRY + data_offset as u64;
+    let replacement = jal(0, 16);
+    let mut memory = guest_machine_memory_with_words_and_data(
+        &[
+            addi(3, 0, 1),
+            csrrs(0, 0x0813, 11),
+            add(0, 10, 12),
+            jal(0, -12),
+            0x0000_0073,
+        ],
+        data_offset,
+        &replacement.to_le_bytes(),
+    );
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(10, ENTRY)
+        .expect("destination register should set");
+    state
+        .set_register(11, data_address)
+        .expect("source register should set");
+    state
+        .set_register(12, 4)
+        .expect("count register should set");
+
+    let report = run_guest_machine(&mut memory, &mut state, 8).expect("program should halt");
+
+    assert_eq!(report.executed_instructions, 5);
+    assert_eq!(
+        report.halt,
+        GuestMachineHalt::Ecall {
+            address: ENTRY + 16,
+        }
+    );
+    assert_eq!(state.register(3), Some(1));
 }
 
 #[test]
