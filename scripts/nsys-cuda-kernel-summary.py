@@ -408,6 +408,28 @@ def direction_hint(launch_ns: int, sync_ns: int) -> str:
     return "mixed_launch_and_sync"
 
 
+def next_action_hint(launch_ns: int, sync_ns: int, stream_count: int) -> tuple[str, str]:
+    if sync_ns > launch_ns * 5 // 4:
+        if stream_count <= 1:
+            return (
+                "remove_sync_boundaries_or_keep_roots_on_device",
+                "sync dominates and only one kernel stream is active",
+            )
+        return (
+            "inspect_cross_stream_sync_or_data_residency",
+            "sync dominates despite multiple kernel streams",
+        )
+    if launch_ns > sync_ns * 5 // 4:
+        return (
+            "graph_or_fuse_repeated_launch_shapes",
+            "launch API time dominates synchronization time",
+        )
+    return (
+        "measure_launch_and_sync_candidates_together",
+        "launch and synchronization costs are both material",
+    )
+
+
 def print_direction_triage(
     launch_rows: list[sqlite3.Row],
     sync_rows: list[sqlite3.Row],
@@ -422,6 +444,7 @@ def print_direction_triage(
     top_fusion = fusion_rows[0] if fusion_rows else None
     top_shape = graph_shape_rows[0] if graph_shape_rows else None
     top_pair = adjacency_rows[0] if adjacency_rows else None
+    next_action, next_action_detail = next_action_hint(launch_ns, sync_ns, stream_count)
     print()
     print("cuda_graph_fusion_separation_triage")
     print("metric,value,detail")
@@ -430,12 +453,21 @@ def print_direction_triage(
         "host launch time available to CUDA Graph or kernel fusion"
     )
     print(
+        f"graph_or_fusion_upper_bound_ms,{ms(launch_ns):.3f},"
+        "launch API time before any synchronization or transfer costs"
+    )
+    print(
         f"sync_api_ms,{ms(sync_ns):.3f},"
         "host synchronization time that Graph or fusion may not remove"
+    )
+    print(
+        f"sync_to_launch_ratio,{ratio(sync_ns, launch_ns)},"
+        "values above 1 mean synchronization dominates launch overhead"
     )
     dominant = "sync_api" if sync_ns > launch_ns else "launch_api"
     print(f"dominant_wait,{dominant},{direction_hint(launch_ns, sync_ns)}")
     print(f"stream_count,{stream_count},kernel streams observed in nsys export")
+    print(f"next_action_hint,{next_action},{next_action_detail}")
     if top_fusion is None:
         print("top_fusion_kernel,none,no repeated launch candidate")
     else:

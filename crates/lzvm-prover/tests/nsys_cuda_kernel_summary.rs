@@ -59,6 +59,9 @@ fn nsys_cuda_kernel_summary_reports_kernel_launch_and_stream_shape() {
         "cudaDeviceSynchronize_v3020",
         "cuda_graph_fusion_separation_triage",
         "dominant_wait",
+        "graph_or_fusion_upper_bound_ms",
+        "sync_to_launch_ratio",
+        "next_action_hint",
         "top_graph_shape",
         "top_same_stream_pair",
     ] {
