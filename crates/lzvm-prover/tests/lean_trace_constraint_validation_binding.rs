@@ -38,6 +38,25 @@ fn lean_trace_constraint_validation_binding_exports_core_contract_projection() {
             "runtime_trace_constraint_required_external_source_accepts_backend_core_sound_witness",
         ],
     );
+    lean_binding::assert_theorem_declarations(
+        &lean_source,
+        &["runtime_trace_constraint_checked_acceptance_pcs_fri_backend_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_pcs_fri_backend_contract",
+        &[
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeTraceConstraintArtifactBindingEvidence",
+            "RuntimeTraceConstraintBackendContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_pcs_fri_backend_contract",
+        &["AssumptionBundle"],
+    );
     assert!(
         theorem_prefix(
             &lean_source,

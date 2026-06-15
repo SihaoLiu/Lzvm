@@ -358,6 +358,63 @@ theorem runtime_trace_constraint_checked_acceptance_backend_contract
                     evidence.right.right.right.left
                     evidence.right.right.right.right.right.left))))
 
+theorem runtime_trace_constraint_checked_acceptance_pcs_fri_backend_contract
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeTraceConstraintArtifactBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTraceConstraintBackendContract
+            system
+            validation
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have openingAccepted :=
+    validation.traceConstraintAcceptedImpliesOpeningAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingChecks :=
+    runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingAccepted
+  have artifactBindingEvidence :=
+    runtime_trace_constraint_checked_acceptance_artifact_binding_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have backendContract :=
+    runtime_trace_constraint_checked_acceptance_backend_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro openingChecks.left
+      (And.intro openingChecks.right
+        (And.intro artifactBindingEvidence backendContract))
+
 theorem runtime_trace_constraint_checked_acceptance_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
