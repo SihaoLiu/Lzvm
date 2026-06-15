@@ -55,6 +55,14 @@ unsafe extern "C" {
         slice_width_words: usize,
         stream: *mut c_void,
     ) -> i32;
+    fn lzvm_cuda_copy_d2d_selected_row_major_rows(
+        dst: *mut c_void,
+        src: *const c_void,
+        rows: *const u64,
+        selected_row_count: usize,
+        source_row_count: usize,
+        row_width_words: usize,
+    ) -> i32;
     fn lzvm_cuda_copy_d2h_state_prefix_words(
         dst: *mut c_void,
         src: *const c_void,
@@ -198,6 +206,50 @@ fn validate_row_major_u64_slice_shape(
         .ok_or(AccelError::InvalidDomain {
             bits: slice_width_words,
             len: row_count,
+        })
+}
+
+fn validate_selected_row_major_u64_rows_shape(
+    word_count: usize,
+    row_count: usize,
+    row_width_words: usize,
+    rows: &[usize],
+) -> Result<usize, AccelError> {
+    let expected_words =
+        row_count
+            .checked_mul(row_width_words)
+            .ok_or(AccelError::InvalidDomain {
+                bits: row_width_words,
+                len: row_count,
+            })?;
+    if word_count != expected_words {
+        return Err(AccelError::LengthMismatch {
+            lhs: word_count,
+            rhs: expected_words,
+        });
+    }
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    if row_width_words == 0 {
+        return Err(AccelError::InvalidDomain {
+            bits: row_width_words,
+            len: rows.len(),
+        });
+    }
+    for &row in rows {
+        if row >= row_count {
+            return Err(AccelError::InvalidDomain {
+                bits: row_count,
+                len: row,
+            });
+        }
+    }
+    rows.len()
+        .checked_mul(row_width_words)
+        .ok_or(AccelError::InvalidDomain {
+            bits: row_width_words,
+            len: rows.len(),
         })
 }
 
@@ -418,6 +470,34 @@ impl CudaDeviceBuffer {
             source_width_words,
             start_word,
             slice_width_words,
+        )?;
+        Ok(buffer)
+    }
+
+    pub fn from_device_selected_row_major_u64_rows(
+        source: &Self,
+        row_count: usize,
+        row_width_words: usize,
+        rows: &[usize],
+    ) -> Result<Self, AccelError> {
+        if !source.len.is_multiple_of(8) {
+            return Err(AccelError::LengthMismatch {
+                lhs: source.len,
+                rhs: source.len / 8 * 8,
+            });
+        }
+        let output_words = validate_selected_row_major_u64_rows_shape(
+            source.len / 8,
+            row_count,
+            row_width_words,
+            rows,
+        )?;
+        let mut buffer = Self::new(u64_word_byte_len(output_words)?)?;
+        buffer.copy_from_device_selected_row_major_u64_rows(
+            source,
+            row_count,
+            row_width_words,
+            rows,
         )?;
         Ok(buffer)
     }
@@ -1161,6 +1241,58 @@ impl CudaDeviceBuffer {
                 source_width_words,
                 start_word,
                 slice_width_words,
+            )
+        };
+        cuda_status(code)
+    }
+
+    pub fn copy_from_device_selected_row_major_u64_rows(
+        &mut self,
+        source: &Self,
+        row_count: usize,
+        row_width_words: usize,
+        rows: &[usize],
+    ) -> Result<(), AccelError> {
+        if !source.len.is_multiple_of(8) {
+            return Err(AccelError::LengthMismatch {
+                lhs: source.len,
+                rhs: source.len / 8 * 8,
+            });
+        }
+        let output_words = validate_selected_row_major_u64_rows_shape(
+            source.len / 8,
+            row_count,
+            row_width_words,
+            rows,
+        )?;
+        let expected_len = u64_word_byte_len(output_words)?;
+        if expected_len != self.len {
+            return Err(AccelError::LengthMismatch {
+                lhs: self.len,
+                rhs: expected_len,
+            });
+        }
+        if self.len == 0 {
+            return Ok(());
+        }
+        let row_indices = rows
+            .iter()
+            .copied()
+            .map(u64::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| AccelError::InvalidDomain {
+                bits: row_count,
+                len: rows.len(),
+            })?;
+        let row_buffer = CudaDeviceBuffer::from_u64_words(&row_indices)?;
+        let code = unsafe {
+            lzvm_cuda_copy_d2d_selected_row_major_rows(
+                self.ptr,
+                source.ptr as *const c_void,
+                row_buffer.ptr as *const u64,
+                rows.len(),
+                row_count,
+                row_width_words,
             )
         };
         cuda_status(code)

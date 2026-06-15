@@ -159,6 +159,13 @@ extern "C" int lzvm_cuda_copy_d2d_row_slice_words_on_stream(
     std::size_t start_word,
     std::size_t slice_width_words,
     void* stream);
+extern "C" int lzvm_cuda_copy_d2d_selected_row_major_rows(
+    void* dst,
+    const void* src,
+    const std::uint64_t* rows,
+    std::size_t selected_row_count,
+    std::size_t source_row_count,
+    std::size_t row_width_words);
 extern "C" int lzvm_cuda_copy_d2h_state_prefix_words(
     void* dst,
     const void* src,

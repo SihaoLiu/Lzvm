@@ -188,10 +188,11 @@ fn cuda_witness_commit_has_stream_capable_row_major_extension() {
         "lzvm-accel should own CUDA streams safely from Rust"
     );
     assert!(
-        accel_lib_source.contains("pub use cuda_stream::CudaStream")
+        (accel_lib_source.contains("pub use cuda_stream::CudaStream")
+            || (accel_lib_source.contains("pub use cuda_stream::{")
+                && accel_lib_source.contains("CudaStream")))
             && accel_lib_source
-                .contains("cuda_goldilocks_coset_extend_row_major_columns_device_on_stream")
-            && accel_lib_source.contains("CudaStream"),
+                .contains("cuda_goldilocks_coset_extend_row_major_columns_device_on_stream"),
         "row-major coset extension should have an explicit-stream Rust wrapper"
     );
     assert!(
@@ -1127,7 +1128,7 @@ fn cuda_compact_opening_avoids_redundant_path_root_downloads() {
     let retained_leaf_body = function_body(
         &values_source,
         "fn open_batch_with_retained_leaf_digest_level_cuda",
-        "fn copy_extended_row_values_from_device",
+        "fn copy_extended_row_values_batch_from_device",
     );
     assert!(
         retained_leaf_body.contains("opening_path_siblings(*row)")
@@ -3261,7 +3262,7 @@ fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
     let leaf_digest_body = function_body(
         &values_source,
         "fn open_batch_with_retained_leaf_digest_level_cuda",
-        "fn copy_extended_row_values_from_device",
+        "fn copy_extended_row_values_batch_from_device",
     );
     assert!(
         leaf_digest_body.contains("extended_row_values_from_source_cuda(*row"),
@@ -3393,7 +3394,7 @@ fn compact_cuda_opening_errors_name_failing_operation() {
     let leaf_digest_body = function_body(
         &values_source,
         "fn open_batch_with_retained_leaf_digest_level_cuda",
-        "fn copy_extended_row_values_from_device",
+        "fn copy_extended_row_values_batch_from_device",
     );
     for operation in [
         "compact retained leaf digest path",

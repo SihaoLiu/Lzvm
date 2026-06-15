@@ -70,6 +70,7 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_row_values_source_download: Duration,
     pub witness_opening_row_values_device_download: Duration,
     pub witness_opening_row_values_device_row_count: usize,
+    pub witness_opening_row_values_device_download_batch_count: usize,
     pub witness_opening_row_values_source_row_count: usize,
     pub witness_opening_row_values_word_count: usize,
     pub witness_opening_row_values_byte_count: usize,
@@ -157,6 +158,7 @@ pub struct WitnessProofStageOpeningWork {
     pub path_parent_hash_retained_parent_checkpoint_suffix_byte_count: usize,
     pub path_parent_hash_retained_parent_checkpoint_suffix_launch_count: usize,
     pub row_values_device_row_count: usize,
+    pub row_values_device_download_batch_count: usize,
     pub row_values_source_row_count: usize,
     pub row_values_word_count: usize,
     pub row_values_byte_count: usize,
@@ -242,6 +244,8 @@ impl WitnessProofStageOpeningWork {
         self.path_parent_hash_retained_parent_checkpoint_suffix_launch_count +=
             timing.path_parent_hash_retained_parent_checkpoint_suffix_launch_count;
         self.row_values_device_row_count += timing.row_values_device_row_count;
+        self.row_values_device_download_batch_count +=
+            timing.row_values_device_download_batch_count;
         self.row_values_source_row_count += timing.row_values_source_row_count;
         self.row_values_word_count += timing.row_values_word_count;
         self.row_values_byte_count += timing.row_values_byte_count;
@@ -438,6 +442,8 @@ impl WitnessProofArtifactTiming {
         self.witness_opening_row_values_source_download += timing.row_values_source_download;
         self.witness_opening_row_values_device_download += timing.row_values_device_download;
         self.witness_opening_row_values_device_row_count += timing.row_values_device_row_count;
+        self.witness_opening_row_values_device_download_batch_count +=
+            timing.row_values_device_download_batch_count;
         self.witness_opening_row_values_source_row_count += timing.row_values_source_row_count;
         self.witness_opening_row_values_word_count += timing.row_values_word_count;
         self.witness_opening_row_values_byte_count += timing.row_values_byte_count;

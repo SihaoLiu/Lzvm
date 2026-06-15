@@ -2430,6 +2430,7 @@ mod tests {
         );
         assert_eq!(batch_timing.row_values_source_row_count, 0);
         assert_eq!(batch_timing.row_values_device_row_count, rows.len());
+        assert_eq!(batch_timing.row_values_device_download_batch_count, 1);
         assert_eq!(
             batch_timing.row_values_word_count,
             rows.len() * column_count
@@ -2451,6 +2452,20 @@ mod tests {
             batch_timing.path_parent_hash_retained_parent_checkpoint_suffix_row_count,
             checkpoint_parent_rows
         );
+
+        let mut single_timing = WitnessStageOpeningWorkTiming::default();
+        let single_openings = open_witness_stage_commitments_with_source_device_timing(
+            &device,
+            &[3891],
+            extended_rows as u64,
+            column_count,
+            None,
+            &mut single_timing,
+        )
+        .expect("single opening should build");
+        assert_eq!(single_openings.len(), 1);
+        assert_eq!(single_timing.row_values_device_row_count, 1);
+        assert_eq!(single_timing.row_values_device_download_batch_count, 0);
     }
 
     #[cfg(feature = "cuda")]

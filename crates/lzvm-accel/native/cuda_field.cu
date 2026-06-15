@@ -528,6 +528,27 @@ __global__ void pack_poseidon2_width16_linear_round_inputs_kernel(
     }
 }
 
+__global__ void copy_d2d_selected_row_major_rows_kernel(
+    uint64_t* dst,
+    const uint64_t* src,
+    const uint64_t* rows,
+    size_t selected_row_count,
+    size_t source_row_count,
+    size_t row_width_words) {
+    const size_t word_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const size_t total_words = selected_row_count * row_width_words;
+    if (word_index >= total_words) {
+        return;
+    }
+    const size_t selected_row_index = word_index / row_width_words;
+    const size_t column = word_index - selected_row_index * row_width_words;
+    const uint64_t source_row = rows[selected_row_index];
+    if (source_row >= source_row_count) {
+        return;
+    }
+    dst[word_index] = src[static_cast<size_t>(source_row) * row_width_words + column];
+}
+
 int run_poseidon2_width4_on_device(
     const uint64_t* device_values,
     uint64_t* device_out,
@@ -663,6 +684,38 @@ extern "C" int lzvm_cuda_setup_root_limit(unsigned int* out) {
     LZVM_CUDA_RETURN_ON_ERROR(
         cudaMemcpyFromSymbol(out, kNttStageRootLimit, sizeof(*out)));
     return 0;
+}
+
+extern "C" int lzvm_cuda_copy_d2d_selected_row_major_rows(
+    void* dst,
+    const void* src,
+    const uint64_t* rows,
+    size_t selected_row_count,
+    size_t source_row_count,
+    size_t row_width_words) {
+    if (selected_row_count == 0) {
+        return 0;
+    }
+    if (dst == nullptr || src == nullptr || rows == nullptr) {
+        return -1;
+    }
+    if (row_width_words == 0) {
+        return -2;
+    }
+    if (selected_row_count > std::numeric_limits<size_t>::max() / row_width_words ||
+        source_row_count > std::numeric_limits<size_t>::max() / row_width_words) {
+        return -2;
+    }
+    const size_t total_words = selected_row_count * row_width_words;
+    const size_t blocks = (total_words + kThreads - 1) / kThreads;
+    copy_d2d_selected_row_major_rows_kernel<<<blocks, kThreads>>>(
+        static_cast<uint64_t*>(dst),
+        static_cast<const uint64_t*>(src),
+        rows,
+        selected_row_count,
+        source_row_count,
+        row_width_words);
+    return lzvm_cuda_check_launch();
 }
 
 extern "C" int lzvm_cuda_setup_init(

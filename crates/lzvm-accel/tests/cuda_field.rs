@@ -649,6 +649,25 @@ fn cuda_device_buffer_copies_row_major_column_slice_from_device() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_device_buffer_copies_selected_row_major_rows_from_device() {
+    let source = CudaDeviceBuffer::from_u64_words(&(0_u64..20).collect::<Vec<_>>())
+        .expect("source device buffer should upload");
+    let buffer =
+        CudaDeviceBuffer::from_device_selected_row_major_u64_rows(&source, 4, 5, &[2, 0, 3])
+            .expect("selected device row-major rows should copy");
+
+    let actual = buffer
+        .to_u64_words()
+        .expect("selected device rows should download");
+
+    assert_eq!(
+        actual,
+        vec![10, 11, 12, 13, 14, 0, 1, 2, 3, 4, 15, 16, 17, 18, 19]
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_device_buffer_copies_u64_words_directly() {
     let input = vec![
         0,
