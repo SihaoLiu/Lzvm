@@ -561,6 +561,12 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_stage_tree_commit_root_materialization_max_group_size",
         timing.guest_stage_tree_commit_root_materialization_max_group_size(),
     );
+    record_guest_stage_root_materialization_shape(
+        timings,
+        timing.guest_stage_tree_commit_root_count(),
+        timing.guest_stage_tree_commit_root_materialization_group_count(),
+        timing.guest_stage_tree_commit_root_materialization_max_group_size(),
+    );
     timings.record(
         "guest_stage_tree_commit_retain_work",
         timing.guest_stage_tree_commit_retain_work_duration(),
@@ -715,5 +721,70 @@ pub(super) fn record_guest_pc_trace_timing(
             format!("guest_stage_{stage_index}_tree_commit_retain_work"),
             stage_timing.tree_commit_retain_work_duration(),
         );
+    }
+}
+
+fn record_guest_stage_root_materialization_shape(
+    timings: &mut TimingRecorder,
+    root_count: usize,
+    group_count: usize,
+    max_group_size: usize,
+) {
+    let avg_group_size_milli = if group_count == 0 {
+        0
+    } else {
+        root_count.saturating_mul(1000) / group_count
+    };
+    let needs_cross_segment_pipeline =
+        usize::from(root_count > 1 && group_count == root_count && max_group_size <= 1);
+    timings.record_count(
+        "guest_stage_tree_commit_root_materialization_avg_group_size_milli",
+        avg_group_size_milli,
+    );
+    timings.record_count(
+        "guest_stage_tree_commit_root_materialization_needs_cross_segment_pipeline",
+        needs_cross_segment_pipeline,
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::timing::{write_timing_summary, TimingRecorder};
+    use super::record_guest_stage_root_materialization_shape;
+
+    #[test]
+    fn guest_root_materialization_shape_flags_cross_segment_pipeline_need() {
+        let mut timings = TimingRecorder::new(true);
+
+        record_guest_stage_root_materialization_shape(&mut timings, 23, 23, 1);
+
+        let mut stdout = Vec::new();
+        write_timing_summary(&mut stdout, &timings);
+        let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+        for expected in [
+            "timing_guest_stage_tree_commit_root_materialization_avg_group_size_milli=1000\n",
+            "timing_guest_stage_tree_commit_root_materialization_needs_cross_segment_pipeline=1\n",
+        ] {
+            assert!(stdout.contains(expected), "missing {expected} in {stdout}");
+        }
+    }
+
+    #[test]
+    fn guest_root_materialization_shape_keeps_batched_groups_clear() {
+        let mut timings = TimingRecorder::new(true);
+
+        record_guest_stage_root_materialization_shape(&mut timings, 24, 6, 4);
+
+        let mut stdout = Vec::new();
+        write_timing_summary(&mut stdout, &timings);
+        let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+        for expected in [
+            "timing_guest_stage_tree_commit_root_materialization_avg_group_size_milli=4000\n",
+            "timing_guest_stage_tree_commit_root_materialization_needs_cross_segment_pipeline=0\n",
+        ] {
+            assert!(stdout.contains(expected), "missing {expected} in {stdout}");
+        }
     }
 }
