@@ -442,6 +442,167 @@ conn.close()
 }
 
 #[test]
+fn nsys_cuda_copy_summary_groups_small_d2h_batching_candidates() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/nsys-cuda-copy-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("temp directory should be creatable");
+    let sqlite_path = temp_dir.join(format!(
+        "nsys-copy-summary-small-d2h-test-{}.sqlite",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    let setup = r#"
+import sqlite3
+import sys
+
+path = sys.argv[1]
+conn = sqlite3.connect(path)
+conn.executescript("""
+create table StringIds (id integer primary key, value text);
+create table ENUM_CUDA_MEMCPY_OPER (id integer primary key, label text);
+create table CUPTI_ACTIVITY_KIND_RUNTIME (
+    start integer,
+    end integer,
+    eventClass integer,
+    globalTid integer,
+    correlationId integer,
+    nameId integer,
+    returnValue integer,
+    callchainId integer
+);
+create table CUPTI_ACTIVITY_KIND_MEMCPY (
+    start integer,
+    end integer,
+    deviceId integer,
+    contextId integer,
+    greenContextId integer,
+    streamId integer,
+    correlationId integer,
+    globalPid integer,
+    bytes integer,
+    copyKind integer,
+    deprecatedSrcId integer,
+    srcKind integer,
+    dstKind integer,
+    srcDeviceId integer,
+    srcContextId integer,
+    dstDeviceId integer,
+    dstContextId integer,
+    migrationCause integer,
+    graphNodeId integer,
+    virtualAddress integer,
+    copyCount integer
+);
+create table CUPTI_ACTIVITY_KIND_KERNEL (
+    start integer,
+    end integer,
+    deviceId integer,
+    contextId integer,
+    greenContextId integer,
+    streamId integer,
+    correlationId integer,
+    globalPid integer,
+    demangledName integer,
+    shortName integer,
+    mangledName integer
+);
+""")
+conn.executemany("insert into StringIds (id, value) values (?, ?)", [
+    (1, "cudaMemcpy_v3020"),
+    (2, "poseidon2_merkle_digest_parent_kernel"),
+])
+conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", [
+    (1, "Device-to-Host"),
+])
+conn.executemany("""
+insert into CUPTI_ACTIVITY_KIND_RUNTIME
+    (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
+values (?, ?, 0, 7, ?, 1, 0, null)
+""", [
+    (0, 2_000_000, 10),
+    (3_000_000, 5_000_000, 11),
+    (6_000_000, 8_000_000, 12),
+    (9_000_000, 11_000_000, 13),
+    (12_000_000, 14_000_000, 14),
+])
+conn.executemany("""
+insert into CUPTI_ACTIVITY_KIND_MEMCPY
+    (start, end, deviceId, contextId, greenContextId, streamId, correlationId,
+     globalPid, bytes, copyKind, deprecatedSrcId, srcKind, dstKind, srcDeviceId,
+     srcContextId, dstDeviceId, dstContextId, migrationCause, graphNodeId,
+     virtualAddress, copyCount)
+values (?, ?, 0, 0, null, 3, ?, 1, ?, 1, null, null, null,
+        null, null, null, null, null, null, null, 1)
+""", [
+    (1000, 1500, 10, 1152),
+    (2000, 2500, 11, 1152),
+    (3000, 3500, 12, 1152),
+    (4000, 4500, 13, 936),
+    (5000, 5500, 14, 936),
+])
+conn.executemany("""
+insert into CUPTI_ACTIVITY_KIND_KERNEL
+    (start, end, deviceId, contextId, greenContextId, streamId, correlationId,
+     globalPid, demangledName, shortName, mangledName)
+values (?, ?, 0, 0, null, 3, ?, 1, 2, 2, 2)
+""", [
+    (100, 900, 100),
+    (1600, 1900, 101),
+    (2600, 2900, 102),
+    (3600, 3900, 103),
+    (4600, 4900, 104),
+])
+conn.commit()
+conn.close()
+"#;
+
+    let setup_output = Command::new("python3")
+        .arg("-c")
+        .arg(setup)
+        .arg(&sqlite_path)
+        .output()
+        .expect("small D2H test database should be created");
+    assert!(
+        setup_output.status.success(),
+        "small D2H test database creation should succeed: stderr={}",
+        String::from_utf8_lossy(&setup_output.stderr)
+    );
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&sqlite_path)
+        .output()
+        .expect("nsys CUDA copy summary should run on small D2H test database");
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    assert!(
+        output.status.success(),
+        "nsys CUDA copy summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("small_d2h_batching_candidates"),
+        "small D2H batching candidate summary should be printed: {stdout}"
+    );
+    assert!(
+        stdout.contains("1152,3,6.000,0.002,2.000,poseidon2_merkle_digest_parent_kernel"),
+        "same-size small D2H copies should be aggregated by size and preceding kernel: {stdout}"
+    );
+    assert!(
+        stdout.contains("936,2,4.000,0.001,2.000,poseidon2_merkle_digest_parent_kernel"),
+        "secondary small D2H sizes should stay visible: {stdout}"
+    );
+    assert!(
+        stdout.contains("small_d2h_batching_hint,batch_small_d2h_by_size"),
+        "transfer triage should flag repeated small D2H copies as a batching candidate: {stdout}"
+    );
+}
+
+#[test]
 fn nsys_cuda_copy_summary_reports_host_registration_overhead() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root.join("../..");
@@ -601,6 +762,9 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
         "dominant_transfer_wait",
         "top_d2h_wait",
         "top_h2d_bulk_upload",
+        "small_d2h_batching_candidates",
+        "small_d2h_batching_hint",
+        "batch_small_d2h_by_size",
         "gpu_residency_hint",
         "h2d_residency_hint",
         "--cudabacktrace=memory:80000",
@@ -651,6 +815,8 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
             && stdout.contains("dominant_transfer_wait")
             && stdout.contains("top_d2h_wait")
             && stdout.contains("top_h2d_bulk_upload")
+            && stdout.contains("small_d2h_batching_candidates")
+            && stdout.contains("small_d2h_batching_hint")
             && stdout.contains("gpu_residency_hint")
             && stdout.contains("h2d_residency_hint")
             && stdout.contains("batch_or_keep_small_d2h_on_device")

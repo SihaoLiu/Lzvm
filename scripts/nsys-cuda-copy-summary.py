@@ -304,6 +304,38 @@ def d2h_preceding_kernel_summary(conn: sqlite3.Connection, limit: int) -> list[s
     ).fetchall()
 
 
+def small_d2h_batching_candidates(
+    d2h_rows: list[sqlite3.Row],
+    limit: int,
+) -> list[dict[str, object]]:
+    candidates = []
+    for row in d2h_rows:
+        bytes_ = int(row["bytes"] or 0)
+        calls = int(row["calls"] or 0)
+        host_ns = int(row["host_ns"] or 0)
+        if bytes_ > 4096 or calls < 2 or host_ns == 0:
+            continue
+        candidates.append(
+            {
+                "bytes": bytes_,
+                "previous_kernel": row["previous_kernel"] or "unresolved",
+                "calls": calls,
+                "host_ns": host_ns,
+                "gpu_ns": int(row["gpu_ns"] or 0),
+                "max_host_ns": int(row["max_host_ns"] or 0),
+            }
+        )
+    return sorted(
+        candidates,
+        key=lambda row: (
+            -int(row["host_ns"]),
+            -int(row["calls"]),
+            int(row["bytes"]),
+            str(row["previous_kernel"]),
+        ),
+    )[:limit]
+
+
 def top_h2d_bulk_upload_summary(conn: sqlite3.Connection) -> sqlite3.Row | None:
     return conn.execute(
         f"""
@@ -711,6 +743,21 @@ def print_d2h_preceding_kernels(rows: list[sqlite3.Row]) -> None:
         print("0,unavailable,0,0.000,0.000,0.000,0.000")
 
 
+def print_small_d2h_batching_candidates(rows: list[dict[str, object]]) -> None:
+    print()
+    print("small_d2h_batching_candidates")
+    print("bytes,calls,host_api_ms,gpu_memcpy_ms,max_host_api_ms,previous_kernel")
+    for row in rows:
+        print(
+            f"{int(row['bytes'])},{int(row['calls'])},"
+            f"{ms(int(row['host_ns'])):.3f},{ms(int(row['gpu_ns'])):.3f},"
+            f"{ms(int(row['max_host_ns'])):.3f},"
+            f"{csv_cell(row['previous_kernel'])}"
+        )
+    if not rows:
+        print("0,0,0.000,0.000,0.000,unavailable")
+
+
 def sum_rows_ns(rows: list[sqlite3.Row], column: str) -> int:
     return sum(int(row[column] or 0) for row in rows)
 
@@ -743,6 +790,7 @@ def print_transfer_triage(
     gpu_rows: list[sqlite3.Row],
     correlated_rows: list[sqlite3.Row],
     d2h_rows: list[sqlite3.Row],
+    small_d2h_rows: list[dict[str, object]],
     top_h2d_bulk: sqlite3.Row | None,
 ) -> None:
     host_ns = sum_rows_ns(runtime_rows, "host_ns")
@@ -802,6 +850,7 @@ def print_transfer_triage(
     if top_d2h is None:
         print("top_d2h_wait,none,no D2H memcpy activity")
         print("gpu_residency_hint,none,no D2H hotspot")
+        print("small_d2h_batching_hint,none,no repeated small D2H hotspot")
         return
     top_host_ns = int(top_d2h["host_ns"] or 0)
     top_gpu_ns = int(top_d2h["gpu_ns"] or 0)
@@ -824,6 +873,17 @@ def print_transfer_triage(
         f"gpu_residency_hint,{hint},"
         "prioritize changes that remove host round trips without changing verifier outputs"
     )
+    if small_d2h_rows:
+        candidate = small_d2h_rows[0]
+        print(
+            "small_d2h_batching_hint,batch_small_d2h_by_size,"
+            f"bytes={int(candidate['bytes'])} "
+            f"calls={int(candidate['calls'])} "
+            f"host_api_ms={ms(int(candidate['host_ns'])):.3f} "
+            f"previous_kernel={csv_cell(candidate['previous_kernel'])}"
+        )
+    else:
+        print("small_d2h_batching_hint,none,no repeated small D2H hotspot")
 
 
 def print_callchain_hint(conn: sqlite3.Connection) -> None:
@@ -863,6 +923,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     )
     h2d_bulk_app_frame_rows = h2d_bulk_app_frame_summary(conn, limit)
     h2d_bulk_quality_rows = h2d_bulk_callchain_quality_summary(conn, limit)
+    small_d2h_rows = small_d2h_batching_candidates(d2h_rows, limit)
     print(f"profile={label}")
     print_runtime(runtime_rows)
     print_host_registration(host_registration_rows)
@@ -874,12 +935,14 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print_h2d_bulk_app_frames(h2d_bulk_app_frame_rows)
     print_callchain_quality(h2d_bulk_quality_rows)
     print_d2h_preceding_kernels(d2h_rows)
+    print_small_d2h_batching_candidates(small_d2h_rows)
     print_transfer_triage(
         runtime_rows,
         host_registration_rows,
         gpu_rows,
         correlated_rows,
         d2h_rows,
+        small_d2h_rows,
         top_h2d_bulk,
     )
     print_callchain_hint(conn)
