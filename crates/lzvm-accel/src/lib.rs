@@ -4279,7 +4279,7 @@ mod tests {
         cuda_poseidon2_width16_linear_round_row_major_digest_device, cuda_status,
         lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream_raw, pow_mod,
         row_weight_shift_for_target_row, CudaDeviceBuffer, CudaEvent, CudaRowMajorColumnView,
-        CudaStream, SHIFT,
+        CudaRowMajorCosetExtensionGraphRunner, CudaStream, SHIFT,
     };
 
     #[test]
@@ -4584,6 +4584,72 @@ mod tests {
             second_out
                 .to_u64_words()
                 .expect("updated graph output should download"),
+            default_out
+                .to_u64_words()
+                .expect("default output should download")
+        );
+    }
+
+    #[test]
+    fn row_major_coset_extension_graph_runner_replays_same_buffers() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let source_bits = 2;
+        let target_bits = 3;
+        let column_count = 3;
+        let source_rows = 1_usize << source_bits;
+        let mut values = (0..source_rows * column_count)
+            .map(|index| (index as u64 + 1) * 23)
+            .collect::<Vec<_>>();
+        let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+            values.len(),
+            column_count,
+            source_bits,
+            target_bits,
+        )
+        .expect("output shape should be valid");
+
+        let mut source = CudaDeviceBuffer::from_u64_words(&values).expect("source should upload");
+        let mut graph_out =
+            CudaDeviceBuffer::new(out_byte_count).expect("graph output should allocate");
+        let mut graph_workspace =
+            CudaDeviceBuffer::new(out_byte_count).expect("graph workspace should allocate");
+        let mut runner =
+            CudaRowMajorCosetExtensionGraphRunner::new(column_count, source_bits, target_bits)
+                .expect("graph runner should create");
+
+        runner
+            .run(&source, &mut graph_out, &mut graph_workspace)
+            .expect("first graph run should succeed");
+        assert_eq!(runner.capture_count(), 1);
+        assert_eq!(runner.launch_count(), 1);
+
+        values.iter_mut().for_each(|value| *value += 97);
+        source
+            .copy_from_u64_words(&values)
+            .expect("source should reupload");
+
+        let mut default_out =
+            CudaDeviceBuffer::new(out_byte_count).expect("default output should allocate");
+        cuda_goldilocks_coset_extend_row_major_columns_device(
+            &source,
+            &mut default_out,
+            column_count,
+            source_bits,
+            target_bits,
+        )
+        .expect("default stream extension should run");
+        runner
+            .run(&source, &mut graph_out, &mut graph_workspace)
+            .expect("second graph run should succeed");
+
+        assert_eq!(runner.capture_count(), 1);
+        assert_eq!(runner.launch_count(), 2);
+        assert_eq!(
+            graph_out
+                .to_u64_words()
+                .expect("graph output should download"),
             default_out
                 .to_u64_words()
                 .expect("default output should download")
