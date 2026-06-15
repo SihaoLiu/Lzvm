@@ -19,6 +19,7 @@ fn ncu_cuda_kernel_summary_reports_duration_throughput_and_occupancy_limits() {
         "kernel_metric_summary",
         "occupancy_limits",
         "memory_bound_candidates",
+        "kernel_separation_candidates",
     ] {
         assert!(
             script_source.contains(required),
@@ -47,6 +48,9 @@ fn ncu_cuda_kernel_summary_reports_duration_throughput_and_occupancy_limits() {
         "registers_per_thread",
         "occupancy_limits",
         "memory_bound_candidates",
+        "kernel_separation_candidates",
+        "separation_hint",
+        "split_or_reduce_register_pressure",
         "register_limited",
     ] {
         assert!(

@@ -421,6 +421,93 @@ def print_memory_bound_candidates(
         writerow(writer, ["none", 0, "0.000", "na", "na", "na", "na"])
 
 
+def minimum_occupancy_limit(metrics: KernelMetrics) -> float | None:
+    values = [
+        metrics.avg(METRIC_REGISTER_LIMIT),
+        metrics.avg(METRIC_SHARED_MEM_LIMIT),
+        metrics.avg(METRIC_WARP_LIMIT),
+        metrics.avg(METRIC_BLOCK_LIMIT),
+    ]
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return min(present)
+
+
+def separation_hint(metrics: KernelMetrics) -> str:
+    limiting = metrics.limiting_factors()
+    if "register_limited" in limiting:
+        return "split_or_reduce_register_pressure"
+    if "shared_mem_limited" in limiting:
+        return "split_or_reduce_shared_memory"
+    if "warp_limited" in limiting:
+        return "tune_block_shape_or_split"
+    return "profile_more_before_splitting"
+
+
+def print_kernel_separation_candidates(
+    writer: csv.writer, rows: list[KernelMetrics], limit: int
+) -> None:
+    print()
+    print("kernel_separation_candidates")
+    writerow(
+        writer,
+        [
+            "kernel",
+            "profiles",
+            "duration_ms",
+            "registers_per_thread",
+            "register_limit_blocks",
+            "warp_limit_blocks",
+            "shared_mem_limit_blocks",
+            "sm_throughput_pct",
+            "issue_active_pct",
+            "separation_hint",
+        ],
+    )
+    ranked = sorted(
+        rows,
+        key=lambda metrics: (
+            minimum_occupancy_limit(metrics) is None,
+            minimum_occupancy_limit(metrics) or 0.0,
+            -metrics.duration_us,
+            metrics.kernel,
+        ),
+    )
+    for metrics in ranked[:limit]:
+        writerow(
+            writer,
+            [
+                metrics.kernel,
+                metrics.profiles,
+                fmt(metrics.duration_us / 1000.0),
+                fmt(metrics.avg(METRIC_REGISTERS_PER_THREAD)),
+                fmt(metrics.avg(METRIC_REGISTER_LIMIT)),
+                fmt(metrics.avg(METRIC_WARP_LIMIT)),
+                fmt(metrics.avg(METRIC_SHARED_MEM_LIMIT)),
+                fmt(metrics.avg(METRIC_SM_THROUGHPUT)),
+                fmt(metrics.avg(METRIC_ISSUE_ACTIVE)),
+                separation_hint(metrics),
+            ],
+        )
+    if not rows:
+        writerow(
+            writer,
+            [
+                "none",
+                0,
+                "0.000",
+                "na",
+                "na",
+                "na",
+                "na",
+                "na",
+                "na",
+                "profile_more_before_splitting",
+            ],
+        )
+
+
 def summarize(rows: list[dict[str, str]], label: str, limit: int) -> None:
     metrics = summarize_rows(rows)
     writer = csv.writer(sys.stdout, lineterminator="\n")
@@ -428,6 +515,7 @@ def summarize(rows: list[dict[str, str]], label: str, limit: int) -> None:
     print_kernel_metric_summary(writer, metrics, limit)
     print_occupancy_limits(writer, metrics, limit)
     print_memory_bound_candidates(writer, metrics, limit)
+    print_kernel_separation_candidates(writer, metrics, limit)
 
 
 def build_self_test_rows() -> list[dict[str, str]]:
