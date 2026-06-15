@@ -50,7 +50,7 @@ use lzvm_artifacts::pcs_fri_segment::{
 };
 use lzvm_artifacts::pcs_material::PcsSetupMaterial;
 use lzvm_artifacts::pcs_material_segment::{
-    parse_pcs_material_manifest_segment, PcsMaterialManifestUnit,
+    parse_pcs_material_manifest_segment, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_nonce_segment::{
     parse_pcs_query_nonce_segment, PCS_QUERY_NONCE_SEGMENT_ID,
@@ -1894,9 +1894,28 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
     struct ParityRun {
         proof_bytes: Vec<u8>,
         witness_segment_bytes: Vec<(u32, Vec<u8>)>,
+        transcript_segment_bytes: Vec<(u32, Vec<u8>)>,
         stage_roots: Vec<Vec<[u64; 4]>>,
         root_materialization_groups: usize,
         max_root_materialization_group_size: usize,
+    }
+
+    fn transcript_related_segment_bytes(proof: &ProofArtifact) -> Vec<(u32, Vec<u8>)> {
+        proof
+            .segments
+            .iter()
+            .filter(|segment| {
+                matches!(
+                    segment.id,
+                    PCS_MATERIAL_MANIFEST_SEGMENT_ID
+                        | PCS_QUERY_PLAN_SEGMENT_ID
+                        | PCS_EVALUATION_SEGMENT_ID
+                        | PCS_FRI_OPENING_SEGMENT_ID
+                        | PCS_QUERY_NONCE_SEGMENT_ID
+                )
+            })
+            .map(|segment| (segment.id, segment.data.clone()))
+            .collect()
     }
 
     let _env_lock = PROVE_WITNESS_ENV_LOCK
@@ -2021,12 +2040,18 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
         )
         .unwrap_or_else(|error| panic!("{label} proof artifact should build: {error}"))
         .expect("proof artifact should exist");
+        let transcript_segment_bytes = transcript_related_segment_bytes(&proof);
+        assert!(
+            !transcript_segment_bytes.is_empty(),
+            "{label} proof artifact should include transcript-related segments"
+        );
         let proof_bytes = encode_proof_artifact(&proof)
             .unwrap_or_else(|error| panic!("{label} proof artifact should encode: {error}"));
 
         ParityRun {
             proof_bytes,
             witness_segment_bytes,
+            transcript_segment_bytes,
             stage_roots,
             root_materialization_groups,
             max_root_materialization_group_size,
@@ -2056,6 +2081,10 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
     assert_eq!(
         default_run.witness_segment_bytes,
         immediate_run.witness_segment_bytes
+    );
+    assert_eq!(
+        default_run.transcript_segment_bytes,
+        immediate_run.transcript_segment_bytes
     );
     assert_eq!(default_run.proof_bytes, immediate_run.proof_bytes);
 }
