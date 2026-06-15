@@ -104,6 +104,19 @@ theorem ignored_metadata_acceptance_sound
         proof
         observed)
 
+theorem ignored_metadata_acceptance_verifier_core_contract_via_soundness
+    {system : VerifierModel}
+    {Acceptance : PublicInput -> Proof -> Prop}
+    (sound :
+      forall publicInput proof,
+        Acceptance publicInput proof ->
+          SoundWitness system publicInput proof) :
+    forall publicInput proof,
+      Acceptance publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact sound_witness_implies_verifier_core_contract (sound publicInput proof observed)
+
 theorem ignored_metadata_acceptance_verifier_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -112,15 +125,9 @@ theorem ignored_metadata_acceptance_verifier_core_contract
     forall publicInput proof,
       IgnoredMetadataObservedAcceptance system metadata publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
-  intro publicInput proof observed
   exact
-    sound_witness_implies_verifier_core_contract
-      (ignored_metadata_acceptance_sound
-        assumptions
-        metadata
-        publicInput
-        proof
-        observed)
+    ignored_metadata_acceptance_verifier_core_contract_via_soundness
+      (ignored_metadata_acceptance_sound assumptions metadata)
 
 structure TimingObservation where
   label : Nat

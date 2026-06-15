@@ -192,6 +192,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("ignored_metadata_acceptance_sound"),
         "Lean auxiliary timing metadata should use one generic ignored-metadata acceptance wrapper"
     );
+    lean_binding::assert_theorem_declarations(
+        &auxiliary_source,
+        &["ignored_metadata_acceptance_verifier_core_contract_via_soundness"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &timing_source,
+        "guest_pc_trace_stream_elapsed_timing_acceptance_verifier_core_contract",
+        &["ignored_metadata_acceptance_verifier_core_contract_via_soundness"],
+    );
     assert!(
         timing_source.contains("IgnoredMetadataObservedAcceptance system observations")
             && lean_source

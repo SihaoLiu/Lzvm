@@ -143,16 +143,12 @@ theorem guest_pc_trace_stream_elapsed_timing_acceptance_verifier_core_contract
         publicInput
         proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
-  intro publicInput proof observed
   exact
-    sound_witness_implies_verifier_core_contract
+    ignored_metadata_acceptance_verifier_core_contract_via_soundness
       (guest_pc_trace_stream_elapsed_timing_acceptance_sound
         assumptions
         summary
-        elapsedMilliseconds
-        publicInput
-        proof
-        observed)
+        elapsedMilliseconds)
 
 theorem guest_pc_trace_descriptor_width_counts_acceptance_sound
     {system : VerifierModel}
