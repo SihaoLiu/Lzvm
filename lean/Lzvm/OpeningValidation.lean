@@ -279,6 +279,39 @@ theorem runtime_opening_checked_acceptance_pcs_and_fri
       proof
       accepted
 
+theorem runtime_witness_opening_arity_two_same_index_leaf_binding_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root opening otherOpening,
+      NAryMerklePathHasArity 2 opening.layers ->
+        NAryMerklePathHasArity 2 otherOpening.layers ->
+          NAryMerklePathOpeningVerifies compress root opening ->
+            NAryMerklePathOpeningVerifies compress root otherOpening ->
+              NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherOpening.layers ->
+                opening.layers.length = otherOpening.layers.length ->
+                  otherOpening.leaf = opening.leaf := by
+  intro root opening otherOpening openingArity otherOpeningArity verified
+    otherVerified sameIndex sameDepth
+  exact
+    verified_concrete_nary_merkle_opening_arity_two_same_index_leaf_eq_from_bundle
+      assumptions
+      centralized
+      root
+      opening
+      otherOpening
+      openingArity
+      otherOpeningArity
+      verified
+      otherVerified
+      sameIndex
+      sameDepth
+
 theorem runtime_witness_opening_arity_four_same_index_leaf_binding_from_bundle
     {Digest : Type uDigest}
     {system : VerifierModel}

@@ -48,8 +48,27 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "runtime_opening_checked_acceptance_verifier_core_contract",
             "runtime_opening_required_external_source_sound",
             "runtime_opening_required_external_source_verifier_core_contract",
+            "runtime_witness_opening_arity_two_same_index_leaf_binding_from_bundle",
             "runtime_witness_opening_arity_four_same_index_leaf_binding_from_bundle",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_witness_opening_arity_two_same_index_leaf_binding_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathHasArity 2 opening.layers",
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherOpening.layers",
+            "opening.layers.length = otherOpening.layers.length",
+            "otherOpening.leaf = opening.leaf",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_witness_opening_arity_two_same_index_leaf_binding_from_bundle",
+        &["verified_concrete_nary_merkle_opening_arity_two_same_index_leaf_eq_from_bundle"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
