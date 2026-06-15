@@ -30,9 +30,26 @@ fn lean_trace_constraint_artifact_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_pcs_fri_backend_contract",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_sound",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_soundness_obligations",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_trace_constraint_artifact_binding_checked_acceptance_pcs_fri_backend_contract",
+        &[
+            "RuntimeTraceConstraintPreflightBindingEvidence",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeTraceConstraintArtifactBindingEvidence",
+            "RuntimeTraceConstraintBackendContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_trace_constraint_artifact_binding_checked_acceptance_pcs_fri_backend_contract",
+        &["AssumptionBundle"],
     );
 }

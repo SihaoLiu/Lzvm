@@ -156,6 +156,64 @@ theorem runtime_trace_constraint_artifact_binding_checked_acceptance_trace_const
       proof
       accepted
 
+theorem runtime_trace_constraint_artifact_binding_checked_acceptance_pcs_fri_backend_contract
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintPreflightBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeTraceConstraintArtifactBindingEvidence
+            system
+            validation.traceConstraintValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTraceConstraintBackendContract
+            system
+            validation.traceConstraintValidation
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have artifactEvidence :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceConstraintAccepted :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceContract :=
+    runtime_trace_constraint_checked_acceptance_pcs_fri_backend_contract
+      validation.traceConstraintValidation
+      artifact
+      publicInput
+      proof
+      traceConstraintAccepted
+  exact
+    And.intro artifactEvidence
+      (And.intro traceContract.left
+        (And.intro traceContract.right.left
+          (And.intro traceContract.right.right.left traceContract.right.right.right)))
+
 theorem runtime_trace_constraint_artifact_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
