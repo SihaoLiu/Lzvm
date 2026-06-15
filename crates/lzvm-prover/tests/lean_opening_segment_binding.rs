@@ -36,6 +36,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri",
             "runtime_opening_segment_binding_evidence_implies_opening_bound_contract",
             "runtime_opening_segment_binding_checked_acceptance_opening_bound_contract",
+            "runtime_opening_segment_binding_checked_acceptance_opening_pcs_fri_contract",
             "runtime_opening_segment_binding_checked_acceptance_sound",
             "runtime_opening_segment_binding_checked_acceptance_verifier_core_contract",
             "runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract",
@@ -104,6 +105,22 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_prefix_omits(
         &lean_source,
         "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_opening_pcs_fri_contract",
+        &[
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "RuntimeOpeningCheckedAcceptance",
+            "RuntimeOpeningBoundContract",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_opening_pcs_fri_contract",
         &["AssumptionBundle"],
     );
     lean_binding::assert_theorem_prefix_contains(

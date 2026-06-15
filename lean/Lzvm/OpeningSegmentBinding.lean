@@ -453,6 +453,53 @@ theorem runtime_opening_segment_binding_checked_acceptance_pcs_and_fri
       proof
       evidence
 
+theorem runtime_opening_segment_binding_checked_acceptance_opening_pcs_fri_contract
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningCheckedAcceptance
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningBoundContract
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_opening_segment_binding_checked_acceptance_opening
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (And.intro
+        (runtime_opening_segment_binding_checked_acceptance_opening_bound_contract
+          validation
+          artifact
+          publicInput
+          proof
+          accepted)
+        (runtime_opening_segment_binding_checked_acceptance_pcs_and_fri
+          validation
+          artifact
+          publicInput
+          proof
+          accepted))
+
 theorem runtime_opening_segment_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
