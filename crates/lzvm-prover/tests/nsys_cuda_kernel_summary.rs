@@ -18,6 +18,8 @@ fn nsys_cuda_kernel_summary_reports_kernel_launch_and_stream_shape() {
         "stream_kernel_activity",
         "fusion_candidates",
         "kernel_adjacency_candidates",
+        "runtime_cuda_sync_api",
+        "cuda_graph_fusion_separation_triage",
     ] {
         assert!(
             script_source.contains(required),
@@ -49,6 +51,11 @@ fn nsys_cuda_kernel_summary_reports_kernel_launch_and_stream_shape() {
         "fusion_candidates",
         "kernel_adjacency_candidates",
         "previous_kernel,next_kernel",
+        "runtime_cuda_sync_api",
+        "cudaDeviceSynchronize_v3020",
+        "cuda_graph_fusion_separation_triage",
+        "dominant_wait",
+        "top_same_stream_pair",
     ] {
         assert!(
             stdout.contains(required),

@@ -88,6 +88,26 @@ def launch_api_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def sync_api_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        f"""
+        select
+            coalesce(s.value, 'nameId=' || r.nameId) as api,
+            coalesce(r.returnValue, -1) as return_code,
+            count(*) as calls,
+            sum(r.end - r.start) as sync_ns,
+            max(r.end - r.start) as max_sync_ns
+        from {RUNTIME_TABLE} r
+        left join {STRING_TABLE} s on s.id = r.nameId
+        where s.value like 'cudaDeviceSynchronize%'
+           or s.value like 'cudaStreamSynchronize%'
+           or s.value like 'cudaEventSynchronize%'
+        group by api, return_code
+        order by sync_ns desc, calls desc, api asc, return_code asc
+        """
+    ).fetchall()
+
+
 def correlated_launch_summary(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
     return conn.execute(
         f"""
@@ -245,6 +265,22 @@ def print_launch_api(rows: list[sqlite3.Row]) -> None:
         print("none,0,0.000,0.000")
 
 
+def print_sync_api(rows: list[sqlite3.Row]) -> None:
+    print()
+    print("runtime_cuda_sync_api")
+    print("api,return_code,calls,sync_api_ms,avg_sync_api_us,max_sync_api_ms")
+    for row in rows:
+        calls = int(row["calls"] or 0)
+        sync_ns = int(row["sync_ns"] or 0)
+        avg = sync_ns / calls if calls else 0
+        print(
+            f"{row['api']},{int(row['return_code'] or 0)},{calls},"
+            f"{ms(sync_ns):.3f},{us(avg):.3f},{ms(row['max_sync_ns']):.3f}"
+        )
+    if not rows:
+        print("none,0,0,0.000,0.000,0.000")
+
+
 def print_correlated_launch(rows: list[sqlite3.Row]) -> None:
     print()
     print("correlated_kernel_launch_waits")
@@ -312,16 +348,84 @@ def print_kernel_adjacency(rows: list[dict[str, object]]) -> None:
         print("none,none,0,0.000,0.000,0.000")
 
 
+def sum_rows_ns(rows: list[sqlite3.Row], column: str) -> int:
+    return sum(int(row[column] or 0) for row in rows)
+
+
+def direction_hint(launch_ns: int, sync_ns: int) -> str:
+    if sync_ns > launch_ns * 5 // 4:
+        return "sync_boundary_before_graph_or_fusion"
+    if launch_ns > sync_ns * 5 // 4:
+        return "graph_or_kernel_fusion"
+    return "mixed_launch_and_sync"
+
+
+def print_direction_triage(
+    launch_rows: list[sqlite3.Row],
+    sync_rows: list[sqlite3.Row],
+    stream_rows: list[sqlite3.Row],
+    fusion_rows: list[sqlite3.Row],
+    adjacency_rows: list[dict[str, object]],
+) -> None:
+    launch_ns = sum_rows_ns(launch_rows, "launch_ns")
+    sync_ns = sum_rows_ns(sync_rows, "sync_ns")
+    stream_count = len(stream_rows)
+    top_fusion = fusion_rows[0] if fusion_rows else None
+    top_pair = adjacency_rows[0] if adjacency_rows else None
+    print()
+    print("cuda_graph_fusion_separation_triage")
+    print("metric,value,detail")
+    print(
+        f"launch_api_ms,{ms(launch_ns):.3f},"
+        "host launch time available to CUDA Graph or kernel fusion"
+    )
+    print(
+        f"sync_api_ms,{ms(sync_ns):.3f},"
+        "host synchronization time that Graph or fusion may not remove"
+    )
+    dominant = "sync_api" if sync_ns > launch_ns else "launch_api"
+    print(f"dominant_wait,{dominant},{direction_hint(launch_ns, sync_ns)}")
+    print(f"stream_count,{stream_count},kernel streams observed in nsys export")
+    if top_fusion is None:
+        print("top_fusion_kernel,none,no repeated launch candidate")
+    else:
+        print(
+            f"top_fusion_kernel,{top_fusion['kernel']},"
+            f"calls={int(top_fusion['calls'] or 0)} "
+            f"launch_api_ms={ms(top_fusion['launch_ns']):.3f}"
+        )
+    if top_pair is None:
+        print("top_same_stream_pair,none,no same-stream adjacency candidate")
+    else:
+        print(
+            "top_same_stream_pair,"
+            f"{top_pair['previous_kernel']}->{top_pair['next_kernel']},"
+            f"calls={int(top_pair['calls'])} "
+            f"pair_launch_api_ms={ms(int(top_pair['launch_ns'])):.3f}"
+        )
+    print(
+        "kernel_separation_hint,use_ncu_occupancy_before_splitting,"
+        "nsys identifies launch and sync shape but not resource limits"
+    )
+
+
 def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     require_tables(conn)
     conn.row_factory = sqlite3.Row
+    launch_rows = launch_api_summary(conn)
+    sync_rows = sync_api_summary(conn)
+    stream_rows = stream_kernel_summary(conn, limit)
+    fusion_rows = fusion_candidate_summary(conn, limit)
+    adjacency_rows = kernel_adjacency_summary(conn, limit)
     print(f"profile={label}")
     print_kernel_gpu(kernel_gpu_summary(conn, limit))
-    print_launch_api(launch_api_summary(conn))
+    print_launch_api(launch_rows)
+    print_sync_api(sync_rows)
     print_correlated_launch(correlated_launch_summary(conn, limit))
-    print_streams(stream_kernel_summary(conn, limit))
-    print_fusion_candidates(fusion_candidate_summary(conn, limit))
-    print_kernel_adjacency(kernel_adjacency_summary(conn, limit))
+    print_streams(stream_rows)
+    print_fusion_candidates(fusion_rows)
+    print_kernel_adjacency(adjacency_rows)
+    print_direction_triage(launch_rows, sync_rows, stream_rows, fusion_rows, adjacency_rows)
 
 
 def build_self_test_db() -> sqlite3.Connection:
@@ -369,6 +473,7 @@ def build_self_test_db() -> sqlite3.Connection:
             (1, "cudaLaunchKernel_v7000"),
             (2, "ntt_stage_kernel"),
             (3, "poseidon2_width16_merkle_parent_kernel"),
+            (4, "cudaDeviceSynchronize_v3020"),
         ],
     )
     conn.executemany(
@@ -381,6 +486,7 @@ def build_self_test_db() -> sqlite3.Connection:
             (0, 20_000, 0, 0, 10, 1, 0, 0),
             (50_000, 90_000, 0, 0, 11, 1, 0, 0),
             (100_000, 150_000, 0, 0, 12, 1, 0, 0),
+            (160_000, 230_000, 0, 0, 0, 4, 0, 0),
         ],
     )
     conn.executemany(
