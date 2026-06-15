@@ -53,6 +53,31 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "runtime_witness_opening_arity_four_same_index_leaf_binding_from_bundle",
             "runtime_witness_opening_arity_two_root_commits_to_leaf_at_index_from_bundle",
             "runtime_witness_opening_arity_four_root_commits_to_leaf_at_index_from_bundle",
+            "runtime_witness_opening_nary_checked_acceptance_witness_bound_from_bundle",
+        ],
+    );
+    assert!(
+        lean_source.contains("structure RuntimeWitnessOpeningNAryConcreteBinding"),
+        "Lean opening validation should model concrete runtime witness openings separately from abstract witnessOpeningsBound fields"
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_witness_opening_nary_checked_acceptance_witness_bound_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof",
+            "validation.witnessOpeningsBound artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_witness_opening_nary_checked_acceptance_witness_bound_from_bundle",
+        &[
+            "binding.concreteOpeningVerifies",
+            "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle",
+            "binding.witnessRootCommitsToLeafImpliesWitnessOpeningsBound",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
