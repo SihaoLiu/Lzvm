@@ -133,6 +133,34 @@ def memcpy_callchain_summary(conn: sqlite3.Connection, limit: int) -> list[sqlit
     ).fetchall()
 
 
+def d2h_memcpy_callchain_summary(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
+    if not table_exists(conn, CALLCHAIN_TABLE):
+        return []
+    return conn.execute(
+        f"""
+        select
+            coalesce(s.value, 'nameId=' || r.nameId) as api,
+            m.bytes as bytes,
+            r.callchainId as callchain_id,
+            count(*) as calls,
+            sum(r.end - r.start) as host_ns,
+            sum(m.end - m.start) as gpu_ns,
+            max(r.end - r.start) as max_host_ns
+        from {RUNTIME_TABLE} r
+        join {STRING_TABLE} s on s.id = r.nameId
+        join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
+        left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
+        where s.value like 'cudaMemcpy%'
+          and coalesce(e.label, 'copyKind=' || m.copyKind) = 'Device-to-Host'
+          and r.callchainId is not null
+        group by api, m.bytes, r.callchainId
+        order by host_ns desc, calls desc, api asc, m.bytes asc
+        limit ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
 def memcpy_missing_callchain_summary(conn: sqlite3.Connection) -> sqlite3.Row:
     return conn.execute(
         f"""
@@ -344,6 +372,28 @@ def print_callchains(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> None:
         print("none,none,0,0,0.000,0.000,0.000,0,unavailable,unavailable")
 
 
+def print_d2h_callchains(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> None:
+    print()
+    print("d2h_cuda_memcpy_callchain_hotspots")
+    print(
+        "api,bytes,calls,host_api_ms,gpu_memcpy_ms,max_host_api_ms,"
+        "callchain_id,app_frame,frames"
+    )
+    for row in rows:
+        callchain_id = int(row["callchain_id"])
+        host_ns = int(row["host_ns"] or 0)
+        gpu_ns = int(row["gpu_ns"] or 0)
+        print(
+            f"{row['api']},{int(row['bytes'] or 0)},"
+            f"{int(row['calls'] or 0)},{ms(host_ns):.3f},{ms(gpu_ns):.3f},"
+            f"{ms(row['max_host_ns']):.3f},{callchain_id},"
+            f"{csv_cell(first_application_frame(conn, callchain_id))},"
+            f"{csv_cell(callchain_frames(conn, callchain_id))}"
+        )
+    if not rows:
+        print("none,0,0,0.000,0.000,0.000,0,unavailable,unavailable")
+
+
 def print_d2h_preceding_kernels(rows: list[sqlite3.Row]) -> None:
     print()
     print("d2h_wait_preceding_kernel_hotspots")
@@ -468,12 +518,14 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     gpu_rows = gpu_memcpy_summary(conn)
     correlated_rows = correlated_memcpy_summary(conn, limit)
     callchain_rows = memcpy_callchain_summary(conn, limit)
+    d2h_callchain_rows = d2h_memcpy_callchain_summary(conn, limit)
     d2h_rows = d2h_preceding_kernel_summary(conn, limit)
     print(f"profile={label}")
     print_runtime(runtime_rows)
     print_gpu(gpu_rows)
     print_correlated(correlated_rows)
     print_callchains(conn, callchain_rows)
+    print_d2h_callchains(conn, d2h_callchain_rows)
     print_d2h_preceding_kernels(d2h_rows)
     print_transfer_triage(runtime_rows, gpu_rows, correlated_rows, d2h_rows)
     print_callchain_hint(conn)
