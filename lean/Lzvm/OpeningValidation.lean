@@ -262,6 +262,30 @@ theorem runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions
       friOpening
   exact And.intro pcsOpenings friQueries
 
+theorem runtime_opening_checked_acceptance_bound_pcs_fri_contract
+    {system : VerifierModel}
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeOpeningBoundContract system validation artifact publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_opening_checked_acceptance_bound_contract
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+
 theorem runtime_opening_checked_acceptance_pcs_and_fri
     {system : VerifierModel}
     (_assumptions : AssumptionBundle system)
