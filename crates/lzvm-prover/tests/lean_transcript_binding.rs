@@ -35,6 +35,7 @@ fn lean_transcript_binding_exports_core_contract_projection() {
             "runtime_transcript_binding_checked_acceptance_transcript_and_core_contract",
             "runtime_transcript_binding_evidence_implies_payload_contract",
             "runtime_transcript_binding_checked_acceptance_payload_contract",
+            "runtime_transcript_binding_checked_acceptance_artifact_payload_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -62,5 +63,25 @@ fn lean_transcript_binding_exports_core_contract_projection() {
             "system.transcriptBound publicInput proof",
             "RuntimeVerifierCoreContract system publicInput proof",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_artifact_payload_contract",
+        &[
+            "RuntimeTranscriptBindingCheckedAcceptance",
+            "RuntimeTranscriptBindingEvidence",
+            "RuntimeArtifactEvidence",
+            "RuntimeTranscriptBindingPayloadContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_artifact_payload_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_artifact_payload_contract",
+        &["abstract_verifier_sound"],
     );
 }

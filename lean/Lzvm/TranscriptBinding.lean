@@ -238,6 +238,64 @@ theorem runtime_transcript_binding_checked_acceptance_payload_contract
         proof
         accepted)
 
+theorem runtime_transcript_binding_checked_acceptance_artifact_payload_contract
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTranscriptBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.artifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTranscriptBindingPayloadContract
+            system
+            validation
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have transcriptEvidence :=
+    runtime_transcript_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactAccepted :=
+    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro transcriptEvidence
+      (And.intro
+        (runtime_proof_artifact_binding_checked_acceptance_runtime_evidence
+          validation.artifactBindingValidation
+          artifact
+          publicInput
+          proof
+          artifactAccepted)
+        (runtime_transcript_binding_evidence_implies_payload_contract
+          validation
+          artifact
+          publicInput
+          proof
+          transcriptEvidence))
+
 theorem runtime_transcript_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
