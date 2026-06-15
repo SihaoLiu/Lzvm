@@ -11,6 +11,7 @@ KERNEL_TABLE = "CUPTI_ACTIVITY_KIND_KERNEL"
 MEMCPY_KIND_TABLE = "ENUM_CUDA_MEMCPY_OPER"
 STRING_TABLE = "StringIds"
 CALLCHAIN_TABLE = "OSRT_CALLCHAINS"
+RUNTIME_MEMCPY_TABLE = "_lzvm_runtime_memcpy"
 
 
 def ms(ns: int | float | None) -> float:
@@ -51,16 +52,60 @@ def require_tables(conn: sqlite3.Connection) -> None:
         raise SystemExit(f"missing nsys SQLite tables: {', '.join(missing)}")
 
 
+def prepare_runtime_memcpy_table(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        f"""
+        drop table if exists temp.{RUNTIME_MEMCPY_TABLE};
+        create temp table {RUNTIME_MEMCPY_TABLE} as
+            with ranked_runtime_memcpy as (
+                select
+                    r.rowid as runtime_rowid,
+                    r.start as start,
+                    r.end as end,
+                    r.nameId as nameId,
+                    r.correlationId as correlationId,
+                    r.callchainId as callchainId,
+                    coalesce(s.value, 'nameId=' || r.nameId) as api,
+                    row_number() over (
+                        partition by case
+                            when r.correlationId is null then 'row:' || r.rowid
+                            else 'correlation:' || r.correlationId
+                        end
+                        order by
+                            case when r.callchainId is not null then 0 else 1 end asc,
+                            case when s.value like '%_v%' then 1 else 0 end asc,
+                            (r.end - r.start) desc,
+                            r.start asc,
+                            r.rowid asc
+                    ) as rank
+                from {RUNTIME_TABLE} r
+                join {STRING_TABLE} s on s.id = r.nameId
+                where s.value like 'cudaMemcpy%'
+            )
+            select
+                runtime_rowid,
+                start,
+                end,
+                nameId,
+                correlationId,
+                callchainId,
+                api
+            from ranked_runtime_memcpy
+            where rank = 1;
+        create index temp._lzvm_runtime_memcpy_correlation_idx
+            on {RUNTIME_MEMCPY_TABLE}(correlationId);
+        """
+    )
+
+
 def runtime_memcpy_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         f"""
         select
-            coalesce(s.value, 'nameId=' || r.nameId) as api,
+            r.api as api,
             count(*) as calls,
             sum(r.end - r.start) as host_ns
-        from {RUNTIME_TABLE} r
-        left join {STRING_TABLE} s on s.id = r.nameId
-        where s.value like 'cudaMemcpy%'
+        from {RUNTIME_MEMCPY_TABLE} r
         group by api
         order by host_ns desc, calls desc, api asc
         """
@@ -92,11 +137,9 @@ def correlated_memcpy_summary(conn: sqlite3.Connection, limit: int) -> list[sqli
             count(*) as calls,
             sum(r.end - r.start) as host_ns,
             sum(m.end - m.start) as gpu_ns
-        from {RUNTIME_TABLE} r
-        join {STRING_TABLE} s on s.id = r.nameId
+        from {RUNTIME_MEMCPY_TABLE} r
         join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
         left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
-        where s.value like 'cudaMemcpy%'
         group by direction, m.bytes
         order by host_ns desc, calls desc, direction asc, m.bytes asc
         limit ?
@@ -111,7 +154,7 @@ def memcpy_callchain_summary(conn: sqlite3.Connection, limit: int) -> list[sqlit
     return conn.execute(
         f"""
         select
-            coalesce(s.value, 'nameId=' || r.nameId) as api,
+            r.api as api,
             coalesce(e.label, 'copyKind=' || m.copyKind) as direction,
             m.bytes as bytes,
             r.callchainId as callchain_id,
@@ -119,12 +162,10 @@ def memcpy_callchain_summary(conn: sqlite3.Connection, limit: int) -> list[sqlit
             sum(r.end - r.start) as host_ns,
             sum(m.end - m.start) as gpu_ns,
             max(r.end - r.start) as max_host_ns
-        from {RUNTIME_TABLE} r
-        join {STRING_TABLE} s on s.id = r.nameId
+        from {RUNTIME_MEMCPY_TABLE} r
         join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
         left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
-        where s.value like 'cudaMemcpy%'
-          and r.callchainId is not null
+        where r.callchainId is not null
         group by api, direction, m.bytes, r.callchainId
         order by host_ns desc, calls desc, api asc, direction asc, m.bytes asc
         limit ?
@@ -139,19 +180,17 @@ def d2h_memcpy_callchain_summary(conn: sqlite3.Connection, limit: int) -> list[s
     return conn.execute(
         f"""
         select
-            coalesce(s.value, 'nameId=' || r.nameId) as api,
+            r.api as api,
             m.bytes as bytes,
             r.callchainId as callchain_id,
             count(*) as calls,
             sum(r.end - r.start) as host_ns,
             sum(m.end - m.start) as gpu_ns,
             max(r.end - r.start) as max_host_ns
-        from {RUNTIME_TABLE} r
-        join {STRING_TABLE} s on s.id = r.nameId
+        from {RUNTIME_MEMCPY_TABLE} r
         join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
         left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
-        where s.value like 'cudaMemcpy%'
-          and coalesce(e.label, 'copyKind=' || m.copyKind) = 'Device-to-Host'
+        where coalesce(e.label, 'copyKind=' || m.copyKind) = 'Device-to-Host'
           and r.callchainId is not null
         group by api, m.bytes, r.callchainId
         order by host_ns desc, calls desc, api asc, m.bytes asc
@@ -167,11 +206,9 @@ def memcpy_missing_callchain_summary(conn: sqlite3.Connection) -> sqlite3.Row:
         select
             count(*) as calls,
             sum(r.end - r.start) as host_ns
-        from {RUNTIME_TABLE} r
-        join {STRING_TABLE} s on s.id = r.nameId
+        from {RUNTIME_MEMCPY_TABLE} r
         join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
-        where s.value like 'cudaMemcpy%'
-          and r.callchainId is null
+        where r.callchainId is null
         """
     ).fetchone()
 
@@ -191,12 +228,10 @@ def d2h_preceding_kernel_summary(conn: sqlite3.Connection, limit: int) -> list[s
                 m.end as memcpy_end,
                 m.bytes as bytes,
                 m.streamId as stream_id
-            from {RUNTIME_TABLE} r
-            join {STRING_TABLE} api on api.id = r.nameId
+            from {RUNTIME_MEMCPY_TABLE} r
             join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
             left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
-            where api.value like 'cudaMemcpy%'
-              and coalesce(e.label, 'copyKind=' || m.copyKind) = 'Device-to-Host';
+            where coalesce(e.label, 'copyKind=' || m.copyKind) = 'Device-to-Host';
         create temp table _lzvm_kernel_stream_end as
             select
                 streamId as stream_id,
@@ -258,12 +293,10 @@ def top_h2d_bulk_upload_summary(conn: sqlite3.Connection) -> sqlite3.Row | None:
             sum(r.end - r.start) as host_ns,
             sum(m.end - m.start) as gpu_ns,
             max(r.end - r.start) as max_host_ns
-        from {RUNTIME_TABLE} r
-        join {STRING_TABLE} s on s.id = r.nameId
+        from {RUNTIME_MEMCPY_TABLE} r
         join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
         left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
-        where s.value like 'cudaMemcpy%'
-          and coalesce(e.label, 'copyKind=' || m.copyKind) = 'Host-to-Device'
+        where coalesce(e.label, 'copyKind=' || m.copyKind) = 'Host-to-Device'
           and m.bytes >= 1048576
         group by m.bytes
         order by host_ns desc, calls desc, m.bytes desc
@@ -282,19 +315,17 @@ def h2d_bulk_callchain_summary(
     return conn.execute(
         f"""
         select
-            coalesce(s.value, 'nameId=' || r.nameId) as api,
+            r.api as api,
             m.bytes as bytes,
             r.callchainId as callchain_id,
             count(*) as calls,
             sum(r.end - r.start) as host_ns,
             sum(m.end - m.start) as gpu_ns,
             max(r.end - r.start) as max_host_ns
-        from {RUNTIME_TABLE} r
-        join {STRING_TABLE} s on s.id = r.nameId
+        from {RUNTIME_MEMCPY_TABLE} r
         join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
         left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
-        where s.value like 'cudaMemcpy%'
-          and coalesce(e.label, 'copyKind=' || m.copyKind) = 'Host-to-Device'
+        where coalesce(e.label, 'copyKind=' || m.copyKind) = 'Host-to-Device'
           and m.bytes = ?
           and r.callchainId is not null
         group by api, m.bytes, r.callchainId
@@ -618,6 +649,7 @@ def print_callchain_hint(conn: sqlite3.Connection) -> None:
 def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     require_tables(conn)
     conn.row_factory = sqlite3.Row
+    prepare_runtime_memcpy_table(conn)
     runtime_rows = runtime_memcpy_summary(conn)
     gpu_rows = gpu_memcpy_summary(conn)
     correlated_rows = correlated_memcpy_summary(conn, limit)
