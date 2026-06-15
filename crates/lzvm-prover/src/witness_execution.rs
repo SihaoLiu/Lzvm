@@ -4190,8 +4190,19 @@ fn guest_pc_descriptor_buffer_retention_enabled(input_byte_count: usize) -> bool
                 _ => value.parse::<usize>().is_ok_and(|bytes| bytes > 0),
             }
         }
-        Err(_) => guest_pc_cross_segment_root_materialization_supported_for_input(input_byte_count),
+        Err(_) => {
+            !guest_pc_parallel_lower_enabled_for_descriptor_retention()
+                && guest_pc_cross_segment_root_materialization_supported_for_input(input_byte_count)
+        }
     }
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_parallel_lower_enabled_for_descriptor_retention() -> bool {
+    !matches!(
+        std::env::var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER").as_deref(),
+        Ok("0" | "false" | "no" | "off" | "")
+    ) && std::env::var_os("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER").is_some()
 }
 
 fn commit_guest_pc_trace_segment_with_scratch(
@@ -6138,6 +6149,12 @@ mod tests {
     }
 
     #[cfg(feature = "cuda")]
+    struct TestEnvVarUnlockedGuard {
+        name: &'static str,
+        previous: Option<OsString>,
+    }
+
+    #[cfg(feature = "cuda")]
     impl TestEnvVarGuard {
         fn new(name: &'static str) -> Self {
             let lock = crate::CUDA_TEST_ENV_LOCK
@@ -6162,6 +6179,28 @@ mod tests {
 
     #[cfg(feature = "cuda")]
     impl Drop for TestEnvVarGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    impl TestEnvVarUnlockedGuard {
+        fn new(name: &'static str) -> Self {
+            let previous = std::env::var_os(name);
+            Self { name, previous }
+        }
+
+        fn set(&self, value: &str) {
+            std::env::set_var(self.name, value);
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    impl Drop for TestEnvVarUnlockedGuard {
         fn drop(&mut self) {
             match &self.previous {
                 Some(value) => std::env::set_var(self.name, value),
@@ -7113,6 +7152,20 @@ mod tests {
 
         env.set("not-a-number");
         assert!(!guest_pc_descriptor_buffer_retention_enabled(0));
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn descriptor_buffer_retention_stays_off_for_parallel_lower_opt_in() {
+        let descriptor_env = TestEnvVarGuard::new("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES");
+        descriptor_env.unset();
+        let parallel_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+        parallel_env.set("1");
+
+        assert!(!guest_pc_descriptor_buffer_retention_enabled(0));
+
+        descriptor_env.set("1048576");
+        assert!(guest_pc_descriptor_buffer_retention_enabled(0));
     }
 
     fn source_assignment_hint(target: HintOperand, value: HintOperand) -> Hint {
