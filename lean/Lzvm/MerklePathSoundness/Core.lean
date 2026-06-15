@@ -151,6 +151,29 @@ structure NAryMerklePathOpening (Digest : Type uDigest) where
   leaf : Digest
   layers : List (NAryMerklePathLayer Digest)
 
+def MerklePathLayerToNAry
+    {Digest : Type uDigest}
+    (layer : MerklePathLayer Digest) : NAryMerklePathLayer Digest :=
+  match layer.direction with
+  | MerklePathDirection.currentOnLeft =>
+      { leftSiblings := []
+        rightSiblings := [layer.sibling] }
+  | MerklePathDirection.currentOnRight =>
+      { leftSiblings := [layer.sibling]
+        rightSiblings := [] }
+
+def MerklePathLayersToNAry
+    {Digest : Type uDigest} :
+    List (MerklePathLayer Digest) -> List (NAryMerklePathLayer Digest)
+  | [] => []
+  | layer :: rest => MerklePathLayerToNAry layer :: MerklePathLayersToNAry rest
+
+def MerklePathOpeningToNAry
+    {Digest : Type uDigest}
+    (opening : MerklePathOpening Digest) : NAryMerklePathOpening Digest :=
+  { leaf := opening.leaf
+    layers := MerklePathLayersToNAry opening.layers }
+
 namespace NAryMerklePathLayer
 
 def children

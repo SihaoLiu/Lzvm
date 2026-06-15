@@ -35,8 +35,11 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             && lean_source.contains("def MerkleCompressionCollisionFree")
             && lean_source.contains("def MerklePathRootCommitsToLeafAtIndex")
             && lean_source.contains("def MerklePathRootCommitsToLeafAtPosition")
+            && lean_source.contains("def MerklePathLayerToNAry")
+            && lean_source.contains("def MerklePathLayersToNAry")
+            && lean_source.contains("def MerklePathOpeningToNAry")
             && lean_source.contains("def CentralizedMerkleCompressionCollisionResistance"),
-        "Lean Merkle path model should expose concrete path data, fold verification, compression collision witnesses, indexed commitment, and centralized assumption binding"
+        "Lean Merkle path model should expose concrete path data, fold verification, compression collision witnesses, indexed commitment, n-ary arity-2 embedding, and centralized assumption binding"
     );
     assert!(
         lean_source.contains(
@@ -127,6 +130,12 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle",
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_no_collision",
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_bundle",
+            "merkle_path_layer_to_nary_has_arity_two",
+            "merkle_path_to_nary_has_arity_two",
+            "merkle_path_to_nary_index_eq",
+            "merkle_path_to_nary_fold_eq",
+            "merkle_path_to_nary_verifies",
+            "merkle_opening_to_nary_verifies",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -744,6 +753,27 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
         &lean_source,
         "nary_merkle_path_arity_four_index_binding_from_bundle",
         &["nary_merkle_path_arity_four_index_binding_from_no_collision"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "merkle_path_to_nary_fold_eq",
+        &[
+            "binaryCompress : Digest -> Digest -> Digest",
+            "naryCompress : List Digest -> Digest",
+            "forall left right, naryCompress [left, right] = binaryCompress left right",
+            "NAryMerklePathFold naryCompress leaf (MerklePathLayersToNAry path) =\n      MerklePathFold binaryCompress leaf path",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "merkle_path_to_nary_verifies",
+        &[
+            "binaryCompress : Digest -> Digest -> Digest",
+            "naryCompress : List Digest -> Digest",
+            "forall left right, naryCompress [left, right] = binaryCompress left right",
+            "MerklePathVerifies binaryCompress root leaf path",
+            "NAryMerklePathVerifies naryCompress root leaf (MerklePathLayersToNAry path)",
+        ],
     );
 }
 

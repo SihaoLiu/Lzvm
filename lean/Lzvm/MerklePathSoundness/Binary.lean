@@ -167,7 +167,7 @@ theorem merkle_path_same_position_implies_same_index
                       at samePosition
                     omega
                   · simp [MerklePathIndex, MerklePathDirection.indexBit]
-                      at samePosition
+                        at samePosition
                     omega
                   · constructor
                     · rfl
@@ -176,6 +176,131 @@ theorem merkle_path_same_position_implies_same_index
                           at samePosition ⊢
                         omega
                       · exact Nat.succ.inj sameDepth
+
+theorem merkle_path_layer_to_nary_has_arity_two
+    {Digest : Type uDigest}
+    (layer : MerklePathLayer Digest) :
+    NAryMerklePathLayerHasArity 2 (MerklePathLayerToNAry layer) := by
+  cases layer with
+  | mk _sibling direction =>
+      cases direction <;>
+        simp [
+          MerklePathLayerToNAry,
+          NAryMerklePathLayerHasArity,
+          NAryMerklePathLayer.arity,
+        ]
+
+theorem merkle_path_to_nary_has_arity_two
+    {Digest : Type uDigest} :
+    forall path : List (MerklePathLayer Digest),
+      NAryMerklePathHasArity 2 (MerklePathLayersToNAry path) := by
+  intro path
+  induction path with
+  | nil =>
+      simp [MerklePathLayersToNAry, NAryMerklePathHasArity]
+  | cons layer rest ih =>
+      simp [
+        MerklePathLayersToNAry,
+        NAryMerklePathHasArity,
+        merkle_path_layer_to_nary_has_arity_two,
+        ih,
+      ]
+
+theorem merkle_path_to_nary_index_eq
+    {Digest : Type uDigest} :
+    forall path : List (MerklePathLayer Digest),
+      NAryMerklePathIndex (MerklePathLayersToNAry path) =
+        MerklePathIndex path := by
+  intro path
+  induction path with
+  | nil =>
+      simp [MerklePathLayersToNAry, NAryMerklePathIndex, MerklePathIndex]
+  | cons layer rest ih =>
+      cases layer with
+      | mk _sibling direction =>
+          cases direction <;>
+            simp [
+              MerklePathLayersToNAry,
+              MerklePathLayerToNAry,
+              NAryMerklePathIndex,
+              MerklePathIndex,
+              NAryMerklePathLayer.childSlot,
+              NAryMerklePathLayer.arity,
+              MerklePathDirection.indexBit,
+              ih,
+            ]
+
+theorem merkle_path_to_nary_fold_eq
+    {Digest : Type uDigest}
+    (binaryCompress : Digest -> Digest -> Digest)
+    (naryCompress : List Digest -> Digest)
+    (compatible :
+      forall left right, naryCompress [left, right] = binaryCompress left right) :
+    forall leaf path,
+      NAryMerklePathFold naryCompress leaf (MerklePathLayersToNAry path) =
+      MerklePathFold binaryCompress leaf path := by
+  intro leaf path
+  induction path generalizing leaf with
+  | nil =>
+      simp [MerklePathLayersToNAry, NAryMerklePathFold, MerklePathFold]
+  | cons layer rest ih =>
+      cases layer with
+      | mk _sibling direction =>
+          cases direction <;>
+            simp [
+              MerklePathLayersToNAry,
+              MerklePathLayerToNAry,
+              NAryMerklePathFold,
+              MerklePathFold,
+              NAryMerklePathLayer.parentDigest,
+              NAryMerklePathLayer.children,
+              MerklePathLayer.parentDigest,
+              compatible,
+              ih,
+            ]
+
+theorem merkle_path_to_nary_verifies
+    {Digest : Type uDigest}
+    (binaryCompress : Digest -> Digest -> Digest)
+    (naryCompress : List Digest -> Digest)
+    (compatible :
+      forall left right, naryCompress [left, right] = binaryCompress left right)
+    {root leaf : Digest}
+    {path : List (MerklePathLayer Digest)}
+    (verified : MerklePathVerifies binaryCompress root leaf path) :
+    NAryMerklePathVerifies naryCompress root leaf (MerklePathLayersToNAry path) := by
+  unfold MerklePathVerifies NAryMerklePathVerifies at *
+  rw [merkle_path_to_nary_fold_eq binaryCompress naryCompress compatible leaf path]
+  exact verified
+
+theorem merkle_opening_to_nary_verifies
+    {Digest : Type uDigest}
+    (binaryCompress : Digest -> Digest -> Digest)
+    (naryCompress : List Digest -> Digest)
+    (compatible :
+      forall left right, naryCompress [left, right] = binaryCompress left right)
+    {root : Digest}
+    {opening : MerklePathOpening Digest}
+    (verified : MerklePathOpeningVerifies binaryCompress root opening) :
+    NAryMerklePathOpeningVerifies
+      naryCompress
+      root
+      (MerklePathOpeningToNAry opening) := by
+  cases opening with
+  | mk openingLeaf openingLayers =>
+      simpa [
+        MerklePathOpeningToNAry,
+        MerklePathOpeningVerifies,
+        NAryMerklePathOpeningVerifies,
+      ] using
+        merkle_path_to_nary_verifies
+          binaryCompress
+          naryCompress
+          compatible
+          (root := root)
+          (leaf := openingLeaf)
+          (path := openingLayers)
+          verified
 
 theorem different_leaf_same_index_verified_paths_imply_merkle_compression_collision
     {Digest : Type uDigest}
