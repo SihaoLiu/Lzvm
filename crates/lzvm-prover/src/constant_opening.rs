@@ -6,9 +6,10 @@ use lzvm_artifacts::constant_opening_segment::{
     ConstantOpeningUnitSegment, CONSTANT_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::constant_tree::{
+    expected_constant_tree_byte_count, expected_constant_tree_leaf_node_byte_counts,
     summarize_constant_tree_file, ConstantTreeError, ConstantTreeFileSummary,
 };
-use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
+use lzvm_artifacts::key_directory::{KeyDirectoryCatalog, KeyUnitCatalogEntry};
 use lzvm_artifacts::pcs_query_segment::{
     parse_pcs_query_plan_segment, PcsQueryPlanSegmentError, PcsQueryPlanUnit,
 };
@@ -428,7 +429,12 @@ pub fn build_constant_opening_segment(
     schedule: &ProveSchedule,
     query_segment: &ProofSegment,
 ) -> Result<ProofSegment, ProveConstantOpeningSegmentError> {
-    build_constant_opening_segment_inner(catalog, schedule, query_segment, None)
+    build_constant_opening_segment_inner(
+        catalog,
+        schedule,
+        query_segment,
+        ConstantTreeMaterialSource::SummarizeFile,
+    )
 }
 
 pub fn build_constant_opening_segment_with_material_summaries(
@@ -441,7 +447,20 @@ pub fn build_constant_opening_segment_with_material_summaries(
         catalog,
         schedule,
         query_segment,
-        Some(constant_tree_material_summaries),
+        ConstantTreeMaterialSource::Prevalidated(constant_tree_material_summaries),
+    )
+}
+
+pub fn build_constant_opening_segment_with_schedule_material(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+) -> Result<ProofSegment, ProveConstantOpeningSegmentError> {
+    build_constant_opening_segment_inner(
+        catalog,
+        schedule,
+        query_segment,
+        ConstantTreeMaterialSource::ScheduleRoot,
     )
 }
 
@@ -475,7 +494,7 @@ fn build_constant_opening_segment_inner(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     query_segment: &ProofSegment,
-    constant_tree_material_summaries: Option<&[Option<ConstantTreeFileSummary>]>,
+    material_source: ConstantTreeMaterialSource<'_>,
 ) -> Result<ProofSegment, ProveConstantOpeningSegmentError> {
     let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
     let mut units = Vec::with_capacity(query_plan.units.len());
@@ -507,7 +526,7 @@ fn build_constant_opening_segment_inner(
             unit_index,
             schedule_unit,
             catalog_unit,
-            constant_tree_material_summaries,
+            material_source,
         )?;
         let mut queries = Vec::with_capacity(query_unit.queries.len());
         for row_index in &query_unit.queries {
@@ -557,6 +576,13 @@ fn build_constant_opening_segment_inner(
     })
 }
 
+#[derive(Clone, Copy)]
+enum ConstantTreeMaterialSource<'a> {
+    SummarizeFile,
+    Prevalidated(&'a [Option<ConstantTreeFileSummary>]),
+    ScheduleRoot,
+}
+
 fn schedule_unit_has_constant_tree_material(schedule_unit: &ProveUnitSchedule) -> bool {
     schedule_unit.pcs_material_constant_tree_digest.is_some()
         || schedule_unit.pcs_material_constant_tree_root.is_some()
@@ -570,27 +596,103 @@ fn schedule_unit_has_constant_tree_material(schedule_unit: &ProveUnitSchedule) -
 fn validate_constant_tree_material_binding(
     unit_index: usize,
     schedule_unit: &ProveUnitSchedule,
-    catalog_unit: &lzvm_artifacts::key_directory::KeyUnitCatalogEntry,
-    constant_tree_material_summaries: Option<&[Option<ConstantTreeFileSummary>]>,
+    catalog_unit: &KeyUnitCatalogEntry,
+    material_source: ConstantTreeMaterialSource<'_>,
 ) -> Result<[Felt; 4], ProveConstantOpeningSegmentError> {
-    let owned_summary;
-    let summary =
-        match constant_tree_material_summaries {
-            Some(summaries) => summaries.get(unit_index).and_then(Option::as_ref).ok_or(
+    match material_source {
+        ConstantTreeMaterialSource::Prevalidated(summaries) => {
+            let summary = summaries.get(unit_index).and_then(Option::as_ref).ok_or(
                 ProveConstantOpeningSegmentError::MissingConstantTreeMaterial { unit_index },
-            )?,
-            None => {
-                owned_summary = summarize_constant_tree_file(
-                    &catalog_unit.paths.constant_tree,
-                    &catalog_unit.metadata.setup,
-                )
-                .map_err(|source| {
-                    ProveConstantOpeningSegmentError::ConstantTree { unit_index, source }
-                })?;
-                &owned_summary
-            }
-        };
-    validate_constant_tree_material_summary(unit_index, schedule_unit, summary)
+            )?;
+            validate_constant_tree_material_summary(unit_index, schedule_unit, summary)
+        }
+        ConstantTreeMaterialSource::SummarizeFile => {
+            let summary = summarize_constant_tree_file(
+                &catalog_unit.paths.constant_tree,
+                &catalog_unit.metadata.setup,
+            )
+            .map_err(|source| ProveConstantOpeningSegmentError::ConstantTree {
+                unit_index,
+                source,
+            })?;
+            validate_constant_tree_material_summary(unit_index, schedule_unit, &summary)
+        }
+        ConstantTreeMaterialSource::ScheduleRoot => {
+            validate_constant_tree_material_schedule(unit_index, schedule_unit, catalog_unit)
+        }
+    }
+}
+
+fn validate_constant_tree_material_schedule(
+    unit_index: usize,
+    schedule_unit: &ProveUnitSchedule,
+    catalog_unit: &KeyUnitCatalogEntry,
+) -> Result<[Felt; 4], ProveConstantOpeningSegmentError> {
+    let _expected_digest = schedule_unit
+        .pcs_material_constant_tree_digest
+        .ok_or(ProveConstantOpeningSegmentError::MissingConstantTreeMaterial { unit_index })?;
+    let expected_root_words = schedule_unit
+        .pcs_material_constant_tree_root
+        .ok_or(ProveConstantOpeningSegmentError::MissingConstantTreeRoot { unit_index })?;
+    let expected_byte_count = schedule_unit
+        .pcs_material_constant_tree_byte_count
+        .ok_or(ProveConstantOpeningSegmentError::MissingConstantTreeMaterial { unit_index })?;
+    let expected_leaf_byte_count = schedule_unit
+        .pcs_material_leaf_byte_count
+        .ok_or(ProveConstantOpeningSegmentError::MissingConstantTreeMaterial { unit_index })?;
+    let expected_node_byte_count = schedule_unit
+        .pcs_material_node_byte_count
+        .ok_or(ProveConstantOpeningSegmentError::MissingConstantTreeMaterial { unit_index })?;
+    let setup_byte_count = expected_constant_tree_byte_count(&catalog_unit.metadata.setup)
+        .map_err(|source| ProveConstantOpeningSegmentError::ConstantTree { unit_index, source })?;
+    let (setup_leaf_byte_count, setup_node_byte_count) =
+        expected_constant_tree_leaf_node_byte_counts(&catalog_unit.metadata.setup).map_err(
+            |source| ProveConstantOpeningSegmentError::ConstantTree { unit_index, source },
+        )?;
+    if u64::try_from(setup_byte_count).map_err(|_| {
+        ProveConstantOpeningSegmentError::ConstantTree {
+            unit_index,
+            source: ConstantTreeError::LengthOverflow,
+        }
+    })? != expected_byte_count
+    {
+        return Err(
+            ProveConstantOpeningSegmentError::ConstantTreeMaterialMismatch {
+                unit_index,
+                field: "byte count",
+            },
+        );
+    }
+    if u64::try_from(setup_leaf_byte_count).map_err(|_| {
+        ProveConstantOpeningSegmentError::ConstantTree {
+            unit_index,
+            source: ConstantTreeError::LengthOverflow,
+        }
+    })? != expected_leaf_byte_count
+    {
+        return Err(
+            ProveConstantOpeningSegmentError::ConstantTreeMaterialMismatch {
+                unit_index,
+                field: "leaf byte count",
+            },
+        );
+    }
+    if u64::try_from(setup_node_byte_count).map_err(|_| {
+        ProveConstantOpeningSegmentError::ConstantTree {
+            unit_index,
+            source: ConstantTreeError::LengthOverflow,
+        }
+    })? != expected_node_byte_count
+    {
+        return Err(
+            ProveConstantOpeningSegmentError::ConstantTreeMaterialMismatch {
+                unit_index,
+                field: "node byte count",
+            },
+        );
+    }
+
+    opening_root_from_words(expected_root_words)
 }
 
 fn validate_constant_tree_material_summary(

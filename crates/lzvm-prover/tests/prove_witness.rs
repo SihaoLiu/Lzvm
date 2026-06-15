@@ -107,7 +107,8 @@ use lzvm_prover::witness_loader::{
 };
 use lzvm_prover::witness_runner::{run_witness_trace, WitnessTraceRunError};
 use lzvm_prover::{
-    build_constant_opening_segment, build_pcs_evaluation_segment, build_pcs_fri_opening_segment,
+    build_constant_opening_segment, build_constant_opening_segment_with_schedule_material,
+    build_pcs_evaluation_segment, build_pcs_fri_opening_segment,
     build_pcs_fri_opening_segment_from_trace, build_pcs_fri_polynomial_values,
     build_pcs_fri_transcript_values_from_trace, build_pcs_material_manifest_segment,
     build_pcs_query_nonce_segment, build_pcs_query_nonce_segment_from_transcript_segments,
@@ -1455,6 +1456,84 @@ fn rejects_constant_opening_tree_digest_mismatch() {
         .expect_err("constant tree digest mismatch should reject opening build");
 
     assert!(error.to_string().contains("digest mismatch"));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn builds_schedule_root_constant_opening_without_digest_summary() {
+    let dir = temp_dir("constant-opening-schedule-root-material");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
+    let material = unit
+        .pcs_material
+        .as_mut()
+        .expect("PCS material should be present");
+    material.constant_tree_digest = [1; 32];
+    let catalog = sample_catalog(unit);
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let query_segment = ProofSegment {
+        id: PCS_QUERY_PLAN_SEGMENT_ID,
+        data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+            units: vec![PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 0,
+                queries: vec![0],
+            }],
+        })
+        .expect("query plan should encode"),
+    };
+
+    let opening_segment =
+        build_constant_opening_segment_with_schedule_material(&catalog, &schedule, &query_segment)
+            .expect("schedule-root material should build sampled openings");
+
+    lzvm_prover::constant_opening::validate_constant_opening_segments(
+        &schedule.units,
+        &[query_segment, opening_segment],
+    )
+    .expect("sampled openings should verify against the scheduled root");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_schedule_root_constant_opening_root_mismatch() {
+    let dir = temp_dir("constant-opening-schedule-root-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
+    let material = unit
+        .pcs_material
+        .as_mut()
+        .expect("PCS material should be present");
+    material.constant_tree_root = [1, 2, 3, 4];
+    let catalog = sample_catalog(unit);
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let query_segment = ProofSegment {
+        id: PCS_QUERY_PLAN_SEGMENT_ID,
+        data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+            units: vec![PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 0,
+                queries: vec![0],
+            }],
+        })
+        .expect("query plan should encode"),
+    };
+
+    let error =
+        build_constant_opening_segment_with_schedule_material(&catalog, &schedule, &query_segment)
+            .expect_err("schedule-root mismatch should reject sampled opening build");
+
+    assert!(error.to_string().contains("root mismatch"), "{error}");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 

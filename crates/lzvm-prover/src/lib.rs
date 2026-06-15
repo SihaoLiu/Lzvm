@@ -118,8 +118,9 @@ pub use prove_fri_opening::{
 pub use prove_fri_polynomial::{build_pcs_fri_polynomial_values, ProvePcsFriPolynomialError};
 pub use prove_witness::{
     build_constant_opening_segment, build_constant_opening_segment_with_material_summaries,
-    build_pcs_evaluation_segment, build_pcs_material_manifest_segment,
-    build_pcs_query_nonce_segment, build_pcs_query_nonce_segment_from_transcript_segments,
+    build_constant_opening_segment_with_schedule_material, build_pcs_evaluation_segment,
+    build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
+    build_pcs_query_nonce_segment_from_transcript_segments,
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_from_transcript_segments,

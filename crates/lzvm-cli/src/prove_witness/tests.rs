@@ -242,6 +242,42 @@ fn records_constant_material_validation_join_wait() {
 }
 
 #[test]
+fn constant_material_validation_defaults_to_schedule_root_path() {
+    assert!(!eager_constant_material_validation_enabled(
+        true, false, None
+    ));
+}
+
+#[test]
+fn constant_material_validation_can_be_requested_with_env() {
+    assert!(eager_constant_material_validation_enabled(
+        true,
+        false,
+        Some("1")
+    ));
+    assert!(eager_constant_material_validation_enabled(
+        true,
+        false,
+        Some("true")
+    ));
+    assert!(!eager_constant_material_validation_enabled(
+        true,
+        false,
+        Some("0")
+    ));
+    assert!(!eager_constant_material_validation_enabled(
+        true,
+        true,
+        Some("1")
+    ));
+    assert!(!eager_constant_material_validation_enabled(
+        false,
+        false,
+        Some("1")
+    ));
+}
+
+#[test]
 fn proof_artifact_timing_reports_parent_hash_shape_counts() {
     let timing = lzvm_prover::WitnessProofArtifactTiming {
         witness_opening_path_parent_hash: std::time::Duration::from_millis(9),

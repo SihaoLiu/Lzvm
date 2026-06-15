@@ -166,7 +166,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     let mut constant_tree_material_validation = start_constant_tree_material_validation(
         &catalog,
         &plan.run_plan.schedule,
-        !contribution_only && plan.inputs.public_inputs.is_some(),
+        eager_constant_material_validation_enabled_from_env(
+            plan.inputs.public_inputs.is_some(),
+            contribution_only,
+        ),
     );
     if parsed.evaluation_values_segment.is_some()
         && !(parsed.all_units || plan.run_plan.options.aggregate)
@@ -673,6 +676,35 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
 struct ConstantTreeMaterialValidationJob {
     handle: JoinHandle<Result<Vec<Option<ConstantTreeFileSummary>>, String>>,
     started: Instant,
+}
+
+const EAGER_CONSTANT_MATERIAL_VALIDATION_ENV: &str = "LZVM_EAGER_CONSTANT_MATERIAL_VALIDATION";
+
+fn eager_constant_material_validation_enabled_from_env(
+    public_inputs_present: bool,
+    contribution_only: bool,
+) -> bool {
+    let value = std::env::var(EAGER_CONSTANT_MATERIAL_VALIDATION_ENV).ok();
+    eager_constant_material_validation_enabled(
+        public_inputs_present,
+        contribution_only,
+        value.as_deref(),
+    )
+}
+
+fn eager_constant_material_validation_enabled(
+    public_inputs_present: bool,
+    contribution_only: bool,
+    value: Option<&str>,
+) -> bool {
+    public_inputs_present
+        && !contribution_only
+        && value.is_some_and(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
 }
 
 fn start_constant_tree_material_validation(

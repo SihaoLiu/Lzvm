@@ -59,13 +59,14 @@ use crate::witness_opening::{
     build_witness_opening_segment_batch_from_trace_outputs_with_timing,
 };
 use crate::{
-    build_constant_opening_segment, build_constant_opening_segment_with_material_summaries,
-    build_pcs_evaluation_segment, build_pcs_fri_opening_segment_from_transcript_values,
-    build_pcs_material_manifest_segment, build_pcs_query_nonce_segment_with_streams,
-    build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_challenge,
-    build_pcs_query_plan_segment_with_bindings, build_witness_commitment_segment_for_schedule,
-    ProveExecutionUnitArtifacts, ProvePcsEvaluationValues, ProveSchedule,
-    ProveWitnessAuxiliaryInputs, ProveWitnessTraceCommitments,
+    build_constant_opening_segment_with_material_summaries,
+    build_constant_opening_segment_with_schedule_material, build_pcs_evaluation_segment,
+    build_pcs_fri_opening_segment_from_transcript_values, build_pcs_material_manifest_segment,
+    build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
+    build_pcs_query_plan_segment_from_challenge, build_pcs_query_plan_segment_with_bindings,
+    build_witness_commitment_segment_for_schedule, ProveExecutionUnitArtifacts,
+    ProvePcsEvaluationValues, ProveSchedule, ProveWitnessAuxiliaryInputs,
+    ProveWitnessTraceCommitments,
 };
 
 trait ProveUnitValuesSliceExt {
@@ -134,7 +135,9 @@ fn build_constant_opening_segment_for_request(
             query_segment,
             summaries,
         ),
-        None => build_constant_opening_segment(catalog, schedule, query_segment),
+        None => {
+            build_constant_opening_segment_with_schedule_material(catalog, schedule, query_segment)
+        }
     }
 }
 
