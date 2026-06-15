@@ -51,6 +51,8 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "runtime_opening_required_external_source_verifier_core_contract",
             "runtime_witness_opening_arity_two_same_index_leaf_binding_from_bundle",
             "runtime_witness_opening_arity_four_same_index_leaf_binding_from_bundle",
+            "runtime_witness_opening_arity_two_root_commits_to_leaf_at_index_from_bundle",
+            "runtime_witness_opening_arity_four_root_commits_to_leaf_at_index_from_bundle",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -88,6 +90,42 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_witness_opening_arity_four_same_index_leaf_binding_from_bundle",
         &["verified_concrete_nary_merkle_opening_arity_four_same_index_leaf_eq_from_bundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_witness_opening_arity_two_root_commits_to_leaf_at_index_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathHasArity 2 opening.layers",
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathRootCommitsToLeafAtIndex",
+            "opening.leaf",
+            "opening.layers",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_witness_opening_arity_two_root_commits_to_leaf_at_index_from_bundle",
+        &["verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_witness_opening_arity_four_root_commits_to_leaf_at_index_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathHasArity 4 opening.layers",
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathRootCommitsToLeafAtIndex",
+            "opening.leaf",
+            "opening.layers",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_witness_opening_arity_four_root_commits_to_leaf_at_index_from_bundle",
+        &["verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle"],
     );
     assert!(
         theorem_prefix(
