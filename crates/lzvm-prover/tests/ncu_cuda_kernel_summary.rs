@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -138,6 +140,77 @@ fn ncu_cuda_kernel_summary_skips_profiler_preamble_and_rejects_metricless_export
     assert!(
         stderr.contains("No metrics to collect"),
         "metricless NCU CSV should preserve the profiler warning: {stderr}"
+    );
+}
+
+#[test]
+fn ncu_cuda_kernel_summary_imports_binary_reports_through_ncu() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/ncu-cuda-kernel-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("workspace temp directory should exist");
+
+    let report_path = temp_file(&temp_dir, "ncu-import-sample.ncu-rep");
+    std::fs::write(&report_path, [0xfe, 0x4e, 0x43, 0x55]).expect("fake NCU report should write");
+    let fake_ncu_path = temp_file(&temp_dir, "fake-ncu.sh");
+    std::fs::write(
+        &fake_ncu_path,
+        concat!(
+            "#!/usr/bin/env bash\n",
+            "set -euo pipefail\n",
+            "if [[ \"$1\" != \"--import\" ]]; then echo \"missing import\" >&2; exit 9; fi\n",
+            "if [[ \"$2\" != *\".ncu-rep\" ]]; then echo \"missing report\" >&2; exit 9; fi\n",
+            "if [[ \"$3\" != \"--csv\" ]]; then echo \"missing csv\" >&2; exit 9; fi\n",
+            "if [[ \"$4\" != \"--page\" || \"$5\" != \"raw\" ]]; then echo \"missing raw page\" >&2; exit 9; fi\n",
+            "cat <<'CSV'\n",
+            "\"Kernel Name\",\"gpu__time_duration.sum\",",
+            "\"sm__throughput.avg.pct_of_peak_sustained_elapsed\",",
+            "\"gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed\",",
+            "\"gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed\",",
+            "\"sm__issue_active.avg.pct_of_peak_sustained_elapsed\",",
+            "\"sm__warps_active.avg.pct_of_peak_sustained_active\",",
+            "\"launch__occupancy_limit_registers\",",
+            "\"launch__occupancy_limit_shared_mem\",",
+            "\"launch__occupancy_limit_warps\",",
+            "\"launch__occupancy_limit_blocks\",",
+            "\"launch__registers_per_thread\",",
+            "\"launch__shared_mem_per_block\"\n",
+            "\"\",\"us\",\"%\",\"%\",\"%\",\"%\",\"%\",\"block\",\"block\",\"block\",\"block\",\"register/thread\",\"Kbyte/block\"\n",
+            "\"ntt_stage_block_twiddle_kernel\",\"45.0\",\"63.0\",\"55.0\",\"58.0\",\"40.0\",\"90.0\",\"6\",\"14\",\"6\",\"24\",\"38\",\"1.104\"\n",
+            "CSV\n",
+        ),
+    )
+    .expect("fake ncu should write");
+    #[cfg(unix)]
+    {
+        let mut permissions = std::fs::metadata(&fake_ncu_path)
+            .expect("fake ncu metadata should read")
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&fake_ncu_path, permissions)
+            .expect("fake ncu should be executable");
+    }
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg("--ncu-command")
+        .arg(&fake_ncu_path)
+        .arg(&report_path)
+        .output()
+        .expect("ncu CUDA kernel summary should run on fake report");
+    let _ = std::fs::remove_file(&report_path);
+    let _ = std::fs::remove_file(&fake_ncu_path);
+
+    assert!(
+        output.status.success(),
+        "fake NCU report should import through ncu: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("profile=") && stdout.contains("ntt_stage_block_twiddle_kernel"),
+        "imported report should produce a kernel summary: {stdout}"
     );
 }
 

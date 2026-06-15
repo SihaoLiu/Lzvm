@@ -2,6 +2,8 @@
 import argparse
 import csv
 import io
+import os
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -227,6 +229,10 @@ def summarize_rows(rows: list[dict[str, str]]) -> list[KernelMetrics]:
 
 def read_ncu_csv(path: Path) -> list[dict[str, str]]:
     lines = path.read_text().splitlines(keepends=True)
+    return parse_ncu_csv_lines(path, lines)
+
+
+def parse_ncu_csv_lines(path: Path, lines: list[str]) -> list[dict[str, str]]:
     header_offset = find_ncu_csv_header_offset(lines, path)
     reader = csv.DictReader(io.StringIO("".join(lines[header_offset:])))
     if not reader.fieldnames or "Kernel Name" not in reader.fieldnames:
@@ -239,6 +245,40 @@ def read_ncu_csv(path: Path) -> list[dict[str, str]]:
     if missing:
         raise SystemExit(missing_metric_message(path, lines, missing))
     return normalize_ncu_metric_units(list(reader))
+
+
+def read_ncu_report(path: Path, ncu_command: str) -> list[dict[str, str]]:
+    command = [ncu_command, "--import", str(path), "--csv", "--page", "raw"]
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        raise SystemExit(
+            f"failed to import NCU report {path}: command not found: {ncu_command}"
+        )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise SystemExit(
+            f"failed to import NCU report {path} with {ncu_command}: {detail}"
+        )
+    return parse_ncu_csv_lines(path, completed.stdout.splitlines(keepends=True))
+
+
+def read_ncu_profile(path: Path, ncu_command: str) -> list[dict[str, str]]:
+    if path.suffix == ".ncu-rep":
+        return read_ncu_report(path, ncu_command)
+    try:
+        return read_ncu_csv(path)
+    except UnicodeDecodeError as error:
+        raise SystemExit(
+            f"not a UTF-8 Nsight Compute CSV export: {path}; "
+            "pass a .ncu-rep report or export CSV with ncu --import <report> --csv --page raw"
+        ) from error
 
 
 def writerow(writer: csv.writer, values: list[object]) -> None:
@@ -458,10 +498,15 @@ def build_self_test_rows() -> list[dict[str, str]]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Summarize CUDA kernel metrics from an Nsight Compute CSV export."
+        description="Summarize CUDA kernel metrics from an Nsight Compute CSV or .ncu-rep export."
     )
-    parser.add_argument("csv", nargs="?", help="path to an ncu CSV export")
+    parser.add_argument("profile", nargs="?", help="path to an ncu CSV or .ncu-rep export")
     parser.add_argument("--top", type=int, default=16, help="rows to print per summary")
+    parser.add_argument(
+        "--ncu-command",
+        default=os.environ.get("LZVM_NCU_COMMAND", "ncu"),
+        help="Nsight Compute command used to import .ncu-rep reports",
+    )
     parser.add_argument("--self-test", action="store_true", help="run against an in-memory sample")
     return parser.parse_args()
 
@@ -471,12 +516,12 @@ def main() -> int:
     if args.self_test:
         summarize(build_self_test_rows(), "self-test", max(args.top, 1))
         return 0
-    if not args.csv:
-        raise SystemExit("CSV path is required unless --self-test is used")
-    path = Path(args.csv)
+    if not args.profile:
+        raise SystemExit("NCU profile path is required unless --self-test is used")
+    path = Path(args.profile)
     if not path.exists():
-        raise SystemExit(f"NCU CSV export does not exist: {path}")
-    summarize(read_ncu_csv(path), str(path), max(args.top, 1))
+        raise SystemExit(f"NCU profile export does not exist: {path}")
+    summarize(read_ncu_profile(path, args.ncu_command), str(path), max(args.top, 1))
     return 0
 
 
