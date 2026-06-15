@@ -177,7 +177,7 @@ fn ncu_cuda_kernel_summary_imports_binary_reports_through_ncu() {
             "\"launch__registers_per_thread\",",
             "\"launch__shared_mem_per_block\"\n",
             "\"\",\"us\",\"%\",\"%\",\"%\",\"%\",\"%\",\"block\",\"block\",\"block\",\"block\",\"register/thread\",\"Kbyte/block\"\n",
-            "\"ntt_stage_block_twiddle_kernel\",\"45.0\",\"63.0\",\"55.0\",\"58.0\",\"40.0\",\"90.0\",\"6\",\"14\",\"6\",\"24\",\"38\",\"1.104\"\n",
+            "\"<unnamed>::ntt_stage_block_twiddle_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",\"45.0\",\"63.0\",\"55.0\",\"58.0\",\"40.0\",\"90.0\",\"6\",\"14\",\"6\",\"24\",\"38\",\"1.104\"\n",
             "CSV\n",
         ),
     )
@@ -209,8 +209,12 @@ fn ncu_cuda_kernel_summary_imports_binary_reports_through_ncu() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("profile=") && stdout.contains("ntt_stage_block_twiddle_kernel"),
+        stdout.contains("profile=") && stdout.contains("ntt_stage_block_twiddle_kernel,1,"),
         "imported report should produce a kernel summary: {stdout}"
+    );
+    assert!(
+        !stdout.contains("unsigned long"),
+        "imported report should print normalized short kernel names: {stdout}"
     );
 }
 

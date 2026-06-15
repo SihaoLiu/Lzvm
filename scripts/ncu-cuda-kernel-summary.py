@@ -123,8 +123,17 @@ class KernelMetrics:
         return "|".join(winners)
 
 
+def normalize_kernel_name(name: str) -> str:
+    name = name.strip()
+    if "(" in name:
+        name = name.split("(", 1)[0].strip()
+    if "::" in name:
+        name = name.rsplit("::", 1)[1].strip()
+    return name
+
+
 def row_kernel_name(row: dict[str, str]) -> str:
-    return (row.get("Kernel Name") or row.get("Kernel") or "").strip()
+    return normalize_kernel_name(row.get("Kernel Name") or row.get("Kernel") or "")
 
 
 def fieldnames_contain_metric(fieldnames: list[str], metric: str) -> bool:
