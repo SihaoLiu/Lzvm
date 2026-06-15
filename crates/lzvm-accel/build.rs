@@ -14,6 +14,7 @@ fn main() {
     println!("cargo:rerun-if-changed=native/cuda_poseidon2_merkle_opening.cuh");
     println!("cargo:rerun-if-changed=native/cuda_poseidon2_merkle_parent.cuh");
     println!("cargo:rerun-if-changed=native/cuda_poseidon2_merkle_root.cuh");
+    println!("cargo:rerun-if-changed=native/cuda_poseidon2_permutation.cuh");
     println!("cargo:rerun-if-changed=native/cuda_poseidon2_row_major.cuh");
     println!("cargo:rerun-if-changed=native/cuda_poseidon2_row_major_exports.cuh");
     println!("cargo:rerun-if-changed=native/cuda_regular_constraints.cuh");

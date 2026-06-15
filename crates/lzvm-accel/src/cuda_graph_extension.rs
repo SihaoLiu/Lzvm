@@ -69,6 +69,23 @@ impl CudaRowMajorCosetExtensionGraphRunner {
         out: &mut CudaDeviceBuffer,
         workspace: &mut CudaDeviceBuffer,
     ) -> Result<(), AccelError> {
+        unsafe { self.enqueue(values, out, workspace)? };
+        self.synchronize()
+    }
+
+    /// Enqueues the captured coset extension graph and returns before it completes.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep `values`, `out`, `workspace`, and this runner alive
+    /// and must not read or reuse `out` or `workspace` until `synchronize`
+    /// has completed on this runner.
+    pub unsafe fn enqueue(
+        &mut self,
+        values: &CudaDeviceBuffer,
+        out: &mut CudaDeviceBuffer,
+        workspace: &mut CudaDeviceBuffer,
+    ) -> Result<(), AccelError> {
         let graph_key = CudaRowMajorCosetExtensionGraphKey::from_buffers(values, out, workspace);
         if self.exec.is_none() || self.graph_key != Some(graph_key) {
             let graph = self.capture(values, out, workspace)?;
@@ -86,6 +103,10 @@ impl CudaRowMajorCosetExtensionGraphRunner {
             .expect("graph executable should be initialized")
             .launch(&self.stream)?;
         self.launch_count += 1;
+        Ok(())
+    }
+
+    pub fn synchronize(&self) -> Result<(), AccelError> {
         self.stream.synchronize()
     }
 
@@ -157,6 +178,23 @@ impl CudaStridedRowMajorCosetExtensionGraphRunner {
         out: &mut CudaDeviceBuffer,
         workspace: &mut CudaDeviceBuffer,
     ) -> Result<(), AccelError> {
+        unsafe { self.enqueue(values, out, workspace)? };
+        self.synchronize()
+    }
+
+    /// Enqueues the captured strided coset extension graph and returns before it completes.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep `values`, `out`, `workspace`, and this runner alive
+    /// and must not read or reuse `out` or `workspace` until `synchronize`
+    /// has completed on this runner.
+    pub unsafe fn enqueue(
+        &mut self,
+        values: &CudaDeviceBuffer,
+        out: &mut CudaDeviceBuffer,
+        workspace: &mut CudaDeviceBuffer,
+    ) -> Result<(), AccelError> {
         let graph_key = CudaRowMajorCosetExtensionGraphKey::from_buffers(values, out, workspace);
         if self.exec.is_none() || self.graph_key != Some(graph_key) {
             let graph = self.capture(values, out, workspace)?;
@@ -174,6 +212,10 @@ impl CudaStridedRowMajorCosetExtensionGraphRunner {
             .expect("graph executable should be initialized")
             .launch(&self.stream)?;
         self.launch_count += 1;
+        Ok(())
+    }
+
+    pub fn synchronize(&self) -> Result<(), AccelError> {
         self.stream.synchronize()
     }
 
