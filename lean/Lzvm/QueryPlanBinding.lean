@@ -210,6 +210,49 @@ theorem runtime_query_plan_binding_evidence_implies_bound_contract
   intro artifact publicInput proof evidence
   exact evidence.left
 
+theorem runtime_query_plan_binding_evidence_implies_transcript_query_plan_bound
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.challengeValidation.transcriptValidation.queryPlanBound
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof evidence
+  rcases evidence.left with
+    ⟨_segmentCanonical,
+      _derivedFromTranscript,
+      _matchesOpenedArtifacts,
+      transcriptQueryPlanBound,
+      _openingQueryPlanBound⟩
+  exact transcriptQueryPlanBound
+
+theorem runtime_query_plan_binding_evidence_implies_opening_query_plan_bound
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.openingValidation.queryPlanBound artifact publicInput proof := by
+  intro artifact publicInput proof evidence
+  rcases evidence.left with
+    ⟨_segmentCanonical,
+      _derivedFromTranscript,
+      _matchesOpenedArtifacts,
+      _transcriptQueryPlanBound,
+      openingQueryPlanBound⟩
+  exact openingQueryPlanBound
+
 theorem runtime_query_plan_binding_evidence_implies_seeded_contract
     {system : VerifierModel}
     (validation : RuntimeQueryPlanBindingValidation system) :
@@ -339,6 +382,73 @@ theorem runtime_query_plan_binding_checked_acceptance_bound_contract
       publicInput
       proof
       evidence
+
+theorem runtime_query_plan_binding_checked_acceptance_transcript_query_plan_bound
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.challengeValidation.transcriptValidation.queryPlanBound
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have segmentCanonical :=
+    validation.queryPlanBindingAcceptedImpliesSegmentCanonical
+      artifact
+      publicInput
+      proof
+      accepted
+  have derivedFromTranscript :=
+    validation.queryPlanBindingAcceptedImpliesDerivedFromTranscript
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    validation.queryPlanChecksImplyTranscriptQueryPlanBound
+      artifact
+      publicInput
+      proof
+      segmentCanonical
+      derivedFromTranscript
+
+theorem runtime_query_plan_binding_checked_acceptance_opening_query_plan_bound
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.openingValidation.queryPlanBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have segmentCanonical :=
+    validation.queryPlanBindingAcceptedImpliesSegmentCanonical
+      artifact
+      publicInput
+      proof
+      accepted
+  have matchesOpenedArtifacts :=
+    validation.queryPlanBindingAcceptedImpliesMatchesOpenedArtifacts
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    validation.queryPlanChecksImplyOpeningQueryPlanBound
+      artifact
+      publicInput
+      proof
+      segmentCanonical
+      matchesOpenedArtifacts
 
 theorem runtime_query_plan_binding_checked_acceptance_seeded_contract
     {system : VerifierModel}

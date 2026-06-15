@@ -53,10 +53,14 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &lean_source,
         &[
             "runtime_query_plan_binding_evidence_implies_bound_contract",
+            "runtime_query_plan_binding_evidence_implies_transcript_query_plan_bound",
+            "runtime_query_plan_binding_evidence_implies_opening_query_plan_bound",
             "runtime_query_plan_binding_evidence_implies_seeded_contract",
             "runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests",
             "runtime_query_plan_binding_seeded_contract_implies_seeded_fri_opening_requirements_checked",
             "runtime_query_plan_binding_checked_acceptance_bound_contract",
+            "runtime_query_plan_binding_checked_acceptance_transcript_query_plan_bound",
+            "runtime_query_plan_binding_checked_acceptance_opening_query_plan_bound",
             "runtime_query_plan_binding_checked_acceptance_seeded_contract",
             "runtime_query_plan_binding_checked_acceptance_seed_binds_witness_tree_digests",
             "runtime_query_plan_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
@@ -68,6 +72,64 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
             "runtime_query_plan_binding_checked_acceptance_seeded_opening_and_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_evidence_implies_transcript_query_plan_bound",
+        &[
+            "RuntimeQueryPlanBindingEvidence",
+            "validation.challengeValidation.transcriptValidation.queryPlanBound",
+            "artifact",
+            "publicInput",
+            "proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_evidence_implies_opening_query_plan_bound",
+        &[
+            "RuntimeQueryPlanBindingEvidence",
+            "validation.openingValidation.queryPlanBound artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_transcript_query_plan_bound",
+        &[
+            "RuntimeQueryPlanBindingCheckedAcceptance",
+            "validation.challengeValidation.transcriptValidation.queryPlanBound",
+            "artifact",
+            "publicInput",
+            "proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_opening_query_plan_bound",
+        &[
+            "RuntimeQueryPlanBindingCheckedAcceptance",
+            "validation.openingValidation.queryPlanBound artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_transcript_query_plan_bound",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_opening_query_plan_bound",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_transcript_query_plan_bound",
+        &["validation.queryPlanChecksImplyTranscriptQueryPlanBound"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_opening_query_plan_bound",
+        &["validation.queryPlanChecksImplyOpeningQueryPlanBound"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
