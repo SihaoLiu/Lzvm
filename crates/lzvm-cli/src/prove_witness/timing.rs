@@ -1,4 +1,6 @@
 use std::io::Write;
+#[cfg(feature = "cuda")]
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 #[derive(Clone)]
@@ -108,6 +110,9 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
     if !timings.is_enabled() {
         return;
     }
+    let copy_site_stats = lzvm_prover::cuda_copy_site_stats_snapshot();
+    record_cuda_copy_site_timing_entries(timings, &copy_site_stats);
+
     let Ok(stats) = lzvm_prover::cuda_allocator_stats() else {
         return;
     };
@@ -398,6 +403,60 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
         "cuda_allocator_no_wait_bypass_bytes",
         stats.no_wait_bypass_bytes,
     );
+}
+
+#[cfg(feature = "cuda")]
+pub(super) fn record_cuda_copy_site_timing_entries(
+    timings: &mut TimingRecorder,
+    stats: &[lzvm_prover::CudaCopySiteStat],
+) {
+    let mut ordered = stats.to_vec();
+    ordered.sort_by(|lhs, rhs| {
+        rhs.bytes
+            .cmp(&lhs.bytes)
+            .then_with(|| rhs.calls.cmp(&lhs.calls))
+            .then_with(|| lhs.label.cmp(rhs.label))
+            .then_with(|| lhs.file.cmp(rhs.file))
+            .then_with(|| lhs.line.cmp(&rhs.line))
+    });
+    for (index, stat) in ordered.iter().take(8).enumerate() {
+        let prefix = cuda_copy_site_timing_prefix(index + 1, stat);
+        timings.record_count_dynamic(format!("{prefix}_calls"), stat.calls);
+        timings.record_count_dynamic(format!("{prefix}_bytes"), stat.bytes);
+        timings.record_count_dynamic(format!("{prefix}_max_bytes"), stat.max_bytes);
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_copy_site_timing_prefix(rank: usize, stat: &lzvm_prover::CudaCopySiteStat) -> String {
+    let file = Path::new(stat.file)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(stat.file);
+    format!(
+        "cuda_copy_site_h2d_top_{}_{}_{}_{}",
+        rank,
+        sanitize_timing_component(stat.label),
+        sanitize_timing_component(file),
+        stat.line
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn sanitize_timing_component(value: &str) -> String {
+    let mut sanitized = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || byte == b'_' {
+            sanitized.push(byte as char);
+        } else {
+            sanitized.push('_');
+        }
+    }
+    if sanitized.is_empty() {
+        "unknown".to_owned()
+    } else {
+        sanitized
+    }
 }
 
 #[cfg(feature = "cuda")]

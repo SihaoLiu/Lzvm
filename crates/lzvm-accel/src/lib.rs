@@ -12,6 +12,8 @@ mod cuda_buffer;
 #[cfg(feature = "cuda")]
 mod cuda_canonical;
 #[cfg(feature = "cuda")]
+mod cuda_copy_sites;
+#[cfg(feature = "cuda")]
 mod cuda_device;
 #[cfg(feature = "cuda")]
 mod cuda_graph_extension;
@@ -32,6 +34,10 @@ pub use cuda_canonical::{
     cuda_goldilocks_begin_validate_canonical_words_device,
     cuda_goldilocks_begin_validate_canonical_words_device_on_stream,
     cuda_goldilocks_validate_canonical_words_device, CudaCanonicalCheck,
+};
+#[cfg(feature = "cuda")]
+pub use cuda_copy_sites::{
+    cuda_copy_site_stats_clear, cuda_copy_site_stats_snapshot, CudaCopySiteStat,
 };
 #[cfg(feature = "cuda")]
 pub use cuda_device::{cuda_device_synchronize, cuda_memory_info, CudaMemoryInfo};

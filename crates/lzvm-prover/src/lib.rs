@@ -33,7 +33,10 @@ use crate::proof_preflight::{public_values_as_fields, PublicValueFieldError};
 use crate::setup_preflight::{validate_public_values_metadata, SetupPreflightError};
 
 #[cfg(feature = "cuda")]
-pub use lzvm_accel::{cuda_allocator_stats, CudaAllocatorStats};
+pub use lzvm_accel::{
+    cuda_allocator_stats, cuda_copy_site_stats_clear, cuda_copy_site_stats_snapshot,
+    CudaAllocatorStats, CudaCopySiteStat,
+};
 
 #[cfg(all(test, feature = "cuda"))]
 pub(crate) static CUDA_TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

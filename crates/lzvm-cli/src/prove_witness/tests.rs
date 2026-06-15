@@ -165,6 +165,48 @@ fn writes_timing_count_summary_lines_without_ms_suffix() {
     );
 }
 
+#[cfg(feature = "cuda")]
+#[test]
+fn writes_cuda_copy_site_timing_summary_lines() {
+    let mut timings = TimingRecorder::new(true);
+    super::timing::record_cuda_copy_site_timing_entries(
+        &mut timings,
+        &[
+            lzvm_prover::CudaCopySiteStat {
+                label: "copy_from",
+                file: "crates/lzvm-prover/src/witness/upload.rs",
+                line: 37,
+                calls: 2,
+                bytes: 128,
+                max_bytes: 64,
+            },
+            lzvm_prover::CudaCopySiteStat {
+                label: "copy_prefix_from_u64_words",
+                file: "crates/lzvm-prover/src/witness/layout.rs",
+                line: 92,
+                calls: 3,
+                bytes: 96,
+                max_bytes: 32,
+            },
+        ],
+    );
+
+    let mut stdout = Vec::new();
+    write_timing_summary(&mut stdout, &timings);
+    let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+    for expected in [
+        "timing_cuda_copy_site_h2d_top_1_copy_from_upload_rs_37_calls=2\n",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_upload_rs_37_bytes=128\n",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_upload_rs_37_max_bytes=64\n",
+        "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_calls=3\n",
+        "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_bytes=96\n",
+        "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_max_bytes=32\n",
+    ] {
+        assert!(stdout.contains(expected), "missing {expected} in {stdout}");
+    }
+}
+
 #[test]
 fn records_constant_material_validation_join_wait() {
     let mut timings = TimingRecorder::new(true);

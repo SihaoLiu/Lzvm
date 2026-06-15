@@ -412,12 +412,14 @@ impl CudaDeviceBuffer {
         self.ptr
     }
 
+    #[track_caller]
     pub fn from_u64_words(words: &[u64]) -> Result<Self, AccelError> {
         let mut buffer = Self::new(u64_word_byte_len(words.len())?)?;
         buffer.copy_from_u64_words(words)?;
         Ok(buffer)
     }
 
+    #[track_caller]
     pub fn from_row_major_u64_slice(
         words: &[u64],
         row_count: usize,
@@ -919,6 +921,7 @@ impl CudaDeviceBuffer {
         }
     }
 
+    #[track_caller]
     pub fn copy_from_u64_words(&mut self, words: &[u64]) -> Result<(), AccelError> {
         let expected_len = u64_word_byte_len(words.len())?;
         if expected_len != self.len {
@@ -932,6 +935,7 @@ impl CudaDeviceBuffer {
         }
         #[cfg(target_endian = "little")]
         {
+            super::cuda_copy_sites::record_h2d_copy_site("copy_from_u64_words", self.len);
             let code =
                 unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, words.as_ptr().cast(), self.len) };
             cuda_status(code)
@@ -950,6 +954,7 @@ impl CudaDeviceBuffer {
     /// The caller must keep `words` alive until the stream has completed the
     /// copy or an ordering event recorded after this call has completed, and
     /// must keep this buffer alive until the queued copy has completed.
+    #[track_caller]
     pub unsafe fn copy_from_u64_words_on_stream(
         &mut self,
         words: &[u64],
@@ -967,6 +972,7 @@ impl CudaDeviceBuffer {
         }
         #[cfg(target_endian = "little")]
         {
+            super::cuda_copy_sites::record_h2d_copy_site("copy_from_u64_words_on_stream", self.len);
             let code = unsafe {
                 lzvm_cuda_copy_h2d_bytes_on_stream(
                     self.ptr,
@@ -983,6 +989,7 @@ impl CudaDeviceBuffer {
         }
     }
 
+    #[track_caller]
     pub fn copy_prefix_from_u64_words(&mut self, words: &[u64]) -> Result<(), AccelError> {
         let copy_len = u64_word_byte_len(words.len())?;
         if copy_len > self.len {
@@ -996,6 +1003,7 @@ impl CudaDeviceBuffer {
         }
         #[cfg(target_endian = "little")]
         {
+            super::cuda_copy_sites::record_h2d_copy_site("copy_prefix_from_u64_words", copy_len);
             let code =
                 unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, words.as_ptr().cast(), copy_len) };
             cuda_status(code)
@@ -1009,12 +1017,14 @@ impl CudaDeviceBuffer {
                     rhs: bytes.len(),
                 });
             }
+            super::cuda_copy_sites::record_h2d_copy_site("copy_prefix_from_u64_words", copy_len);
             let code =
                 unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, bytes.as_ptr().cast(), copy_len) };
             cuda_status(code)
         }
     }
 
+    #[track_caller]
     fn copy_prefix_from_u32_words(&mut self, words: &[u32]) -> Result<(), AccelError> {
         let copy_len = u32_word_byte_len(words.len())?;
         if copy_len > self.len {
@@ -1030,6 +1040,7 @@ impl CudaDeviceBuffer {
         {
             let input =
                 unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<u8>(), copy_len) };
+            super::cuda_copy_sites::record_h2d_copy_site("copy_prefix_from_u32_words", copy_len);
             let code =
                 unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, input.as_ptr().cast(), copy_len) };
             cuda_status(code)
@@ -1040,6 +1051,7 @@ impl CudaDeviceBuffer {
             for word in words {
                 bytes.extend_from_slice(&word.to_le_bytes());
             }
+            super::cuda_copy_sites::record_h2d_copy_site("copy_prefix_from_u32_words", copy_len);
             let code =
                 unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, bytes.as_ptr().cast(), copy_len) };
             cuda_status(code)
@@ -1139,6 +1151,7 @@ impl CudaDeviceBuffer {
         cuda_status(code)
     }
 
+    #[track_caller]
     pub fn copy_from_row_major_u64_slice(
         &mut self,
         words: &[u64],
@@ -1166,6 +1179,7 @@ impl CudaDeviceBuffer {
         }
         #[cfg(target_endian = "little")]
         {
+            super::cuda_copy_sites::record_h2d_copy_site("copy_from_row_major_u64_slice", self.len);
             let code = unsafe {
                 lzvm_cuda_copy_h2d_row_slice_words(
                     self.ptr,
@@ -1400,6 +1414,7 @@ impl CudaDeviceBuffer {
         Ok(output)
     }
 
+    #[track_caller]
     pub fn copy_from(&mut self, input: &[u8]) -> Result<(), AccelError> {
         if input.len() != self.len {
             return Err(AccelError::LengthMismatch {
@@ -1410,6 +1425,7 @@ impl CudaDeviceBuffer {
         if self.len == 0 {
             return Ok(());
         }
+        super::cuda_copy_sites::record_h2d_copy_site("copy_from", self.len);
         let code = unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, input.as_ptr().cast(), self.len) };
         cuda_status(code)
     }
