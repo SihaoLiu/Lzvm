@@ -9,6 +9,8 @@ const ZISK_MAIN_TRACE_WIDE_DESCRIPTOR_WORDS: usize = 14;
 const ZISK_MAIN_TRACE_WIDTH_WORDS: usize = 39;
 
 unsafe extern "C" {
+    fn lzvm_cuda_pinned_host_alloc(out: *mut *mut c_void, bytes: usize) -> i32;
+    fn lzvm_cuda_pinned_host_free(ptr: *mut c_void);
     fn lzvm_cuda_copy_h2d_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
     fn lzvm_cuda_copy_h2d_bytes_on_stream(
         dst: *mut c_void,
@@ -17,6 +19,12 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     fn lzvm_cuda_copy_d2h_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
+    fn lzvm_cuda_copy_d2h_bytes_on_stream(
+        dst: *mut c_void,
+        src: *const c_void,
+        bytes: usize,
+        stream: *mut c_void,
+    ) -> i32;
     fn lzvm_cuda_copy_h2d_row_slice_words(
         dst: *mut c_void,
         src: *const c_void,
@@ -235,6 +243,60 @@ fn u32_word_byte_len(word_count: usize) -> Result<usize, AccelError> {
         bits: 32,
         len: word_count,
     })
+}
+
+#[derive(Debug)]
+pub struct CudaPinnedHostBuffer {
+    ptr: *mut c_void,
+    len: usize,
+}
+
+unsafe impl Send for CudaPinnedHostBuffer {}
+
+impl CudaPinnedHostBuffer {
+    pub fn new(len: usize) -> Result<Self, AccelError> {
+        let mut ptr = ptr::null_mut();
+        let code = unsafe { lzvm_cuda_pinned_host_alloc(&mut ptr, len) };
+        cuda_status(code)?;
+        if len > 0 && ptr.is_null() {
+            return Err(AccelError::Cuda { code: -1 });
+        }
+        Ok(Self { ptr, len })
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    fn as_mut_raw_ptr(&mut self) -> *mut c_void {
+        self.ptr
+    }
+
+    /// Returns the host bytes after the caller has synchronized the stream
+    /// that last wrote this buffer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure no CUDA operation is still writing this memory.
+    pub unsafe fn as_bytes(&self) -> &[u8] {
+        if self.len == 0 {
+            return &[];
+        }
+        unsafe { std::slice::from_raw_parts(self.ptr.cast(), self.len) }
+    }
+}
+
+impl Drop for CudaPinnedHostBuffer {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe { lzvm_cuda_pinned_host_free(self.ptr) };
+            self.ptr = ptr::null_mut();
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1235,6 +1297,27 @@ impl CudaDeviceBuffer {
         cuda_status(code)
     }
 
+    /// Enqueues a device-to-page-locked-host copy on `stream`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep `self`, `output`, and `stream` alive until the copy
+    /// has completed, and must not read `output` until that stream has been
+    /// synchronized or a later event proves completion.
+    pub unsafe fn copy_to_pinned_on_stream(
+        &self,
+        output: &mut CudaPinnedHostBuffer,
+        stream: &CudaStream,
+    ) -> Result<(), AccelError> {
+        if output.len() != self.len {
+            return Err(AccelError::LengthMismatch {
+                lhs: self.len,
+                rhs: output.len(),
+            });
+        }
+        unsafe { self.copy_range_to_pinned_on_stream(0, output, stream) }
+    }
+
     pub fn copy_range_to(&self, byte_offset: usize, output: &mut [u8]) -> Result<(), AccelError> {
         let end = byte_offset
             .checked_add(output.len())
@@ -1257,6 +1340,46 @@ impl CudaDeviceBuffer {
         cuda_status(code)
     }
 
+    /// Enqueues a device range to page-locked host memory on `stream`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep `self`, `output`, and `stream` alive until the copy
+    /// has completed, and must not read `output` until that stream has been
+    /// synchronized or a later event proves completion.
+    pub unsafe fn copy_range_to_pinned_on_stream(
+        &self,
+        byte_offset: usize,
+        output: &mut CudaPinnedHostBuffer,
+        stream: &CudaStream,
+    ) -> Result<(), AccelError> {
+        let end = byte_offset
+            .checked_add(output.len())
+            .ok_or(AccelError::LengthMismatch {
+                lhs: self.len,
+                rhs: output.len(),
+            })?;
+        if end > self.len {
+            return Err(AccelError::LengthMismatch {
+                lhs: self.len.saturating_sub(byte_offset.min(self.len)),
+                rhs: output.len(),
+            });
+        }
+        if output.is_empty() {
+            return Ok(());
+        }
+        let source = unsafe { (self.ptr as *const u8).add(byte_offset).cast() };
+        let code = unsafe {
+            lzvm_cuda_copy_d2h_bytes_on_stream(
+                output.as_mut_raw_ptr(),
+                source,
+                output.len(),
+                stream.as_raw(),
+            )
+        };
+        cuda_status(code)
+    }
+
     pub fn to_vec(&self) -> Result<Vec<u8>, AccelError> {
         let mut output = vec![0_u8; self.len];
         self.copy_to(&mut output)?;
@@ -1275,7 +1398,7 @@ impl Drop for CudaDeviceBuffer {
 
 #[cfg(test)]
 mod tests {
-    use super::{AccelError, CudaDeviceBuffer, CudaStream};
+    use super::{AccelError, CudaDeviceBuffer, CudaPinnedHostBuffer, CudaStream};
 
     #[test]
     fn stream_buffer_initialization_on_stream_matches_blocking() {
@@ -1392,5 +1515,55 @@ mod tests {
                 .to_u64_words()
                 .expect("blocking row slice should download")
         );
+    }
+
+    #[test]
+    fn async_device_to_pinned_host_copy_on_stream_round_trips_words() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let words = vec![
+            0x0102_0304_0506_0708,
+            0x1112_1314_1516_1718,
+            0x2122_2324_2526_2728,
+            0x3132_3334_3536_3738,
+        ];
+        let source = CudaDeviceBuffer::from_u64_words(&words).expect("source should upload");
+        let stream = CudaStream::new().expect("CUDA stream should create");
+        let mut output = CudaPinnedHostBuffer::new(words.len() * std::mem::size_of::<u64>())
+            .expect("pinned host buffer should allocate");
+
+        unsafe {
+            source
+                .copy_to_pinned_on_stream(&mut output, &stream)
+                .expect("D2H copy should enqueue");
+        }
+        stream.synchronize().expect("D2H copy should finish");
+
+        let round_trip = unsafe { output.as_bytes() }
+            .chunks_exact(std::mem::size_of::<u64>())
+            .map(|chunk| {
+                let mut word = [0_u8; std::mem::size_of::<u64>()];
+                word.copy_from_slice(chunk);
+                u64::from_le_bytes(word)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(round_trip, words);
+
+        let mut too_short = CudaPinnedHostBuffer::new(output.len() - 1)
+            .expect("short pinned host buffer should allocate");
+        let error = unsafe { source.copy_to_pinned_on_stream(&mut too_short, &stream) }
+            .expect_err("short pinned host buffer should be rejected");
+        assert!(matches!(error, AccelError::LengthMismatch { .. }));
+
+        let empty_source = CudaDeviceBuffer::new(0).expect("empty device buffer should allocate");
+        let mut empty_output =
+            CudaPinnedHostBuffer::new(0).expect("empty pinned host buffer should allocate");
+        unsafe {
+            empty_source
+                .copy_to_pinned_on_stream(&mut empty_output, &stream)
+                .expect("empty D2H copy should be accepted");
+        }
+        assert!(unsafe { empty_output.as_bytes() }.is_empty());
     }
 }

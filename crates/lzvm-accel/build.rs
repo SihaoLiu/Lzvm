@@ -18,6 +18,7 @@ fn main() {
     println!("cargo:rerun-if-changed=native/cuda_poseidon2_row_major_exports.cuh");
     println!("cargo:rerun-if-changed=native/cuda_regular_constraints.cuh");
     println!("cargo:rerun-if-changed=native/cuda_host.cpp");
+    println!("cargo:rerun-if-changed=native/cuda_host_runtime.cpp");
     println!("cargo:rerun-if-changed=native/cuda_host.hpp");
     println!("cargo:rerun-if-env-changed=LZVM_CUDA_ARCH");
 
@@ -29,8 +30,10 @@ fn main() {
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("out dir"));
     let source = manifest_dir.join("native/cuda_field.cu");
     let host_source = manifest_dir.join("native/cuda_host.cpp");
+    let host_runtime_source = manifest_dir.join("native/cuda_host_runtime.cpp");
     let cuda_object = out_dir.join("cuda_field.o");
     let host_object = out_dir.join("cuda_host.o");
+    let host_runtime_object = out_dir.join("cuda_host_runtime.o");
     let library = out_dir.join("liblzvm_cuda_field.a");
     let arch = std::env::var("LZVM_CUDA_ARCH").unwrap_or_else(|_| "sm_120".to_owned());
     let cuda_home = std::env::var("CUDA_HOME")
@@ -54,19 +57,24 @@ fn main() {
         panic!("nvcc failed while building {}", source.display());
     }
 
-    let status = Command::new("c++")
-        .arg("-std=c++17")
-        .arg("-fPIC")
-        .arg(format!("-I{}", native_include.display()))
-        .arg(format!("-I{cuda_home}/include"))
-        .arg("-c")
-        .arg(&host_source)
-        .arg("-o")
-        .arg(&host_object)
-        .status()
-        .expect("failed to run c++");
-    if !status.success() {
-        panic!("c++ failed while building {}", host_source.display());
+    for (source, object) in [
+        (&host_source, &host_object),
+        (&host_runtime_source, &host_runtime_object),
+    ] {
+        let status = Command::new("c++")
+            .arg("-std=c++17")
+            .arg("-fPIC")
+            .arg(format!("-I{}", native_include.display()))
+            .arg(format!("-I{cuda_home}/include"))
+            .arg("-c")
+            .arg(source)
+            .arg("-o")
+            .arg(object)
+            .status()
+            .expect("failed to run c++");
+        if !status.success() {
+            panic!("c++ failed while building {}", source.display());
+        }
     }
 
     let _ = std::fs::remove_file(&library);
@@ -75,6 +83,7 @@ fn main() {
         .arg(&library)
         .arg(&cuda_object)
         .arg(&host_object)
+        .arg(&host_runtime_object)
         .status()
         .expect("failed to run ar");
     if !status.success() {

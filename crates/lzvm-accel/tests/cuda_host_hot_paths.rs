@@ -17,12 +17,36 @@ fn large_host_to_device_copies_use_page_locked_registration() {
 #[test]
 fn cuda_host_exposes_device_memory_info() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let source_path = crate_root.join("native/cuda_host.cpp");
+    let source_path = crate_root.join("native/cuda_host_runtime.cpp");
     let source = std::fs::read_to_string(&source_path).expect("cuda host source should read");
 
     assert!(
         source.contains("cudaMemGetInfo"),
         "CUDA host layer should expose device memory capacity for retention budgeting"
+    );
+}
+
+#[test]
+fn cuda_host_exposes_async_device_to_pinned_host_copy() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let host_source = std::fs::read_to_string(crate_root.join("native/cuda_host.cpp"))
+        .expect("cuda host source should read");
+    let runtime_source = std::fs::read_to_string(crate_root.join("native/cuda_host_runtime.cpp"))
+        .expect("cuda host runtime source should read");
+
+    assert!(
+        runtime_source.contains("cudaHostAlloc"),
+        "D2H async copies need page-locked host allocation"
+    );
+    assert!(
+        runtime_source.contains("cudaFreeHost"),
+        "page-locked host allocation should have a matching release path"
+    );
+    assert!(
+        host_source.contains("lzvm_cuda_copy_d2h_bytes_on_stream")
+            && host_source.contains("cudaMemcpyAsync")
+            && host_source.contains("cudaMemcpyDeviceToHost"),
+        "D2H copies should be enqueueable on a CUDA stream"
     );
 }
 

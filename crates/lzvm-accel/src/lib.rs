@@ -24,7 +24,7 @@ mod cuda_stream;
 #[cfg(feature = "cuda")]
 pub use cuda_allocator::{cuda_allocator_clear_cache, cuda_allocator_stats, CudaAllocatorStats};
 #[cfg(feature = "cuda")]
-pub use cuda_buffer::CudaDeviceBuffer;
+pub use cuda_buffer::{CudaDeviceBuffer, CudaPinnedHostBuffer};
 #[cfg(feature = "cuda")]
 pub use cuda_canonical::{
     cuda_goldilocks_begin_validate_canonical_words_device,
