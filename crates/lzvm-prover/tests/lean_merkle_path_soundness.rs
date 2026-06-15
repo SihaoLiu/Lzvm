@@ -9,6 +9,9 @@ fn lean_merkle_path_soundness_exposes_direct_leaf_binding_theorems() {
     let binary_path = crate_root.join("../../lean/Lzvm/MerklePathSoundness/Binary.lean");
     let binary_source =
         std::fs::read_to_string(&binary_path).expect("binary Merkle path source should read");
+    let nary_path = crate_root.join("../../lean/Lzvm/MerklePathSoundness/NAry.lean");
+    let nary_source =
+        std::fs::read_to_string(&nary_path).expect("N-ary Merkle path source should read");
 
     assert!(
         core_source.contains("def MerklePathFold")
@@ -39,4 +42,14 @@ fn lean_merkle_path_soundness_exposes_direct_leaf_binding_theorems() {
         !binary_source.contains("MerklePathCollisionResistance"),
         "binary Merkle path soundness should not package the target binding result as an abstract assumption"
     );
+    for theorem_name in [
+        "verified_concrete_nary_merkle_opening_arity_four_same_index_leaf_eq_from_no_collision",
+        "verified_concrete_nary_merkle_opening_arity_four_same_index_leaf_eq_from_assumption",
+        "verified_concrete_nary_merkle_opening_arity_four_same_index_leaf_eq_from_bundle",
+    ] {
+        assert!(
+            nary_source.contains(theorem_name),
+            "N-ary Merkle path soundness should expose {theorem_name}"
+        );
+    }
 }
