@@ -1,6 +1,7 @@
 use super::{
-    cuda_goldilocks_begin_coset_extend_row_major_columns_device_on_stream, AccelError,
-    CudaDeviceBuffer, CudaGraph, CudaGraphExec, CudaStream,
+    cuda_goldilocks_begin_coset_extend_row_major_columns_device_on_stream,
+    cuda_goldilocks_begin_coset_extend_row_major_columns_strided_device_on_stream, AccelError,
+    CudaDeviceBuffer, CudaGraph, CudaGraphExec, CudaRowMajorColumnView, CudaStream,
 };
 
 #[derive(Debug)]
@@ -24,6 +25,23 @@ struct CudaRowMajorCosetExtensionGraphKey {
     out_len: usize,
     workspace_ptr: usize,
     workspace_len: usize,
+}
+
+impl CudaRowMajorCosetExtensionGraphKey {
+    fn from_buffers(
+        values: &CudaDeviceBuffer,
+        out: &CudaDeviceBuffer,
+        workspace: &CudaDeviceBuffer,
+    ) -> Self {
+        Self {
+            values_ptr: values.as_raw_ptr() as usize,
+            values_len: values.len(),
+            out_ptr: out.as_raw_ptr() as usize,
+            out_len: out.len(),
+            workspace_ptr: workspace.as_raw_ptr() as usize,
+            workspace_len: workspace.len(),
+        }
+    }
 }
 
 impl CudaRowMajorCosetExtensionGraphRunner {
@@ -51,7 +69,7 @@ impl CudaRowMajorCosetExtensionGraphRunner {
         out: &mut CudaDeviceBuffer,
         workspace: &mut CudaDeviceBuffer,
     ) -> Result<(), AccelError> {
-        let graph_key = Self::graph_key(values, out, workspace);
+        let graph_key = CudaRowMajorCosetExtensionGraphKey::from_buffers(values, out, workspace);
         if self.exec.is_none() || self.graph_key != Some(graph_key) {
             let graph = self.capture(values, out, workspace)?;
             if let Some(exec) = &mut self.exec {
@@ -79,21 +97,6 @@ impl CudaRowMajorCosetExtensionGraphRunner {
         self.launch_count
     }
 
-    fn graph_key(
-        values: &CudaDeviceBuffer,
-        out: &CudaDeviceBuffer,
-        workspace: &CudaDeviceBuffer,
-    ) -> CudaRowMajorCosetExtensionGraphKey {
-        CudaRowMajorCosetExtensionGraphKey {
-            values_ptr: values.as_raw_ptr() as usize,
-            values_len: values.len(),
-            out_ptr: out.as_raw_ptr() as usize,
-            out_len: out.len(),
-            workspace_ptr: workspace.as_raw_ptr() as usize,
-            workspace_len: workspace.len(),
-        }
-    }
-
     fn capture(
         &self,
         values: &CudaDeviceBuffer,
@@ -107,6 +110,94 @@ impl CudaRowMajorCosetExtensionGraphRunner {
                 out,
                 workspace,
                 self.column_count,
+                self.source_bits,
+                self.target_bits,
+                &self.stream,
+            )?;
+        }
+        capture.end()
+    }
+}
+
+#[derive(Debug)]
+pub struct CudaStridedRowMajorCosetExtensionGraphRunner {
+    stream: CudaStream,
+    graph: Option<CudaGraph>,
+    exec: Option<CudaGraphExec>,
+    graph_key: Option<CudaRowMajorCosetExtensionGraphKey>,
+    view: CudaRowMajorColumnView,
+    source_bits: usize,
+    target_bits: usize,
+    capture_count: usize,
+    launch_count: usize,
+}
+
+impl CudaStridedRowMajorCosetExtensionGraphRunner {
+    pub fn new(
+        view: CudaRowMajorColumnView,
+        source_bits: usize,
+        target_bits: usize,
+    ) -> Result<Self, AccelError> {
+        Ok(Self {
+            stream: CudaStream::new()?,
+            graph: None,
+            exec: None,
+            graph_key: None,
+            view,
+            source_bits,
+            target_bits,
+            capture_count: 0,
+            launch_count: 0,
+        })
+    }
+
+    pub fn run(
+        &mut self,
+        values: &CudaDeviceBuffer,
+        out: &mut CudaDeviceBuffer,
+        workspace: &mut CudaDeviceBuffer,
+    ) -> Result<(), AccelError> {
+        let graph_key = CudaRowMajorCosetExtensionGraphKey::from_buffers(values, out, workspace);
+        if self.exec.is_none() || self.graph_key != Some(graph_key) {
+            let graph = self.capture(values, out, workspace)?;
+            if let Some(exec) = &mut self.exec {
+                exec.update(&graph)?;
+            } else {
+                self.exec = Some(graph.instantiate()?);
+            }
+            self.graph = Some(graph);
+            self.graph_key = Some(graph_key);
+            self.capture_count += 1;
+        }
+        self.exec
+            .as_ref()
+            .expect("graph executable should be initialized")
+            .launch(&self.stream)?;
+        self.launch_count += 1;
+        self.stream.synchronize()
+    }
+
+    pub fn capture_count(&self) -> usize {
+        self.capture_count
+    }
+
+    pub fn launch_count(&self) -> usize {
+        self.launch_count
+    }
+
+    fn capture(
+        &self,
+        values: &CudaDeviceBuffer,
+        out: &mut CudaDeviceBuffer,
+        workspace: &mut CudaDeviceBuffer,
+    ) -> Result<CudaGraph, AccelError> {
+        let capture = self.stream.begin_capture()?;
+        unsafe {
+            cuda_goldilocks_begin_coset_extend_row_major_columns_strided_device_on_stream(
+                values,
+                out,
+                workspace,
+                self.view,
                 self.source_bits,
                 self.target_bits,
                 &self.stream,
