@@ -63,6 +63,7 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "runtime_retained_leaf_digest_opening_checked_acceptance_batch_rows_bound_contract",
             "runtime_retained_leaf_digest_opening_evidence_implies_opening_evidence",
             "runtime_retained_leaf_digest_opening_checked_acceptance_opening_evidence",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_batch_path_and_opening_evidence",
             "runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_retained_rows_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_digest_contract",
@@ -251,16 +252,31 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
         top_level_source.contains("import Lzvm.RetainedLeafDigestOpening"),
         "top-level Lean module should import retained leaf digest opening binding"
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_opening_checked_acceptance_batch_path_and_opening_evidence",
+        &[
+            "runtime_retained_leaf_digest_opening_checked_acceptance_batch_rows_evidence",
+            "retainedLeafDigestOpeningAcceptedImpliesPathBound",
+            "retainedLeafDigestOpeningAcceptedImpliesRootMatchesExpectedRoot",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_opening_evidence",
+        ],
+    );
+    let retained_leaf_fast_path = function_body(
+        &values_source,
+        "fn open_batch_with_retained_leaf_digest_level_cuda",
+        "fn copy_extended_row_values_batch_from_device",
+    );
     assert!(
-        values_source.contains("open_batch_with_retained_leaf_digest_level_cuda")
-            && values_source.contains("retained_leaf_digest_level")
-            && values_source.contains("extended_row_values_from_source_cuda")
+        retained_leaf_fast_path.contains("retained_leaf_digest_level")
+            && retained_leaf_fast_path.contains("extended_row_values_from_source_cuda")
             && values_source
                 .contains("cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device")
             && values_source.contains(
                 "cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device"
             )
-            && values_source.contains("opening_path_siblings(*row)")
+            && retained_leaf_fast_path.contains("opening_path_siblings_batch(rows)")
+            && !retained_leaf_fast_path.contains("opening_path_siblings(*row)")
             && !values_source.contains("path.root != expected_root")
             && hot_paths_source
                 .contains("cuda_compact_opening_avoids_redundant_path_root_downloads")
@@ -269,4 +285,15 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             && hot_paths_source.contains("residue weight cache"),
         "runtime retained leaf digest opening should bind retained paths to source-derived rows, shifted-row cache use, and host-known expected roots"
     );
+}
+
+fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+    let start_index = source
+        .find(start)
+        .unwrap_or_else(|| panic!("{start} should appear in source"));
+    let rest = &source[start_index..];
+    let end_index = rest
+        .find(end)
+        .unwrap_or_else(|| panic!("{end} should appear after {start}"));
+    &rest[..end_index]
 }

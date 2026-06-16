@@ -968,6 +968,69 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_opening_evidence
       requiresExternalSource
       evidence
 
+theorem runtime_retained_leaf_digest_opening_checked_acceptance_batch_path_and_opening_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeBatchWitnessOpeningRowsEvidence
+            system
+            validation.batchRowsValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ validation.retainedLeafDigestPathBound artifact publicInput proof
+          /\ validation.retainedLeafDigestRootMatchesExpectedRoot artifact publicInput proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.batchRowsValidation.openingSegmentValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have batchEvidence :=
+    runtime_retained_leaf_digest_opening_checked_acceptance_batch_rows_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have pathBound :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesPathBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have rootMatches :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRootMatchesExpectedRoot
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingEvidence :=
+    runtime_retained_leaf_digest_opening_checked_acceptance_opening_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    And.intro batchEvidence
+      (And.intro pathBound
+        (And.intro rootMatches openingEvidence))
+
 theorem runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_contract
     {system : VerifierModel}
     (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
