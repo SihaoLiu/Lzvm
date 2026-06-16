@@ -49,6 +49,12 @@ HEADER = (
     "leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure,"
     "trace_to_leaf_ratio,primary_bottleneck"
 )
+AGGREGATE_HEADER = (
+    "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
+    "total_median_ms,total_max_ms,sample_spread_pct,close_samples,max_outlier"
+)
+CLOSE_SAMPLE_SPREAD_PCT = 5.0
+OUTLIER_RATIO_THRESHOLD = 1.5
 
 TIMING_KEYS = {
     TOTAL_MS_KEY,
@@ -124,8 +130,7 @@ def primary_bottleneck(
     return name if value > 0.0 else "total" if total_ms > 0 else "unknown"
 
 
-def summarize_profile(label: str, text: str) -> str:
-    values = parse_timing_log(text)
+def summarize_profile_values(label: str, values: dict[str, int]) -> str:
     missing = [
         key
         for key in [ROOT_COUNT_KEY, ROOT_GROUPS_KEY, ROOT_MAX_GROUP_KEY]
@@ -205,10 +210,63 @@ def summarize_profile(label: str, text: str) -> str:
     )
 
 
+def summarize_profile(label: str, text: str) -> str:
+    return summarize_profile_values(label, parse_timing_log(text))
+
+
+def median_int(values: list[int]) -> float:
+    ordered = sorted(values)
+    midpoint = len(ordered) // 2
+    if len(ordered) % 2 == 1:
+        return float(ordered[midpoint])
+    return (ordered[midpoint - 1] + ordered[midpoint]) / 2.0
+
+
+def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> str:
+    total_count = len(parsed_inputs)
+    totals = [
+        values[TOTAL_MS_KEY]
+        for _, values in parsed_inputs
+        if values.get(TOTAL_MS_KEY, 0) > 0
+    ]
+    valid_total_count = len(totals)
+    if not totals:
+        return f"aggregate,{total_count},0,0,0.000,0.000,0,0.000,no,no"
+
+    total_min_ms = min(totals)
+    total_mean_ms = sum(totals) / valid_total_count
+    total_median_ms = median_int(totals)
+    total_max_ms = max(totals)
+    sample_spread_pct = (
+        (total_max_ms - total_min_ms) * 100.0 / total_median_ms
+        if total_median_ms
+        else 0.0
+    )
+    close_samples = (
+        "yes"
+        if valid_total_count >= 3 and sample_spread_pct <= CLOSE_SAMPLE_SPREAD_PCT
+        else "no"
+    )
+    max_outlier = (
+        "yes"
+        if valid_total_count >= 3 and total_max_ms > total_median_ms * OUTLIER_RATIO_THRESHOLD
+        else "no"
+    )
+    return (
+        f"aggregate,{total_count},{valid_total_count},{total_min_ms},"
+        f"{total_mean_ms:.3f},{total_median_ms:.3f},{total_max_ms},"
+        f"{sample_spread_pct:.3f},{close_samples},{max_outlier}"
+    )
+
+
 def print_summary(inputs: list[tuple[str, str]]) -> None:
+    parsed_inputs = [(label, parse_timing_log(text)) for label, text in inputs]
     print(HEADER)
-    for label, text in inputs:
-        print(summarize_profile(label, text))
+    for label, values in parsed_inputs:
+        print(summarize_profile_values(label, values))
+    if len(parsed_inputs) > 1:
+        print(AGGREGATE_HEADER)
+        print(summarize_total_samples(parsed_inputs))
 
 
 def self_test() -> None:
@@ -254,6 +312,17 @@ def self_test() -> None:
                 "\n".join(
                     [
                         f"{TOTAL_MS_KEY}=9050",
+                        f"{ROOT_COUNT_KEY}=23",
+                        f"{ROOT_GROUPS_KEY}=1",
+                        f"{ROOT_MAX_GROUP_KEY}=23",
+                    ]
+                ),
+            ),
+            (
+                "slow-sample",
+                "\n".join(
+                    [
+                        f"{TOTAL_MS_KEY}=18100",
                         f"{ROOT_COUNT_KEY}=23",
                         f"{ROOT_GROUPS_KEY}=1",
                         f"{ROOT_MAX_GROUP_KEY}=23",
