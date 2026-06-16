@@ -34,6 +34,21 @@ PARALLEL_LOWER_EMITTED_KEY = "timing_guest_trace_parallel_lower_emitted"
 PARALLEL_LOWER_MAX_REORDER_KEY = "timing_guest_trace_parallel_lower_max_reorder"
 TRACE_REPORTS_KEY = "timing_guest_trace_reports"
 TRACE_REPORT_ROWS_KEY = "timing_guest_trace_report_rows"
+TRACE_SINGLE_ROW_REPORTS_KEY = "timing_guest_trace_single_row_reports"
+TRACE_MULTI_ROW_REPORTS_KEY = "timing_guest_trace_multi_row_reports"
+TRACE_PENDING_DMA_REPORTS_KEY = "timing_guest_trace_pending_dma_reports"
+TRACE_AMO_REPORTS_KEY = "timing_guest_trace_amo_reports"
+TRACE_STORE_CONDITIONAL_REPORTS_KEY = "timing_guest_trace_store_conditional_reports"
+TRACE_EXTERNAL_OP_ROWS_KEY = "timing_guest_trace_external_op_rows"
+TRACE_COPY_ROWS_KEY = "timing_guest_trace_copy_rows"
+TRACE_FLAG_ROWS_KEY = "timing_guest_trace_flag_rows"
+TRACE_PRECOMPILE_ROWS_KEY = "timing_guest_trace_precompile_rows"
+TRACE_INDIRECT_MEMORY_ROWS_KEY = "timing_guest_trace_indirect_memory_rows"
+TRACE_REGISTER_SOURCE_READS_KEY = "timing_guest_trace_register_source_reads"
+TRACE_MEMORY_SOURCE_READS_KEY = "timing_guest_trace_memory_source_reads"
+TRACE_REGISTER_STORE_ROWS_KEY = "timing_guest_trace_register_store_rows"
+TRACE_MEMORY_STORE_ROWS_KEY = "timing_guest_trace_memory_store_rows"
+TRACE_NO_STORE_ROWS_KEY = "timing_guest_trace_no_store_rows"
 TRACE_REPORT_DETAIL_SAMPLES_KEY = "timing_guest_trace_report_detail_samples"
 TRACE_REPORT_SAMPLED_NS_KEY = "timing_guest_trace_report_sampled_ns"
 TRACE_REPORT_LOWERING_SAMPLED_NS_KEY = "timing_guest_trace_report_lowering_sampled_ns"
@@ -207,6 +222,12 @@ HEADER = (
     "perf_memmove_trace_slice_pct,perf_memmove_source_hint,"
     "perf_pending_segment_drop_self_pct,perf_sha256_self_pct,"
     "perf_sha256_source_hint,cpu_trace_hotspot_hint,"
+    "single_row_reports,multi_row_reports,pending_dma_reports,amo_reports,"
+    "store_conditional_reports,external_op_rows,copy_rows,flag_rows,"
+    "precompile_rows,indirect_memory_rows,indirect_memory_row_pct,"
+    "register_source_reads,memory_source_reads,memory_source_read_pct,"
+    "register_store_rows,memory_store_rows,memory_store_row_pct,"
+    "no_store_rows,no_store_row_pct,"
     "trace_report_detail_samples,trace_report_detail_sample_pct,"
     "trace_report_detail_sample_ppm,trace_report_detail_sample_hint,"
     "trace_report_detail_avg_ns,"
@@ -245,6 +266,21 @@ TIMING_KEYS = {
     PARALLEL_LOWER_MAX_REORDER_KEY,
     TRACE_REPORTS_KEY,
     TRACE_REPORT_ROWS_KEY,
+    TRACE_SINGLE_ROW_REPORTS_KEY,
+    TRACE_MULTI_ROW_REPORTS_KEY,
+    TRACE_PENDING_DMA_REPORTS_KEY,
+    TRACE_AMO_REPORTS_KEY,
+    TRACE_STORE_CONDITIONAL_REPORTS_KEY,
+    TRACE_EXTERNAL_OP_ROWS_KEY,
+    TRACE_COPY_ROWS_KEY,
+    TRACE_FLAG_ROWS_KEY,
+    TRACE_PRECOMPILE_ROWS_KEY,
+    TRACE_INDIRECT_MEMORY_ROWS_KEY,
+    TRACE_REGISTER_SOURCE_READS_KEY,
+    TRACE_MEMORY_SOURCE_READS_KEY,
+    TRACE_REGISTER_STORE_ROWS_KEY,
+    TRACE_MEMORY_STORE_ROWS_KEY,
+    TRACE_NO_STORE_ROWS_KEY,
     TRACE_REPORT_DETAIL_SAMPLES_KEY,
     TRACE_REPORT_SAMPLED_NS_KEY,
     TRACE_REPORT_LOWERING_SAMPLED_NS_KEY,
@@ -821,6 +857,43 @@ def summarize_profile_values(
     parallel_lower_max_reorder = values.get(PARALLEL_LOWER_MAX_REORDER_KEY, 0)
     trace_reports = values.get(TRACE_REPORTS_KEY, 0)
     trace_report_rows = values.get(TRACE_REPORT_ROWS_KEY, 0)
+    single_row_reports = values.get(TRACE_SINGLE_ROW_REPORTS_KEY, 0)
+    multi_row_reports = values.get(TRACE_MULTI_ROW_REPORTS_KEY, 0)
+    pending_dma_reports = values.get(TRACE_PENDING_DMA_REPORTS_KEY, 0)
+    amo_reports = values.get(TRACE_AMO_REPORTS_KEY, 0)
+    store_conditional_reports = values.get(
+        TRACE_STORE_CONDITIONAL_REPORTS_KEY, 0
+    )
+    external_op_rows = values.get(TRACE_EXTERNAL_OP_ROWS_KEY, 0)
+    copy_rows = values.get(TRACE_COPY_ROWS_KEY, 0)
+    flag_rows = values.get(TRACE_FLAG_ROWS_KEY, 0)
+    precompile_rows = values.get(TRACE_PRECOMPILE_ROWS_KEY, 0)
+    indirect_memory_rows = values.get(TRACE_INDIRECT_MEMORY_ROWS_KEY, 0)
+    register_source_reads = values.get(TRACE_REGISTER_SOURCE_READS_KEY, 0)
+    memory_source_reads = values.get(TRACE_MEMORY_SOURCE_READS_KEY, 0)
+    register_store_rows = values.get(TRACE_REGISTER_STORE_ROWS_KEY, 0)
+    memory_store_rows = values.get(TRACE_MEMORY_STORE_ROWS_KEY, 0)
+    no_store_rows = values.get(TRACE_NO_STORE_ROWS_KEY, 0)
+    indirect_memory_row_pct = (
+        indirect_memory_rows * 100.0 / trace_report_rows
+        if trace_report_rows
+        else 0.0
+    )
+    memory_source_read_pct = (
+        memory_source_reads * 100.0 / trace_report_rows
+        if trace_report_rows
+        else 0.0
+    )
+    memory_store_row_pct = (
+        memory_store_rows * 100.0 / trace_report_rows
+        if trace_report_rows
+        else 0.0
+    )
+    no_store_row_pct = (
+        no_store_rows * 100.0 / trace_report_rows
+        if trace_report_rows
+        else 0.0
+    )
     trace_report_detail_samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
     trace_report_detail_sample_pct = (
         trace_report_detail_samples * 100.0 / trace_reports if trace_reports else 0.0
@@ -1116,6 +1189,14 @@ def summarize_profile_values(
         f"{lowered_report_row_pct:.3f},{memmove_pct:.3f},{memmove_guest_machine_pct:.3f},"
         f"{memmove_trace_slice_pct:.3f},{memmove_hint},"
         f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint},"
+        f"{single_row_reports},{multi_row_reports},{pending_dma_reports},"
+        f"{amo_reports},{store_conditional_reports},{external_op_rows},"
+        f"{copy_rows},{flag_rows},{precompile_rows},"
+        f"{indirect_memory_rows},{indirect_memory_row_pct:.3f},"
+        f"{register_source_reads},{memory_source_reads},"
+        f"{memory_source_read_pct:.3f},{register_store_rows},"
+        f"{memory_store_rows},{memory_store_row_pct:.3f},"
+        f"{no_store_rows},{no_store_row_pct:.3f},"
         f"{trace_report_detail_samples},{trace_report_detail_sample_pct:.3f},"
         f"{trace_report_detail_sample_ppm:.3f},{trace_report_detail_hint},"
         f"{trace_report_detail_avg_ns},"

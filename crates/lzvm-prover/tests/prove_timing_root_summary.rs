@@ -232,6 +232,73 @@ fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_trace_shape_counts() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=9000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_reports=1000",
+        "timing_guest_trace_report_rows=1100",
+        "timing_guest_trace_single_row_reports=900",
+        "timing_guest_trace_multi_row_reports=100",
+        "timing_guest_trace_pending_dma_reports=50",
+        "timing_guest_trace_amo_reports=25",
+        "timing_guest_trace_store_conditional_reports=10",
+        "timing_guest_trace_external_op_rows=300",
+        "timing_guest_trace_copy_rows=400",
+        "timing_guest_trace_flag_rows=20",
+        "timing_guest_trace_precompile_rows=8",
+        "timing_guest_trace_indirect_memory_rows=500",
+        "timing_guest_trace_register_source_reads=1400",
+        "timing_guest_trace_memory_source_reads=300",
+        "timing_guest_trace_register_store_rows=700",
+        "timing_guest_trace_memory_store_rows=200",
+        "timing_guest_trace_no_store_rows=100",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains(
+            "single_row_reports,multi_row_reports,pending_dma_reports,amo_reports,store_conditional_reports,external_op_rows,copy_rows,flag_rows,precompile_rows,indirect_memory_rows,indirect_memory_row_pct,register_source_reads,memory_source_reads,memory_source_read_pct,register_store_rows,memory_store_rows,memory_store_row_pct,no_store_rows,no_store_row_pct"
+        ),
+        "prove timing root summary should expose trace shape columns: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(
+            ",900,100,50,25,10,300,400,20,8,500,45.455,1400,300,27.273,700,200,18.182,100,9.091,"
+        ),
+        "prove timing root summary should classify trace shape ratios: stdout={stdout}"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_tiny_detail_sample_coverage_ppm() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
