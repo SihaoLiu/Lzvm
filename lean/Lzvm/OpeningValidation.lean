@@ -944,6 +944,52 @@ theorem runtime_opening_evidence_implies_external_source_requirement
       requiresExternalSource
       evidence.left
 
+theorem runtime_opening_checked_acceptance_runtime_soundness_evidence_from_opening_checks
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeSoundnessEvidence
+          system
+          validation.runtimeSoundnessValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have runtimeAccepted :=
+    validation.openingAcceptedImpliesRuntimeSoundnessAccepted
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have transcriptSound :=
+    runtime_transcript_binding_checked_acceptance_sound
+      assumptions
+      validation.runtimeSoundnessValidation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      runtimeAccepted.left
+  have coreContract :=
+    sound_witness_implies_verifier_core_contract
+      transcriptSound.right.right.right
+  have pcsAndFri :=
+    runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro transcriptSound.left
+      (And.intro transcriptSound.right.left
+        (And.intro transcriptSound.right.right.left
+          (And.intro coreContract.right.left
+            (And.intro runtimeAccepted.right pcsAndFri))))
+
 theorem runtime_opening_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

@@ -60,6 +60,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "runtime_witness_opening_arity_four_root_commits_to_leaf_at_index_from_bundle",
             "runtime_witness_opening_nary_checked_acceptance_witness_bound_from_bundle",
             "runtime_opening_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle",
+            "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
             "runtime_constant_opening_nary_checked_acceptance_constant_bound_from_hash_assumption",
             "runtime_witness_opening_nary_checked_acceptance_witness_bound_from_hash_assumption",
             "runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
@@ -148,6 +149,35 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
         &[
             "validation.openingAcceptedImpliesConstantOpeningsBound",
             "validation.openingAcceptedImpliesWitnessOpeningsBound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
+        &[
+            "AssumptionBundle system",
+            "RuntimeOpeningValidation system",
+            "RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof",
+            "RuntimeSoundnessEvidence",
+            "validation.runtimeSoundnessValidation",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
+        &[
+            "runtime_transcript_binding_checked_acceptance_sound",
+            "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
+            "validation.openingAcceptedImpliesRuntimeSoundnessAccepted",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
+        &[
+            "required_crypto_assumptions_pcs_opening_soundness",
+            "required_crypto_assumptions_fri_query_soundness",
+            "runtime_soundness_checked_acceptance_evidence",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
