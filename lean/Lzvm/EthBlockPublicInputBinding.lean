@@ -101,6 +101,67 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_artifact_bindi
       proof
       accepted
 
+theorem runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract
+    {system : VerifierModel}
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeEthBlockPublicInputBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingEvidence
+            system
+            validation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have ethEvidence :=
+    runtime_eth_block_public_input_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactAccepted :=
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactEvidence :=
+    runtime_proof_artifact_binding_checked_acceptance_evidence
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have runtimeEvidence :=
+    runtime_proof_artifact_binding_evidence_implies_runtime_evidence
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactEvidence
+  exact
+    And.intro ethEvidence
+      (And.intro artifactEvidence runtimeEvidence)
+
 theorem runtime_eth_block_public_input_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -132,8 +193,8 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_sound
             proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof accepted
-  have ethEvidence :=
-    runtime_eth_block_public_input_binding_checked_acceptance_evidence
+  have evidenceContract :=
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract
       validation
       artifact
       publicInput
@@ -154,7 +215,10 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_sound
       publicInput
       proof
       artifactAccepted
-  exact And.intro ethEvidence artifactSound
+  exact
+    And.intro evidenceContract.left
+      (And.intro evidenceContract.right.left
+        (And.intro evidenceContract.right.right artifactSound.right.right))
 
 theorem runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract
     {system : VerifierModel}

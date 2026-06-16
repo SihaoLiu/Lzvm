@@ -29,8 +29,28 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract",
             "runtime_eth_block_public_input_binding_checked_acceptance_sound",
             "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract",
+        &[
+            "RuntimeEthBlockPublicInputBindingEvidence",
+            "RuntimeProofArtifactBindingEvidence",
+            "RuntimeArtifactEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract",
+        &["abstract_verifier_sound"],
     );
 }
