@@ -916,6 +916,7 @@ pub(crate) struct ZiskMainDeviceTraceDescriptors {
     unpaired_value_count: usize,
     unpaired_high32_nonzero_count: usize,
     unpaired_high32_nonzero_row_count: usize,
+    record_unpaired_high32_stats_enabled: bool,
     row_count: usize,
     column_count: usize,
     terminal_pc: u64,
@@ -937,11 +938,12 @@ pub(crate) struct GuestPcTraceDeviceTraceStage {
 impl ZiskMainDeviceTraceDescriptors {
     #[cfg(test)]
     fn new(row_count: usize, column_count: usize, terminal_pc: u64) -> Self {
-        Self::new_with_descriptor_words(
+        Self::new_with_descriptor_words_and_stats(
             row_count,
             column_count,
             terminal_pc,
             ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS,
+            true,
         )
     }
 
@@ -950,6 +952,22 @@ impl ZiskMainDeviceTraceDescriptors {
         column_count: usize,
         terminal_pc: u64,
         descriptor_words: usize,
+    ) -> Self {
+        Self::new_with_descriptor_words_and_stats(
+            row_count,
+            column_count,
+            terminal_pc,
+            descriptor_words,
+            guest_pc_trace_descriptor_high32_stats_enabled(),
+        )
+    }
+
+    fn new_with_descriptor_words_and_stats(
+        row_count: usize,
+        column_count: usize,
+        terminal_pc: u64,
+        descriptor_words: usize,
+        record_unpaired_high32_stats_enabled: bool,
     ) -> Self {
         debug_assert!(
             descriptor_words == ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS
@@ -962,6 +980,7 @@ impl ZiskMainDeviceTraceDescriptors {
             unpaired_value_count: 0,
             unpaired_high32_nonzero_count: 0,
             unpaired_high32_nonzero_row_count: 0,
+            record_unpaired_high32_stats_enabled,
             row_count,
             column_count,
             terminal_pc,
@@ -1185,13 +1204,15 @@ fn append_main_device_trace_descriptor(
     let b_prev_mem_step = values.register_accesses.b_prev_mem_step.unwrap_or(0);
     let store_prev_mem_step = values.register_accesses.store_prev_mem_step.unwrap_or(0);
     let store_prev_value = values.register_accesses.store_prev_value.unwrap_or(0);
-    descriptors.record_unpaired_high32_stats(zisk_main_unpaired_descriptor_values(
-        values,
-        a_payload,
-        b_payload,
-        store_payload,
-        store_prev_value,
-    ));
+    if descriptors.record_unpaired_high32_stats_enabled {
+        descriptors.record_unpaired_high32_stats(zisk_main_unpaired_descriptor_values(
+            values,
+            a_payload,
+            b_payload,
+            store_payload,
+            store_prev_value,
+        ));
+    }
     if descriptors.descriptor_words == ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS {
         if let Some(compact_words) = zisk_main_compact_device_trace_descriptor_words(
             values,
@@ -1548,6 +1569,11 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
 #[cfg(feature = "cuda")]
 fn guest_pc_descriptor_stream_ingress_enabled() -> bool {
     env_flag_enabled("LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS", false)
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_trace_descriptor_high32_stats_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_DESCRIPTOR_HIGH32_STATS", false)
 }
 
 #[cfg(feature = "cuda")]

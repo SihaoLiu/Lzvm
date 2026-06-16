@@ -4021,8 +4021,14 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
     assert!(
         descriptor_fields.contains("unpaired_value_count")
             && descriptor_fields.contains("unpaired_high32_nonzero_count")
-            && descriptor_fields.contains("unpaired_high32_nonzero_row_count"),
+            && descriptor_fields.contains("unpaired_high32_nonzero_row_count")
+            && descriptor_fields.contains("record_unpaired_high32_stats_enabled"),
         "guest PC descriptors should retain high-word occupancy counters"
+    );
+    assert!(
+        backend_source.contains("fn guest_pc_trace_descriptor_high32_stats_enabled")
+            && backend_source.contains("LZVM_GUEST_PC_TRACE_DESCRIPTOR_HIGH32_STATS"),
+        "guest PC descriptor high-word occupancy scans should be an opt-in diagnostic"
     );
 
     let append_descriptor_body = function_body(
@@ -4031,9 +4037,10 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         "#[cfg(feature = \"cuda\")]\n#[allow(clippy::too_many_arguments)]",
     );
     assert!(
-        append_descriptor_body.contains("record_unpaired_high32_stats")
+        append_descriptor_body.contains("if descriptors.record_unpaired_high32_stats_enabled")
+            && append_descriptor_body.contains("record_unpaired_high32_stats")
             && append_descriptor_body.contains("zisk_main_unpaired_descriptor_values"),
-        "guest PC descriptor append should record high-word occupancy from unpaired descriptor fields"
+        "guest PC descriptor append should only scan high-word occupancy when the diagnostic is enabled"
     );
 
     let material_body = function_body(
