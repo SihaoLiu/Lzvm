@@ -165,6 +165,27 @@ theorem runtime_external_source_checked_acceptance_sound
       (And.intro externalEvidence
         (And.intro externalSound.right.left externalSound.right.right))
 
+theorem runtime_external_source_checked_acceptance_pcs_without_assumptions
+    {system : VerifierModel}
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof ->
+        system.pcsOpeningsValid publicInput proof := by
+  intro artifact publicInput proof checked
+  exact
+    external_source_opening_evidence_implies_pcs_openings
+      sourceValidation
+      publicInput
+      proof
+      checked.right
+
 theorem runtime_external_source_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -243,6 +264,37 @@ theorem runtime_guarded_external_source_checked_acceptance_sound
   exact
     And.intro artifactEvidence
       (And.intro sourceRequirement (And.intro pcsOpenings soundWitness))
+
+theorem runtime_guarded_external_source_required_pcs_without_assumptions
+    {system : VerifierModel}
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeGuardedExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          system.pcsOpeningsValid publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have externalEvidence :=
+    external_source_opening_requirement_implies_evidence
+      sourceValidation
+      publicInput
+      proof
+      requiresExternalSource
+      checked.right
+      required
+  exact
+    external_source_opening_evidence_implies_pcs_openings
+      sourceValidation
+      publicInput
+      proof
+      externalEvidence
 
 theorem runtime_guarded_external_source_checked_acceptance_verifier_core_contract
     {system : VerifierModel}

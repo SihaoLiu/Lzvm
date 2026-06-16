@@ -27,10 +27,35 @@ fn lean_runtime_external_source_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_external_source_checked_acceptance_pcs_without_assumptions",
             "runtime_external_source_checked_acceptance_sound",
             "runtime_external_source_checked_acceptance_verifier_core_contract",
+            "runtime_guarded_external_source_required_pcs_without_assumptions",
             "runtime_guarded_external_source_checked_acceptance_sound",
             "runtime_guarded_external_source_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_external_source_checked_acceptance_pcs_without_assumptions",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_external_source_checked_acceptance_pcs_without_assumptions",
+        &["system.pcsOpeningsValid publicInput proof"],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_guarded_external_source_required_pcs_without_assumptions",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_guarded_external_source_required_pcs_without_assumptions",
+        &[
+            "requiresExternalSource ->",
+            "system.pcsOpeningsValid publicInput proof",
         ],
     );
 }
