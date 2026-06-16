@@ -23,6 +23,17 @@ PARALLEL_LOWER_DISPATCHED_KEY = "timing_guest_trace_parallel_lower_dispatched"
 PARALLEL_LOWER_RECEIVED_KEY = "timing_guest_trace_parallel_lower_received"
 PARALLEL_LOWER_EMITTED_KEY = "timing_guest_trace_parallel_lower_emitted"
 PARALLEL_LOWER_MAX_REORDER_KEY = "timing_guest_trace_parallel_lower_max_reorder"
+DESCRIPTOR_ROWS_KEY = "timing_guest_trace_descriptor_rows"
+DESCRIPTOR_COMPACT_ROWS_KEY = "timing_guest_trace_descriptor_compact_rows"
+DESCRIPTOR_WIDE_ROWS_KEY = "timing_guest_trace_descriptor_wide_rows"
+DESCRIPTOR_UPLOAD_BYTES_KEY = "timing_guest_device_source_descriptor_upload_bytes"
+DESCRIPTOR_UPLOAD_ROWS_KEY = "timing_guest_device_source_descriptor_upload_rows"
+DESCRIPTOR_HIGH32_VALUES_KEY = (
+    "timing_guest_trace_descriptor_unpaired_high32_nonzero_values"
+)
+DESCRIPTOR_HIGH32_ROWS_KEY = (
+    "timing_guest_trace_descriptor_unpaired_high32_nonzero_rows"
+)
 SEED_DIRECT_LIFT_ATTEMPTS_KEY = "timing_guest_trace_seed_direct_lift_attempts"
 SEED_DIRECT_LIFT_SUCCESSES_KEY = "timing_guest_trace_seed_direct_lift_successes"
 SEED_FULL_ADVANCES_KEY = "timing_guest_trace_seed_full_advances"
@@ -69,7 +80,10 @@ HEADER = (
     "segment_commit_ms,stream_commit_residual_ms,segment_receive_wait_ms,"
     "pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,"
     "parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,"
-    "parallel_lower_max_reorder,seed_direct_lift_attempts,"
+    "parallel_lower_max_reorder,descriptor_rows,descriptor_compact_rows,"
+    "descriptor_wide_rows,descriptor_upload_bytes,descriptor_bytes_per_row,"
+    "descriptor_high32_nonzero_values,descriptor_high32_nonzero_rows,"
+    "descriptor_high32_row_pct,descriptor_shape_hint,seed_direct_lift_attempts,"
     "seed_direct_lift_successes,seed_full_advances,"
     "finish_opening_ms,opening_query_units,opening_single_query_units,"
     "retained_leaf_openings,retained_leaf_rows,retained_leaf_all_single_row,"
@@ -108,6 +122,13 @@ TIMING_KEYS = {
     PARALLEL_LOWER_RECEIVED_KEY,
     PARALLEL_LOWER_EMITTED_KEY,
     PARALLEL_LOWER_MAX_REORDER_KEY,
+    DESCRIPTOR_ROWS_KEY,
+    DESCRIPTOR_COMPACT_ROWS_KEY,
+    DESCRIPTOR_WIDE_ROWS_KEY,
+    DESCRIPTOR_UPLOAD_BYTES_KEY,
+    DESCRIPTOR_UPLOAD_ROWS_KEY,
+    DESCRIPTOR_HIGH32_VALUES_KEY,
+    DESCRIPTOR_HIGH32_ROWS_KEY,
     SEED_DIRECT_LIFT_ATTEMPTS_KEY,
     SEED_DIRECT_LIFT_SUCCESSES_KEY,
     SEED_FULL_ADVANCES_KEY,
@@ -325,6 +346,28 @@ def sha256_source_hint(perf_hotspots: dict[str, float]) -> str:
     return "sha256_digest_unresolved"
 
 
+def descriptor_shape_hint(
+    descriptor_rows: int,
+    compact_rows: int,
+    wide_rows: int,
+    high32_rows_present: bool,
+    high32_row_pct: float,
+) -> str:
+    if descriptor_rows <= 0:
+        return "none"
+    if wide_rows > 0:
+        return "wide_descriptor_fallback_present"
+    if compact_rows != descriptor_rows:
+        return "descriptor_row_count_mismatch"
+    if not high32_rows_present:
+        return "compact_descriptor_no_high32_stats"
+    if high32_row_pct == 0.0:
+        return "high32_zero_compact_descriptor"
+    if high32_row_pct < 5.0:
+        return "high32_sparse_compact_descriptor"
+    return "high32_dense_compact_descriptor"
+
+
 def root_pipeline_policy_hint(
     input_bytes: int,
     root_count: int,
@@ -397,6 +440,29 @@ def summarize_profile_values(
     parallel_lower_received = values.get(PARALLEL_LOWER_RECEIVED_KEY, 0)
     parallel_lower_emitted = values.get(PARALLEL_LOWER_EMITTED_KEY, 0)
     parallel_lower_max_reorder = values.get(PARALLEL_LOWER_MAX_REORDER_KEY, 0)
+    descriptor_rows = values.get(DESCRIPTOR_ROWS_KEY, 0)
+    descriptor_compact_rows = values.get(DESCRIPTOR_COMPACT_ROWS_KEY, 0)
+    descriptor_wide_rows = values.get(DESCRIPTOR_WIDE_ROWS_KEY, 0)
+    descriptor_upload_bytes = values.get(DESCRIPTOR_UPLOAD_BYTES_KEY, 0)
+    descriptor_upload_rows = values.get(DESCRIPTOR_UPLOAD_ROWS_KEY, 0)
+    descriptor_bytes_per_row = (
+        descriptor_upload_bytes / descriptor_upload_rows
+        if descriptor_upload_rows
+        else 0.0
+    )
+    descriptor_high32_values = values.get(DESCRIPTOR_HIGH32_VALUES_KEY, 0)
+    descriptor_high32_rows_present = DESCRIPTOR_HIGH32_ROWS_KEY in values
+    descriptor_high32_rows = values.get(DESCRIPTOR_HIGH32_ROWS_KEY, 0)
+    descriptor_high32_row_pct = (
+        descriptor_high32_rows * 100.0 / descriptor_rows if descriptor_rows else 0.0
+    )
+    descriptor_hint = descriptor_shape_hint(
+        descriptor_rows,
+        descriptor_compact_rows,
+        descriptor_wide_rows,
+        descriptor_high32_rows_present,
+        descriptor_high32_row_pct,
+    )
     seed_direct_lift_attempts = values.get(SEED_DIRECT_LIFT_ATTEMPTS_KEY, 0)
     seed_direct_lift_successes = values.get(SEED_DIRECT_LIFT_SUCCESSES_KEY, 0)
     seed_full_advances = values.get(SEED_FULL_ADVANCES_KEY, 0)
@@ -483,7 +549,12 @@ def summarize_profile_values(
         f"{pending_receive_wait_ms},{pending_send_wait_ms},"
         f"{parallel_lower_workers},{parallel_lower_dispatched},"
         f"{parallel_lower_received},{parallel_lower_emitted},"
-        f"{parallel_lower_max_reorder},{seed_direct_lift_attempts},"
+        f"{parallel_lower_max_reorder},{descriptor_rows},"
+        f"{descriptor_compact_rows},{descriptor_wide_rows},"
+        f"{descriptor_upload_bytes},{descriptor_bytes_per_row:.3f},"
+        f"{descriptor_high32_values},{descriptor_high32_rows},"
+        f"{descriptor_high32_row_pct:.3f},{descriptor_hint},"
+        f"{seed_direct_lift_attempts},"
         f"{seed_direct_lift_successes},{seed_full_advances},"
         f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
         f"{retained_leaf_openings},{retained_leaf_rows},"
@@ -590,6 +661,13 @@ def self_test() -> None:
                         f"{PARALLEL_LOWER_RECEIVED_KEY}=23",
                         f"{PARALLEL_LOWER_EMITTED_KEY}=23",
                         f"{PARALLEL_LOWER_MAX_REORDER_KEY}=1",
+                        f"{DESCRIPTOR_ROWS_KEY}=1000",
+                        f"{DESCRIPTOR_COMPACT_ROWS_KEY}=1000",
+                        f"{DESCRIPTOR_WIDE_ROWS_KEY}=0",
+                        f"{DESCRIPTOR_UPLOAD_BYTES_KEY}=88000",
+                        f"{DESCRIPTOR_UPLOAD_ROWS_KEY}=1000",
+                        f"{DESCRIPTOR_HIGH32_VALUES_KEY}=6",
+                        f"{DESCRIPTOR_HIGH32_ROWS_KEY}=4",
                         f"{SEED_DIRECT_LIFT_ATTEMPTS_KEY}=22",
                         f"{SEED_DIRECT_LIFT_SUCCESSES_KEY}=22",
                         f"{SEED_FULL_ADVANCES_KEY}=1",
