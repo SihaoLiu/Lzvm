@@ -14,6 +14,16 @@ STREAM_ELAPSED_MS_KEY = "timing_guest_trace_stream_elapsed_ms"
 STREAM_WORKER_MS_KEY = "timing_guest_trace_stream_ms"
 SEGMENT_COMMIT_MS_KEY = "timing_guest_segment_commit_ms"
 SEGMENT_RECEIVE_WAIT_MS_KEY = "timing_guest_trace_segment_receive_wait_ms"
+PENDING_RECEIVE_WAIT_MS_KEY = "timing_guest_trace_pending_receive_wait_ms"
+PENDING_SEND_WAIT_MS_KEY = "timing_guest_trace_pending_send_wait_ms"
+PARALLEL_LOWER_WORKERS_KEY = "timing_guest_trace_parallel_lower_workers"
+PARALLEL_LOWER_DISPATCHED_KEY = "timing_guest_trace_parallel_lower_dispatched"
+PARALLEL_LOWER_RECEIVED_KEY = "timing_guest_trace_parallel_lower_received"
+PARALLEL_LOWER_EMITTED_KEY = "timing_guest_trace_parallel_lower_emitted"
+PARALLEL_LOWER_MAX_REORDER_KEY = "timing_guest_trace_parallel_lower_max_reorder"
+SEED_DIRECT_LIFT_ATTEMPTS_KEY = "timing_guest_trace_seed_direct_lift_attempts"
+SEED_DIRECT_LIFT_SUCCESSES_KEY = "timing_guest_trace_seed_direct_lift_successes"
+SEED_FULL_ADVANCES_KEY = "timing_guest_trace_seed_full_advances"
 FINISH_OPENING_MS_KEY = "timing_finish_witness_opening_ms"
 LEAF_KERNEL_MS_KEY = "timing_guest_stage_leaf_kernel_work_ms"
 LEAF_COSET_CALLS_KEY = "timing_guest_stage_leaf_coset_extend_calls"
@@ -28,6 +38,10 @@ DIRECT_D2H_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_wait_ns"
 HEADER = (
     "profile,total_ms,runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,"
     "segment_commit_ms,stream_commit_residual_ms,segment_receive_wait_ms,"
+    "pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,"
+    "parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,"
+    "parallel_lower_max_reorder,seed_direct_lift_attempts,"
+    "seed_direct_lift_successes,seed_full_advances,"
     "finish_opening_ms,root_count,materialization_groups,"
     "materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,"
     "leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
@@ -44,6 +58,16 @@ TIMING_KEYS = {
     STREAM_WORKER_MS_KEY,
     SEGMENT_COMMIT_MS_KEY,
     SEGMENT_RECEIVE_WAIT_MS_KEY,
+    PENDING_RECEIVE_WAIT_MS_KEY,
+    PENDING_SEND_WAIT_MS_KEY,
+    PARALLEL_LOWER_WORKERS_KEY,
+    PARALLEL_LOWER_DISPATCHED_KEY,
+    PARALLEL_LOWER_RECEIVED_KEY,
+    PARALLEL_LOWER_EMITTED_KEY,
+    PARALLEL_LOWER_MAX_REORDER_KEY,
+    SEED_DIRECT_LIFT_ATTEMPTS_KEY,
+    SEED_DIRECT_LIFT_SUCCESSES_KEY,
+    SEED_FULL_ADVANCES_KEY,
     FINISH_OPENING_MS_KEY,
     ROOT_COUNT_KEY,
     ROOT_GROUPS_KEY,
@@ -120,6 +144,16 @@ def summarize_profile(label: str, text: str) -> str:
         stream_elapsed_ms - stream_worker_ms - segment_commit_ms
     )
     segment_receive_wait_ms = values.get(SEGMENT_RECEIVE_WAIT_MS_KEY, 0)
+    pending_receive_wait_ms = values.get(PENDING_RECEIVE_WAIT_MS_KEY, 0)
+    pending_send_wait_ms = values.get(PENDING_SEND_WAIT_MS_KEY, 0)
+    parallel_lower_workers = values.get(PARALLEL_LOWER_WORKERS_KEY, 0)
+    parallel_lower_dispatched = values.get(PARALLEL_LOWER_DISPATCHED_KEY, 0)
+    parallel_lower_received = values.get(PARALLEL_LOWER_RECEIVED_KEY, 0)
+    parallel_lower_emitted = values.get(PARALLEL_LOWER_EMITTED_KEY, 0)
+    parallel_lower_max_reorder = values.get(PARALLEL_LOWER_MAX_REORDER_KEY, 0)
+    seed_direct_lift_attempts = values.get(SEED_DIRECT_LIFT_ATTEMPTS_KEY, 0)
+    seed_direct_lift_successes = values.get(SEED_DIRECT_LIFT_SUCCESSES_KEY, 0)
+    seed_full_advances = values.get(SEED_FULL_ADVANCES_KEY, 0)
     finish_opening_ms = values.get(FINISH_OPENING_MS_KEY, 0)
     root_count = values[ROOT_COUNT_KEY]
     groups = values[ROOT_GROUPS_KEY]
@@ -155,7 +189,13 @@ def summarize_profile(label: str, text: str) -> str:
     return (
         f"{label},{total_ms},{runner_ms},{lowerer_ms},"
         f"{stream_elapsed_ms},{stream_worker_ms},{segment_commit_ms},"
-        f"{stream_commit_residual_ms},{segment_receive_wait_ms},{finish_opening_ms},"
+        f"{stream_commit_residual_ms},{segment_receive_wait_ms},"
+        f"{pending_receive_wait_ms},{pending_send_wait_ms},"
+        f"{parallel_lower_workers},{parallel_lower_dispatched},"
+        f"{parallel_lower_received},{parallel_lower_emitted},"
+        f"{parallel_lower_max_reorder},{seed_direct_lift_attempts},"
+        f"{seed_direct_lift_successes},{seed_full_advances},"
+        f"{finish_opening_ms},"
         f"{root_count},{groups},{max_group_size},"
         f"{roots_per_group:.3f},{needs_cross_segment_root_pipeline},"
         f"{leaf_kernel_ms},{leaf_coset_calls},{leaf_coset_columns},{leaf_ntt_launches},"
@@ -185,6 +225,16 @@ def self_test() -> None:
                         f"{STREAM_WORKER_MS_KEY}=7812",
                         f"{SEGMENT_COMMIT_MS_KEY}=2100",
                         f"{SEGMENT_RECEIVE_WAIT_MS_KEY}=6000",
+                        f"{PENDING_RECEIVE_WAIT_MS_KEY}=1200",
+                        f"{PENDING_SEND_WAIT_MS_KEY}=345",
+                        f"{PARALLEL_LOWER_WORKERS_KEY}=2",
+                        f"{PARALLEL_LOWER_DISPATCHED_KEY}=23",
+                        f"{PARALLEL_LOWER_RECEIVED_KEY}=23",
+                        f"{PARALLEL_LOWER_EMITTED_KEY}=23",
+                        f"{PARALLEL_LOWER_MAX_REORDER_KEY}=1",
+                        f"{SEED_DIRECT_LIFT_ATTEMPTS_KEY}=22",
+                        f"{SEED_DIRECT_LIFT_SUCCESSES_KEY}=22",
+                        f"{SEED_FULL_ADVANCES_KEY}=1",
                         f"{FINISH_OPENING_MS_KEY}=476",
                         f"{ROOT_COUNT_KEY}=23",
                         f"{ROOT_GROUPS_KEY}=23",
