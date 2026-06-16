@@ -41,6 +41,15 @@ REQUIRED_METRIC_COLUMNS = [
     METRIC_DURATION_US,
 ]
 
+FALLBACK_REQUIRED_METRIC_GROUPS = [
+    [
+        METRIC_REGISTER_LIMIT,
+        METRIC_SHARED_MEM_LIMIT,
+        METRIC_WARP_LIMIT,
+        METRIC_BLOCK_LIMIT,
+    ],
+]
+
 
 def metric_value(row: dict[str, str], metric: str) -> str | None:
     key = metric_key(row, metric)
@@ -133,6 +142,23 @@ def fieldnames_contain_metric(fieldnames: list[str], metric: str) -> bool:
     return any(name == metric or name.endswith(suffix) for name in fieldnames)
 
 
+def fieldnames_contain_metric_group(fieldnames: list[str], metrics: list[str]) -> bool:
+    return all(fieldnames_contain_metric(fieldnames, metric) for metric in metrics)
+
+
+def has_supported_metric_columns(fieldnames: list[str]) -> bool:
+    if fieldnames_contain_metric_group(fieldnames, REQUIRED_METRIC_COLUMNS):
+        return True
+    return any(
+        fieldnames_contain_metric_group(fieldnames, group)
+        for group in FALLBACK_REQUIRED_METRIC_GROUPS
+    )
+
+
+def row_has_any_metric_value(row: dict[str, str], metrics: list[str]) -> bool:
+    return any(metric_value(row, metric) for metric in metrics)
+
+
 def scale_for_duration_unit(unit: str | None) -> float:
     normalized = (unit or "").strip().lower()
     if normalized in {"ns", "nanosecond", "nanoseconds"}:
@@ -170,11 +196,12 @@ def scale_metric(row: dict[str, str], metric: str, scale: float) -> None:
 
 
 def normalize_ncu_metric_units(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    unit_metrics = REQUIRED_METRIC_COLUMNS + OPTIONAL_METRIC_COLUMNS
     unit_row = next(
         (
             row
             for row in rows
-            if not row_kernel_name(row) and metric_value(row, METRIC_DURATION_US)
+            if not row_kernel_name(row) and row_has_any_metric_value(row, unit_metrics)
         ),
         {},
     )
@@ -238,12 +265,12 @@ def parse_ncu_csv_lines(path: Path, lines: list[str]) -> list[dict[str, str]]:
     reader = csv.DictReader(io.StringIO("".join(lines[header_offset:])))
     if not reader.fieldnames or "Kernel Name" not in reader.fieldnames:
         raise SystemExit(f"not an Nsight Compute CSV export: {path}")
-    missing = [
-        metric
-        for metric in REQUIRED_METRIC_COLUMNS
-        if not fieldnames_contain_metric(reader.fieldnames, metric)
-    ]
-    if missing:
+    if not has_supported_metric_columns(reader.fieldnames):
+        missing = [
+            metric
+            for metric in REQUIRED_METRIC_COLUMNS
+            if not fieldnames_contain_metric(reader.fieldnames, metric)
+        ]
         raise SystemExit(missing_metric_message(path, lines, missing))
     return normalize_ncu_metric_units(list(reader))
 

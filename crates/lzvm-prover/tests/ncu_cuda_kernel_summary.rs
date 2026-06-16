@@ -203,6 +203,61 @@ fn ncu_cuda_kernel_summary_allows_missing_auxiliary_occupancy_metrics() {
 }
 
 #[test]
+fn ncu_cuda_kernel_summary_accepts_speed_of_light_launch_raw_without_duration() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/ncu-cuda-kernel-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("workspace temp directory should exist");
+
+    let speed_of_light_csv = temp_file(&temp_dir, "ncu-speed-of-light-launch-raw.csv");
+    std::fs::write(
+        &speed_of_light_csv,
+        concat!(
+            "\"ID\",\"Kernel Name\",",
+            "\"launch__occupancy_limit_blocks\",",
+            "\"launch__occupancy_limit_registers\",",
+            "\"launch__occupancy_limit_shared_mem\",",
+            "\"launch__occupancy_limit_warps\",",
+            "\"launch__registers_per_thread\",",
+            "\"launch__shared_mem_per_block\"\n",
+            "\"\",\"\",\"block\",\"block\",\"block\",\"block\",\"register/thread\",\"Kbyte/block\"\n",
+            "\"0\",\"<unnamed>::ntt_stage_block_twiddle_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",\"24.0\",\"6.0\",\"14.0\",\"6.0\",\"38\",\"1.104\"\n",
+        ),
+    )
+    .expect("speed-of-light NCU raw sample should write");
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&speed_of_light_csv)
+        .output()
+        .expect("ncu CUDA kernel summary should run on speed-of-light sample");
+    let _ = std::fs::remove_file(&speed_of_light_csv);
+
+    assert!(
+        output.status.success(),
+        "speed-of-light launch-only NCU CSV should parse: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("ntt_stage_block_twiddle_kernel,1,0.000,0.000"),
+        "launch-only NCU CSV should still summarize the kernel with zero duration: {stdout}"
+    );
+    assert!(
+        stdout.contains("6.000,14.000,6.000,24.000"),
+        "launch-only NCU CSV should preserve occupancy limits: {stdout}"
+    );
+    assert!(
+        stdout.contains("split_or_reduce_register_pressure"),
+        "launch-only occupancy limits should still drive separation hints: {stdout}"
+    );
+    assert!(
+        !stdout.contains("unsigned long"),
+        "launch-only NCU CSV should print normalized short kernel names: {stdout}"
+    );
+}
+
+#[test]
 fn ncu_cuda_kernel_summary_imports_binary_reports_through_ncu() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root.join("../..");
