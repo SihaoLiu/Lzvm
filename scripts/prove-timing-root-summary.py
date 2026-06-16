@@ -10,6 +10,8 @@ ROOT_MAX_GROUP_KEY = "timing_guest_stage_tree_commit_root_materialization_max_gr
 TOTAL_MS_KEY = "timing_total_ms"
 RUNNER_MS_KEY = "timing_guest_trace_runner_ms"
 LOWERER_MS_KEY = "timing_guest_trace_lowerer_ms"
+STREAM_ELAPSED_MS_KEY = "timing_guest_trace_stream_elapsed_ms"
+STREAM_WORKER_MS_KEY = "timing_guest_trace_stream_ms"
 SEGMENT_COMMIT_MS_KEY = "timing_guest_segment_commit_ms"
 SEGMENT_RECEIVE_WAIT_MS_KEY = "timing_guest_trace_segment_receive_wait_ms"
 FINISH_OPENING_MS_KEY = "timing_finish_witness_opening_ms"
@@ -24,8 +26,9 @@ LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY = (
 DIRECT_D2H_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_wait_ns"
 
 HEADER = (
-    "profile,total_ms,runner_ms,lowerer_ms,segment_commit_ms,"
-    "segment_receive_wait_ms,finish_opening_ms,root_count,materialization_groups,"
+    "profile,total_ms,runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,"
+    "segment_commit_ms,stream_commit_residual_ms,segment_receive_wait_ms,"
+    "finish_opening_ms,root_count,materialization_groups,"
     "materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,"
     "leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
     "leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,"
@@ -37,6 +40,8 @@ TIMING_KEYS = {
     TOTAL_MS_KEY,
     RUNNER_MS_KEY,
     LOWERER_MS_KEY,
+    STREAM_ELAPSED_MS_KEY,
+    STREAM_WORKER_MS_KEY,
     SEGMENT_COMMIT_MS_KEY,
     SEGMENT_RECEIVE_WAIT_MS_KEY,
     FINISH_OPENING_MS_KEY,
@@ -72,6 +77,8 @@ def primary_bottleneck(
     total_ms: int,
     runner_ms: int,
     lowerer_ms: int,
+    stream_elapsed_ms: int,
+    stream_worker_ms: int,
     segment_commit_ms: int,
     segment_receive_wait_ms: int,
     finish_opening_ms: int,
@@ -81,6 +88,8 @@ def primary_bottleneck(
     candidates = [
         ("trace_runner", float(runner_ms)),
         ("trace_lowerer", float(lowerer_ms)),
+        ("stream_elapsed", float(stream_elapsed_ms)),
+        ("stream_worker", float(stream_worker_ms)),
         ("segment_commit", float(segment_commit_ms)),
         ("segment_receive_wait", float(segment_receive_wait_ms)),
         ("finish_opening", float(finish_opening_ms)),
@@ -104,7 +113,12 @@ def summarize_profile(label: str, text: str) -> str:
     total_ms = values.get(TOTAL_MS_KEY, 0)
     runner_ms = values.get(RUNNER_MS_KEY, 0)
     lowerer_ms = values.get(LOWERER_MS_KEY, 0)
+    stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
+    stream_worker_ms = values.get(STREAM_WORKER_MS_KEY, 0)
     segment_commit_ms = values.get(SEGMENT_COMMIT_MS_KEY, 0)
+    stream_commit_residual_ms = (
+        stream_elapsed_ms - stream_worker_ms - segment_commit_ms
+    )
     segment_receive_wait_ms = values.get(SEGMENT_RECEIVE_WAIT_MS_KEY, 0)
     finish_opening_ms = values.get(FINISH_OPENING_MS_KEY, 0)
     root_count = values[ROOT_COUNT_KEY]
@@ -130,6 +144,8 @@ def summarize_profile(label: str, text: str) -> str:
         total_ms,
         runner_ms,
         lowerer_ms,
+        stream_elapsed_ms,
+        stream_worker_ms,
         segment_commit_ms,
         segment_receive_wait_ms,
         finish_opening_ms,
@@ -137,8 +153,9 @@ def summarize_profile(label: str, text: str) -> str:
         direct_d2h_wait_ms,
     )
     return (
-        f"{label},{total_ms},{runner_ms},{lowerer_ms},{segment_commit_ms},"
-        f"{segment_receive_wait_ms},{finish_opening_ms},"
+        f"{label},{total_ms},{runner_ms},{lowerer_ms},"
+        f"{stream_elapsed_ms},{stream_worker_ms},{segment_commit_ms},"
+        f"{stream_commit_residual_ms},{segment_receive_wait_ms},{finish_opening_ms},"
         f"{root_count},{groups},{max_group_size},"
         f"{roots_per_group:.3f},{needs_cross_segment_root_pipeline},"
         f"{leaf_kernel_ms},{leaf_coset_calls},{leaf_coset_columns},{leaf_ntt_launches},"
@@ -164,6 +181,8 @@ def self_test() -> None:
                         f"{TOTAL_MS_KEY}=9050",
                         f"{RUNNER_MS_KEY}=7800",
                         f"{LOWERER_MS_KEY}=7812",
+                        f"{STREAM_ELAPSED_MS_KEY}=9912",
+                        f"{STREAM_WORKER_MS_KEY}=7812",
                         f"{SEGMENT_COMMIT_MS_KEY}=2100",
                         f"{SEGMENT_RECEIVE_WAIT_MS_KEY}=6000",
                         f"{FINISH_OPENING_MS_KEY}=476",
