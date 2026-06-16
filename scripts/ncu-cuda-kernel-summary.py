@@ -155,6 +155,19 @@ def has_supported_metric_columns(fieldnames: list[str]) -> bool:
     )
 
 
+def row_contains_metric_group(row: dict[str, str], metrics: list[str]) -> bool:
+    return all(metric in row for metric in metrics)
+
+
+def has_supported_metric_rows(rows: list[dict[str, str]]) -> bool:
+    if any(row_contains_metric_group(row, REQUIRED_METRIC_COLUMNS) for row in rows):
+        return True
+    return any(
+        any(row_contains_metric_group(row, group) for row in rows)
+        for group in FALLBACK_REQUIRED_METRIC_GROUPS
+    )
+
+
 def row_has_any_metric_value(row: dict[str, str], metrics: list[str]) -> bool:
     return any(metric_value(row, metric) for metric in metrics)
 
@@ -217,6 +230,48 @@ def normalize_ncu_metric_units(rows: list[dict[str, str]]) -> list[dict[str, str
     return rows
 
 
+def is_ncu_metric_row_export(fieldnames: list[str]) -> bool:
+    return all(
+        name in fieldnames
+        for name in ["Kernel Name", "Metric Name", "Metric Unit", "Metric Value"]
+    )
+
+
+def normalize_metric_row_value(metric: str, unit: str | None, value: str) -> str:
+    scale = 1.0
+    if metric == METRIC_DURATION_US:
+        scale = scale_for_duration_unit(unit)
+    elif metric == METRIC_SHARED_MEM_PER_BLOCK:
+        scale = scale_for_shared_mem_unit(unit)
+    if scale == 1.0:
+        return value
+    parsed = parse_float(value)
+    if parsed is None:
+        return value
+    return f"{parsed * scale:.12g}"
+
+
+def pivot_ncu_metric_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    by_launch: dict[tuple[str, str, str, str], dict[str, str]] = {}
+    for row in rows:
+        kernel = row.get("Kernel Name", "")
+        metric = row.get("Metric Name", "")
+        value = row.get("Metric Value", "")
+        if not kernel or not metric:
+            continue
+        key = (
+            row.get("ID", ""),
+            row.get("Process ID", ""),
+            row.get("Context", ""),
+            kernel,
+        )
+        output = by_launch.setdefault(key, {"Kernel Name": kernel})
+        output[metric] = normalize_metric_row_value(
+            metric, row.get("Metric Unit"), value
+        )
+    return list(by_launch.values())
+
+
 def find_ncu_csv_header_offset(lines: list[str], path: Path) -> int:
     for index, line in enumerate(lines):
         if "Kernel Name" not in line:
@@ -265,6 +320,16 @@ def parse_ncu_csv_lines(path: Path, lines: list[str]) -> list[dict[str, str]]:
     reader = csv.DictReader(io.StringIO("".join(lines[header_offset:])))
     if not reader.fieldnames or "Kernel Name" not in reader.fieldnames:
         raise SystemExit(f"not an Nsight Compute CSV export: {path}")
+    if is_ncu_metric_row_export(reader.fieldnames):
+        rows = pivot_ncu_metric_rows(list(reader))
+        if not has_supported_metric_rows(rows):
+            missing = [
+                metric
+                for metric in REQUIRED_METRIC_COLUMNS
+                if not any(metric in row for row in rows)
+            ]
+            raise SystemExit(missing_metric_message(path, lines, missing))
+        return rows
     if not has_supported_metric_columns(reader.fieldnames):
         missing = [
             metric

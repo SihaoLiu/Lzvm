@@ -258,6 +258,96 @@ fn ncu_cuda_kernel_summary_accepts_speed_of_light_launch_raw_without_duration() 
 }
 
 #[test]
+fn ncu_cuda_kernel_summary_accepts_command_line_metric_rows() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/ncu-cuda-kernel-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("workspace temp directory should exist");
+
+    let metric_rows_csv = temp_file(&temp_dir, "ncu-command-line-metric-rows.csv");
+    std::fs::write(
+        &metric_rows_csv,
+        concat!(
+            "==PROF== Connected to process 1\n",
+            "\"ID\",\"Process ID\",\"Process Name\",\"Host Name\",\"Kernel Name\",",
+            "\"Context\",\"Stream\",\"Block Size\",\"Grid Size\",\"Device\",\"CC\",",
+            "\"Metric Name\",\"Metric Unit\",\"Metric Value\"\n",
+            "\"0\",\"1\",\"lzvm\",\"host\",",
+            "\"<unnamed>::ntt_stage_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",",
+            "\"1\",\"7\",\"(256, 1, 1)\",\"(16384, 1, 1)\",\"0\",\"12.0\",",
+            "\"gpu__time_duration.sum\",\"ns\",\"4734624\"\n",
+            "\"0\",\"1\",\"lzvm\",\"host\",",
+            "\"<unnamed>::ntt_stage_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",",
+            "\"1\",\"7\",\"(256, 1, 1)\",\"(16384, 1, 1)\",\"0\",\"12.0\",",
+            "\"sm__throughput.avg.pct_of_peak_sustained_elapsed\",\"%\",\"3.96\"\n",
+            "\"0\",\"1\",\"lzvm\",\"host\",",
+            "\"<unnamed>::ntt_stage_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",",
+            "\"1\",\"7\",\"(256, 1, 1)\",\"(16384, 1, 1)\",\"0\",\"12.0\",",
+            "\"gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed\",\"%\",\"34.82\"\n",
+            "\"0\",\"1\",\"lzvm\",\"host\",",
+            "\"<unnamed>::ntt_stage_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",",
+            "\"1\",\"7\",\"(256, 1, 1)\",\"(16384, 1, 1)\",\"0\",\"12.0\",",
+            "\"gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed\",\"%\",\"42.55\"\n",
+            "\"0\",\"1\",\"lzvm\",\"host\",",
+            "\"<unnamed>::ntt_stage_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",",
+            "\"1\",\"7\",\"(256, 1, 1)\",\"(16384, 1, 1)\",\"0\",\"12.0\",",
+            "\"sm__issue_active.avg.pct_of_peak_sustained_elapsed\",\"%\",\"0.39\"\n",
+            "\"0\",\"1\",\"lzvm\",\"host\",",
+            "\"<unnamed>::ntt_stage_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",",
+            "\"1\",\"7\",\"(256, 1, 1)\",\"(16384, 1, 1)\",\"0\",\"12.0\",",
+            "\"sm__warps_active.avg.pct_of_peak_sustained_active\",\"%\",\"88.44\"\n",
+            "\"0\",\"1\",\"lzvm\",\"host\",",
+            "\"<unnamed>::ntt_stage_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",",
+            "\"1\",\"7\",\"(256, 1, 1)\",\"(16384, 1, 1)\",\"0\",\"12.0\",",
+            "\"launch__occupancy_limit_registers\",\"block\",\"6\"\n",
+            "\"0\",\"1\",\"lzvm\",\"host\",",
+            "\"<unnamed>::ntt_stage_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",",
+            "\"1\",\"7\",\"(256, 1, 1)\",\"(16384, 1, 1)\",\"0\",\"12.0\",",
+            "\"launch__occupancy_limit_shared_mem\",\"block\",\"16\"\n",
+            "\"0\",\"1\",\"lzvm\",\"host\",",
+            "\"<unnamed>::ntt_stage_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",",
+            "\"1\",\"7\",\"(256, 1, 1)\",\"(16384, 1, 1)\",\"0\",\"12.0\",",
+            "\"launch__occupancy_limit_warps\",\"block\",\"6\"\n",
+            "\"0\",\"1\",\"lzvm\",\"host\",",
+            "\"<unnamed>::ntt_stage_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",",
+            "\"1\",\"7\",\"(256, 1, 1)\",\"(16384, 1, 1)\",\"0\",\"12.0\",",
+            "\"launch__occupancy_limit_blocks\",\"block\",\"24\"\n",
+            "\"0\",\"1\",\"lzvm\",\"host\",",
+            "\"<unnamed>::ntt_stage_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",",
+            "\"1\",\"7\",\"(256, 1, 1)\",\"(16384, 1, 1)\",\"0\",\"12.0\",",
+            "\"launch__registers_per_thread\",\"register/thread\",\"40\"\n",
+            "\"0\",\"1\",\"lzvm\",\"host\",",
+            "\"<unnamed>::ntt_stage_kernel(unsigned long *, unsigned long, unsigned long, unsigned long, unsigned long, bool)\",",
+            "\"1\",\"7\",\"(256, 1, 1)\",\"(16384, 1, 1)\",\"0\",\"12.0\",",
+            "\"launch__shared_mem_per_block\",\"byte/block\",\"1024\"\n",
+        ),
+    )
+    .expect("command-line NCU metric-row sample should write");
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&metric_rows_csv)
+        .output()
+        .expect("ncu CUDA kernel summary should run on metric-row sample");
+    let _ = std::fs::remove_file(&metric_rows_csv);
+
+    assert!(
+        output.status.success(),
+        "command-line metric-row NCU CSV should parse: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("ntt_stage_kernel,1,4.735,4734.624"),
+        "metric-row NCU CSV should summarize duration with ns conversion: {stdout}"
+    );
+    assert!(
+        stdout.contains("40.000,1.000"),
+        "metric-row NCU CSV should preserve registers and byte shared memory: {stdout}"
+    );
+}
+
+#[test]
 fn ncu_cuda_kernel_summary_imports_binary_reports_through_ncu() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root.join("../..");
