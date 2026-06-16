@@ -47,6 +47,9 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_stage_leaf_coset_extend_ntt_stage_launches",
         "timing_guest_stage_leaf_coset_extend_ntt_block_twiddle_launches",
         "timing_cuda_direct_copy_d2h_wait_ns",
+        "timing_cuda_direct_copy_d2h_hot_bytes",
+        "timing_cuda_direct_copy_d2h_hot_count",
+        "timing_cuda_direct_copy_d2h_hot_wait_ns",
         "timing_guest_trace_runner_ms",
         "timing_guest_trace_lowerer_ms",
         "timing_guest_trace_stream_elapsed_ms",
@@ -228,6 +231,56 @@ fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
             ",10,1.000,10000.000,detail_timing_sampled,100,row_validation,50.000,source_values,42.000,20.000,25.000,75.000"
         ),
         "prove timing root summary should classify sampled detail, row-validation, and visit hotspots: stdout={stdout}"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reports_direct_d2h_hot_copy_shape() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=58552",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_cuda_direct_copy_d2h_wait_ns=4156548184",
+        "timing_cuda_direct_copy_d2h_hot_bytes=1152",
+        "timing_cuda_direct_copy_d2h_hot_count=41",
+        "timing_cuda_direct_copy_d2h_hot_wait_ns=3389722844",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms"),
+        "prove timing root summary should expose hot direct D2H copy shape: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(",1152,41,3389.723"),
+        "prove timing root summary should report the dominant direct D2H wait bucket: stdout={stdout}"
     );
 }
 

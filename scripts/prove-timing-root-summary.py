@@ -181,6 +181,9 @@ LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY = (
     "timing_guest_stage_leaf_coset_extend_ntt_block_twiddle_launches"
 )
 DIRECT_D2H_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_wait_ns"
+DIRECT_D2H_HOT_BYTES_KEY = "timing_cuda_direct_copy_d2h_hot_bytes"
+DIRECT_D2H_HOT_COUNT_KEY = "timing_cuda_direct_copy_d2h_hot_count"
+DIRECT_D2H_HOT_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_hot_wait_ns"
 PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
 PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
 PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY = "perf_memmove_guest_machine_pct"
@@ -251,7 +254,8 @@ HEADER = (
     "trace_report_detail_hotspot,trace_report_detail_hotspot_pct,"
     "trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,"
     "trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,"
-    "trace_report_visit_residual_pct"
+    "trace_report_visit_residual_pct,"
+    "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -362,6 +366,9 @@ TIMING_KEYS = {
     LEAF_NTT_STAGE_LAUNCHES_KEY,
     LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY,
     DIRECT_D2H_WAIT_NS_KEY,
+    DIRECT_D2H_HOT_BYTES_KEY,
+    DIRECT_D2H_HOT_COUNT_KEY,
+    DIRECT_D2H_HOT_WAIT_NS_KEY,
 }
 
 
@@ -1092,6 +1099,9 @@ def summarize_profile_values(
     leaf_ntt_block_twiddle_launches = values.get(LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY, 0)
     ntt_launches_per_call = leaf_ntt_launches / leaf_coset_calls if leaf_coset_calls else 0.0
     direct_d2h_wait_ms = values.get(DIRECT_D2H_WAIT_NS_KEY, 0) / 1_000_000.0
+    direct_d2h_hot_bytes = values.get(DIRECT_D2H_HOT_BYTES_KEY, 0)
+    direct_d2h_hot_count = values.get(DIRECT_D2H_HOT_COUNT_KEY, 0)
+    direct_d2h_hot_wait_ms = values.get(DIRECT_D2H_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
     opening_source_hint = opening_source_shape_hint(
         opening_query_units,
         opening_single_query_units,
@@ -1231,7 +1241,9 @@ def summarize_profile_values(
         f"{trace_report_row_validation_hotspot_pct:.3f},"
         f"{trace_report_detail_visit_pct:.3f},"
         f"{trace_report_visit_descriptor_pct:.3f},"
-        f"{trace_report_visit_residual_pct:.3f}"
+        f"{trace_report_visit_residual_pct:.3f},"
+        f"{direct_d2h_hot_bytes},{direct_d2h_hot_count},"
+        f"{direct_d2h_hot_wait_ms:.3f}"
     )
 
 
