@@ -149,7 +149,8 @@ HEADER = (
     "perf_pending_segment_drop_self_pct,perf_sha256_self_pct,"
     "perf_sha256_source_hint,cpu_trace_hotspot_hint,"
     "trace_report_detail_samples,trace_report_detail_sample_pct,"
-    "trace_report_detail_sample_hint,trace_report_detail_avg_ns,"
+    "trace_report_detail_sample_ppm,trace_report_detail_sample_hint,"
+    "trace_report_detail_avg_ns,"
     "trace_report_detail_hotspot,trace_report_detail_hotspot_pct,"
     "trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,"
     "trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,"
@@ -675,6 +676,11 @@ def summarize_profile_values(
     trace_report_detail_sample_pct = (
         trace_report_detail_samples * 100.0 / trace_reports if trace_reports else 0.0
     )
+    trace_report_detail_sample_ppm = (
+        trace_report_detail_samples * 1_000_000.0 / trace_reports
+        if trace_reports
+        else 0.0
+    )
     trace_report_detail_hint = trace_report_detail_sample_hint(
         trace_reports,
         trace_report_detail_samples,
@@ -887,7 +893,8 @@ def summarize_profile_values(
         f"{memmove_trace_slice_pct:.3f},{memmove_hint},"
         f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint},"
         f"{trace_report_detail_samples},{trace_report_detail_sample_pct:.3f},"
-        f"{trace_report_detail_hint},{trace_report_detail_avg_ns},"
+        f"{trace_report_detail_sample_ppm:.3f},{trace_report_detail_hint},"
+        f"{trace_report_detail_avg_ns},"
         f"{trace_report_detail_hotspot_name},{trace_report_detail_hotspot_pct:.3f},"
         f"{trace_report_row_validation_hotspot_name},"
         f"{trace_report_row_validation_hotspot_pct:.3f},"

@@ -168,15 +168,66 @@ fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "trace_report_detail_samples,trace_report_detail_sample_pct,trace_report_detail_sample_hint,trace_report_detail_avg_ns,trace_report_detail_hotspot,trace_report_detail_hotspot_pct,trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,trace_report_visit_residual_pct"
+            "trace_report_detail_samples,trace_report_detail_sample_pct,trace_report_detail_sample_ppm,trace_report_detail_sample_hint,trace_report_detail_avg_ns,trace_report_detail_hotspot,trace_report_detail_hotspot_pct,trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,trace_report_visit_residual_pct"
         ),
         "prove timing root summary should expose detail sample hotspot and visit drilldown columns: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            ",10,1.000,detail_timing_sampled,100,row_validation,50.000,source_values,42.000,20.000,25.000,75.000"
+            ",10,1.000,10000.000,detail_timing_sampled,100,row_validation,50.000,source_values,42.000,20.000,25.000,75.000"
         ),
         "prove timing root summary should classify sampled detail, row-validation, and visit hotspots: stdout={stdout}"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reports_tiny_detail_sample_coverage_ppm() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=9000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_reports=1000000",
+        "timing_guest_trace_report_rows=1000000",
+        "timing_guest_trace_report_detail_samples=1",
+        "timing_guest_trace_report_sampled_ns=1000",
+        "timing_guest_trace_report_row_validation_sampled_ns=500",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("trace_report_detail_sample_pct,trace_report_detail_sample_ppm,"),
+        "prove timing root summary should expose ppm coverage next to percent coverage: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(",1,0.000,1.000,detail_timing_sampled,1000,"),
+        "prove timing root summary should preserve tiny sampled coverage that rounds to zero percent: stdout={stdout}"
     );
 }
 
