@@ -1216,6 +1216,82 @@ theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_digest_con
             (And.intro rootMatches
               (And.intro rowsFromSource rowsBoundToQueryPlan)))))
 
+theorem
+  runtime_retained_parent_checkpoint_opening_checked_acceptance_batch_path_and_opening_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeBatchWitnessOpeningRowsEvidence
+            system
+            validation.batchRowsValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeRetainedParentCheckpointOpeningPrefixBatchContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedParentCheckpointOpeningDigestContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.batchRowsValidation.openingSegmentValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have batchEvidence :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_batch_rows_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have prefixBatchContract :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_prefix_batch_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have digestContract :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_digest_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingEvidence :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    And.intro batchEvidence
+      (And.intro prefixBatchContract
+        (And.intro digestContract openingEvidence))
+
 theorem runtime_retained_parent_checkpoint_concrete_path_digest_contract_from_bundle
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

@@ -75,6 +75,7 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_batch_rows_bound_contract",
             "runtime_retained_parent_checkpoint_opening_evidence_implies_opening_evidence",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_evidence",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_batch_path_and_opening_evidence",
             "runtime_retained_parent_checkpoint_opening_evidence_implies_retained_rows_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_retained_rows_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_digest_contract",
@@ -265,6 +266,26 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
         &lean_source,
         "runtime_retained_parent_checkpoint_concrete_path_digest_contract_from_bundle",
         &["retainedParentCheckpointOpeningAcceptedImpliesStitchedPathBound"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_opening_checked_acceptance_batch_path_and_opening_evidence",
+        &[
+            "RuntimeBatchWitnessOpeningRowsEvidence",
+            "RuntimeRetainedParentCheckpointOpeningPrefixBatchContract",
+            "RuntimeRetainedParentCheckpointOpeningDigestContract",
+            "RuntimeOpeningEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_opening_checked_acceptance_batch_path_and_opening_evidence",
+        &[
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_batch_rows_evidence",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_prefix_batch_contract",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_digest_contract",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_evidence",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
