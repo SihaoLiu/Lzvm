@@ -81,8 +81,19 @@ SEED_DIRECT_LIFT_ATTEMPTS_KEY = "timing_guest_trace_seed_direct_lift_attempts"
 SEED_DIRECT_LIFT_SUCCESSES_KEY = "timing_guest_trace_seed_direct_lift_successes"
 SEED_FULL_ADVANCES_KEY = "timing_guest_trace_seed_full_advances"
 FINISH_OPENING_MS_KEY = "timing_finish_witness_opening_ms"
+OPENING_QUERY_COUNT_KEY = "timing_finish_witness_opening_query_count"
 OPENING_QUERY_UNITS_KEY = "timing_finish_witness_opening_query_unit_count"
 OPENING_SINGLE_QUERY_UNITS_KEY = "timing_finish_witness_opening_single_query_unit_count"
+OPENING_MAX_QUERIES_PER_UNIT_KEY = (
+    "timing_finish_witness_opening_max_queries_per_unit"
+)
+OPENING_STAGE_COUNT_KEY = "timing_finish_witness_opening_stage_count"
+OPENING_RETAINED_SOURCE_COUNT_KEY = "timing_finish_witness_opening_retained_source_count"
+OPENING_EXTERNAL_SOURCE_COUNT_KEY = "timing_finish_witness_opening_external_source_count"
+OPENING_EMBEDDED_SOURCE_COUNT_KEY = "timing_finish_witness_opening_embedded_source_count"
+OPENING_MISSING_SOURCE_COUNT_KEY = "timing_finish_witness_opening_missing_source_count"
+OPENING_ROW_VALUE_DEVICE_ROWS_KEY = "timing_finish_witness_opening_row_values_device_rows"
+OPENING_ROW_VALUE_SOURCE_ROWS_KEY = "timing_finish_witness_opening_row_values_source_rows"
 OPENING_RETAINED_LEAF_COUNT_KEY = (
     "timing_finish_witness_opening_retained_leaf_digest_openings"
 )
@@ -151,6 +162,9 @@ HEADER = (
     "descriptor_high32_row_pct,descriptor_shape_hint,seed_direct_lift_attempts,"
     "seed_direct_lift_successes,seed_full_advances,"
     "finish_opening_ms,opening_query_units,opening_single_query_units,"
+    "opening_queries,opening_max_queries_per_unit,opening_stage_count,"
+    "opening_source_shape_hint,opening_row_value_device_rows,"
+    "opening_row_value_source_rows,"
     "retained_leaf_openings,retained_leaf_rows,retained_leaf_all_single_row,"
     "retained_leaf_path_launches,retained_parent_checkpoint_openings,"
     "retained_parent_checkpoint_rows,retained_parent_checkpoint_all_single_row,"
@@ -229,8 +243,17 @@ TIMING_KEYS = {
     SEED_DIRECT_LIFT_SUCCESSES_KEY,
     SEED_FULL_ADVANCES_KEY,
     FINISH_OPENING_MS_KEY,
+    OPENING_QUERY_COUNT_KEY,
     OPENING_QUERY_UNITS_KEY,
     OPENING_SINGLE_QUERY_UNITS_KEY,
+    OPENING_MAX_QUERIES_PER_UNIT_KEY,
+    OPENING_STAGE_COUNT_KEY,
+    OPENING_RETAINED_SOURCE_COUNT_KEY,
+    OPENING_EXTERNAL_SOURCE_COUNT_KEY,
+    OPENING_EMBEDDED_SOURCE_COUNT_KEY,
+    OPENING_MISSING_SOURCE_COUNT_KEY,
+    OPENING_ROW_VALUE_DEVICE_ROWS_KEY,
+    OPENING_ROW_VALUE_SOURCE_ROWS_KEY,
     OPENING_RETAINED_LEAF_COUNT_KEY,
     OPENING_RETAINED_LEAF_ROWS_KEY,
     OPENING_RETAINED_LEAF_ALL_SINGLE_ROW_KEY,
@@ -525,6 +548,55 @@ def opening_batching_hint(
     return "none"
 
 
+def opening_source_shape_hint(
+    query_units: int,
+    single_query_units: int,
+    max_queries_per_unit: int,
+    root_count: int,
+    retained_source_count: int,
+    external_source_count: int,
+    embedded_source_count: int,
+    missing_source_count: int,
+) -> str:
+    if query_units <= 0:
+        return "none"
+
+    source_kinds = sum(
+        1
+        for count in (
+            retained_source_count,
+            external_source_count,
+            embedded_source_count,
+            missing_source_count,
+        )
+        if count > 0
+    )
+    if source_kinds > 1:
+        source_shape = "mixed_sources"
+    elif retained_source_count > 0:
+        source_shape = "retained_source"
+    elif external_source_count > 0:
+        source_shape = "external_source"
+    elif embedded_source_count > 0:
+        source_shape = "embedded_source"
+    elif missing_source_count > 0:
+        source_shape = "missing_source"
+    else:
+        source_shape = "no_sources"
+
+    if single_query_units == query_units and max_queries_per_unit <= 1:
+        if query_units > 1 and root_count >= query_units:
+            query_shape = "single_query_cross_root"
+        else:
+            query_shape = "single_query_units"
+    elif max_queries_per_unit > 1:
+        query_shape = "multi_query_units"
+    else:
+        query_shape = "mixed_query_units"
+
+    return f"{query_shape}_with_{source_shape}"
+
+
 def constant_material_overlap_hint(elapsed_ms: int, join_wait_ms: int) -> str:
     if elapsed_ms <= 0:
         return "none"
@@ -806,8 +878,17 @@ def summarize_profile_values(
     seed_direct_lift_successes = values.get(SEED_DIRECT_LIFT_SUCCESSES_KEY, 0)
     seed_full_advances = values.get(SEED_FULL_ADVANCES_KEY, 0)
     finish_opening_ms = values.get(FINISH_OPENING_MS_KEY, 0)
+    opening_queries = values.get(OPENING_QUERY_COUNT_KEY, 0)
     opening_query_units = values.get(OPENING_QUERY_UNITS_KEY, 0)
     opening_single_query_units = values.get(OPENING_SINGLE_QUERY_UNITS_KEY, 0)
+    opening_max_queries_per_unit = values.get(OPENING_MAX_QUERIES_PER_UNIT_KEY, 0)
+    opening_stage_count = values.get(OPENING_STAGE_COUNT_KEY, 0)
+    opening_retained_source_count = values.get(OPENING_RETAINED_SOURCE_COUNT_KEY, 0)
+    opening_external_source_count = values.get(OPENING_EXTERNAL_SOURCE_COUNT_KEY, 0)
+    opening_embedded_source_count = values.get(OPENING_EMBEDDED_SOURCE_COUNT_KEY, 0)
+    opening_missing_source_count = values.get(OPENING_MISSING_SOURCE_COUNT_KEY, 0)
+    opening_row_value_device_rows = values.get(OPENING_ROW_VALUE_DEVICE_ROWS_KEY, 0)
+    opening_row_value_source_rows = values.get(OPENING_ROW_VALUE_SOURCE_ROWS_KEY, 0)
     retained_leaf_openings = values.get(OPENING_RETAINED_LEAF_COUNT_KEY, 0)
     retained_leaf_rows = values.get(OPENING_RETAINED_LEAF_ROWS_KEY, 0)
     retained_leaf_all_single_row_value = values.get(
@@ -855,6 +936,16 @@ def summarize_profile_values(
     leaf_ntt_block_twiddle_launches = values.get(LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY, 0)
     ntt_launches_per_call = leaf_ntt_launches / leaf_coset_calls if leaf_coset_calls else 0.0
     direct_d2h_wait_ms = values.get(DIRECT_D2H_WAIT_NS_KEY, 0) / 1_000_000.0
+    opening_source_hint = opening_source_shape_hint(
+        opening_query_units,
+        opening_single_query_units,
+        opening_max_queries_per_unit,
+        root_count,
+        opening_retained_source_count,
+        opening_external_source_count,
+        opening_embedded_source_count,
+        opening_missing_source_count,
+    )
     opening_hint = opening_batching_hint(
         opening_query_units,
         opening_single_query_units,
@@ -941,6 +1032,9 @@ def summarize_profile_values(
         f"{seed_direct_lift_attempts},"
         f"{seed_direct_lift_successes},{seed_full_advances},"
         f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
+        f"{opening_queries},{opening_max_queries_per_unit},{opening_stage_count},"
+        f"{opening_source_hint},{opening_row_value_device_rows},"
+        f"{opening_row_value_source_rows},"
         f"{retained_leaf_openings},{retained_leaf_rows},"
         f"{retained_leaf_all_single_row},{retained_leaf_path_launches},"
         f"{retained_parent_checkpoint_openings},{retained_parent_checkpoint_rows},"
