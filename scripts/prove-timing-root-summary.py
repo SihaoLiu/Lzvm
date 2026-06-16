@@ -21,6 +21,9 @@ LOWERER_MS_KEY = "timing_guest_trace_lowerer_ms"
 STREAM_ELAPSED_MS_KEY = "timing_guest_trace_stream_elapsed_ms"
 STREAM_WORKER_MS_KEY = "timing_guest_trace_stream_ms"
 SEGMENT_COMMIT_MS_KEY = "timing_guest_segment_commit_ms"
+SEGMENT_COMMIT_INITIAL_WORKERS_KEY = "timing_guest_segment_commit_initial_workers"
+SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY = "timing_guest_segment_commit_effective_workers"
+SEGMENT_COMMIT_OOM_RETRIES_KEY = "timing_guest_segment_commit_oom_retries"
 SEGMENT_RECEIVE_WAIT_MS_KEY = "timing_guest_trace_segment_receive_wait_ms"
 PENDING_RECEIVE_WAIT_MS_KEY = "timing_guest_trace_pending_receive_wait_ms"
 PENDING_SEND_WAIT_MS_KEY = "timing_guest_trace_pending_send_wait_ms"
@@ -166,7 +169,9 @@ HEADER = (
     "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,"
     "constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
     "runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,"
-    "segment_commit_ms,stream_commit_residual_ms,segment_receive_wait_ms,"
+    "segment_commit_ms,segment_commit_initial_workers,"
+    "segment_commit_effective_workers,segment_commit_oom_retries,"
+    "stream_commit_residual_ms,segment_receive_wait_ms,"
     "pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,"
     "parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,"
     "parallel_lower_max_reorder,trace_reports,trace_report_rows,"
@@ -227,6 +232,9 @@ TIMING_KEYS = {
     STREAM_ELAPSED_MS_KEY,
     STREAM_WORKER_MS_KEY,
     SEGMENT_COMMIT_MS_KEY,
+    SEGMENT_COMMIT_INITIAL_WORKERS_KEY,
+    SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY,
+    SEGMENT_COMMIT_OOM_RETRIES_KEY,
     SEGMENT_RECEIVE_WAIT_MS_KEY,
     PENDING_RECEIVE_WAIT_MS_KEY,
     PENDING_SEND_WAIT_MS_KEY,
@@ -797,6 +805,9 @@ def summarize_profile_values(
     stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
     stream_worker_ms = values.get(STREAM_WORKER_MS_KEY, 0)
     segment_commit_ms = values.get(SEGMENT_COMMIT_MS_KEY, 0)
+    segment_commit_initial_workers = values.get(SEGMENT_COMMIT_INITIAL_WORKERS_KEY, 0)
+    segment_commit_effective_workers = values.get(SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY, 0)
+    segment_commit_oom_retries = values.get(SEGMENT_COMMIT_OOM_RETRIES_KEY, 0)
     stream_commit_residual_ms = (
         stream_elapsed_ms - stream_worker_ms - segment_commit_ms
     )
@@ -1060,6 +1071,8 @@ def summarize_profile_values(
         f"{constant_material_elapsed_ms},{constant_material_join_wait_ms},"
         f"{constant_material_hint},{runner_ms},{lowerer_ms},"
         f"{stream_elapsed_ms},{stream_worker_ms},{segment_commit_ms},"
+        f"{segment_commit_initial_workers},{segment_commit_effective_workers},"
+        f"{segment_commit_oom_retries},"
         f"{stream_commit_residual_ms},{segment_receive_wait_ms},"
         f"{pending_receive_wait_ms},{pending_send_wait_ms},"
         f"{parallel_lower_workers},{parallel_lower_dispatched},"
@@ -1196,6 +1209,9 @@ def self_test() -> None:
                         f"{STREAM_ELAPSED_MS_KEY}=9912",
                         f"{STREAM_WORKER_MS_KEY}=7812",
                         f"{SEGMENT_COMMIT_MS_KEY}=2100",
+                        f"{SEGMENT_COMMIT_INITIAL_WORKERS_KEY}=2",
+                        f"{SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY}=2",
+                        f"{SEGMENT_COMMIT_OOM_RETRIES_KEY}=0",
                         f"{SEGMENT_RECEIVE_WAIT_MS_KEY}=6000",
                         f"{PENDING_RECEIVE_WAIT_MS_KEY}=1200",
                         f"{PENDING_SEND_WAIT_MS_KEY}=345",
