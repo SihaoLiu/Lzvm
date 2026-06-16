@@ -38,6 +38,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let prove_witness_path = crate_root.join("../lzvm-cli/src/prove_witness.rs");
     let prove_witness_source =
         std::fs::read_to_string(&prove_witness_path).expect("prove witness source should read");
+    let constant_material_path =
+        crate_root.join("../lzvm-cli/src/prove_witness/constant_material.rs");
+    let constant_material_source = std::fs::read_to_string(&constant_material_path)
+        .expect("constant material source should read");
     let prove_plan_path = crate_root.join("../lzvm-cli/src/prove_plan.rs");
     let prove_plan_source =
         std::fs::read_to_string(&prove_plan_path).expect("prove plan source should read");
@@ -1450,7 +1454,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "\"constant_material_validation_bytes\"",
     ] {
         assert!(
-            prove_witness_source.contains(line_name),
+            constant_material_source.contains(line_name),
             "CLI constant material validation timing output should include {line_name}"
         );
     }
