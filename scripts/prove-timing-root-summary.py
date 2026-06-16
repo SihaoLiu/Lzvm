@@ -93,6 +93,21 @@ OPENING_RETAINED_LEAF_ALL_SINGLE_ROW_KEY = (
 OPENING_RETAINED_LEAF_PATH_LAUNCHES_KEY = (
     "timing_finish_witness_opening_path_parent_hash_retained_leaf_digest_launches"
 )
+OPENING_RETAINED_PARENT_CHECKPOINT_COUNT_KEY = (
+    "timing_finish_witness_opening_retained_parent_checkpoint_openings"
+)
+OPENING_RETAINED_PARENT_CHECKPOINT_ROWS_KEY = (
+    "timing_finish_witness_opening_retained_parent_checkpoint_rows"
+)
+OPENING_RETAINED_PARENT_CHECKPOINT_ALL_SINGLE_ROW_KEY = (
+    "timing_finish_witness_opening_retained_parent_checkpoint_all_single_row_openings"
+)
+OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_LAUNCHES_KEY = (
+    "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launches"
+)
+OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_LAUNCHES_KEY = (
+    "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches"
+)
 LEAF_KERNEL_MS_KEY = "timing_guest_stage_leaf_kernel_work_ms"
 LEAF_COSET_CALLS_KEY = "timing_guest_stage_leaf_coset_extend_calls"
 LEAF_COSET_COLUMNS_KEY = "timing_guest_stage_leaf_coset_extend_columns"
@@ -137,7 +152,10 @@ HEADER = (
     "seed_direct_lift_successes,seed_full_advances,"
     "finish_opening_ms,opening_query_units,opening_single_query_units,"
     "retained_leaf_openings,retained_leaf_rows,retained_leaf_all_single_row,"
-    "retained_leaf_path_launches,opening_batching_hint,"
+    "retained_leaf_path_launches,retained_parent_checkpoint_openings,"
+    "retained_parent_checkpoint_rows,retained_parent_checkpoint_all_single_row,"
+    "retained_parent_checkpoint_prefix_launches,"
+    "retained_parent_checkpoint_suffix_launches,opening_batching_hint,"
     "root_count,materialization_groups,"
     "materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,"
     "root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
@@ -217,6 +235,11 @@ TIMING_KEYS = {
     OPENING_RETAINED_LEAF_ROWS_KEY,
     OPENING_RETAINED_LEAF_ALL_SINGLE_ROW_KEY,
     OPENING_RETAINED_LEAF_PATH_LAUNCHES_KEY,
+    OPENING_RETAINED_PARENT_CHECKPOINT_COUNT_KEY,
+    OPENING_RETAINED_PARENT_CHECKPOINT_ROWS_KEY,
+    OPENING_RETAINED_PARENT_CHECKPOINT_ALL_SINGLE_ROW_KEY,
+    OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_LAUNCHES_KEY,
+    OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_LAUNCHES_KEY,
     ROOT_COUNT_KEY,
     ROOT_GROUPS_KEY,
     ROOT_MAX_GROUP_KEY,
@@ -468,23 +491,38 @@ def opening_batching_hint(
     retained_leaf_rows: int,
     retained_leaf_all_single_row: int,
     retained_leaf_path_launches: int,
+    retained_parent_checkpoint_openings: int,
+    retained_parent_checkpoint_rows: int,
+    retained_parent_checkpoint_all_single_row: int,
+    retained_parent_checkpoint_prefix_launches: int,
+    retained_parent_checkpoint_suffix_launches: int,
     direct_d2h_wait_ms: float,
 ) -> str:
-    if retained_leaf_openings <= 1:
-        return "none"
-    if retained_leaf_rows != retained_leaf_openings:
-        return "none"
-    if retained_leaf_all_single_row == 0:
-        return "none"
-    if single_query_units < retained_leaf_openings:
+    if direct_d2h_wait_ms < OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD:
         return "none"
     if query_units and single_query_units != query_units:
         return "none"
-    if retained_leaf_path_launches <= retained_leaf_openings:
-        return "none"
-    if direct_d2h_wait_ms < OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD:
-        return "none"
-    return "cross_segment_retained_leaf_opening_candidate"
+    if (
+        retained_leaf_openings > 1
+        and retained_leaf_rows == retained_leaf_openings
+        and retained_leaf_all_single_row > 0
+        and single_query_units >= retained_leaf_openings
+        and retained_leaf_path_launches > retained_leaf_openings
+    ):
+        return "cross_segment_retained_leaf_opening_candidate"
+    retained_parent_checkpoint_path_launches = (
+        retained_parent_checkpoint_prefix_launches
+        + retained_parent_checkpoint_suffix_launches
+    )
+    if (
+        retained_parent_checkpoint_openings > 1
+        and retained_parent_checkpoint_rows == retained_parent_checkpoint_openings
+        and retained_parent_checkpoint_all_single_row > 0
+        and single_query_units >= retained_parent_checkpoint_openings
+        and retained_parent_checkpoint_path_launches > retained_parent_checkpoint_openings
+    ):
+        return "cross_segment_retained_parent_checkpoint_opening_candidate"
+    return "none"
 
 
 def constant_material_overlap_hint(elapsed_ms: int, join_wait_ms: int) -> str:
@@ -781,6 +819,24 @@ def summarize_profile_values(
     retained_leaf_path_launches = values.get(
         OPENING_RETAINED_LEAF_PATH_LAUNCHES_KEY, 0
     )
+    retained_parent_checkpoint_openings = values.get(
+        OPENING_RETAINED_PARENT_CHECKPOINT_COUNT_KEY, 0
+    )
+    retained_parent_checkpoint_rows = values.get(
+        OPENING_RETAINED_PARENT_CHECKPOINT_ROWS_KEY, 0
+    )
+    retained_parent_checkpoint_all_single_row_value = values.get(
+        OPENING_RETAINED_PARENT_CHECKPOINT_ALL_SINGLE_ROW_KEY, 0
+    )
+    retained_parent_checkpoint_all_single_row = (
+        "yes" if retained_parent_checkpoint_all_single_row_value > 0 else "no"
+    )
+    retained_parent_checkpoint_prefix_launches = values.get(
+        OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_LAUNCHES_KEY, 0
+    )
+    retained_parent_checkpoint_suffix_launches = values.get(
+        OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_LAUNCHES_KEY, 0
+    )
     root_count = values[ROOT_COUNT_KEY]
     groups = values[ROOT_GROUPS_KEY]
     max_group_size = values[ROOT_MAX_GROUP_KEY]
@@ -806,6 +862,11 @@ def summarize_profile_values(
         retained_leaf_rows,
         retained_leaf_all_single_row_value,
         retained_leaf_path_launches,
+        retained_parent_checkpoint_openings,
+        retained_parent_checkpoint_rows,
+        retained_parent_checkpoint_all_single_row_value,
+        retained_parent_checkpoint_prefix_launches,
+        retained_parent_checkpoint_suffix_launches,
         direct_d2h_wait_ms,
     )
     leaf_launch_pressure = "yes" if leaf_ntt_launches >= 10_000 else "no"
@@ -882,6 +943,10 @@ def summarize_profile_values(
         f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
         f"{retained_leaf_openings},{retained_leaf_rows},"
         f"{retained_leaf_all_single_row},{retained_leaf_path_launches},"
+        f"{retained_parent_checkpoint_openings},{retained_parent_checkpoint_rows},"
+        f"{retained_parent_checkpoint_all_single_row},"
+        f"{retained_parent_checkpoint_prefix_launches},"
+        f"{retained_parent_checkpoint_suffix_launches},"
         f"{opening_hint},"
         f"{root_count},{groups},{max_group_size},"
         f"{roots_per_group:.3f},{needs_cross_segment_root_pipeline},{policy_hint},"
