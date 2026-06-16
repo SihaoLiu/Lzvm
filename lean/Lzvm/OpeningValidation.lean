@@ -461,6 +461,75 @@ theorem runtime_witness_opening_nary_checked_acceptance_witness_bound_from_bundl
       accepted
       rootCommitsToLeaf
 
+theorem runtime_opening_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  have constantOpenings :=
+    runtime_constant_opening_nary_checked_acceptance_constant_bound_from_bundle
+      assumptions
+      validation
+      centralized
+      constantBinding
+      artifact
+      publicInput
+      proof
+      accepted
+  have witnessOpenings :=
+    runtime_witness_opening_nary_checked_acceptance_witness_bound_from_bundle
+      assumptions
+      validation
+      centralized
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      accepted
+  have friOpening :=
+    validation.openingAcceptedImpliesFriOpeningBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have pcsOpenings :=
+    validation.openingChecksImplyPcsOpeningsValid
+      artifact
+      publicInput
+      proof
+      constantOpenings
+      witnessOpenings
+      friOpening
+  have friQueries :=
+    validation.friOpeningImpliesFriQueriesValid
+      artifact
+      publicInput
+      proof
+      friOpening
+  exact And.intro pcsOpenings friQueries
+
 theorem runtime_witness_opening_arity_two_same_index_leaf_binding_from_bundle
     {Digest : Type uDigest}
     {system : VerifierModel}
