@@ -8,11 +8,37 @@ ROOT_COUNT_KEY = "timing_guest_stage_tree_commit_root_count"
 ROOT_GROUPS_KEY = "timing_guest_stage_tree_commit_root_materialization_groups"
 ROOT_MAX_GROUP_KEY = "timing_guest_stage_tree_commit_root_materialization_max_group_size"
 TOTAL_MS_KEY = "timing_total_ms"
+LEAF_KERNEL_MS_KEY = "timing_guest_stage_leaf_kernel_work_ms"
+LEAF_COSET_CALLS_KEY = "timing_guest_stage_leaf_coset_extend_calls"
+LEAF_COSET_COLUMNS_KEY = "timing_guest_stage_leaf_coset_extend_columns"
+LEAF_NTT_LAUNCHES_KEY = "timing_guest_stage_leaf_coset_extend_ntt_launches"
+LEAF_NTT_STAGE_LAUNCHES_KEY = "timing_guest_stage_leaf_coset_extend_ntt_stage_launches"
+LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY = (
+    "timing_guest_stage_leaf_coset_extend_ntt_block_twiddle_launches"
+)
+DIRECT_D2H_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_wait_ns"
 
 HEADER = (
     "profile,total_ms,root_count,materialization_groups,"
-    "materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline"
+    "materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,"
+    "leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
+    "leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,"
+    "leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure"
 )
+
+TIMING_KEYS = {
+    TOTAL_MS_KEY,
+    ROOT_COUNT_KEY,
+    ROOT_GROUPS_KEY,
+    ROOT_MAX_GROUP_KEY,
+    LEAF_KERNEL_MS_KEY,
+    LEAF_COSET_CALLS_KEY,
+    LEAF_COSET_COLUMNS_KEY,
+    LEAF_NTT_LAUNCHES_KEY,
+    LEAF_NTT_STAGE_LAUNCHES_KEY,
+    LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY,
+    DIRECT_D2H_WAIT_NS_KEY,
+}
 
 
 def parse_timing_log(text: str) -> dict[str, int]:
@@ -21,7 +47,7 @@ def parse_timing_log(text: str) -> dict[str, int]:
         if "=" not in line:
             continue
         key, value = line.split("=", 1)
-        if key not in {TOTAL_MS_KEY, ROOT_COUNT_KEY, ROOT_GROUPS_KEY, ROOT_MAX_GROUP_KEY}:
+        if key not in TIMING_KEYS:
             continue
         try:
             values[key] = int(value.strip())
@@ -48,9 +74,21 @@ def summarize_profile(label: str, text: str) -> str:
     needs_cross_segment_root_pipeline = (
         "yes" if root_count > 1 and groups >= root_count and max_group_size <= 1 else "no"
     )
+    leaf_kernel_ms = values.get(LEAF_KERNEL_MS_KEY, 0)
+    leaf_coset_calls = values.get(LEAF_COSET_CALLS_KEY, 0)
+    leaf_coset_columns = values.get(LEAF_COSET_COLUMNS_KEY, 0)
+    leaf_ntt_launches = values.get(LEAF_NTT_LAUNCHES_KEY, 0)
+    leaf_ntt_stage_launches = values.get(LEAF_NTT_STAGE_LAUNCHES_KEY, 0)
+    leaf_ntt_block_twiddle_launches = values.get(LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY, 0)
+    ntt_launches_per_call = leaf_ntt_launches / leaf_coset_calls if leaf_coset_calls else 0.0
+    direct_d2h_wait_ms = values.get(DIRECT_D2H_WAIT_NS_KEY, 0) / 1_000_000.0
+    leaf_launch_pressure = "yes" if leaf_ntt_launches >= 10_000 else "no"
     return (
         f"{label},{total_ms},{root_count},{groups},{max_group_size},"
-        f"{roots_per_group:.3f},{needs_cross_segment_root_pipeline}"
+        f"{roots_per_group:.3f},{needs_cross_segment_root_pipeline},"
+        f"{leaf_kernel_ms},{leaf_coset_calls},{leaf_coset_columns},{leaf_ntt_launches},"
+        f"{leaf_ntt_stage_launches},{leaf_ntt_block_twiddle_launches},"
+        f"{ntt_launches_per_call:.3f},{direct_d2h_wait_ms:.3f},{leaf_launch_pressure}"
     )
 
 
@@ -71,6 +109,13 @@ def self_test() -> None:
                         f"{ROOT_COUNT_KEY}=23",
                         f"{ROOT_GROUPS_KEY}=23",
                         f"{ROOT_MAX_GROUP_KEY}=1",
+                        f"{LEAF_KERNEL_MS_KEY}=858",
+                        f"{LEAF_COSET_CALLS_KEY}=23",
+                        f"{LEAF_COSET_COLUMNS_KEY}=874",
+                        f"{LEAF_NTT_LAUNCHES_KEY}=41078",
+                        f"{LEAF_NTT_STAGE_LAUNCHES_KEY}=15732",
+                        f"{LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY}=23598",
+                        f"{DIRECT_D2H_WAIT_NS_KEY}=192973857",
                     ]
                 ),
             ),

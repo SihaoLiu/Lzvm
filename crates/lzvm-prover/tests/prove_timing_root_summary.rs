@@ -11,7 +11,15 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_stage_tree_commit_root_count",
         "timing_guest_stage_tree_commit_root_materialization_groups",
         "timing_guest_stage_tree_commit_root_materialization_max_group_size",
+        "timing_guest_stage_leaf_kernel_work_ms",
+        "timing_guest_stage_leaf_coset_extend_calls",
+        "timing_guest_stage_leaf_coset_extend_columns",
+        "timing_guest_stage_leaf_coset_extend_ntt_launches",
+        "timing_guest_stage_leaf_coset_extend_ntt_stage_launches",
+        "timing_guest_stage_leaf_coset_extend_ntt_block_twiddle_launches",
+        "timing_cuda_direct_copy_d2h_wait_ns",
         "needs_cross_segment_root_pipeline",
+        "leaf_launch_pressure",
     ] {
         assert!(
             source.contains(required),
@@ -32,9 +40,9 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     for required in [
-        "profile,total_ms,root_count,materialization_groups,materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline",
-        "single-root-groups,9050,23,23,1,1.000,yes",
-        "batched-roots,9050,23,1,23,23.000,no",
+        "profile,total_ms,root_count,materialization_groups,materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure",
+        "single-root-groups,9050,23,23,1,1.000,yes,858,23,874,41078,15732,23598,1786.000,192.974,yes",
+        "batched-roots,9050,23,1,23,23.000,no,0,0,0,0,0,0,0.000,0.000,no",
     ] {
         assert!(
             stdout.contains(required),
