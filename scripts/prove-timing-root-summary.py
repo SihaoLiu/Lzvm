@@ -101,8 +101,8 @@ HEADER = (
     "root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
     "leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,"
     "leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure,"
-    "trace_to_leaf_ratio,primary_bottleneck,perf_lowered_report_row_self_pct,"
-    "perf_memmove_self_pct,perf_memmove_guest_machine_pct,"
+    "trace_to_leaf_ratio,primary_bottleneck,trace_structure_hint,"
+    "perf_lowered_report_row_self_pct,perf_memmove_self_pct,perf_memmove_guest_machine_pct,"
     "perf_memmove_trace_slice_pct,perf_memmove_source_hint,"
     "perf_pending_segment_drop_self_pct,perf_sha256_self_pct,"
     "perf_sha256_source_hint,cpu_trace_hotspot_hint"
@@ -432,6 +432,34 @@ def constant_material_overlap_hint(elapsed_ms: int, join_wait_ms: int) -> str:
     return "partial_overlap"
 
 
+def trace_structure_hint(
+    total_ms: int,
+    runner_ms: int,
+    lowerer_ms: int,
+    stream_elapsed_ms: int,
+    segment_receive_wait_ms: int,
+    parallel_lower_workers: int,
+    leaf_kernel_ms: int,
+) -> str:
+    trace_ms = max(runner_ms, lowerer_ms, stream_elapsed_ms)
+    if total_ms <= 0 or trace_ms <= 0:
+        return "none"
+    receive_wait_ratio = (
+        segment_receive_wait_ms / stream_elapsed_ms if stream_elapsed_ms else 0.0
+    )
+    leaf_ratio = leaf_kernel_ms / trace_ms if trace_ms else 0.0
+    trace_total_ratio = trace_ms / total_ms if total_ms else 0.0
+    if parallel_lower_workers > 0:
+        if receive_wait_ratio >= 0.5:
+            return "parallel_lower_waiting"
+        return "parallel_lower_active"
+    if trace_total_ratio >= 0.6 and receive_wait_ratio >= 0.5 and leaf_ratio <= 0.2:
+        return "trace_stream_cpu_floor"
+    if trace_total_ratio >= 0.6:
+        return "cpu_trace_dominant"
+    return "none"
+
+
 def summarize_profile_values(
     label: str,
     values: dict[str, int],
@@ -556,6 +584,15 @@ def summarize_profile_values(
         leaf_kernel_ms,
         direct_d2h_wait_ms,
     )
+    trace_hint = trace_structure_hint(
+        total_ms,
+        runner_ms,
+        lowerer_ms,
+        stream_elapsed_ms,
+        segment_receive_wait_ms,
+        parallel_lower_workers,
+        leaf_kernel_ms,
+    )
     if perf_hotspots is None:
         perf_hotspots = parse_perf_self_hotspots("")
     lowered_report_row_pct = perf_hotspots.get(
@@ -600,8 +637,8 @@ def summarize_profile_values(
         f"{leaf_kernel_ms},{leaf_coset_calls},{leaf_coset_columns},{leaf_ntt_launches},"
         f"{leaf_ntt_stage_launches},{leaf_ntt_block_twiddle_launches},"
         f"{ntt_launches_per_call:.3f},{direct_d2h_wait_ms:.3f},{leaf_launch_pressure},"
-        f"{trace_to_leaf_ratio:.3f},{bottleneck},{lowered_report_row_pct:.3f},"
-        f"{memmove_pct:.3f},{memmove_guest_machine_pct:.3f},"
+        f"{trace_to_leaf_ratio:.3f},{bottleneck},{trace_hint},"
+        f"{lowered_report_row_pct:.3f},{memmove_pct:.3f},{memmove_guest_machine_pct:.3f},"
         f"{memmove_trace_slice_pct:.3f},{memmove_hint},"
         f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint}"
     )
