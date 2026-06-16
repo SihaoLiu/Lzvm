@@ -903,6 +903,183 @@ conn.close()
 }
 
 #[test]
+fn nsys_cuda_copy_summary_does_not_batch_memory_info_d2h() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/nsys-cuda-copy-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("temp directory should be creatable");
+    let sqlite_path = temp_dir.join(format!(
+        "nsys-copy-summary-d2h-meminfo-test-{}.sqlite",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    let setup = r#"
+import sqlite3
+import sys
+
+path = sys.argv[1]
+conn = sqlite3.connect(path)
+conn.executescript("""
+create table StringIds (id integer primary key, value text);
+create table ENUM_CUDA_MEMCPY_OPER (id integer primary key, label text);
+create table CUPTI_ACTIVITY_KIND_RUNTIME (
+    start integer,
+    end integer,
+    eventClass integer,
+    globalTid integer,
+    correlationId integer,
+    nameId integer,
+    returnValue integer,
+    callchainId integer
+);
+create table CUPTI_ACTIVITY_KIND_MEMCPY (
+    start integer,
+    end integer,
+    deviceId integer,
+    contextId integer,
+    greenContextId integer,
+    streamId integer,
+    correlationId integer,
+    globalPid integer,
+    bytes integer,
+    copyKind integer,
+    deprecatedSrcId integer,
+    srcKind integer,
+    dstKind integer,
+    srcDeviceId integer,
+    srcContextId integer,
+    dstDeviceId integer,
+    dstContextId integer,
+    migrationCause integer,
+    graphNodeId integer,
+    virtualAddress integer,
+    copyCount integer
+);
+create table CUPTI_ACTIVITY_KIND_KERNEL (
+    start integer,
+    end integer,
+    deviceId integer,
+    contextId integer,
+    greenContextId integer,
+    streamId integer,
+    correlationId integer,
+    globalPid integer,
+    demangledName integer,
+    shortName integer,
+    mangledName integer
+);
+create table OSRT_CALLCHAINS (
+    id integer,
+    symbol text,
+    module text,
+    kernelMode integer,
+    thumbCode integer,
+    unresolved integer,
+    specialEntry integer,
+    originalIP integer,
+    unwindMethod integer,
+    stackDepth integer
+);
+""")
+conn.executemany("insert into StringIds (id, value) values (?, ?)", [
+    (1, "cudaMemcpy_v3020"),
+    (2, "poseidon2_merkle_digest_parent_kernel"),
+])
+conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", [
+    (1, "Device-to-Host"),
+])
+conn.executemany("""
+insert into CUPTI_ACTIVITY_KIND_RUNTIME
+    (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
+values (?, ?, 0, 7, ?, 1, 0, ?)
+""", [
+    (0, 2_000_000, 10, 100),
+    (3_000_000, 5_000_000, 11, 101),
+    (6_000_000, 8_000_000, 12, 102),
+])
+conn.executemany("""
+insert into CUPTI_ACTIVITY_KIND_MEMCPY
+    (start, end, deviceId, contextId, greenContextId, streamId, correlationId,
+     globalPid, bytes, copyKind, deprecatedSrcId, srcKind, dstKind, srcDeviceId,
+     srcContextId, dstDeviceId, dstContextId, migrationCause, graphNodeId,
+     virtualAddress, copyCount)
+values (?, ?, 0, 0, null, 3, ?, 1, 1152, 1, null, null, null,
+        null, null, null, null, null, null, null, 1)
+""", [
+    (1000, 1500, 10),
+    (2000, 2500, 11),
+    (3000, 3500, 12),
+])
+conn.executemany("""
+insert into CUPTI_ACTIVITY_KIND_KERNEL
+    (start, end, deviceId, contextId, greenContextId, streamId, correlationId,
+     globalPid, demangledName, shortName, mangledName)
+values (?, ?, 0, 0, null, 3, ?, 1, 2, 2, 2)
+""", [
+    (100, 900, 200),
+    (1600, 1900, 201),
+    (2600, 2900, 202),
+])
+conn.executemany("""
+insert into OSRT_CALLCHAINS
+    (id, symbol, module, kernelMode, thumbCode, unresolved, specialEntry,
+     originalIP, unwindMethod, stackDepth)
+values (?, ?, ?, 0, 0, 0, 0, 0, 0, ?)
+""", [
+    (100, "lzvm_cuda_memory_info", "lzvm", 0),
+    (101, "cudaMemGetInfo", "libcuda.so", 0),
+    (102, "lzvm_cuda_memory_info", "lzvm", 0),
+])
+conn.commit()
+conn.close()
+"#;
+
+    let setup_output = Command::new("python3")
+        .arg("-c")
+        .arg(setup)
+        .arg(&sqlite_path)
+        .output()
+        .expect("D2H memory-info test database should be created");
+    assert!(
+        setup_output.status.success(),
+        "D2H memory-info test database creation should succeed: stderr={}",
+        String::from_utf8_lossy(&setup_output.stderr)
+    );
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&sqlite_path)
+        .output()
+        .expect("nsys CUDA copy summary should run on D2H memory-info test database");
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    assert!(
+        output.status.success(),
+        "nsys CUDA copy summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("d2h_meminfo_frame_calls,3,host_api_ms=6.000 example_bytes=1152"),
+        "D2H memory-info quality summary should count diagnostic copies: {stdout}"
+    );
+    assert!(
+        stdout.contains("gpu_residency_hint,ignore_diagnostic_memory_info_d2h"),
+        "transfer triage should not classify memory-info D2H as a residency opportunity: {stdout}"
+    );
+    assert!(
+        stdout.contains("small_d2h_batching_hint,diagnostic_memory_info_d2h"),
+        "transfer triage should not suggest batching diagnostic memory-info D2H: {stdout}"
+    );
+    assert!(
+        !stdout.contains("small_d2h_batching_hint,batch_small_d2h_by_size,bytes=1152"),
+        "memory-info D2H should not be treated as a batching candidate: {stdout}"
+    );
+}
+
+#[test]
 fn nsys_cuda_copy_summary_reports_host_registration_overhead() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root.join("../..");

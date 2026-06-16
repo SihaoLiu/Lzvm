@@ -313,8 +313,10 @@ def d2h_preceding_kernel_summary(conn: sqlite3.Connection, limit: int) -> list[s
 
 def small_d2h_batching_candidates(
     d2h_rows: list[sqlite3.Row],
+    d2h_meminfo_rows: list[dict[str, object]],
     limit: int,
 ) -> list[dict[str, object]]:
+    meminfo_by_bytes = {int(row["bytes"]): row for row in d2h_meminfo_rows}
     candidates = []
     for row in d2h_rows:
         bytes_ = int(row["bytes"] or 0)
@@ -322,6 +324,12 @@ def small_d2h_batching_candidates(
         host_ns = int(row["host_ns"] or 0)
         if bytes_ > 4096 or calls < 2 or host_ns == 0:
             continue
+        meminfo = meminfo_by_bytes.get(bytes_)
+        if meminfo is not None:
+            meminfo_calls = int(meminfo["calls"])
+            meminfo_host_ns = int(meminfo["host_ns"])
+            if meminfo_calls >= calls and meminfo_host_ns * 2 >= host_ns:
+                continue
         candidates.append(
             {
                 "bytes": bytes_,
@@ -505,6 +513,48 @@ def h2d_bulk_callchain_quality_summary(
             }
         )
     return suspect_rows[:limit]
+
+
+def d2h_meminfo_callchain_quality_summary(
+    conn: sqlite3.Connection,
+    limit: int,
+) -> list[dict[str, object]]:
+    if not any_callchain_table_exists(conn):
+        return []
+    rows = d2h_memcpy_callchain_summary(conn, limit * 4)
+    grouped: dict[int, dict[str, object]] = {}
+    for row in rows:
+        callchain_id = int(row["callchain_id"])
+        if not callchain_has_meminfo_frame(conn, callchain_id):
+            continue
+        bytes_ = int(row["bytes"] or 0)
+        entry = grouped.setdefault(
+            bytes_,
+            {
+                "bytes": bytes_,
+                "callchain_id": callchain_id,
+                "app_frame": first_application_frame(conn, callchain_id),
+                "calls": 0,
+                "host_ns": 0,
+                "gpu_ns": 0,
+                "max_host_ns": 0,
+            },
+        )
+        entry["calls"] = int(entry["calls"]) + int(row["calls"] or 0)
+        entry["host_ns"] = int(entry["host_ns"]) + int(row["host_ns"] or 0)
+        entry["gpu_ns"] = int(entry["gpu_ns"]) + int(row["gpu_ns"] or 0)
+        entry["max_host_ns"] = max(
+            int(entry["max_host_ns"]),
+            int(row["max_host_ns"] or 0),
+        )
+    return sorted(
+        grouped.values(),
+        key=lambda row: (
+            -int(row["host_ns"]),
+            -int(row["calls"]),
+            int(row["bytes"]),
+        ),
+    )[:limit]
 
 
 def callchain_frame_rows(
@@ -751,6 +801,25 @@ def print_callchain_quality(rows: list[dict[str, object]]) -> None:
     )
 
 
+def print_d2h_callchain_quality(rows: list[dict[str, object]]) -> None:
+    print()
+    print("d2h_meminfo_callchain_quality")
+    print("metric,value,detail")
+    if not rows:
+        print("d2h_meminfo_frame_calls,0,none")
+        return
+    calls = sum(int(row["calls"]) for row in rows)
+    host_ns = sum(int(row["host_ns"]) for row in rows)
+    first = rows[0]
+    print(
+        f"d2h_meminfo_frame_calls,{calls},"
+        f"host_api_ms={ms(host_ns):.3f} "
+        f"example_bytes={int(first['bytes'])} "
+        f"example_callchain_id={int(first['callchain_id'])} "
+        f"app_frame={csv_cell(first['app_frame'])}"
+    )
+
+
 def print_d2h_preceding_kernels(rows: list[sqlite3.Row]) -> None:
     print()
     print("d2h_wait_preceding_kernel_hotspots")
@@ -818,6 +887,7 @@ def print_transfer_triage(
     gpu_rows: list[sqlite3.Row],
     correlated_rows: list[sqlite3.Row],
     d2h_rows: list[sqlite3.Row],
+    d2h_meminfo_rows: list[dict[str, object]],
     small_d2h_rows: list[dict[str, object]],
     top_h2d_bulk: sqlite3.Row | None,
 ) -> None:
@@ -883,6 +953,15 @@ def print_transfer_triage(
     top_host_ns = int(top_d2h["host_ns"] or 0)
     top_gpu_ns = int(top_d2h["gpu_ns"] or 0)
     top_bytes = int(top_d2h["bytes"] or 0)
+    top_d2h_meminfo = next(
+        (row for row in d2h_meminfo_rows if int(row["bytes"]) == top_bytes),
+        None,
+    )
+    top_d2h_meminfo_dominates = (
+        top_d2h_meminfo is not None
+        and int(top_d2h_meminfo["calls"]) >= int(top_d2h["calls"] or 0)
+        and int(top_d2h_meminfo["host_ns"]) * 2 >= top_host_ns
+    )
     print(
         f"top_d2h_wait,{top_bytes},"
         f"previous_kernel={csv_cell(top_d2h['previous_kernel'])} "
@@ -891,7 +970,9 @@ def print_transfer_triage(
         f"gpu_memcpy_ms={ms(top_gpu_ns):.3f} "
         f"wait_ratio={ratio(top_host_ns, top_gpu_ns)}"
     )
-    if top_bytes <= 4096 and top_host_ns > top_gpu_ns * 100:
+    if top_d2h_meminfo_dominates:
+        hint = "ignore_diagnostic_memory_info_d2h"
+    elif top_bytes <= 4096 and top_host_ns > top_gpu_ns * 100:
         hint = "batch_or_keep_small_d2h_on_device"
     elif host_direction == "Host-to-Device" and host_direction_ns > gpu_direction_ns:
         hint = "prefer_reused_device_residency_for_h2d_inputs"
@@ -909,6 +990,13 @@ def print_transfer_triage(
             f"calls={int(candidate['calls'])} "
             f"host_api_ms={ms(int(candidate['host_ns'])):.3f} "
             f"previous_kernel={csv_cell(candidate['previous_kernel'])}"
+        )
+    elif top_d2h_meminfo_dominates:
+        print(
+            "small_d2h_batching_hint,diagnostic_memory_info_d2h,"
+            f"bytes={top_bytes} "
+            f"calls={int(top_d2h_meminfo['calls'])} "
+            f"host_api_ms={ms(int(top_d2h_meminfo['host_ns'])):.3f}"
         )
     else:
         print("small_d2h_batching_hint,none,no repeated small D2H hotspot")
@@ -942,6 +1030,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     callchain_rows = memcpy_callchain_summary(conn, limit)
     d2h_callchain_rows = d2h_memcpy_callchain_summary(conn, limit)
     d2h_rows = d2h_preceding_kernel_summary(conn, limit)
+    d2h_meminfo_rows = d2h_meminfo_callchain_quality_summary(conn, limit)
     top_h2d_bulk = top_h2d_bulk_upload_summary(conn)
     top_h2d_bulk_bytes = int(top_h2d_bulk["bytes"]) if top_h2d_bulk else None
     h2d_bulk_callchain_rows = h2d_bulk_callchain_summary(
@@ -951,7 +1040,11 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     )
     h2d_bulk_app_frame_rows = h2d_bulk_app_frame_summary(conn, limit)
     h2d_bulk_quality_rows = h2d_bulk_callchain_quality_summary(conn, limit)
-    small_d2h_rows = small_d2h_batching_candidates(d2h_rows, limit)
+    small_d2h_rows = small_d2h_batching_candidates(
+        d2h_rows,
+        d2h_meminfo_rows,
+        limit,
+    )
     print(f"profile={label}")
     print_runtime(runtime_rows)
     print_host_registration(host_registration_rows)
@@ -962,6 +1055,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print_h2d_bulk_callchains(conn, h2d_bulk_callchain_rows, top_h2d_bulk_bytes)
     print_h2d_bulk_app_frames(h2d_bulk_app_frame_rows)
     print_callchain_quality(h2d_bulk_quality_rows)
+    print_d2h_callchain_quality(d2h_meminfo_rows)
     print_d2h_preceding_kernels(d2h_rows)
     print_small_d2h_batching_candidates(small_d2h_rows)
     print_transfer_triage(
@@ -970,6 +1064,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
         gpu_rows,
         correlated_rows,
         d2h_rows,
+        d2h_meminfo_rows,
         small_d2h_rows,
         top_h2d_bulk,
     )
