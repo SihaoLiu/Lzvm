@@ -310,6 +310,73 @@ theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_f
       requiresExternalSource
       openingAccepted
 
+set_option linter.style.longLine false in
+theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimePipelineBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeSoundnessEvidence
+          system
+          (runtime_pipeline_runtime_soundness_validation validation)
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have openingSegmentAccepted :=
+    runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingAccepted :=
+    runtime_opening_segment_binding_checked_acceptance_opening
+      validation.queryPlanBindingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentAccepted
+  exact
+    runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening
+      assumptions
+      hashAssumptions
+      validation.queryPlanBindingValidation.openingValidation.openingValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
