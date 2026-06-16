@@ -461,6 +461,63 @@ def h2d_bulk_app_frame_summary(
     )[:limit]
 
 
+def d2h_app_frame_summary(
+    conn: sqlite3.Connection,
+    limit: int,
+) -> list[dict[str, object]]:
+    if not any_callchain_table_exists(conn):
+        return []
+    rows = conn.execute(
+        f"""
+        select
+            m.bytes as bytes,
+            r.callchainId as callchain_id,
+            count(*) as calls,
+            sum(r.end - r.start) as host_ns,
+            sum(m.end - m.start) as gpu_ns,
+            max(r.end - r.start) as max_host_ns
+        from {RUNTIME_MEMCPY_TABLE} r
+        join {MEMCPY_TABLE} m on m.correlationId = r.correlationId
+        left join {MEMCPY_KIND_TABLE} e on e.id = m.copyKind
+        where coalesce(e.label, 'copyKind=' || m.copyKind) = 'Device-to-Host'
+          and r.callchainId is not null
+        group by m.bytes, r.callchainId
+        """
+    ).fetchall()
+    grouped: dict[tuple[int, str], dict[str, object]] = {}
+    for row in rows:
+        bytes_ = int(row["bytes"] or 0)
+        app_frame = first_application_frame(conn, int(row["callchain_id"]))
+        key = (bytes_, app_frame)
+        entry = grouped.setdefault(
+            key,
+            {
+                "bytes": bytes_,
+                "app_frame": app_frame,
+                "calls": 0,
+                "host_ns": 0,
+                "gpu_ns": 0,
+                "max_host_ns": 0,
+            },
+        )
+        entry["calls"] = int(entry["calls"]) + int(row["calls"] or 0)
+        entry["host_ns"] = int(entry["host_ns"]) + int(row["host_ns"] or 0)
+        entry["gpu_ns"] = int(entry["gpu_ns"]) + int(row["gpu_ns"] or 0)
+        entry["max_host_ns"] = max(
+            int(entry["max_host_ns"]),
+            int(row["max_host_ns"] or 0),
+        )
+    return sorted(
+        grouped.values(),
+        key=lambda entry: (
+            -int(entry["host_ns"]),
+            -int(entry["calls"]),
+            int(entry["bytes"]),
+            str(entry["app_frame"]),
+        ),
+    )[:limit]
+
+
 def callchain_has_meminfo_frame(conn: sqlite3.Connection, callchain_id: int) -> bool:
     for row in callchain_frame_rows(conn, callchain_id):
         symbol = str(row["symbol"] or "").lower()
@@ -791,6 +848,20 @@ def print_h2d_bulk_app_frames(rows: list[dict[str, object]]) -> None:
         print("0,0,0.000,0.000,0.000,unavailable")
 
 
+def print_d2h_app_frames(rows: list[dict[str, object]]) -> None:
+    print()
+    print("d2h_app_frame_hotspots")
+    print("bytes,calls,host_api_ms,gpu_memcpy_ms,max_host_api_ms,app_frame")
+    for row in rows:
+        print(
+            f"{int(row['bytes'])},{int(row['calls'])},"
+            f"{ms(int(row['host_ns'])):.3f},{ms(int(row['gpu_ns'])):.3f},"
+            f"{ms(int(row['max_host_ns'])):.3f},{csv_cell(row['app_frame'])}"
+        )
+    if not rows:
+        print("0,0,0.000,0.000,0.000,unavailable")
+
+
 def print_callchain_quality(rows: list[dict[str, object]]) -> None:
     print()
     print("cuda_memcpy_callchain_quality")
@@ -1048,6 +1119,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
         limit,
     )
     h2d_bulk_app_frame_rows = h2d_bulk_app_frame_summary(conn, limit)
+    d2h_app_frame_rows = d2h_app_frame_summary(conn, limit)
     h2d_bulk_quality_rows = h2d_bulk_callchain_quality_summary(conn, limit)
     small_d2h_rows = small_d2h_batching_candidates(
         d2h_rows,
@@ -1063,6 +1135,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print_d2h_callchains(conn, d2h_callchain_rows)
     print_h2d_bulk_callchains(conn, h2d_bulk_callchain_rows, top_h2d_bulk_bytes)
     print_h2d_bulk_app_frames(h2d_bulk_app_frame_rows)
+    print_d2h_app_frames(d2h_app_frame_rows)
     print_callchain_quality(h2d_bulk_quality_rows)
     print_d2h_callchain_quality(d2h_meminfo_rows)
     print_d2h_preceding_kernels(d2h_rows)

@@ -577,6 +577,155 @@ lzvm_prover::witness_commitment::values::copy_extended_row_values_from_device@lz
 }
 
 #[test]
+fn nsys_cuda_copy_summary_groups_d2h_wait_by_application_frame() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/nsys-cuda-copy-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("temp directory should be creatable");
+    let sqlite_path = temp_dir.join(format!(
+        "nsys-copy-summary-d2h-app-frame-test-{}.sqlite",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    let setup = r#"
+import sqlite3
+import sys
+
+path = sys.argv[1]
+conn = sqlite3.connect(path)
+conn.executescript("""
+create table StringIds (id integer primary key, value text);
+create table ENUM_CUDA_MEMCPY_OPER (id integer primary key, label text);
+create table CUPTI_ACTIVITY_KIND_RUNTIME (
+    start integer,
+    end integer,
+    eventClass integer,
+    globalTid integer,
+    correlationId integer,
+    nameId integer,
+    returnValue integer,
+    callchainId integer
+);
+create table CUPTI_ACTIVITY_KIND_MEMCPY (
+    start integer,
+    end integer,
+    deviceId integer,
+    contextId integer,
+    greenContextId integer,
+    streamId integer,
+    correlationId integer,
+    globalPid integer,
+    bytes integer,
+    copyKind integer,
+    deprecatedSrcId integer,
+    srcKind integer,
+    dstKind integer,
+    srcDeviceId integer,
+    srcContextId integer,
+    dstDeviceId integer,
+    dstContextId integer,
+    migrationCause integer,
+    graphNodeId integer,
+    virtualAddress integer,
+    copyCount integer
+);
+create table OSRT_CALLCHAINS (
+    id integer,
+    symbol text,
+    module text,
+    kernelMode integer,
+    thumbCode integer,
+    unresolved integer,
+    specialEntry integer,
+    originalIP integer,
+    unwindMethod integer,
+    stackDepth integer
+);
+""")
+conn.executemany("insert into StringIds (id, value) values (?, ?)", [
+    (1, "cudaMemcpy"),
+])
+conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", [
+    (1, "Device-to-Host"),
+])
+conn.executemany("""
+insert into CUPTI_ACTIVITY_KIND_RUNTIME
+    (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
+values (?, ?, 0, 7, ?, 1, 0, ?)
+""", [
+    (0, 12_000_000, 45, 301),
+    (20_000_000, 28_000_000, 46, 302),
+])
+conn.executemany("""
+insert into CUPTI_ACTIVITY_KIND_MEMCPY
+    (start, end, deviceId, contextId, greenContextId, streamId, correlationId,
+     globalPid, bytes, copyKind, deprecatedSrcId, srcKind, dstKind, srcDeviceId,
+     srcContextId, dstDeviceId, dstContextId, migrationCause, graphNodeId,
+     virtualAddress, copyCount)
+values (?, ?, 0, 0, null, 3, ?, 1, 1152, 1, null, null, null,
+        null, null, null, null, null, null, null, 1)
+""", [
+    (1000, 2000, 45),
+    (20_001_000, 20_002_000, 46),
+])
+conn.executemany("""
+insert into OSRT_CALLCHAINS
+    (id, symbol, module, kernelMode, thumbCode, unresolved, specialEntry,
+     originalIP, unwindMethod, stackDepth)
+values (?, ?, ?, 0, 0, 0, 0, 0, 0, ?)
+""", [
+    (301, "cudaMemcpy", "libcudart.so", 0),
+    (301, "(anonymous namespace)::record_direct_d2h_copy(void*, void const*, unsigned long)", "lzvm", 1),
+    (301, "lzvm_prover::witness_commitment::values::copy_extended_row_values_from_device", "lzvm", 2),
+    (302, "cudaMemcpy", "libcudart.so", 0),
+    (302, "(anonymous namespace)::record_direct_d2h_copy(void*, void const*, unsigned long)", "lzvm", 1),
+    (302, "lzvm_prover::witness_commitment::values::copy_extended_row_values_from_device", "lzvm", 2),
+])
+conn.commit()
+conn.close()
+"#;
+
+    let setup_output = Command::new("python3")
+        .arg("-c")
+        .arg(setup)
+        .arg(&sqlite_path)
+        .output()
+        .expect("D2H app-frame test database should be created");
+    assert!(
+        setup_output.status.success(),
+        "D2H app-frame test database creation should succeed: stderr={}",
+        String::from_utf8_lossy(&setup_output.stderr)
+    );
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&sqlite_path)
+        .output()
+        .expect("nsys CUDA copy summary should run on D2H app-frame test database");
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    assert!(
+        output.status.success(),
+        "nsys CUDA copy summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("d2h_app_frame_hotspots"),
+        "D2H app-frame summary should be printed: {stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "1152,2,20.000,0.002,12.000,\
+lzvm_prover::witness_commitment::values::copy_extended_row_values_from_device@lzvm"
+        ),
+        "same D2H app frame should be aggregated across callchains: {stdout}"
+    );
+}
+
+#[test]
 fn nsys_cuda_copy_summary_prefers_cuda_callchains_for_cuda_memcpy_frames() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root.join("../..");
@@ -1366,6 +1515,7 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
         "OSRT_CALLCHAINS",
         "cuda_memcpy_callchain_hotspots",
         "d2h_cuda_memcpy_callchain_hotspots",
+        "d2h_app_frame_hotspots",
         "top_h2d_bulk_callchain_hotspots",
         "h2d_bulk_app_frame_hotspots",
         "cuda_memcpy_callchain_quality",
@@ -1411,6 +1561,7 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
             && stdout.contains("cuda_memcpy_callchain_hotspots")
             && stdout.contains("api,direction,bytes")
             && stdout.contains("d2h_cuda_memcpy_callchain_hotspots")
+            && stdout.contains("d2h_app_frame_hotspots")
             && stdout.contains("api,bytes,calls")
             && stdout.contains("top_h2d_bulk_callchain_hotspots")
             && stdout.contains("h2d_bulk_app_frame_hotspots")
