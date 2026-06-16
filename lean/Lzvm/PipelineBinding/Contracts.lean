@@ -208,6 +208,65 @@ theorem runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_concrete_na
       proof
       openingAccepted
 
+set_option linter.style.longLine false in
+theorem runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimePipelineBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  have openingSegmentAccepted :=
+    runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingAccepted :=
+    runtime_opening_segment_binding_checked_acceptance_opening
+      validation.queryPlanBindingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentAccepted
+  exact
+    runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle
+      hashAssumptions
+      validation.queryPlanBindingValidation.openingValidation.openingValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      openingAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

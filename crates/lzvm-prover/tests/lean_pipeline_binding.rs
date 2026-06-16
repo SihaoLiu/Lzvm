@@ -84,6 +84,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_constant_opening_bound_from_concrete_nary_merkle",
             "runtime_pipeline_binding_checked_acceptance_witness_opening_bound_from_concrete_nary_merkle",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle",
+            "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
             "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract",
             "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
@@ -836,6 +837,38 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle",
+        &["runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+        &[
+            "HashCollisionResistanceAssumption",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimePipelineBindingCheckedAcceptance",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
+            "runtime_opening_segment_binding_checked_acceptance_opening",
+            "runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
         &["runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri"],
     );
     lean_binding::assert_theorem_prefix_contains(
