@@ -2169,7 +2169,7 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
                 auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
                 unit_values: &[],
                 evaluation_values_segment: None,
-                verify_outputs: false,
+                verify_outputs: true,
                 program_image_cache: None,
                 eth_block_input: None,
                 challenge_values_segment: None,
