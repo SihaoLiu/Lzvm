@@ -12,6 +12,8 @@ Compact proof-system contracts derived from runtime proof pipeline binding.
 
 namespace Lzvm
 
+universe uDigest
+
 theorem runtime_pipeline_binding_checked_acceptance_opening_bound_contract
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
@@ -43,6 +45,110 @@ theorem runtime_pipeline_binding_checked_acceptance_opening_bound_contract
       publicInput
       proof
       openingSegmentAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_constant_opening_bound_from_concrete_nary_merkle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let openingValidation :=
+          validation.queryPlanBindingValidation.openingValidation.openingValidation
+        openingValidation.constantOpeningsBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have openingSegmentAccepted :=
+    runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingAccepted :=
+    runtime_opening_segment_binding_checked_acceptance_opening
+      validation.queryPlanBindingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentAccepted
+  exact
+    runtime_constant_opening_nary_checked_acceptance_constant_bound_from_bundle
+      assumptions
+      validation.queryPlanBindingValidation.openingValidation.openingValidation
+      centralized
+      binding
+      artifact
+      publicInput
+      proof
+      openingAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_witness_opening_bound_from_concrete_nary_merkle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let openingValidation :=
+          validation.queryPlanBindingValidation.openingValidation.openingValidation
+        openingValidation.witnessOpeningsBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have openingSegmentAccepted :=
+    runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingAccepted :=
+    runtime_opening_segment_binding_checked_acceptance_opening
+      validation.queryPlanBindingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentAccepted
+  exact
+    runtime_witness_opening_nary_checked_acceptance_witness_bound_from_bundle
+      assumptions
+      validation.queryPlanBindingValidation.openingValidation.openingValidation
+      centralized
+      binding
+      artifact
+      publicInput
+      proof
+      openingAccepted
 
 theorem runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract
     {system : VerifierModel}
