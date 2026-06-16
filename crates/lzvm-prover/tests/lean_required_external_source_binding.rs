@@ -27,6 +27,37 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_declarations(
         &lean_source,
-        &["runtime_guarded_external_source_required_verifier_core_contract"],
+        &[
+            "runtime_guarded_external_source_required_verifier_core_contract",
+            "runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_opening",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_opening",
+        &[
+            "HashCollisionResistanceAssumption",
+            "RuntimeOpeningValidation system",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_opening",
+        &[
+            "external_source_opening_requirement_implies_evidence",
+            "runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_opening",
+        &[
+            "external_source_opening_evidence_implies_pcs_openings",
+            "providerEvidenceImpliesPcsOpenings",
+        ],
     );
 }

@@ -5,7 +5,7 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.AssumptionAudit
-import Lzvm.RequiredExternalSource
+import Lzvm.ExternalSource
 import Lzvm.TranscriptBinding
 
 /-!

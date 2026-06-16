@@ -26,6 +26,7 @@ import Lzvm.PipelineBinding.Accepts
 import Lzvm.PipelineBinding.Contracts
 import Lzvm.QueryPlanBinding
 import Lzvm.RetainedLeafDigestOpening
+import Lzvm.RetainedLeafDigestOpening.Contracts
 import Lzvm.RetainedParentCheckpointOpening
 import Lzvm.RequiredExternalSource
 import Lzvm.RuntimeExternalSource
