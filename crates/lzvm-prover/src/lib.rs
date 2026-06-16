@@ -35,7 +35,7 @@ use crate::setup_preflight::{validate_public_values_metadata, SetupPreflightErro
 #[cfg(feature = "cuda")]
 pub use lzvm_accel::{
     cuda_allocator_stats, cuda_copy_site_stats_clear, cuda_copy_site_stats_snapshot,
-    CudaAllocatorStats, CudaCopySiteStat,
+    CudaAllocatorStats, CudaCopyDirection, CudaCopySiteStat,
 };
 
 #[cfg(all(test, feature = "cuda"))]

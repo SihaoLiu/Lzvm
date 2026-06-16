@@ -410,26 +410,35 @@ pub(super) fn record_cuda_copy_site_timing_entries(
     timings: &mut TimingRecorder,
     stats: &[lzvm_prover::CudaCopySiteStat],
 ) {
-    let mut ordered = stats.to_vec();
-    ordered.sort_by(|lhs, rhs| {
-        rhs.bytes
-            .cmp(&lhs.bytes)
-            .then_with(|| rhs.calls.cmp(&lhs.calls))
-            .then_with(|| lhs.label.cmp(rhs.label))
-            .then_with(|| lhs.file.cmp(rhs.file))
-            .then_with(|| lhs.line.cmp(&rhs.line))
-    });
-    for (index, stat) in ordered.iter().take(8).enumerate() {
-        let prefix = cuda_copy_site_timing_prefix(index + 1, stat);
-        timings.record_count_dynamic(format!("{prefix}_calls"), stat.calls);
-        timings.record_count_dynamic(format!("{prefix}_bytes"), stat.bytes);
-        timings.record_count_dynamic(format!("{prefix}_max_bytes"), stat.max_bytes);
-        timings.record_count_dynamic(format!("{prefix}_wait_ns"), stat.wait_ns);
-        timings.record_count_dynamic(format!("{prefix}_max_wait_ns"), stat.max_wait_ns);
-        timings.record_count_dynamic(
-            format!("{prefix}_avg_wait_per_call_ns"),
-            average_wait_ns(stat.wait_ns, stat.calls),
-        );
+    for direction in [
+        lzvm_prover::CudaCopyDirection::H2d,
+        lzvm_prover::CudaCopyDirection::D2h,
+    ] {
+        let mut ordered = stats
+            .iter()
+            .filter(|stat| stat.direction == direction)
+            .cloned()
+            .collect::<Vec<_>>();
+        ordered.sort_by(|lhs, rhs| {
+            rhs.bytes
+                .cmp(&lhs.bytes)
+                .then_with(|| rhs.calls.cmp(&lhs.calls))
+                .then_with(|| lhs.label.cmp(rhs.label))
+                .then_with(|| lhs.file.cmp(rhs.file))
+                .then_with(|| lhs.line.cmp(&rhs.line))
+        });
+        for (index, stat) in ordered.iter().take(8).enumerate() {
+            let prefix = cuda_copy_site_timing_prefix(index + 1, stat);
+            timings.record_count_dynamic(format!("{prefix}_calls"), stat.calls);
+            timings.record_count_dynamic(format!("{prefix}_bytes"), stat.bytes);
+            timings.record_count_dynamic(format!("{prefix}_max_bytes"), stat.max_bytes);
+            timings.record_count_dynamic(format!("{prefix}_wait_ns"), stat.wait_ns);
+            timings.record_count_dynamic(format!("{prefix}_max_wait_ns"), stat.max_wait_ns);
+            timings.record_count_dynamic(
+                format!("{prefix}_avg_wait_per_call_ns"),
+                average_wait_ns(stat.wait_ns, stat.calls),
+            );
+        }
     }
 }
 
@@ -440,7 +449,8 @@ fn cuda_copy_site_timing_prefix(rank: usize, stat: &lzvm_prover::CudaCopySiteSta
         .and_then(|name| name.to_str())
         .unwrap_or(stat.file);
     format!(
-        "cuda_copy_site_h2d_top_{}_{}_{}_{}",
+        "cuda_copy_site_{}_top_{}_{}_{}_{}",
+        stat.direction.as_str(),
         rank,
         sanitize_timing_component(stat.label),
         sanitize_timing_component(file),

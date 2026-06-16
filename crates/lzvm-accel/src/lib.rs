@@ -37,7 +37,7 @@ pub use cuda_canonical::{
 };
 #[cfg(feature = "cuda")]
 pub use cuda_copy_sites::{
-    cuda_copy_site_stats_clear, cuda_copy_site_stats_snapshot, CudaCopySiteStat,
+    cuda_copy_site_stats_clear, cuda_copy_site_stats_snapshot, CudaCopyDirection, CudaCopySiteStat,
 };
 #[cfg(feature = "cuda")]
 pub use cuda_device::{cuda_device_synchronize, cuda_memory_info, CudaMemoryInfo};
@@ -2952,16 +2952,25 @@ fn run_cuda_poseidon2_merkle_opening_path_device_op(
         })?;
     let mut root = [0_u64; 4];
     let mut siblings = vec![0_u64; sibling_word_count];
-    let code = unsafe {
-        operation(
-            values.as_raw_ptr() as *const u64,
-            root.as_mut_ptr(),
-            siblings.as_mut_ptr(),
-            child_state_count,
-            query_index,
-        )
-    };
-    cuda_status(code)?;
+    let host_output_bytes = sibling_word_count
+        .checked_add(4)
+        .and_then(|word_count| word_count.checked_mul(8))
+        .ok_or(AccelError::InvalidDomain {
+            bits,
+            len: child_state_count,
+        })?;
+    cuda_copy_sites::record_d2h_copy_site_timing("merkle_opening_path", host_output_bytes, || {
+        let code = unsafe {
+            operation(
+                values.as_raw_ptr() as *const u64,
+                root.as_mut_ptr(),
+                siblings.as_mut_ptr(),
+                child_state_count,
+                query_index,
+            )
+        };
+        cuda_status(code)
+    })?;
 
     Ok(CudaMerkleOpeningPathWords { root, siblings })
 }
@@ -3245,16 +3254,23 @@ fn run_cuda_poseidon2_merkle_digest_opening_prefix_device_op(
             len: child_state_count,
         })?;
     let mut siblings = vec![0_u64; sibling_word_count];
-    let code = unsafe {
-        operation(
-            values.as_raw_ptr() as *const u64,
-            siblings.as_mut_ptr(),
-            child_state_count,
-            query_index,
-            prefix_level_count,
-        )
-    };
-    cuda_status(code)?;
+    let host_output_bytes = u64_word_byte_len(sibling_word_count)?;
+    cuda_copy_sites::record_d2h_copy_site_timing(
+        "merkle_opening_prefix",
+        host_output_bytes,
+        || {
+            let code = unsafe {
+                operation(
+                    values.as_raw_ptr() as *const u64,
+                    siblings.as_mut_ptr(),
+                    child_state_count,
+                    query_index,
+                    prefix_level_count,
+                )
+            };
+            cuda_status(code)
+        },
+    )?;
 
     Ok(siblings)
 }
@@ -3312,17 +3328,24 @@ fn run_cuda_poseidon2_merkle_digest_opening_prefix_batch_device_op(
             len: child_state_count,
         })?;
     let mut siblings = vec![0_u64; sibling_word_count];
-    let code = unsafe {
-        operation(
-            values.as_raw_ptr() as *const u64,
-            query_indices.as_ptr(),
-            siblings.as_mut_ptr(),
-            child_state_count,
-            query_indices.len(),
-            prefix_level_count,
-        )
-    };
-    cuda_status(code)?;
+    let host_output_bytes = u64_word_byte_len(sibling_word_count)?;
+    cuda_copy_sites::record_d2h_copy_site_timing(
+        "merkle_opening_prefix_batch",
+        host_output_bytes,
+        || {
+            let code = unsafe {
+                operation(
+                    values.as_raw_ptr() as *const u64,
+                    query_indices.as_ptr(),
+                    siblings.as_mut_ptr(),
+                    child_state_count,
+                    query_indices.len(),
+                    prefix_level_count,
+                )
+            };
+            cuda_status(code)
+        },
+    )?;
 
     Ok(siblings)
 }

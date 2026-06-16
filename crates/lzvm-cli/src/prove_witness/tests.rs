@@ -173,6 +173,7 @@ fn writes_cuda_copy_site_timing_summary_lines() {
         &mut timings,
         &[
             lzvm_prover::CudaCopySiteStat {
+                direction: lzvm_prover::CudaCopyDirection::H2d,
                 label: "copy_from",
                 file: "crates/lzvm-prover/src/witness/upload.rs",
                 line: 37,
@@ -183,6 +184,7 @@ fn writes_cuda_copy_site_timing_summary_lines() {
                 max_wait_ns: 9,
             },
             lzvm_prover::CudaCopySiteStat {
+                direction: lzvm_prover::CudaCopyDirection::D2h,
                 label: "copy_prefix_from_u64_words",
                 file: "crates/lzvm-prover/src/witness/layout.rs",
                 line: 92,
@@ -206,12 +208,12 @@ fn writes_cuda_copy_site_timing_summary_lines() {
         "timing_cuda_copy_site_h2d_top_1_copy_from_upload_rs_37_wait_ns=15\n",
         "timing_cuda_copy_site_h2d_top_1_copy_from_upload_rs_37_max_wait_ns=9\n",
         "timing_cuda_copy_site_h2d_top_1_copy_from_upload_rs_37_avg_wait_per_call_ns=7\n",
-        "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_calls=3\n",
-        "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_bytes=96\n",
-        "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_max_bytes=32\n",
-        "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_wait_ns=21\n",
-        "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_max_wait_ns=8\n",
-        "timing_cuda_copy_site_h2d_top_2_copy_prefix_from_u64_words_layout_rs_92_avg_wait_per_call_ns=7\n",
+        "timing_cuda_copy_site_d2h_top_1_copy_prefix_from_u64_words_layout_rs_92_calls=3\n",
+        "timing_cuda_copy_site_d2h_top_1_copy_prefix_from_u64_words_layout_rs_92_bytes=96\n",
+        "timing_cuda_copy_site_d2h_top_1_copy_prefix_from_u64_words_layout_rs_92_max_bytes=32\n",
+        "timing_cuda_copy_site_d2h_top_1_copy_prefix_from_u64_words_layout_rs_92_wait_ns=21\n",
+        "timing_cuda_copy_site_d2h_top_1_copy_prefix_from_u64_words_layout_rs_92_max_wait_ns=8\n",
+        "timing_cuda_copy_site_d2h_top_1_copy_prefix_from_u64_words_layout_rs_92_avg_wait_per_call_ns=7\n",
     ] {
         assert!(stdout.contains(expected), "missing {expected} in {stdout}");
     }

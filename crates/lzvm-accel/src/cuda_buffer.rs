@@ -1045,6 +1045,7 @@ impl CudaDeviceBuffer {
         Ok(buffer)
     }
 
+    #[track_caller]
     pub fn to_u64_words(&self) -> Result<Vec<u64>, AccelError> {
         if !self.len.is_multiple_of(8) {
             return Err(AccelError::LengthMismatch {
@@ -1058,14 +1059,16 @@ impl CudaDeviceBuffer {
             if output.is_empty() {
                 return Ok(output);
             }
-            let code = unsafe {
-                lzvm_cuda_copy_d2h_bytes(
-                    output.as_mut_ptr().cast(),
-                    self.ptr as *const c_void,
-                    self.len,
-                )
-            };
-            cuda_status(code)?;
+            super::cuda_copy_sites::record_d2h_copy_site_timing("to_u64_words", self.len, || {
+                let code = unsafe {
+                    lzvm_cuda_copy_d2h_bytes(
+                        output.as_mut_ptr().cast(),
+                        self.ptr as *const c_void,
+                        self.len,
+                    )
+                };
+                cuda_status(code)
+            })?;
             Ok(output)
         }
         #[cfg(not(target_endian = "little"))]
@@ -1559,6 +1562,7 @@ impl CudaDeviceBuffer {
         cuda_status(code)
     }
 
+    #[track_caller]
     pub fn to_state_prefix_u64_words(
         &self,
         state_count: usize,
@@ -1595,16 +1599,22 @@ impl CudaDeviceBuffer {
         if output.is_empty() {
             return Ok(output);
         }
-        let code = unsafe {
-            lzvm_cuda_copy_d2h_state_prefix_words(
-                output.as_mut_ptr().cast(),
-                self.ptr as *const c_void,
-                state_count,
-                state_width_words,
-                prefix_words,
-            )
-        };
-        cuda_status(code)?;
+        super::cuda_copy_sites::record_d2h_copy_site_timing(
+            "to_state_prefix_u64_words",
+            u64_word_byte_len(output_words)?,
+            || {
+                let code = unsafe {
+                    lzvm_cuda_copy_d2h_state_prefix_words(
+                        output.as_mut_ptr().cast(),
+                        self.ptr as *const c_void,
+                        state_count,
+                        state_width_words,
+                        prefix_words,
+                    )
+                };
+                cuda_status(code)
+            },
+        )?;
         Ok(output)
     }
 
@@ -1645,6 +1655,7 @@ impl CudaDeviceBuffer {
         })
     }
 
+    #[track_caller]
     pub fn copy_to(&self, output: &mut [u8]) -> Result<(), AccelError> {
         if output.len() != self.len {
             return Err(AccelError::LengthMismatch {
@@ -1655,14 +1666,16 @@ impl CudaDeviceBuffer {
         if self.len == 0 {
             return Ok(());
         }
-        let code = unsafe {
-            lzvm_cuda_copy_d2h_bytes(
-                output.as_mut_ptr().cast(),
-                self.ptr as *const c_void,
-                self.len,
-            )
-        };
-        cuda_status(code)
+        super::cuda_copy_sites::record_d2h_copy_site_timing("copy_to", self.len, || {
+            let code = unsafe {
+                lzvm_cuda_copy_d2h_bytes(
+                    output.as_mut_ptr().cast(),
+                    self.ptr as *const c_void,
+                    self.len,
+                )
+            };
+            cuda_status(code)
+        })
     }
 
     /// Enqueues a device-to-page-locked-host copy on `stream`.
@@ -1672,6 +1685,7 @@ impl CudaDeviceBuffer {
     /// The caller must keep `self`, `output`, and `stream` alive until the copy
     /// has completed, and must not read `output` until that stream has been
     /// synchronized or a later event proves completion.
+    #[track_caller]
     pub unsafe fn copy_to_pinned_on_stream(
         &self,
         output: &mut CudaPinnedHostBuffer,
@@ -1693,6 +1707,7 @@ impl CudaDeviceBuffer {
     /// The caller must keep `self` and `output` alive until the copy has
     /// completed, and must not read `output` until the device or default stream
     /// has been synchronized.
+    #[track_caller]
     pub unsafe fn copy_to_pinned_on_default_stream(
         &self,
         output: &mut CudaPinnedHostBuffer,
@@ -1706,6 +1721,7 @@ impl CudaDeviceBuffer {
         unsafe { self.copy_range_to_pinned_on_default_stream(0, output) }
     }
 
+    #[track_caller]
     pub fn copy_range_to(&self, byte_offset: usize, output: &mut [u8]) -> Result<(), AccelError> {
         let end = byte_offset
             .checked_add(output.len())
@@ -1723,9 +1739,12 @@ impl CudaDeviceBuffer {
             return Ok(());
         }
         let source = unsafe { (self.ptr as *const u8).add(byte_offset).cast() };
-        let code =
-            unsafe { lzvm_cuda_copy_d2h_bytes(output.as_mut_ptr().cast(), source, output.len()) };
-        cuda_status(code)
+        super::cuda_copy_sites::record_d2h_copy_site_timing("copy_range_to", output.len(), || {
+            let code = unsafe {
+                lzvm_cuda_copy_d2h_bytes(output.as_mut_ptr().cast(), source, output.len())
+            };
+            cuda_status(code)
+        })
     }
 
     /// Enqueues a device range to page-locked host memory on the legacy default
@@ -1736,6 +1755,7 @@ impl CudaDeviceBuffer {
     /// The caller must keep `self` and `output` alive until the copy has
     /// completed, and must not read `output` until the device or default stream
     /// has been synchronized.
+    #[track_caller]
     pub unsafe fn copy_range_to_pinned_on_default_stream(
         &self,
         byte_offset: usize,
@@ -1757,14 +1777,20 @@ impl CudaDeviceBuffer {
             return Ok(());
         }
         let source = unsafe { (self.ptr as *const u8).add(byte_offset).cast() };
-        let code = unsafe {
-            lzvm_cuda_copy_d2h_bytes_on_default_stream(
-                output.as_mut_raw_ptr(),
-                source,
-                output.len(),
-            )
-        };
-        cuda_status(code)
+        super::cuda_copy_sites::record_d2h_copy_site_timing(
+            "copy_range_to_pinned_on_default_stream",
+            output.len(),
+            || {
+                let code = unsafe {
+                    lzvm_cuda_copy_d2h_bytes_on_default_stream(
+                        output.as_mut_raw_ptr(),
+                        source,
+                        output.len(),
+                    )
+                };
+                cuda_status(code)
+            },
+        )
     }
 
     /// Enqueues a device range to page-locked host memory on `stream`.
@@ -1774,6 +1800,7 @@ impl CudaDeviceBuffer {
     /// The caller must keep `self`, `output`, and `stream` alive until the copy
     /// has completed, and must not read `output` until that stream has been
     /// synchronized or a later event proves completion.
+    #[track_caller]
     pub unsafe fn copy_range_to_pinned_on_stream(
         &self,
         byte_offset: usize,
@@ -1796,17 +1823,24 @@ impl CudaDeviceBuffer {
             return Ok(());
         }
         let source = unsafe { (self.ptr as *const u8).add(byte_offset).cast() };
-        let code = unsafe {
-            lzvm_cuda_copy_d2h_bytes_on_stream(
-                output.as_mut_raw_ptr(),
-                source,
-                output.len(),
-                stream.as_raw(),
-            )
-        };
-        cuda_status(code)
+        super::cuda_copy_sites::record_d2h_copy_site_timing(
+            "copy_range_to_pinned_on_stream",
+            output.len(),
+            || {
+                let code = unsafe {
+                    lzvm_cuda_copy_d2h_bytes_on_stream(
+                        output.as_mut_raw_ptr(),
+                        source,
+                        output.len(),
+                        stream.as_raw(),
+                    )
+                };
+                cuda_status(code)
+            },
+        )
     }
 
+    #[track_caller]
     pub fn to_vec(&self) -> Result<Vec<u8>, AccelError> {
         let mut output = vec![0_u8; self.len];
         self.copy_to(&mut output)?;
