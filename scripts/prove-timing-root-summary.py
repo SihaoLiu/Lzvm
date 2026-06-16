@@ -150,7 +150,9 @@ HEADER = (
     "perf_sha256_source_hint,cpu_trace_hotspot_hint,"
     "trace_report_detail_samples,trace_report_detail_sample_pct,"
     "trace_report_detail_sample_hint,trace_report_detail_avg_ns,"
-    "trace_report_detail_hotspot,trace_report_detail_hotspot_pct"
+    "trace_report_detail_hotspot,trace_report_detail_hotspot_pct,"
+    "trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,"
+    "trace_report_detail_visit_pct"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -554,6 +556,16 @@ DETAIL_SAMPLE_HOTSPOT_KEYS = [
     ("precompile_memory", TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY),
 ]
 
+ROW_VALIDATION_HOTSPOT_KEYS = [
+    ("source_values", TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY),
+    ("instruction_result", TRACE_REPORT_INSTRUCTION_RESULT_SAMPLED_NS_KEY),
+    ("next_pc", TRACE_REPORT_NEXT_PC_SAMPLED_NS_KEY),
+    ("register_access", TRACE_REPORT_REGISTER_ACCESS_SAMPLED_NS_KEY),
+    ("memory_access", TRACE_REPORT_MEMORY_ACCESS_SAMPLED_NS_KEY),
+    ("store_apply", TRACE_REPORT_STORE_APPLY_SAMPLED_NS_KEY),
+    ("precompile_memory", TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY),
+]
+
 
 def trace_report_detail_hotspot(values: dict[str, int]) -> tuple[int, str, float]:
     samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
@@ -570,6 +582,21 @@ def trace_report_detail_hotspot(values: dict[str, int]) -> tuple[int, str, float
             hotspot_ns = value
     hotspot_pct = hotspot_ns * 100.0 / sampled_ns if sampled_ns else 0.0
     return (avg_ns, hotspot_name, hotspot_pct)
+
+
+def trace_report_row_validation_hotspot(values: dict[str, int]) -> tuple[str, float]:
+    row_validation_ns = values.get(TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY, 0)
+    if row_validation_ns <= 0:
+        return ("none", 0.0)
+    hotspot_name = "none"
+    hotspot_ns = 0
+    for name, key in ROW_VALIDATION_HOTSPOT_KEYS:
+        value = values.get(key, 0)
+        if value > hotspot_ns:
+            hotspot_name = name
+            hotspot_ns = value
+    hotspot_pct = hotspot_ns * 100.0 / row_validation_ns
+    return (hotspot_name, hotspot_pct)
 
 
 def trace_structure_hint(
@@ -656,6 +683,16 @@ def summarize_profile_values(
         trace_report_detail_hotspot_name,
         trace_report_detail_hotspot_pct,
     ) = trace_report_detail_hotspot(values)
+    (
+        trace_report_row_validation_hotspot_name,
+        trace_report_row_validation_hotspot_pct,
+    ) = trace_report_row_validation_hotspot(values)
+    trace_report_detail_visit_pct = (
+        values.get(TRACE_REPORT_VISIT_SAMPLED_NS_KEY, 0) * 100.0
+        / values.get(TRACE_REPORT_SAMPLED_NS_KEY, 0)
+        if values.get(TRACE_REPORT_SAMPLED_NS_KEY, 0)
+        else 0.0
+    )
     trace_rows_per_report = (
         trace_report_rows / trace_reports if trace_reports else 0.0
     )
@@ -836,7 +873,10 @@ def summarize_profile_values(
         f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint},"
         f"{trace_report_detail_samples},{trace_report_detail_sample_pct:.3f},"
         f"{trace_report_detail_hint},{trace_report_detail_avg_ns},"
-        f"{trace_report_detail_hotspot_name},{trace_report_detail_hotspot_pct:.3f}"
+        f"{trace_report_detail_hotspot_name},{trace_report_detail_hotspot_pct:.3f},"
+        f"{trace_report_row_validation_hotspot_name},"
+        f"{trace_report_row_validation_hotspot_pct:.3f},"
+        f"{trace_report_detail_visit_pct:.3f}"
     )
 
 
