@@ -94,6 +94,22 @@ def launch_api_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def graph_api_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        f"""
+        select
+            coalesce(s.value, 'nameId=' || r.nameId) as api,
+            count(*) as calls,
+            sum(r.end - r.start) as graph_ns
+        from {RUNTIME_TABLE} r
+        left join {STRING_TABLE} s on s.id = r.nameId
+        where s.value like 'cudaGraph%'
+        group by api
+        order by graph_ns desc, calls desc, api asc
+        """
+    ).fetchall()
+
+
 def sync_api_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         f"""
@@ -381,6 +397,19 @@ def print_launch_api(rows: list[sqlite3.Row]) -> None:
         print("none,0,0.000,0.000")
 
 
+def print_graph_api(rows: list[sqlite3.Row]) -> None:
+    print()
+    print("runtime_cuda_graph_api")
+    print("api,calls,graph_api_ms,avg_graph_api_us")
+    for row in rows:
+        calls = int(row["calls"] or 0)
+        graph_ns = int(row["graph_ns"] or 0)
+        avg = graph_ns / calls if calls else 0
+        print(f"{row['api']},{calls},{ms(graph_ns):.3f},{us(avg):.3f}")
+    if not rows:
+        print("none,0,0.000,0.000")
+
+
 def print_sync_api(rows: list[sqlite3.Row]) -> None:
     print()
     print("runtime_cuda_sync_api")
@@ -544,6 +573,7 @@ def next_action_hint(
 
 def print_direction_triage(
     launch_rows: list[sqlite3.Row],
+    graph_rows: list[sqlite3.Row],
     sync_rows: list[sqlite3.Row],
     stream_rows: list[sqlite3.Row],
     fusion_rows: list[sqlite3.Row],
@@ -553,7 +583,13 @@ def print_direction_triage(
     top_d2h: sqlite3.Row | None,
 ) -> None:
     launch_ns = sum_rows_ns(launch_rows, "launch_ns")
+    graph_ns = sum_rows_ns(graph_rows, "graph_ns")
     sync_ns = sum_rows_ns(sync_rows, "sync_ns")
+    graph_launch_calls = sum(
+        int(row["calls"] or 0)
+        for row in graph_rows
+        if str(row["api"]).startswith("cudaGraphLaunch")
+    )
     stream_count = len(stream_rows)
     top_stream_id, top_stream_gpu_ns, top_stream_window_ns, top_stream_idle_ns = top_stream_stats(
         stream_rows
@@ -579,6 +615,12 @@ def print_direction_triage(
         f"graph_or_fusion_upper_bound_ms,{ms(launch_ns):.3f},"
         "launch API time before any synchronization or transfer costs"
     )
+    print(f"graph_api_ms,{ms(graph_ns):.3f},host time spent inside CUDA Graph APIs")
+    print(
+        f"graph_api_present,{str(bool(graph_rows)).lower()},"
+        "true means the nsys export observed CUDA Graph runtime calls"
+    )
+    print(f"graph_launch_calls,{graph_launch_calls},cudaGraphLaunch calls observed")
     print(
         f"sync_api_ms,{ms(sync_ns):.3f},"
         "host synchronization time that Graph or fusion may not remove"
@@ -677,6 +719,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     require_tables(conn)
     conn.row_factory = sqlite3.Row
     launch_rows = launch_api_summary(conn)
+    graph_rows = graph_api_summary(conn)
     sync_rows = sync_api_summary(conn)
     stream_rows = stream_kernel_summary(conn, limit)
     fusion_rows = fusion_candidate_summary(conn, limit)
@@ -687,6 +730,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print(f"profile={label}")
     print_kernel_gpu(kernel_gpu_summary(conn, limit))
     print_launch_api(launch_rows)
+    print_graph_api(graph_rows)
     print_sync_api(sync_rows)
     print_correlated_launch(correlated_launch_summary(conn, limit))
     print_streams(stream_rows)
@@ -695,6 +739,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print_kernel_adjacency(adjacency_rows)
     print_direction_triage(
         launch_rows,
+        graph_rows,
         sync_rows,
         stream_rows,
         fusion_rows,
@@ -761,6 +806,8 @@ def build_self_test_db() -> sqlite3.Connection:
             (3, "poseidon2_width16_merkle_parent_kernel"),
             (4, "cudaDeviceSynchronize_v3020"),
             (5, "cudaMemcpyAsync_v3020"),
+            (6, "cudaGraphInstantiate_v10000"),
+            (7, "cudaGraphLaunch_v10000"),
         ],
     )
     conn.executemany(
@@ -783,6 +830,8 @@ def build_self_test_db() -> sqlite3.Connection:
             (160_000, 230_000, 0, 0, 0, 4, 0, 0),
             (240_000, 260_000, 0, 0, 13, 1, 0, 0),
             (262_000, 1_862_000, 0, 0, 20, 5, 0, 0),
+            (1_900_000, 1_960_000, 0, 0, 0, 6, 0, 0),
+            (1_970_000, 2_000_000, 0, 0, 0, 7, 0, 0),
         ],
     )
     conn.executemany(
