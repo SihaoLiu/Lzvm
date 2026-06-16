@@ -86,6 +86,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_witness_opening_bound_from_concrete_nary_merkle",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+            "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
             "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract",
             "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
@@ -284,6 +285,34 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
         &["runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
+        &[
+            "AssumptionBundle system",
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RuntimeSoundnessEvidence",
+            "(runtime_pipeline_runtime_soundness_validation validation)",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
+            "runtime_opening_segment_binding_checked_acceptance_opening",
+            "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_sound",
+            "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
+            "runtime_soundness_checked_acceptance_evidence",
+        ],
     );
     assert!(
         theorem_prefix(
