@@ -633,7 +633,16 @@ def low_level_cuda_copy_frame(symbol: str) -> bool:
         "lzvm_accel::cuda_copy_sites::",
         "lzvm_accel::cuda_buffer::CudaDeviceBuffer::",
     )
-    return symbol.startswith(low_level_prefixes)
+    if symbol.startswith(low_level_prefixes):
+        return True
+    low_level_fragments = (
+        "record_direct_d2h_copy",
+        "record_cuda_direct_copy_d2h_wait",
+        "record_cuda_copy_d2h_wait",
+        "record_cuda_copy_h2d_wait",
+        "record_cuda_copy_d2d_wait",
+    )
+    return any(fragment in symbol for fragment in low_level_fragments)
 
 
 def print_runtime(rows: list[sqlite3.Row]) -> None:
