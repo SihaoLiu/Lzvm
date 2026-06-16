@@ -468,9 +468,46 @@ theorem runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_w
               (And.intro compactContract.right.right.right.right.right.left
                 (And.intro compactContract.right.right.right.right.right.right.left
                   (And.intro seedBinds
-                    (And.intro seededFriOpeningChecked
-                      (And.intro coreContract.right.right
-                        compactContract.right.right.right.right.right.right.right)))))))))
+                      (And.intro seededFriOpeningChecked
+                        (And.intro coreContract.right.right
+                          compactContract.right.right.right.right.right.right.right)))))))))
+
+theorem runtime_pipeline_binding_required_external_source_audited_seeded_query_requirements_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+              artifact
+              publicInput
+              proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+              artifact
+              publicInput
+              proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have auditedCore :=
+    runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  have seedBinds :=
+    auditedCore.right.right.right.right.right.right.right.left
+  have seededFriOpeningChecked :=
+    auditedCore.right.right.right.right.right.right.right.right.left
+  exact And.intro seedBinds seededFriOpeningChecked
 
 theorem runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract
     {system : VerifierModel}

@@ -123,6 +123,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract",
+            "runtime_pipeline_binding_required_external_source_audited_seeded_query_requirements_contract",
         ],
     );
     assert!(
@@ -285,6 +286,25 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
         &["runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_audited_seeded_query_requirements_contract",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "requiresExternalSource",
+            "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
+            "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_audited_seeded_query_requirements_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract",
+            "seedBinds",
+            "seededFriOpeningChecked",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
