@@ -990,6 +990,76 @@ theorem runtime_opening_checked_acceptance_runtime_soundness_evidence_from_openi
           (And.intro coreContract.right.left
             (And.intro runtimeAccepted.right pcsAndFri))))
 
+set_option linter.style.longLine false in
+theorem runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeOpeningValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeSoundnessEvidence
+          system
+          validation.runtimeSoundnessValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have runtimeAccepted :=
+    validation.openingAcceptedImpliesRuntimeSoundnessAccepted
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have transcriptSound :=
+    runtime_transcript_binding_checked_acceptance_sound
+      assumptions
+      validation.runtimeSoundnessValidation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      runtimeAccepted.left
+  have coreContract :=
+    sound_witness_implies_verifier_core_contract
+      transcriptSound.right.right.right
+  have pcsAndFri :=
+    runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle
+      hashAssumptions
+      validation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro transcriptSound.left
+      (And.intro transcriptSound.right.left
+        (And.intro transcriptSound.right.right.left
+          (And.intro coreContract.right.left
+            (And.intro runtimeAccepted.right pcsAndFri))))
+
 theorem runtime_opening_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

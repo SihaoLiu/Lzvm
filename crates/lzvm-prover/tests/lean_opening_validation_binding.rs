@@ -182,6 +182,39 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening",
+        &[
+            "AssumptionBundle system",
+            "HashCollisionResistanceAssumption",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeOpeningValidation system",
+            "RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof",
+            "RuntimeSoundnessEvidence",
+            "validation.runtimeSoundnessValidation",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening",
+        &[
+            "runtime_transcript_binding_checked_acceptance_sound",
+            "runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+            "validation.openingAcceptedImpliesRuntimeSoundnessAccepted",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening",
+        &[
+            "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
+            "runtime_opening_checked_acceptance_evidence",
+            "runtime_soundness_checked_acceptance_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_constant_opening_nary_checked_acceptance_constant_bound_from_hash_assumption",
         &[
             "HashCollisionResistanceAssumption",
