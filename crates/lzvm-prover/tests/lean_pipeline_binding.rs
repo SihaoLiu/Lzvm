@@ -114,6 +114,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract",
             "runtime_pipeline_binding_required_external_source_audited_proof_system_contract",
             "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract",
+            "runtime_pipeline_required_external_source_concrete_opening_core_contract",
             "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract",
@@ -1132,6 +1133,39 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_pipeline_binding_required_external_source_contracts_core_contract",
+        &["runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_required_external_source_concrete_opening_core_contract",
+        &[
+            "AssumptionBundle system",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimePipelineBindingCheckedAcceptance",
+            "requiresExternalSource",
+            "ExternalSourceOpeningEvidence",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "ProofSystemSound system",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_required_external_source_concrete_opening_core_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract",
+            "runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_required_external_source_concrete_opening_core_contract",
         &["runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"],
     );
     assert!(
