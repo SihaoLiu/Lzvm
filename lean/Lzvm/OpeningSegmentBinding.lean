@@ -458,7 +458,7 @@ theorem runtime_opening_segment_binding_checked_acceptance_fri_opening_checks
       proof
       evidence
 
-theorem runtime_opening_segment_binding_checked_acceptance_pcs_and_fri
+theorem runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_assumptions
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
     forall artifact publicInput proof,
@@ -485,6 +485,27 @@ theorem runtime_opening_segment_binding_checked_acceptance_pcs_and_fri
       publicInput
       proof
       evidence
+
+theorem runtime_opening_segment_binding_checked_acceptance_pcs_and_fri
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
 
 theorem runtime_opening_segment_binding_checked_acceptance_opening_pcs_fri_contract
     {system : VerifierModel}

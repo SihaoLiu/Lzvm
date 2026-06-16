@@ -35,6 +35,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_checked_acceptance_query_plan_bound",
             "runtime_opening_segment_binding_checked_acceptance_bound_contract",
             "runtime_opening_segment_binding_checked_acceptance_fri_opening_checks",
+            "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri",
             "runtime_opening_segment_binding_evidence_implies_opening_bound_contract",
             "runtime_opening_segment_binding_checked_acceptance_opening_bound_contract",
@@ -100,6 +101,25 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "system.pcsOpeningsValid publicInput proof",
             "system.friQueriesValid publicInput proof",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_assumptions",
+        &[
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_assumptions",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_assumptions",
+        &["runtime_opening_segment_binding_evidence_implies_pcs_and_fri"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
