@@ -199,6 +199,7 @@ PERF_SHA256_GUEST_MACHINE_PCT_KEY = "perf_sha256_guest_machine_pct"
 PERF_SHA256_TRACE_SLICE_PCT_KEY = "perf_sha256_trace_slice_pct"
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
 OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
+PROOF_TARGET_MS = 12_000
 PERF_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
 PERF_SECOND_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
 PERF_CALLCHAIN_PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)%--(.*)$")
@@ -241,6 +242,7 @@ HEADER = (
     "leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,"
     "leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure,"
     "trace_to_leaf_ratio,primary_bottleneck,trace_structure_hint,"
+    "proof_12s_gap_ms,proof_12s_gap_hint,"
     "perf_lowered_report_row_self_pct,perf_memmove_self_pct,perf_memmove_guest_machine_pct,"
     "perf_memmove_trace_slice_pct,perf_memmove_source_hint,"
     "perf_pending_segment_drop_self_pct,perf_sha256_self_pct,"
@@ -503,6 +505,42 @@ def primary_bottleneck(
     ]
     name, value = max(candidates, key=lambda item: item[1])
     return name if value > 0.0 else "total" if total_ms > 0 else "unknown"
+
+
+def proof_target_gap_hint(
+    total_ms: int,
+    runner_ms: int,
+    lowerer_ms: int,
+    stream_elapsed_ms: int,
+    segment_commit_ms: int,
+    finish_opening_ms: int,
+    leaf_kernel_ms: int,
+    direct_d2h_wait_ms: float,
+) -> str:
+    if total_ms <= 0:
+        return "unknown"
+    if total_ms <= PROOF_TARGET_MS:
+        return "within_12s_target"
+    trace_floor_ms = max(runner_ms, lowerer_ms, stream_elapsed_ms)
+    gpu_or_opening_ms = max(
+        float(segment_commit_ms),
+        float(finish_opening_ms),
+        float(leaf_kernel_ms),
+        direct_d2h_wait_ms,
+    )
+    if trace_floor_ms <= 0 and gpu_or_opening_ms <= 0.0:
+        return "target_gap_needs_timing_breakdown"
+    if trace_floor_ms >= PROOF_TARGET_MS and trace_floor_ms >= gpu_or_opening_ms:
+        return "cpu_trace_generation_above_target"
+    if float(segment_commit_ms) >= PROOF_TARGET_MS or float(leaf_kernel_ms) >= PROOF_TARGET_MS:
+        return "gpu_commit_above_target"
+    if float(finish_opening_ms) >= PROOF_TARGET_MS or direct_d2h_wait_ms >= PROOF_TARGET_MS:
+        return "opening_above_target"
+    if trace_floor_ms >= gpu_or_opening_ms * 1.5:
+        return "cpu_trace_generation_dominant_gap"
+    if gpu_or_opening_ms >= float(trace_floor_ms) * 1.5:
+        return "gpu_or_opening_dominant_gap"
+    return "mixed_pipeline_gap"
 
 
 def cpu_trace_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
@@ -1174,6 +1212,17 @@ def summarize_profile_values(
         parallel_lower_workers,
         leaf_kernel_ms,
     )
+    proof_12s_gap_ms = max(total_ms - PROOF_TARGET_MS, 0) if total_ms > 0 else 0
+    proof_12s_hint = proof_target_gap_hint(
+        total_ms,
+        runner_ms,
+        lowerer_ms,
+        stream_elapsed_ms,
+        segment_commit_ms,
+        finish_opening_ms,
+        leaf_kernel_ms,
+        direct_d2h_wait_ms,
+    )
     if perf_hotspots is None:
         perf_hotspots = parse_perf_self_hotspots("")
     pending_drop_pct = perf_hotspots.get(
@@ -1245,6 +1294,7 @@ def summarize_profile_values(
         f"{leaf_ntt_stage_launches},{leaf_ntt_block_twiddle_launches},"
         f"{ntt_launches_per_call:.3f},{direct_d2h_wait_ms:.3f},{leaf_launch_pressure},"
         f"{trace_to_leaf_ratio:.3f},{bottleneck},{trace_hint},"
+        f"{proof_12s_gap_ms},{proof_12s_hint},"
         f"{lowered_report_row_pct:.3f},{memmove_pct:.3f},{memmove_guest_machine_pct:.3f},"
         f"{memmove_trace_slice_pct:.3f},{memmove_hint},"
         f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint},"
