@@ -29,6 +29,13 @@ PARALLEL_LOWER_DISPATCHED_KEY = "timing_guest_trace_parallel_lower_dispatched"
 PARALLEL_LOWER_RECEIVED_KEY = "timing_guest_trace_parallel_lower_received"
 PARALLEL_LOWER_EMITTED_KEY = "timing_guest_trace_parallel_lower_emitted"
 PARALLEL_LOWER_MAX_REORDER_KEY = "timing_guest_trace_parallel_lower_max_reorder"
+TRACE_REPORTS_KEY = "timing_guest_trace_reports"
+TRACE_REPORT_ROWS_KEY = "timing_guest_trace_report_rows"
+TRACE_REPORT_BUFFER_CAPACITY_KEY = "timing_guest_trace_report_buffer_capacity"
+TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY = "timing_guest_trace_report_buffer_max_capacity"
+TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY = (
+    "timing_guest_trace_report_buffer_excess_capacity"
+)
 DESCRIPTOR_ROWS_KEY = "timing_guest_trace_descriptor_rows"
 DESCRIPTOR_COMPACT_ROWS_KEY = "timing_guest_trace_descriptor_compact_rows"
 DESCRIPTOR_WIDE_ROWS_KEY = "timing_guest_trace_descriptor_wide_rows"
@@ -91,7 +98,11 @@ HEADER = (
     "segment_commit_ms,stream_commit_residual_ms,segment_receive_wait_ms,"
     "pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,"
     "parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,"
-    "parallel_lower_max_reorder,descriptor_rows,descriptor_compact_rows,"
+    "parallel_lower_max_reorder,trace_reports,trace_report_rows,"
+    "trace_rows_per_report,trace_report_buffer_capacity,"
+    "trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,"
+    "trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
+    "descriptor_rows,descriptor_compact_rows,"
     "descriptor_wide_rows,descriptor_upload_bytes,descriptor_bytes_per_row,"
     "descriptor_high32_nonzero_values,descriptor_high32_nonzero_rows,"
     "descriptor_high32_row_pct,descriptor_shape_hint,seed_direct_lift_attempts,"
@@ -135,6 +146,11 @@ TIMING_KEYS = {
     PARALLEL_LOWER_RECEIVED_KEY,
     PARALLEL_LOWER_EMITTED_KEY,
     PARALLEL_LOWER_MAX_REORDER_KEY,
+    TRACE_REPORTS_KEY,
+    TRACE_REPORT_ROWS_KEY,
+    TRACE_REPORT_BUFFER_CAPACITY_KEY,
+    TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY,
+    TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY,
     DESCRIPTOR_ROWS_KEY,
     DESCRIPTOR_COMPACT_ROWS_KEY,
     DESCRIPTOR_WIDE_ROWS_KEY,
@@ -436,6 +452,24 @@ def constant_material_overlap_hint(elapsed_ms: int, join_wait_ms: int) -> str:
     return "partial_overlap"
 
 
+def trace_report_buffer_shape_hint(
+    reports: int,
+    report_rows: int,
+    buffer_capacity: int,
+    buffer_excess_capacity: int,
+) -> str:
+    if reports <= 0 and report_rows <= 0 and buffer_capacity <= 0:
+        return "none"
+    if buffer_capacity <= 0:
+        return "report_buffer_capacity_missing"
+    excess_pct = buffer_excess_capacity * 100.0 / buffer_capacity
+    if excess_pct <= 1.0:
+        return "report_buffer_capacity_tight"
+    if excess_pct <= 5.0:
+        return "report_buffer_capacity_moderate"
+    return "report_buffer_capacity_slack"
+
+
 def trace_structure_hint(
     total_ms: int,
     runner_ms: int,
@@ -505,6 +539,29 @@ def summarize_profile_values(
     parallel_lower_received = values.get(PARALLEL_LOWER_RECEIVED_KEY, 0)
     parallel_lower_emitted = values.get(PARALLEL_LOWER_EMITTED_KEY, 0)
     parallel_lower_max_reorder = values.get(PARALLEL_LOWER_MAX_REORDER_KEY, 0)
+    trace_reports = values.get(TRACE_REPORTS_KEY, 0)
+    trace_report_rows = values.get(TRACE_REPORT_ROWS_KEY, 0)
+    trace_rows_per_report = (
+        trace_report_rows / trace_reports if trace_reports else 0.0
+    )
+    trace_report_buffer_capacity = values.get(TRACE_REPORT_BUFFER_CAPACITY_KEY, 0)
+    trace_report_buffer_max_capacity = values.get(
+        TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY, 0
+    )
+    trace_report_buffer_excess_capacity = values.get(
+        TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY, 0
+    )
+    trace_report_buffer_excess_pct = (
+        trace_report_buffer_excess_capacity * 100.0 / trace_report_buffer_capacity
+        if trace_report_buffer_capacity
+        else 0.0
+    )
+    trace_report_buffer_hint = trace_report_buffer_shape_hint(
+        trace_reports,
+        trace_report_rows,
+        trace_report_buffer_capacity,
+        trace_report_buffer_excess_capacity,
+    )
     descriptor_rows = values.get(DESCRIPTOR_ROWS_KEY, 0)
     descriptor_compact_rows = values.get(DESCRIPTOR_COMPACT_ROWS_KEY, 0)
     descriptor_wide_rows = values.get(DESCRIPTOR_WIDE_ROWS_KEY, 0)
@@ -631,7 +688,12 @@ def summarize_profile_values(
         f"{pending_receive_wait_ms},{pending_send_wait_ms},"
         f"{parallel_lower_workers},{parallel_lower_dispatched},"
         f"{parallel_lower_received},{parallel_lower_emitted},"
-        f"{parallel_lower_max_reorder},{descriptor_rows},"
+        f"{parallel_lower_max_reorder},{trace_reports},"
+        f"{trace_report_rows},{trace_rows_per_report:.3f},"
+        f"{trace_report_buffer_capacity},{trace_report_buffer_max_capacity},"
+        f"{trace_report_buffer_excess_capacity},"
+        f"{trace_report_buffer_excess_pct:.3f},{trace_report_buffer_hint},"
+        f"{descriptor_rows},"
         f"{descriptor_compact_rows},{descriptor_wide_rows},"
         f"{descriptor_upload_bytes},{descriptor_bytes_per_row:.3f},"
         f"{descriptor_high32_values},{descriptor_high32_rows},"
@@ -743,6 +805,11 @@ def self_test() -> None:
                         f"{PARALLEL_LOWER_RECEIVED_KEY}=23",
                         f"{PARALLEL_LOWER_EMITTED_KEY}=23",
                         f"{PARALLEL_LOWER_MAX_REORDER_KEY}=1",
+                        f"{TRACE_REPORTS_KEY}=93843537",
+                        f"{TRACE_REPORT_ROWS_KEY}=93917088",
+                        f"{TRACE_REPORT_BUFFER_CAPACITY_KEY}=94371840",
+                        f"{TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY}=4194304",
+                        f"{TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY}=528303",
                         f"{DESCRIPTOR_ROWS_KEY}=1000",
                         f"{DESCRIPTOR_COMPACT_ROWS_KEY}=1000",
                         f"{DESCRIPTOR_WIDE_ROWS_KEY}=0",
