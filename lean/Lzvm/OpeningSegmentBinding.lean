@@ -12,6 +12,8 @@ Runtime opening segment binding obligations.
 
 namespace Lzvm
 
+universe uDigest
+
 structure RuntimeOpeningSegmentBindingValidation (system : VerifierModel) where
   openingValidation : RuntimeOpeningValidation system
   openingSegmentBindingAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
@@ -600,6 +602,58 @@ theorem runtime_opening_segment_binding_checked_acceptance_bound_pcs_fri_contrac
           publicInput
           proof
           accepted))
+
+set_option linter.style.longLine false in
+theorem runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeOpeningSegmentBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  have openingAccepted :=
+    runtime_opening_segment_binding_checked_acceptance_opening
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle
+      hashAssumptions
+      validation.openingValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      openingAccepted
 
 theorem runtime_opening_segment_binding_checked_acceptance_sound
     {system : VerifierModel}
