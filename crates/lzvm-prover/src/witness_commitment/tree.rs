@@ -2353,6 +2353,107 @@ mod tests {
 
     #[cfg(feature = "cuda")]
     #[test]
+    fn compact_device_batch_opening_combines_leaf_digest_with_parent_checkpoint() {
+        let _retained_source_budget = retained_source_device_budget_for_test();
+        let source_bits = 2;
+        let target_bits = 20;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let column_count = 6;
+        let arity = 4;
+        let source_values = (0..source_rows * column_count)
+            .map(|value| Felt::from_u64(value as u64 + 1))
+            .collect::<Vec<_>>();
+        let source_device = std::sync::Arc::new(
+            lzvm_accel::CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&source_values))
+                .expect("source values should upload"),
+        );
+        let mut timing = crate::witness_commitment::WitnessStageLeafExtendTiming::default();
+        let leaf_level =
+            crate::witness_commitment::compact_witness_stage_leaf_hash_level_from_source_device_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                source_device.as_ref(),
+                &mut timing,
+            )
+            .expect("device leaf hash level should build");
+        let device = commit_witness_stage_device_compact_with_leaf_hash_level(
+            WitnessStageDeviceCompactCommitInput {
+                stage_index: 1,
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                external_source_required: false,
+            },
+            leaf_level,
+            Some(WitnessStageSourceDeviceView::new(
+                source_rows,
+                column_count,
+                column_count,
+                0,
+                source_device,
+            )),
+        )
+        .expect("device compact commitment should build");
+        assert_eq!(
+            device.retained_parent_checkpoint_shape_for_test(),
+            Some((extended_rows, 1, extended_rows / arity, arity))
+        );
+
+        let rows = [0_u64, 3891, 4095];
+        let mut batch_timing = WitnessStageOpeningWorkTiming::default();
+        let batch_openings = open_witness_stage_commitments_with_source_device_timing(
+            &device,
+            &rows,
+            extended_rows as u64,
+            column_count,
+            None,
+            &mut batch_timing,
+        )
+        .expect("batch opening should build");
+
+        assert_eq!(batch_openings.len(), rows.len());
+        for (row, batch_opening) in rows.iter().copied().zip(batch_openings.iter()) {
+            let single_opening =
+                open_witness_stage_commitment(&device, row, extended_rows as u64, column_count)
+                    .expect("single opening should build");
+            assert_eq!(batch_opening, &single_opening);
+            assert!(
+                verify_witness_stage_opening_root(device.root(), arity, batch_opening)
+                    .expect("batch opening should verify")
+            );
+        }
+
+        assert_eq!(batch_timing.retained_leaf_digest_opening_count, 1);
+        assert_eq!(batch_timing.retained_parent_checkpoint_opening_count, 1);
+        assert_eq!(
+            batch_timing.path_parent_hash_retained_leaf_digest_row_count,
+            0
+        );
+        assert_eq!(
+            batch_timing.path_parent_hash_retained_parent_checkpoint_prefix_row_count,
+            0
+        );
+        let checkpoint_parent_rows = 65536 + 16384 + 4096 + 1024 + 256 + 64 + 16 + 4 + 1;
+        assert_eq!(
+            batch_timing.path_parent_hash_retained_parent_checkpoint_suffix_row_count,
+            checkpoint_parent_rows
+        );
+        assert_eq!(
+            batch_timing.path_parent_hash_row_count,
+            checkpoint_parent_rows
+        );
+        assert_eq!(batch_timing.row_values_source_row_count, rows.len());
+        assert_eq!(batch_timing.row_values_device_row_count, 0);
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
     fn compact_device_batch_opening_uses_retained_parent_checkpoint_after_leaf_digest_drop() {
         let _retained_source_budget = retained_source_device_budget_for_test();
         let source_bits = 2;
