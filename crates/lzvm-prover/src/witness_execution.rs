@@ -3900,7 +3900,7 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
 fn default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
     const PARALLEL_COMMIT_INPUT_THRESHOLD_BYTES: usize = 8 * 1024 * 1024;
     if input_byte_count >= PARALLEL_COMMIT_INPUT_THRESHOLD_BYTES {
-        3
+        2
     } else {
         1
     }
@@ -6490,11 +6490,11 @@ mod tests {
         );
         assert_eq!(
             default_guest_pc_trace_segment_commit_worker_count_for_input(8 * 1024 * 1024),
-            3
+            2
         );
         assert_eq!(
             default_guest_pc_trace_segment_commit_worker_count_for_input(usize::MAX),
-            3
+            2
         );
     }
 
@@ -6550,7 +6550,7 @@ mod tests {
         ));
         assert_eq!(
             next_guest_pc_segment_commit_worker_count_after_oom(8 * 1024 * 1024, None, &oom_error),
-            Some(2)
+            Some(1)
         );
         assert_eq!(
             next_guest_pc_segment_commit_worker_count_after_oom(
@@ -6558,7 +6558,7 @@ mod tests {
                 None,
                 &merkle_oom_error
             ),
-            Some(2)
+            Some(1)
         );
         assert_eq!(
             next_guest_pc_segment_commit_worker_count_after_oom(
