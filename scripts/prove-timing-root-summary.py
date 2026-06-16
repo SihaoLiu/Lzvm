@@ -38,9 +38,12 @@ LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY = (
 DIRECT_D2H_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_wait_ns"
 PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
 PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
+PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY = "perf_memmove_guest_machine_pct"
+PERF_MEMMOVE_TRACE_SLICE_PCT_KEY = "perf_memmove_trace_slice_pct"
 PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY = "perf_pending_segment_drop_self_pct"
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
 PERF_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
+PERF_CALLCHAIN_PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)%--(.*)$")
 
 HEADER = (
     "profile,input_bytes,total_ms,runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,"
@@ -55,7 +58,9 @@ HEADER = (
     "leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,"
     "leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure,"
     "trace_to_leaf_ratio,primary_bottleneck,perf_lowered_report_row_self_pct,"
-    "perf_memmove_self_pct,perf_pending_segment_drop_self_pct,cpu_trace_hotspot_hint"
+    "perf_memmove_self_pct,perf_memmove_guest_machine_pct,"
+    "perf_memmove_trace_slice_pct,perf_memmove_source_hint,"
+    "perf_pending_segment_drop_self_pct,cpu_trace_hotspot_hint"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -116,26 +121,48 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
     hotspots = {
         PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY: 0.0,
         PERF_MEMMOVE_SELF_PCT_KEY: 0.0,
+        PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY: 0.0,
+        PERF_MEMMOVE_TRACE_SLICE_PCT_KEY: 0.0,
         PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY: 0.0,
     }
+    in_memmove_callchain = False
     for line in text.splitlines():
         match = PERF_SELF_PERCENT_RE.match(line)
-        if not match:
+        if match:
+            try:
+                pct = float(match.group(1))
+            except ValueError:
+                continue
+            symbol_text = match.group(2)
+            in_memmove_callchain = "memmove" in symbol_text
+            if "lowered_report_row" in symbol_text:
+                key = PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY
+            elif "memmove" in symbol_text:
+                key = PERF_MEMMOVE_SELF_PCT_KEY
+            elif (
+                "GuestPcTracePendingSegmentSlice" in symbol_text
+                and "drop_in_place" in symbol_text
+            ):
+                key = PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY
+            else:
+                continue
+            hotspots[key] = max(hotspots[key], pct)
+            continue
+
+        if not in_memmove_callchain:
+            continue
+        callchain_match = PERF_CALLCHAIN_PERCENT_RE.search(line)
+        if not callchain_match:
             continue
         try:
-            pct = float(match.group(1))
+            pct = float(callchain_match.group(1))
         except ValueError:
             continue
-        symbol_text = match.group(2)
-        if "lowered_report_row" in symbol_text:
-            key = PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY
-        elif "memmove" in symbol_text:
-            key = PERF_MEMMOVE_SELF_PCT_KEY
-        elif (
-            "GuestPcTracePendingSegmentSlice" in symbol_text
-            and "drop_in_place" in symbol_text
-        ):
-            key = PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY
+        symbol_text = callchain_match.group(2)
+        if "advance_guest_machine_prepared_inner" in symbol_text:
+            key = PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY
+        elif "run_guest_pc_trace_segment_slice" in symbol_text:
+            key = PERF_MEMMOVE_TRACE_SLICE_PCT_KEY
         else:
             continue
         hotspots[key] = max(hotspots[key], pct)
@@ -185,6 +212,22 @@ def cpu_trace_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
         return "guest_state_copies"
     if pending_drop_pct >= 5.0:
         return "pending_segment_lifetime"
+    return "none"
+
+
+def memmove_source_hint(perf_hotspots: dict[str, float]) -> str:
+    guest_machine_pct = perf_hotspots.get(PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY, 0.0)
+    trace_slice_pct = perf_hotspots.get(PERF_MEMMOVE_TRACE_SLICE_PCT_KEY, 0.0)
+    if guest_machine_pct > 0.0 and trace_slice_pct > 0.0:
+        if guest_machine_pct >= trace_slice_pct * 1.25:
+            return "guest_machine_dominant"
+        if trace_slice_pct >= guest_machine_pct * 1.25:
+            return "trace_slice_dominant"
+        return "guest_machine_and_trace_slice"
+    if guest_machine_pct > 0.0:
+        return "guest_machine"
+    if trace_slice_pct > 0.0:
+        return "trace_slice"
     return "none"
 
 
@@ -278,6 +321,13 @@ def summarize_profile_values(
         PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY, 0.0
     )
     memmove_pct = perf_hotspots.get(PERF_MEMMOVE_SELF_PCT_KEY, 0.0)
+    memmove_guest_machine_pct = perf_hotspots.get(
+        PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY, 0.0
+    )
+    memmove_trace_slice_pct = perf_hotspots.get(
+        PERF_MEMMOVE_TRACE_SLICE_PCT_KEY, 0.0
+    )
+    memmove_hint = memmove_source_hint(perf_hotspots)
     pending_drop_pct = perf_hotspots.get(
         PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY, 0.0
     )
@@ -298,7 +348,9 @@ def summarize_profile_values(
         f"{leaf_ntt_stage_launches},{leaf_ntt_block_twiddle_launches},"
         f"{ntt_launches_per_call:.3f},{direct_d2h_wait_ms:.3f},{leaf_launch_pressure},"
         f"{trace_to_leaf_ratio:.3f},{bottleneck},{lowered_report_row_pct:.3f},"
-        f"{memmove_pct:.3f},{pending_drop_pct:.3f},{cpu_hint}"
+        f"{memmove_pct:.3f},{memmove_guest_machine_pct:.3f},"
+        f"{memmove_trace_slice_pct:.3f},{memmove_hint},"
+        f"{pending_drop_pct:.3f},{cpu_hint}"
     )
 
 
@@ -408,6 +460,8 @@ def self_test() -> None:
                         f"{DIRECT_D2H_WAIT_NS_KEY}=192973857",
                         "    26.35%  [.] lzvm_prover::guest_pc_trace_backend::apply_main_lowered_report_row",
                         "    20.94%  [.] __memmove_avx512_unaligned_erms",
+                        "            |--10.61%--lzvm_prover::guest_machine::advance_guest_machine_prepared_inner",
+                        "             --8.67%--lzvm_prover::guest_pc_trace_backend::run_guest_pc_trace_segment_slice",
                         "     7.41%  [.] core::ptr::drop_in_place<lzvm_prover::guest_pc_trace_backend::GuestPcTracePendingSegmentSlice>",
                     ]
                 ),
