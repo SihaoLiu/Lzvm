@@ -31,6 +31,15 @@ use super::{
 const RETAINED_PARENT_CHECKPOINT_MAX_STATES: usize = 524288;
 
 #[cfg(feature = "cuda")]
+fn retained_parent_checkpoint_max_states() -> usize {
+    std::env::var("LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_MAX_STATES")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|states| *states > 0)
+        .unwrap_or(RETAINED_PARENT_CHECKPOINT_MAX_STATES)
+}
+
+#[cfg(feature = "cuda")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct WitnessStageTreeCommitTiming {
     pub(crate) checkpoint_duration: Duration,
@@ -536,7 +545,7 @@ fn commit_witness_stage_leaves_compact_with_leaf_hash_level_inner(
             .map(|timing| &mut timing.checkpoint_duration),
         || {
             leaf_level
-                .parent_checkpoint_level(RETAINED_PARENT_CHECKPOINT_MAX_STATES)
+                .parent_checkpoint_level(retained_parent_checkpoint_max_states())
                 .map_err(WitnessStageCommitmentError::from)
         },
     )?;
@@ -701,7 +710,7 @@ fn commit_witness_stage_device_compact_with_leaf_hash_level_pending_inner(
             .map(|timing| &mut timing.checkpoint_duration),
         || {
             leaf_level
-                .parent_checkpoint_level(RETAINED_PARENT_CHECKPOINT_MAX_STATES)
+                .parent_checkpoint_level(retained_parent_checkpoint_max_states())
                 .map_err(WitnessStageCommitmentError::from)
         },
     )?;
@@ -789,7 +798,7 @@ fn commit_witness_stage_device_compact_with_leaf_hash_level_inner(
             .map(|timing| &mut timing.checkpoint_duration),
         || {
             leaf_level
-                .parent_checkpoint_level(RETAINED_PARENT_CHECKPOINT_MAX_STATES)
+                .parent_checkpoint_level(retained_parent_checkpoint_max_states())
                 .map_err(WitnessStageCommitmentError::from)
         },
     )?;
@@ -1434,7 +1443,8 @@ mod tests {
         commit_witness_stage_device_compact_with_leaf_hash_level,
         commit_witness_stage_leaves_compact_with_leaf_hash_level,
         open_witness_stage_commitments_with_source_device_timing,
-        WitnessStageDeviceCompactCommitInput, WitnessStageSourceDeviceView,
+        retained_parent_checkpoint_max_states, WitnessStageDeviceCompactCommitInput,
+        WitnessStageSourceDeviceView, RETAINED_PARENT_CHECKPOINT_MAX_STATES,
     };
     use super::{
         commit_witness_stage_leaves, commit_witness_stage_leaves_compact_with_leaf_hashes,
@@ -1477,6 +1487,65 @@ mod tests {
             _lock: lock,
             previous,
         }
+    }
+
+    #[cfg(feature = "cuda")]
+    struct RetainedParentCheckpointMaxStatesGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    #[cfg(feature = "cuda")]
+    impl RetainedParentCheckpointMaxStatesGuard {
+        fn new() -> Self {
+            let lock = crate::CUDA_TEST_ENV_LOCK
+                .lock()
+                .expect("retained parent checkpoint env lock should acquire");
+            let previous = std::env::var_os("LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_MAX_STATES");
+            std::env::remove_var("LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_MAX_STATES");
+            Self {
+                _lock: lock,
+                previous,
+            }
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    impl Drop for RetainedParentCheckpointMaxStatesGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => {
+                    std::env::set_var("LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_MAX_STATES", value)
+                }
+                None => std::env::remove_var("LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_MAX_STATES"),
+            }
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn retained_parent_checkpoint_max_states_can_be_tuned_for_profiling() {
+        let _guard = RetainedParentCheckpointMaxStatesGuard::new();
+
+        assert_eq!(
+            retained_parent_checkpoint_max_states(),
+            RETAINED_PARENT_CHECKPOINT_MAX_STATES
+        );
+
+        std::env::set_var("LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_MAX_STATES", "1048576");
+        assert_eq!(retained_parent_checkpoint_max_states(), 1048576);
+
+        std::env::set_var("LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_MAX_STATES", "0");
+        assert_eq!(
+            retained_parent_checkpoint_max_states(),
+            RETAINED_PARENT_CHECKPOINT_MAX_STATES
+        );
+
+        std::env::set_var("LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_MAX_STATES", "invalid");
+        assert_eq!(
+            retained_parent_checkpoint_max_states(),
+            RETAINED_PARENT_CHECKPOINT_MAX_STATES
+        );
     }
 
     #[test]
