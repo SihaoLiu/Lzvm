@@ -382,6 +382,47 @@ theorem runtime_constant_opening_nary_checked_acceptance_constant_bound_from_bun
       accepted
       rootCommitsToLeaf
 
+theorem runtime_constant_opening_nary_checked_acceptance_constant_bound_from_hash_assumption
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeOpeningValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (binding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        validation.constantOpeningsBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have verified :=
+    binding.concreteOpeningVerifies
+      artifact
+      publicInput
+      proof
+      accepted
+  have rootCommitsToLeaf :=
+    verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_assumption
+      hashAssumptions
+      centralized
+      (binding.root artifact publicInput proof)
+      (binding.opening artifact publicInput proof)
+      verified
+  exact
+    binding.constantRootCommitsToLeafImpliesConstantOpeningsBound
+      artifact
+      publicInput
+      proof
+      accepted
+      rootCommitsToLeaf
+
 structure RuntimeWitnessOpeningNAryConcreteBinding
     (system : VerifierModel)
     (validation : RuntimeOpeningValidation system)
@@ -461,6 +502,47 @@ theorem runtime_witness_opening_nary_checked_acceptance_witness_bound_from_bundl
       accepted
       rootCommitsToLeaf
 
+theorem runtime_witness_opening_nary_checked_acceptance_witness_bound_from_hash_assumption
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeOpeningValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (binding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        validation.witnessOpeningsBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have verified :=
+    binding.concreteOpeningVerifies
+      artifact
+      publicInput
+      proof
+      accepted
+  have rootCommitsToLeaf :=
+    verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_assumption
+      hashAssumptions
+      centralized
+      (binding.root artifact publicInput proof)
+      (binding.opening artifact publicInput proof)
+      verified
+  exact
+    binding.witnessRootCommitsToLeafImpliesWitnessOpeningsBound
+      artifact
+      publicInput
+      proof
+      accepted
+      rootCommitsToLeaf
+
 theorem runtime_opening_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle
     {Digest : Type uDigest}
     {system : VerifierModel}
@@ -501,6 +583,75 @@ theorem runtime_opening_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle
   have witnessOpenings :=
     runtime_witness_opening_nary_checked_acceptance_witness_bound_from_bundle
       assumptions
+      validation
+      centralized
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      accepted
+  have friOpening :=
+    validation.openingAcceptedImpliesFriOpeningBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have pcsOpenings :=
+    validation.openingChecksImplyPcsOpeningsValid
+      artifact
+      publicInput
+      proof
+      constantOpenings
+      witnessOpenings
+      friOpening
+  have friQueries :=
+    validation.friOpeningImpliesFriQueriesValid
+      artifact
+      publicInput
+      proof
+      friOpening
+  exact And.intro pcsOpenings friQueries
+
+theorem runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeOpeningValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  have constantOpenings :=
+    runtime_constant_opening_nary_checked_acceptance_constant_bound_from_hash_assumption
+      hashAssumptions
+      validation
+      centralized
+      constantBinding
+      artifact
+      publicInput
+      proof
+      accepted
+  have witnessOpenings :=
+    runtime_witness_opening_nary_checked_acceptance_witness_bound_from_hash_assumption
+      hashAssumptions
       validation
       centralized
       witnessBinding

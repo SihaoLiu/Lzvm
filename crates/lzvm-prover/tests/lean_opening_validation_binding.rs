@@ -60,6 +60,9 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "runtime_witness_opening_arity_four_root_commits_to_leaf_at_index_from_bundle",
             "runtime_witness_opening_nary_checked_acceptance_witness_bound_from_bundle",
             "runtime_opening_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle",
+            "runtime_constant_opening_nary_checked_acceptance_constant_bound_from_hash_assumption",
+            "runtime_witness_opening_nary_checked_acceptance_witness_bound_from_hash_assumption",
+            "runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
         ],
     );
     assert!(
@@ -145,6 +148,85 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
         &[
             "validation.openingAcceptedImpliesConstantOpeningsBound",
             "validation.openingAcceptedImpliesWitnessOpeningsBound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_constant_opening_nary_checked_acceptance_constant_bound_from_hash_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof",
+            "validation.constantOpeningsBound artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_constant_opening_nary_checked_acceptance_constant_bound_from_hash_assumption",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_constant_opening_nary_checked_acceptance_constant_bound_from_hash_assumption",
+        &[
+            "binding.concreteOpeningVerifies",
+            "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_assumption",
+            "binding.constantRootCommitsToLeafImpliesConstantOpeningsBound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_witness_opening_nary_checked_acceptance_witness_bound_from_hash_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof",
+            "validation.witnessOpeningsBound artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_witness_opening_nary_checked_acceptance_witness_bound_from_hash_assumption",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_witness_opening_nary_checked_acceptance_witness_bound_from_hash_assumption",
+        &[
+            "binding.concreteOpeningVerifies",
+            "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_assumption",
+            "binding.witnessRootCommitsToLeafImpliesWitnessOpeningsBound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+        &[
+            "HashCollisionResistanceAssumption",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+        &[
+            "runtime_constant_opening_nary_checked_acceptance_constant_bound_from_hash_assumption",
+            "runtime_witness_opening_nary_checked_acceptance_witness_bound_from_hash_assumption",
+            "validation.openingAcceptedImpliesFriOpeningBound",
+            "validation.openingChecksImplyPcsOpeningsValid",
+            "validation.friOpeningImpliesFriQueriesValid",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
