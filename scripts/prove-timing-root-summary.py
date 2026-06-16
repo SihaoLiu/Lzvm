@@ -1057,11 +1057,34 @@ def self_test() -> None:
     )
 
 
+def sibling_perf_report_paths(input_path: Path) -> list[Path]:
+    candidates = [
+        input_path.with_suffix(".perf.report"),
+        input_path.with_name(f"{input_path.name}.perf.report"),
+    ]
+    paths = []
+    seen = set()
+    for candidate in candidates:
+        if candidate == input_path or candidate in seen:
+            continue
+        seen.add(candidate)
+        paths.append(candidate)
+    return paths
+
+
 def read_input(path: str | None) -> tuple[str, str]:
     if path is None or path == "-":
         return ("stdin", sys.stdin.read())
     input_path = Path(path)
-    return (str(input_path), input_path.read_text(encoding="utf-8"))
+    text = input_path.read_text(encoding="utf-8")
+    perf_reports = [
+        perf_report.read_text(encoding="utf-8")
+        for perf_report in sibling_perf_report_paths(input_path)
+        if perf_report.is_file()
+    ]
+    if perf_reports:
+        text = "\n".join([text, *perf_reports])
+    return (str(input_path), text)
 
 
 def main() -> None:

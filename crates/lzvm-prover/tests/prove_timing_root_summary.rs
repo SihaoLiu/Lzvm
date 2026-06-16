@@ -460,6 +460,61 @@ fn prove_timing_root_summary_uses_thread_name_for_memmove_source_hint() {
 }
 
 #[test]
+fn prove_timing_root_summary_reads_sibling_perf_report() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let temp_dir = crate_root.join("../../temp").join(format!(
+        "prove-timing-root-summary-perf-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    std::fs::create_dir_all(&temp_dir).expect("test temp directory should be created");
+    let log_path = temp_dir.join("sample.log");
+    let perf_report_path = temp_dir.join("sample.perf.report");
+    std::fs::write(
+        &log_path,
+        [
+            "timing_total_ms=1000",
+            "timing_guest_stage_tree_commit_root_count=1",
+            "timing_guest_stage_tree_commit_root_materialization_groups=1",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        ]
+        .join("\n"),
+    )
+    .expect("timing log should be written");
+    std::fs::write(
+        &perf_report_path,
+        [
+            "    22.58%  [.] lzvm_prover::guest_pc_trace_backend::apply_main_lowered_report_row",
+            "    17.70%  [.] __memmove_avx512_unaligned_erms",
+            "     4.70%  [.] core::ptr::drop_in_place<lzvm_prover::guest_pc_trace_backend::GuestPcTracePendingSegmentSlice>",
+        ]
+        .join("\n"),
+    )
+    .expect("sibling perf report should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains(
+            ",22.580,17.700,0.000,0.000,none,4.700,0.000,none,report_lifetime_and_data_movement"
+        ),
+        "prove timing root summary should merge sibling perf report hotspots: stdout={stdout}"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_constant_material_overlap() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
