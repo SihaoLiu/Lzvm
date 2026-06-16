@@ -139,6 +139,67 @@ def runtime_host_registration_summary(conn: sqlite3.Connection) -> list[sqlite3.
     ).fetchall()
 
 
+def host_registration_app_frame_summary(
+    conn: sqlite3.Connection,
+    limit: int,
+) -> list[dict[str, object]]:
+    if not any_callchain_table_exists(conn):
+        return []
+    rows = conn.execute(
+        f"""
+        select
+            coalesce(s.value, 'nameId=' || r.nameId) as api,
+            r.callchainId as callchain_id,
+            count(*) as calls,
+            sum(r.end - r.start) as host_ns,
+            max(r.end - r.start) as max_host_ns
+        from {RUNTIME_TABLE} r
+        left join {STRING_TABLE} s on s.id = r.nameId
+        where (
+              s.value like 'cudaHostRegister%'
+              or s.value like 'cudaHostUnregister%'
+              or s.value like 'cudaHostAlloc%'
+              or s.value like 'cudaFreeHost%'
+          )
+        group by api, r.callchainId
+        """
+    ).fetchall()
+    grouped: dict[tuple[str, str], dict[str, object]] = {}
+    for row in rows:
+        api = str(row["api"] or "unknown")
+        app_frame = (
+            first_application_frame(conn, int(row["callchain_id"]))
+            if row["callchain_id"] is not None
+            else "unavailable"
+        )
+        key = (api, app_frame)
+        entry = grouped.setdefault(
+            key,
+            {
+                "api": api,
+                "app_frame": app_frame,
+                "calls": 0,
+                "host_ns": 0,
+                "max_host_ns": 0,
+            },
+        )
+        entry["calls"] = int(entry["calls"]) + int(row["calls"] or 0)
+        entry["host_ns"] = int(entry["host_ns"]) + int(row["host_ns"] or 0)
+        entry["max_host_ns"] = max(
+            int(entry["max_host_ns"]),
+            int(row["max_host_ns"] or 0),
+        )
+    return sorted(
+        grouped.values(),
+        key=lambda entry: (
+            -int(entry["host_ns"]),
+            -int(entry["calls"]),
+            str(entry["api"]),
+            str(entry["app_frame"]),
+        ),
+    )[:limit]
+
+
 def gpu_memcpy_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         f"""
@@ -730,6 +791,20 @@ def print_host_registration(rows: list[sqlite3.Row]) -> None:
         print("none,0,0.000,0.000,0.000")
 
 
+def print_host_registration_app_frames(rows: list[dict[str, object]]) -> None:
+    print()
+    print("host_registration_app_frame_hotspots")
+    print("api,calls,host_api_ms,max_host_api_ms,app_frame")
+    for row in rows:
+        print(
+            f"{csv_cell(row['api'])},{int(row['calls'])},"
+            f"{ms(int(row['host_ns'])):.3f},{ms(int(row['max_host_ns'])):.3f},"
+            f"{csv_cell(row['app_frame'])}"
+        )
+    if not rows:
+        print("none,0,0.000,0.000,unavailable")
+
+
 def print_gpu(rows: list[sqlite3.Row]) -> None:
     print()
     print("gpu_cuda_memcpy_activity")
@@ -1105,6 +1180,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     prepare_runtime_memcpy_table(conn)
     runtime_rows = runtime_memcpy_summary(conn)
     host_registration_rows = runtime_host_registration_summary(conn)
+    host_registration_app_frame_rows = host_registration_app_frame_summary(conn, limit)
     gpu_rows = gpu_memcpy_summary(conn)
     correlated_rows = correlated_memcpy_summary(conn, limit)
     callchain_rows = memcpy_callchain_summary(conn, limit)
@@ -1129,6 +1205,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print(f"profile={label}")
     print_runtime(runtime_rows)
     print_host_registration(host_registration_rows)
+    print_host_registration_app_frames(host_registration_app_frame_rows)
     print_gpu(gpu_rows)
     print_correlated(correlated_rows)
     print_callchains(conn, callchain_rows)
