@@ -5793,6 +5793,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "trace_store_conditional_report_duration",
         "trace_report_lowering_duration",
         "trace_report_row_validation_duration",
+        "trace_report_memory_columns_duration",
         "trace_report_source_values_duration",
         "trace_report_precompile_memory_duration",
         "trace_report_instruction_result_duration",
@@ -5930,6 +5931,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
     let apply_body = function_body(&backend_source, apply_start, "fn record_trace_report_shape");
     assert!(
         apply_body.contains("trace_report_row_validation_duration")
+            && apply_body.contains("trace_report_memory_columns_duration")
             && apply_body.contains("trace_report_source_values_duration")
             && apply_body.contains("trace_report_precompile_memory_duration")
             && apply_body.contains("trace_report_instruction_result_duration")
@@ -6015,6 +6017,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_store_conditional_report_lower\"",
         "\"guest_trace_report_lowering\"",
         "\"guest_trace_report_row_validation\"",
+        "\"guest_trace_report_memory_columns\"",
         "\"guest_trace_report_visit\"",
         "\"guest_trace_emit\"",
         "\"guest_trace_descriptor\"",

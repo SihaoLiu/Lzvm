@@ -875,6 +875,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_trace_report_row_validation_duration()",
         ),
         (
+            "\"guest_trace_report_memory_columns\"",
+            "guest_trace_report_memory_columns_duration()",
+        ),
+        (
             "\"guest_trace_report_source_values\"",
             "guest_trace_report_source_values_duration()",
         ),

@@ -197,6 +197,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_store_conditional_report_duration: Duration,
     trace_report_lowering_duration: Duration,
     trace_report_row_validation_duration: Duration,
+    trace_report_memory_columns_duration: Duration,
     trace_report_source_values_duration: Duration,
     trace_report_precompile_memory_duration: Duration,
     trace_report_instruction_result_duration: Duration,
@@ -271,6 +272,7 @@ impl GuestPcTraceStreamTiming {
             other.trace_store_conditional_report_duration;
         self.trace_report_lowering_duration += other.trace_report_lowering_duration;
         self.trace_report_row_validation_duration += other.trace_report_row_validation_duration;
+        self.trace_report_memory_columns_duration += other.trace_report_memory_columns_duration;
         self.trace_report_source_values_duration += other.trace_report_source_values_duration;
         self.trace_report_precompile_memory_duration +=
             other.trace_report_precompile_memory_duration;
@@ -390,6 +392,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_row_validation_duration(&self) -> Duration {
         self.trace_report_row_validation_duration
+    }
+
+    pub fn trace_report_memory_columns_duration(&self) -> Duration {
+        self.trace_report_memory_columns_duration
     }
 
     pub fn trace_report_source_values_duration(&self) -> Duration {
@@ -4154,7 +4160,11 @@ fn apply_zisk_main_lowered_report_row(
     let validation_started = detail_duration_started(&timing, detail_timing);
     let instruction = lowered_row.instruction;
     if let Some(columns) = context.columns {
+        let memory_columns_started = detail_duration_started(&timing, detail_timing);
         validate_zisk_main_memory_columns(output_row, &instruction, columns)?;
+        record_detail_duration(memory_columns_started, &mut timing, |timing| {
+            &mut timing.trace_report_memory_columns_duration
+        });
     }
     let source_values_started = detail_duration_started(&timing, detail_timing);
     let (a, a_access) = zisk_main_source_value(
