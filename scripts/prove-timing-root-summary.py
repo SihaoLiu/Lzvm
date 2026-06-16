@@ -27,6 +27,18 @@ SEED_DIRECT_LIFT_ATTEMPTS_KEY = "timing_guest_trace_seed_direct_lift_attempts"
 SEED_DIRECT_LIFT_SUCCESSES_KEY = "timing_guest_trace_seed_direct_lift_successes"
 SEED_FULL_ADVANCES_KEY = "timing_guest_trace_seed_full_advances"
 FINISH_OPENING_MS_KEY = "timing_finish_witness_opening_ms"
+OPENING_QUERY_UNITS_KEY = "timing_finish_witness_opening_query_unit_count"
+OPENING_SINGLE_QUERY_UNITS_KEY = "timing_finish_witness_opening_single_query_unit_count"
+OPENING_RETAINED_LEAF_COUNT_KEY = (
+    "timing_finish_witness_opening_retained_leaf_digest_openings"
+)
+OPENING_RETAINED_LEAF_ROWS_KEY = "timing_finish_witness_opening_retained_leaf_digest_rows"
+OPENING_RETAINED_LEAF_ALL_SINGLE_ROW_KEY = (
+    "timing_finish_witness_opening_retained_leaf_digest_all_single_row_openings"
+)
+OPENING_RETAINED_LEAF_PATH_LAUNCHES_KEY = (
+    "timing_finish_witness_opening_path_parent_hash_retained_leaf_digest_launches"
+)
 LEAF_KERNEL_MS_KEY = "timing_guest_stage_leaf_kernel_work_ms"
 LEAF_COSET_CALLS_KEY = "timing_guest_stage_leaf_coset_extend_calls"
 LEAF_COSET_COLUMNS_KEY = "timing_guest_stage_leaf_coset_extend_columns"
@@ -47,6 +59,7 @@ PERF_SHA256_SELF_PCT_KEY = "perf_sha256_self_pct"
 PERF_SHA256_GUEST_MACHINE_PCT_KEY = "perf_sha256_guest_machine_pct"
 PERF_SHA256_TRACE_SLICE_PCT_KEY = "perf_sha256_trace_slice_pct"
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
+OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
 PERF_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
 PERF_SECOND_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
 PERF_CALLCHAIN_PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)%--(.*)$")
@@ -58,7 +71,10 @@ HEADER = (
     "parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,"
     "parallel_lower_max_reorder,seed_direct_lift_attempts,"
     "seed_direct_lift_successes,seed_full_advances,"
-    "finish_opening_ms,root_count,materialization_groups,"
+    "finish_opening_ms,opening_query_units,opening_single_query_units,"
+    "retained_leaf_openings,retained_leaf_rows,retained_leaf_all_single_row,"
+    "retained_leaf_path_launches,opening_batching_hint,"
+    "root_count,materialization_groups,"
     "materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,"
     "root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
     "leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,"
@@ -96,6 +112,12 @@ TIMING_KEYS = {
     SEED_DIRECT_LIFT_SUCCESSES_KEY,
     SEED_FULL_ADVANCES_KEY,
     FINISH_OPENING_MS_KEY,
+    OPENING_QUERY_UNITS_KEY,
+    OPENING_SINGLE_QUERY_UNITS_KEY,
+    OPENING_RETAINED_LEAF_COUNT_KEY,
+    OPENING_RETAINED_LEAF_ROWS_KEY,
+    OPENING_RETAINED_LEAF_ALL_SINGLE_ROW_KEY,
+    OPENING_RETAINED_LEAF_PATH_LAUNCHES_KEY,
     ROOT_COUNT_KEY,
     ROOT_GROUPS_KEY,
     ROOT_MAX_GROUP_KEY,
@@ -318,6 +340,32 @@ def root_pipeline_policy_hint(
     return "enable_cross_segment_root_pipeline"
 
 
+def opening_batching_hint(
+    query_units: int,
+    single_query_units: int,
+    retained_leaf_openings: int,
+    retained_leaf_rows: int,
+    retained_leaf_all_single_row: int,
+    retained_leaf_path_launches: int,
+    direct_d2h_wait_ms: float,
+) -> str:
+    if retained_leaf_openings <= 1:
+        return "none"
+    if retained_leaf_rows != retained_leaf_openings:
+        return "none"
+    if retained_leaf_all_single_row == 0:
+        return "none"
+    if single_query_units < retained_leaf_openings:
+        return "none"
+    if query_units and single_query_units != query_units:
+        return "none"
+    if retained_leaf_path_launches <= retained_leaf_openings:
+        return "none"
+    if direct_d2h_wait_ms < OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD:
+        return "none"
+    return "cross_segment_retained_leaf_opening_candidate"
+
+
 def summarize_profile_values(
     label: str,
     values: dict[str, int],
@@ -353,6 +401,19 @@ def summarize_profile_values(
     seed_direct_lift_successes = values.get(SEED_DIRECT_LIFT_SUCCESSES_KEY, 0)
     seed_full_advances = values.get(SEED_FULL_ADVANCES_KEY, 0)
     finish_opening_ms = values.get(FINISH_OPENING_MS_KEY, 0)
+    opening_query_units = values.get(OPENING_QUERY_UNITS_KEY, 0)
+    opening_single_query_units = values.get(OPENING_SINGLE_QUERY_UNITS_KEY, 0)
+    retained_leaf_openings = values.get(OPENING_RETAINED_LEAF_COUNT_KEY, 0)
+    retained_leaf_rows = values.get(OPENING_RETAINED_LEAF_ROWS_KEY, 0)
+    retained_leaf_all_single_row_value = values.get(
+        OPENING_RETAINED_LEAF_ALL_SINGLE_ROW_KEY, 0
+    )
+    retained_leaf_all_single_row = (
+        "yes" if retained_leaf_all_single_row_value > 0 else "no"
+    )
+    retained_leaf_path_launches = values.get(
+        OPENING_RETAINED_LEAF_PATH_LAUNCHES_KEY, 0
+    )
     root_count = values[ROOT_COUNT_KEY]
     groups = values[ROOT_GROUPS_KEY]
     max_group_size = values[ROOT_MAX_GROUP_KEY]
@@ -371,6 +432,15 @@ def summarize_profile_values(
     leaf_ntt_block_twiddle_launches = values.get(LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY, 0)
     ntt_launches_per_call = leaf_ntt_launches / leaf_coset_calls if leaf_coset_calls else 0.0
     direct_d2h_wait_ms = values.get(DIRECT_D2H_WAIT_NS_KEY, 0) / 1_000_000.0
+    opening_hint = opening_batching_hint(
+        opening_query_units,
+        opening_single_query_units,
+        retained_leaf_openings,
+        retained_leaf_rows,
+        retained_leaf_all_single_row_value,
+        retained_leaf_path_launches,
+        direct_d2h_wait_ms,
+    )
     leaf_launch_pressure = "yes" if leaf_ntt_launches >= 10_000 else "no"
     trace_to_leaf_ratio = (
         max(runner_ms, lowerer_ms) / leaf_kernel_ms if leaf_kernel_ms else 0.0
@@ -415,7 +485,10 @@ def summarize_profile_values(
         f"{parallel_lower_received},{parallel_lower_emitted},"
         f"{parallel_lower_max_reorder},{seed_direct_lift_attempts},"
         f"{seed_direct_lift_successes},{seed_full_advances},"
-        f"{finish_opening_ms},"
+        f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
+        f"{retained_leaf_openings},{retained_leaf_rows},"
+        f"{retained_leaf_all_single_row},{retained_leaf_path_launches},"
+        f"{opening_hint},"
         f"{root_count},{groups},{max_group_size},"
         f"{roots_per_group:.3f},{needs_cross_segment_root_pipeline},{policy_hint},"
         f"{leaf_kernel_ms},{leaf_coset_calls},{leaf_coset_columns},{leaf_ntt_launches},"
@@ -521,6 +594,12 @@ def self_test() -> None:
                         f"{SEED_DIRECT_LIFT_SUCCESSES_KEY}=22",
                         f"{SEED_FULL_ADVANCES_KEY}=1",
                         f"{FINISH_OPENING_MS_KEY}=476",
+                        f"{OPENING_QUERY_UNITS_KEY}=23",
+                        f"{OPENING_SINGLE_QUERY_UNITS_KEY}=23",
+                        f"{OPENING_RETAINED_LEAF_COUNT_KEY}=23",
+                        f"{OPENING_RETAINED_LEAF_ROWS_KEY}=23",
+                        f"{OPENING_RETAINED_LEAF_ALL_SINGLE_ROW_KEY}=1",
+                        f"{OPENING_RETAINED_LEAF_PATH_LAUNCHES_KEY}=276",
                         f"{INPUT_BYTES_KEY}=2758032",
                         f"{ROOT_COUNT_KEY}=23",
                         f"{ROOT_GROUPS_KEY}=23",
