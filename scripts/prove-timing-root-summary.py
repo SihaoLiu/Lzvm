@@ -253,6 +253,7 @@ HEADER = (
     "trace_report_detail_avg_ns,"
     "trace_report_detail_hotspot,trace_report_detail_hotspot_pct,"
     "trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,"
+    "trace_report_row_validation_explained_pct,trace_report_row_validation_residual_pct,"
     "trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,"
     "trace_report_visit_residual_pct,"
     "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms"
@@ -815,6 +816,19 @@ def trace_report_row_validation_hotspot(values: dict[str, int]) -> tuple[str, fl
     return (hotspot_name, hotspot_pct)
 
 
+def trace_report_row_validation_coverage(values: dict[str, int]) -> tuple[float, float]:
+    row_validation_ns = values.get(TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY, 0)
+    if row_validation_ns <= 0:
+        return (0.0, 0.0)
+    child_ns = sum(values.get(key, 0) for _, key in ROW_VALIDATION_HOTSPOT_KEYS)
+    explained_ns = min(child_ns, row_validation_ns)
+    residual_ns = max(row_validation_ns - child_ns, 0)
+    return (
+        explained_ns * 100.0 / row_validation_ns,
+        residual_ns * 100.0 / row_validation_ns,
+    )
+
+
 def trace_structure_hint(
     total_ms: int,
     runner_ms: int,
@@ -949,6 +963,10 @@ def summarize_profile_values(
         trace_report_row_validation_hotspot_name,
         trace_report_row_validation_hotspot_pct,
     ) = trace_report_row_validation_hotspot(values)
+    (
+        trace_report_row_validation_explained_pct,
+        trace_report_row_validation_residual_pct,
+    ) = trace_report_row_validation_coverage(values)
     trace_report_detail_visit_pct = (
         values.get(TRACE_REPORT_VISIT_SAMPLED_NS_KEY, 0) * 100.0
         / values.get(TRACE_REPORT_SAMPLED_NS_KEY, 0)
@@ -1239,6 +1257,8 @@ def summarize_profile_values(
         f"{trace_report_detail_hotspot_name},{trace_report_detail_hotspot_pct:.3f},"
         f"{trace_report_row_validation_hotspot_name},"
         f"{trace_report_row_validation_hotspot_pct:.3f},"
+        f"{trace_report_row_validation_explained_pct:.3f},"
+        f"{trace_report_row_validation_residual_pct:.3f},"
         f"{trace_report_detail_visit_pct:.3f},"
         f"{trace_report_visit_descriptor_pct:.3f},"
         f"{trace_report_visit_residual_pct:.3f},"
