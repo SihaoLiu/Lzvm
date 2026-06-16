@@ -91,6 +91,7 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_nary_opening_position_bound_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_opening_and_core_contract_from_bundle",
+            "runtime_retained_parent_checkpoint_nary_opening_source_and_core_contract_from_bundle",
             "runtime_retained_parent_checkpoint_prefix_batch_implies_lower_prefix_bound",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_prefix_batch_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract",
@@ -204,6 +205,29 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
         &lean_source,
         "runtime_retained_parent_checkpoint_nary_opening_opening_and_core_contract_from_bundle",
         &["runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_bundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_source_and_core_contract_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedParentCheckpointNAryConcreteOpeningBinding",
+            "RuntimeRetainedParentCheckpointOpeningDigestContract",
+            "RuntimeRetainedParentCheckpointOpeningSourceContract",
+            "RuntimeRetainedParentCheckpointOpeningRetainedRowsContract",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_source_and_core_contract_from_bundle",
+        &[
+            "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_bundle",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_retained_rows_contract",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
