@@ -74,6 +74,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_required_external_source_audited_pcs_fri_witness_contract",
             "runtime_soundness_required_external_source_audited_pcs_fri_core_witness_contract",
             "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
+            "runtime_soundness_checked_acceptance_contracts_core_contract",
             "runtime_soundness_required_external_source_contracts_core_contract",
         ],
     );
@@ -959,6 +960,72 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("RuntimeSoundnessEvidence"),
         "compact checked runtime binding PCS/FRI core contract should not force callers to unpack full runtime evidence"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_contracts_core_contract"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_contracts_core_contract"
+            )
+            .contains("ProofSystemSound system")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_contracts_core_contract"
+            )
+            .contains("system.accepts publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_contracts_core_contract"
+            )
+            .contains("system.transcriptBound publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_contracts_core_contract"
+            )
+            .contains("system.publicInputBound publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_contracts_core_contract"
+            )
+            .contains("system.pcsOpeningsValid publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_contracts_core_contract"
+            )
+            .contains("system.friQueriesValid publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_contracts_core_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_contracts_core_contract"
+            )
+            .contains("system.traceConsistent publicInput proof trace")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_contracts_core_contract"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "checked runtime contracts should expose compact proof-system core obligations"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_contracts_core_contract"
+        )
+        .contains("RuntimeSoundnessEvidence")
+            && !theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_contracts_core_contract"
+            )
+            .contains("RuntimeArtifactSoundnessObligations"),
+        "checked runtime contracts wrapper should keep the compact core surface"
     );
 }
 

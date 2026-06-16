@@ -100,6 +100,71 @@ theorem runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witnes
                 (And.intro pcsAndFri.right
                   (And.intro coreContract soundWitness)))))))
 
+theorem runtime_soundness_checked_acceptance_contracts_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have compactContract :=
+    runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have executionObligations :=
+    runtime_soundness_checked_acceptance_execution_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  rcases compactContract with
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      verifierCore,
+      soundWitness⟩
+  exact
+    And.intro auditedAssumptions
+      (And.intro proofSystemSound
+        (And.intro verifierAccepts
+          (And.intro transcriptBound
+            (And.intro publicInputBound
+              (And.intro pcsOpenings
+                (And.intro friQueries
+                  (And.intro verifierCore
+                    (And.intro executionObligations soundWitness))))))))
+
 theorem runtime_soundness_required_external_source_contracts_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
