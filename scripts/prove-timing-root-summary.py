@@ -44,7 +44,7 @@ HEADER = (
     "seed_direct_lift_successes,seed_full_advances,"
     "finish_opening_ms,root_count,materialization_groups,"
     "materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,"
-    "leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
+    "root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
     "leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,"
     "leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure,"
     "trace_to_leaf_ratio,primary_bottleneck"
@@ -130,6 +130,20 @@ def primary_bottleneck(
     return name if value > 0.0 else "total" if total_ms > 0 else "unknown"
 
 
+def root_pipeline_policy_hint(
+    root_count: int,
+    groups: int,
+    max_group_size: int,
+) -> str:
+    if root_count <= 1:
+        return "none"
+    if groups < root_count or max_group_size > 1:
+        return "root_batches_already_grouped"
+    if root_count >= 64:
+        return "check_large_input_root_gate_or_window"
+    return "enable_cross_segment_root_pipeline"
+
+
 def summarize_profile_values(label: str, values: dict[str, int]) -> str:
     missing = [
         key
@@ -167,6 +181,7 @@ def summarize_profile_values(label: str, values: dict[str, int]) -> str:
     needs_cross_segment_root_pipeline = (
         "yes" if root_count > 1 and groups >= root_count and max_group_size <= 1 else "no"
     )
+    policy_hint = root_pipeline_policy_hint(root_count, groups, max_group_size)
     leaf_kernel_ms = values.get(LEAF_KERNEL_MS_KEY, 0)
     leaf_coset_calls = values.get(LEAF_COSET_CALLS_KEY, 0)
     leaf_coset_columns = values.get(LEAF_COSET_COLUMNS_KEY, 0)
@@ -202,7 +217,7 @@ def summarize_profile_values(label: str, values: dict[str, int]) -> str:
         f"{seed_direct_lift_successes},{seed_full_advances},"
         f"{finish_opening_ms},"
         f"{root_count},{groups},{max_group_size},"
-        f"{roots_per_group:.3f},{needs_cross_segment_root_pipeline},"
+        f"{roots_per_group:.3f},{needs_cross_segment_root_pipeline},{policy_hint},"
         f"{leaf_kernel_ms},{leaf_coset_calls},{leaf_coset_columns},{leaf_ntt_launches},"
         f"{leaf_ntt_stage_launches},{leaf_ntt_block_twiddle_launches},"
         f"{ntt_launches_per_call:.3f},{direct_d2h_wait_ms:.3f},{leaf_launch_pressure},"
