@@ -63,6 +63,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_public_input_bound",
             "runtime_pipeline_binding_evidence_implies_pcs_and_fri",
             "runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri",
+            "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri",
             "runtime_pipeline_binding_evidence_implies_core_obligations",
             "runtime_pipeline_binding_evidence_implies_execution_obligations",
@@ -264,6 +265,25 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri",
         &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
+        &["runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri"],
     );
     assert!(
         theorem_prefix(

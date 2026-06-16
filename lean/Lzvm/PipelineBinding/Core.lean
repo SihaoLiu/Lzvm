@@ -905,6 +905,27 @@ theorem runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri
       proof
       queryPlanAccepted
 
+theorem runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+
 theorem runtime_pipeline_binding_checked_acceptance_pcs_and_fri
     {system : VerifierModel}
     (_assumptions : AssumptionBundle system)
@@ -920,7 +941,7 @@ theorem runtime_pipeline_binding_checked_acceptance_pcs_and_fri
           /\ system.friQueriesValid publicInput proof := by
   intro artifact publicInput proof accepted
   exact
-    runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri
+    runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions
       validation
       artifact
       publicInput
