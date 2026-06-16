@@ -71,6 +71,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_verifier_core_contract",
             "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
             "runtime_query_plan_binding_checked_acceptance_seeded_opening_and_core_contract",
+            "runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_and_core_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -211,6 +212,34 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &[
             "runtime_query_plan_binding_checked_acceptance_seeded_contract",
             "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_and_core_contract",
+        &[
+            "RuntimeQueryPlanBindingCheckedAcceptance",
+            "RuntimeQueryPlanBindingSeededContract",
+            "RuntimeQueryPlanBindingBoundContract",
+            "RuntimeOpeningSegmentBindingBoundContract",
+            "RuntimeOpeningEvidence",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_and_core_contract",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_seeded_contract",
+            "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
+            "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

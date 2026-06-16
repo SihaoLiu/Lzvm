@@ -13,6 +13,8 @@ Runtime query plan binding obligations.
 
 namespace Lzvm
 
+universe uDigest
+
 structure RuntimeQueryPlanBindingValidation (system : VerifierModel) where
   challengeValidation : RuntimeChallengeSegmentBindingValidation system
   openingValidation : RuntimeOpeningSegmentBindingValidation system
@@ -891,5 +893,126 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_opening_and_core_co
       requiresExternalSource
       accepted
   exact And.intro seededContract openingAndCore
+
+set_option linter.style.longLine false in
+theorem runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_and_core_contract
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeQueryPlanBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.openingValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.openingValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingSeededContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeQueryPlanBindingBoundContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingBoundContract
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have seededContract :=
+    runtime_query_plan_binding_checked_acceptance_seeded_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingAndCore :=
+    runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have openingAccepted :=
+    runtime_query_plan_binding_checked_acceptance_opening
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have concretePcsFri :=
+    runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle
+      assumptions.crypto.hashCollisionResistance
+      validation.openingValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      openingAccepted
+  rcases openingAndCore with
+    ⟨queryPlanBound,
+      openingSegmentBound,
+      openingEvidence,
+      transcriptBound,
+      _pcsOpeningsValid,
+      _friQueriesValid,
+      coreContract⟩
+  rcases coreContract with
+    ⟨_coreTranscriptBound,
+      publicInputBound,
+      _corePcsOpeningsValid,
+      _coreFriQueriesValid⟩
+  have concreteCore :
+      RuntimeVerifierCoreContract system publicInput proof :=
+    ⟨transcriptBound, publicInputBound, concretePcsFri.left, concretePcsFri.right⟩
+  exact
+    And.intro seededContract
+      (And.intro queryPlanBound
+        (And.intro openingSegmentBound
+          (And.intro openingEvidence
+            (And.intro transcriptBound
+              (And.intro publicInputBound
+                (And.intro concretePcsFri.left
+                  (And.intro concretePcsFri.right concreteCore)))))))
 
 end Lzvm
