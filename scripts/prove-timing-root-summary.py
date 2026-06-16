@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 
+INPUT_BYTES_KEY = "input_bytes"
 ROOT_COUNT_KEY = "timing_guest_stage_tree_commit_root_count"
 ROOT_GROUPS_KEY = "timing_guest_stage_tree_commit_root_materialization_groups"
 ROOT_MAX_GROUP_KEY = "timing_guest_stage_tree_commit_root_materialization_max_group_size"
@@ -34,9 +35,10 @@ LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY = (
     "timing_guest_stage_leaf_coset_extend_ntt_block_twiddle_launches"
 )
 DIRECT_D2H_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_wait_ns"
+ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
 
 HEADER = (
-    "profile,total_ms,runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,"
+    "profile,input_bytes,total_ms,runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,"
     "segment_commit_ms,stream_commit_residual_ms,segment_receive_wait_ms,"
     "pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,"
     "parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,"
@@ -57,6 +59,7 @@ CLOSE_SAMPLE_SPREAD_PCT = 5.0
 OUTLIER_RATIO_THRESHOLD = 1.5
 
 TIMING_KEYS = {
+    INPUT_BYTES_KEY,
     TOTAL_MS_KEY,
     RUNNER_MS_KEY,
     LOWERER_MS_KEY,
@@ -131,6 +134,7 @@ def primary_bottleneck(
 
 
 def root_pipeline_policy_hint(
+    input_bytes: int,
     root_count: int,
     groups: int,
     max_group_size: int,
@@ -139,8 +143,8 @@ def root_pipeline_policy_hint(
         return "none"
     if groups < root_count or max_group_size > 1:
         return "root_batches_already_grouped"
-    if root_count >= 64:
-        return "check_large_input_root_gate_or_window"
+    if input_bytes >= ROOT_PIPELINE_INPUT_BYTE_LIMIT:
+        return "large_input_root_pipeline_gated"
     return "enable_cross_segment_root_pipeline"
 
 
@@ -153,6 +157,7 @@ def summarize_profile_values(label: str, values: dict[str, int]) -> str:
     if missing:
         raise SystemExit(f"{label}: missing timing fields: {', '.join(missing)}")
 
+    input_bytes = values.get(INPUT_BYTES_KEY, 0)
     total_ms = values.get(TOTAL_MS_KEY, 0)
     runner_ms = values.get(RUNNER_MS_KEY, 0)
     lowerer_ms = values.get(LOWERER_MS_KEY, 0)
@@ -181,7 +186,9 @@ def summarize_profile_values(label: str, values: dict[str, int]) -> str:
     needs_cross_segment_root_pipeline = (
         "yes" if root_count > 1 and groups >= root_count and max_group_size <= 1 else "no"
     )
-    policy_hint = root_pipeline_policy_hint(root_count, groups, max_group_size)
+    policy_hint = root_pipeline_policy_hint(
+        input_bytes, root_count, groups, max_group_size
+    )
     leaf_kernel_ms = values.get(LEAF_KERNEL_MS_KEY, 0)
     leaf_coset_calls = values.get(LEAF_COSET_CALLS_KEY, 0)
     leaf_coset_columns = values.get(LEAF_COSET_COLUMNS_KEY, 0)
@@ -207,7 +214,7 @@ def summarize_profile_values(label: str, values: dict[str, int]) -> str:
         direct_d2h_wait_ms,
     )
     return (
-        f"{label},{total_ms},{runner_ms},{lowerer_ms},"
+        f"{label},{input_bytes},{total_ms},{runner_ms},{lowerer_ms},"
         f"{stream_elapsed_ms},{stream_worker_ms},{segment_commit_ms},"
         f"{stream_commit_residual_ms},{segment_receive_wait_ms},"
         f"{pending_receive_wait_ms},{pending_send_wait_ms},"
@@ -309,6 +316,7 @@ def self_test() -> None:
                         f"{SEED_DIRECT_LIFT_SUCCESSES_KEY}=22",
                         f"{SEED_FULL_ADVANCES_KEY}=1",
                         f"{FINISH_OPENING_MS_KEY}=476",
+                        f"{INPUT_BYTES_KEY}=2758032",
                         f"{ROOT_COUNT_KEY}=23",
                         f"{ROOT_GROUPS_KEY}=23",
                         f"{ROOT_MAX_GROUP_KEY}=1",
@@ -327,6 +335,7 @@ def self_test() -> None:
                 "\n".join(
                     [
                         f"{TOTAL_MS_KEY}=9050",
+                        f"{INPUT_BYTES_KEY}=2758032",
                         f"{ROOT_COUNT_KEY}=23",
                         f"{ROOT_GROUPS_KEY}=1",
                         f"{ROOT_MAX_GROUP_KEY}=23",
@@ -338,9 +347,10 @@ def self_test() -> None:
                 "\n".join(
                     [
                         f"{TOTAL_MS_KEY}=18100",
-                        f"{ROOT_COUNT_KEY}=23",
-                        f"{ROOT_GROUPS_KEY}=1",
-                        f"{ROOT_MAX_GROUP_KEY}=23",
+                        f"{INPUT_BYTES_KEY}=12447640",
+                        f"{ROOT_COUNT_KEY}=120",
+                        f"{ROOT_GROUPS_KEY}=120",
+                        f"{ROOT_MAX_GROUP_KEY}=1",
                     ]
                 ),
             ),
