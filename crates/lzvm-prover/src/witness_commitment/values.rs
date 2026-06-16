@@ -452,11 +452,11 @@ impl RetainedCudaLeafDigestLevel {
         self.level.opening_path(query_row)
     }
 
-    fn opening_path_siblings(
+    fn opening_path_siblings_batch(
         &self,
-        query_row: usize,
-    ) -> Result<Vec<Vec<[Felt; HASH_WORDS]>>, crate::merkle_hash::MerkleHashError> {
-        self.level.opening_path_siblings(query_row)
+        query_rows: &[usize],
+    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, crate::merkle_hash::MerkleHashError> {
+        self.level.opening_path_siblings_batch(query_rows)
     }
 }
 
@@ -2130,30 +2130,33 @@ impl WitnessStageCompactTreeStorage {
         } else {
             None
         };
-        let mut openings = Vec::with_capacity(rows.len());
-        for row in rows {
-            let siblings = record_path_parent_hash_duration(
-                timing.as_deref_mut(),
+        let siblings_by_row = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::RetainedLeafDigest,
+            || {
+                leaf_level
+                    .opening_path_siblings_batch(rows)
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context("compact retained leaf digest path", source)
+        })?;
+        if siblings_by_row.len() != rows.len() {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        if let (Some(timing), Some((row_count, byte_count, launch_count))) =
+            (timing.as_deref_mut(), path_parent_work)
+        {
+            timing.record_path_parent_hash_work(
                 PathParentHashTimingKind::RetainedLeafDigest,
-                || {
-                    leaf_level
-                        .opening_path_siblings(*row)
-                        .map_err(WitnessStageOpeningError::from)
-                },
-            )
-            .map_err(|source| {
-                WitnessStageOpeningError::context("compact retained leaf digest path", source)
-            })?;
-            if let (Some(timing), Some((row_count, byte_count, launch_count))) =
-                (timing.as_deref_mut(), path_parent_work)
-            {
-                timing.record_path_parent_hash_work(
-                    PathParentHashTimingKind::RetainedLeafDigest,
-                    row_count,
-                    byte_count,
-                    launch_count,
-                );
-            }
+                row_count,
+                byte_count,
+                launch_count,
+            );
+        }
+        let mut openings = Vec::with_capacity(rows.len());
+        for (row, siblings) in rows.iter().zip(siblings_by_row.into_iter()) {
             let values = self
                 .extended_row_values_from_source_cuda(*row, source_buffer, timing.as_deref_mut())
                 .map_err(|source| {

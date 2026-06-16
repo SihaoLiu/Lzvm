@@ -1139,10 +1139,11 @@ fn cuda_compact_opening_avoids_redundant_path_root_downloads() {
         "fn copy_extended_row_values_batch_from_device",
     );
     assert!(
-        retained_leaf_body.contains("opening_path_siblings(*row)")
+        retained_leaf_body.contains("opening_path_siblings_batch(rows)")
+            && !retained_leaf_body.contains("opening_path_siblings(*row)")
             && !retained_leaf_body.contains(".opening_path(*row)")
             && !retained_leaf_body.contains("path.root != expected_root"),
-        "retained leaf digest openings should use host-known roots and download only siblings"
+        "retained leaf digest openings should batch sibling extraction while using host-known roots"
     );
 
     let checkpoint_body = function_body(

@@ -2225,6 +2225,10 @@ mod tests {
             batch_timing.row_values_byte_count,
             rows.len() * column_count * WORD_BYTES
         );
+        assert_eq!(
+            batch_timing.path_parent_hash_retained_leaf_digest_launch_count,
+            2
+        );
         assert_eq!(batch_timing.leaf_coset_extend_call_count, 0);
         assert_eq!(batch_timing.leaf_hash_rows, 0);
     }
