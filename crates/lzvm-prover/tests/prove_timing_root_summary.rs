@@ -1,6 +1,34 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+#[cfg(unix)]
+#[test]
+fn prove_timing_root_summary_script_is_directly_executable() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let mode = std::fs::metadata(&script_path)
+        .expect("prove timing root summary metadata should read")
+        .permissions()
+        .mode();
+    assert_ne!(
+        mode & 0o111,
+        0,
+        "prove timing root summary should be executable as a profiling helper"
+    );
+
+    let output = Command::new(&script_path)
+        .arg("--self-test")
+        .output()
+        .expect("prove timing root summary should run directly through its shebang");
+    assert!(
+        output.status.success(),
+        "prove timing root summary direct self-test should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn prove_timing_root_summary_reports_root_grouping_shape() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
