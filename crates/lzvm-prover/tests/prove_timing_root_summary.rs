@@ -165,6 +165,79 @@ fn prove_timing_root_summary_reports_serial_trace_structure_hint() {
 }
 
 #[test]
+fn prove_timing_root_summary_distinguishes_disabled_high32_stats_from_zero_high32_stats() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let disabled_input = [
+        "timing_total_ms=8000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_descriptor_rows=1000",
+        "timing_guest_trace_descriptor_compact_rows=1000",
+        "timing_guest_trace_descriptor_wide_rows=0",
+        "timing_guest_trace_descriptor_unpaired_high32_nonzero_values=0",
+        "timing_guest_trace_descriptor_unpaired_high32_nonzero_rows=0",
+    ]
+    .join("\n");
+    let enabled_zero_input = [
+        "timing_total_ms=8000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_descriptor_rows=1000",
+        "timing_guest_trace_descriptor_compact_rows=1000",
+        "timing_guest_trace_descriptor_wide_rows=0",
+        "timing_guest_trace_descriptor_high32_stats_enabled=1",
+        "timing_guest_trace_descriptor_unpaired_high32_nonzero_values=0",
+        "timing_guest_trace_descriptor_unpaired_high32_nonzero_rows=0",
+    ]
+    .join("\n");
+
+    for (label, input, expected_hint) in [
+        (
+            "disabled",
+            disabled_input,
+            "compact_descriptor_no_high32_stats",
+        ),
+        (
+            "enabled-zero",
+            enabled_zero_input,
+            "high32_zero_compact_descriptor",
+        ),
+    ] {
+        let mut child = Command::new("python3")
+            .arg(&script_path)
+            .arg("-")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap_or_else(|error| panic!("{label} summary should spawn: {error}"));
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin should be open")
+            .write_all(input.as_bytes())
+            .expect("stdin should write");
+        let output = child
+            .wait_with_output()
+            .unwrap_or_else(|error| panic!("{label} summary should run: {error}"));
+
+        assert!(
+            output.status.success(),
+            "{label} summary should pass: stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+        assert!(
+            stdout.contains(expected_hint),
+            "{label} summary should report {expected_hint}: stdout={stdout}"
+        );
+    }
+}
+
+#[test]
 fn prove_timing_root_summary_uses_thread_name_for_memmove_source_hint() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

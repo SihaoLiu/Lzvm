@@ -4141,6 +4141,10 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "guest_trace_descriptor_unpaired_high32_nonzero_row_count()",
         ),
         (
+            "\"guest_trace_descriptor_high32_stats_enabled\"",
+            "guest_trace_descriptor_high32_stats_enabled()",
+        ),
+        (
             "\"guest_stage_leaf_hash_rows\"",
             "guest_stage_leaf_hash_row_count()",
         ),

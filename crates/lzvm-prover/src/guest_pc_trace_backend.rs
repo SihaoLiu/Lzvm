@@ -1572,7 +1572,7 @@ fn guest_pc_descriptor_stream_ingress_enabled() -> bool {
 }
 
 #[cfg(feature = "cuda")]
-fn guest_pc_trace_descriptor_high32_stats_enabled() -> bool {
+pub(crate) fn guest_pc_trace_descriptor_high32_stats_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_DESCRIPTOR_HIGH32_STATS", false)
 }
 

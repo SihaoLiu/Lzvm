@@ -40,6 +40,9 @@ DESCRIPTOR_HIGH32_VALUES_KEY = (
 DESCRIPTOR_HIGH32_ROWS_KEY = (
     "timing_guest_trace_descriptor_unpaired_high32_nonzero_rows"
 )
+DESCRIPTOR_HIGH32_STATS_ENABLED_KEY = (
+    "timing_guest_trace_descriptor_high32_stats_enabled"
+)
 SEED_DIRECT_LIFT_ATTEMPTS_KEY = "timing_guest_trace_seed_direct_lift_attempts"
 SEED_DIRECT_LIFT_SUCCESSES_KEY = "timing_guest_trace_seed_direct_lift_successes"
 SEED_FULL_ADVANCES_KEY = "timing_guest_trace_seed_full_advances"
@@ -139,6 +142,7 @@ TIMING_KEYS = {
     DESCRIPTOR_UPLOAD_ROWS_KEY,
     DESCRIPTOR_HIGH32_VALUES_KEY,
     DESCRIPTOR_HIGH32_ROWS_KEY,
+    DESCRIPTOR_HIGH32_STATS_ENABLED_KEY,
     SEED_DIRECT_LIFT_ATTEMPTS_KEY,
     SEED_DIRECT_LIFT_SUCCESSES_KEY,
     SEED_FULL_ADVANCES_KEY,
@@ -512,8 +516,14 @@ def summarize_profile_values(
         else 0.0
     )
     descriptor_high32_values = values.get(DESCRIPTOR_HIGH32_VALUES_KEY, 0)
-    descriptor_high32_rows_present = DESCRIPTOR_HIGH32_ROWS_KEY in values
     descriptor_high32_rows = values.get(DESCRIPTOR_HIGH32_ROWS_KEY, 0)
+    descriptor_high32_stats_enabled = values.get(
+        DESCRIPTOR_HIGH32_STATS_ENABLED_KEY,
+        1 if descriptor_high32_values > 0 or descriptor_high32_rows > 0 else 0,
+    )
+    descriptor_high32_rows_present = (
+        descriptor_high32_stats_enabled > 0 and DESCRIPTOR_HIGH32_ROWS_KEY in values
+    )
     descriptor_high32_row_pct = (
         descriptor_high32_rows * 100.0 / descriptor_rows if descriptor_rows else 0.0
     )

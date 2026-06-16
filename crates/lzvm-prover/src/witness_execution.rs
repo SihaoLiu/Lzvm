@@ -31,8 +31,8 @@ use crate::global_constraints::GlobalConstraintInputs;
 use crate::guest_pc_trace_backend::{
     build_guest_pc_trace_stage_source_devices,
     build_guest_pc_trace_stage_source_devices_from_device_material_timing,
-    GuestPcDeviceSourceBuildTiming, GuestPcTraceDeviceSegmentMaterial,
-    GuestPcTraceDeviceTraceBuilder,
+    guest_pc_trace_descriptor_high32_stats_enabled, GuestPcDeviceSourceBuildTiming,
+    GuestPcTraceDeviceSegmentMaterial, GuestPcTraceDeviceTraceBuilder,
 };
 use crate::guest_pc_trace_backend::{
     for_each_guest_pc_trace_segment_collecting_proof_values_with_context,
@@ -95,6 +95,11 @@ use crate::witness_trace::{parse_witness_trace, WitnessTraceBuffer};
 use crate::{ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassRequest, ProveUnitSchedule};
 
 mod proof_value_dependency;
+
+#[cfg(not(feature = "cuda"))]
+fn guest_pc_trace_descriptor_high32_stats_enabled() -> bool {
+    false
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProveTraceIdentity {
@@ -465,6 +470,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_descriptor_unpaired_value_count: usize,
     guest_trace_descriptor_unpaired_high32_nonzero_count: usize,
     guest_trace_descriptor_unpaired_high32_nonzero_row_count: usize,
+    guest_trace_descriptor_high32_stats_enabled: bool,
     guest_trace_single_row_report_count: usize,
     guest_trace_multi_row_report_count: usize,
     guest_trace_pending_dma_report_count: usize,
@@ -687,6 +693,8 @@ impl ProveWitnessGuestPcTraceTiming {
                 .trace_descriptor_unpaired_high32_nonzero_count(),
             guest_trace_descriptor_unpaired_high32_nonzero_row_count: stream_timing
                 .trace_descriptor_unpaired_high32_nonzero_row_count(),
+            guest_trace_descriptor_high32_stats_enabled:
+                guest_pc_trace_descriptor_high32_stats_enabled(),
             guest_trace_single_row_report_count: stream_timing.trace_single_row_report_count(),
             guest_trace_multi_row_report_count: stream_timing.trace_multi_row_report_count(),
             guest_trace_pending_dma_report_count: stream_timing.trace_pending_dma_report_count(),
@@ -1089,6 +1097,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_descriptor_unpaired_high32_nonzero_row_count(&self) -> usize {
         self.guest_trace_descriptor_unpaired_high32_nonzero_row_count
+    }
+
+    pub fn guest_trace_descriptor_high32_stats_enabled(&self) -> bool {
+        self.guest_trace_descriptor_high32_stats_enabled
     }
 
     pub fn guest_trace_single_row_report_count(&self) -> usize {
