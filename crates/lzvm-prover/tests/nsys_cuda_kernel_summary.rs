@@ -66,11 +66,15 @@ fn nsys_cuda_kernel_summary_reports_kernel_launch_and_stream_shape() {
         "graph_or_fusion_upper_bound_ms",
         "sync_to_launch_ratio",
         "next_action_hint",
+        "top_stream_occupancy_ratio",
+        "top_stream_idle_ms",
+        "launch_to_top_stream_idle_ratio",
         "top_graph_shape",
         "top_same_stream_pair",
         "transfer_residency_hint",
         "batch_or_keep_small_d2h_on_device",
         "top_d2h_wait,1152",
+        "inspect_stream_idle_or_cpu_producer",
     ] {
         assert!(
             stdout.contains(required),

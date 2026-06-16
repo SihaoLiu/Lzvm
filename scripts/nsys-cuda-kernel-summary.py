@@ -489,6 +489,18 @@ def sum_rows_ns(rows: list[sqlite3.Row], column: str) -> int:
     return sum(int(row[column] or 0) for row in rows)
 
 
+def top_stream_stats(stream_rows: list[sqlite3.Row]) -> tuple[int, int, int, int]:
+    if not stream_rows:
+        return (0, 0, 0, 0)
+    row = stream_rows[0]
+    gpu_ns = int(row["gpu_ns"] or 0)
+    first_ns = int(row["first_ns"] or 0)
+    last_ns = int(row["last_ns"] or first_ns)
+    window_ns = max(0, last_ns - first_ns)
+    idle_ns = max(0, window_ns - gpu_ns)
+    return (int(row["stream_id"] or 0), gpu_ns, window_ns, idle_ns)
+
+
 def direction_hint(launch_ns: int, sync_ns: int) -> str:
     if sync_ns > launch_ns * 5 // 4:
         return "sync_boundary_before_graph_or_fusion"
@@ -497,7 +509,18 @@ def direction_hint(launch_ns: int, sync_ns: int) -> str:
     return "mixed_launch_and_sync"
 
 
-def next_action_hint(launch_ns: int, sync_ns: int, stream_count: int) -> tuple[str, str]:
+def next_action_hint(
+    launch_ns: int,
+    sync_ns: int,
+    stream_count: int,
+    top_stream_window_ns: int,
+    top_stream_idle_ns: int,
+) -> tuple[str, str]:
+    if top_stream_window_ns > 0 and top_stream_idle_ns * 4 > top_stream_window_ns:
+        return (
+            "inspect_stream_idle_or_cpu_producer",
+            "top kernel stream is idle for more than a quarter of its active window",
+        )
     if sync_ns > launch_ns * 5 // 4:
         if stream_count <= 1:
             return (
@@ -532,10 +555,19 @@ def print_direction_triage(
     launch_ns = sum_rows_ns(launch_rows, "launch_ns")
     sync_ns = sum_rows_ns(sync_rows, "sync_ns")
     stream_count = len(stream_rows)
+    top_stream_id, top_stream_gpu_ns, top_stream_window_ns, top_stream_idle_ns = top_stream_stats(
+        stream_rows
+    )
     top_fusion = fusion_rows[0] if fusion_rows else None
     top_shape = graph_shape_rows[0] if graph_shape_rows else None
     top_pair = adjacency_rows[0] if adjacency_rows else None
-    next_action, next_action_detail = next_action_hint(launch_ns, sync_ns, stream_count)
+    next_action, next_action_detail = next_action_hint(
+        launch_ns,
+        sync_ns,
+        stream_count,
+        top_stream_window_ns,
+        top_stream_idle_ns,
+    )
     print()
     print("cuda_graph_fusion_separation_triage")
     print("metric,value,detail")
@@ -558,6 +590,19 @@ def print_direction_triage(
     dominant = "sync_api" if sync_ns > launch_ns else "launch_api"
     print(f"dominant_wait,{dominant},{direction_hint(launch_ns, sync_ns)}")
     print(f"stream_count,{stream_count},kernel streams observed in nsys export")
+    print(f"top_stream_id,{top_stream_id},kernel stream with largest GPU work")
+    print(
+        f"top_stream_occupancy_ratio,{ratio(top_stream_gpu_ns, top_stream_window_ns)},"
+        "top stream kernel GPU time divided by its active window"
+    )
+    print(
+        f"top_stream_idle_ms,{ms(top_stream_idle_ns):.3f},"
+        "active-window time not covered by kernels on the top stream"
+    )
+    print(
+        f"launch_to_top_stream_idle_ratio,{ratio(launch_ns, top_stream_idle_ns)},"
+        "CUDA launch API time relative to top-stream idle time"
+    )
     print(f"next_action_hint,{next_action},{next_action_detail}")
     if top_fusion is None:
         print("top_fusion_kernel,none,no repeated launch candidate")
