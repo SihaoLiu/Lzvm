@@ -168,15 +168,15 @@ fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "trace_report_detail_samples,trace_report_detail_sample_pct,trace_report_detail_sample_hint,trace_report_detail_avg_ns,trace_report_detail_hotspot,trace_report_detail_hotspot_pct,trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,trace_report_detail_visit_pct"
+            "trace_report_detail_samples,trace_report_detail_sample_pct,trace_report_detail_sample_hint,trace_report_detail_avg_ns,trace_report_detail_hotspot,trace_report_detail_hotspot_pct,trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,trace_report_visit_residual_pct"
         ),
-        "prove timing root summary should expose detail sample hotspot and row-validation drilldown columns: stdout={stdout}"
+        "prove timing root summary should expose detail sample hotspot and visit drilldown columns: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            ",10,1.000,detail_timing_sampled,100,row_validation,50.000,source_values,42.000,20.000"
+            ",10,1.000,detail_timing_sampled,100,row_validation,50.000,source_values,42.000,20.000,25.000,75.000"
         ),
-        "prove timing root summary should classify sampled detail and row-validation hotspots: stdout={stdout}"
+        "prove timing root summary should classify sampled detail, row-validation, and visit hotspots: stdout={stdout}"
     );
 }
 

@@ -152,7 +152,8 @@ HEADER = (
     "trace_report_detail_sample_hint,trace_report_detail_avg_ns,"
     "trace_report_detail_hotspot,trace_report_detail_hotspot_pct,"
     "trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,"
-    "trace_report_detail_visit_pct"
+    "trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,"
+    "trace_report_visit_residual_pct"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -693,6 +694,20 @@ def summarize_profile_values(
         if values.get(TRACE_REPORT_SAMPLED_NS_KEY, 0)
         else 0.0
     )
+    trace_report_visit_sampled_ns = values.get(TRACE_REPORT_VISIT_SAMPLED_NS_KEY, 0)
+    trace_descriptor_sampled_ns = values.get(TRACE_DESCRIPTOR_SAMPLED_NS_KEY, 0)
+    trace_report_visit_descriptor_pct = (
+        trace_descriptor_sampled_ns * 100.0 / trace_report_visit_sampled_ns
+        if trace_report_visit_sampled_ns
+        else 0.0
+    )
+    trace_report_visit_residual_pct = (
+        max(trace_report_visit_sampled_ns - trace_descriptor_sampled_ns, 0)
+        * 100.0
+        / trace_report_visit_sampled_ns
+        if trace_report_visit_sampled_ns
+        else 0.0
+    )
     trace_rows_per_report = (
         trace_report_rows / trace_reports if trace_reports else 0.0
     )
@@ -876,7 +891,9 @@ def summarize_profile_values(
         f"{trace_report_detail_hotspot_name},{trace_report_detail_hotspot_pct:.3f},"
         f"{trace_report_row_validation_hotspot_name},"
         f"{trace_report_row_validation_hotspot_pct:.3f},"
-        f"{trace_report_detail_visit_pct:.3f}"
+        f"{trace_report_detail_visit_pct:.3f},"
+        f"{trace_report_visit_descriptor_pct:.3f},"
+        f"{trace_report_visit_residual_pct:.3f}"
     )
 
 
