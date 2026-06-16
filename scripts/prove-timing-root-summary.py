@@ -32,6 +32,32 @@ PARALLEL_LOWER_MAX_REORDER_KEY = "timing_guest_trace_parallel_lower_max_reorder"
 TRACE_REPORTS_KEY = "timing_guest_trace_reports"
 TRACE_REPORT_ROWS_KEY = "timing_guest_trace_report_rows"
 TRACE_REPORT_DETAIL_SAMPLES_KEY = "timing_guest_trace_report_detail_samples"
+TRACE_REPORT_SAMPLED_NS_KEY = "timing_guest_trace_report_sampled_ns"
+TRACE_REPORT_LOWERING_SAMPLED_NS_KEY = "timing_guest_trace_report_lowering_sampled_ns"
+TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_row_validation_sampled_ns"
+)
+TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_source_values_sampled_ns"
+)
+TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_precompile_memory_sampled_ns"
+)
+TRACE_REPORT_INSTRUCTION_RESULT_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_instruction_result_sampled_ns"
+)
+TRACE_REPORT_NEXT_PC_SAMPLED_NS_KEY = "timing_guest_trace_report_next_pc_sampled_ns"
+TRACE_REPORT_REGISTER_ACCESS_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_register_access_sampled_ns"
+)
+TRACE_REPORT_MEMORY_ACCESS_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_memory_access_sampled_ns"
+)
+TRACE_REPORT_STORE_APPLY_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_store_apply_sampled_ns"
+)
+TRACE_REPORT_VISIT_SAMPLED_NS_KEY = "timing_guest_trace_report_visit_sampled_ns"
+TRACE_DESCRIPTOR_SAMPLED_NS_KEY = "timing_guest_trace_descriptor_sampled_ns"
 TRACE_REPORT_BUFFER_CAPACITY_KEY = "timing_guest_trace_report_buffer_capacity"
 TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY = "timing_guest_trace_report_buffer_max_capacity"
 TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY = (
@@ -123,7 +149,8 @@ HEADER = (
     "perf_pending_segment_drop_self_pct,perf_sha256_self_pct,"
     "perf_sha256_source_hint,cpu_trace_hotspot_hint,"
     "trace_report_detail_samples,trace_report_detail_sample_pct,"
-    "trace_report_detail_sample_hint"
+    "trace_report_detail_sample_hint,trace_report_detail_avg_ns,"
+    "trace_report_detail_hotspot,trace_report_detail_hotspot_pct"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -153,6 +180,18 @@ TIMING_KEYS = {
     TRACE_REPORTS_KEY,
     TRACE_REPORT_ROWS_KEY,
     TRACE_REPORT_DETAIL_SAMPLES_KEY,
+    TRACE_REPORT_SAMPLED_NS_KEY,
+    TRACE_REPORT_LOWERING_SAMPLED_NS_KEY,
+    TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY,
+    TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY,
+    TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY,
+    TRACE_REPORT_INSTRUCTION_RESULT_SAMPLED_NS_KEY,
+    TRACE_REPORT_NEXT_PC_SAMPLED_NS_KEY,
+    TRACE_REPORT_REGISTER_ACCESS_SAMPLED_NS_KEY,
+    TRACE_REPORT_MEMORY_ACCESS_SAMPLED_NS_KEY,
+    TRACE_REPORT_STORE_APPLY_SAMPLED_NS_KEY,
+    TRACE_REPORT_VISIT_SAMPLED_NS_KEY,
+    TRACE_DESCRIPTOR_SAMPLED_NS_KEY,
     TRACE_REPORT_BUFFER_CAPACITY_KEY,
     TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY,
     TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY,
@@ -501,6 +540,38 @@ def trace_report_detail_sample_hint(reports: int, detail_samples: int) -> str:
     return "detail_timing_sampled"
 
 
+DETAIL_SAMPLE_HOTSPOT_KEYS = [
+    ("row_validation", TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY),
+    ("lowering", TRACE_REPORT_LOWERING_SAMPLED_NS_KEY),
+    ("visit", TRACE_REPORT_VISIT_SAMPLED_NS_KEY),
+    ("descriptor", TRACE_DESCRIPTOR_SAMPLED_NS_KEY),
+    ("source_values", TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY),
+    ("instruction_result", TRACE_REPORT_INSTRUCTION_RESULT_SAMPLED_NS_KEY),
+    ("next_pc", TRACE_REPORT_NEXT_PC_SAMPLED_NS_KEY),
+    ("register_access", TRACE_REPORT_REGISTER_ACCESS_SAMPLED_NS_KEY),
+    ("memory_access", TRACE_REPORT_MEMORY_ACCESS_SAMPLED_NS_KEY),
+    ("store_apply", TRACE_REPORT_STORE_APPLY_SAMPLED_NS_KEY),
+    ("precompile_memory", TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY),
+]
+
+
+def trace_report_detail_hotspot(values: dict[str, int]) -> tuple[int, str, float]:
+    samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
+    sampled_ns = values.get(TRACE_REPORT_SAMPLED_NS_KEY, 0)
+    if samples <= 0 or sampled_ns <= 0:
+        return (0, "none", 0.0)
+    avg_ns = sampled_ns // samples
+    hotspot_name = "none"
+    hotspot_ns = 0
+    for name, key in DETAIL_SAMPLE_HOTSPOT_KEYS:
+        value = values.get(key, 0)
+        if value > hotspot_ns:
+            hotspot_name = name
+            hotspot_ns = value
+    hotspot_pct = hotspot_ns * 100.0 / sampled_ns if sampled_ns else 0.0
+    return (avg_ns, hotspot_name, hotspot_pct)
+
+
 def trace_structure_hint(
     total_ms: int,
     runner_ms: int,
@@ -580,6 +651,11 @@ def summarize_profile_values(
         trace_reports,
         trace_report_detail_samples,
     )
+    (
+        trace_report_detail_avg_ns,
+        trace_report_detail_hotspot_name,
+        trace_report_detail_hotspot_pct,
+    ) = trace_report_detail_hotspot(values)
     trace_rows_per_report = (
         trace_report_rows / trace_reports if trace_reports else 0.0
     )
@@ -759,7 +835,8 @@ def summarize_profile_values(
         f"{memmove_trace_slice_pct:.3f},{memmove_hint},"
         f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint},"
         f"{trace_report_detail_samples},{trace_report_detail_sample_pct:.3f},"
-        f"{trace_report_detail_hint}"
+        f"{trace_report_detail_hint},{trace_report_detail_avg_ns},"
+        f"{trace_report_detail_hotspot_name},{trace_report_detail_hotspot_pct:.3f}"
     )
 
 
