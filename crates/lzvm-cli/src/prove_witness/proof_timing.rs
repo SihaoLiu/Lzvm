@@ -51,12 +51,24 @@ pub(super) fn record_proof_artifact_timing(
         "finish_witness_opening_retained_leaf_digest_rows",
         timing.witness_opening_retained_leaf_digest_opening_row_count,
     );
+    record_opening_row_shape(
+        timings,
+        "finish_witness_opening_retained_leaf_digest",
+        timing.witness_opening_retained_leaf_digest_opening_count,
+        timing.witness_opening_retained_leaf_digest_opening_row_count,
+    );
     timings.record_count(
         "finish_witness_opening_retained_parent_checkpoint_openings",
         timing.witness_opening_retained_parent_checkpoint_opening_count,
     );
     timings.record_count(
         "finish_witness_opening_retained_parent_checkpoint_rows",
+        timing.witness_opening_retained_parent_checkpoint_opening_row_count,
+    );
+    record_opening_row_shape(
+        timings,
+        "finish_witness_opening_retained_parent_checkpoint",
+        timing.witness_opening_retained_parent_checkpoint_opening_count,
         timing.witness_opening_retained_parent_checkpoint_opening_row_count,
     );
     timings.record(
@@ -362,6 +374,15 @@ pub(super) fn record_proof_artifact_timing(
             ),
             stage_work.retained_leaf_digest_opening_row_count,
         );
+        record_opening_row_shape(
+            timings,
+            &format!(
+                "finish_witness_stage_{}_opening_retained_leaf_digest",
+                stage_work.stage_index
+            ),
+            stage_work.retained_leaf_digest_opening_count,
+            stage_work.retained_leaf_digest_opening_row_count,
+        );
         timings.record_count_dynamic(
             format!(
                 "finish_witness_stage_{}_opening_retained_parent_checkpoint_openings",
@@ -374,6 +395,15 @@ pub(super) fn record_proof_artifact_timing(
                 "finish_witness_stage_{}_opening_retained_parent_checkpoint_rows",
                 stage_work.stage_index
             ),
+            stage_work.retained_parent_checkpoint_opening_row_count,
+        );
+        record_opening_row_shape(
+            timings,
+            &format!(
+                "finish_witness_stage_{}_opening_retained_parent_checkpoint",
+                stage_work.stage_index
+            ),
+            stage_work.retained_parent_checkpoint_opening_count,
             stage_work.retained_parent_checkpoint_opening_row_count,
         );
         timings.record_count_dynamic(
@@ -765,4 +795,20 @@ fn record_count_per_unit(
         return;
     }
     timings.record_count(name, numerator / denominator);
+}
+
+fn record_opening_row_shape(
+    timings: &mut TimingRecorder,
+    prefix: &str,
+    opening_count: usize,
+    row_count: usize,
+) {
+    timings.record_count_dynamic(
+        format!("{prefix}_opening_extra_rows"),
+        row_count.saturating_sub(opening_count),
+    );
+    timings.record_count_dynamic(
+        format!("{prefix}_all_single_row_openings"),
+        usize::from(opening_count > 0 && row_count == opening_count),
+    );
 }

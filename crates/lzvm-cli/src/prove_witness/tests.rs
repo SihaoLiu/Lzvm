@@ -302,6 +302,10 @@ fn proof_artifact_timing_reports_parent_hash_shape_counts() {
         witness_opening_path_parent_hash_retained_leaf_digest_byte_count: 704,
         witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_byte_count: 759,
         witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_byte_count: 816,
+        witness_opening_retained_leaf_digest_opening_count: 32,
+        witness_opening_retained_leaf_digest_opening_row_count: 32,
+        witness_opening_retained_parent_checkpoint_opening_count: 33,
+        witness_opening_retained_parent_checkpoint_opening_row_count: 36,
         witness_opening_query_count: 3,
         witness_opening_stage_count: 4,
         ..lzvm_prover::WitnessProofArtifactTiming::default()
@@ -383,6 +387,17 @@ fn proof_artifact_timing_reports_parent_hash_shape_counts() {
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_bytes_per_launch=24\n"
     ));
     assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_rows_per_query=40\n"));
+    assert!(stdout
+        .contains("timing_finish_witness_opening_retained_leaf_digest_opening_extra_rows=0\n"));
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_retained_leaf_digest_all_single_row_openings=1\n"
+    ));
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_retained_parent_checkpoint_opening_extra_rows=3\n"
+    ));
+    assert!(stdout.contains(
+        "timing_finish_witness_opening_retained_parent_checkpoint_all_single_row_openings=0\n"
+    ));
     assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_rows_per_stage=30\n"));
     assert!(
         stdout.contains("timing_finish_witness_opening_path_parent_hash_launches_per_stage=3\n")
@@ -553,8 +568,12 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
         "timing_finish_witness_stage_7_opening_missing_source_count=5\n",
         "timing_finish_witness_stage_7_opening_retained_leaf_digest_openings=6\n",
         "timing_finish_witness_stage_7_opening_retained_leaf_digest_rows=7\n",
+        "timing_finish_witness_stage_7_opening_retained_leaf_digest_opening_extra_rows=1\n",
+        "timing_finish_witness_stage_7_opening_retained_leaf_digest_all_single_row_openings=0\n",
         "timing_finish_witness_stage_7_opening_retained_parent_checkpoint_openings=8\n",
         "timing_finish_witness_stage_7_opening_retained_parent_checkpoint_rows=9\n",
+        "timing_finish_witness_stage_7_opening_retained_parent_checkpoint_opening_extra_rows=1\n",
+        "timing_finish_witness_stage_7_opening_retained_parent_checkpoint_all_single_row_openings=0\n",
         "timing_finish_witness_stage_7_opening_leaf_hash_rows=10\n",
         "timing_finish_witness_stage_7_opening_leaf_hash_bytes=11\n",
         "timing_finish_witness_stage_7_opening_leaf_hash_arity2_rows=26\n",
