@@ -10,7 +10,10 @@ MEMCPY_TABLE = "CUPTI_ACTIVITY_KIND_MEMCPY"
 KERNEL_TABLE = "CUPTI_ACTIVITY_KIND_KERNEL"
 MEMCPY_KIND_TABLE = "ENUM_CUDA_MEMCPY_OPER"
 STRING_TABLE = "StringIds"
-CALLCHAIN_TABLE = "OSRT_CALLCHAINS"
+CUDA_CALLCHAIN_TABLE = "CUDA_CALLCHAINS"
+OSRT_CALLCHAIN_TABLE = "OSRT_CALLCHAINS"
+CALLCHAIN_TABLE = OSRT_CALLCHAIN_TABLE
+CALLCHAIN_TABLES = (CUDA_CALLCHAIN_TABLE, OSRT_CALLCHAIN_TABLE)
 RUNTIME_MEMCPY_TABLE = "_lzvm_runtime_memcpy"
 
 
@@ -40,6 +43,10 @@ def table_exists(conn: sqlite3.Connection, name: str) -> bool:
         (name,),
     ).fetchone()
     return row is not None
+
+
+def any_callchain_table_exists(conn: sqlite3.Connection) -> bool:
+    return any(table_exists(conn, table) for table in CALLCHAIN_TABLES)
 
 
 def require_tables(conn: sqlite3.Connection) -> None:
@@ -169,7 +176,7 @@ def correlated_memcpy_summary(conn: sqlite3.Connection, limit: int) -> list[sqli
 
 
 def memcpy_callchain_summary(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
-    if not table_exists(conn, CALLCHAIN_TABLE):
+    if not any_callchain_table_exists(conn):
         return []
     return conn.execute(
         f"""
@@ -195,7 +202,7 @@ def memcpy_callchain_summary(conn: sqlite3.Connection, limit: int) -> list[sqlit
 
 
 def d2h_memcpy_callchain_summary(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
-    if not table_exists(conn, CALLCHAIN_TABLE):
+    if not any_callchain_table_exists(conn):
         return []
     return conn.execute(
         f"""
@@ -362,7 +369,7 @@ def h2d_bulk_callchain_summary(
     bulk_bytes: int | None,
     limit: int,
 ) -> list[sqlite3.Row]:
-    if bulk_bytes is None or not table_exists(conn, CALLCHAIN_TABLE):
+    if bulk_bytes is None or not any_callchain_table_exists(conn):
         return []
     return conn.execute(
         f"""
@@ -392,7 +399,7 @@ def h2d_bulk_app_frame_summary(
     conn: sqlite3.Connection,
     limit: int,
 ) -> list[dict[str, object]]:
-    if not table_exists(conn, CALLCHAIN_TABLE):
+    if not any_callchain_table_exists(conn):
         return []
     rows = conn.execute(
         f"""
@@ -462,7 +469,7 @@ def h2d_bulk_callchain_quality_summary(
     conn: sqlite3.Connection,
     limit: int,
 ) -> list[dict[str, object]]:
-    if not table_exists(conn, CALLCHAIN_TABLE):
+    if not any_callchain_table_exists(conn):
         return []
     rows = conn.execute(
         f"""
@@ -504,22 +511,26 @@ def callchain_frame_rows(
     conn: sqlite3.Connection,
     callchain_id: int,
 ) -> list[sqlite3.Row]:
-    if not table_exists(conn, CALLCHAIN_TABLE):
-        return []
-    return conn.execute(
-        f"""
-        select
-            c.stackDepth as stackDepth,
-            coalesce(sym.value, c.symbol, 'unknown') as symbol,
-            coalesce(mod.value, c.module, 'unknown') as module
-        from {CALLCHAIN_TABLE} c
-        left join {STRING_TABLE} sym on sym.id = c.symbol
-        left join {STRING_TABLE} mod on mod.id = c.module
-        where c.id = ?
-        order by c.stackDepth asc
-        """,
-        (callchain_id,),
-    ).fetchall()
+    for table in CALLCHAIN_TABLES:
+        if not table_exists(conn, table):
+            continue
+        rows = conn.execute(
+            f"""
+            select
+                c.stackDepth as stackDepth,
+                coalesce(sym.value, c.symbol, 'unknown') as symbol,
+                coalesce(mod.value, c.module, 'unknown') as module
+            from {table} c
+            left join {STRING_TABLE} sym on sym.id = c.symbol
+            left join {STRING_TABLE} mod on mod.id = c.module
+            where c.id = ?
+            order by c.stackDepth asc
+            """,
+            (callchain_id,),
+        ).fetchall()
+        if rows:
+            return rows
+    return []
 
 
 def callchain_frames(
@@ -537,6 +548,7 @@ def callchain_frames(
 
 
 def first_application_frame(conn: sqlite3.Connection, callchain_id: int) -> str:
+    application_frames: list[str] = []
     for row in callchain_frame_rows(conn, callchain_id):
         symbol = str(row["symbol"] or "unknown")
         module = str(row["module"] or "unknown")
@@ -554,8 +566,24 @@ def first_application_frame(conn: sqlite3.Connection, callchain_id: int) -> str:
             ]
         ):
             continue
-        return f"{symbol}@{module}"
+        application_frames.append(f"{symbol}@{module}")
+    for frame in application_frames:
+        symbol = frame.split("@", 1)[0]
+        if low_level_cuda_copy_frame(symbol):
+            continue
+        return frame
+    if application_frames:
+        return application_frames[0]
     return "unresolved"
+
+
+def low_level_cuda_copy_frame(symbol: str) -> bool:
+    low_level_prefixes = (
+        "lzvm_cuda_",
+        "lzvm_accel::cuda_copy_sites::",
+        "lzvm_accel::cuda_buffer::CudaDeviceBuffer::",
+    )
+    return symbol.startswith(low_level_prefixes)
 
 
 def print_runtime(rows: list[sqlite3.Row]) -> None:

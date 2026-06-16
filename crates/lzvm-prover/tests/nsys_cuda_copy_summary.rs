@@ -300,6 +300,306 @@ conn.close()
 }
 
 #[test]
+fn nsys_cuda_copy_summary_skips_low_level_copy_wrappers_for_h2d_app_frame() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/nsys-cuda-copy-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("temp directory should be creatable");
+    let sqlite_path = temp_dir.join(format!(
+        "nsys-copy-summary-low-level-frame-test-{}.sqlite",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    let setup = r#"
+import sqlite3
+import sys
+
+path = sys.argv[1]
+conn = sqlite3.connect(path)
+conn.executescript("""
+create table StringIds (id integer primary key, value text);
+create table ENUM_CUDA_MEMCPY_OPER (id integer primary key, label text);
+create table CUPTI_ACTIVITY_KIND_RUNTIME (
+    start integer,
+    end integer,
+    eventClass integer,
+    globalTid integer,
+    correlationId integer,
+    nameId integer,
+    returnValue integer,
+    callchainId integer
+);
+create table CUPTI_ACTIVITY_KIND_MEMCPY (
+    start integer,
+    end integer,
+    deviceId integer,
+    contextId integer,
+    greenContextId integer,
+    streamId integer,
+    correlationId integer,
+    globalPid integer,
+    bytes integer,
+    copyKind integer,
+    deprecatedSrcId integer,
+    srcKind integer,
+    dstKind integer,
+    srcDeviceId integer,
+    srcContextId integer,
+    dstDeviceId integer,
+    dstContextId integer,
+    migrationCause integer,
+    graphNodeId integer,
+    virtualAddress integer,
+    copyCount integer
+);
+create table OSRT_CALLCHAINS (
+    id integer,
+    symbol text,
+    module text,
+    kernelMode integer,
+    thumbCode integer,
+    unresolved integer,
+    specialEntry integer,
+    originalIP integer,
+    unwindMethod integer,
+    stackDepth integer
+);
+""")
+conn.executemany("insert into StringIds (id, value) values (?, ?)", [
+    (1, "cudaMemcpy"),
+])
+conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", [
+    (1, "Host-to-Device"),
+])
+conn.execute("""
+insert into CUPTI_ACTIVITY_KIND_RUNTIME
+    (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
+values (0, 50_000_000, 0, 7, 44, 1, 0, 300)
+""")
+conn.execute("""
+insert into CUPTI_ACTIVITY_KIND_MEMCPY
+    (start, end, deviceId, contextId, greenContextId, streamId, correlationId,
+     globalPid, bytes, copyKind, deprecatedSrcId, srcKind, dstKind, srcDeviceId,
+     srcContextId, dstDeviceId, dstContextId, migrationCause, graphNodeId,
+     virtualAddress, copyCount)
+values (1000, 45_000_000, 0, 0, null, 3, 44, 1, 369098752, 1, null, null, null,
+        null, null, null, null, null, null, null, 1)
+""")
+conn.executemany("""
+insert into OSRT_CALLCHAINS
+    (id, symbol, module, kernelMode, thumbCode, unresolved, specialEntry,
+     originalIP, unwindMethod, stackDepth)
+values (?, ?, ?, 0, 0, 0, 0, 0, 0, ?)
+""", [
+    (300, "cudaMemcpy", "libcudart.so", 0),
+    (300, "lzvm_cuda_copy_h2d_bytes", "lzvm", 1),
+    (300, "lzvm_accel::cuda_copy_sites::record_h2d_copy_site_timing", "lzvm", 2),
+    (300, "lzvm_accel::cuda_buffer::CudaDeviceBuffer::from_u64_words", "lzvm", 3),
+    (300, "lzvm_prover::guest_pc_trace_backend::build_guest_pc_trace_stage_source_devices_from_device_material_timing", "lzvm", 4),
+    (300, "lzvm_prover::witness_execution::build_preloaded_guest_pc_trace_stage_source_devices", "lzvm", 5),
+])
+conn.commit()
+conn.close()
+"#;
+
+    let setup_output = Command::new("python3")
+        .arg("-c")
+        .arg(setup)
+        .arg(&sqlite_path)
+        .output()
+        .expect("low-level frame test database should be created");
+    assert!(
+        setup_output.status.success(),
+        "low-level frame test database creation should succeed: stderr={}",
+        String::from_utf8_lossy(&setup_output.stderr)
+    );
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&sqlite_path)
+        .output()
+        .expect("nsys CUDA copy summary should run on low-level frame test database");
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    assert!(
+        output.status.success(),
+        "nsys CUDA copy summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(
+            "369098752,1,50.000,44.999,50.000,\
+lzvm_prover::guest_pc_trace_backend::build_guest_pc_trace_stage_source_devices_from_device_material_timing@lzvm"
+        ),
+        "bulk H2D app-frame summary should skip low-level copy wrappers: {stdout}"
+    );
+}
+
+#[test]
+fn nsys_cuda_copy_summary_prefers_cuda_callchains_for_cuda_memcpy_frames() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/nsys-cuda-copy-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("temp directory should be creatable");
+    let sqlite_path = temp_dir.join(format!(
+        "nsys-copy-summary-cuda-callchain-test-{}.sqlite",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    let setup = r#"
+import sqlite3
+import sys
+
+path = sys.argv[1]
+conn = sqlite3.connect(path)
+conn.executescript("""
+create table StringIds (id integer primary key, value text);
+create table ENUM_CUDA_MEMCPY_OPER (id integer primary key, label text);
+create table CUPTI_ACTIVITY_KIND_RUNTIME (
+    start integer,
+    end integer,
+    eventClass integer,
+    globalTid integer,
+    correlationId integer,
+    nameId integer,
+    returnValue integer,
+    callchainId integer
+);
+create table CUPTI_ACTIVITY_KIND_MEMCPY (
+    start integer,
+    end integer,
+    deviceId integer,
+    contextId integer,
+    greenContextId integer,
+    streamId integer,
+    correlationId integer,
+    globalPid integer,
+    bytes integer,
+    copyKind integer,
+    deprecatedSrcId integer,
+    srcKind integer,
+    dstKind integer,
+    srcDeviceId integer,
+    srcContextId integer,
+    dstDeviceId integer,
+    dstContextId integer,
+    migrationCause integer,
+    graphNodeId integer,
+    virtualAddress integer,
+    copyCount integer
+);
+create table OSRT_CALLCHAINS (
+    id integer,
+    symbol text,
+    module text,
+    kernelMode integer,
+    thumbCode integer,
+    unresolved integer,
+    specialEntry integer,
+    originalIP integer,
+    unwindMethod integer,
+    stackDepth integer
+);
+create table CUDA_CALLCHAINS (
+    id integer,
+    symbol integer,
+    module integer,
+    unresolved integer,
+    originalIP integer,
+    stackDepth integer
+);
+""")
+conn.executemany("insert into StringIds (id, value) values (?, ?)", [
+    (1, "cudaMemcpy"),
+    (2, "libcudart.so"),
+    (3, "lzvm_cuda_copy_h2d_bytes"),
+    (4, "lzvm"),
+    (5, "lzvm_accel::cuda_buffer::CudaDeviceBuffer::from_u64_words"),
+    (6, "lzvm_prover::guest_pc_trace_backend::build_guest_pc_trace_stage_source_devices_from_device_material_timing"),
+])
+conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", [
+    (1, "Host-to-Device"),
+])
+conn.execute("""
+insert into CUPTI_ACTIVITY_KIND_RUNTIME
+    (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
+values (0, 50_000_000, 0, 7, 55, 1, 0, 400)
+""")
+conn.execute("""
+insert into CUPTI_ACTIVITY_KIND_MEMCPY
+    (start, end, deviceId, contextId, greenContextId, streamId, correlationId,
+     globalPid, bytes, copyKind, deprecatedSrcId, srcKind, dstKind, srcDeviceId,
+     srcContextId, dstDeviceId, dstContextId, migrationCause, graphNodeId,
+     virtualAddress, copyCount)
+values (1000, 45_000_000, 0, 0, null, 3, 55, 1, 369098752, 1, null, null, null,
+        null, null, null, null, null, null, null, 1)
+""")
+conn.executemany("""
+insert into OSRT_CALLCHAINS
+    (id, symbol, module, kernelMode, thumbCode, unresolved, specialEntry,
+     originalIP, unwindMethod, stackDepth)
+values (?, ?, ?, 0, 0, 0, 0, 0, 0, ?)
+""", [
+    (400, "lzvm_cuda_memory_info", "lzvm", 0),
+])
+conn.executemany("""
+insert into CUDA_CALLCHAINS
+    (id, symbol, module, unresolved, originalIP, stackDepth)
+values (?, ?, ?, 0, 0, ?)
+""", [
+    (400, 1, 2, 0),
+    (400, 3, 4, 1),
+    (400, 5, 4, 2),
+    (400, 6, 4, 3),
+])
+conn.commit()
+conn.close()
+"#;
+
+    let setup_output = Command::new("python3")
+        .arg("-c")
+        .arg(setup)
+        .arg(&sqlite_path)
+        .output()
+        .expect("CUDA callchain test database should be created");
+    assert!(
+        setup_output.status.success(),
+        "CUDA callchain test database creation should succeed: stderr={}",
+        String::from_utf8_lossy(&setup_output.stderr)
+    );
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&sqlite_path)
+        .output()
+        .expect("nsys CUDA copy summary should run on CUDA callchain test database");
+    let _ = std::fs::remove_file(&sqlite_path);
+
+    assert!(
+        output.status.success(),
+        "nsys CUDA copy summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(
+            "369098752,1,50.000,44.999,50.000,\
+lzvm_prover::guest_pc_trace_backend::build_guest_pc_trace_stage_source_devices_from_device_material_timing@lzvm"
+        ),
+        "CUDA memcpy app-frame summary should prefer CUDA_CALLCHAINS over OSRT callchains: {stdout}"
+    );
+    assert!(
+        !stdout.contains("369098752,1,50.000,44.999,50.000,lzvm_cuda_memory_info@lzvm"),
+        "OSRT memory-info frames should not hide CUDA memcpy callchains: {stdout}"
+    );
+}
+
+#[test]
 fn nsys_cuda_copy_summary_flags_meminfo_polluted_h2d_bulk_callchains() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root.join("../..");
