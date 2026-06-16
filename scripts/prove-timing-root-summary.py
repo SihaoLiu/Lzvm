@@ -41,8 +41,12 @@ PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
 PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY = "perf_memmove_guest_machine_pct"
 PERF_MEMMOVE_TRACE_SLICE_PCT_KEY = "perf_memmove_trace_slice_pct"
 PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY = "perf_pending_segment_drop_self_pct"
+PERF_SHA256_SELF_PCT_KEY = "perf_sha256_self_pct"
+PERF_SHA256_GUEST_MACHINE_PCT_KEY = "perf_sha256_guest_machine_pct"
+PERF_SHA256_TRACE_SLICE_PCT_KEY = "perf_sha256_trace_slice_pct"
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
 PERF_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
+PERF_SECOND_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
 PERF_CALLCHAIN_PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)%--(.*)$")
 
 HEADER = (
@@ -60,7 +64,8 @@ HEADER = (
     "trace_to_leaf_ratio,primary_bottleneck,perf_lowered_report_row_self_pct,"
     "perf_memmove_self_pct,perf_memmove_guest_machine_pct,"
     "perf_memmove_trace_slice_pct,perf_memmove_source_hint,"
-    "perf_pending_segment_drop_self_pct,cpu_trace_hotspot_hint"
+    "perf_pending_segment_drop_self_pct,perf_sha256_self_pct,"
+    "perf_sha256_source_hint,cpu_trace_hotspot_hint"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -124,8 +129,12 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
         PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY: 0.0,
         PERF_MEMMOVE_TRACE_SLICE_PCT_KEY: 0.0,
         PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY: 0.0,
+        PERF_SHA256_SELF_PCT_KEY: 0.0,
+        PERF_SHA256_GUEST_MACHINE_PCT_KEY: 0.0,
+        PERF_SHA256_TRACE_SLICE_PCT_KEY: 0.0,
     }
     in_memmove_callchain = False
+    in_sha256_callchain = False
     for line in text.splitlines():
         match = PERF_SELF_PERCENT_RE.match(line)
         if match:
@@ -134,11 +143,23 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
             except ValueError:
                 continue
             symbol_text = match.group(2)
+            second_pct_match = PERF_SECOND_SELF_PERCENT_RE.match(symbol_text)
+            if second_pct_match:
+                try:
+                    pct = float(second_pct_match.group(1))
+                    symbol_text = second_pct_match.group(2)
+                except ValueError:
+                    pass
             in_memmove_callchain = "memmove" in symbol_text
+            in_sha256_callchain = (
+                "sha2::sha256" in symbol_text or "digest_blocks" in symbol_text
+            )
             if "lowered_report_row" in symbol_text:
                 key = PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY
             elif "memmove" in symbol_text:
                 key = PERF_MEMMOVE_SELF_PCT_KEY
+            elif in_sha256_callchain:
+                key = PERF_SHA256_SELF_PCT_KEY
             elif (
                 "GuestPcTracePendingSegmentSlice" in symbol_text
                 and "drop_in_place" in symbol_text
@@ -150,7 +171,8 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
             continue
 
         if not in_memmove_callchain:
-            continue
+            if not in_sha256_callchain:
+                continue
         callchain_match = PERF_CALLCHAIN_PERCENT_RE.search(line)
         if not callchain_match:
             continue
@@ -159,11 +181,18 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
         except ValueError:
             continue
         symbol_text = callchain_match.group(2)
-        if "advance_guest_machine_prepared_inner" in symbol_text:
-            key = PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY
-        elif "run_guest_pc_trace_segment_slice" in symbol_text:
-            key = PERF_MEMMOVE_TRACE_SLICE_PCT_KEY
-        else:
+        key = None
+        if in_memmove_callchain:
+            if "advance_guest_machine_prepared_inner" in symbol_text:
+                key = PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY
+            elif "run_guest_pc_trace_segment_slice" in symbol_text:
+                key = PERF_MEMMOVE_TRACE_SLICE_PCT_KEY
+        if in_sha256_callchain:
+            if "advance_guest_machine_prepared_inner" in symbol_text:
+                key = PERF_SHA256_GUEST_MACHINE_PCT_KEY
+            elif "run_guest_pc_trace_segment_slice" in symbol_text:
+                key = PERF_SHA256_TRACE_SLICE_PCT_KEY
+        if key is None:
             continue
         hotspots[key] = max(hotspots[key], pct)
     return hotspots
@@ -229,6 +258,25 @@ def memmove_source_hint(perf_hotspots: dict[str, float]) -> str:
     if trace_slice_pct > 0.0:
         return "trace_slice"
     return "none"
+
+
+def sha256_source_hint(perf_hotspots: dict[str, float]) -> str:
+    sha256_pct = perf_hotspots.get(PERF_SHA256_SELF_PCT_KEY, 0.0)
+    if sha256_pct <= 0.0:
+        return "none"
+    guest_machine_pct = perf_hotspots.get(PERF_SHA256_GUEST_MACHINE_PCT_KEY, 0.0)
+    trace_slice_pct = perf_hotspots.get(PERF_SHA256_TRACE_SLICE_PCT_KEY, 0.0)
+    if guest_machine_pct > 0.0 and trace_slice_pct > 0.0:
+        if guest_machine_pct >= trace_slice_pct * 1.25:
+            return "guest_machine"
+        if trace_slice_pct >= guest_machine_pct * 1.25:
+            return "trace_slice"
+        return "guest_machine_and_trace_slice"
+    if guest_machine_pct > 0.0:
+        return "guest_machine"
+    if trace_slice_pct > 0.0:
+        return "trace_slice"
+    return "sha256_digest_unresolved"
 
 
 def root_pipeline_policy_hint(
@@ -331,6 +379,8 @@ def summarize_profile_values(
     pending_drop_pct = perf_hotspots.get(
         PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY, 0.0
     )
+    sha256_pct = perf_hotspots.get(PERF_SHA256_SELF_PCT_KEY, 0.0)
+    sha256_hint = sha256_source_hint(perf_hotspots)
     cpu_hint = cpu_trace_hotspot_hint(perf_hotspots)
     return (
         f"{label},{input_bytes},{total_ms},{runner_ms},{lowerer_ms},"
@@ -350,7 +400,7 @@ def summarize_profile_values(
         f"{trace_to_leaf_ratio:.3f},{bottleneck},{lowered_report_row_pct:.3f},"
         f"{memmove_pct:.3f},{memmove_guest_machine_pct:.3f},"
         f"{memmove_trace_slice_pct:.3f},{memmove_hint},"
-        f"{pending_drop_pct:.3f},{cpu_hint}"
+        f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint}"
     )
 
 
@@ -458,6 +508,8 @@ def self_test() -> None:
                         f"{LEAF_NTT_STAGE_LAUNCHES_KEY}=15732",
                         f"{LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY}=23598",
                         f"{DIRECT_D2H_WAIT_NS_KEY}=192973857",
+                        "    23.99%    23.17%  [.] sha2::sha256::x86::digest_blocks",
+                        "            |--3.36%--0xf2b2442ea4d72b97",
                         "    26.35%  [.] lzvm_prover::guest_pc_trace_backend::apply_main_lowered_report_row",
                         "    20.94%  [.] __memmove_avx512_unaligned_erms",
                         "            |--10.61%--lzvm_prover::guest_machine::advance_guest_machine_prepared_inner",
