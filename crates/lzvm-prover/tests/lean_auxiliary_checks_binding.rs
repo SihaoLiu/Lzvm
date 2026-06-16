@@ -232,6 +232,25 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "{module_name} should not duplicate abstract verifier soundness for ignored metadata"
         );
     }
+    assert!(
+        gpu_runtime_source.contains("private theorem checked_acceptance_sound_witness"),
+        "Lean GPU runtime checks should centralize checked-acceptance SoundWitness projection"
+    );
+    for theorem_name in [
+        "guest_pc_trace_large_gpu_gate_checked_acceptance_sound",
+        "guest_pc_trace_traceless_commitment_input_checked_acceptance_sound",
+        "guest_pc_trace_traceless_segment_output_checked_acceptance_sound",
+        "guest_pc_trace_device_trace_source_checked_acceptance_sound",
+        "guest_pc_trace_sparse_source_checked_acceptance_sound",
+        "guest_pc_trace_terminal_sparse_source_checked_acceptance_sound",
+        "fri_retained_stage_source_checked_acceptance_sound",
+    ] {
+        let theorem_body = lean_binding::theorem_body(&gpu_runtime_source, theorem_name);
+        assert!(
+            theorem_body.contains("checked_acceptance_sound_witness"),
+            "{theorem_name} should reuse the centralized checked-acceptance SoundWitness projector"
+        );
+    }
     let finish_summary_wrapper_uses = lean_source
         .matches(
             "proof_artifact_finish_timing_some_summary_acceptance_sound\n      assumptions\n      { summary with",
