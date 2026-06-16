@@ -10,6 +10,12 @@ ROOT_COUNT_KEY = "timing_guest_stage_tree_commit_root_count"
 ROOT_GROUPS_KEY = "timing_guest_stage_tree_commit_root_materialization_groups"
 ROOT_MAX_GROUP_KEY = "timing_guest_stage_tree_commit_root_materialization_max_group_size"
 TOTAL_MS_KEY = "timing_total_ms"
+CONSTANT_MATERIAL_VALIDATION_ELAPSED_MS_KEY = (
+    "timing_constant_material_validation_elapsed_ms"
+)
+CONSTANT_MATERIAL_VALIDATION_JOIN_WAIT_MS_KEY = (
+    "timing_constant_material_validation_join_wait_ms"
+)
 RUNNER_MS_KEY = "timing_guest_trace_runner_ms"
 LOWERER_MS_KEY = "timing_guest_trace_lowerer_ms"
 STREAM_ELAPSED_MS_KEY = "timing_guest_trace_stream_elapsed_ms"
@@ -76,7 +82,9 @@ PERF_SECOND_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
 PERF_CALLCHAIN_PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)%--(.*)$")
 
 HEADER = (
-    "profile,input_bytes,total_ms,runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,"
+    "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,"
+    "constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
+    "runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,"
     "segment_commit_ms,stream_commit_residual_ms,segment_receive_wait_ms,"
     "pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,"
     "parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,"
@@ -109,6 +117,8 @@ OUTLIER_RATIO_THRESHOLD = 1.5
 TIMING_KEYS = {
     INPUT_BYTES_KEY,
     TOTAL_MS_KEY,
+    CONSTANT_MATERIAL_VALIDATION_ELAPSED_MS_KEY,
+    CONSTANT_MATERIAL_VALIDATION_JOIN_WAIT_MS_KEY,
     RUNNER_MS_KEY,
     LOWERER_MS_KEY,
     STREAM_ELAPSED_MS_KEY,
@@ -409,6 +419,19 @@ def opening_batching_hint(
     return "cross_segment_retained_leaf_opening_candidate"
 
 
+def constant_material_overlap_hint(elapsed_ms: int, join_wait_ms: int) -> str:
+    if elapsed_ms <= 0:
+        return "none"
+    if join_wait_ms <= 0:
+        return "fully_overlapped"
+    wait_ratio = join_wait_ms / elapsed_ms
+    if wait_ratio < 0.25:
+        return "mostly_overlapped"
+    if wait_ratio >= 0.75:
+        return "foreground_wait"
+    return "partial_overlap"
+
+
 def summarize_profile_values(
     label: str,
     values: dict[str, int],
@@ -424,6 +447,16 @@ def summarize_profile_values(
 
     input_bytes = values.get(INPUT_BYTES_KEY, 0)
     total_ms = values.get(TOTAL_MS_KEY, 0)
+    constant_material_elapsed_ms = values.get(
+        CONSTANT_MATERIAL_VALIDATION_ELAPSED_MS_KEY, 0
+    )
+    constant_material_join_wait_ms = values.get(
+        CONSTANT_MATERIAL_VALIDATION_JOIN_WAIT_MS_KEY, 0
+    )
+    constant_material_hint = constant_material_overlap_hint(
+        constant_material_elapsed_ms,
+        constant_material_join_wait_ms,
+    )
     runner_ms = values.get(RUNNER_MS_KEY, 0)
     lowerer_ms = values.get(LOWERER_MS_KEY, 0)
     stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
@@ -543,7 +576,9 @@ def summarize_profile_values(
     sha256_hint = sha256_source_hint(perf_hotspots)
     cpu_hint = cpu_trace_hotspot_hint(perf_hotspots)
     return (
-        f"{label},{input_bytes},{total_ms},{runner_ms},{lowerer_ms},"
+        f"{label},{input_bytes},{total_ms},"
+        f"{constant_material_elapsed_ms},{constant_material_join_wait_ms},"
+        f"{constant_material_hint},{runner_ms},{lowerer_ms},"
         f"{stream_elapsed_ms},{stream_worker_ms},{segment_commit_ms},"
         f"{stream_commit_residual_ms},{segment_receive_wait_ms},"
         f"{pending_receive_wait_ms},{pending_send_wait_ms},"
