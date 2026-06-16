@@ -40,6 +40,8 @@ PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
 PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
 PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY = "perf_memmove_guest_machine_pct"
 PERF_MEMMOVE_TRACE_SLICE_PCT_KEY = "perf_memmove_trace_slice_pct"
+PERF_MEMMOVE_RUNNER_THREAD_PCT_KEY = "perf_memmove_runner_thread_pct"
+PERF_MEMMOVE_LOWER_THREAD_PCT_KEY = "perf_memmove_lower_thread_pct"
 PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY = "perf_pending_segment_drop_self_pct"
 PERF_SHA256_SELF_PCT_KEY = "perf_sha256_self_pct"
 PERF_SHA256_GUEST_MACHINE_PCT_KEY = "perf_sha256_guest_machine_pct"
@@ -128,6 +130,8 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
         PERF_MEMMOVE_SELF_PCT_KEY: 0.0,
         PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY: 0.0,
         PERF_MEMMOVE_TRACE_SLICE_PCT_KEY: 0.0,
+        PERF_MEMMOVE_RUNNER_THREAD_PCT_KEY: 0.0,
+        PERF_MEMMOVE_LOWER_THREAD_PCT_KEY: 0.0,
         PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY: 0.0,
         PERF_SHA256_SELF_PCT_KEY: 0.0,
         PERF_SHA256_GUEST_MACHINE_PCT_KEY: 0.0,
@@ -158,6 +162,14 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
                 key = PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY
             elif "memmove" in symbol_text:
                 key = PERF_MEMMOVE_SELF_PCT_KEY
+                if "lzvm-gp-runner" in symbol_text:
+                    hotspots[PERF_MEMMOVE_RUNNER_THREAD_PCT_KEY] = max(
+                        hotspots[PERF_MEMMOVE_RUNNER_THREAD_PCT_KEY], pct
+                    )
+                elif "lzvm-gp-lower" in symbol_text:
+                    hotspots[PERF_MEMMOVE_LOWER_THREAD_PCT_KEY] = max(
+                        hotspots[PERF_MEMMOVE_LOWER_THREAD_PCT_KEY], pct
+                    )
             elif in_sha256_callchain:
                 key = PERF_SHA256_SELF_PCT_KEY
             elif (
@@ -257,6 +269,18 @@ def memmove_source_hint(perf_hotspots: dict[str, float]) -> str:
         return "guest_machine"
     if trace_slice_pct > 0.0:
         return "trace_slice"
+    runner_thread_pct = perf_hotspots.get(PERF_MEMMOVE_RUNNER_THREAD_PCT_KEY, 0.0)
+    lower_thread_pct = perf_hotspots.get(PERF_MEMMOVE_LOWER_THREAD_PCT_KEY, 0.0)
+    if runner_thread_pct > 0.0 and lower_thread_pct > 0.0:
+        if runner_thread_pct >= lower_thread_pct * 1.25:
+            return "guest_runner_thread"
+        if lower_thread_pct >= runner_thread_pct * 1.25:
+            return "trace_lower_thread"
+        return "guest_runner_and_trace_lower_threads"
+    if runner_thread_pct > 0.0:
+        return "guest_runner_thread"
+    if lower_thread_pct > 0.0:
+        return "trace_lower_thread"
     return "none"
 
 

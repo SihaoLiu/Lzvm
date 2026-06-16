@@ -1,4 +1,5 @@
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 #[test]
 fn prove_timing_root_summary_reports_root_grouping_shape() {
@@ -88,4 +89,49 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
             "prove timing root summary should print {required}"
         );
     }
+}
+
+#[test]
+fn prove_timing_root_summary_uses_thread_name_for_memmove_source_hint() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=1000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "    21.23%    21.23%  lzvm-gp-runner  libc.so.6             [.] __memmove_avx512_unaligned_erms",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains(
+            "stdin,0,1000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1.000,no,none,0,0,0,0,0,0,0.000,0.000,no,0.000,total,0.000,21.230,0.000,0.000,guest_runner_thread,0.000,0.000,none,guest_state_copies"
+        ),
+        "prove timing root summary should classify command-column memmove source: stdout={stdout}"
+    );
 }
