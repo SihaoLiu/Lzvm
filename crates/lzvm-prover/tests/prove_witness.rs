@@ -162,6 +162,122 @@ fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-prover-witness-{}-{name}", std::process::id()))
 }
 
+fn path_with_suffix(prefix: &Path, suffix: &str) -> PathBuf {
+    let mut value = prefix.as_os_str().to_owned();
+    value.push(suffix);
+    PathBuf::from(value)
+}
+
+fn single_file_unit_paths(root: &Path) -> KeyUnitPaths {
+    let prefix = root
+        .join("sample-program")
+        .join("vadcop_final")
+        .join("vadcop_final");
+    KeyUnitPaths {
+        kind: KeyUnitKind::FinalAggregation,
+        group_id: None,
+        unit_id: None,
+        group_name: None,
+        unit_name: None,
+        fixed_columns: path_with_suffix(&prefix, ".const"),
+        constant_tree: path_with_suffix(&prefix, ".consttree"),
+        prefix: prefix.clone(),
+        metadata_prefix: Some(prefix.clone()),
+        program_prefix: Some(prefix.clone()),
+        verification_key_prefix: prefix,
+    }
+}
+
+fn write_file(path: &Path, bytes: Vec<u8>) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("fixture parent directory should be created");
+    }
+    fs::write(path, bytes).expect("fixture file should be written");
+}
+
+fn write_key_directory_catalog_files(catalog: &KeyDirectoryCatalog) {
+    write_file(
+        &catalog.layout.global_paths.info,
+        lzvm_artifacts::global_info::encode_global_info(&catalog.layout.global_info)
+            .expect("global info should encode"),
+    );
+    write_file(
+        &catalog.layout.global_paths.constraints_program,
+        lzvm_artifacts::global_program::encode_global_program(
+            &lzvm_artifacts::global_program::GlobalProgram {
+                constraints: catalog.global_constraints.clone(),
+                hints: catalog.global_hints.clone(),
+            },
+        )
+        .expect("global program should encode"),
+    );
+    for unit in &catalog.units {
+        let paths = &unit.paths;
+        write_file(
+            &paths.setup_info().expect("unit setup path should derive"),
+            lzvm_artifacts::setup_info::encode_unit_setup_info(&unit.metadata.setup)
+                .expect("unit setup should encode"),
+        );
+        write_file(
+            &paths
+                .expression_info()
+                .expect("unit expression info path should derive"),
+            lzvm_artifacts::expression_info::encode_expression_info(&unit.metadata.expressions)
+                .expect("unit expression info should encode"),
+        );
+        write_file(
+            &paths
+                .verifier_info()
+                .expect("unit verifier info path should derive"),
+            lzvm_artifacts::verifier_info::encode_verifier_info(&unit.metadata.verifier)
+                .expect("unit verifier info should encode"),
+        );
+        write_file(
+            &paths
+                .pcs_setup_plan()
+                .expect("unit PCS setup plan path should derive"),
+            lzvm_artifacts::pcs_plan::encode_pcs_setup_plan(&unit.pcs_plan)
+                .expect("unit PCS setup plan should encode"),
+        );
+        if let Some(material) = unit.pcs_material.as_ref() {
+            write_file(
+                &paths
+                    .pcs_setup_material()
+                    .expect("unit PCS setup material path should derive"),
+                lzvm_artifacts::pcs_material::encode_pcs_setup_material(material)
+                    .expect("unit PCS setup material should encode"),
+            );
+        }
+        write_file(
+            &paths.verification_key_binary(),
+            lzvm_artifacts::verification_key::encode_verification_key_binary(
+                &unit.verification_key,
+            )
+            .expect("unit verification key should encode"),
+        );
+        write_file(
+            &paths
+                .expression_program()
+                .expect("unit expression program path should derive"),
+            lzvm_artifacts::regular_program::encode_regular_program(
+                &lzvm_artifacts::regular_program::RegularProgram {
+                    expressions: unit.expression_program.clone(),
+                    constraints: unit.regular_constraints.clone(),
+                    hints: unit.regular_hints.clone(),
+                },
+            )
+            .expect("unit regular program should encode"),
+        );
+        write_file(
+            &paths
+                .verifier_program()
+                .expect("unit verifier program path should derive"),
+            lzvm_artifacts::expression_program::encode_expression_program(&unit.verifier_program)
+                .expect("unit verifier program should encode"),
+        );
+    }
+}
+
 fn build_shared_library(dir: &Path, name: &str, source: &str) -> PathBuf {
     fs::create_dir_all(dir).expect("fixture directory should be created");
     let source_path = dir.join(format!("{name}.c"));
@@ -403,6 +519,26 @@ fn empty_verifier_info() -> VerifierInfo {
             temporary_count: 0,
             operations: Vec::new(),
         },
+    }
+}
+
+fn fixture_verifier_code() -> VerifierCode {
+    VerifierCode {
+        expression_id: None,
+        stage: None,
+        line: String::new(),
+        temporary_count: 1,
+        operations: vec![lzvm_artifacts::verifier_info::VerifierOperation {
+            op: lzvm_artifacts::verifier_info::VerifierOperationKind::Copy,
+            destination: lzvm_artifacts::verifier_info::VerifierDestination {
+                temporary_id: 0,
+                dimension: 1,
+            },
+            sources: vec![lzvm_artifacts::verifier_info::VerifierOperand::Number {
+                value: 0,
+                dimension: 1,
+            }],
+        }],
     }
 }
 
@@ -2978,14 +3114,63 @@ fn seeded_fri_preflight_fixture(name: &str) -> SeededFriPreflightFixture {
 
     let expression_id = 42;
     let mut unit = sample_unit();
-    unit.paths.fixed_columns = dir.join("unit.const");
-    unit.paths.constant_tree = dir.join("unit.consttree");
+    unit.paths = single_file_unit_paths(&dir);
+    fs::create_dir_all(
+        unit.paths
+            .prefix
+            .parent()
+            .expect("unit prefix should have a parent"),
+    )
+    .expect("unit path should be created");
     unit.metadata.verifier.quotient.expression_id = Some(expression_id);
+    unit.metadata.verifier.quotient.operations = fixture_verifier_code().operations;
+    unit.metadata.verifier.quotient.temporary_count = 1;
+    unit.metadata.verifier.query = fixture_verifier_code();
+    unit.metadata.expressions.expressions = vec![lzvm_artifacts::expression_info::ExpressionCode {
+        expression_id,
+        stage: 2,
+        line: String::new(),
+        temporary_count: 0,
+        destination: None,
+        operations: Vec::new(),
+    }];
     unit.expression_program = fixed_plus_stage_expression_program(expression_id);
+    let fixed_bytes =
+        encode_raw_fixed_columns(&sample_fixed_columns("unit-a"), &unit.metadata.setup)
+            .expect("fixed columns should encode");
+    write_fixed_bytes_for_unit(&mut unit, fixed_bytes.clone());
+    unit.expected_fixed_bytes = expected_raw_fixed_column_byte_count(&unit.metadata.setup)
+        .expect("expected fixed byte count should derive");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
     write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
+    let constant_tree = read_constant_tree_file(&unit.paths.constant_tree, &unit.metadata.setup)
+        .expect("constant tree should reload");
+    let material = lzvm_artifacts::pcs_material::build_pcs_setup_material(
+        &unit.pcs_plan,
+        &fixed_bytes,
+        &constant_tree,
+    )
+    .expect("PCS setup material should derive");
+    let material_bytes = lzvm_artifacts::pcs_material::encode_pcs_setup_material(&material)
+        .expect("PCS setup material should encode");
+    unit.pcs_material = Some(material);
+    unit.pcs_material_bytes =
+        Some(u64::try_from(material_bytes.len()).expect("PCS material byte count should fit"));
     let mut catalog = sample_catalog(unit);
+    catalog.layout.root = dir.clone();
+    catalog.layout.global_paths.info = dir.join("pilout.globalInfo.bin");
+    catalog.layout.global_paths.constraints_program = dir.join("pilout.globalConstraints.bin");
+    catalog.layout.source_fixed_file_manifest = dir.join("lzvm.source-fixed-file-manifest");
+    catalog.layout.source_program_archive = dir.join("lzvm.source-program-archive");
+    catalog.layout.units = catalog
+        .units
+        .iter()
+        .map(|unit| unit.paths.clone())
+        .collect();
+    catalog.layout.global_info.air_groups.clear();
+    catalog.layout.global_info.airs.clear();
+    catalog.layout.global_info.aggregation_types.clear();
     catalog.layout.global_info.lattice_size = Some(32);
     let plan = derive_prove_execution_plan(
         &catalog,
@@ -3071,6 +3256,19 @@ fn seeded_fri_preflight_fixture(name: &str) -> SeededFriPreflightFixture {
     }
 }
 
+fn tamper_seeded_witness_tree_digest(proof: &mut ProofArtifact) {
+    let segment = proof
+        .segments
+        .iter_mut()
+        .find(|segment| segment.id == WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+        .expect("witness commitment segment should exist");
+    let mut witness = parse_witness_commitment_segment(&segment.data)
+        .expect("witness commitment segment should parse");
+    witness.stages[0].tree_digest[0] ^= 1;
+    segment.data =
+        encode_witness_commitment_segment(&witness).expect("tampered witness should encode");
+}
+
 #[test]
 fn rejects_seeded_fri_unit_proof_without_fri_opening_in_preflight() {
     let fixture = seeded_fri_preflight_fixture("proof-artifact-seeded-fri-missing-opening");
@@ -3094,17 +3292,7 @@ fn rejects_seeded_fri_unit_proof_without_fri_opening_in_preflight() {
 #[test]
 fn rejects_tampered_seeded_witness_commitment_in_preflight() {
     let mut fixture = seeded_fri_preflight_fixture("proof-artifact-seeded-fri-tampered-witness");
-    let segment = fixture
-        .proof
-        .segments
-        .iter_mut()
-        .find(|segment| segment.id == WITNESS_COMMITMENT_SEGMENT_BASE_ID)
-        .expect("witness commitment segment should exist");
-    let mut witness = parse_witness_commitment_segment(&segment.data)
-        .expect("witness commitment segment should parse");
-    witness.stages[0].tree_digest[0] ^= 1;
-    segment.data =
-        encode_witness_commitment_segment(&witness).expect("tampered witness should encode");
+    tamper_seeded_witness_tree_digest(&mut fixture.proof);
 
     let error = lzvm_prover::setup_preflight::validate_setup_preflight(
         &fixture.catalog,
@@ -3112,6 +3300,41 @@ fn rejects_tampered_seeded_witness_commitment_in_preflight() {
         &fixture.public_values,
     )
     .expect_err("tampered seeded witness commitment should reject");
+    fs::remove_dir_all(&fixture.dir).expect("fixture directory should be removed");
+
+    assert!(
+        error
+            .to_string()
+            .contains("PCS query plan segment mismatch"),
+        "{error}"
+    );
+}
+
+#[test]
+fn rejects_tampered_seeded_witness_commitment_from_file_preflight() {
+    let mut fixture =
+        seeded_fri_preflight_fixture("proof-artifact-seeded-fri-file-tampered-witness");
+    tamper_seeded_witness_tree_digest(&mut fixture.proof);
+    write_key_directory_catalog_files(&fixture.catalog);
+    let proof_path = fixture.dir.join("proof.bin");
+    let public_values_path = fixture.dir.join("public-values.bin");
+    fs::write(
+        &proof_path,
+        encode_proof_artifact(&fixture.proof).expect("proof should encode"),
+    )
+    .expect("proof should be written");
+    fs::write(
+        &public_values_path,
+        encode_public_values(&fixture.public_values).expect("public values should encode"),
+    )
+    .expect("public values should be written");
+
+    let error = lzvm_prover::setup_preflight::validate_setup_preflight_from_files(
+        &fixture.dir,
+        &proof_path,
+        &public_values_path,
+    )
+    .expect_err("file verifier entrypoint should reject tampered seeded witness commitment");
     fs::remove_dir_all(&fixture.dir).expect("fixture directory should be removed");
 
     assert!(
