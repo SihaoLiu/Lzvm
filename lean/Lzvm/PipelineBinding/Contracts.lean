@@ -554,6 +554,98 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_con
                       (And.intro coreContract.right
                         compactContract.right.right.right)))))))))
 
+theorem runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contract
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof _requiresExternalSource accepted
+  have concreteContract :=
+    runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_contract
+      assumptions
+      validation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      _requiresExternalSource
+      accepted
+  have executionObligations :=
+    runtime_pipeline_binding_checked_acceptance_execution_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have seedBinds :=
+    concreteContract.right.right.right.right.right.right.right.left
+  have seededFriOpeningChecked :=
+    concreteContract.right.right.right.right.right.right.right.right.left
+  have verifierCore :=
+    concreteContract.right.right.right.right.right.right.right.right.right.left
+  have soundWitness :=
+    concreteContract.right.right.right.right.right.right.right.right.right.right
+  exact
+    And.intro concreteContract.left
+      (And.intro concreteContract.right.left
+        (And.intro concreteContract.right.right.left
+          (And.intro concreteContract.right.right.right.left
+            (And.intro concreteContract.right.right.right.right.left
+              (And.intro concreteContract.right.right.right.right.right.left
+                (And.intro concreteContract.right.right.right.right.right.right.left
+                  (And.intro seedBinds
+                    (And.intro seededFriOpeningChecked
+                      (And.intro verifierCore
+                        (And.intro executionObligations soundWitness))))))))))
+
 theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
