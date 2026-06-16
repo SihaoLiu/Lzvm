@@ -47,6 +47,10 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "sample_spread_pct",
         "close_samples",
         "max_outlier",
+        "perf_lowered_report_row_self_pct",
+        "perf_memmove_self_pct",
+        "perf_pending_segment_drop_self_pct",
+        "cpu_trace_hotspot_hint",
     ] {
         assert!(
             source.contains(required),
@@ -67,10 +71,10 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     for required in [
-        "profile,input_bytes,total_ms,runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,segment_commit_ms,stream_commit_residual_ms,segment_receive_wait_ms,pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,parallel_lower_max_reorder,seed_direct_lift_attempts,seed_direct_lift_successes,seed_full_advances,finish_opening_ms,root_count,materialization_groups,materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure,trace_to_leaf_ratio,primary_bottleneck",
-        "single-root-groups,2758032,9050,7800,7812,9912,7812,2100,0,6000,1200,345,2,23,23,23,1,22,22,1,476,23,23,1,1.000,yes,enable_cross_segment_root_pipeline,858,23,874,41078,15732,23598,1786.000,192.974,yes,9.105,stream_elapsed",
-        "batched-roots,2758032,9050,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,23,1,23,23.000,no,root_batches_already_grouped,0,0,0,0,0,0,0.000,0.000,no,0.000,total",
-        "slow-sample,12447640,18100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,120,120,1,1.000,yes,large_input_root_pipeline_gated,0,0,0,0,0,0,0.000,0.000,no,0.000,total",
+        "profile,input_bytes,total_ms,runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,segment_commit_ms,stream_commit_residual_ms,segment_receive_wait_ms,pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,parallel_lower_max_reorder,seed_direct_lift_attempts,seed_direct_lift_successes,seed_full_advances,finish_opening_ms,root_count,materialization_groups,materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure,trace_to_leaf_ratio,primary_bottleneck,perf_lowered_report_row_self_pct,perf_memmove_self_pct,perf_pending_segment_drop_self_pct,cpu_trace_hotspot_hint",
+        "single-root-groups,2758032,9050,7800,7812,9912,7812,2100,0,6000,1200,345,2,23,23,23,1,22,22,1,476,23,23,1,1.000,yes,enable_cross_segment_root_pipeline,858,23,874,41078,15732,23598,1786.000,192.974,yes,9.105,stream_elapsed,26.350,20.940,7.410,report_lifetime_and_data_movement",
+        "batched-roots,2758032,9050,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,23,1,23,23.000,no,root_batches_already_grouped,0,0,0,0,0,0,0.000,0.000,no,0.000,total,0.000,0.000,0.000,none",
+        "slow-sample,12447640,18100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,120,120,1,1.000,yes,large_input_root_pipeline_gated,0,0,0,0,0,0,0.000,0.000,no,0.000,total,0.000,0.000,0.000,none",
         "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,total_median_ms,total_max_ms,sample_spread_pct,close_samples,max_outlier",
         "aggregate,3,3,9050,12066.667,9050.000,18100,100.000,no,yes",
     ] {

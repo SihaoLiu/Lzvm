@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -35,7 +36,11 @@ LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY = (
     "timing_guest_stage_leaf_coset_extend_ntt_block_twiddle_launches"
 )
 DIRECT_D2H_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_wait_ns"
+PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
+PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
+PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY = "perf_pending_segment_drop_self_pct"
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
+PERF_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
 
 HEADER = (
     "profile,input_bytes,total_ms,runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,"
@@ -49,7 +54,8 @@ HEADER = (
     "root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
     "leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,"
     "leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure,"
-    "trace_to_leaf_ratio,primary_bottleneck"
+    "trace_to_leaf_ratio,primary_bottleneck,perf_lowered_report_row_self_pct,"
+    "perf_memmove_self_pct,perf_pending_segment_drop_self_pct,cpu_trace_hotspot_hint"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -106,6 +112,36 @@ def parse_timing_log(text: str) -> dict[str, int]:
     return values
 
 
+def parse_perf_self_hotspots(text: str) -> dict[str, float]:
+    hotspots = {
+        PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY: 0.0,
+        PERF_MEMMOVE_SELF_PCT_KEY: 0.0,
+        PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY: 0.0,
+    }
+    for line in text.splitlines():
+        match = PERF_SELF_PERCENT_RE.match(line)
+        if not match:
+            continue
+        try:
+            pct = float(match.group(1))
+        except ValueError:
+            continue
+        symbol_text = match.group(2)
+        if "lowered_report_row" in symbol_text:
+            key = PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY
+        elif "memmove" in symbol_text:
+            key = PERF_MEMMOVE_SELF_PCT_KEY
+        elif (
+            "GuestPcTracePendingSegmentSlice" in symbol_text
+            and "drop_in_place" in symbol_text
+        ):
+            key = PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY
+        else:
+            continue
+        hotspots[key] = max(hotspots[key], pct)
+    return hotspots
+
+
 def primary_bottleneck(
     total_ms: int,
     runner_ms: int,
@@ -133,6 +169,25 @@ def primary_bottleneck(
     return name if value > 0.0 else "total" if total_ms > 0 else "unknown"
 
 
+def cpu_trace_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
+    lowered_report_row_pct = perf_hotspots.get(
+        PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY, 0.0
+    )
+    memmove_pct = perf_hotspots.get(PERF_MEMMOVE_SELF_PCT_KEY, 0.0)
+    pending_drop_pct = perf_hotspots.get(
+        PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY, 0.0
+    )
+    if lowered_report_row_pct >= 20.0 and memmove_pct >= 15.0:
+        return "report_lifetime_and_data_movement"
+    if lowered_report_row_pct >= 20.0:
+        return "lowered_report_rows"
+    if memmove_pct >= 15.0:
+        return "guest_state_copies"
+    if pending_drop_pct >= 5.0:
+        return "pending_segment_lifetime"
+    return "none"
+
+
 def root_pipeline_policy_hint(
     input_bytes: int,
     root_count: int,
@@ -148,7 +203,11 @@ def root_pipeline_policy_hint(
     return "enable_cross_segment_root_pipeline"
 
 
-def summarize_profile_values(label: str, values: dict[str, int]) -> str:
+def summarize_profile_values(
+    label: str,
+    values: dict[str, int],
+    perf_hotspots: dict[str, float] | None = None,
+) -> str:
     missing = [
         key
         for key in [ROOT_COUNT_KEY, ROOT_GROUPS_KEY, ROOT_MAX_GROUP_KEY]
@@ -213,6 +272,16 @@ def summarize_profile_values(label: str, values: dict[str, int]) -> str:
         leaf_kernel_ms,
         direct_d2h_wait_ms,
     )
+    if perf_hotspots is None:
+        perf_hotspots = parse_perf_self_hotspots("")
+    lowered_report_row_pct = perf_hotspots.get(
+        PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY, 0.0
+    )
+    memmove_pct = perf_hotspots.get(PERF_MEMMOVE_SELF_PCT_KEY, 0.0)
+    pending_drop_pct = perf_hotspots.get(
+        PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY, 0.0
+    )
+    cpu_hint = cpu_trace_hotspot_hint(perf_hotspots)
     return (
         f"{label},{input_bytes},{total_ms},{runner_ms},{lowerer_ms},"
         f"{stream_elapsed_ms},{stream_worker_ms},{segment_commit_ms},"
@@ -228,12 +297,15 @@ def summarize_profile_values(label: str, values: dict[str, int]) -> str:
         f"{leaf_kernel_ms},{leaf_coset_calls},{leaf_coset_columns},{leaf_ntt_launches},"
         f"{leaf_ntt_stage_launches},{leaf_ntt_block_twiddle_launches},"
         f"{ntt_launches_per_call:.3f},{direct_d2h_wait_ms:.3f},{leaf_launch_pressure},"
-        f"{trace_to_leaf_ratio:.3f},{bottleneck}"
+        f"{trace_to_leaf_ratio:.3f},{bottleneck},{lowered_report_row_pct:.3f},"
+        f"{memmove_pct:.3f},{pending_drop_pct:.3f},{cpu_hint}"
     )
 
 
 def summarize_profile(label: str, text: str) -> str:
-    return summarize_profile_values(label, parse_timing_log(text))
+    return summarize_profile_values(
+        label, parse_timing_log(text), parse_perf_self_hotspots(text)
+    )
 
 
 def median_int(values: list[int]) -> float:
@@ -282,13 +354,20 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
 
 
 def print_summary(inputs: list[tuple[str, str]]) -> None:
-    parsed_inputs = [(label, parse_timing_log(text)) for label, text in inputs]
+    parsed_inputs = [
+        (label, parse_timing_log(text), parse_perf_self_hotspots(text))
+        for label, text in inputs
+    ]
     print(HEADER)
-    for label, values in parsed_inputs:
-        print(summarize_profile_values(label, values))
+    for label, values, perf_hotspots in parsed_inputs:
+        print(summarize_profile_values(label, values, perf_hotspots))
     if len(parsed_inputs) > 1:
         print(AGGREGATE_HEADER)
-        print(summarize_total_samples(parsed_inputs))
+        print(
+            summarize_total_samples(
+                [(label, values) for label, values, _ in parsed_inputs]
+            )
+        )
 
 
 def self_test() -> None:
@@ -327,6 +406,9 @@ def self_test() -> None:
                         f"{LEAF_NTT_STAGE_LAUNCHES_KEY}=15732",
                         f"{LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY}=23598",
                         f"{DIRECT_D2H_WAIT_NS_KEY}=192973857",
+                        "    26.35%  [.] lzvm_prover::guest_pc_trace_backend::apply_main_lowered_report_row",
+                        "    20.94%  [.] __memmove_avx512_unaligned_erms",
+                        "     7.41%  [.] core::ptr::drop_in_place<lzvm_prover::guest_pc_trace_backend::GuestPcTracePendingSegmentSlice>",
                     ]
                 ),
             ),
