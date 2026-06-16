@@ -1310,6 +1310,44 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_required_external_source_concrete_opening_core_contract",
         &["runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_required_external_source_hash_concrete_opening_core_contract",
+        &[
+            "AssumptionBundle system",
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "hashAssumptions",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "RuntimePipelineBindingCheckedAcceptance",
+            "requiresExternalSource",
+            "ExternalSourceOpeningEvidence",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "ProofSystemSound system",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_required_external_source_hash_concrete_opening_core_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract",
+            "runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_required_external_source_hash_concrete_opening_core_contract",
+        &[
+            "runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contract",
+            "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract",
+        ],
+    );
     assert!(
         theorem_prefix(
             &lean_source,
