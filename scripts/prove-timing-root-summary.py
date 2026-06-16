@@ -102,6 +102,7 @@ HEADER = (
     "trace_rows_per_report,trace_report_buffer_capacity,"
     "trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,"
     "trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
+    "trace_report_lifetime_hint,"
     "descriptor_rows,descriptor_compact_rows,"
     "descriptor_wide_rows,descriptor_upload_bytes,descriptor_bytes_per_row,"
     "descriptor_high32_nonzero_values,descriptor_high32_nonzero_rows,"
@@ -470,6 +471,22 @@ def trace_report_buffer_shape_hint(
     return "report_buffer_capacity_slack"
 
 
+def trace_report_lifetime_hint(
+    reports: int,
+    buffer_excess_pct: float,
+    pending_drop_pct: float,
+) -> str:
+    if reports <= 0:
+        return "none"
+    if buffer_excess_pct <= 1.0 and pending_drop_pct >= 5.0:
+        return "tight_report_buffer_and_pending_drop"
+    if pending_drop_pct >= 5.0:
+        return "pending_segment_drop_pressure"
+    if buffer_excess_pct <= 1.0:
+        return "report_buffer_tight"
+    return "none"
+
+
 def trace_structure_hint(
     total_ms: int,
     runner_ms: int,
@@ -662,6 +679,14 @@ def summarize_profile_values(
     )
     if perf_hotspots is None:
         perf_hotspots = parse_perf_self_hotspots("")
+    pending_drop_pct = perf_hotspots.get(
+        PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY, 0.0
+    )
+    trace_lifetime_hint = trace_report_lifetime_hint(
+        trace_reports,
+        trace_report_buffer_excess_pct,
+        pending_drop_pct,
+    )
     lowered_report_row_pct = perf_hotspots.get(
         PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY, 0.0
     )
@@ -673,9 +698,6 @@ def summarize_profile_values(
         PERF_MEMMOVE_TRACE_SLICE_PCT_KEY, 0.0
     )
     memmove_hint = memmove_source_hint(perf_hotspots)
-    pending_drop_pct = perf_hotspots.get(
-        PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY, 0.0
-    )
     sha256_pct = perf_hotspots.get(PERF_SHA256_SELF_PCT_KEY, 0.0)
     sha256_hint = sha256_source_hint(perf_hotspots)
     cpu_hint = cpu_trace_hotspot_hint(perf_hotspots)
@@ -693,6 +715,7 @@ def summarize_profile_values(
         f"{trace_report_buffer_capacity},{trace_report_buffer_max_capacity},"
         f"{trace_report_buffer_excess_capacity},"
         f"{trace_report_buffer_excess_pct:.3f},{trace_report_buffer_hint},"
+        f"{trace_lifetime_hint},"
         f"{descriptor_rows},"
         f"{descriptor_compact_rows},{descriptor_wide_rows},"
         f"{descriptor_upload_bytes},{descriptor_bytes_per_row:.3f},"

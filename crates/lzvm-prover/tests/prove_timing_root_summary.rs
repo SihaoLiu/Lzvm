@@ -102,10 +102,10 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     for required in [
-        "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,segment_commit_ms,stream_commit_residual_ms,segment_receive_wait_ms,pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,parallel_lower_max_reorder,trace_reports,trace_report_rows,trace_rows_per_report,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,descriptor_rows,descriptor_compact_rows,descriptor_wide_rows,descriptor_upload_bytes,descriptor_bytes_per_row,descriptor_high32_nonzero_values,descriptor_high32_nonzero_rows,descriptor_high32_row_pct,descriptor_shape_hint,seed_direct_lift_attempts,seed_direct_lift_successes,seed_full_advances,finish_opening_ms,opening_query_units,opening_single_query_units,retained_leaf_openings,retained_leaf_rows,retained_leaf_all_single_row,retained_leaf_path_launches,opening_batching_hint,root_count,materialization_groups,materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure,trace_to_leaf_ratio,primary_bottleneck,trace_structure_hint,perf_lowered_report_row_self_pct,perf_memmove_self_pct,perf_memmove_guest_machine_pct,perf_memmove_trace_slice_pct,perf_memmove_source_hint,perf_pending_segment_drop_self_pct,perf_sha256_self_pct,perf_sha256_source_hint,cpu_trace_hotspot_hint",
-        "single-root-groups,2758032,9050,0,0,none,7800,7812,9912,7812,2100,0,6000,1200,345,2,23,23,23,1,93843537,93917088,1.001,94371840,4194304,528303,0.560,report_buffer_capacity_tight,1000,1000,0,88000,88.000,6,4,0.400,high32_sparse_compact_descriptor,22,22,1,476,23,23,23,23,yes,276,cross_segment_retained_leaf_opening_candidate,23,23,1,1.000,yes,enable_cross_segment_root_pipeline,858,23,874,41078,15732,23598,1786.000,192.974,yes,9.105,stream_elapsed,parallel_lower_waiting,26.350,20.940,10.610,8.670,guest_machine_and_trace_slice,7.410,23.170,sha256_digest_unresolved,report_lifetime_and_data_movement",
-        "batched-roots,2758032,9050,0,0,none,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,0,0,0.000,none,0,0,0,0,0.000,0,0,0.000,none,0,0,0,0,0,0,0,0,no,0,none,23,1,23,23.000,no,root_batches_already_grouped,0,0,0,0,0,0,0.000,0.000,no,0.000,total,none,0.000,0.000,0.000,0.000,none,0.000,0.000,none,none",
-        "slow-sample,12447640,18100,0,0,none,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,0,0,0.000,none,0,0,0,0,0.000,0,0,0.000,none,0,0,0,0,0,0,0,0,no,0,none,120,120,1,1.000,yes,large_input_root_pipeline_gated,0,0,0,0,0,0,0.000,0.000,no,0.000,total,none,0.000,0.000,0.000,0.000,none,0.000,0.000,none,none",
+        "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,segment_commit_ms,stream_commit_residual_ms,segment_receive_wait_ms,pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,parallel_lower_max_reorder,trace_reports,trace_report_rows,trace_rows_per_report,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,trace_report_lifetime_hint,descriptor_rows,descriptor_compact_rows,descriptor_wide_rows,descriptor_upload_bytes,descriptor_bytes_per_row,descriptor_high32_nonzero_values,descriptor_high32_nonzero_rows,descriptor_high32_row_pct,descriptor_shape_hint,seed_direct_lift_attempts,seed_direct_lift_successes,seed_full_advances,finish_opening_ms,opening_query_units,opening_single_query_units,retained_leaf_openings,retained_leaf_rows,retained_leaf_all_single_row,retained_leaf_path_launches,opening_batching_hint,root_count,materialization_groups,materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure,trace_to_leaf_ratio,primary_bottleneck,trace_structure_hint,perf_lowered_report_row_self_pct,perf_memmove_self_pct,perf_memmove_guest_machine_pct,perf_memmove_trace_slice_pct,perf_memmove_source_hint,perf_pending_segment_drop_self_pct,perf_sha256_self_pct,perf_sha256_source_hint,cpu_trace_hotspot_hint",
+        "single-root-groups,2758032,9050,0,0,none,7800,7812,9912,7812,2100,0,6000,1200,345,2,23,23,23,1,93843537,93917088,1.001,94371840,4194304,528303,0.560,report_buffer_capacity_tight,tight_report_buffer_and_pending_drop,1000,1000,0,88000,88.000,6,4,0.400,high32_sparse_compact_descriptor,22,22,1,476,23,23,23,23,yes,276,cross_segment_retained_leaf_opening_candidate,23,23,1,1.000,yes,enable_cross_segment_root_pipeline,858,23,874,41078,15732,23598,1786.000,192.974,yes,9.105,stream_elapsed,parallel_lower_waiting,26.350,20.940,10.610,8.670,guest_machine_and_trace_slice,7.410,23.170,sha256_digest_unresolved,report_lifetime_and_data_movement",
+        "batched-roots,2758032,9050,0,0,none,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,0,0,0.000,none,none,0,0,0,0,0.000,0,0,0.000,none,0,0,0,0,0,0,0,0,no,0,none,23,1,23,23.000,no,root_batches_already_grouped,0,0,0,0,0,0,0.000,0.000,no,0.000,total,none,0.000,0.000,0.000,0.000,none,0.000,0.000,none,none",
+        "slow-sample,12447640,18100,0,0,none,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,0,0,0.000,none,none,0,0,0,0,0.000,0,0,0.000,none,0,0,0,0,0,0,0,0,no,0,none,120,120,1,1.000,yes,large_input_root_pipeline_gated,0,0,0,0,0,0,0.000,0.000,no,0.000,total,none,0.000,0.000,0.000,0.000,none,0.000,0.000,none,none",
         "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,total_median_ms,total_max_ms,sample_spread_pct,close_samples,max_outlier",
         "aggregate,3,3,9050,12066.667,9050.000,18100,100.000,no,yes",
     ] {
@@ -168,6 +168,58 @@ fn prove_timing_root_summary_reports_trace_report_buffer_shape() {
             "93843537,93917088,1.001,94371840,4194304,528303,0.560,report_buffer_capacity_tight,"
         ),
         "prove timing root summary should classify tight report buffer capacity: stdout={stdout}"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reports_trace_report_lifetime_pressure() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=9000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_reports=93843537",
+        "timing_guest_trace_report_rows=93917088",
+        "timing_guest_trace_report_buffer_capacity=94371840",
+        "timing_guest_trace_report_buffer_max_capacity=4194304",
+        "timing_guest_trace_report_buffer_excess_capacity=528303",
+        "     7.41%  [.] core::ptr::drop_in_place<lzvm_prover::guest_pc_trace_backend::GuestPcTracePendingSegmentSlice>",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("trace_report_lifetime_hint,"),
+        "prove timing root summary should expose trace report lifetime hint: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("tight_report_buffer_and_pending_drop"),
+        "prove timing root summary should classify report lifetime pressure: stdout={stdout}"
     );
 }
 
@@ -337,7 +389,7 @@ fn prove_timing_root_summary_uses_thread_name_for_memmove_source_hint() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "stdin,0,1000,0,0,none,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,0,0,0.000,none,0,0,0,0,0.000,0,0,0.000,none,0,0,0,0,0,0,0,0,no,0,none,1,1,1,1.000,no,none,0,0,0,0,0,0,0.000,0.000,no,0.000,total,none,0.000,21.230,0.000,0.000,guest_runner_thread,0.000,0.000,none,guest_state_copies"
+            "stdin,0,1000,0,0,none,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,0,0,0.000,none,none,0,0,0,0,0.000,0,0,0.000,none,0,0,0,0,0,0,0,0,no,0,none,1,1,1,1.000,no,none,0,0,0,0,0,0,0.000,0.000,no,0.000,total,none,0.000,21.230,0.000,0.000,guest_runner_thread,0.000,0.000,none,guest_state_copies"
         ),
         "prove timing root summary should classify command-column memmove source: stdout={stdout}"
     );
