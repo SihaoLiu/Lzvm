@@ -312,6 +312,7 @@ def kernel_launch_timeline(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         select
             k.streamId as stream_id,
             k.start as kernel_start_ns,
+            k.end as kernel_end_ns,
             {kernel_name_expr()} as kernel,
             coalesce(r.end - r.start, 0) as launch_ns,
             k.end - k.start as gpu_ns
@@ -360,6 +361,45 @@ def kernel_adjacency_summary(conn: sqlite3.Connection, limit: int) -> list[dict[
             -int(row["launch_ns"]),
             -int(row["calls"]),
             -int(row["gpu_ns"]),
+            str(row["previous_kernel"]),
+            str(row["next_kernel"]),
+        )
+    )
+    return rows[:limit]
+
+
+def stream_idle_gap_summary(conn: sqlite3.Connection, limit: int) -> list[dict[str, object]]:
+    gaps: dict[tuple[str, str], dict[str, object]] = {}
+    previous_by_stream: dict[int, sqlite3.Row] = {}
+    for row in kernel_launch_timeline(conn):
+        stream_id = int(row["stream_id"] or 0)
+        previous = previous_by_stream.get(stream_id)
+        if previous is not None:
+            previous_end_ns = int(previous["kernel_end_ns"] or 0)
+            next_start_ns = int(row["kernel_start_ns"] or previous_end_ns)
+            idle_ns = max(0, next_start_ns - previous_end_ns)
+            if idle_ns > 0:
+                key = (str(previous["kernel"]), str(row["kernel"]))
+                entry = gaps.setdefault(
+                    key,
+                    {
+                        "previous_kernel": key[0],
+                        "next_kernel": key[1],
+                        "calls": 0,
+                        "idle_ns": 0,
+                        "max_idle_ns": 0,
+                    },
+                )
+                entry["calls"] = int(entry["calls"]) + 1
+                entry["idle_ns"] = int(entry["idle_ns"]) + idle_ns
+                entry["max_idle_ns"] = max(int(entry["max_idle_ns"]), idle_ns)
+        previous_by_stream[stream_id] = row
+    rows = list(gaps.values())
+    rows.sort(
+        key=lambda row: (
+            -int(row["idle_ns"]),
+            -int(row["max_idle_ns"]),
+            -int(row["calls"]),
             str(row["previous_kernel"]),
             str(row["next_kernel"]),
         )
@@ -456,6 +496,19 @@ def print_streams(rows: list[sqlite3.Row]) -> None:
         )
     if not rows:
         print("0,0,0.000,0.000,0.000")
+
+
+def print_stream_idle_gaps(rows: list[dict[str, object]]) -> None:
+    print()
+    print("stream_idle_gap_hotspots")
+    print("previous_kernel,next_kernel,calls,idle_gap_ms,max_idle_gap_ms")
+    for row in rows:
+        print(
+            f"{row['previous_kernel']},{row['next_kernel']},{int(row['calls'])},"
+            f"{ms(int(row['idle_ns'])):.3f},{ms(int(row['max_idle_ns'])):.3f}"
+        )
+    if not rows:
+        print("none,none,0,0.000,0.000")
 
 
 def print_fusion_candidates(rows: list[sqlite3.Row]) -> None:
@@ -725,6 +778,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     fusion_rows = fusion_candidate_summary(conn, limit)
     graph_shape_rows = graph_shape_candidate_summary(conn, limit)
     adjacency_rows = kernel_adjacency_summary(conn, limit)
+    stream_idle_gap_rows = stream_idle_gap_summary(conn, limit)
     memcpy_rows = memcpy_direction_summary(conn)
     top_d2h = d2h_preceding_kernel_summary(conn)
     print(f"profile={label}")
@@ -734,6 +788,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
     print_sync_api(sync_rows)
     print_correlated_launch(correlated_launch_summary(conn, limit))
     print_streams(stream_rows)
+    print_stream_idle_gaps(stream_idle_gap_rows)
     print_fusion_candidates(fusion_rows)
     print_graph_shape_candidates(graph_shape_rows)
     print_kernel_adjacency(adjacency_rows)
