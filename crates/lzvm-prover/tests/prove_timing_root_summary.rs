@@ -82,6 +82,8 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "perf_sha256_self_pct",
         "perf_sha256_source_hint",
         "cpu_trace_hotspot_hint",
+        "timing_guest_trace_report_detail_samples",
+        "trace_report_detail_sample_hint",
     ] {
         assert!(
             source.contains(required),
@@ -114,6 +116,57 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
             "prove timing root summary should print {required}"
         );
     }
+}
+
+#[test]
+fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=9000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_reports=1000",
+        "timing_guest_trace_report_rows=1000",
+        "timing_guest_trace_report_detail_samples=10",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains(
+            "trace_report_detail_samples,trace_report_detail_sample_pct,trace_report_detail_sample_hint"
+        ),
+        "prove timing root summary should expose detail sample coverage columns: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(",10,1.000,detail_timing_sampled"),
+        "prove timing root summary should classify sampled detail timing coverage: stdout={stdout}"
+    );
 }
 
 #[test]

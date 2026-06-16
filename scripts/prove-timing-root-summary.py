@@ -31,6 +31,7 @@ PARALLEL_LOWER_EMITTED_KEY = "timing_guest_trace_parallel_lower_emitted"
 PARALLEL_LOWER_MAX_REORDER_KEY = "timing_guest_trace_parallel_lower_max_reorder"
 TRACE_REPORTS_KEY = "timing_guest_trace_reports"
 TRACE_REPORT_ROWS_KEY = "timing_guest_trace_report_rows"
+TRACE_REPORT_DETAIL_SAMPLES_KEY = "timing_guest_trace_report_detail_samples"
 TRACE_REPORT_BUFFER_CAPACITY_KEY = "timing_guest_trace_report_buffer_capacity"
 TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY = "timing_guest_trace_report_buffer_max_capacity"
 TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY = (
@@ -120,7 +121,9 @@ HEADER = (
     "perf_lowered_report_row_self_pct,perf_memmove_self_pct,perf_memmove_guest_machine_pct,"
     "perf_memmove_trace_slice_pct,perf_memmove_source_hint,"
     "perf_pending_segment_drop_self_pct,perf_sha256_self_pct,"
-    "perf_sha256_source_hint,cpu_trace_hotspot_hint"
+    "perf_sha256_source_hint,cpu_trace_hotspot_hint,"
+    "trace_report_detail_samples,trace_report_detail_sample_pct,"
+    "trace_report_detail_sample_hint"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -149,6 +152,7 @@ TIMING_KEYS = {
     PARALLEL_LOWER_MAX_REORDER_KEY,
     TRACE_REPORTS_KEY,
     TRACE_REPORT_ROWS_KEY,
+    TRACE_REPORT_DETAIL_SAMPLES_KEY,
     TRACE_REPORT_BUFFER_CAPACITY_KEY,
     TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY,
     TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY,
@@ -487,6 +491,16 @@ def trace_report_lifetime_hint(
     return "none"
 
 
+def trace_report_detail_sample_hint(reports: int, detail_samples: int) -> str:
+    if reports <= 0:
+        return "none"
+    if detail_samples <= 0:
+        return "detail_timing_disabled"
+    if detail_samples >= reports:
+        return "detail_timing_full"
+    return "detail_timing_sampled"
+
+
 def trace_structure_hint(
     total_ms: int,
     runner_ms: int,
@@ -558,6 +572,14 @@ def summarize_profile_values(
     parallel_lower_max_reorder = values.get(PARALLEL_LOWER_MAX_REORDER_KEY, 0)
     trace_reports = values.get(TRACE_REPORTS_KEY, 0)
     trace_report_rows = values.get(TRACE_REPORT_ROWS_KEY, 0)
+    trace_report_detail_samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
+    trace_report_detail_sample_pct = (
+        trace_report_detail_samples * 100.0 / trace_reports if trace_reports else 0.0
+    )
+    trace_report_detail_hint = trace_report_detail_sample_hint(
+        trace_reports,
+        trace_report_detail_samples,
+    )
     trace_rows_per_report = (
         trace_report_rows / trace_reports if trace_reports else 0.0
     )
@@ -735,7 +757,9 @@ def summarize_profile_values(
         f"{trace_to_leaf_ratio:.3f},{bottleneck},{trace_hint},"
         f"{lowered_report_row_pct:.3f},{memmove_pct:.3f},{memmove_guest_machine_pct:.3f},"
         f"{memmove_trace_slice_pct:.3f},{memmove_hint},"
-        f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint}"
+        f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint},"
+        f"{trace_report_detail_samples},{trace_report_detail_sample_pct:.3f},"
+        f"{trace_report_detail_hint}"
     )
 
 
