@@ -49,6 +49,23 @@ TRACE_MEMORY_SOURCE_READS_KEY = "timing_guest_trace_memory_source_reads"
 TRACE_REGISTER_STORE_ROWS_KEY = "timing_guest_trace_register_store_rows"
 TRACE_MEMORY_STORE_ROWS_KEY = "timing_guest_trace_memory_store_rows"
 TRACE_NO_STORE_ROWS_KEY = "timing_guest_trace_no_store_rows"
+TRACE_SHAPE_KEYS = (
+    TRACE_SINGLE_ROW_REPORTS_KEY,
+    TRACE_MULTI_ROW_REPORTS_KEY,
+    TRACE_PENDING_DMA_REPORTS_KEY,
+    TRACE_AMO_REPORTS_KEY,
+    TRACE_STORE_CONDITIONAL_REPORTS_KEY,
+    TRACE_EXTERNAL_OP_ROWS_KEY,
+    TRACE_COPY_ROWS_KEY,
+    TRACE_FLAG_ROWS_KEY,
+    TRACE_PRECOMPILE_ROWS_KEY,
+    TRACE_INDIRECT_MEMORY_ROWS_KEY,
+    TRACE_REGISTER_SOURCE_READS_KEY,
+    TRACE_MEMORY_SOURCE_READS_KEY,
+    TRACE_REGISTER_STORE_ROWS_KEY,
+    TRACE_MEMORY_STORE_ROWS_KEY,
+    TRACE_NO_STORE_ROWS_KEY,
+)
 TRACE_REPORT_DETAIL_SAMPLES_KEY = "timing_guest_trace_report_detail_samples"
 TRACE_REPORT_SAMPLED_NS_KEY = "timing_guest_trace_report_sampled_ns"
 TRACE_REPORT_LOWERING_SAMPLED_NS_KEY = "timing_guest_trace_report_lowering_sampled_ns"
@@ -227,7 +244,7 @@ HEADER = (
     "precompile_rows,indirect_memory_rows,indirect_memory_row_pct,"
     "register_source_reads,memory_source_reads,memory_source_read_pct,"
     "register_store_rows,memory_store_rows,memory_store_row_pct,"
-    "no_store_rows,no_store_row_pct,"
+    "no_store_rows,no_store_row_pct,trace_shape_sample_hint,"
     "trace_report_detail_samples,trace_report_detail_sample_pct,"
     "trace_report_detail_sample_ppm,trace_report_detail_sample_hint,"
     "trace_report_detail_avg_ns,"
@@ -726,6 +743,14 @@ def trace_report_detail_sample_hint(reports: int, detail_samples: int) -> str:
     return "detail_timing_sampled"
 
 
+def trace_shape_sample_hint(values: dict[str, int], rows: int) -> str:
+    if rows <= 0:
+        return "none"
+    if any(values.get(key, 0) > 0 for key in TRACE_SHAPE_KEYS):
+        return "shape_timing_enabled"
+    return "shape_timing_disabled_or_zero"
+
+
 DETAIL_SAMPLE_HOTSPOT_KEYS = [
     ("row_validation", TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY),
     ("lowering", TRACE_REPORT_LOWERING_SAMPLED_NS_KEY),
@@ -894,6 +919,7 @@ def summarize_profile_values(
         if trace_report_rows
         else 0.0
     )
+    trace_shape_hint = trace_shape_sample_hint(values, trace_report_rows)
     trace_report_detail_samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
     trace_report_detail_sample_pct = (
         trace_report_detail_samples * 100.0 / trace_reports if trace_reports else 0.0
@@ -1196,7 +1222,7 @@ def summarize_profile_values(
         f"{register_source_reads},{memory_source_reads},"
         f"{memory_source_read_pct:.3f},{register_store_rows},"
         f"{memory_store_rows},{memory_store_row_pct:.3f},"
-        f"{no_store_rows},{no_store_row_pct:.3f},"
+        f"{no_store_rows},{no_store_row_pct:.3f},{trace_shape_hint},"
         f"{trace_report_detail_samples},{trace_report_detail_sample_pct:.3f},"
         f"{trace_report_detail_sample_ppm:.3f},{trace_report_detail_hint},"
         f"{trace_report_detail_avg_ns},"
