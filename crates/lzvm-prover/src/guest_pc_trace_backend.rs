@@ -6493,40 +6493,40 @@ fn validate_zisk_main_precompile_memory_accesses(
     };
     match kind {
         RiscvPrecompileKind::Keccak => {
-            cursor.expect_reads(operand_address, 25)?;
-            cursor.expect_writes(operand_address, 25)?;
+            cursor.expect_reads::<25>(operand_address)?;
+            cursor.expect_writes::<25>(operand_address)?;
         }
         RiscvPrecompileKind::Arith256 => {
-            let params = cursor.expect_reads(operand_address, 5)?;
-            cursor.expect_reads(params[0], 4)?;
-            cursor.expect_reads(params[1], 4)?;
-            cursor.expect_reads(params[2], 4)?;
-            cursor.expect_writes(params[3], 4)?;
-            cursor.expect_writes(params[4], 4)?;
+            let params = cursor.expect_read_values::<5>(operand_address)?;
+            cursor.expect_reads::<4>(params[0])?;
+            cursor.expect_reads::<4>(params[1])?;
+            cursor.expect_reads::<4>(params[2])?;
+            cursor.expect_writes::<4>(params[3])?;
+            cursor.expect_writes::<4>(params[4])?;
         }
         RiscvPrecompileKind::Arith256Mod => {
-            let params = cursor.expect_reads(operand_address, 5)?;
-            cursor.expect_reads(params[0], 4)?;
-            cursor.expect_reads(params[1], 4)?;
-            cursor.expect_reads(params[2], 4)?;
-            cursor.expect_reads(params[3], 4)?;
-            cursor.expect_writes(params[4], 4)?;
+            let params = cursor.expect_read_values::<5>(operand_address)?;
+            cursor.expect_reads::<4>(params[0])?;
+            cursor.expect_reads::<4>(params[1])?;
+            cursor.expect_reads::<4>(params[2])?;
+            cursor.expect_reads::<4>(params[3])?;
+            cursor.expect_writes::<4>(params[4])?;
         }
         RiscvPrecompileKind::Secp256k1Add => {
-            let params = cursor.expect_reads(operand_address, 2)?;
-            cursor.expect_reads(params[0], 8)?;
-            cursor.expect_reads(params[1], 8)?;
-            cursor.expect_writes(params[0], 8)?;
+            let params = cursor.expect_read_values::<2>(operand_address)?;
+            cursor.expect_reads::<8>(params[0])?;
+            cursor.expect_reads::<8>(params[1])?;
+            cursor.expect_writes::<8>(params[0])?;
         }
         RiscvPrecompileKind::Secp256k1Dbl => {
-            cursor.expect_reads(operand_address, 8)?;
-            cursor.expect_writes(operand_address, 8)?;
+            cursor.expect_reads::<8>(operand_address)?;
+            cursor.expect_writes::<8>(operand_address)?;
         }
         RiscvPrecompileKind::Add256 => {
-            let params = cursor.expect_reads(operand_address, 4)?;
-            cursor.expect_reads(params[0], 4)?;
-            cursor.expect_reads(params[1], 4)?;
-            cursor.expect_writes(params[3], 4)?;
+            let params = cursor.expect_read_values::<4>(operand_address)?;
+            cursor.expect_reads::<4>(params[0])?;
+            cursor.expect_reads::<4>(params[1])?;
+            cursor.expect_writes::<4>(params[3])?;
         }
     }
     cursor.finish()
@@ -6552,33 +6552,36 @@ struct PrecompileMemoryAccessCursor<'a> {
 }
 
 impl PrecompileMemoryAccessCursor<'_> {
-    fn expect_reads(
+    fn expect_read_values<const N: usize>(
         &mut self,
         base_address: u64,
-        word_count: usize,
-    ) -> Result<Vec<u64>, GuestPcTraceBackendError> {
-        let mut values = Vec::with_capacity(word_count);
-        for index in 0..word_count {
-            values.push(
-                self.expect_access(GuestMemoryAccessKind::Read, base_address + index as u64 * 8)?,
-            );
+    ) -> Result<[u64; N], GuestPcTraceBackendError> {
+        let mut values = [0_u64; N];
+        for (index, value) in values.iter_mut().enumerate() {
+            *value =
+                self.expect_access(GuestMemoryAccessKind::Read, base_address + index as u64 * 8)?;
         }
         Ok(values)
     }
 
-    fn expect_writes(
+    fn expect_reads<const N: usize>(
         &mut self,
         base_address: u64,
-        word_count: usize,
-    ) -> Result<Vec<u64>, GuestPcTraceBackendError> {
-        let mut values = Vec::with_capacity(word_count);
-        for index in 0..word_count {
-            values.push(self.expect_access(
+    ) -> Result<(), GuestPcTraceBackendError> {
+        self.expect_read_values::<N>(base_address).map(|_| ())
+    }
+
+    fn expect_writes<const N: usize>(
+        &mut self,
+        base_address: u64,
+    ) -> Result<(), GuestPcTraceBackendError> {
+        for index in 0..N {
+            self.expect_access(
                 GuestMemoryAccessKind::Write,
                 base_address + index as u64 * 8,
-            )?);
+            )?;
         }
-        Ok(values)
+        Ok(())
     }
 
     fn expect_access(
