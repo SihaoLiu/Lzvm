@@ -390,6 +390,36 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_descriptor_high32_stats_enabled",
         usize::from(timing.guest_trace_descriptor_high32_stats_enabled()),
     );
+    let [descriptor_high32_a_values, descriptor_high32_b_values, descriptor_high32_c_values, descriptor_high32_a_payload_values, descriptor_high32_b_payload_values, descriptor_high32_store_payload_values, descriptor_high32_store_prev_value_values] =
+        timing.guest_trace_descriptor_high32_field_counts();
+    timings.record_count(
+        "guest_trace_descriptor_high32_a_values",
+        descriptor_high32_a_values,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_b_values",
+        descriptor_high32_b_values,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_c_values",
+        descriptor_high32_c_values,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_a_payload_values",
+        descriptor_high32_a_payload_values,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_b_payload_values",
+        descriptor_high32_b_payload_values,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_store_payload_values",
+        descriptor_high32_store_payload_values,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_store_prev_value_values",
+        descriptor_high32_store_prev_value_values,
+    );
     timings.record_count(
         "guest_trace_single_row_reports",
         timing.guest_trace_single_row_report_count(),

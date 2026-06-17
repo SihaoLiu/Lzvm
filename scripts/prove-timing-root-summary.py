@@ -154,6 +154,21 @@ DESCRIPTOR_HIGH32_ROWS_KEY = (
 DESCRIPTOR_HIGH32_STATS_ENABLED_KEY = (
     "timing_guest_trace_descriptor_high32_stats_enabled"
 )
+DESCRIPTOR_HIGH32_A_VALUES_KEY = "timing_guest_trace_descriptor_high32_a_values"
+DESCRIPTOR_HIGH32_B_VALUES_KEY = "timing_guest_trace_descriptor_high32_b_values"
+DESCRIPTOR_HIGH32_C_VALUES_KEY = "timing_guest_trace_descriptor_high32_c_values"
+DESCRIPTOR_HIGH32_A_PAYLOAD_VALUES_KEY = (
+    "timing_guest_trace_descriptor_high32_a_payload_values"
+)
+DESCRIPTOR_HIGH32_B_PAYLOAD_VALUES_KEY = (
+    "timing_guest_trace_descriptor_high32_b_payload_values"
+)
+DESCRIPTOR_HIGH32_STORE_PAYLOAD_VALUES_KEY = (
+    "timing_guest_trace_descriptor_high32_store_payload_values"
+)
+DESCRIPTOR_HIGH32_STORE_PREV_VALUE_VALUES_KEY = (
+    "timing_guest_trace_descriptor_high32_store_prev_value_values"
+)
 SEED_DIRECT_LIFT_ATTEMPTS_KEY = "timing_guest_trace_seed_direct_lift_attempts"
 SEED_DIRECT_LIFT_SUCCESSES_KEY = "timing_guest_trace_seed_direct_lift_successes"
 SEED_FULL_ADVANCES_KEY = "timing_guest_trace_seed_full_advances"
@@ -303,7 +318,12 @@ HEADER = (
     "descriptor_rows,descriptor_compact_rows,"
     "descriptor_wide_rows,descriptor_upload_bytes,descriptor_bytes_per_row,"
     "descriptor_high32_nonzero_values,descriptor_high32_nonzero_rows,"
-    "descriptor_high32_row_pct,descriptor_shape_hint,seed_direct_lift_attempts,"
+    "descriptor_high32_row_pct,descriptor_high32_a_values,"
+    "descriptor_high32_b_values,descriptor_high32_c_values,"
+    "descriptor_high32_a_payload_values,descriptor_high32_b_payload_values,"
+    "descriptor_high32_store_payload_values,"
+    "descriptor_high32_store_prev_value_values,"
+    "descriptor_shape_hint,seed_direct_lift_attempts,"
     "seed_direct_lift_successes,seed_full_advances,"
     "finish_opening_ms,opening_query_units,opening_single_query_units,"
     "opening_queries,opening_max_queries_per_unit,opening_stage_count,"
@@ -484,6 +504,13 @@ TIMING_KEYS = {
     DESCRIPTOR_HIGH32_VALUES_KEY,
     DESCRIPTOR_HIGH32_ROWS_KEY,
     DESCRIPTOR_HIGH32_STATS_ENABLED_KEY,
+    DESCRIPTOR_HIGH32_A_VALUES_KEY,
+    DESCRIPTOR_HIGH32_B_VALUES_KEY,
+    DESCRIPTOR_HIGH32_C_VALUES_KEY,
+    DESCRIPTOR_HIGH32_A_PAYLOAD_VALUES_KEY,
+    DESCRIPTOR_HIGH32_B_PAYLOAD_VALUES_KEY,
+    DESCRIPTOR_HIGH32_STORE_PAYLOAD_VALUES_KEY,
+    DESCRIPTOR_HIGH32_STORE_PREV_VALUE_VALUES_KEY,
     SEED_DIRECT_LIFT_ATTEMPTS_KEY,
     SEED_DIRECT_LIFT_SUCCESSES_KEY,
     SEED_FULL_ADVANCES_KEY,
@@ -1853,6 +1880,21 @@ def summarize_profile_values(
     descriptor_high32_row_pct = (
         descriptor_high32_rows * 100.0 / descriptor_rows if descriptor_rows else 0.0
     )
+    descriptor_high32_a_values = values.get(DESCRIPTOR_HIGH32_A_VALUES_KEY, 0)
+    descriptor_high32_b_values = values.get(DESCRIPTOR_HIGH32_B_VALUES_KEY, 0)
+    descriptor_high32_c_values = values.get(DESCRIPTOR_HIGH32_C_VALUES_KEY, 0)
+    descriptor_high32_a_payload_values = values.get(
+        DESCRIPTOR_HIGH32_A_PAYLOAD_VALUES_KEY, 0
+    )
+    descriptor_high32_b_payload_values = values.get(
+        DESCRIPTOR_HIGH32_B_PAYLOAD_VALUES_KEY, 0
+    )
+    descriptor_high32_store_payload_values = values.get(
+        DESCRIPTOR_HIGH32_STORE_PAYLOAD_VALUES_KEY, 0
+    )
+    descriptor_high32_store_prev_value_values = values.get(
+        DESCRIPTOR_HIGH32_STORE_PREV_VALUE_VALUES_KEY, 0
+    )
     descriptor_hint = descriptor_shape_hint(
         descriptor_rows,
         descriptor_compact_rows,
@@ -2124,7 +2166,11 @@ def summarize_profile_values(
         f"{descriptor_compact_rows},{descriptor_wide_rows},"
         f"{descriptor_upload_bytes},{descriptor_bytes_per_row:.3f},"
         f"{descriptor_high32_values},{descriptor_high32_rows},"
-        f"{descriptor_high32_row_pct:.3f},{descriptor_hint},"
+        f"{descriptor_high32_row_pct:.3f},{descriptor_high32_a_values},"
+        f"{descriptor_high32_b_values},{descriptor_high32_c_values},"
+        f"{descriptor_high32_a_payload_values},{descriptor_high32_b_payload_values},"
+        f"{descriptor_high32_store_payload_values},"
+        f"{descriptor_high32_store_prev_value_values},{descriptor_hint},"
         f"{seed_direct_lift_attempts},"
         f"{seed_direct_lift_successes},{seed_full_advances},"
         f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
@@ -2367,6 +2413,13 @@ def self_test() -> None:
                         f"{DESCRIPTOR_UPLOAD_ROWS_KEY}=1000",
                         f"{DESCRIPTOR_HIGH32_VALUES_KEY}=6",
                         f"{DESCRIPTOR_HIGH32_ROWS_KEY}=4",
+                        f"{DESCRIPTOR_HIGH32_A_VALUES_KEY}=1",
+                        f"{DESCRIPTOR_HIGH32_B_VALUES_KEY}=0",
+                        f"{DESCRIPTOR_HIGH32_C_VALUES_KEY}=2",
+                        f"{DESCRIPTOR_HIGH32_A_PAYLOAD_VALUES_KEY}=0",
+                        f"{DESCRIPTOR_HIGH32_B_PAYLOAD_VALUES_KEY}=1",
+                        f"{DESCRIPTOR_HIGH32_STORE_PAYLOAD_VALUES_KEY}=0",
+                        f"{DESCRIPTOR_HIGH32_STORE_PREV_VALUE_VALUES_KEY}=2",
                         f"{SEED_DIRECT_LIFT_ATTEMPTS_KEY}=22",
                         f"{SEED_DIRECT_LIFT_SUCCESSES_KEY}=22",
                         f"{SEED_FULL_ADVANCES_KEY}=1",

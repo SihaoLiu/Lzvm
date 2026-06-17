@@ -244,6 +244,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_descriptor_unpaired_value_count: usize,
     trace_descriptor_unpaired_high32_nonzero_count: usize,
     trace_descriptor_unpaired_high32_nonzero_row_count: usize,
+    trace_descriptor_high32_field_counts: [u32; ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT],
     trace_single_row_report_count: usize,
     trace_multi_row_report_count: usize,
     trace_pending_dma_report_count: usize,
@@ -343,6 +344,13 @@ impl GuestPcTraceStreamTiming {
             other.trace_descriptor_unpaired_high32_nonzero_count;
         self.trace_descriptor_unpaired_high32_nonzero_row_count +=
             other.trace_descriptor_unpaired_high32_nonzero_row_count;
+        for (field_count, other_count) in self
+            .trace_descriptor_high32_field_counts
+            .iter_mut()
+            .zip(other.trace_descriptor_high32_field_counts)
+        {
+            *field_count = field_count.saturating_add(other_count);
+        }
         self.trace_single_row_report_count += other.trace_single_row_report_count;
         self.trace_multi_row_report_count += other.trace_multi_row_report_count;
         self.trace_pending_dma_report_count += other.trace_pending_dma_report_count;
@@ -631,6 +639,13 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_descriptor_unpaired_high32_nonzero_row_count(&self) -> usize {
         self.trace_descriptor_unpaired_high32_nonzero_row_count
+    }
+
+    pub fn trace_descriptor_high32_field_counts(
+        &self,
+    ) -> [usize; ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT] {
+        self.trace_descriptor_high32_field_counts
+            .map(|count| count as usize)
     }
 
     pub fn trace_single_row_report_count(&self) -> usize {
@@ -982,6 +997,7 @@ pub(crate) struct ZiskMainDeviceTraceDescriptors {
     unpaired_value_count: usize,
     unpaired_high32_nonzero_count: usize,
     unpaired_high32_nonzero_row_count: usize,
+    unpaired_high32_nonzero_field_counts: [u32; ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT],
     record_unpaired_high32_stats_enabled: bool,
     row_count: usize,
     column_count: usize,
@@ -1046,6 +1062,7 @@ impl ZiskMainDeviceTraceDescriptors {
             unpaired_value_count: 0,
             unpaired_high32_nonzero_count: 0,
             unpaired_high32_nonzero_row_count: 0,
+            unpaired_high32_nonzero_field_counts: [0; ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT],
             record_unpaired_high32_stats_enabled,
             row_count,
             column_count,
@@ -1074,6 +1091,12 @@ impl ZiskMainDeviceTraceDescriptors {
         self.unpaired_high32_nonzero_row_count
     }
 
+    pub(crate) fn unpaired_high32_nonzero_field_counts(
+        &self,
+    ) -> [u32; ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT] {
+        self.unpaired_high32_nonzero_field_counts
+    }
+
     pub(crate) fn row_count(&self) -> usize {
         self.row_count
     }
@@ -1100,6 +1123,15 @@ impl ZiskMainDeviceTraceDescriptors {
         if high32_nonzero_count != 0 {
             self.unpaired_high32_nonzero_row_count += 1;
         }
+        for (field_count, value) in self
+            .unpaired_high32_nonzero_field_counts
+            .iter_mut()
+            .zip(values)
+        {
+            if zisk_main_high32_nonzero(value) {
+                *field_count = field_count.saturating_add(1);
+            }
+        }
     }
 }
 
@@ -1109,6 +1141,7 @@ const ZISK_MAIN_DEVICE_TRACE_COLUMNS: usize = 39;
 const ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS: usize = 11;
 #[cfg(feature = "cuda")]
 const ZISK_MAIN_DEVICE_TRACE_WIDE_DESCRIPTOR_WORDS: usize = 14;
+pub(crate) const ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT: usize = 7;
 #[cfg(feature = "cuda")]
 const ZISK_MAIN_DEVICE_TRACE_SOURCE_MEMORY: u64 = 1;
 #[cfg(feature = "cuda")]
@@ -4479,6 +4512,13 @@ fn record_trace_descriptor_width_counts(
         descriptors.unpaired_high32_nonzero_count();
     timing.trace_descriptor_unpaired_high32_nonzero_row_count +=
         descriptors.unpaired_high32_nonzero_row_count();
+    for (field_count, descriptor_count) in timing
+        .trace_descriptor_high32_field_counts
+        .iter_mut()
+        .zip(descriptors.unpaired_high32_nonzero_field_counts())
+    {
+        *field_count += descriptor_count;
+    }
 }
 
 fn record_trace_lowered_row_shape(

@@ -39,7 +39,7 @@ use crate::guest_pc_trace_backend::{
     for_each_guest_pc_trace_segment_with_context,
     run_guest_pc_trace_runtime_proof_values_with_context, run_guest_pc_trace_segments_with_context,
     GuestPcTraceBackend, GuestPcTraceSegmentRunOutput, GuestPcTraceSegmentStreamError,
-    GuestPcTraceStreamTiming,
+    GuestPcTraceStreamTiming, ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT,
 };
 use crate::hint_eval::{
     regular_hint_input_requirements, resolve_global_hint_program,
@@ -477,6 +477,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_descriptor_unpaired_value_count: usize,
     guest_trace_descriptor_unpaired_high32_nonzero_count: usize,
     guest_trace_descriptor_unpaired_high32_nonzero_row_count: usize,
+    guest_trace_descriptor_high32_field_counts: [usize; ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT],
     guest_trace_descriptor_high32_stats_enabled: bool,
     guest_trace_single_row_report_count: usize,
     guest_trace_multi_row_report_count: usize,
@@ -718,6 +719,8 @@ impl ProveWitnessGuestPcTraceTiming {
                 .trace_descriptor_unpaired_high32_nonzero_count(),
             guest_trace_descriptor_unpaired_high32_nonzero_row_count: stream_timing
                 .trace_descriptor_unpaired_high32_nonzero_row_count(),
+            guest_trace_descriptor_high32_field_counts: stream_timing
+                .trace_descriptor_high32_field_counts(),
             guest_trace_descriptor_high32_stats_enabled:
                 guest_pc_trace_descriptor_high32_stats_enabled(),
             guest_trace_single_row_report_count: stream_timing.trace_single_row_report_count(),
@@ -1154,6 +1157,12 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_descriptor_unpaired_high32_nonzero_row_count(&self) -> usize {
         self.guest_trace_descriptor_unpaired_high32_nonzero_row_count
+    }
+
+    pub fn guest_trace_descriptor_high32_field_counts(
+        &self,
+    ) -> [usize; ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT] {
+        self.guest_trace_descriptor_high32_field_counts
     }
 
     pub fn guest_trace_descriptor_high32_stats_enabled(&self) -> bool {
