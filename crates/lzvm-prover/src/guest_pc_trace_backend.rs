@@ -4024,7 +4024,23 @@ struct ZiskMainReportWindow<'a> {
 struct ZiskMainReportValidationContext<'a> {
     columns: Option<&'a ZiskMainTraceColumns<'a>>,
     row_count: usize,
-    segment: ZiskMainTraceSegmentInfo,
+    row_mem_step_segment_base: u64,
+}
+
+impl<'a> ZiskMainReportValidationContext<'a> {
+    fn new(
+        columns: Option<&'a ZiskMainTraceColumns<'a>>,
+        row_count: usize,
+        segment: ZiskMainTraceSegmentInfo,
+    ) -> Result<Self, GuestPcTraceBackendError> {
+        let row_mem_step_segment_base =
+            zisk_main_segment_mem_step_base(row_count, segment.trace_instance_index)?;
+        Ok(Self {
+            columns,
+            row_count,
+            row_mem_step_segment_base,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4322,8 +4338,7 @@ fn apply_zisk_main_lowered_report_row(
         output_row,
         &instruction,
         state,
-        context.row_count,
-        context.segment,
+        context.row_mem_step_segment_base,
     )?;
     record_detail_duration(register_access_started, &mut timing, |timing| {
         &mut timing.trace_report_register_access_duration
@@ -5075,8 +5090,7 @@ fn apply_zisk_main_register_access_values(
     row: usize,
     instruction: &ZiskMainInstruction,
     state: &mut ZiskMainTraceState,
-    row_count: usize,
-    segment: ZiskMainTraceSegmentInfo,
+    row_mem_step_segment_base: u64,
 ) -> Result<ZiskMainRegisterAccessValues, GuestPcTraceBackendError> {
     let mut values = ZiskMainRegisterAccessValues {
         a_prev_mem_step: None,
@@ -5090,7 +5104,7 @@ fn apply_zisk_main_register_access_values(
             Some(base) => base,
             None => {
                 let base =
-                    zisk_main_row_mem_step_base(row_count, segment.trace_instance_index, row)?;
+                    zisk_main_row_mem_step_base_from_segment_base(row_mem_step_segment_base, row)?;
                 row_mem_step_base = Some(base);
                 base
             }
@@ -5183,25 +5197,45 @@ fn zisk_main_row_mem_step(
     zisk_main_mem_step_from_base(base, offset)
 }
 
+#[cfg(test)]
 fn zisk_main_row_mem_step_base(
     row_count: usize,
     trace_instance_index: u32,
     row: usize,
 ) -> Result<u64, GuestPcTraceBackendError> {
+    let segment_base = zisk_main_segment_mem_step_base(row_count, trace_instance_index)?;
+    zisk_main_row_mem_step_base_from_segment_base(segment_base, row)
+}
+
+fn zisk_main_segment_mem_step_base(
+    row_count: usize,
+    trace_instance_index: u32,
+) -> Result<u64, GuestPcTraceBackendError> {
     let row_count =
         u64::try_from(row_count).map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: "Zisk Main row count is too large".to_owned(),
         })?;
-    let row = u64::try_from(row).map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
-        message: "Zisk Main row index is too large".to_owned(),
-    })?;
-    let main_step = u64::from(trace_instance_index)
+    let main_step_base = u64::from(trace_instance_index)
         .checked_mul(row_count)
-        .and_then(|base| base.checked_add(row))
         .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: "Zisk Main step is too large".to_owned(),
         })?;
-    zisk_main_mem_step(main_step, ZISK_MAIN_A_MEM_STEP_OFFSET)
+    zisk_main_mem_step(main_step_base, ZISK_MAIN_A_MEM_STEP_OFFSET)
+}
+
+fn zisk_main_row_mem_step_base_from_segment_base(
+    segment_base: u64,
+    row: usize,
+) -> Result<u64, GuestPcTraceBackendError> {
+    let row = u64::try_from(row).map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
+        message: "Zisk Main row index is too large".to_owned(),
+    })?;
+    ZISK_MAIN_MEM_STEPS_PER_ROW
+        .checked_mul(row)
+        .and_then(|row_offset| segment_base.checked_add(row_offset))
+        .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk Main step is too large".to_owned(),
+        })
 }
 
 fn zisk_main_mem_step_from_base(base: u64, offset: u64) -> Result<u64, GuestPcTraceBackendError> {
@@ -5352,11 +5386,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
             report,
             &mut || guest_report_next_instruction(reports, report_index, lookahead_instruction),
             &mut state,
-            ZiskMainReportValidationContext {
-                columns: None,
-                row_count: layout.row_count(),
-                segment,
-            },
+            ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?,
             row_timing,
             report_detail_timing,
             shape_timing,
@@ -5547,11 +5577,7 @@ fn advance_zisk_main_segment_seed(
             report,
             &mut next_instruction,
             &mut state,
-            ZiskMainReportValidationContext {
-                columns: None,
-                row_count: layout.row_count(),
-                segment,
-            },
+            ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?,
             None,
             false,
             false,
@@ -6099,11 +6125,7 @@ fn write_zisk_main_report_columns(
         reports.current,
         reports.next_instruction,
         state,
-        ZiskMainReportValidationContext {
-            columns: Some(columns),
-            row_count,
-            segment,
-        },
+        ZiskMainReportValidationContext::new(Some(columns), row_count, segment)?,
         reborrow_trace_timing(&mut timing),
         _detail_timing,
         shape_timing,

@@ -52,11 +52,7 @@ pub(super) fn write_layout_precompile_memory_trace(
             report,
             &mut || guest_report_next_instruction(reports, report_index, None),
             &mut state,
-            ZiskMainReportValidationContext {
-                columns: None,
-                row_count: usize::MAX,
-                segment,
-            },
+            ZiskMainReportValidationContext::new(None, usize::MAX, segment)?,
             None,
             false,
             false,

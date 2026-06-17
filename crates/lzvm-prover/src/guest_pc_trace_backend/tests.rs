@@ -1543,8 +1543,10 @@ fn register_mem_steps_preserve_same_register_access_order() {
         4,
     );
 
+    let segment_base = zisk_main_segment_mem_step_base(row_count, segment.trace_instance_index)
+        .expect("segment mem-step base should fit");
     let values =
-        apply_zisk_main_register_access_values(row, &instruction, &mut state, row_count, segment)
+        apply_zisk_main_register_access_values(row, &instruction, &mut state, segment_base)
             .expect("same-register accesses should validate");
 
     let a_step = zisk_main_row_mem_step(
@@ -1593,6 +1595,26 @@ fn row_mem_step_base_matches_direct_offset_helper() {
                 zisk_main_mem_step_from_base(base, offset).expect("offset mem-step should fit"),
                 zisk_main_row_mem_step(row_count, trace_instance_index, row, offset)
                     .expect("direct mem-step should fit")
+            );
+        }
+    }
+}
+
+#[test]
+fn segment_mem_step_base_matches_row_base_helper() {
+    for (row_count, trace_instance_index, rows) in [
+        (1, 0, [0, 0, 0]),
+        (100, 2, [0, 5, 99]),
+        (120_000_000, 8, [0, 42, 119_999_999]),
+    ] {
+        let segment_base = zisk_main_segment_mem_step_base(row_count, trace_instance_index)
+            .expect("segment mem-step base should fit");
+        for row in rows {
+            assert_eq!(
+                zisk_main_row_mem_step_base_from_segment_base(segment_base, row)
+                    .expect("precomputed row base should fit"),
+                zisk_main_row_mem_step_base(row_count, trace_instance_index, row)
+                    .expect("direct row base should fit")
             );
         }
     }
