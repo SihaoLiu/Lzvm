@@ -427,6 +427,61 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_trace_shape_row_mix_hint() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=72000",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_reports=500000000",
+        "timing_guest_trace_report_rows=500000000",
+        "timing_guest_trace_single_row_reports=499000000",
+        "timing_guest_trace_external_op_rows=237000000",
+        "timing_guest_trace_copy_rows=254000000",
+        "timing_guest_trace_indirect_memory_rows=224000000",
+        "timing_guest_trace_memory_source_reads=146000000",
+        "timing_guest_trace_memory_store_rows=81200000",
+        "timing_guest_trace_no_store_rows=46400000",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("external_op_row_pct,copy_row_pct,trace_shape_row_mix_hint"),
+        "prove timing root summary should expose external-op and copy row mix columns: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(",47.400,50.800,copy_and_external_op_rows_dominate"),
+        "prove timing root summary should report row mix percentages and hotspot hint: stdout={stdout}"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_marks_trace_shape_timing_disabled_or_zero() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

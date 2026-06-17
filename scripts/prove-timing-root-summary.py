@@ -300,7 +300,8 @@ HEADER = (
     "trace_report_source_values_lookup_pct,trace_report_source_values_residual_pct,"
     "trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,"
     "trace_report_visit_residual_pct,"
-    "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms"
+    "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms,"
+    "external_op_row_pct,copy_row_pct,trace_shape_row_mix_hint"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -899,6 +900,25 @@ def trace_shape_sample_hint(values: dict[str, int], rows: int) -> str:
     return "shape_timing_disabled_or_zero"
 
 
+def trace_shape_row_mix_hint(
+    trace_shape_hint: str,
+    external_op_row_pct: float,
+    copy_row_pct: float,
+    indirect_memory_row_pct: float,
+) -> str:
+    if trace_shape_hint != "shape_timing_enabled":
+        return "none"
+    if copy_row_pct >= 45.0 and external_op_row_pct >= 40.0:
+        return "copy_and_external_op_rows_dominate"
+    if external_op_row_pct >= 45.0:
+        return "external_op_rows_dominate"
+    if copy_row_pct >= 45.0:
+        return "copy_rows_dominate"
+    if indirect_memory_row_pct >= 40.0:
+        return "indirect_memory_rows_dominate"
+    return "mixed_trace_rows"
+
+
 DETAIL_SAMPLE_HOTSPOT_KEYS = [
     ("row_validation", TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY),
     ("lowering", TRACE_REPORT_LOWERING_SAMPLED_NS_KEY),
@@ -1174,6 +1194,16 @@ def summarize_profile_values(
         else 0.0
     )
     trace_shape_hint = trace_shape_sample_hint(values, trace_report_rows)
+    external_op_row_pct = (
+        external_op_rows * 100.0 / trace_report_rows if trace_report_rows else 0.0
+    )
+    copy_row_pct = copy_rows * 100.0 / trace_report_rows if trace_report_rows else 0.0
+    trace_shape_row_mix = trace_shape_row_mix_hint(
+        trace_shape_hint,
+        external_op_row_pct,
+        copy_row_pct,
+        indirect_memory_row_pct,
+    )
     trace_report_detail_samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
     trace_report_detail_sample_pct = (
         trace_report_detail_samples * 100.0 / trace_reports if trace_reports else 0.0
@@ -1648,7 +1678,8 @@ def summarize_profile_values(
         f"{trace_report_visit_descriptor_pct:.3f},"
         f"{trace_report_visit_residual_pct:.3f},"
         f"{direct_d2h_hot_bytes},{direct_d2h_hot_count},"
-        f"{direct_d2h_hot_wait_ms:.3f}"
+        f"{direct_d2h_hot_wait_ms:.3f},"
+        f"{external_op_row_pct:.3f},{copy_row_pct:.3f},{trace_shape_row_mix}"
     )
 
 
