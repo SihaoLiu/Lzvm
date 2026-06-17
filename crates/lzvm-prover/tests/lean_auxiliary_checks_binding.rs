@@ -1075,6 +1075,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_segment_commit_oom_retry_count()",
         ),
         (
+            "\"guest_segment_commit_attempt\"",
+            "guest_segment_commit_attempt_duration()",
+        ),
+        (
+            "\"guest_segment_commit_oom_retry\"",
+            "guest_segment_commit_oom_retry_duration()",
+        ),
+        (
             "\"guest_segment_commit_cuda_memory_total_bytes\"",
             "guest_segment_commit_cuda_memory_total_byte_count()",
         ),

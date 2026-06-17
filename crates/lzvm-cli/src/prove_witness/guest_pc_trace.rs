@@ -72,6 +72,14 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_segment_commit",
         timing.guest_segment_commit_duration(),
     );
+    timings.record(
+        "guest_segment_commit_attempt",
+        timing.guest_segment_commit_attempt_duration(),
+    );
+    timings.record(
+        "guest_segment_commit_oom_retry",
+        timing.guest_segment_commit_oom_retry_duration(),
+    );
     timings.record_count(
         "guest_segment_commit_initial_workers",
         timing.guest_segment_commit_initial_worker_count(),

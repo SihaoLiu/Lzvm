@@ -407,6 +407,8 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_stream_duration: Duration,
     guest_trace_proof_value_prerun_duration: Duration,
     guest_segment_commit_duration: Duration,
+    guest_segment_commit_attempt_duration: Duration,
+    guest_segment_commit_oom_retry_duration: Duration,
     guest_segment_commit_initial_worker_count: usize,
     guest_segment_commit_effective_worker_count: usize,
     guest_segment_commit_oom_retry_count: usize,
@@ -581,6 +583,12 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_proof_value_prerun_duration: run_timing
                 .guest_trace_proof_value_prerun_duration,
             guest_segment_commit_duration: run_timing.guest_segment_commit_duration,
+            guest_segment_commit_attempt_duration: run_timing
+                .segment_commit_worker_timing
+                .attempt_duration,
+            guest_segment_commit_oom_retry_duration: run_timing
+                .segment_commit_worker_timing
+                .oom_retry_duration,
             guest_segment_commit_initial_worker_count: run_timing
                 .segment_commit_worker_timing
                 .initial_worker_count,
@@ -852,6 +860,14 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_segment_commit_duration(&self) -> Duration {
         self.guest_segment_commit_duration
+    }
+
+    pub fn guest_segment_commit_attempt_duration(&self) -> Duration {
+        self.guest_segment_commit_attempt_duration
+    }
+
+    pub fn guest_segment_commit_oom_retry_duration(&self) -> Duration {
+        self.guest_segment_commit_oom_retry_duration
     }
 
     pub fn guest_segment_commit_initial_worker_count(&self) -> usize {
@@ -3217,11 +3233,14 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
     let mut oom_retry_count = 0;
     let collect_segment_commit_memory_timing = timing_observer.is_some();
     let mut segment_commit_memory_timing = GuestPcTraceSegmentCommitMemoryTiming::default();
+    let mut segment_commit_attempt_duration = Duration::ZERO;
+    let mut segment_commit_oom_retry_duration = Duration::ZERO;
     loop {
         if collect_segment_commit_memory_timing {
             segment_commit_memory_timing
                 .observe_attempt_start(sample_guest_pc_segment_commit_cuda_memory());
         }
+        let segment_commit_attempt_started = Instant::now();
         let segment_commit_worker_timing = GuestPcTraceSegmentCommitWorkerTiming {
             initial_worker_count,
             effective_worker_count:
@@ -3230,24 +3249,47 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
                     worker_count_override,
                 ),
             oom_retry_count,
+            attempt_duration: segment_commit_attempt_duration,
+            oom_retry_duration: segment_commit_oom_retry_duration,
             memory_timing: segment_commit_memory_timing,
         };
-        let result = run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt(
-            plan,
-            unit_index,
-            &shared_inputs,
-            Arc::clone(&auxiliary_inputs),
-            instruction_limit,
-            GuestPcTraceSegmentCommitAttemptOptions {
-                timing_observer: timing_observer.as_mut().map(|observer| {
-                    &mut **observer as &mut dyn FnMut(ProveWitnessGuestPcTraceTiming)
-                }),
-                segment_commit_worker_count_override: worker_count_override,
-                segment_commit_worker_timing,
-            },
-        );
+        let mut attempt_timing = None;
+        let result = {
+            let mut attempt_timing_observer =
+                |timing: ProveWitnessGuestPcTraceTiming| attempt_timing = Some(timing);
+            let attempt_timing_observer: Option<&mut dyn FnMut(ProveWitnessGuestPcTraceTiming)> =
+                if timing_observer.is_some() {
+                    Some(&mut attempt_timing_observer)
+                } else {
+                    None
+                };
+            run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt(
+                plan,
+                unit_index,
+                &shared_inputs,
+                Arc::clone(&auxiliary_inputs),
+                instruction_limit,
+                GuestPcTraceSegmentCommitAttemptOptions {
+                    timing_observer: attempt_timing_observer,
+                    segment_commit_worker_count_override: worker_count_override,
+                    segment_commit_worker_timing,
+                },
+            )
+        };
+        let segment_commit_attempt_elapsed = segment_commit_attempt_started.elapsed();
+        segment_commit_attempt_duration += segment_commit_attempt_elapsed;
         match result {
-            Ok(outputs) => return Ok(outputs),
+            Ok(outputs) => {
+                if let (Some(observer), Some(mut timing)) =
+                    (timing_observer.as_deref_mut(), attempt_timing)
+                {
+                    timing.guest_segment_commit_attempt_duration = segment_commit_attempt_duration;
+                    timing.guest_segment_commit_oom_retry_duration =
+                        segment_commit_oom_retry_duration;
+                    observer(timing);
+                }
+                return Ok(outputs);
+            }
             Err(error) => {
                 let Some(next_worker_count) = next_guest_pc_segment_commit_worker_count_after_oom(
                     shared_inputs.input.len(),
@@ -3259,6 +3301,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
                 #[cfg(feature = "cuda")]
                 let _ = lzvm_accel::cuda_allocator_clear_cache();
                 oom_retry_count += 1;
+                segment_commit_oom_retry_duration += segment_commit_attempt_elapsed;
                 worker_count_override = Some(next_worker_count);
             }
         }
@@ -4023,6 +4066,8 @@ struct GuestPcTraceSegmentCommitWorkerTiming {
     initial_worker_count: usize,
     effective_worker_count: usize,
     oom_retry_count: usize,
+    attempt_duration: Duration,
+    oom_retry_duration: Duration,
     memory_timing: GuestPcTraceSegmentCommitMemoryTiming,
 }
 

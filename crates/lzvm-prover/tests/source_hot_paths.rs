@@ -3857,6 +3857,8 @@ fn guest_pc_trace_timing_reports_segment_commit_cuda_memory_headroom() {
         "impl ProveWitnessGuestPcTraceTiming",
     );
     for required in [
+        "guest_segment_commit_attempt_duration",
+        "guest_segment_commit_oom_retry_duration",
         "guest_segment_commit_cuda_memory_total_byte_count",
         "guest_segment_commit_cuda_memory_initial_free_byte_count",
         "guest_segment_commit_cuda_memory_effective_free_byte_count",
@@ -3878,11 +3880,21 @@ fn guest_pc_trace_timing_reports_segment_commit_cuda_memory_headroom() {
     assert!(
         run_body.contains("sample_guest_pc_segment_commit_cuda_memory()")
             && run_body.contains("observe_attempt_start")
+            && run_body.contains("segment_commit_attempt_duration")
+            && run_body.contains("segment_commit_oom_retry_duration")
             && run_body.contains("segment_commit_memory_timing"),
-        "segment commit timing should sample CUDA memory headroom across retry attempts"
+        "segment commit timing should sample CUDA memory headroom and retry time across attempts"
     );
 
     for (timing_name, accessor) in [
+        (
+            "\"guest_segment_commit_attempt\"",
+            "guest_segment_commit_attempt_duration()",
+        ),
+        (
+            "\"guest_segment_commit_oom_retry\"",
+            "guest_segment_commit_oom_retry_duration()",
+        ),
         (
             "\"guest_segment_commit_cuda_memory_total_bytes\"",
             "guest_segment_commit_cuda_memory_total_byte_count()",
