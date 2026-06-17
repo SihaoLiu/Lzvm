@@ -979,8 +979,8 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_an
       proof
       accepted
   have concretePcsFri :=
-    runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle
-      assumptions.crypto.hashCollisionResistance
+    runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle
+      assumptions
       validation.openingValidation
       centralized
       constantBinding
