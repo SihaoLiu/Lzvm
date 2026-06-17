@@ -1466,6 +1466,43 @@ theorem
       sameDepth
 
 theorem
+  nary_merkle_opening_arity_two_index_binding_from_assumption
+    {Digest : Type uDigest}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress) :
+    forall root opening,
+      NAryMerklePathHasArity 2 opening.layers ->
+        NAryMerklePathOpeningVerifies compress root opening ->
+          forall otherLeaf otherPath,
+            NAryMerklePathHasArity 2 otherPath ->
+              NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherPath ->
+                opening.layers.length = otherPath.length ->
+                  NAryMerklePathVerifies compress root otherLeaf otherPath ->
+                    otherLeaf = opening.leaf := by
+  intro root opening openingArity verified otherLeaf otherPath otherPathArity
+    sameIndex sameDepth otherVerified
+  exact
+    nary_merkle_path_arity_two_index_binding_from_no_collision
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
+      root
+      opening.leaf
+      opening.layers
+      openingArity
+      verified
+      otherLeaf
+      otherPath
+      otherPathArity
+      sameIndex
+      sameDepth
+      otherVerified
+
+theorem
   nary_merkle_opening_arity_two_index_binding_from_bundle
     {Digest : Type uDigest}
     {system : VerifierModel}
@@ -1487,10 +1524,45 @@ theorem
   intro root opening openingArity verified otherLeaf otherPath otherPathArity
     sameIndex sameDepth otherVerified
   exact
-    nary_merkle_path_arity_two_index_binding_from_no_collision
+    nary_merkle_opening_arity_two_index_binding_from_assumption
+      assumptions.crypto.hashCollisionResistance
+      centralized
+      root
+      opening
+      openingArity
+      verified
+      otherLeaf
+      otherPath
+      otherPathArity
+      sameIndex
+      sameDepth
+      otherVerified
+
+theorem
+  nary_merkle_opening_arity_four_index_binding_from_assumption
+    {Digest : Type uDigest}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress) :
+    forall root opening,
+      NAryMerklePathHasArity 4 opening.layers ->
+        NAryMerklePathOpeningVerifies compress root opening ->
+          forall otherLeaf otherPath,
+            NAryMerklePathHasArity 4 otherPath ->
+              NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherPath ->
+                opening.layers.length = otherPath.length ->
+                  NAryMerklePathVerifies compress root otherLeaf otherPath ->
+                    otherLeaf = opening.leaf := by
+  intro root opening openingArity verified otherLeaf otherPath otherPathArity
+    sameIndex sameDepth otherVerified
+  exact
+    nary_merkle_path_arity_four_index_binding_from_no_collision
       (Eq.mp
         centralized
-        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+        hashAssumptions.merkleHashCollisionResistance.evidence)
       root
       opening.leaf
       opening.layers
@@ -1525,13 +1597,11 @@ theorem
   intro root opening openingArity verified otherLeaf otherPath otherPathArity
     sameIndex sameDepth otherVerified
   exact
-    nary_merkle_path_arity_four_index_binding_from_no_collision
-      (Eq.mp
-        centralized
-        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+    nary_merkle_opening_arity_four_index_binding_from_assumption
+      assumptions.crypto.hashCollisionResistance
+      centralized
       root
-      opening.leaf
-      opening.layers
+      opening
       openingArity
       verified
       otherLeaf

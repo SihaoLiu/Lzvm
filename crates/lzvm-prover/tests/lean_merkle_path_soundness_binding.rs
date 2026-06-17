@@ -115,6 +115,8 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "nary_merkle_path_arity_four_index_binding_from_no_collision",
             "nary_merkle_path_arity_two_index_binding_from_bundle",
             "nary_merkle_path_arity_four_index_binding_from_bundle",
+            "nary_merkle_opening_arity_two_index_binding_from_assumption",
+            "nary_merkle_opening_arity_four_index_binding_from_assumption",
             "nary_merkle_opening_arity_two_index_binding_from_bundle",
             "nary_merkle_opening_arity_four_index_binding_from_bundle",
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index",
@@ -753,6 +755,62 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
         &lean_source,
         "nary_merkle_path_arity_four_index_binding_from_bundle",
         &["nary_merkle_path_arity_four_index_binding_from_no_collision"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "nary_merkle_opening_arity_two_index_binding_from_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathHasArity 2 opening.layers",
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherPath",
+            "opening.layers.length = otherPath.length",
+            "otherLeaf = opening.leaf",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "nary_merkle_opening_arity_two_index_binding_from_assumption",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "nary_merkle_opening_arity_two_index_binding_from_assumption",
+        &["nary_merkle_path_arity_two_index_binding_from_no_collision"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "nary_merkle_opening_arity_four_index_binding_from_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathHasArity 4 opening.layers",
+            "NAryMerklePathOpeningVerifies compress root opening",
+            "NAryMerklePathIndex opening.layers = NAryMerklePathIndex otherPath",
+            "opening.layers.length = otherPath.length",
+            "otherLeaf = opening.leaf",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "nary_merkle_opening_arity_four_index_binding_from_assumption",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "nary_merkle_opening_arity_four_index_binding_from_assumption",
+        &["nary_merkle_path_arity_four_index_binding_from_no_collision"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "nary_merkle_opening_arity_two_index_binding_from_bundle",
+        &["nary_merkle_opening_arity_two_index_binding_from_assumption"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "nary_merkle_opening_arity_four_index_binding_from_bundle",
+        &["nary_merkle_opening_arity_four_index_binding_from_assumption"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
