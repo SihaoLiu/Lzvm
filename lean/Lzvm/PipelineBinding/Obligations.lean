@@ -227,16 +227,32 @@ theorem runtime_pipeline_binding_checked_acceptance_core_obligations
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
-  have sound :=
-    runtime_pipeline_binding_checked_acceptance_sound
-      assumptions
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
       validation
       artifact
       publicInput
       proof
-      False
       accepted
-  exact runtime_pipeline_binding_evidence_implies_core_obligations sound.left
+  have transcriptBound :=
+    runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have publicInputBound :=
+    assumptions.semantic.public_input_binding publicInput proof verifierAccepts
+  have pcsAndFri :=
+    runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro transcriptBound
+      (And.intro publicInputBound pcsAndFri)
 
 theorem runtime_pipeline_binding_checked_acceptance_query_opening_evidence
     {system : VerifierModel}

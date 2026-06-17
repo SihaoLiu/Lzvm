@@ -829,9 +829,8 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_assumptions
       accepted
   exact And.intro audited sound
 
-theorem runtime_pipeline_binding_checked_acceptance_transcript_bound
+theorem runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions
     {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
     (validation : RuntimePipelineBindingValidation system) :
     forall artifact publicInput proof,
       RuntimePipelineBindingCheckedAcceptance
@@ -842,16 +841,55 @@ theorem runtime_pipeline_binding_checked_acceptance_transcript_bound
           proof ->
         system.transcriptBound publicInput proof := by
   intro artifact publicInput proof accepted
-  have sound :=
-    runtime_pipeline_binding_checked_acceptance_sound
-      assumptions
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
       validation
       artifact
       publicInput
       proof
-      False
       accepted
-  exact runtime_pipeline_binding_evidence_implies_transcript_bound sound.left
+  have challengeAccepted :=
+    runtime_query_plan_binding_checked_acceptance_challenge
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation.queryPlanBindingValidation.challengeValidation
+      artifact
+      publicInput
+      proof
+      challengeAccepted
+  exact
+    runtime_transcript_binding_checked_acceptance_transcript_bound
+      validation.queryPlanBindingValidation.challengeValidation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_transcript_bound
+    {system : VerifierModel}
+    (_assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.transcriptBound publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
 
 theorem runtime_pipeline_binding_checked_acceptance_public_input_bound
     {system : VerifierModel}
@@ -866,16 +904,14 @@ theorem runtime_pipeline_binding_checked_acceptance_public_input_bound
           proof ->
         system.publicInputBound publicInput proof := by
   intro artifact publicInput proof accepted
-  have sound :=
-    runtime_pipeline_binding_checked_acceptance_sound
-      assumptions
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
       validation
       artifact
       publicInput
       proof
-      False
       accepted
-  exact runtime_pipeline_binding_evidence_implies_public_input_bound sound.left
+  exact assumptions.semantic.public_input_binding publicInput proof verifierAccepts
 
 theorem runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri
     {system : VerifierModel}
