@@ -179,6 +179,8 @@ DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS = (
     "timing_guest_trace_descriptor_high32_rows_with_6_fields",
     "timing_guest_trace_descriptor_high32_rows_with_7_fields",
 )
+SPARSE_HIGH32_DESCRIPTOR_BASE_WORDS_PER_ROW = 9
+WORD_BYTES = 8
 SEED_DIRECT_LIFT_ATTEMPTS_KEY = "timing_guest_trace_seed_direct_lift_attempts"
 SEED_DIRECT_LIFT_SUCCESSES_KEY = "timing_guest_trace_seed_direct_lift_successes"
 SEED_FULL_ADVANCES_KEY = "timing_guest_trace_seed_full_advances"
@@ -337,6 +339,9 @@ HEADER = (
     "descriptor_high32_rows_with_2_fields,descriptor_high32_rows_with_3_fields,"
     "descriptor_high32_rows_with_4_fields,descriptor_high32_rows_with_5_fields,"
     "descriptor_high32_rows_with_6_fields,descriptor_high32_rows_with_7_fields,"
+    "descriptor_sparse_high32_estimated_upload_bytes,"
+    "descriptor_sparse_high32_estimated_upload_savings_pct,"
+    "descriptor_sparse_high32_high_words,descriptor_sparse_high32_shape_hint,"
     "descriptor_shape_hint,seed_direct_lift_attempts,"
     "seed_direct_lift_successes,seed_full_advances,"
     "finish_opening_ms,opening_query_units,opening_single_query_units,"
@@ -1058,6 +1063,34 @@ def descriptor_shape_hint(
     if high32_row_pct < 5.0:
         return "high32_sparse_compact_descriptor"
     return "high32_dense_compact_descriptor"
+
+
+def sparse_high32_descriptor_estimate(
+    descriptor_rows: int,
+    descriptor_upload_bytes: int,
+    descriptor_high32_values: int,
+    high32_rows_present: bool,
+) -> tuple[int, float, int, str]:
+    if (
+        descriptor_rows <= 0
+        or descriptor_upload_bytes <= 0
+        or not high32_rows_present
+    ):
+        return 0, 0.0, 0, "none"
+    high_words = (descriptor_high32_values + 1) // 2
+    estimated_words = (
+        descriptor_rows * SPARSE_HIGH32_DESCRIPTOR_BASE_WORDS_PER_ROW
+        + high_words
+    )
+    estimated_bytes = estimated_words * WORD_BYTES
+    if estimated_bytes >= descriptor_upload_bytes:
+        return estimated_bytes, 0.0, high_words, "sparse_high32_not_smaller"
+    savings_pct = (descriptor_upload_bytes - estimated_bytes) * 100.0 / descriptor_upload_bytes
+    if savings_pct >= 10.0:
+        hint = "sparse_high32_descriptor_candidate"
+    else:
+        hint = "sparse_high32_marginal"
+    return estimated_bytes, savings_pct, high_words, hint
 
 
 def root_pipeline_policy_hint(
@@ -1913,6 +1946,17 @@ def summarize_profile_values(
     descriptor_high32_row_field_histogram = [
         values.get(key, 0) for key in DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS
     ]
+    (
+        sparse_high32_estimated_upload_bytes,
+        sparse_high32_estimated_upload_savings_pct,
+        sparse_high32_high_words,
+        sparse_high32_shape_hint,
+    ) = sparse_high32_descriptor_estimate(
+        descriptor_rows,
+        descriptor_upload_bytes,
+        descriptor_high32_values,
+        descriptor_high32_rows_present,
+    )
     descriptor_hint = descriptor_shape_hint(
         descriptor_rows,
         descriptor_compact_rows,
@@ -2190,6 +2234,9 @@ def summarize_profile_values(
         f"{descriptor_high32_store_payload_values},"
         f"{descriptor_high32_store_prev_value_values},"
         f"{','.join(str(count) for count in descriptor_high32_row_field_histogram)},"
+        f"{sparse_high32_estimated_upload_bytes},"
+        f"{sparse_high32_estimated_upload_savings_pct:.3f},"
+        f"{sparse_high32_high_words},{sparse_high32_shape_hint},"
         f"{descriptor_hint},"
         f"{seed_direct_lift_attempts},"
         f"{seed_direct_lift_successes},{seed_full_advances},"
