@@ -525,15 +525,60 @@ fn prove_timing_root_summary_reports_trace_shape_duration_hint() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "external_op_row_lower_ms,copy_row_lower_ms,external_op_row_lower_ns_per_row,copy_row_lower_ns_per_row,external_op_row_lower_pct,copy_row_lower_pct,trace_shape_duration_hint"
+            "external_op_row_lower_ms,copy_row_lower_ms,external_op_row_lower_ns_per_row,copy_row_lower_ns_per_row,external_op_row_lower_pct,copy_row_lower_pct,trace_shape_duration_hint,trace_shape_unit_cost_hint"
         ),
-        "prove timing root summary should expose external-op and copy duration and per-row columns: stdout={stdout}"
+        "prove timing root summary should expose external-op and copy duration, per-row, and unit-cost hint columns: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            ",474,508,1580000.000,1270000.000,47.400,50.800,copy_and_external_op_duration_dominate"
+            ",474,508,1580000.000,1270000.000,47.400,50.800,copy_and_external_op_duration_dominate,external_op_unit_cost_higher"
         ),
-        "prove timing root summary should classify external-op and copy duration dominance and per-row cost: stdout={stdout}"
+        "prove timing root summary should classify external-op and copy duration dominance and per-row cost skew: stdout={stdout}"
+    );
+
+    let balanced_input = [
+        "timing_total_ms=72000",
+        "timing_guest_trace_lower_ms=51154",
+        "timing_guest_trace_report_rows=499917240",
+        "timing_guest_trace_external_op_rows=237231598",
+        "timing_guest_trace_copy_rows=253826801",
+        "timing_guest_trace_external_op_row_lower_ms=14926",
+        "timing_guest_trace_copy_row_lower_ms=16895",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(balanced_input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains(
+            ",14926,16895,62.917,66.561,29.179,33.028,mixed_trace_shape_duration,row_volume_dominates_shape_duration"
+        ),
+        "prove timing root summary should classify balanced shape unit costs as row-volume dominated: stdout={stdout}"
     );
 }
 

@@ -308,7 +308,8 @@ HEADER = (
     "external_op_row_pct,copy_row_pct,trace_shape_row_mix_hint,"
     "external_op_row_lower_ms,copy_row_lower_ms,"
     "external_op_row_lower_ns_per_row,copy_row_lower_ns_per_row,"
-    "external_op_row_lower_pct,copy_row_lower_pct,trace_shape_duration_hint"
+    "external_op_row_lower_pct,copy_row_lower_pct,trace_shape_duration_hint,"
+    "trace_shape_unit_cost_hint"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -943,6 +944,27 @@ def trace_shape_duration_hint(
     return "none"
 
 
+def trace_shape_unit_cost_hint(
+    external_op_row_lower_ns_per_row: float,
+    copy_row_lower_ns_per_row: float,
+    trace_shape_row_mix: str,
+) -> str:
+    if (
+        external_op_row_lower_ns_per_row <= 0.0
+        and copy_row_lower_ns_per_row <= 0.0
+    ):
+        return "none"
+    if external_op_row_lower_ns_per_row <= 0.0 or copy_row_lower_ns_per_row <= 0.0:
+        return "single_shape_unit_cost_sampled"
+    if external_op_row_lower_ns_per_row >= copy_row_lower_ns_per_row * 1.20:
+        return "external_op_unit_cost_higher"
+    if copy_row_lower_ns_per_row >= external_op_row_lower_ns_per_row * 1.20:
+        return "copy_unit_cost_higher"
+    if trace_shape_row_mix == "copy_and_external_op_rows_dominate":
+        return "row_volume_dominates_shape_duration"
+    return "balanced_shape_unit_cost"
+
+
 def ns_per_row_from_ms(duration_ms: int, row_count: int) -> float:
     if duration_ms <= 0 or row_count <= 0:
         return 0.0
@@ -1253,6 +1275,11 @@ def summarize_profile_values(
     trace_shape_duration = trace_shape_duration_hint(
         external_op_row_lower_pct,
         copy_row_lower_pct,
+    )
+    trace_shape_unit_cost = trace_shape_unit_cost_hint(
+        external_op_row_lower_ns_per_row,
+        copy_row_lower_ns_per_row,
+        trace_shape_row_mix,
     )
     trace_report_detail_samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
     trace_report_detail_sample_pct = (
@@ -1734,7 +1761,7 @@ def summarize_profile_values(
         f"{external_op_row_lower_ns_per_row:.3f},"
         f"{copy_row_lower_ns_per_row:.3f},"
         f"{external_op_row_lower_pct:.3f},{copy_row_lower_pct:.3f},"
-        f"{trace_shape_duration}"
+        f"{trace_shape_duration},{trace_shape_unit_cost}"
     )
 
 
