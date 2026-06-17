@@ -348,6 +348,59 @@ fn ncu_cuda_kernel_summary_accepts_command_line_metric_rows() {
 }
 
 #[test]
+fn ncu_cuda_kernel_summary_flags_descriptor_expansion_shape_candidates() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/ncu-cuda-kernel-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("workspace temp directory should exist");
+
+    let descriptor_csv = temp_file(&temp_dir, "ncu-descriptor-expansion-shape.csv");
+    std::fs::write(
+        &descriptor_csv,
+        concat!(
+            "\"Kernel Name\",\"gpu__time_duration.sum\",",
+            "\"sm__throughput.avg.pct_of_peak_sustained_elapsed\",",
+            "\"gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed\",",
+            "\"gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed\",",
+            "\"sm__issue_active.avg.pct_of_peak_sustained_elapsed\",",
+            "\"sm__warps_active.avg.pct_of_peak_sustained_active\",",
+            "\"launch__occupancy_limit_registers\",",
+            "\"launch__occupancy_limit_shared_mem\",",
+            "\"launch__occupancy_limit_warps\",",
+            "\"launch__occupancy_limit_blocks\",",
+            "\"launch__registers_per_thread\",",
+            "\"launch__shared_mem_per_block\"\n",
+            "\"\",\"us\",\"%\",\"%\",\"%\",\"%\",\"%\",\"block\",\"block\",\"block\",\"block\",\"register/thread\",\"Kbyte/block\"\n",
+            "\"expand_main_trace_descriptors_kernel\",\"4734.624\",\"3.90\",\"34.45\",\"42.55\",\"0.386\",\"88.44\",\"6\",\"16\",\"6\",\"24\",\"40\",\"1.000\"\n",
+            "\"poseidon2_merkle_digest_parent_kernel\",\"2262.080\",\"35.0\",\"15.0\",\"18.0\",\"20.0\",\"42.0\",\"8\",\"12\",\"8\",\"24\",\"56\",\"2.000\"\n",
+        ),
+    )
+    .expect("descriptor NCU sample should write");
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&descriptor_csv)
+        .output()
+        .expect("ncu CUDA kernel summary should run on descriptor sample");
+    let _ = std::fs::remove_file(&descriptor_csv);
+
+    assert!(
+        output.status.success(),
+        "descriptor NCU CSV should parse: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("descriptor_expansion_shape_candidates"),
+        "descriptor expansion candidates should have a dedicated table: {stdout}"
+    );
+    assert!(
+        stdout.contains("expand_main_trace_descriptors_kernel,1,4.735,34.450,3.900,0.386,40.000,redesign_descriptor_fields_before_kernel_split"),
+        "low-issue descriptor expansion should be flagged with a representation-level hint: {stdout}"
+    );
+}
+
+#[test]
 fn ncu_cuda_kernel_summary_imports_binary_reports_through_ncu() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root.join("../..");

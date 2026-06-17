@@ -570,6 +570,83 @@ def separation_hint(metrics: KernelMetrics) -> str:
     return "profile_more_before_splitting"
 
 
+def is_descriptor_expansion_kernel(metrics: KernelMetrics) -> bool:
+    kernel = metrics.kernel.lower()
+    return "expand" in kernel and "trace_descriptors" in kernel
+
+
+def descriptor_expansion_shape_hint(metrics: KernelMetrics) -> str:
+    issue_active = metrics.avg(METRIC_ISSUE_ACTIVE)
+    dram_throughput = metrics.avg(METRIC_DRAM_THROUGHPUT)
+    if (
+        issue_active is not None
+        and issue_active <= 1.0
+        and dram_throughput is not None
+        and dram_throughput >= 20.0
+    ):
+        return "redesign_descriptor_fields_before_kernel_split"
+    return "profile_descriptor_field_widths_before_changing_kernel"
+
+
+def print_descriptor_expansion_shape_candidates(
+    writer: csv.writer, rows: list[KernelMetrics], limit: int
+) -> None:
+    print()
+    print("descriptor_expansion_shape_candidates")
+    writerow(
+        writer,
+        [
+            "kernel",
+            "profiles",
+            "duration_ms",
+            "dram_throughput_pct",
+            "sm_throughput_pct",
+            "issue_active_pct",
+            "registers_per_thread",
+            "descriptor_hint",
+        ],
+    )
+    candidates = [metrics for metrics in rows if is_descriptor_expansion_kernel(metrics)]
+    ranked = sorted(
+        candidates,
+        key=lambda metrics: (
+            metrics.avg(METRIC_ISSUE_ACTIVE) is None,
+            metrics.avg(METRIC_ISSUE_ACTIVE) or 0.0,
+            -(metrics.avg(METRIC_DRAM_THROUGHPUT) or 0.0),
+            -metrics.duration_us,
+            metrics.kernel,
+        ),
+    )
+    for metrics in ranked[:limit]:
+        writerow(
+            writer,
+            [
+                metrics.kernel,
+                metrics.profiles,
+                fmt(metrics.duration_us / 1000.0),
+                fmt(metrics.avg(METRIC_DRAM_THROUGHPUT)),
+                fmt(metrics.avg(METRIC_SM_THROUGHPUT)),
+                fmt(metrics.avg(METRIC_ISSUE_ACTIVE)),
+                fmt(metrics.avg(METRIC_REGISTERS_PER_THREAD)),
+                descriptor_expansion_shape_hint(metrics),
+            ],
+        )
+    if not candidates:
+        writerow(
+            writer,
+            [
+                "none",
+                0,
+                "0.000",
+                "na",
+                "na",
+                "na",
+                "na",
+                "profile_descriptor_field_widths_before_changing_kernel",
+            ],
+        )
+
+
 def print_kernel_separation_candidates(
     writer: csv.writer, rows: list[KernelMetrics], limit: int
 ) -> None:
@@ -640,6 +717,7 @@ def summarize(rows: list[dict[str, str]], label: str, limit: int) -> None:
     print_kernel_metric_summary(writer, metrics, limit)
     print_occupancy_limits(writer, metrics, limit)
     print_memory_bound_candidates(writer, metrics, limit)
+    print_descriptor_expansion_shape_candidates(writer, metrics, limit)
     print_kernel_separation_candidates(writer, metrics, limit)
 
 
