@@ -1021,6 +1021,8 @@ def root_pipeline_policy_hint(
 def opening_batching_hint(
     query_units: int,
     single_query_units: int,
+    row_value_device_rows: int,
+    row_value_device_download_batches: int,
     retained_leaf_openings: int,
     retained_leaf_rows: int,
     retained_leaf_all_single_row: int,
@@ -1036,6 +1038,12 @@ def opening_batching_hint(
         return "none"
     if query_units and single_query_units != query_units:
         return "none"
+    if (
+        query_units > 1
+        and row_value_device_rows > 1
+        and row_value_device_download_batches == 0
+    ):
+        return "cross_query_unit_device_row_value_batching_candidate"
     if (
         retained_leaf_openings > 1
         and retained_leaf_rows == retained_leaf_openings
@@ -1951,6 +1959,8 @@ def summarize_profile_values(
     opening_hint = opening_batching_hint(
         opening_query_units,
         opening_single_query_units,
+        opening_row_value_device_rows,
+        opening_row_value_device_download_batches,
         retained_leaf_openings,
         retained_leaf_rows,
         retained_leaf_all_single_row_value,

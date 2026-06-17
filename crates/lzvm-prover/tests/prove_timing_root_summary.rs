@@ -1287,6 +1287,8 @@ fn prove_timing_root_summary_reports_retained_parent_checkpoint_opening_shape() 
         "timing_finish_witness_opening_retained_parent_checkpoint_all_single_row_openings=1",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launches=79",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches=790",
+        "timing_finish_witness_opening_row_values_device_rows=43",
+        "timing_finish_witness_opening_row_values_device_download_batches=0",
     ]
     .join("\n");
 
@@ -1322,9 +1324,9 @@ fn prove_timing_root_summary_reports_retained_parent_checkpoint_opening_shape() 
     );
     assert!(
         stdout.contains(
-            ",77,77,yes,0,79,79,yes,0,0,79,0,0,790,0,0,cross_segment_retained_parent_checkpoint_opening_candidate,"
+            ",43,0,77,77,yes,0,79,79,yes,0,0,79,0,0,790,0,0,cross_query_unit_device_row_value_batching_candidate,"
         ),
-        "prove timing root summary should classify single-query retained parent checkpoint openings as a cross-unit batching target: stdout={stdout}"
+        "prove timing root summary should classify single-query device row-value openings as a cross-unit batching target: stdout={stdout}"
     );
 }
 
