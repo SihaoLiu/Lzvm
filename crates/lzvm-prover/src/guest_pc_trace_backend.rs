@@ -250,7 +250,13 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_amo_report_count: usize,
     trace_store_conditional_report_count: usize,
     trace_external_op_row_count: usize,
+    trace_external_op_run_count: usize,
+    trace_external_op_current_run_count: usize,
+    trace_external_op_max_run_count: usize,
     trace_copy_row_count: usize,
+    trace_copy_run_count: usize,
+    trace_copy_current_run_count: usize,
+    trace_copy_max_run_count: usize,
     trace_flag_row_count: usize,
     trace_precompile_row_count: usize,
     trace_indirect_memory_row_count: usize,
@@ -343,7 +349,21 @@ impl GuestPcTraceStreamTiming {
         self.trace_amo_report_count += other.trace_amo_report_count;
         self.trace_store_conditional_report_count += other.trace_store_conditional_report_count;
         self.trace_external_op_row_count += other.trace_external_op_row_count;
+        self.trace_external_op_run_count += other.trace_external_op_run_count;
+        self.trace_external_op_current_run_count = self
+            .trace_external_op_current_run_count
+            .max(other.trace_external_op_current_run_count);
+        self.trace_external_op_max_run_count = self
+            .trace_external_op_max_run_count
+            .max(other.trace_external_op_max_run_count);
         self.trace_copy_row_count += other.trace_copy_row_count;
+        self.trace_copy_run_count += other.trace_copy_run_count;
+        self.trace_copy_current_run_count = self
+            .trace_copy_current_run_count
+            .max(other.trace_copy_current_run_count);
+        self.trace_copy_max_run_count = self
+            .trace_copy_max_run_count
+            .max(other.trace_copy_max_run_count);
         self.trace_flag_row_count += other.trace_flag_row_count;
         self.trace_precompile_row_count += other.trace_precompile_row_count;
         self.trace_indirect_memory_row_count += other.trace_indirect_memory_row_count;
@@ -637,8 +657,24 @@ impl GuestPcTraceStreamTiming {
         self.trace_external_op_row_count
     }
 
+    pub fn trace_external_op_run_count(&self) -> usize {
+        self.trace_external_op_run_count
+    }
+
+    pub fn trace_external_op_max_run_count(&self) -> usize {
+        self.trace_external_op_max_run_count
+    }
+
     pub fn trace_copy_row_count(&self) -> usize {
         self.trace_copy_row_count
+    }
+
+    pub fn trace_copy_run_count(&self) -> usize {
+        self.trace_copy_run_count
+    }
+
+    pub fn trace_copy_max_run_count(&self) -> usize {
+        self.trace_copy_max_run_count
     }
 
     pub fn trace_flag_row_count(&self) -> usize {
@@ -4423,6 +4459,19 @@ fn record_trace_lowered_row_shape(
     if instruction.is_external_op {
         timing.trace_external_op_row_count += 1;
     }
+    record_trace_shape_run(
+        instruction.is_external_op,
+        &mut timing.trace_external_op_run_count,
+        &mut timing.trace_external_op_current_run_count,
+        &mut timing.trace_external_op_max_run_count,
+    );
+    let is_copy = matches!(instruction.op, ZiskMainOp::CopyB);
+    record_trace_shape_run(
+        is_copy,
+        &mut timing.trace_copy_run_count,
+        &mut timing.trace_copy_current_run_count,
+        &mut timing.trace_copy_max_run_count,
+    );
     match instruction.op {
         ZiskMainOp::CopyB => timing.trace_copy_row_count += 1,
         ZiskMainOp::Flag => timing.trace_flag_row_count += 1,
@@ -4442,6 +4491,23 @@ fn record_trace_lowered_row_shape(
             timing.trace_memory_store_row_count += 1;
         }
         ZiskMainStore::None => timing.trace_no_store_row_count += 1,
+    }
+}
+
+fn record_trace_shape_run(
+    is_active: bool,
+    run_count: &mut usize,
+    current_run_count: &mut usize,
+    max_run_count: &mut usize,
+) {
+    if is_active {
+        if *current_run_count == 0 {
+            *run_count += 1;
+        }
+        *current_run_count += 1;
+        *max_run_count = (*max_run_count).max(*current_run_count);
+    } else {
+        *current_run_count = 0;
     }
 }
 

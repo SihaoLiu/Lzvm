@@ -414,7 +414,20 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_external_op_rows",
         timing.guest_trace_external_op_row_count(),
     );
+    timings.record_count(
+        "guest_trace_external_op_runs",
+        timing.guest_trace_external_op_run_count(),
+    );
+    timings.record_count(
+        "guest_trace_external_op_max_run",
+        timing.guest_trace_external_op_max_run_count(),
+    );
     timings.record_count("guest_trace_copy_rows", timing.guest_trace_copy_row_count());
+    timings.record_count("guest_trace_copy_runs", timing.guest_trace_copy_run_count());
+    timings.record_count(
+        "guest_trace_copy_max_run",
+        timing.guest_trace_copy_max_run_count(),
+    );
     timings.record_count("guest_trace_flag_rows", timing.guest_trace_flag_row_count());
     timings.record_count(
         "guest_trace_precompile_rows",

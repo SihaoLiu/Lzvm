@@ -74,6 +74,11 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_parallel_lower_max_reorder",
         "timing_guest_trace_reports",
         "timing_guest_trace_report_rows",
+        "timing_guest_trace_external_op_runs",
+        "timing_guest_trace_external_op_max_run",
+        "timing_guest_trace_copy_runs",
+        "timing_guest_trace_copy_max_run",
+        "trace_shape_run_hint",
         "timing_guest_trace_report_buffer_capacity",
         "timing_guest_trace_report_buffer_max_capacity",
         "timing_guest_trace_report_buffer_excess_capacity",
@@ -591,6 +596,66 @@ fn prove_timing_root_summary_reports_trace_shape_duration_hint() {
             ",14926,16895,62.917,66.561,29.179,33.028,mixed_trace_shape_duration,row_volume_dominates_shape_duration"
         ),
         "prove timing root summary should classify balanced shape unit costs as row-volume dominated: stdout={stdout}"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reports_trace_shape_run_lengths() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=9000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_lower_ms=1500",
+        "timing_guest_trace_reports=1000",
+        "timing_guest_trace_report_rows=1000",
+        "timing_guest_trace_single_row_reports=1000",
+        "timing_guest_trace_external_op_rows=600",
+        "timing_guest_trace_copy_rows=300",
+        "timing_guest_trace_external_op_row_lower_ms=600",
+        "timing_guest_trace_copy_row_lower_ms=300",
+        "timing_guest_trace_external_op_runs=30",
+        "timing_guest_trace_external_op_max_run=80",
+        "timing_guest_trace_copy_runs=150",
+        "timing_guest_trace_copy_max_run=3",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains(
+            "external_op_runs,external_op_avg_run,external_op_max_run,copy_runs,copy_avg_run,copy_max_run,trace_shape_run_hint"
+        ),
+        "prove timing root summary should expose trace shape run-length columns: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(",30,20.000,80,150,2.000,3,external_op_runs_long"),
+        "prove timing root summary should classify long external-op row runs: stdout={stdout}"
     );
 }
 

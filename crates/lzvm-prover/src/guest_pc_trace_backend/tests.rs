@@ -94,6 +94,44 @@ fn guest_trace_detail_timing_sample_stride_uses_positive_env_values() {
 }
 
 #[test]
+fn trace_shape_run_counts_track_consecutive_row_classes() {
+    let mut timing = GuestPcTraceStreamTiming::default();
+    let external = zisk_main_base_instruction(
+        0x8000_0000,
+        ZiskMainSource::Immediate(1),
+        ZiskMainSource::Immediate(2),
+        ZiskMainOp::Add,
+        ZiskMainStore::None,
+        4,
+    );
+    let copy = zisk_main_base_instruction(
+        0x8000_0004,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Immediate(3),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::None,
+        4,
+    );
+    let flag = zisk_main_base_instruction(
+        0x8000_0008,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Immediate(0),
+        ZiskMainOp::Flag,
+        ZiskMainStore::None,
+        4,
+    );
+
+    for instruction in [&external, &external, &copy, &copy, &copy, &flag, &external] {
+        record_trace_lowered_row_shape(&mut timing, instruction);
+    }
+
+    assert_eq!(timing.trace_external_op_run_count(), 2);
+    assert_eq!(timing.trace_external_op_max_run_count(), 2);
+    assert_eq!(timing.trace_copy_run_count(), 1);
+    assert_eq!(timing.trace_copy_max_run_count(), 3);
+}
+
+#[test]
 fn rejects_add256_precompile_memory_access_address_mismatch() {
     let mut report = add256_report();
     report.precompile_memory_accesses[4].address += 8;

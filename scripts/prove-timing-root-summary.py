@@ -44,6 +44,10 @@ TRACE_AMO_REPORTS_KEY = "timing_guest_trace_amo_reports"
 TRACE_STORE_CONDITIONAL_REPORTS_KEY = "timing_guest_trace_store_conditional_reports"
 TRACE_EXTERNAL_OP_ROWS_KEY = "timing_guest_trace_external_op_rows"
 TRACE_COPY_ROWS_KEY = "timing_guest_trace_copy_rows"
+TRACE_EXTERNAL_OP_RUNS_KEY = "timing_guest_trace_external_op_runs"
+TRACE_EXTERNAL_OP_MAX_RUN_KEY = "timing_guest_trace_external_op_max_run"
+TRACE_COPY_RUNS_KEY = "timing_guest_trace_copy_runs"
+TRACE_COPY_MAX_RUN_KEY = "timing_guest_trace_copy_max_run"
 TRACE_EXTERNAL_OP_ROW_LOWER_MS_KEY = "timing_guest_trace_external_op_row_lower_ms"
 TRACE_COPY_ROW_LOWER_MS_KEY = "timing_guest_trace_copy_row_lower_ms"
 TRACE_FLAG_ROWS_KEY = "timing_guest_trace_flag_rows"
@@ -62,6 +66,10 @@ TRACE_SHAPE_KEYS = (
     TRACE_STORE_CONDITIONAL_REPORTS_KEY,
     TRACE_EXTERNAL_OP_ROWS_KEY,
     TRACE_COPY_ROWS_KEY,
+    TRACE_EXTERNAL_OP_RUNS_KEY,
+    TRACE_EXTERNAL_OP_MAX_RUN_KEY,
+    TRACE_COPY_RUNS_KEY,
+    TRACE_COPY_MAX_RUN_KEY,
     TRACE_EXTERNAL_OP_ROW_LOWER_MS_KEY,
     TRACE_COPY_ROW_LOWER_MS_KEY,
     TRACE_FLAG_ROWS_KEY,
@@ -316,7 +324,9 @@ HEADER = (
     "trace_report_source_values_residual_ns_per_row,"
     "trace_report_row_validation_residual_ns_per_row,"
     "trace_report_visit_residual_ns_per_row,"
-    "trace_report_descriptor_ns_per_row"
+    "trace_report_descriptor_ns_per_row,"
+    "external_op_runs,external_op_avg_run,external_op_max_run,"
+    "copy_runs,copy_avg_run,copy_max_run,trace_shape_run_hint"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -358,6 +368,10 @@ TIMING_KEYS = {
     TRACE_STORE_CONDITIONAL_REPORTS_KEY,
     TRACE_EXTERNAL_OP_ROWS_KEY,
     TRACE_COPY_ROWS_KEY,
+    TRACE_EXTERNAL_OP_RUNS_KEY,
+    TRACE_EXTERNAL_OP_MAX_RUN_KEY,
+    TRACE_COPY_RUNS_KEY,
+    TRACE_COPY_MAX_RUN_KEY,
     TRACE_EXTERNAL_OP_ROW_LOWER_MS_KEY,
     TRACE_COPY_ROW_LOWER_MS_KEY,
     TRACE_FLAG_ROWS_KEY,
@@ -974,6 +988,32 @@ def trace_shape_unit_cost_hint(
     return "balanced_shape_unit_cost"
 
 
+def trace_shape_run_hint(
+    external_op_avg_run: float,
+    external_op_max_run: int,
+    copy_avg_run: float,
+    copy_max_run: int,
+) -> str:
+    if (
+        external_op_avg_run <= 0.0
+        and external_op_max_run <= 0
+        and copy_avg_run <= 0.0
+        and copy_max_run <= 0
+    ):
+        return "none"
+    if external_op_avg_run >= 8.0 or external_op_max_run >= 32:
+        return "external_op_runs_long"
+    if copy_avg_run >= 8.0 or copy_max_run >= 32:
+        return "copy_runs_long"
+    return "shape_runs_short"
+
+
+def avg_run_length(rows: int, runs: int) -> float:
+    if rows <= 0 or runs <= 0:
+        return 0.0
+    return rows / runs
+
+
 def ns_per_row_from_ms(duration_ms: int, row_count: int) -> float:
     if duration_ms <= 0 or row_count <= 0:
         return 0.0
@@ -1228,6 +1268,10 @@ def summarize_profile_values(
     )
     external_op_rows = values.get(TRACE_EXTERNAL_OP_ROWS_KEY, 0)
     copy_rows = values.get(TRACE_COPY_ROWS_KEY, 0)
+    external_op_runs = values.get(TRACE_EXTERNAL_OP_RUNS_KEY, 0)
+    external_op_max_run = values.get(TRACE_EXTERNAL_OP_MAX_RUN_KEY, 0)
+    copy_runs = values.get(TRACE_COPY_RUNS_KEY, 0)
+    copy_max_run = values.get(TRACE_COPY_MAX_RUN_KEY, 0)
     flag_rows = values.get(TRACE_FLAG_ROWS_KEY, 0)
     precompile_rows = values.get(TRACE_PRECOMPILE_ROWS_KEY, 0)
     indirect_memory_rows = values.get(TRACE_INDIRECT_MEMORY_ROWS_KEY, 0)
@@ -1291,6 +1335,14 @@ def summarize_profile_values(
         external_op_row_lower_ns_per_row,
         copy_row_lower_ns_per_row,
         trace_shape_row_mix,
+    )
+    external_op_avg_run = avg_run_length(external_op_rows, external_op_runs)
+    copy_avg_run = avg_run_length(copy_rows, copy_runs)
+    trace_shape_run = trace_shape_run_hint(
+        external_op_avg_run,
+        external_op_max_run,
+        copy_avg_run,
+        copy_max_run,
     )
     trace_report_detail_samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
     trace_report_detail_sample_pct = (
@@ -1798,7 +1850,10 @@ def summarize_profile_values(
         f"{trace_report_source_values_residual_ns_per_row:.3f},"
         f"{trace_report_row_validation_residual_ns_per_row:.3f},"
         f"{trace_report_visit_residual_ns_per_row:.3f},"
-        f"{trace_report_descriptor_ns_per_row:.3f}"
+        f"{trace_report_descriptor_ns_per_row:.3f},"
+        f"{external_op_runs},{external_op_avg_run:.3f},"
+        f"{external_op_max_run},{copy_runs},{copy_avg_run:.3f},"
+        f"{copy_max_run},{trace_shape_run}"
     )
 
 
