@@ -50,6 +50,12 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_cuda_direct_copy_d2h_hot_bytes",
         "timing_cuda_direct_copy_d2h_hot_count",
         "timing_cuda_direct_copy_d2h_hot_wait_ns",
+        "timing_cuda_allocator_host_register_wait_ns",
+        "timing_cuda_allocator_copy_h2d_bytes",
+        "timing_cuda_allocator_copy_h2d_wait_ns",
+        "timing_cuda_allocator_copy_h2d_hot_bytes",
+        "timing_cuda_allocator_copy_h2d_hot_count",
+        "timing_cuda_allocator_copy_h2d_hot_wait_ns",
         "timing_guest_trace_runner_ms",
         "timing_guest_trace_lowerer_ms",
         "timing_guest_trace_lower_ms",
@@ -142,6 +148,11 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "max_outlier",
         "dominant_trace_pipeline_action_hint",
         "trace_pipeline_action_consensus",
+        "cuda_host_register_wait_ms",
+        "cuda_h2d_bytes",
+        "cuda_transfer_action_hint",
+        "dominant_cuda_transfer_action_hint",
+        "cuda_transfer_action_consensus",
         "perf_lowered_report_row_self_pct",
         "perf_memmove_self_pct",
         "perf_memmove_guest_machine_pct",
@@ -452,6 +463,92 @@ fn prove_timing_root_summary_aggregates_trace_pipeline_action() {
             "aggregate,3,3,51950,52016.667,52000.000,52100,0.288,yes,no,trace_generation_and_commit_pipeline_candidate,yes"
         ),
         "aggregate row should report the dominant trace pipeline action and consensus: stdout={stdout}"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_aggregates_cuda_transfer_action() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join("../../temp/prove-timing-transfer-action");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("timing summary fixture directory should be created");
+
+    let sample = |total_ms: u64| {
+        [
+            "input_bytes=12447640".to_owned(),
+            format!("timing_total_ms={total_ms}"),
+            "timing_guest_stage_tree_commit_root_count=120".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_groups=120".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1".to_owned(),
+            "timing_cuda_allocator_host_register_wait_ns=5286762509".to_owned(),
+            "timing_cuda_allocator_copy_h2d_bytes=88120303688".to_owned(),
+            "timing_cuda_allocator_copy_h2d_wait_ns=7329175000".to_owned(),
+            "timing_cuda_direct_copy_d2h_hot_bytes=1152".to_owned(),
+            "timing_cuda_direct_copy_d2h_hot_count=41".to_owned(),
+            "timing_cuda_direct_copy_d2h_hot_wait_ns=3388755526".to_owned(),
+        ]
+        .join("\n")
+    };
+    let paths = [60139_u64, 60080, 60200]
+        .into_iter()
+        .enumerate()
+        .map(|(index, total_ms)| {
+            let path = dir.join(format!("sample-{index}.log"));
+            std::fs::write(&path, sample(total_ms)).expect("sample timing log should be written");
+            path
+        })
+        .collect::<Vec<_>>();
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .args(&paths)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert!(
+        lines.len() >= 6,
+        "multi-sample summary should include data and aggregate rows: stdout={stdout}"
+    );
+    let headers = lines[0].split(',').collect::<Vec<_>>();
+    let fields = lines[1].split(',').collect::<Vec<_>>();
+    let transfer_hint_index = headers
+        .iter()
+        .position(|header| *header == "cuda_transfer_action_hint")
+        .expect("summary should expose CUDA transfer action hint");
+    assert_eq!(
+        fields.get(transfer_hint_index),
+        Some(&"reduce_bulk_h2d_source_uploads"),
+        "large H2D upload and host registration waits should point at source upload reduction: stdout={stdout}"
+    );
+
+    let aggregate_headers = lines[4].split(',').collect::<Vec<_>>();
+    let aggregate_fields = lines[5].split(',').collect::<Vec<_>>();
+    let dominant_index = aggregate_headers
+        .iter()
+        .position(|header| *header == "dominant_cuda_transfer_action_hint")
+        .expect("aggregate summary should expose dominant CUDA transfer action hint");
+    let consensus_index = aggregate_headers
+        .iter()
+        .position(|header| *header == "cuda_transfer_action_consensus")
+        .expect("aggregate summary should expose CUDA transfer action consensus");
+    assert_eq!(
+        aggregate_fields.get(dominant_index),
+        Some(&"reduce_bulk_h2d_source_uploads"),
+        "aggregate row should report the dominant CUDA transfer action: stdout={stdout}"
+    );
+    assert_eq!(
+        aggregate_fields.get(consensus_index),
+        Some(&"yes"),
+        "aggregate row should report stable CUDA transfer action consensus: stdout={stdout}"
     );
 }
 

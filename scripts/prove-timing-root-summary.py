@@ -208,6 +208,12 @@ DIRECT_D2H_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_wait_ns"
 DIRECT_D2H_HOT_BYTES_KEY = "timing_cuda_direct_copy_d2h_hot_bytes"
 DIRECT_D2H_HOT_COUNT_KEY = "timing_cuda_direct_copy_d2h_hot_count"
 DIRECT_D2H_HOT_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_hot_wait_ns"
+CUDA_HOST_REGISTER_WAIT_NS_KEY = "timing_cuda_allocator_host_register_wait_ns"
+CUDA_COPY_H2D_BYTES_KEY = "timing_cuda_allocator_copy_h2d_bytes"
+CUDA_COPY_H2D_WAIT_NS_KEY = "timing_cuda_allocator_copy_h2d_wait_ns"
+CUDA_COPY_H2D_HOT_BYTES_KEY = "timing_cuda_allocator_copy_h2d_hot_bytes"
+CUDA_COPY_H2D_HOT_COUNT_KEY = "timing_cuda_allocator_copy_h2d_hot_count"
+CUDA_COPY_H2D_HOT_WAIT_NS_KEY = "timing_cuda_allocator_copy_h2d_hot_wait_ns"
 PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
 PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
 PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY = "perf_memmove_guest_machine_pct"
@@ -231,6 +237,9 @@ PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY = (
 PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY = "perf_effect_record_memory_read_self_pct"
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
 OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
+CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD = 8 * 1024 * 1024 * 1024
+CUDA_TRANSFER_WAIT_MS_THRESHOLD = 500.0
+CUDA_TRANSFER_HOT_COPY_COUNT_THRESHOLD = 8
 PROOF_TARGET_MS = 12_000
 PERF_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
 PERF_SECOND_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
@@ -316,6 +325,7 @@ HEADER = (
     "trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,"
     "trace_report_visit_residual_pct,"
     "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms,"
+    "cuda_host_register_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
     "external_op_row_pct,copy_row_pct,trace_shape_row_mix_hint,"
     "external_op_row_lower_ms,copy_row_lower_ms,"
     "external_op_row_lower_ns_per_row,copy_row_lower_ns_per_row,"
@@ -332,7 +342,8 @@ HEADER = (
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
     "total_median_ms,total_max_ms,sample_spread_pct,close_samples,max_outlier,"
-    "dominant_trace_pipeline_action_hint,trace_pipeline_action_consensus"
+    "dominant_trace_pipeline_action_hint,trace_pipeline_action_consensus,"
+    "dominant_cuda_transfer_action_hint,cuda_transfer_action_consensus"
 )
 CLOSE_SAMPLE_SPREAD_PCT = 5.0
 OUTLIER_RATIO_THRESHOLD = 1.5
@@ -454,6 +465,12 @@ TIMING_KEYS = {
     DIRECT_D2H_HOT_BYTES_KEY,
     DIRECT_D2H_HOT_COUNT_KEY,
     DIRECT_D2H_HOT_WAIT_NS_KEY,
+    CUDA_HOST_REGISTER_WAIT_NS_KEY,
+    CUDA_COPY_H2D_BYTES_KEY,
+    CUDA_COPY_H2D_WAIT_NS_KEY,
+    CUDA_COPY_H2D_HOT_BYTES_KEY,
+    CUDA_COPY_H2D_HOT_COUNT_KEY,
+    CUDA_COPY_H2D_HOT_WAIT_NS_KEY,
 }
 
 
@@ -717,6 +734,37 @@ def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
         values.get(PENDING_RECEIVE_WAIT_MS_KEY, 0),
         values.get(PARALLEL_LOWER_WORKERS_KEY, 0),
     )
+
+
+def cuda_transfer_action_hint_from_values(values: dict[str, int]) -> str:
+    h2d_bytes = values.get(CUDA_COPY_H2D_BYTES_KEY, 0)
+    h2d_wait_ms = values.get(CUDA_COPY_H2D_WAIT_NS_KEY, 0) / 1_000_000.0
+    host_register_wait_ms = (
+        values.get(CUDA_HOST_REGISTER_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    h2d_hot_count = values.get(CUDA_COPY_H2D_HOT_COUNT_KEY, 0)
+    h2d_hot_wait_ms = values.get(CUDA_COPY_H2D_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
+    d2h_hot_count = values.get(DIRECT_D2H_HOT_COUNT_KEY, 0)
+    d2h_hot_wait_ms = values.get(DIRECT_D2H_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
+
+    if (
+        h2d_bytes >= CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD
+        and max(h2d_wait_ms, host_register_wait_ms) >= CUDA_TRANSFER_WAIT_MS_THRESHOLD
+    ):
+        return "reduce_bulk_h2d_source_uploads"
+    if (
+        h2d_hot_count >= CUDA_TRANSFER_HOT_COPY_COUNT_THRESHOLD
+        and h2d_hot_wait_ms >= CUDA_TRANSFER_WAIT_MS_THRESHOLD
+    ):
+        return "coalesce_hot_h2d_uploads"
+    if (
+        d2h_hot_count >= CUDA_TRANSFER_HOT_COPY_COUNT_THRESHOLD
+        and d2h_hot_wait_ms >= CUDA_TRANSFER_WAIT_MS_THRESHOLD
+    ):
+        return "batch_or_keep_small_d2h_on_device"
+    if h2d_bytes >= CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD:
+        return "inspect_bulk_h2d_source_uploads"
+    return "none"
 
 
 def cpu_trace_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
@@ -1703,6 +1751,10 @@ def summarize_profile_values(
     direct_d2h_hot_bytes = values.get(DIRECT_D2H_HOT_BYTES_KEY, 0)
     direct_d2h_hot_count = values.get(DIRECT_D2H_HOT_COUNT_KEY, 0)
     direct_d2h_hot_wait_ms = values.get(DIRECT_D2H_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
+    cuda_host_register_wait_ms = (
+        values.get(CUDA_HOST_REGISTER_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_h2d_bytes = values.get(CUDA_COPY_H2D_BYTES_KEY, 0)
     opening_source_hint = opening_source_shape_hint(
         opening_query_units,
         opening_single_query_units,
@@ -1766,6 +1818,7 @@ def summarize_profile_values(
         direct_d2h_wait_ms,
     )
     trace_pipeline_hint = trace_pipeline_action_hint_from_values(values)
+    cuda_transfer_hint = cuda_transfer_action_hint_from_values(values)
     if perf_hotspots is None:
         perf_hotspots = parse_perf_self_hotspots("")
     pending_drop_pct = perf_hotspots.get(
@@ -1913,6 +1966,7 @@ def summarize_profile_values(
         f"{trace_report_visit_residual_pct:.3f},"
         f"{direct_d2h_hot_bytes},{direct_d2h_hot_count},"
         f"{direct_d2h_hot_wait_ms:.3f},"
+        f"{cuda_host_register_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
         f"{external_op_row_pct:.3f},{copy_row_pct:.3f},{trace_shape_row_mix},"
         f"{external_op_row_lower_ms},{copy_row_lower_ms},"
         f"{external_op_row_lower_ns_per_row:.3f},"
@@ -1944,6 +1998,22 @@ def median_int(values: list[int]) -> float:
     return (ordered[midpoint - 1] + ordered[midpoint]) / 2.0
 
 
+def dominant_hint_and_consensus(hints: list[str]) -> tuple[str, str]:
+    hint_counts: dict[str, int] = {}
+    for hint in hints:
+        hint_counts[hint] = hint_counts.get(hint, 0) + 1
+
+    dominant_hint = "none"
+    dominant_count = 0
+    for hint in hints:
+        count = hint_counts[hint]
+        if count > dominant_count:
+            dominant_hint = hint
+            dominant_count = count
+    consensus = "yes" if hints and dominant_count == len(hints) else "no"
+    return dominant_hint, consensus
+
+
 def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> str:
     total_count = len(parsed_inputs)
     valid_inputs = [
@@ -1957,7 +2027,7 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
     ]
     valid_total_count = len(totals)
     if not totals:
-        return f"aggregate,{total_count},0,0,0.000,0.000,0,0.000,no,no,none,no"
+        return f"aggregate,{total_count},0,0,0.000,0.000,0,0.000,no,no,none,no,none,no"
 
     total_min_ms = min(totals)
     total_mean_ms = sum(totals) / valid_total_count
@@ -1982,26 +2052,18 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
         trace_pipeline_action_hint_from_values(values)
         for _, values in valid_inputs
     ]
-    action_counts: dict[str, int] = {}
-    for hint in action_hints:
-        action_counts[hint] = action_counts.get(hint, 0) + 1
-    dominant_action_hint = "none"
-    dominant_count = 0
-    for hint in action_hints:
-        count = action_counts[hint]
-        if count > dominant_count:
-            dominant_action_hint = hint
-            dominant_count = count
-    action_consensus = (
-        "yes"
-        if action_hints and dominant_count == len(action_hints)
-        else "no"
-    )
+    dominant_action_hint, action_consensus = dominant_hint_and_consensus(action_hints)
+    transfer_hints = [
+        cuda_transfer_action_hint_from_values(values)
+        for _, values in valid_inputs
+    ]
+    dominant_transfer_hint, transfer_consensus = dominant_hint_and_consensus(transfer_hints)
     return (
         f"aggregate,{total_count},{valid_total_count},{total_min_ms},"
         f"{total_mean_ms:.3f},{total_median_ms:.3f},{total_max_ms},"
         f"{sample_spread_pct:.3f},{close_samples},{max_outlier},"
-        f"{dominant_action_hint},{action_consensus}"
+        f"{dominant_action_hint},{action_consensus},"
+        f"{dominant_transfer_hint},{transfer_consensus}"
     )
 
 
