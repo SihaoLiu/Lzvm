@@ -6389,6 +6389,34 @@ mod tests {
     }
 
     #[cfg(feature = "cuda")]
+    #[test]
+    fn segment_commit_oom_retry_ignores_plain_length_overflow() {
+        let error = ProveWitnessCommitmentError::from(WitnessTraceCommitmentError::from(
+            WitnessStageCommitmentError::LengthOverflow,
+        ));
+
+        assert_eq!(
+            next_guest_pc_segment_commit_worker_count_after_oom(8 * 1024 * 1024, None, &error),
+            None
+        );
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn segment_commit_oom_retry_accepts_cuda_oom_source() {
+        let error = ProveWitnessCommitmentError::from(WitnessTraceCommitmentError::from(
+            WitnessStageCommitmentError::from(WitnessStageLeafError::from(
+                lzvm_accel::AccelError::Cuda { code: 2 },
+            )),
+        ));
+
+        assert_eq!(
+            next_guest_pc_segment_commit_worker_count_after_oom(8 * 1024 * 1024, Some(3), &error),
+            Some(2)
+        );
+    }
+
+    #[cfg(feature = "cuda")]
     impl TestEnvVarGuard {
         fn new(name: &'static str) -> Self {
             let lock = crate::CUDA_TEST_ENV_LOCK

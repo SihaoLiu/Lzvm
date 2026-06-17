@@ -3489,6 +3489,39 @@ fn merkle_cuda_errors_remain_visible_to_segment_commit_oom_retry() {
 }
 
 #[test]
+fn guest_pc_segment_commit_oom_retry_excludes_plain_length_overflow() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let witness_execution_path = crate_root.join("src/witness_execution.rs");
+    let witness_execution_source = std::fs::read_to_string(&witness_execution_path)
+        .expect("witness execution source should read");
+
+    let retry_classifier_body = function_body(
+        &witness_execution_source,
+        "fn prove_witness_commitment_error_is_cuda_out_of_memory",
+        "#[cfg(not(feature = \"cuda\"))]",
+    );
+    assert!(
+        retry_classifier_body.contains("downcast_ref::<lzvm_accel::AccelError>()")
+            && retry_classifier_body.contains("CUDA_ERROR_OUT_OF_MEMORY"),
+        "segment commit OOM retry should classify CUDA OOM through the accelerator error source chain"
+    );
+    assert!(
+        !retry_classifier_body.contains("LengthOverflow"),
+        "plain length overflow must stay a structural error instead of being retried as CUDA OOM"
+    );
+
+    assert!(
+        witness_execution_source
+            .contains("fn segment_commit_oom_retry_ignores_plain_length_overflow"),
+        "witness execution should unit-test that plain length overflow is not retryable OOM"
+    );
+    assert!(
+        witness_execution_source.contains("fn segment_commit_oom_retry_accepts_cuda_oom_source"),
+        "witness execution should unit-test that CUDA error code 2 still triggers worker fallback"
+    );
+}
+
+#[test]
 fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");
