@@ -4,7 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
-import Lzvm.MerklePathSoundness.Core
+import Lzvm.MerklePathSoundness.NAry
 
 /-!
 Binary Merkle authentication path soundness derived from concrete path folding.
@@ -206,6 +206,17 @@ theorem merkle_path_to_nary_has_arity_two
         ih,
       ]
 
+theorem merkle_path_to_nary_length_eq
+    {Digest : Type uDigest} :
+    forall path : List (MerklePathLayer Digest),
+      (MerklePathLayersToNAry path).length = path.length := by
+  intro path
+  induction path with
+  | nil =>
+      simp [MerklePathLayersToNAry]
+  | cons layer rest ih =>
+      simp [MerklePathLayersToNAry, ih]
+
 theorem merkle_path_to_nary_index_eq
     {Digest : Type uDigest} :
     forall path : List (MerklePathLayer Digest),
@@ -293,14 +304,176 @@ theorem merkle_opening_to_nary_verifies
         MerklePathOpeningVerifies,
         NAryMerklePathOpeningVerifies,
       ] using
-        merkle_path_to_nary_verifies
+        (merkle_path_to_nary_verifies
           binaryCompress
           naryCompress
           compatible
           (root := root)
           (leaf := openingLeaf)
           (path := openingLayers)
-          verified
+          verified)
+
+theorem binary_merkle_opening_to_nary_arity_two_index_binding_from_no_collision
+    {Digest : Type uDigest}
+    (binaryCompress : Digest -> Digest -> Digest)
+    (naryCompress : List Digest -> Digest)
+    (compatible :
+      forall left right, naryCompress [left, right] = binaryCompress left right)
+    (noCollision : NAryMerkleCompressionNoCollision naryCompress) :
+    forall root opening,
+      MerklePathOpeningVerifies binaryCompress root opening ->
+        forall otherLeaf otherPath,
+          MerklePathIndex opening.layers = MerklePathIndex otherPath ->
+            opening.layers.length = otherPath.length ->
+              MerklePathVerifies binaryCompress root otherLeaf otherPath ->
+                otherLeaf = opening.leaf := by
+  intro root opening verified otherLeaf otherPath sameIndex sameDepth otherVerified
+  let naryOpening := MerklePathOpeningToNAry opening
+  have openingArity :
+      NAryMerklePathHasArity 2 naryOpening.layers := by
+    cases opening with
+    | mk _openingLeaf openingLayers =>
+        simp [
+          naryOpening,
+          MerklePathOpeningToNAry,
+          merkle_path_to_nary_has_arity_two,
+        ]
+  have otherArity :
+      NAryMerklePathHasArity 2 (MerklePathLayersToNAry otherPath) := by
+    exact merkle_path_to_nary_has_arity_two otherPath
+  have naryVerified :
+      NAryMerklePathOpeningVerifies naryCompress root naryOpening := by
+    exact
+      merkle_opening_to_nary_verifies
+        binaryCompress
+        naryCompress
+        compatible
+        (root := root)
+        (opening := opening)
+        verified
+  have otherNaryVerified :
+      NAryMerklePathVerifies
+        naryCompress
+        root
+        otherLeaf
+        (MerklePathLayersToNAry otherPath) := by
+    exact
+      merkle_path_to_nary_verifies
+        binaryCompress
+        naryCompress
+        compatible
+        (root := root)
+        (leaf := otherLeaf)
+        (path := otherPath)
+        otherVerified
+  have naryIndex :
+      NAryMerklePathIndex naryOpening.layers =
+        NAryMerklePathIndex (MerklePathLayersToNAry otherPath) := by
+    cases opening with
+    | mk _openingLeaf openingLayers =>
+        simp [
+          naryOpening,
+          MerklePathOpeningToNAry,
+          merkle_path_to_nary_index_eq,
+          sameIndex,
+        ]
+  have naryDepth :
+      naryOpening.layers.length =
+        (MerklePathLayersToNAry otherPath).length := by
+    cases opening with
+    | mk _openingLeaf openingLayers =>
+        simp [
+          naryOpening,
+          MerklePathOpeningToNAry,
+          merkle_path_to_nary_length_eq,
+          sameDepth,
+        ]
+  exact
+    nary_merkle_path_arity_two_index_binding_from_no_collision
+      noCollision
+      root
+      naryOpening.leaf
+      naryOpening.layers
+      openingArity
+      naryVerified
+      otherLeaf
+      (MerklePathLayersToNAry otherPath)
+      otherArity
+      naryIndex
+      naryDepth
+      otherNaryVerified
+
+theorem binary_merkle_opening_to_nary_arity_two_index_binding_from_assumption
+    {Digest : Type uDigest}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (binaryCompress : Digest -> Digest -> Digest)
+    (naryCompress : List Digest -> Digest)
+    (compatible :
+      forall left right, naryCompress [left, right] = binaryCompress left right)
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        naryCompress) :
+    forall root opening,
+      MerklePathOpeningVerifies binaryCompress root opening ->
+        forall otherLeaf otherPath,
+          MerklePathIndex opening.layers = MerklePathIndex otherPath ->
+            opening.layers.length = otherPath.length ->
+              MerklePathVerifies binaryCompress root otherLeaf otherPath ->
+                otherLeaf = opening.leaf := by
+  intro root opening verified otherLeaf otherPath sameIndex sameDepth otherVerified
+  exact
+    binary_merkle_opening_to_nary_arity_two_index_binding_from_no_collision
+      binaryCompress
+      naryCompress
+      compatible
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
+      root
+      opening
+      verified
+      otherLeaf
+      otherPath
+      sameIndex
+      sameDepth
+      otherVerified
+
+theorem binary_merkle_opening_to_nary_arity_two_index_binding_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (binaryCompress : Digest -> Digest -> Digest)
+    (naryCompress : List Digest -> Digest)
+    (compatible :
+      forall left right, naryCompress [left, right] = binaryCompress left right)
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        naryCompress) :
+    forall root opening,
+      MerklePathOpeningVerifies binaryCompress root opening ->
+        forall otherLeaf otherPath,
+          MerklePathIndex opening.layers = MerklePathIndex otherPath ->
+            opening.layers.length = otherPath.length ->
+              MerklePathVerifies binaryCompress root otherLeaf otherPath ->
+                otherLeaf = opening.leaf := by
+  intro root opening verified otherLeaf otherPath sameIndex sameDepth otherVerified
+  exact
+    binary_merkle_opening_to_nary_arity_two_index_binding_from_assumption
+      assumptions.crypto.hashCollisionResistance
+      binaryCompress
+      naryCompress
+      compatible
+      centralized
+      root
+      opening
+      verified
+      otherLeaf
+      otherPath
+      sameIndex
+      sameDepth
+      otherVerified
 
 theorem different_leaf_same_index_verified_paths_imply_merkle_compression_collision
     {Digest : Type uDigest}

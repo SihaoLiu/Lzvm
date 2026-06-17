@@ -138,6 +138,10 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "merkle_path_to_nary_fold_eq",
             "merkle_path_to_nary_verifies",
             "merkle_opening_to_nary_verifies",
+            "merkle_path_to_nary_length_eq",
+            "binary_merkle_opening_to_nary_arity_two_index_binding_from_no_collision",
+            "binary_merkle_opening_to_nary_arity_two_index_binding_from_assumption",
+            "binary_merkle_opening_to_nary_arity_two_index_binding_from_bundle",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -832,6 +836,77 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "MerklePathVerifies binaryCompress root leaf path",
             "NAryMerklePathVerifies naryCompress root leaf (MerklePathLayersToNAry path)",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "merkle_path_to_nary_length_eq",
+        &[
+            "forall path : List (MerklePathLayer Digest)",
+            "(MerklePathLayersToNAry path).length = path.length",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "binary_merkle_opening_to_nary_arity_two_index_binding_from_no_collision",
+        &[
+            "binaryCompress : Digest -> Digest -> Digest",
+            "naryCompress : List Digest -> Digest",
+            "forall left right, naryCompress [left, right] = binaryCompress left right",
+            "NAryMerkleCompressionNoCollision naryCompress",
+            "MerklePathOpeningVerifies binaryCompress root opening",
+            "MerklePathIndex opening.layers = MerklePathIndex otherPath",
+            "opening.layers.length = otherPath.length",
+            "MerklePathVerifies binaryCompress root otherLeaf otherPath",
+            "otherLeaf = opening.leaf",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "binary_merkle_opening_to_nary_arity_two_index_binding_from_no_collision",
+        &[
+            "MerklePathOpeningToNAry opening",
+            "merkle_path_to_nary_has_arity_two",
+            "merkle_path_to_nary_index_eq",
+            "merkle_path_to_nary_length_eq",
+            "merkle_opening_to_nary_verifies",
+            "merkle_path_to_nary_verifies",
+            "nary_merkle_path_arity_two_index_binding_from_no_collision",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "binary_merkle_opening_to_nary_arity_two_index_binding_from_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "MerklePathOpeningVerifies binaryCompress root opening",
+            "otherLeaf = opening.leaf",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "binary_merkle_opening_to_nary_arity_two_index_binding_from_assumption",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "binary_merkle_opening_to_nary_arity_two_index_binding_from_assumption",
+        &["binary_merkle_opening_to_nary_arity_two_index_binding_from_no_collision"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "binary_merkle_opening_to_nary_arity_two_index_binding_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "MerklePathOpeningVerifies binaryCompress root opening",
+            "otherLeaf = opening.leaf",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "binary_merkle_opening_to_nary_arity_two_index_binding_from_bundle",
+        &["binary_merkle_opening_to_nary_arity_two_index_binding_from_assumption"],
     );
 }
 
