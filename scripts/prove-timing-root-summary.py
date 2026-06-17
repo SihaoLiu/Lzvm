@@ -217,6 +217,9 @@ OPENING_ROW_VALUE_DEVICE_DOWNLOAD_BATCHES_KEY = (
 OPENING_ROW_VALUE_DEVICE_SINGLE_DOWNLOADS_KEY = (
     "timing_finish_witness_opening_row_values_device_single_downloads"
 )
+OPENING_STAGE_ROW_VALUE_DEVICE_SINGLE_DOWNLOAD_RE = re.compile(
+    r"^timing_finish_witness_stage_(\d+)_opening_row_values_device_single_downloads$"
+)
 LEAF_KERNEL_MS_KEY = "timing_guest_stage_leaf_kernel_work_ms"
 LEAF_COSET_CALLS_KEY = "timing_guest_stage_leaf_coset_extend_calls"
 LEAF_COSET_COLUMNS_KEY = "timing_guest_stage_leaf_coset_extend_columns"
@@ -315,7 +318,11 @@ HEADER = (
     "retained_parent_checkpoint_suffix_launches,"
     "opening_path_parent_hash_launches_per_stage,"
     "opening_row_value_device_download_batches,"
-    "opening_row_value_device_single_downloads,opening_batching_hint,"
+    "opening_row_value_device_single_downloads,"
+    "opening_row_value_device_single_stage_count,"
+    "opening_row_value_device_single_max_stage,"
+    "opening_row_value_device_cross_unit_batch_savings,"
+    "opening_batching_hint,"
     "root_count,materialization_groups,"
     "materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,"
     "root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
@@ -542,7 +549,10 @@ def parse_timing_log(text: str) -> dict[str, int]:
         if "=" not in line:
             continue
         key, value = line.split("=", 1)
-        if key not in TIMING_KEYS:
+        if (
+            key not in TIMING_KEYS
+            and OPENING_STAGE_ROW_VALUE_DEVICE_SINGLE_DOWNLOAD_RE.match(key) is None
+        ):
             continue
         try:
             values[key] = int(value.strip())
@@ -1070,6 +1080,21 @@ def opening_batching_hint(
     ):
         return "cross_segment_retained_parent_checkpoint_opening_candidate"
     return "none"
+
+
+def opening_device_single_stage_shape(values: dict[str, int]) -> tuple[int, int, int]:
+    stage_counts = [
+        count
+        for key, count in values.items()
+        if OPENING_STAGE_ROW_VALUE_DEVICE_SINGLE_DOWNLOAD_RE.match(key) is not None
+        and count > 0
+    ]
+    if not stage_counts:
+        return (0, 0, 0)
+    stage_count = len(stage_counts)
+    max_stage_count = max(stage_counts)
+    batch_savings = sum(count - 1 for count in stage_counts)
+    return (stage_count, max_stage_count, batch_savings)
 
 
 def opening_source_shape_hint(
@@ -1900,6 +1925,11 @@ def summarize_profile_values(
     opening_row_value_device_single_downloads = values.get(
         OPENING_ROW_VALUE_DEVICE_SINGLE_DOWNLOADS_KEY, 0
     )
+    (
+        opening_row_value_device_single_stage_count,
+        opening_row_value_device_single_max_stage,
+        opening_row_value_device_cross_unit_batch_savings,
+    ) = opening_device_single_stage_shape(values)
     root_count = values[ROOT_COUNT_KEY]
     groups = values[ROOT_GROUPS_KEY]
     max_group_size = values[ROOT_MAX_GROUP_KEY]
@@ -2114,6 +2144,9 @@ def summarize_profile_values(
         f"{opening_path_parent_hash_launches_per_stage},"
         f"{opening_row_value_device_download_batches},"
         f"{opening_row_value_device_single_downloads},"
+        f"{opening_row_value_device_single_stage_count},"
+        f"{opening_row_value_device_single_max_stage},"
+        f"{opening_row_value_device_cross_unit_batch_savings},"
         f"{opening_hint},"
         f"{root_count},{groups},{max_group_size},"
         f"{roots_per_group:.3f},{needs_cross_segment_root_pipeline},{policy_hint},"
