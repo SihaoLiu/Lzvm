@@ -203,6 +203,12 @@ PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY = "perf_pending_segment_drop_self_pct"
 PERF_SHA256_SELF_PCT_KEY = "perf_sha256_self_pct"
 PERF_SHA256_GUEST_MACHINE_PCT_KEY = "perf_sha256_guest_machine_pct"
 PERF_SHA256_TRACE_SLICE_PCT_KEY = "perf_sha256_trace_slice_pct"
+PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY = "perf_prepare_instruction_self_pct"
+PERF_TRACE_SEGMENT_BUILD_SELF_PCT_KEY = "perf_trace_segment_build_self_pct"
+PERF_ADVANCE_GUEST_MACHINE_SELF_PCT_KEY = "perf_advance_guest_machine_self_pct"
+PERF_GUEST_MEMORY_WRITE_SELF_PCT_KEY = "perf_guest_memory_write_self_pct"
+PERF_BIGUINT_MODPOW_SELF_PCT_KEY = "perf_biguint_modpow_self_pct"
+PERF_GUEST_MEMORY_READ_SELF_PCT_KEY = "perf_guest_memory_read_self_pct"
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
 OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
 PROOF_TARGET_MS = 12_000
@@ -253,6 +259,10 @@ HEADER = (
     "perf_memmove_trace_slice_pct,perf_memmove_source_hint,"
     "perf_pending_segment_drop_self_pct,perf_sha256_self_pct,"
     "perf_sha256_source_hint,cpu_trace_hotspot_hint,"
+    "perf_prepare_instruction_self_pct,perf_trace_segment_build_self_pct,"
+    "perf_advance_guest_machine_self_pct,perf_guest_memory_write_self_pct,"
+    "perf_biguint_modpow_self_pct,perf_guest_memory_read_self_pct,"
+    "cpu_runner_hotspot_hint,"
     "single_row_reports,multi_row_reports,pending_dma_reports,amo_reports,"
     "store_conditional_reports,external_op_rows,copy_rows,flag_rows,"
     "precompile_rows,indirect_memory_rows,indirect_memory_row_pct,"
@@ -415,6 +425,12 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
         PERF_SHA256_SELF_PCT_KEY: 0.0,
         PERF_SHA256_GUEST_MACHINE_PCT_KEY: 0.0,
         PERF_SHA256_TRACE_SLICE_PCT_KEY: 0.0,
+        PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY: 0.0,
+        PERF_TRACE_SEGMENT_BUILD_SELF_PCT_KEY: 0.0,
+        PERF_ADVANCE_GUEST_MACHINE_SELF_PCT_KEY: 0.0,
+        PERF_GUEST_MEMORY_WRITE_SELF_PCT_KEY: 0.0,
+        PERF_BIGUINT_MODPOW_SELF_PCT_KEY: 0.0,
+        PERF_GUEST_MEMORY_READ_SELF_PCT_KEY: 0.0,
     }
     in_memmove_callchain = False
     in_sha256_callchain = False
@@ -456,6 +472,18 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
                 and "drop_in_place" in symbol_text
             ):
                 key = PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY
+            elif "prepare_current_guest_instruction" in symbol_text:
+                key = PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY
+            elif "build_layout_zisk_main_trace_segment_for_segment_output" in symbol_text:
+                key = PERF_TRACE_SEGMENT_BUILD_SELF_PCT_KEY
+            elif "advance_guest_machine_prepared_inner" in symbol_text:
+                key = PERF_ADVANCE_GUEST_MACHINE_SELF_PCT_KEY
+            elif "GuestMachineMemorySegment::write_range" in symbol_text:
+                key = PERF_GUEST_MEMORY_WRITE_SELF_PCT_KEY
+            elif "monty_modpow" in symbol_text:
+                key = PERF_BIGUINT_MODPOW_SELF_PCT_KEY
+            elif "GuestMachineMemory::read_range_into" in symbol_text:
+                key = PERF_GUEST_MEMORY_READ_SELF_PCT_KEY
             else:
                 continue
             hotspots[key] = max(hotspots[key], pct)
@@ -568,6 +596,26 @@ def cpu_trace_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
         return "guest_state_copies"
     if pending_drop_pct >= 5.0:
         return "pending_segment_lifetime"
+    return "none"
+
+
+def cpu_runner_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
+    prepare_pct = perf_hotspots.get(PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY, 0.0)
+    advance_pct = perf_hotspots.get(PERF_ADVANCE_GUEST_MACHINE_SELF_PCT_KEY, 0.0)
+    memory_pct = perf_hotspots.get(
+        PERF_GUEST_MEMORY_WRITE_SELF_PCT_KEY, 0.0
+    ) + perf_hotspots.get(PERF_GUEST_MEMORY_READ_SELF_PCT_KEY, 0.0)
+    modpow_pct = perf_hotspots.get(PERF_BIGUINT_MODPOW_SELF_PCT_KEY, 0.0)
+    if prepare_pct >= 4.0 and advance_pct >= 4.0:
+        return "instruction_prepare_and_advance"
+    if prepare_pct >= 4.0:
+        return "instruction_prepare"
+    if advance_pct >= 4.0:
+        return "guest_machine_advance"
+    if memory_pct >= 4.0:
+        return "guest_memory_access"
+    if modpow_pct >= 2.0:
+        return "biguint_modpow"
     return "none"
 
 
@@ -1298,6 +1346,23 @@ def summarize_profile_values(
     sha256_pct = perf_hotspots.get(PERF_SHA256_SELF_PCT_KEY, 0.0)
     sha256_hint = sha256_source_hint(perf_hotspots)
     cpu_hint = cpu_trace_hotspot_hint(perf_hotspots)
+    prepare_instruction_pct = perf_hotspots.get(
+        PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY, 0.0
+    )
+    trace_segment_build_pct = perf_hotspots.get(
+        PERF_TRACE_SEGMENT_BUILD_SELF_PCT_KEY, 0.0
+    )
+    advance_guest_machine_pct = perf_hotspots.get(
+        PERF_ADVANCE_GUEST_MACHINE_SELF_PCT_KEY, 0.0
+    )
+    guest_memory_write_pct = perf_hotspots.get(
+        PERF_GUEST_MEMORY_WRITE_SELF_PCT_KEY, 0.0
+    )
+    biguint_modpow_pct = perf_hotspots.get(PERF_BIGUINT_MODPOW_SELF_PCT_KEY, 0.0)
+    guest_memory_read_pct = perf_hotspots.get(
+        PERF_GUEST_MEMORY_READ_SELF_PCT_KEY, 0.0
+    )
+    runner_hint = cpu_runner_hotspot_hint(perf_hotspots)
     return (
         f"{label},{input_bytes},{total_ms},"
         f"{constant_material_elapsed_ms},{constant_material_join_wait_ms},"
@@ -1349,6 +1414,9 @@ def summarize_profile_values(
         f"{lowered_report_row_pct:.3f},{memmove_pct:.3f},{memmove_guest_machine_pct:.3f},"
         f"{memmove_trace_slice_pct:.3f},{memmove_hint},"
         f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint},"
+        f"{prepare_instruction_pct:.3f},{trace_segment_build_pct:.3f},"
+        f"{advance_guest_machine_pct:.3f},{guest_memory_write_pct:.3f},"
+        f"{biguint_modpow_pct:.3f},{guest_memory_read_pct:.3f},{runner_hint},"
         f"{single_row_reports},{multi_row_reports},{pending_dma_reports},"
         f"{amo_reports},{store_conditional_reports},{external_op_rows},"
         f"{copy_rows},{flag_rows},{precompile_rows},"
