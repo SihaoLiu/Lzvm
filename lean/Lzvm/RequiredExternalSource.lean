@@ -294,4 +294,75 @@ theorem runtime_guarded_external_source_required_hash_concrete_opening_sound
           (And.intro concretePcsFri.right.right
             (And.intro coreContract soundWitness))))
 
+set_option linter.style.longLine false in
+theorem runtime_guarded_external_source_required_audited_hash_concrete_opening_sound
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system)
+    (openingValidation : RuntimeOpeningValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeGuardedExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeOpeningCheckedAcceptance
+          system
+          openingValidation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          RuntimeArtifactEvidence
+              system
+              runtimeValidation
+              artifact
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence system sourceValidation publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked openingAccepted required
+  exact
+    runtime_guarded_external_source_required_hash_concrete_opening_sound
+      assumptions
+      assumptions.crypto.hashCollisionResistance
+      runtimeValidation
+      sourceValidation
+      openingValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      openingAccepted
+      required
+
 end Lzvm
