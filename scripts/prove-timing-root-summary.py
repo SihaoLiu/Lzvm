@@ -331,7 +331,8 @@ HEADER = (
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
-    "total_median_ms,total_max_ms,sample_spread_pct,close_samples,max_outlier"
+    "total_median_ms,total_max_ms,sample_spread_pct,close_samples,max_outlier,"
+    "dominant_trace_pipeline_action_hint,trace_pipeline_action_consensus"
 )
 CLOSE_SAMPLE_SPREAD_PCT = 5.0
 OUTLIER_RATIO_THRESHOLD = 1.5
@@ -702,6 +703,20 @@ def trace_pipeline_action_hint(
     if queue_wait_is_long:
         return "trace_queue_backpressure_candidate"
     return "balanced_pipeline"
+
+
+def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
+    return trace_pipeline_action_hint(
+        values.get(TOTAL_MS_KEY, 0),
+        values.get(RUNNER_MS_KEY, 0),
+        values.get(LOWERER_MS_KEY, 0),
+        values.get(TRACE_LOWER_MS_KEY, 0),
+        values.get(STREAM_ELAPSED_MS_KEY, 0),
+        values.get(SEGMENT_COMMIT_MS_KEY, 0),
+        values.get(SEGMENT_RECEIVE_WAIT_MS_KEY, 0),
+        values.get(PENDING_RECEIVE_WAIT_MS_KEY, 0),
+        values.get(PARALLEL_LOWER_WORKERS_KEY, 0),
+    )
 
 
 def cpu_trace_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
@@ -1750,17 +1765,7 @@ def summarize_profile_values(
         leaf_kernel_ms,
         direct_d2h_wait_ms,
     )
-    trace_pipeline_hint = trace_pipeline_action_hint(
-        total_ms,
-        runner_ms,
-        lowerer_ms,
-        trace_lower_ms,
-        stream_elapsed_ms,
-        segment_commit_ms,
-        segment_receive_wait_ms,
-        pending_receive_wait_ms,
-        parallel_lower_workers,
-    )
+    trace_pipeline_hint = trace_pipeline_action_hint_from_values(values)
     if perf_hotspots is None:
         perf_hotspots = parse_perf_self_hotspots("")
     pending_drop_pct = perf_hotspots.get(
@@ -1941,14 +1946,18 @@ def median_int(values: list[int]) -> float:
 
 def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> str:
     total_count = len(parsed_inputs)
+    valid_inputs = [
+        (label, values)
+        for label, values in parsed_inputs
+        if values.get(TOTAL_MS_KEY, 0) > 0
+    ]
     totals = [
         values[TOTAL_MS_KEY]
-        for _, values in parsed_inputs
-        if values.get(TOTAL_MS_KEY, 0) > 0
+        for _, values in valid_inputs
     ]
     valid_total_count = len(totals)
     if not totals:
-        return f"aggregate,{total_count},0,0,0.000,0.000,0,0.000,no,no"
+        return f"aggregate,{total_count},0,0,0.000,0.000,0,0.000,no,no,none,no"
 
     total_min_ms = min(totals)
     total_mean_ms = sum(totals) / valid_total_count
@@ -1969,10 +1978,30 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
         if valid_total_count >= 3 and total_max_ms > total_median_ms * OUTLIER_RATIO_THRESHOLD
         else "no"
     )
+    action_hints = [
+        trace_pipeline_action_hint_from_values(values)
+        for _, values in valid_inputs
+    ]
+    action_counts: dict[str, int] = {}
+    for hint in action_hints:
+        action_counts[hint] = action_counts.get(hint, 0) + 1
+    dominant_action_hint = "none"
+    dominant_count = 0
+    for hint in action_hints:
+        count = action_counts[hint]
+        if count > dominant_count:
+            dominant_action_hint = hint
+            dominant_count = count
+    action_consensus = (
+        "yes"
+        if action_hints and dominant_count == len(action_hints)
+        else "no"
+    )
     return (
         f"aggregate,{total_count},{valid_total_count},{total_min_ms},"
         f"{total_mean_ms:.3f},{total_median_ms:.3f},{total_max_ms},"
-        f"{sample_spread_pct:.3f},{close_samples},{max_outlier}"
+        f"{sample_spread_pct:.3f},{close_samples},{max_outlier},"
+        f"{dominant_action_hint},{action_consensus}"
     )
 
 
