@@ -25,6 +25,10 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         "assumption audit should connect centralized hash assumptions to concrete Merkle path collision resistance"
     );
     assert!(
+        audit_source.contains("import Lzvm.MerklePathSoundness.NAry"),
+        "assumption audit should also connect centralized hash assumptions to concrete N-ary Merkle path collision resistance"
+    );
+    assert!(
         runtime_source.contains("assumption_bundle_carries_required_crypto_evidence"),
         "runtime soundness should use the audited assumption bundle projection"
     );
@@ -36,8 +40,12 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "required_crypto_assumptions_merkle_hash_collision_resistance",
             "required_crypto_assumptions_merkle_compression_no_collision",
             "required_crypto_assumptions_merkle_compression_collision_free",
+            "required_crypto_assumptions_nary_merkle_compression_no_collision",
+            "required_crypto_assumptions_nary_merkle_compression_collision_free",
             "assumption_bundle_merkle_compression_no_collision",
             "assumption_bundle_merkle_compression_collision_free",
+            "assumption_bundle_nary_merkle_compression_no_collision",
+            "assumption_bundle_nary_merkle_compression_collision_free",
             "required_crypto_assumptions_transcript_hash_collision_resistance",
             "required_crypto_assumptions_random_oracle_model",
             "required_crypto_assumptions_fiat_shamir_transcript_binding",
@@ -75,6 +83,36 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         &[
             "assumption_bundle_carries_required_crypto_evidence",
             "required_crypto_assumptions_merkle_compression_collision_free",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &audit_source,
+        "required_crypto_assumptions_nary_merkle_compression_no_collision",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerkleCompressionNoCollision compress",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "required_crypto_assumptions_nary_merkle_compression_no_collision",
+        &["required_crypto_assumptions_merkle_hash_collision_resistance"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "required_crypto_assumptions_nary_merkle_compression_collision_free",
+        &[
+            "required_crypto_assumptions_nary_merkle_compression_no_collision",
+            "nary_merkle_compression_collision_free_of_no_collision",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "assumption_bundle_nary_merkle_compression_collision_free",
+        &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "required_crypto_assumptions_nary_merkle_compression_collision_free",
         ],
     );
     for theorem_name in [
