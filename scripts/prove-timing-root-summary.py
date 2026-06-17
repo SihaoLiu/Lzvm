@@ -307,6 +307,7 @@ HEADER = (
     "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms,"
     "external_op_row_pct,copy_row_pct,trace_shape_row_mix_hint,"
     "external_op_row_lower_ms,copy_row_lower_ms,"
+    "external_op_row_lower_ns_per_row,copy_row_lower_ns_per_row,"
     "external_op_row_lower_pct,copy_row_lower_pct,trace_shape_duration_hint"
 )
 AGGREGATE_HEADER = (
@@ -942,6 +943,12 @@ def trace_shape_duration_hint(
     return "none"
 
 
+def ns_per_row_from_ms(duration_ms: int, row_count: int) -> float:
+    if duration_ms <= 0 or row_count <= 0:
+        return 0.0
+    return duration_ms * 1_000_000.0 / row_count
+
+
 DETAIL_SAMPLE_HOTSPOT_KEYS = [
     ("row_validation", TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY),
     ("lowering", TRACE_REPORT_LOWERING_SAMPLED_NS_KEY),
@@ -1229,6 +1236,14 @@ def summarize_profile_values(
     )
     external_op_row_lower_ms = values.get(TRACE_EXTERNAL_OP_ROW_LOWER_MS_KEY, 0)
     copy_row_lower_ms = values.get(TRACE_COPY_ROW_LOWER_MS_KEY, 0)
+    external_op_row_lower_ns_per_row = ns_per_row_from_ms(
+        external_op_row_lower_ms,
+        external_op_rows,
+    )
+    copy_row_lower_ns_per_row = ns_per_row_from_ms(
+        copy_row_lower_ms,
+        copy_rows,
+    )
     external_op_row_lower_pct = (
         external_op_row_lower_ms * 100.0 / trace_lower_ms if trace_lower_ms else 0.0
     )
@@ -1716,6 +1731,8 @@ def summarize_profile_values(
         f"{direct_d2h_hot_wait_ms:.3f},"
         f"{external_op_row_pct:.3f},{copy_row_pct:.3f},{trace_shape_row_mix},"
         f"{external_op_row_lower_ms},{copy_row_lower_ms},"
+        f"{external_op_row_lower_ns_per_row:.3f},"
+        f"{copy_row_lower_ns_per_row:.3f},"
         f"{external_op_row_lower_pct:.3f},{copy_row_lower_pct:.3f},"
         f"{trace_shape_duration}"
     )

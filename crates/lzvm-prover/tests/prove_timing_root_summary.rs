@@ -488,6 +488,9 @@ fn prove_timing_root_summary_reports_trace_shape_duration_hint() {
     let input = [
         "timing_total_ms=72000",
         "timing_guest_trace_lower_ms=1000",
+        "timing_guest_trace_report_rows=1000",
+        "timing_guest_trace_external_op_rows=300",
+        "timing_guest_trace_copy_rows=400",
         "timing_guest_trace_external_op_row_lower_ms=474",
         "timing_guest_trace_copy_row_lower_ms=508",
         "timing_guest_stage_tree_commit_root_count=120",
@@ -522,13 +525,15 @@ fn prove_timing_root_summary_reports_trace_shape_duration_hint() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "external_op_row_lower_ms,copy_row_lower_ms,external_op_row_lower_pct,copy_row_lower_pct,trace_shape_duration_hint"
+            "external_op_row_lower_ms,copy_row_lower_ms,external_op_row_lower_ns_per_row,copy_row_lower_ns_per_row,external_op_row_lower_pct,copy_row_lower_pct,trace_shape_duration_hint"
         ),
-        "prove timing root summary should expose external-op and copy duration columns: stdout={stdout}"
+        "prove timing root summary should expose external-op and copy duration and per-row columns: stdout={stdout}"
     );
     assert!(
-        stdout.contains(",474,508,47.400,50.800,copy_and_external_op_duration_dominate"),
-        "prove timing root summary should classify external-op and copy duration dominance: stdout={stdout}"
+        stdout.contains(
+            ",474,508,1580000.000,1270000.000,47.400,50.800,copy_and_external_op_duration_dominate"
+        ),
+        "prove timing root summary should classify external-op and copy duration dominance and per-row cost: stdout={stdout}"
     );
 }
 
