@@ -1339,6 +1339,76 @@ fn zisk_main_device_descriptor_counts_unpaired_high_words() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn zisk_main_device_descriptor_uses_sparse_high_words() {
+    let mut descriptors = ZiskMainDeviceTraceDescriptors::new_with_descriptor_words_and_stats(
+        3,
+        39,
+        0x2000,
+        ZISK_MAIN_DEVICE_TRACE_SPARSE_DESCRIPTOR_WORDS,
+        true,
+    );
+    let low_values = zisk_main_descriptor_trace_values(0x1000, 5, 6, 21, 22, 23, 24, 7);
+    append_main_device_trace_descriptor(&mut descriptors, &low_values)
+        .expect("low sparse descriptor row should append");
+
+    let mut high_values =
+        zisk_main_descriptor_trace_values(0x1004, 5, 6, 21, 22, 23, 0x1_0000_0001, 0x2_0000_0002);
+    high_values.a = 0x3_0000_0003;
+    high_values.instruction.a = ZiskMainSource::Immediate(0x4_0000_0004);
+    high_values.instruction.store = ZiskMainStore::Memory(0x5_0000_0005);
+    append_main_device_trace_descriptor(&mut descriptors, &high_values)
+        .expect("high sparse descriptor row should append");
+
+    assert_eq!(descriptors.descriptor_word_count(), 9);
+    assert_eq!(descriptors.words().len(), 18);
+    assert_eq!(descriptors.sparse_high_words().len(), 3);
+    assert_eq!(descriptors.words()[7] >> 32, 0);
+    assert_eq!(descriptors.words()[9 + 7] >> 32, 0x6d);
+    assert_eq!(
+        descriptors.sparse_high_words(),
+        &[0x3 | (0x2_u64 << 32), 0x4 | (0x5_u64 << 32), 0x1,]
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn zisk_main_device_sparse_descriptor_falls_back_to_wide_words_when_values_do_not_fit() {
+    let mut descriptors = ZiskMainDeviceTraceDescriptors::new_with_descriptor_words_and_stats(
+        2,
+        39,
+        0x2000,
+        ZISK_MAIN_DEVICE_TRACE_SPARSE_DESCRIPTOR_WORDS,
+        true,
+    );
+    let mut first =
+        zisk_main_descriptor_trace_values(0x1000, 5, 6, 21, 22, 23, 0x1_0000_0001, 0x2_0000_0002);
+    first.a = 0x3_0000_0003;
+    first.instruction.a = ZiskMainSource::Immediate(0x4_0000_0004);
+    first.instruction.store = ZiskMainStore::Memory(0x5_0000_0005);
+    append_main_device_trace_descriptor(&mut descriptors, &first)
+        .expect("first sparse descriptor row should append");
+
+    let second =
+        zisk_main_descriptor_trace_values(0x1004, i64::from(i32::MAX) + 1, 6, 21, 22, 23, 24, 7);
+    append_main_device_trace_descriptor(&mut descriptors, &second)
+        .expect("wide fallback descriptor row should append");
+
+    assert_eq!(descriptors.descriptor_word_count(), 14);
+    assert!(descriptors.sparse_high_words().is_empty());
+    assert_eq!(descriptors.words().len(), 28);
+    assert_eq!(descriptors.words()[0], 0x3_0000_0003);
+    assert_eq!(descriptors.words()[2], 0x2_0000_0002);
+    assert_eq!(descriptors.words()[4], 0x4_0000_0004);
+    assert_eq!(descriptors.words()[6], 0x5_0000_0005);
+    assert_eq!(descriptors.words()[13], 0x1_0000_0001);
+    assert_eq!(
+        descriptors.words()[14 + 8],
+        (i64::from(i32::MAX) + 1) as u64
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn main_descriptor_width_tracks_segment_mem_step_capacity() {
     assert_eq!(
         main_segment_descriptor_words(120_000_000, 0),
