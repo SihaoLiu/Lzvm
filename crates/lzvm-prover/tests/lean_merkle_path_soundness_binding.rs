@@ -122,6 +122,12 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "nary_merkle_path_arity_four_index_binding_from_no_collision",
             "nary_merkle_path_arity_two_index_binding_from_bundle",
             "nary_merkle_path_arity_four_index_binding_from_bundle",
+            "verified_concrete_nary_merkle_path_arity_two_same_index_leaf_eq_from_no_collision",
+            "verified_concrete_nary_merkle_path_arity_two_same_index_leaf_eq_from_assumption",
+            "verified_concrete_nary_merkle_path_arity_two_same_index_leaf_eq_from_bundle",
+            "verified_concrete_nary_merkle_path_arity_four_same_index_leaf_eq_from_no_collision",
+            "verified_concrete_nary_merkle_path_arity_four_same_index_leaf_eq_from_assumption",
+            "verified_concrete_nary_merkle_path_arity_four_same_index_leaf_eq_from_bundle",
             "nary_merkle_opening_arity_two_index_binding_from_assumption",
             "nary_merkle_opening_arity_four_index_binding_from_assumption",
             "nary_merkle_opening_arity_two_index_binding_from_bundle",
@@ -974,6 +980,7 @@ fn read_merkle_path_soundness_sources(crate_root: &Path) -> String {
         "../../lean/Lzvm/MerklePathSoundness.lean",
         "../../lean/Lzvm/MerklePathSoundness/Core.lean",
         "../../lean/Lzvm/MerklePathSoundness/NAry.lean",
+        "../../lean/Lzvm/MerklePathSoundness/NAryLeafEq.lean",
         "../../lean/Lzvm/MerklePathSoundness/Binary.lean",
     ]
     .into_iter()
