@@ -1078,7 +1078,7 @@ def opening_batching_hint(
         and single_query_units >= retained_parent_checkpoint_openings
         and retained_parent_checkpoint_path_launches > retained_parent_checkpoint_openings
     ):
-        return "cross_segment_retained_parent_checkpoint_opening_candidate"
+        return "cross_stage_retained_parent_checkpoint_prefix_suffix_gather_candidate"
     return "none"
 
 

@@ -1415,6 +1415,7 @@ fn prove_timing_root_summary_reports_opening_parent_hash_work_scope() {
         "timing_guest_stage_tree_commit_root_count=120",
         "timing_guest_stage_tree_commit_root_materialization_groups=120",
         "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_cuda_direct_copy_d2h_wait_ns=3389670000",
         "timing_finish_witness_opening_query_count=120",
         "timing_finish_witness_opening_query_unit_count=120",
         "timing_finish_witness_opening_single_query_unit_count=120",
@@ -1470,6 +1471,12 @@ fn prove_timing_root_summary_reports_opening_parent_hash_work_scope() {
             ",79,79,yes,165675008,21206401024,79,13808034,1767428352,790,5,43,0,"
         ),
         "prove timing root summary should report retained parent checkpoint work scope: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(
+            ",5,43,0,0,0,0,cross_stage_retained_parent_checkpoint_prefix_suffix_gather_candidate,"
+        ),
+        "prove timing root summary should classify retained parent checkpoint single-query prefix/suffix D2H as a cross-stage gather target: stdout={stdout}"
     );
 }
 
