@@ -747,6 +747,7 @@ theorem runtime_constant_opening_arity_four_same_index_leaf_binding_from_bundle
       sameIndex
       sameDepth
 
+set_option linter.style.longLine false in
 theorem runtime_constant_opening_arity_two_root_commits_to_leaf_at_index_from_bundle
     {Digest : Type uDigest}
     {system : VerifierModel}
@@ -759,20 +760,23 @@ theorem runtime_constant_opening_arity_two_root_commits_to_leaf_at_index_from_bu
     forall root opening,
       NAryMerklePathHasArity 2 opening.layers ->
         NAryMerklePathOpeningVerifies compress root opening ->
-          NAryMerklePathRootCommitsToLeafAtIndex
+          NAryMerklePathRootCommitsToLeafAtArityIndex
             compress
+            2
             root
             opening.leaf
             opening.layers := by
-  intro root opening _openingArity verified
+  intro root opening openingArity verified
   exact
-    verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle
+    verified_concrete_nary_merkle_opening_arity_two_implies_root_commits_to_leaf_at_index_from_bundle
       assumptions
       centralized
       root
       opening
+      openingArity
       verified
 
+set_option linter.style.longLine false in
 theorem runtime_constant_opening_arity_four_root_commits_to_leaf_at_index_from_bundle
     {Digest : Type uDigest}
     {system : VerifierModel}
@@ -785,18 +789,20 @@ theorem runtime_constant_opening_arity_four_root_commits_to_leaf_at_index_from_b
     forall root opening,
       NAryMerklePathHasArity 4 opening.layers ->
         NAryMerklePathOpeningVerifies compress root opening ->
-          NAryMerklePathRootCommitsToLeafAtIndex
+          NAryMerklePathRootCommitsToLeafAtArityIndex
             compress
+            4
             root
             opening.leaf
             opening.layers := by
-  intro root opening _openingArity verified
+  intro root opening openingArity verified
   exact
-    verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle
+    verified_concrete_nary_merkle_opening_arity_four_implies_root_commits_to_leaf_at_index_from_bundle
       assumptions
       centralized
       root
       opening
+      openingArity
       verified
 
 theorem runtime_witness_opening_arity_two_same_index_leaf_binding_from_bundle
@@ -865,6 +871,7 @@ theorem runtime_witness_opening_arity_four_same_index_leaf_binding_from_bundle
       sameIndex
       sameDepth
 
+set_option linter.style.longLine false in
 theorem runtime_witness_opening_arity_two_root_commits_to_leaf_at_index_from_bundle
     {Digest : Type uDigest}
     {system : VerifierModel}
@@ -877,20 +884,23 @@ theorem runtime_witness_opening_arity_two_root_commits_to_leaf_at_index_from_bun
     forall root opening,
       NAryMerklePathHasArity 2 opening.layers ->
         NAryMerklePathOpeningVerifies compress root opening ->
-          NAryMerklePathRootCommitsToLeafAtIndex
+          NAryMerklePathRootCommitsToLeafAtArityIndex
             compress
+            2
             root
             opening.leaf
             opening.layers := by
-  intro root opening _openingArity verified
+  intro root opening openingArity verified
   exact
-    verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle
+    verified_concrete_nary_merkle_opening_arity_two_implies_root_commits_to_leaf_at_index_from_bundle
       assumptions
       centralized
       root
       opening
+      openingArity
       verified
 
+set_option linter.style.longLine false in
 theorem runtime_witness_opening_arity_four_root_commits_to_leaf_at_index_from_bundle
     {Digest : Type uDigest}
     {system : VerifierModel}
@@ -903,18 +913,20 @@ theorem runtime_witness_opening_arity_four_root_commits_to_leaf_at_index_from_bu
     forall root opening,
       NAryMerklePathHasArity 4 opening.layers ->
         NAryMerklePathOpeningVerifies compress root opening ->
-          NAryMerklePathRootCommitsToLeafAtIndex
+          NAryMerklePathRootCommitsToLeafAtArityIndex
             compress
+            4
             root
             opening.leaf
             opening.layers := by
-  intro root opening _openingArity verified
+  intro root opening openingArity verified
   exact
-    verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle
+    verified_concrete_nary_merkle_opening_arity_four_implies_root_commits_to_leaf_at_index_from_bundle
       assumptions
       centralized
       root
       opening
+      openingArity
       verified
 
 theorem runtime_opening_evidence_implies_external_source_requirement

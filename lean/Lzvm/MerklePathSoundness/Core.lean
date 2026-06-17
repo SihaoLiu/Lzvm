@@ -318,6 +318,21 @@ def NAryMerklePathRootCommitsToLeafAtIndex
     leaf
     path
 
+def NAryMerklePathRootCommitsToLeafAtArityIndex
+    {Digest : Type uDigest}
+    (compress : List Digest -> Digest)
+    (arity : Nat)
+    (root : Digest)
+    (leaf : Digest)
+    (path : List (NAryMerklePathLayer Digest)) : Prop :=
+  NAryMerklePathHasArity arity path
+    /\ forall otherLeaf otherPath,
+      NAryMerklePathHasArity arity otherPath ->
+        NAryMerklePathIndex path = NAryMerklePathIndex otherPath ->
+          path.length = otherPath.length ->
+            NAryMerklePathVerifies compress root otherLeaf otherPath ->
+              otherLeaf = leaf
+
 def CentralizedNAryMerkleCompressionCollisionResistance
     {Digest : Type uDigest}
     (hashAssumptions : HashCollisionResistanceAssumption)

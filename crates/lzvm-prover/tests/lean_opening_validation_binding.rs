@@ -375,7 +375,8 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "CentralizedNAryMerkleCompressionCollisionResistance",
             "NAryMerklePathHasArity 2 opening.layers",
             "NAryMerklePathOpeningVerifies compress root opening",
-            "NAryMerklePathRootCommitsToLeafAtIndex",
+            "NAryMerklePathRootCommitsToLeafAtArityIndex",
+            "2",
             "opening.leaf",
             "opening.layers",
         ],
@@ -383,7 +384,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_constant_opening_arity_two_root_commits_to_leaf_at_index_from_bundle",
-        &["verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle"],
+        &["verified_concrete_nary_merkle_opening_arity_two_implies_root_commits_to_leaf_at_index_from_bundle"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -393,7 +394,8 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "CentralizedNAryMerkleCompressionCollisionResistance",
             "NAryMerklePathHasArity 4 opening.layers",
             "NAryMerklePathOpeningVerifies compress root opening",
-            "NAryMerklePathRootCommitsToLeafAtIndex",
+            "NAryMerklePathRootCommitsToLeafAtArityIndex",
+            "4",
             "opening.leaf",
             "opening.layers",
         ],
@@ -401,7 +403,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_constant_opening_arity_four_root_commits_to_leaf_at_index_from_bundle",
-        &["verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle"],
+        &["verified_concrete_nary_merkle_opening_arity_four_implies_root_commits_to_leaf_at_index_from_bundle"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -447,7 +449,8 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "CentralizedNAryMerkleCompressionCollisionResistance",
             "NAryMerklePathHasArity 2 opening.layers",
             "NAryMerklePathOpeningVerifies compress root opening",
-            "NAryMerklePathRootCommitsToLeafAtIndex",
+            "NAryMerklePathRootCommitsToLeafAtArityIndex",
+            "2",
             "opening.leaf",
             "opening.layers",
         ],
@@ -455,7 +458,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_witness_opening_arity_two_root_commits_to_leaf_at_index_from_bundle",
-        &["verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle"],
+        &["verified_concrete_nary_merkle_opening_arity_two_implies_root_commits_to_leaf_at_index_from_bundle"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -465,7 +468,8 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "CentralizedNAryMerkleCompressionCollisionResistance",
             "NAryMerklePathHasArity 4 opening.layers",
             "NAryMerklePathOpeningVerifies compress root opening",
-            "NAryMerklePathRootCommitsToLeafAtIndex",
+            "NAryMerklePathRootCommitsToLeafAtArityIndex",
+            "4",
             "opening.leaf",
             "opening.layers",
         ],
@@ -473,7 +477,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_witness_opening_arity_four_root_commits_to_leaf_at_index_from_bundle",
-        &["verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle"],
+        &["verified_concrete_nary_merkle_opening_arity_four_implies_root_commits_to_leaf_at_index_from_bundle"],
     );
     assert!(
         theorem_prefix(

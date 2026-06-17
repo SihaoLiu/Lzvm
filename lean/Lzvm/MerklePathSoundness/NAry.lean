@@ -1269,6 +1269,188 @@ theorem verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_po
       opening
       verified
 
+set_option linter.style.longLine false in
+theorem
+  verified_concrete_nary_merkle_path_arity_two_implies_root_commits_to_leaf_at_index_from_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root leaf path,
+      NAryMerklePathHasArity 2 path ->
+        NAryMerklePathVerifies compress root leaf path ->
+          NAryMerklePathRootCommitsToLeafAtArityIndex
+            compress
+            2
+            root
+            leaf
+            path := by
+  intro root leaf path pathArity verified
+  exact
+    And.intro pathArity
+      (by
+        intro otherLeaf otherPath otherPathArity sameIndex sameDepth otherVerified
+        exact
+          nary_merkle_path_arity_two_index_binding_from_no_collision
+            noCollision
+            root
+            leaf
+            path
+            pathArity
+            verified
+            otherLeaf
+            otherPath
+            otherPathArity
+            sameIndex
+            sameDepth
+            otherVerified)
+
+set_option linter.style.longLine false in
+theorem
+  verified_concrete_nary_merkle_path_arity_four_implies_root_commits_to_leaf_at_index_from_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root leaf path,
+      NAryMerklePathHasArity 4 path ->
+        NAryMerklePathVerifies compress root leaf path ->
+          NAryMerklePathRootCommitsToLeafAtArityIndex
+            compress
+            4
+            root
+            leaf
+            path := by
+  intro root leaf path pathArity verified
+  exact
+    And.intro pathArity
+      (by
+        intro otherLeaf otherPath otherPathArity sameIndex sameDepth otherVerified
+        exact
+          nary_merkle_path_arity_four_index_binding_from_no_collision
+            noCollision
+            root
+            leaf
+            path
+            pathArity
+            verified
+            otherLeaf
+            otherPath
+            otherPathArity
+            sameIndex
+            sameDepth
+            otherVerified)
+
+set_option linter.style.longLine false in
+theorem
+  verified_concrete_nary_merkle_opening_arity_two_implies_root_commits_to_leaf_at_index_from_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root opening,
+      NAryMerklePathHasArity 2 opening.layers ->
+        NAryMerklePathOpeningVerifies compress root opening ->
+          NAryMerklePathRootCommitsToLeafAtArityIndex
+            compress
+            2
+            root
+            opening.leaf
+            opening.layers := by
+  intro root opening openingArity verified
+  exact
+    verified_concrete_nary_merkle_path_arity_two_implies_root_commits_to_leaf_at_index_from_no_collision
+      noCollision
+      root
+      opening.leaf
+      opening.layers
+      openingArity
+      verified
+
+set_option linter.style.longLine false in
+theorem
+  verified_concrete_nary_merkle_opening_arity_four_implies_root_commits_to_leaf_at_index_from_no_collision
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (noCollision : NAryMerkleCompressionNoCollision compress) :
+    forall root opening,
+      NAryMerklePathHasArity 4 opening.layers ->
+        NAryMerklePathOpeningVerifies compress root opening ->
+          NAryMerklePathRootCommitsToLeafAtArityIndex
+            compress
+            4
+            root
+            opening.leaf
+            opening.layers := by
+  intro root opening openingArity verified
+  exact
+    verified_concrete_nary_merkle_path_arity_four_implies_root_commits_to_leaf_at_index_from_no_collision
+      noCollision
+      root
+      opening.leaf
+      opening.layers
+      openingArity
+      verified
+
+set_option linter.style.longLine false in
+theorem
+  verified_concrete_nary_merkle_opening_arity_two_implies_root_commits_to_leaf_at_index_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root opening,
+      NAryMerklePathHasArity 2 opening.layers ->
+        NAryMerklePathOpeningVerifies compress root opening ->
+          NAryMerklePathRootCommitsToLeafAtArityIndex
+            compress
+            2
+            root
+            opening.leaf
+            opening.layers := by
+  intro root opening openingArity verified
+  exact
+    verified_concrete_nary_merkle_opening_arity_two_implies_root_commits_to_leaf_at_index_from_no_collision
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      root
+      opening
+      openingArity
+      verified
+
+set_option linter.style.longLine false in
+theorem
+  verified_concrete_nary_merkle_opening_arity_four_implies_root_commits_to_leaf_at_index_from_bundle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress) :
+    forall root opening,
+      NAryMerklePathHasArity 4 opening.layers ->
+        NAryMerklePathOpeningVerifies compress root opening ->
+          NAryMerklePathRootCommitsToLeafAtArityIndex
+            compress
+            4
+            root
+            opening.leaf
+            opening.layers := by
+  intro root opening openingArity verified
+  exact
+    verified_concrete_nary_merkle_opening_arity_four_implies_root_commits_to_leaf_at_index_from_no_collision
+      (Eq.mp
+        centralized
+        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      root
+      opening
+      openingArity
+      verified
+
 theorem
   verified_concrete_nary_merkle_opening_arity_two_same_index_leaf_eq_from_no_collision
     {Digest : Type uDigest}
