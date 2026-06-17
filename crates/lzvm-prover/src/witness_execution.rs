@@ -6635,7 +6635,7 @@ mod tests {
         ));
         assert_eq!(
             next_guest_pc_segment_commit_worker_count_after_oom(8 * 1024 * 1024, None, &oom_error),
-            Some(1)
+            None
         );
         assert_eq!(
             next_guest_pc_segment_commit_worker_count_after_oom(
@@ -6643,7 +6643,7 @@ mod tests {
                 None,
                 &merkle_oom_error
             ),
-            Some(1)
+            None
         );
         assert_eq!(
             next_guest_pc_segment_commit_worker_count_after_oom(
