@@ -209,6 +209,11 @@ PERF_ADVANCE_GUEST_MACHINE_SELF_PCT_KEY = "perf_advance_guest_machine_self_pct"
 PERF_GUEST_MEMORY_WRITE_SELF_PCT_KEY = "perf_guest_memory_write_self_pct"
 PERF_BIGUINT_MODPOW_SELF_PCT_KEY = "perf_biguint_modpow_self_pct"
 PERF_GUEST_MEMORY_READ_SELF_PCT_KEY = "perf_guest_memory_read_self_pct"
+PERF_DECODE_INSTRUCTION_SELF_PCT_KEY = "perf_decode_instruction_self_pct"
+PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY = (
+    "perf_effect_record_memory_write_self_pct"
+)
+PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY = "perf_effect_record_memory_read_self_pct"
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
 OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
 PROOF_TARGET_MS = 12_000
@@ -262,6 +267,8 @@ HEADER = (
     "perf_prepare_instruction_self_pct,perf_trace_segment_build_self_pct,"
     "perf_advance_guest_machine_self_pct,perf_guest_memory_write_self_pct,"
     "perf_biguint_modpow_self_pct,perf_guest_memory_read_self_pct,"
+    "perf_decode_instruction_self_pct,perf_effect_record_memory_write_self_pct,"
+    "perf_effect_record_memory_read_self_pct,"
     "cpu_runner_hotspot_hint,"
     "single_row_reports,multi_row_reports,pending_dma_reports,amo_reports,"
     "store_conditional_reports,external_op_rows,copy_rows,flag_rows,"
@@ -431,6 +438,9 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
         PERF_GUEST_MEMORY_WRITE_SELF_PCT_KEY: 0.0,
         PERF_BIGUINT_MODPOW_SELF_PCT_KEY: 0.0,
         PERF_GUEST_MEMORY_READ_SELF_PCT_KEY: 0.0,
+        PERF_DECODE_INSTRUCTION_SELF_PCT_KEY: 0.0,
+        PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY: 0.0,
+        PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY: 0.0,
     }
     in_memmove_callchain = False
     in_sha256_callchain = False
@@ -484,6 +494,12 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
                 key = PERF_BIGUINT_MODPOW_SELF_PCT_KEY
             elif "GuestMachineMemory::read_range_into" in symbol_text:
                 key = PERF_GUEST_MEMORY_READ_SELF_PCT_KEY
+            elif "decode_guest_instruction" in symbol_text:
+                key = PERF_DECODE_INSTRUCTION_SELF_PCT_KEY
+            elif "GuestInstructionEffects::record_memory_write" in symbol_text:
+                key = PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY
+            elif "GuestInstructionEffects::record_memory_read" in symbol_text:
+                key = PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY
             else:
                 continue
             hotspots[key] = max(hotspots[key], pct)
@@ -1362,6 +1378,15 @@ def summarize_profile_values(
     guest_memory_read_pct = perf_hotspots.get(
         PERF_GUEST_MEMORY_READ_SELF_PCT_KEY, 0.0
     )
+    decode_instruction_pct = perf_hotspots.get(
+        PERF_DECODE_INSTRUCTION_SELF_PCT_KEY, 0.0
+    )
+    effect_memory_write_pct = perf_hotspots.get(
+        PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY, 0.0
+    )
+    effect_memory_read_pct = perf_hotspots.get(
+        PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY, 0.0
+    )
     runner_hint = cpu_runner_hotspot_hint(perf_hotspots)
     return (
         f"{label},{input_bytes},{total_ms},"
@@ -1416,7 +1441,9 @@ def summarize_profile_values(
         f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint},"
         f"{prepare_instruction_pct:.3f},{trace_segment_build_pct:.3f},"
         f"{advance_guest_machine_pct:.3f},{guest_memory_write_pct:.3f},"
-        f"{biguint_modpow_pct:.3f},{guest_memory_read_pct:.3f},{runner_hint},"
+        f"{biguint_modpow_pct:.3f},{guest_memory_read_pct:.3f},"
+        f"{decode_instruction_pct:.3f},{effect_memory_write_pct:.3f},"
+        f"{effect_memory_read_pct:.3f},{runner_hint},"
         f"{single_row_reports},{multi_row_reports},{pending_dma_reports},"
         f"{amo_reports},{store_conditional_reports},{external_op_rows},"
         f"{copy_rows},{flag_rows},{precompile_rows},"

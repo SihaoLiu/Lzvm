@@ -144,6 +144,9 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "perf_guest_memory_write_self_pct",
         "perf_biguint_modpow_self_pct",
         "perf_guest_memory_read_self_pct",
+        "perf_decode_instruction_self_pct",
+        "perf_effect_record_memory_write_self_pct",
+        "perf_effect_record_memory_read_self_pct",
         "cpu_runner_hotspot_hint",
         "timing_guest_trace_report_detail_samples",
         "trace_report_detail_sample_hint",
@@ -1098,6 +1101,9 @@ fn prove_timing_root_summary_reports_runner_perf_hotspots() {
         "     2.81%  [.] lzvm_prover::guest_machine::memory::GuestMachineMemorySegment::write_range",
         "     1.97%  [.] num_bigint::biguint::monty::monty_modpow",
         "     1.70%  [.] lzvm_prover::guest_machine::memory::GuestMachineMemory::read_range_into",
+        "     0.26%  [.] lzvm_prover::guest_machine::GuestInstructionEffects::record_memory_write",
+        "     0.14%  [.] lzvm_prover::guest_machine::GuestInstructionEffects::record_memory_read",
+        "     0.03%  [.] lzvm_prover::guest_instruction::decode_guest_instruction",
     ]
     .join("\n");
 
@@ -1157,6 +1163,9 @@ fn prove_timing_root_summary_reports_runner_perf_hotspots() {
     assert_eq!(value("perf_guest_memory_write_self_pct"), "2.810");
     assert_eq!(value("perf_biguint_modpow_self_pct"), "1.970");
     assert_eq!(value("perf_guest_memory_read_self_pct"), "1.700");
+    assert_eq!(value("perf_decode_instruction_self_pct"), "0.030");
+    assert_eq!(value("perf_effect_record_memory_write_self_pct"), "0.260");
+    assert_eq!(value("perf_effect_record_memory_read_self_pct"), "0.140");
     assert_eq!(
         value("cpu_runner_hotspot_hint"),
         "instruction_prepare_and_advance"
