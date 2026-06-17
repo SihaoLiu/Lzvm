@@ -280,6 +280,17 @@ HEADER = (
     "trace_report_detail_sample_ppm,trace_report_detail_sample_hint,"
     "trace_report_detail_avg_ns,"
     "trace_report_detail_lowerer_share_ms,trace_report_row_validation_lowerer_share_ms,"
+    "trace_report_memory_columns_lowerer_share_ms,"
+    "trace_report_source_values_lowerer_share_ms,"
+    "trace_report_source_lookup_lowerer_share_ms,"
+    "trace_report_source_values_residual_lowerer_share_ms,"
+    "trace_report_precompile_memory_lowerer_share_ms,"
+    "trace_report_instruction_result_lowerer_share_ms,"
+    "trace_report_next_pc_lowerer_share_ms,"
+    "trace_report_register_access_lowerer_share_ms,"
+    "trace_report_memory_access_lowerer_share_ms,"
+    "trace_report_store_apply_lowerer_share_ms,"
+    "trace_report_row_validation_residual_lowerer_share_ms,"
     "trace_report_visit_lowerer_share_ms,trace_report_descriptor_lowerer_share_ms,"
     "trace_report_detail_hotspot,trace_report_detail_hotspot_pct,"
     "trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,"
@@ -990,10 +1001,42 @@ def trace_report_detail_lowerer_share_ms(
     sample_key: str,
     lowerer_ms: int,
 ) -> float:
+    return trace_report_sampled_ns_lowerer_share_ms(
+        values,
+        values.get(sample_key, 0),
+        lowerer_ms,
+    )
+
+
+def trace_report_sampled_ns_lowerer_share_ms(
+    values: dict[str, int],
+    child_ns: int,
+    lowerer_ms: int,
+) -> float:
     sampled_ns = values.get(TRACE_REPORT_SAMPLED_NS_KEY, 0)
     if sampled_ns <= 0 or lowerer_ms <= 0:
         return 0.0
-    return values.get(sample_key, 0) * lowerer_ms / sampled_ns
+    return child_ns * lowerer_ms / sampled_ns
+
+
+def trace_report_source_lookup_sampled_ns(values: dict[str, int]) -> int:
+    return values.get(TRACE_REPORT_SOURCE_A_VALUE_SAMPLED_NS_KEY, 0) + values.get(
+        TRACE_REPORT_SOURCE_B_VALUE_SAMPLED_NS_KEY, 0
+    )
+
+
+def trace_report_source_values_residual_sampled_ns(values: dict[str, int]) -> int:
+    return max(
+        values.get(TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY, 0)
+        - trace_report_source_lookup_sampled_ns(values),
+        0,
+    )
+
+
+def trace_report_row_validation_residual_sampled_ns(values: dict[str, int]) -> int:
+    row_validation_ns = values.get(TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY, 0)
+    child_ns = sum(values.get(key, 0) for _, key in row_validation_hotspot_keys(values))
+    return max(row_validation_ns - child_ns, 0)
 
 
 def trace_structure_hint(
@@ -1135,6 +1178,65 @@ def summarize_profile_values(
         values,
         TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY,
         lowerer_ms,
+    )
+    trace_report_memory_columns_share_ms = trace_report_detail_lowerer_share_ms(
+        values,
+        TRACE_REPORT_MEMORY_COLUMNS_SAMPLED_NS_KEY,
+        lowerer_ms,
+    )
+    trace_report_source_values_share_ms = trace_report_detail_lowerer_share_ms(
+        values,
+        TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY,
+        lowerer_ms,
+    )
+    trace_report_source_lookup_share_ms = trace_report_sampled_ns_lowerer_share_ms(
+        values,
+        trace_report_source_lookup_sampled_ns(values),
+        lowerer_ms,
+    )
+    trace_report_source_values_residual_share_ms = (
+        trace_report_sampled_ns_lowerer_share_ms(
+            values,
+            trace_report_source_values_residual_sampled_ns(values),
+            lowerer_ms,
+        )
+    )
+    trace_report_precompile_memory_share_ms = trace_report_detail_lowerer_share_ms(
+        values,
+        TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY,
+        lowerer_ms,
+    )
+    trace_report_instruction_result_share_ms = trace_report_detail_lowerer_share_ms(
+        values,
+        TRACE_REPORT_INSTRUCTION_RESULT_SAMPLED_NS_KEY,
+        lowerer_ms,
+    )
+    trace_report_next_pc_share_ms = trace_report_detail_lowerer_share_ms(
+        values,
+        TRACE_REPORT_NEXT_PC_SAMPLED_NS_KEY,
+        lowerer_ms,
+    )
+    trace_report_register_access_share_ms = trace_report_detail_lowerer_share_ms(
+        values,
+        TRACE_REPORT_REGISTER_ACCESS_SAMPLED_NS_KEY,
+        lowerer_ms,
+    )
+    trace_report_memory_access_share_ms = trace_report_detail_lowerer_share_ms(
+        values,
+        TRACE_REPORT_MEMORY_ACCESS_SAMPLED_NS_KEY,
+        lowerer_ms,
+    )
+    trace_report_store_apply_share_ms = trace_report_detail_lowerer_share_ms(
+        values,
+        TRACE_REPORT_STORE_APPLY_SAMPLED_NS_KEY,
+        lowerer_ms,
+    )
+    trace_report_row_validation_residual_share_ms = (
+        trace_report_sampled_ns_lowerer_share_ms(
+            values,
+            trace_report_row_validation_residual_sampled_ns(values),
+            lowerer_ms,
+        )
     )
     trace_report_visit_share_ms = trace_report_detail_lowerer_share_ms(
         values,
@@ -1490,6 +1592,17 @@ def summarize_profile_values(
         f"{trace_report_detail_avg_ns},"
         f"{trace_report_detail_share_ms:.3f},"
         f"{trace_report_row_validation_share_ms:.3f},"
+        f"{trace_report_memory_columns_share_ms:.3f},"
+        f"{trace_report_source_values_share_ms:.3f},"
+        f"{trace_report_source_lookup_share_ms:.3f},"
+        f"{trace_report_source_values_residual_share_ms:.3f},"
+        f"{trace_report_precompile_memory_share_ms:.3f},"
+        f"{trace_report_instruction_result_share_ms:.3f},"
+        f"{trace_report_next_pc_share_ms:.3f},"
+        f"{trace_report_register_access_share_ms:.3f},"
+        f"{trace_report_memory_access_share_ms:.3f},"
+        f"{trace_report_store_apply_share_ms:.3f},"
+        f"{trace_report_row_validation_residual_share_ms:.3f},"
         f"{trace_report_visit_share_ms:.3f},"
         f"{trace_report_descriptor_share_ms:.3f},"
         f"{trace_report_detail_hotspot_name},{trace_report_detail_hotspot_pct:.3f},"
