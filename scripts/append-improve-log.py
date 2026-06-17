@@ -103,6 +103,7 @@ def append_row(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Append a quoted improve-log CSV row.")
     parser.add_argument("summary", nargs="?")
+    parser.add_argument("--summary", dest="summary_flag")
     parser.add_argument("--path", default="temp/improve-log.csv")
     parser.add_argument("--commit", default=None)
     parser.add_argument("--small", default="")
@@ -117,14 +118,17 @@ def main() -> None:
     path = Path(args.path)
     validate_improve_log(path)
     if not args.check:
-        if args.summary is None:
+        if args.summary is not None and args.summary_flag is not None:
+            parser.error("summary must be provided either positionally or with --summary")
+        summary = args.summary_flag if args.summary_flag is not None else args.summary
+        if summary is None:
             parser.error("summary is required unless --check is used")
         append_row(
             path,
             args.commit or current_commit(),
             args.small,
             args.large,
-            args.summary,
+            summary,
         )
         validate_improve_log(path)
 
