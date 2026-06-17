@@ -153,6 +153,14 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_report_source_values_duration(),
     );
     timings.record(
+        "guest_trace_report_source_a_value",
+        timing.guest_trace_report_source_a_value_duration(),
+    );
+    timings.record(
+        "guest_trace_report_source_b_value",
+        timing.guest_trace_report_source_b_value_duration(),
+    );
+    timings.record(
         "guest_trace_report_precompile_memory",
         timing.guest_trace_report_precompile_memory_duration(),
     );
@@ -215,6 +223,18 @@ pub(super) fn record_guest_pc_trace_timing(
         timings,
         "guest_trace_report_source_values",
         timing.guest_trace_report_source_values_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_source_a_value",
+        timing.guest_trace_report_source_a_value_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_source_b_value",
+        timing.guest_trace_report_source_b_value_duration(),
         detail_sample_count,
     );
     record_guest_trace_sampled_duration_counts(

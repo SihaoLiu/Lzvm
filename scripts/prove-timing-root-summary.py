@@ -78,6 +78,12 @@ TRACE_REPORT_MEMORY_COLUMNS_SAMPLED_NS_KEY = (
 TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY = (
     "timing_guest_trace_report_source_values_sampled_ns"
 )
+TRACE_REPORT_SOURCE_A_VALUE_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_source_a_value_sampled_ns"
+)
+TRACE_REPORT_SOURCE_B_VALUE_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_source_b_value_sampled_ns"
+)
 TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY = (
     "timing_guest_trace_report_precompile_memory_sampled_ns"
 )
@@ -314,6 +320,8 @@ TIMING_KEYS = {
     TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY,
     TRACE_REPORT_MEMORY_COLUMNS_SAMPLED_NS_KEY,
     TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY,
+    TRACE_REPORT_SOURCE_A_VALUE_SAMPLED_NS_KEY,
+    TRACE_REPORT_SOURCE_B_VALUE_SAMPLED_NS_KEY,
     TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY,
     TRACE_REPORT_INSTRUCTION_RESULT_SAMPLED_NS_KEY,
     TRACE_REPORT_NEXT_PC_SAMPLED_NS_KEY,
@@ -807,6 +815,8 @@ DETAIL_SAMPLE_HOTSPOT_KEYS = [
     ("visit", TRACE_REPORT_VISIT_SAMPLED_NS_KEY),
     ("descriptor", TRACE_DESCRIPTOR_SAMPLED_NS_KEY),
     ("source_values", TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY),
+    ("source_a_value", TRACE_REPORT_SOURCE_A_VALUE_SAMPLED_NS_KEY),
+    ("source_b_value", TRACE_REPORT_SOURCE_B_VALUE_SAMPLED_NS_KEY),
     ("instruction_result", TRACE_REPORT_INSTRUCTION_RESULT_SAMPLED_NS_KEY),
     ("next_pc", TRACE_REPORT_NEXT_PC_SAMPLED_NS_KEY),
     ("register_access", TRACE_REPORT_REGISTER_ACCESS_SAMPLED_NS_KEY),
@@ -815,9 +825,16 @@ DETAIL_SAMPLE_HOTSPOT_KEYS = [
     ("precompile_memory", TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY),
 ]
 
-ROW_VALIDATION_HOTSPOT_KEYS = [
+SOURCE_VALUE_DETAIL_HOTSPOT_KEYS = [
+    ("source_a_value", TRACE_REPORT_SOURCE_A_VALUE_SAMPLED_NS_KEY),
+    ("source_b_value", TRACE_REPORT_SOURCE_B_VALUE_SAMPLED_NS_KEY),
+]
+
+ROW_VALIDATION_PREFIX_HOTSPOT_KEYS = [
     ("memory_columns", TRACE_REPORT_MEMORY_COLUMNS_SAMPLED_NS_KEY),
-    ("source_values", TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY),
+]
+
+ROW_VALIDATION_SUFFIX_HOTSPOT_KEYS = [
     ("instruction_result", TRACE_REPORT_INSTRUCTION_RESULT_SAMPLED_NS_KEY),
     ("next_pc", TRACE_REPORT_NEXT_PC_SAMPLED_NS_KEY),
     ("register_access", TRACE_REPORT_REGISTER_ACCESS_SAMPLED_NS_KEY),
@@ -825,6 +842,19 @@ ROW_VALIDATION_HOTSPOT_KEYS = [
     ("store_apply", TRACE_REPORT_STORE_APPLY_SAMPLED_NS_KEY),
     ("precompile_memory", TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY),
 ]
+
+
+def row_validation_hotspot_keys(values: dict[str, int]) -> list[tuple[str, str]]:
+    source_value_keys = (
+        SOURCE_VALUE_DETAIL_HOTSPOT_KEYS
+        if any(key in values for _, key in SOURCE_VALUE_DETAIL_HOTSPOT_KEYS)
+        else [("source_values", TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY)]
+    )
+    return (
+        ROW_VALIDATION_PREFIX_HOTSPOT_KEYS
+        + source_value_keys
+        + ROW_VALIDATION_SUFFIX_HOTSPOT_KEYS
+    )
 
 
 def trace_report_detail_hotspot(values: dict[str, int]) -> tuple[int, str, float]:
@@ -850,7 +880,7 @@ def trace_report_row_validation_hotspot(values: dict[str, int]) -> tuple[str, fl
         return ("none", 0.0)
     hotspot_name = "none"
     hotspot_ns = 0
-    for name, key in ROW_VALIDATION_HOTSPOT_KEYS:
+    for name, key in row_validation_hotspot_keys(values):
         value = values.get(key, 0)
         if value > hotspot_ns:
             hotspot_name = name
@@ -863,7 +893,7 @@ def trace_report_row_validation_coverage(values: dict[str, int]) -> tuple[float,
     row_validation_ns = values.get(TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY, 0)
     if row_validation_ns <= 0:
         return (0.0, 0.0)
-    child_ns = sum(values.get(key, 0) for _, key in ROW_VALIDATION_HOTSPOT_KEYS)
+    child_ns = sum(values.get(key, 0) for _, key in row_validation_hotspot_keys(values))
     explained_ns = min(child_ns, row_validation_ns)
     residual_ns = max(row_validation_ns - child_ns, 0)
     return (

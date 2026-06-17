@@ -2908,6 +2908,11 @@ fn guest_trace_detail_timing_keeps_aggregate_report_and_sampled_fields_separate(
             "{function_name} should keep aggregate report timing even when detail sampling is enabled and place sampled report time in a separate counter"
         );
     }
+    assert!(
+        backend_source.contains("trace_report_source_a_value_duration")
+            && backend_source.contains("trace_report_source_b_value_duration"),
+        "guest trace detail timing should split A/B source-value lookup work inside row validation"
+    );
 
     let cli_body = function_body(
         &cli_source,
@@ -2917,6 +2922,11 @@ fn guest_trace_detail_timing_keeps_aggregate_report_and_sampled_fields_separate(
     assert!(
         cli_body.contains("timing.guest_trace_report_sample_duration()"),
         "CLI sampled report nanos should use the sampled report counter, not the aggregate report duration"
+    );
+    assert!(
+        cli_body.contains("guest_trace_report_source_a_value")
+            && cli_body.contains("guest_trace_report_source_b_value"),
+        "CLI sampled detail timing should emit A/B source-value lookup counters"
     );
     assert!(
         !cli_body.contains(

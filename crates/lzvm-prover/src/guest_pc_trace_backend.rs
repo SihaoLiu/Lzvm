@@ -199,6 +199,8 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_report_row_validation_duration: Duration,
     trace_report_memory_columns_duration: Duration,
     trace_report_source_values_duration: Duration,
+    trace_report_source_a_value_duration: Duration,
+    trace_report_source_b_value_duration: Duration,
     trace_report_precompile_memory_duration: Duration,
     trace_report_instruction_result_duration: Duration,
     trace_report_next_pc_duration: Duration,
@@ -274,6 +276,8 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_row_validation_duration += other.trace_report_row_validation_duration;
         self.trace_report_memory_columns_duration += other.trace_report_memory_columns_duration;
         self.trace_report_source_values_duration += other.trace_report_source_values_duration;
+        self.trace_report_source_a_value_duration += other.trace_report_source_a_value_duration;
+        self.trace_report_source_b_value_duration += other.trace_report_source_b_value_duration;
         self.trace_report_precompile_memory_duration +=
             other.trace_report_precompile_memory_duration;
         self.trace_report_instruction_result_duration +=
@@ -400,6 +404,14 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_source_values_duration(&self) -> Duration {
         self.trace_report_source_values_duration
+    }
+
+    pub fn trace_report_source_a_value_duration(&self) -> Duration {
+        self.trace_report_source_a_value_duration
+    }
+
+    pub fn trace_report_source_b_value_duration(&self) -> Duration {
+        self.trace_report_source_b_value_duration
     }
 
     pub fn trace_report_precompile_memory_duration(&self) -> Duration {
@@ -4167,6 +4179,7 @@ fn apply_zisk_main_lowered_report_row(
         });
     }
     let source_values_started = detail_duration_started(&timing, detail_timing);
+    let source_a_value_started = detail_duration_started(&timing, detail_timing);
     let (a, a_access) = zisk_main_source_value(
         output_row,
         instruction.a,
@@ -4176,6 +4189,10 @@ fn apply_zisk_main_lowered_report_row(
         None,
         0,
     )?;
+    record_detail_duration(source_a_value_started, &mut timing, |timing| {
+        &mut timing.trace_report_source_a_value_duration
+    });
+    let source_b_value_started = detail_duration_started(&timing, detail_timing);
     let (b, b_access) = zisk_main_source_value(
         output_row,
         instruction.b,
@@ -4185,6 +4202,9 @@ fn apply_zisk_main_lowered_report_row(
         Some(a),
         instruction.ind_width,
     )?;
+    record_detail_duration(source_b_value_started, &mut timing, |timing| {
+        &mut timing.trace_report_source_b_value_duration
+    });
     record_detail_duration(source_values_started, &mut timing, |timing| {
         &mut timing.trace_report_source_values_duration
     });

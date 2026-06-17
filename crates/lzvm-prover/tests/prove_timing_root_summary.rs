@@ -191,6 +191,8 @@ fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
         "timing_guest_trace_report_row_validation_sampled_ns=500",
         "timing_guest_trace_report_memory_columns_sampled_ns=60",
         "timing_guest_trace_report_source_values_sampled_ns=180",
+        "timing_guest_trace_report_source_a_value_sampled_ns=140",
+        "timing_guest_trace_report_source_b_value_sampled_ns=90",
         "timing_guest_trace_report_register_access_sampled_ns=100",
         "timing_guest_trace_report_memory_access_sampled_ns=80",
         "timing_guest_trace_report_precompile_memory_sampled_ns=20",
@@ -231,7 +233,7 @@ fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
     );
     assert!(
         stdout.contains(
-            ",10,1.000,10000.000,detail_timing_sampled,100,row_validation,50.000,source_values,36.000,88.000,12.000,20.000,25.000,75.000"
+            ",10,1.000,10000.000,detail_timing_sampled,100,row_validation,50.000,source_a_value,28.000,98.000,2.000,20.000,25.000,75.000"
         ),
         "prove timing root summary should classify sampled detail, row-validation, and visit hotspots: stdout={stdout}"
     );
