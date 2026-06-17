@@ -1045,6 +1045,7 @@ def print_transfer_triage(
     d2h_meminfo_rows: list[dict[str, object]],
     small_d2h_rows: list[dict[str, object]],
     top_h2d_bulk: sqlite3.Row | None,
+    h2d_bulk_app_frame_rows: list[dict[str, object]],
 ) -> None:
     host_ns = sum_rows_ns(runtime_rows, "host_ns")
     host_registration_ns = sum_rows_ns(host_registration_rows, "host_ns")
@@ -1085,6 +1086,10 @@ def print_transfer_triage(
     if top_h2d_bulk is None:
         print("top_h2d_bulk_upload,none,no H2D copy at or above 1MiB")
         print("h2d_residency_hint,none,no bulk H2D hotspot")
+        print(
+            "h2d_bulk_app_frame_hint,none,"
+            "no bulk H2D app-frame callchain hotspot"
+        )
     else:
         bulk_host_ns = int(top_h2d_bulk["host_ns"] or 0)
         bulk_gpu_ns = int(top_h2d_bulk["gpu_ns"] or 0)
@@ -1100,6 +1105,20 @@ def print_transfer_triage(
             "h2d_residency_hint,reduce_bulk_h2d_source_uploads,"
             "prefer GPU-resident lowering or reusable device inputs before kernel fusion"
         )
+        if h2d_bulk_app_frame_rows:
+            candidate = h2d_bulk_app_frame_rows[0]
+            print(
+                "h2d_bulk_app_frame_hint,reuse_device_source_for_hot_frame,"
+                f"bytes={int(candidate['bytes'])} "
+                f"calls={int(candidate['calls'])} "
+                f"host_api_ms={ms(int(candidate['host_ns'])):.3f} "
+                f"app_frame={csv_cell(candidate['app_frame'])}"
+            )
+        else:
+            print(
+                "h2d_bulk_app_frame_hint,inspect_callchains,"
+                "bulk H2D exists but no application callchain frame was available"
+            )
     if top_d2h is None:
         print("top_d2h_wait,none,no D2H memcpy activity")
         print("gpu_residency_hint,none,no D2H hotspot")
@@ -1226,6 +1245,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
         d2h_meminfo_rows,
         small_d2h_rows,
         top_h2d_bulk,
+        h2d_bulk_app_frame_rows,
     )
     print_callchain_hint(conn)
 

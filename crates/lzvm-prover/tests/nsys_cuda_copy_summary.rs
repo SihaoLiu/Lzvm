@@ -297,6 +297,12 @@ conn.close()
         stdout.contains("1048576,1,6.000,0.004,6.000,upload_auxiliary_inputs@lzvm"),
         "bulk H2D app-frame summary should keep distinct application frames separate: {stdout}"
     );
+    assert!(
+        stdout.contains(
+            "h2d_bulk_app_frame_hint,reuse_device_source_for_hot_frame,bytes=2097152 calls=2 host_api_ms=25.000 app_frame=upload_trace_source_to_device@lzvm"
+        ),
+        "transfer triage should name the hottest bulk H2D app frame as a device-residency candidate: {stdout}"
+    );
 }
 
 #[test]
