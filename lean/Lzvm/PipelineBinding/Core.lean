@@ -891,9 +891,9 @@ theorem runtime_pipeline_binding_checked_acceptance_transcript_bound
       proof
       accepted
 
-theorem runtime_pipeline_binding_checked_acceptance_public_input_bound
+theorem runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions
     {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
+    (semanticAssumptions : SemanticAssumptions system)
     (validation : RuntimePipelineBindingValidation system) :
     forall artifact publicInput proof,
       RuntimePipelineBindingCheckedAcceptance
@@ -911,7 +911,29 @@ theorem runtime_pipeline_binding_checked_acceptance_public_input_bound
       publicInput
       proof
       accepted
-  exact assumptions.semantic.public_input_binding publicInput proof verifierAccepts
+  exact semanticAssumptions.public_input_binding publicInput proof verifierAccepts
+
+theorem runtime_pipeline_binding_checked_acceptance_public_input_bound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.publicInputBound publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions
+      assumptions.semantic
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
 
 theorem runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri
     {system : VerifierModel}

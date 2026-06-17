@@ -62,11 +62,13 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_transcript_bound",
             "runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions",
             "runtime_pipeline_binding_checked_acceptance_public_input_bound",
+            "runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions",
             "runtime_pipeline_binding_evidence_implies_pcs_and_fri",
             "runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri",
             "runtime_pipeline_binding_evidence_implies_core_obligations",
+            "runtime_pipeline_binding_checked_acceptance_core_obligations_from_semantic_assumptions",
             "runtime_pipeline_binding_evidence_implies_execution_obligations",
             "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence",
@@ -282,20 +284,73 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
-        "runtime_pipeline_binding_checked_acceptance_core_obligations",
+        "runtime_pipeline_binding_checked_acceptance_core_obligations_from_semantic_assumptions",
         &[
             "runtime_pipeline_binding_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
+            "AssumptionBundle",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions",
+        &[
+            "SemanticAssumptions system",
+            "RuntimePipelineBindingCheckedAcceptance",
+            "system.publicInputBound publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions",
+        &["AssumptionBundle", "CryptographicAssumptions"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
+            "semanticAssumptions.public_input_binding",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_public_input_bound",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions",
+            "assumptions.semantic",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_core_obligations_from_semantic_assumptions",
+        &[
+            "SemanticAssumptions system",
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_core_obligations_from_semantic_assumptions",
+        &["AssumptionBundle", "CryptographicAssumptions"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_core_obligations_from_semantic_assumptions",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
+            "semanticAssumptions.public_input_binding",
+            "runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions",
+            "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
         ],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_core_obligations",
         &[
-            "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
-            "assumptions.semantic.public_input_binding",
-            "runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions",
-            "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
+            "runtime_pipeline_binding_checked_acceptance_core_obligations_from_semantic_assumptions",
+            "assumptions.semantic",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

@@ -214,9 +214,9 @@ theorem runtime_pipeline_binding_required_external_source_verifier_core_contract
               (And.intro openingExternalEvidence
                 (sound_witness_implies_verifier_core_contract soundWitness))
 
-theorem runtime_pipeline_binding_checked_acceptance_core_obligations
+theorem runtime_pipeline_binding_checked_acceptance_core_obligations_from_semantic_assumptions
     {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
+    (semanticAssumptions : SemanticAssumptions system)
     (validation : RuntimePipelineBindingValidation system) :
     forall artifact publicInput proof,
       RuntimePipelineBindingCheckedAcceptance
@@ -242,7 +242,7 @@ theorem runtime_pipeline_binding_checked_acceptance_core_obligations
       proof
       accepted
   have publicInputBound :=
-    assumptions.semantic.public_input_binding publicInput proof verifierAccepts
+    semanticAssumptions.public_input_binding publicInput proof verifierAccepts
   have pcsAndFri :=
     runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions
       validation
@@ -253,6 +253,28 @@ theorem runtime_pipeline_binding_checked_acceptance_core_obligations
   exact
     And.intro transcriptBound
       (And.intro publicInputBound pcsAndFri)
+
+theorem runtime_pipeline_binding_checked_acceptance_core_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_pipeline_binding_checked_acceptance_core_obligations_from_semantic_assumptions
+      assumptions.semantic
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
 
 theorem runtime_pipeline_binding_checked_acceptance_query_opening_evidence
     {system : VerifierModel}
