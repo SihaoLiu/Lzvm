@@ -837,6 +837,10 @@ def direct_d2h_action_hint(
     direct_d2h_wait_ms: float,
     direct_d2h_hot_count: int,
     direct_d2h_hot_wait_pct: float,
+    opening_query_units: int,
+    opening_single_query_units: int,
+    opening_row_value_device_rows: int,
+    opening_row_value_device_download_batches: int,
     root_count: int,
     materialization_groups: int,
     materialization_max_group_size: int,
@@ -852,6 +856,14 @@ def direct_d2h_action_hint(
         and materialization_groups >= root_count
         and materialization_max_group_size <= 1
     )
+    single_query_row_value_reads = (
+        opening_row_value_device_rows > 0
+        and opening_row_value_device_download_batches == 0
+        and opening_query_units > 0
+        and opening_single_query_units >= opening_query_units
+    )
+    if hot_bucket and single_query_row_value_reads:
+        return "batch_single_query_device_row_value_reads"
     if hot_bucket and single_root_groups:
         return "batch_hot_direct_d2h_root_reads"
     if hot_bucket:
@@ -1902,6 +1914,10 @@ def summarize_profile_values(
         direct_d2h_wait_ms,
         direct_d2h_hot_count,
         direct_d2h_hot_wait_pct,
+        opening_query_units,
+        opening_single_query_units,
+        opening_row_value_device_rows,
+        opening_row_value_device_download_batches,
         root_count,
         groups,
         max_group_size,

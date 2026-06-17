@@ -712,6 +712,10 @@ fn prove_timing_root_summary_reports_direct_d2h_hot_copy_shape() {
         "timing_cuda_direct_copy_d2h_hot_bytes=1152",
         "timing_cuda_direct_copy_d2h_hot_count=41",
         "timing_cuda_direct_copy_d2h_hot_wait_ns=3389722844",
+        "timing_finish_witness_opening_query_unit_count=120",
+        "timing_finish_witness_opening_single_query_unit_count=120",
+        "timing_finish_witness_opening_row_values_device_rows=43",
+        "timing_finish_witness_opening_row_values_device_download_batches=0",
     ]
     .join("\n");
 
@@ -752,7 +756,10 @@ fn prove_timing_root_summary_reports_direct_d2h_hot_copy_shape() {
     let fields = lines[1].split(',').collect::<Vec<_>>();
     for (header, expected) in [
         ("direct_d2h_hot_wait_pct", "81.551"),
-        ("direct_d2h_action_hint", "batch_hot_direct_d2h_root_reads"),
+        (
+            "direct_d2h_action_hint",
+            "batch_single_query_device_row_value_reads",
+        ),
     ] {
         let index = headers
             .iter()
