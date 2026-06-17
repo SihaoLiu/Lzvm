@@ -4330,14 +4330,14 @@ fn apply_zisk_main_lowered_report_row(
     });
 
     let memory_access_started = detail_duration_started(&timing, detail_timing);
-    validate_zisk_main_memory_accesses(
+    let validated_source_access_count = b_memory_access_index + usize::from(b_access.is_some());
+    validate_zisk_main_memory_accesses_after_source_values(
         output_row,
         &instruction,
         lowered_row.effects,
         a,
         c,
-        a_access,
-        b_access,
+        validated_source_access_count,
     )?;
     record_detail_duration(memory_access_started, &mut timing, |timing| {
         &mut timing.trace_report_memory_access_duration
@@ -6551,6 +6551,7 @@ fn matching_memory_access(
     }
 }
 
+#[cfg(test)]
 fn validate_zisk_main_memory_accesses(
     row: usize,
     instruction: &ZiskMainInstruction,
@@ -6560,19 +6561,7 @@ fn validate_zisk_main_memory_accesses(
     a_access: Option<ExpectedMemoryAccess>,
     b_access: Option<ExpectedMemoryAccess>,
 ) -> Result<(), GuestPcTraceBackendError> {
-    let store_value = zisk_main_store_value(instruction, c);
-    let store_access = if let ZiskMainStore::Indirect(offset) = instruction.store {
-        let byte_len = usize::try_from(instruction.ind_width)
-            .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainStore { row })?;
-        Some(ExpectedMemoryAccess {
-            kind: GuestMemoryAccessKind::Write,
-            address: a.wrapping_add_signed(offset),
-            byte_len,
-            value: low_bytes_value(store_value, byte_len),
-        })
-    } else {
-        None
-    };
+    let store_access = zisk_main_store_memory_access(row, instruction, a, c)?;
     let expected_len = usize::from(a_access.is_some())
         + usize::from(b_access.is_some())
         + usize::from(store_access.is_some());
@@ -6602,6 +6591,57 @@ fn validate_zisk_main_memory_accesses(
     }
     debug_assert_eq!(access_index, expected_len);
     Ok(())
+}
+
+fn validate_zisk_main_memory_accesses_after_source_values(
+    row: usize,
+    instruction: &ZiskMainInstruction,
+    effects: ZiskMainReportEffects<'_>,
+    a: u64,
+    c: u64,
+    validated_source_access_count: usize,
+) -> Result<(), GuestPcTraceBackendError> {
+    let store_access = zisk_main_store_memory_access(row, instruction, a, c)?;
+    let expected_len = validated_source_access_count + usize::from(store_access.is_some());
+    if effects.memory_accesses.len() != expected_len {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!(
+                "expected {} memory accesses, found {}",
+                expected_len,
+                effects.memory_accesses.len()
+            ),
+        });
+    }
+    if let Some(expected) = store_access {
+        validate_expected_memory_access(
+            row,
+            effects.memory_accesses[validated_source_access_count],
+            expected,
+        )?;
+    }
+    Ok(())
+}
+
+fn zisk_main_store_memory_access(
+    row: usize,
+    instruction: &ZiskMainInstruction,
+    a: u64,
+    c: u64,
+) -> Result<Option<ExpectedMemoryAccess>, GuestPcTraceBackendError> {
+    let store_value = zisk_main_store_value(instruction, c);
+    if let ZiskMainStore::Indirect(offset) = instruction.store {
+        let byte_len = usize::try_from(instruction.ind_width)
+            .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainStore { row })?;
+        Ok(Some(ExpectedMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address: a.wrapping_add_signed(offset),
+            byte_len,
+            value: low_bytes_value(store_value, byte_len),
+        }))
+    } else {
+        Ok(None)
+    }
 }
 
 fn validate_expected_memory_access(

@@ -1486,6 +1486,43 @@ fn zisk_main_memory_access_validation_preserves_source_then_store_order() {
 }
 
 #[test]
+fn zisk_main_memory_access_validation_after_source_values_checks_store_position() {
+    let mut instruction = zisk_main_base_instruction(
+        0x8000_0000,
+        ZiskMainSource::Memory(64),
+        ZiskMainSource::Memory(72),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::Indirect(0),
+        4,
+    );
+    instruction.ind_width = 8;
+    let store_access = memory_write(96, 13);
+    let ordered_accesses = [memory_read(64, 96), memory_read(72, 13), store_access];
+    let effects = ZiskMainReportEffects {
+        register_writes: &[],
+        memory_accesses: &ordered_accesses,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+
+    validate_zisk_main_memory_accesses_after_source_values(9, &instruction, effects, 96, 13, 2)
+        .expect("store after two validated source accesses should validate");
+
+    let misplaced_store = [memory_read(64, 96), store_access, memory_read(72, 13)];
+    let effects = ZiskMainReportEffects {
+        register_writes: &[],
+        memory_accesses: &misplaced_store,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let error =
+        validate_zisk_main_memory_accesses_after_source_values(9, &instruction, effects, 96, 13, 2)
+            .expect_err("store access should remain checked after validated source accesses");
+
+    assert!(error.to_string().contains("expected Write at 96"));
+}
+
+#[test]
 fn register_mem_steps_preserve_same_register_access_order() {
     let row = 5;
     let row_count = 100;
