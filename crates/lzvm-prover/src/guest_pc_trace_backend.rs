@@ -1192,6 +1192,9 @@ const ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS: usize = 11;
 const ZISK_MAIN_DEVICE_TRACE_SPARSE_DESCRIPTOR_WORDS: usize = 9;
 #[cfg(feature = "cuda")]
 const ZISK_MAIN_DEVICE_TRACE_WIDE_DESCRIPTOR_WORDS: usize = 14;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_SPARSE_DESCRIPTOR_MAX_HIGH_WORDS: usize =
+    ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT.div_ceil(2);
 pub(crate) const ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT: usize = 7;
 pub(crate) const ZISK_MAIN_UNPAIRED_DESCRIPTOR_HIGH32_HISTOGRAM_BUCKETS: usize =
     ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT + 1;
@@ -1370,22 +1373,22 @@ fn append_main_device_trace_descriptor(
         ));
     }
     if descriptors.descriptor_words == ZISK_MAIN_DEVICE_TRACE_SPARSE_DESCRIPTOR_WORDS {
-        if let Some((sparse_words, sparse_high_words)) =
-            zisk_main_sparse_device_trace_descriptor_words(
-                values,
-                a_payload,
-                b_payload,
-                store_payload,
-                control,
-                a_prev_mem_step,
-                b_prev_mem_step,
-                store_prev_mem_step,
-                store_prev_value,
-                descriptors.sparse_high_words.len(),
-            )
-        {
-            descriptors.words.extend_from_slice(&sparse_words);
-            descriptors.sparse_high_words.extend(sparse_high_words);
+        if let Some(sparse) = zisk_main_sparse_device_trace_descriptor_words(
+            values,
+            a_payload,
+            b_payload,
+            store_payload,
+            control,
+            a_prev_mem_step,
+            b_prev_mem_step,
+            store_prev_mem_step,
+            store_prev_value,
+            descriptors.sparse_high_words.len(),
+        ) {
+            descriptors.words.extend_from_slice(&sparse.words);
+            descriptors
+                .sparse_high_words
+                .extend_from_slice(&sparse.high_words[..sparse.high_word_count]);
             descriptors.descriptor_rows = descriptors.descriptor_rows.checked_add(1).ok_or(
                 GuestPcTraceBackendError::InvalidPcTraceLayout {
                     message: "Zisk Main device trace descriptor row count overflow".to_owned(),
@@ -1466,6 +1469,14 @@ fn zisk_main_high32_nonzero(value: u64) -> bool {
 }
 
 #[cfg(feature = "cuda")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ZiskMainSparseDeviceTraceDescriptorWords {
+    words: [u64; ZISK_MAIN_DEVICE_TRACE_SPARSE_DESCRIPTOR_WORDS],
+    high_words: [u64; ZISK_MAIN_SPARSE_DESCRIPTOR_MAX_HIGH_WORDS],
+    high_word_count: usize,
+}
+
+#[cfg(feature = "cuda")]
 #[allow(clippy::too_many_arguments)]
 fn zisk_main_sparse_device_trace_descriptor_words(
     values: &ZiskMainReportTraceValues,
@@ -1478,10 +1489,7 @@ fn zisk_main_sparse_device_trace_descriptor_words(
     store_prev_mem_step: u64,
     store_prev_value: u64,
     sparse_high_word_offset: usize,
-) -> Option<(
-    [u64; ZISK_MAIN_DEVICE_TRACE_SPARSE_DESCRIPTOR_WORDS],
-    Vec<u64>,
-)> {
+) -> Option<ZiskMainSparseDeviceTraceDescriptorWords> {
     let pc_and_store_step = zisk_main_pack_u32_pair(values.instruction.pc, store_prev_mem_step)?;
     let jump_offsets = zisk_main_pack_i32_pair(
         values.instruction.jmp_offset1,
@@ -1496,22 +1504,23 @@ fn zisk_main_sparse_device_trace_descriptor_words(
         store_prev_value,
     );
     let mut high_mask = 0_u64;
-    let mut high_values = Vec::new();
+    let mut high_words = [0_u64; ZISK_MAIN_SPARSE_DESCRIPTOR_MAX_HIGH_WORDS];
+    let mut high_value_count = 0_usize;
     for (index, value) in unpaired_values.into_iter().enumerate() {
         let high = value >> 32;
         if high != 0 {
             high_mask |= 1_u64 << index;
-            high_values.push(high);
+            let high_word_index = high_value_count / 2;
+            if high_value_count.is_multiple_of(2) {
+                high_words[high_word_index] = high;
+            } else {
+                high_words[high_word_index] |= high << 32;
+            }
+            high_value_count += 1;
         }
     }
-    let mut sparse_high_words = Vec::with_capacity(high_values.len().div_ceil(2));
-    for chunk in high_values.chunks(2) {
-        let low = chunk[0];
-        let high = chunk.get(1).copied().unwrap_or(0);
-        sparse_high_words.push(low | (high << 32));
-    }
-    Some((
-        [
+    Some(ZiskMainSparseDeviceTraceDescriptorWords {
+        words: [
             zisk_main_low32_pair(values.a, values.b),
             zisk_main_low32_pair(values.c, a_payload),
             zisk_main_low32_pair(b_payload, store_payload),
@@ -1522,8 +1531,9 @@ fn zisk_main_sparse_device_trace_descriptor_words(
             (store_prev_value & 0xffff_ffff) | (high_mask << 32),
             u64::try_from(sparse_high_word_offset).ok()?,
         ],
-        sparse_high_words,
-    ))
+        high_words,
+        high_word_count: high_value_count.div_ceil(2),
+    })
 }
 
 #[cfg(feature = "cuda")]

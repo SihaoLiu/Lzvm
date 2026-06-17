@@ -1372,6 +1372,46 @@ fn zisk_main_device_descriptor_uses_sparse_high_words() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn zisk_main_sparse_descriptor_words_are_stack_packed() {
+    fn assert_copy<T: Copy>(_: T) {}
+
+    let mut values =
+        zisk_main_descriptor_trace_values(0x1004, 5, 6, 21, 22, 23, 0x1_0000_0001, 0x2_0000_0002);
+    values.a = 0x3_0000_0003;
+    values.instruction.a = ZiskMainSource::Immediate(0x4_0000_0004);
+    values.instruction.store = ZiskMainStore::Memory(0x5_0000_0005);
+    let instruction = &values.instruction;
+    let (_, a_payload) = zisk_main_device_trace_source_descriptor(instruction.a);
+    let (_, b_payload) = zisk_main_device_trace_source_descriptor(instruction.b);
+    let (_, store_payload) = zisk_main_device_trace_store_descriptor(&instruction.store);
+    let control = 0x1234;
+
+    let sparse = zisk_main_sparse_device_trace_descriptor_words(
+        &values,
+        a_payload,
+        b_payload,
+        store_payload,
+        control,
+        21,
+        22,
+        23,
+        0x1_0000_0001,
+        17,
+    )
+    .expect("sparse descriptor should pack on stack");
+
+    assert_copy(sparse);
+    assert_eq!(sparse.high_word_count, 3);
+    assert_eq!(
+        &sparse.high_words[..sparse.high_word_count],
+        &[0x3 | (0x2_u64 << 32), 0x4 | (0x5_u64 << 32), 0x1,]
+    );
+    assert_eq!(sparse.words[7] >> 32, 0x6d);
+    assert_eq!(sparse.words[8], 17);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn zisk_main_device_sparse_descriptor_falls_back_to_wide_words_when_values_do_not_fit() {
     let mut descriptors = ZiskMainDeviceTraceDescriptors::new_with_descriptor_words_and_stats(
         2,
