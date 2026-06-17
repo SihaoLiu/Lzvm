@@ -312,7 +312,11 @@ HEADER = (
     "external_op_row_lower_ms,copy_row_lower_ms,"
     "external_op_row_lower_ns_per_row,copy_row_lower_ns_per_row,"
     "external_op_row_lower_pct,copy_row_lower_pct,trace_shape_duration_hint,"
-    "trace_shape_unit_cost_hint"
+    "trace_shape_unit_cost_hint,"
+    "trace_report_source_values_residual_ns_per_row,"
+    "trace_report_row_validation_residual_ns_per_row,"
+    "trace_report_visit_residual_ns_per_row,"
+    "trace_report_descriptor_ns_per_row"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -1390,6 +1394,14 @@ def summarize_profile_values(
         TRACE_DESCRIPTOR_SAMPLED_NS_KEY,
         trace_lowerer_share_scale_ms,
     )
+    trace_report_source_values_residual_ns_per_row = ns_per_row_from_ms(
+        trace_report_source_values_residual_share_ms,
+        trace_report_rows,
+    )
+    trace_report_row_validation_residual_ns_per_row = ns_per_row_from_ms(
+        trace_report_row_validation_residual_share_ms,
+        trace_report_rows,
+    )
     (
         trace_report_row_validation_hotspot_name,
         trace_report_row_validation_hotspot_pct,
@@ -1421,6 +1433,19 @@ def summarize_profile_values(
         / trace_report_visit_sampled_ns
         if trace_report_visit_sampled_ns
         else 0.0
+    )
+    trace_report_visit_residual_share_ms = trace_report_sampled_ns_lowerer_share_ms(
+        values,
+        max(trace_report_visit_sampled_ns - trace_descriptor_sampled_ns, 0),
+        trace_lowerer_share_scale_ms,
+    )
+    trace_report_visit_residual_ns_per_row = ns_per_row_from_ms(
+        trace_report_visit_residual_share_ms,
+        trace_report_rows,
+    )
+    trace_report_descriptor_ns_per_row = ns_per_row_from_ms(
+        trace_report_descriptor_share_ms,
+        trace_report_rows,
     )
     trace_rows_per_report = (
         trace_report_rows / trace_reports if trace_reports else 0.0
@@ -1769,7 +1794,11 @@ def summarize_profile_values(
         f"{external_op_row_lower_ns_per_row:.3f},"
         f"{copy_row_lower_ns_per_row:.3f},"
         f"{external_op_row_lower_pct:.3f},{copy_row_lower_pct:.3f},"
-        f"{trace_shape_duration},{trace_shape_unit_cost}"
+        f"{trace_shape_duration},{trace_shape_unit_cost},"
+        f"{trace_report_source_values_residual_ns_per_row:.3f},"
+        f"{trace_report_row_validation_residual_ns_per_row:.3f},"
+        f"{trace_report_visit_residual_ns_per_row:.3f},"
+        f"{trace_report_descriptor_ns_per_row:.3f}"
     )
 
 

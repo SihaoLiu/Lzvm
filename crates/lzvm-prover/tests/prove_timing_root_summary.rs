@@ -255,6 +255,16 @@ fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
         ),
         "prove timing root summary should classify sampled detail, scale costs by actual trace lower work, source-value lookup coverage, row-validation, and visit hotspots: stdout={stdout}"
     );
+    assert!(
+        stdout.contains(
+            "trace_report_source_values_residual_ns_per_row,trace_report_row_validation_residual_ns_per_row,trace_report_visit_residual_ns_per_row,trace_report_descriptor_ns_per_row"
+        ),
+        "prove timing root summary should expose per-row residual and descriptor costs: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(",0.000,15000.000,225000.000,75000.000"),
+        "prove timing root summary should scale residual and descriptor costs to ns per trace row: stdout={stdout}"
+    );
 }
 
 #[test]
