@@ -748,8 +748,10 @@ def first_application_frame(conn: sqlite3.Connection, callchain_id: int) -> str:
 def low_level_cuda_copy_frame(symbol: str) -> bool:
     low_level_prefixes = (
         "lzvm_cuda_",
+        "lzvm_accel::cuda_poseidon2_",
         "lzvm_accel::cuda_copy_sites::",
         "lzvm_accel::cuda_buffer::CudaDeviceBuffer::",
+        "lzvm_accel::run_cuda_",
     )
     if symbol.startswith(low_level_prefixes):
         return True
@@ -759,6 +761,7 @@ def low_level_cuda_copy_frame(symbol: str) -> bool:
         "record_cuda_copy_d2h_wait",
         "record_cuda_copy_h2d_wait",
         "record_cuda_copy_d2d_wait",
+        "run_poseidon2_",
     )
     return any(fragment in symbol for fragment in low_level_fragments)
 
