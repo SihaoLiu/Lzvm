@@ -3340,7 +3340,7 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
             && source.contains("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS")
             && source.contains(".filter(|count| *count > 0)")
             && source.contains("default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count)"),
-        "segment commit worker count should be an explicit nonzero env-controlled knob with a large-input parallel default"
+        "segment commit worker count should be an explicit nonzero env-controlled knob with a conservative default"
     );
 
     let pool_region = function_body(
