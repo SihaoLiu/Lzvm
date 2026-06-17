@@ -5,6 +5,7 @@ use super::{cuda_allocator, cuda_status, u64_word_byte_len, AccelError, CudaStre
 
 const SPARSE_U64_WORD_CHUNK: usize = 8 * 1024 * 1024;
 const ZISK_MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS: usize = 11;
+const ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS: usize = 9;
 const ZISK_MAIN_TRACE_WIDE_DESCRIPTOR_WORDS: usize = 14;
 const ZISK_MAIN_TRACE_WIDTH_WORDS: usize = 39;
 
@@ -152,6 +153,16 @@ unsafe extern "C" {
         terminal_pc: u64,
         stream: *mut c_void,
     ) -> i32;
+    fn lzvm_cuda_expand_sparse_zisk_main_trace_descriptors(
+        dst: *mut u64,
+        descriptors: *const u64,
+        high_words: *const u64,
+        high_word_count: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+    ) -> i32;
 }
 
 #[cfg(not(target_endian = "little"))]
@@ -196,6 +207,70 @@ fn validate_zisk_main_trace_descriptor_device_shape(
         return Err(AccelError::LengthMismatch {
             lhs: descriptor_byte_len,
             rhs: expected_descriptor_len,
+        });
+    }
+    let output_words = row_count
+        .checked_mul(row_width_words)
+        .ok_or(AccelError::InvalidDomain {
+            bits: row_width_words,
+            len: row_count,
+        })?;
+    u64_word_byte_len(output_words)
+}
+
+fn validate_sparse_zisk_main_trace_descriptors(
+    descriptors: &[u64],
+    high_words: &[u64],
+    descriptor_count: usize,
+    row_count: usize,
+    row_width_words: usize,
+) -> Result<usize, AccelError> {
+    if row_width_words != ZISK_MAIN_TRACE_WIDTH_WORDS || descriptor_count > row_count {
+        return Err(AccelError::InvalidDomain {
+            bits: row_width_words,
+            len: row_count,
+        });
+    }
+    let expected_descriptor_words = descriptor_count
+        .checked_mul(ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS)
+        .ok_or(AccelError::InvalidDomain {
+            bits: ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS,
+            len: descriptor_count,
+        })?;
+    if descriptors.len() != expected_descriptor_words {
+        return Err(AccelError::LengthMismatch {
+            lhs: descriptors.len(),
+            rhs: expected_descriptor_words,
+        });
+    }
+    let mut required_high_words = 0usize;
+    for descriptor in descriptors.chunks_exact(ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS) {
+        let high_mask = descriptor[7] >> 32;
+        if high_mask & !0x7f != 0 {
+            return Err(AccelError::InvalidDomain {
+                bits: high_mask as usize,
+                len: descriptor_count,
+            });
+        }
+        let high_words_for_row = (high_mask.count_ones() as usize).div_ceil(2);
+        let high_offset =
+            usize::try_from(descriptor[8]).map_err(|_| AccelError::InvalidDomain {
+                bits: ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS,
+                len: descriptor_count,
+            })?;
+        let row_required_high_words =
+            high_offset
+                .checked_add(high_words_for_row)
+                .ok_or(AccelError::InvalidDomain {
+                    bits: ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS,
+                    len: descriptor_count,
+                })?;
+        required_high_words = required_high_words.max(row_required_high_words);
+    }
+    if high_words.len() != required_high_words {
+        return Err(AccelError::LengthMismatch {
+            lhs: high_words.len(),
+            rhs: required_high_words,
         });
     }
     let output_words = row_count
@@ -858,6 +933,35 @@ impl CudaDeviceBuffer {
         )
     }
 
+    pub fn from_sparse_zisk_main_trace_descriptors(
+        descriptors: &[u64],
+        high_words: &[u64],
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+    ) -> Result<Self, AccelError> {
+        let output_byte_len = validate_sparse_zisk_main_trace_descriptors(
+            descriptors,
+            high_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+        )?;
+        let descriptor_buffer = Self::from_u64_words(descriptors)?;
+        let high_buffer = Self::from_u64_words(high_words)?;
+        Self::from_sparse_zisk_main_trace_descriptors_device(
+            &descriptor_buffer,
+            &high_buffer,
+            high_words.len(),
+            descriptor_count,
+            row_count,
+            row_width_words,
+            terminal_pc,
+            output_byte_len,
+        )
+    }
+
     pub fn from_zisk_main_trace_descriptors_device(
         descriptors: &Self,
         descriptor_words: usize,
@@ -882,6 +986,37 @@ impl CudaDeviceBuffer {
                 buffer.ptr.cast(),
                 descriptors.ptr.cast(),
                 descriptor_words,
+                descriptor_count,
+                row_count,
+                row_width_words,
+                terminal_pc,
+            )
+        };
+        cuda_status(code)?;
+        Ok(buffer)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn from_sparse_zisk_main_trace_descriptors_device(
+        descriptors: &Self,
+        high_words: &Self,
+        high_word_count: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        output_byte_len: usize,
+    ) -> Result<Self, AccelError> {
+        let buffer = Self::new(output_byte_len)?;
+        if row_count == 0 {
+            return Ok(buffer);
+        }
+        let code = unsafe {
+            lzvm_cuda_expand_sparse_zisk_main_trace_descriptors(
+                buffer.ptr.cast(),
+                descriptors.ptr.cast(),
+                high_words.ptr.cast(),
+                high_word_count,
                 descriptor_count,
                 row_count,
                 row_width_words,

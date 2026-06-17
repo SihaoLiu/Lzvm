@@ -361,6 +361,193 @@ fn cuda_expands_zisk_main_trace_descriptors() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_expands_sparse_zisk_main_trace_descriptors_like_compact() {
+    const WORDS_PER_DESCRIPTOR: usize = 11;
+    const SPARSE_WORDS_PER_DESCRIPTOR: usize = 9;
+    const KIND_MEMORY: u64 = 1;
+    const KIND_IMMEDIATE: u64 = 2;
+    const KIND_REGISTER: u64 = 3;
+    const KIND_INDIRECT: u64 = 4;
+    const STORE_REGISTER: u64 = 2;
+    const STORE_INDIRECT: u64 = 3;
+    const A_KIND_SHIFT: u64 = 32;
+    const B_KIND_SHIFT: u64 = 35;
+    const STORE_KIND_SHIFT: u64 = 38;
+
+    fn signed_word(value: i64) -> u64 {
+        value as u64
+    }
+
+    fn packed_u32_pair(lhs: u32, rhs: u32) -> u64 {
+        u64::from(lhs) | (u64::from(rhs) << 32)
+    }
+
+    fn packed_i32_pair(lhs: i32, rhs: i32) -> u64 {
+        u64::from(lhs as u32) | (u64::from(rhs as u32) << 32)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn control(
+        op: u64,
+        flag: bool,
+        store_pc: bool,
+        set_pc: bool,
+        m32: bool,
+        is_external_op: bool,
+        is_precompiled: bool,
+        ind_width: u64,
+        a_kind: u64,
+        b_kind: u64,
+        store_kind: u64,
+    ) -> u64 {
+        op | (u64::from(flag) << 8)
+            | (u64::from(store_pc) << 9)
+            | (u64::from(set_pc) << 10)
+            | (u64::from(m32) << 11)
+            | (u64::from(is_external_op) << 12)
+            | (u64::from(is_precompiled) << 13)
+            | (ind_width << 16)
+            | (a_kind << A_KIND_SHIFT)
+            | (b_kind << B_KIND_SHIFT)
+            | (store_kind << STORE_KIND_SHIFT)
+    }
+
+    fn append_sparse_row(sparse: &mut Vec<u64>, highs: &mut Vec<u64>, descriptor: &[u64]) {
+        let values = [
+            descriptor[0],
+            descriptor[1],
+            descriptor[2],
+            descriptor[3],
+            descriptor[4],
+            descriptor[5],
+            descriptor[10],
+        ];
+        let mut mask = 0_u64;
+        let mut high_values = Vec::new();
+        for (index, value) in values.into_iter().enumerate() {
+            let high = value >> 32;
+            if high != 0 {
+                mask |= 1_u64 << index;
+                high_values.push(high);
+            }
+        }
+        let high_offset = highs.len() as u64;
+        for chunk in high_values.chunks(2) {
+            let low = chunk[0];
+            let high = chunk.get(1).copied().unwrap_or(0);
+            highs.push(low | (high << 32));
+        }
+        sparse.extend_from_slice(&[
+            (descriptor[0] & 0xffff_ffff) | ((descriptor[1] & 0xffff_ffff) << 32),
+            (descriptor[2] & 0xffff_ffff) | ((descriptor[3] & 0xffff_ffff) << 32),
+            (descriptor[4] & 0xffff_ffff) | ((descriptor[5] & 0xffff_ffff) << 32),
+            descriptor[6],
+            descriptor[7],
+            descriptor[8],
+            descriptor[9],
+            (descriptor[10] & 0xffff_ffff) | (mask << 32),
+            high_offset,
+        ]);
+    }
+
+    let row0_a = (2_u64 << 32) | 1;
+    let row0_b = (4_u64 << 32) | 3;
+    let row0_c = (6_u64 << 32) | 5;
+    let row0_a_source = (8_u64 << 32) | 7;
+    let row0_store_prev = (12_u64 << 32) | 11;
+    let row1_b_source = (9_u64 << 32) | 8;
+    let row1_store_prev = (14_u64 << 32) | 13;
+    let descriptors = [
+        [
+            row0_a,
+            row0_b,
+            row0_c,
+            row0_a_source,
+            9,
+            10,
+            control(
+                0x0a,
+                true,
+                false,
+                true,
+                false,
+                true,
+                false,
+                4,
+                KIND_IMMEDIATE,
+                KIND_REGISTER,
+                STORE_REGISTER,
+            ),
+            packed_u32_pair(0x1000, 23),
+            packed_i32_pair(2, 3),
+            packed_u32_pair(21, 22),
+            row0_store_prev,
+        ],
+        [
+            100,
+            200,
+            300,
+            signed_word(-3),
+            row1_b_source,
+            signed_word(-2),
+            control(
+                0x0b,
+                false,
+                false,
+                false,
+                true,
+                true,
+                true,
+                8,
+                KIND_INDIRECT,
+                KIND_MEMORY,
+                STORE_INDIRECT,
+            ),
+            packed_u32_pair(0x2000, 33),
+            packed_i32_pair(-4, 6),
+            packed_u32_pair(31, 32),
+            row1_store_prev,
+        ],
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    assert_eq!(descriptors.len(), WORDS_PER_DESCRIPTOR * 2);
+
+    let mut sparse_descriptors = Vec::with_capacity(SPARSE_WORDS_PER_DESCRIPTOR * 2);
+    let mut sparse_high_words = Vec::new();
+    for descriptor in descriptors.chunks_exact(WORDS_PER_DESCRIPTOR) {
+        append_sparse_row(&mut sparse_descriptors, &mut sparse_high_words, descriptor);
+    }
+
+    let expected = CudaDeviceBuffer::from_zisk_main_trace_descriptors(
+        descriptors.as_slice(),
+        WORDS_PER_DESCRIPTOR,
+        2,
+        4,
+        39,
+        0x3000,
+    )
+    .expect("compact descriptor expansion should run")
+    .to_u64_words()
+    .expect("compact-expanded trace should download");
+    let actual = CudaDeviceBuffer::from_sparse_zisk_main_trace_descriptors(
+        sparse_descriptors.as_slice(),
+        sparse_high_words.as_slice(),
+        2,
+        4,
+        39,
+        0x3000,
+    )
+    .expect("sparse descriptor expansion should run")
+    .to_u64_words()
+    .expect("sparse-expanded trace should download");
+
+    assert_same_words(&actual, &expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_expands_zisk_main_trace_descriptors_on_stream() {
     const WORDS_PER_DESCRIPTOR: usize = 11;
     let descriptors = (0..(WORDS_PER_DESCRIPTOR * 2))
