@@ -159,6 +159,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "perf_effect_record_memory_write_self_pct",
         "perf_effect_record_memory_read_self_pct",
         "cpu_runner_hotspot_hint",
+        "trace_pipeline_action_hint",
         "timing_guest_trace_report_detail_samples",
         "trace_report_detail_sample_hint",
     ] {
@@ -323,6 +324,71 @@ fn prove_timing_root_summary_reports_trace_lower_work_and_wall_overlap() {
     assert!(
         stdout.contains(",7800,7812,6200,5700,1612,9912,"),
         "prove timing root summary should compute overlap and non-lowerer work from timing_guest_trace_lower_ms: stdout={stdout}"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_classifies_trace_pipeline_action() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "input_bytes=12447640",
+        "timing_total_ms=52000",
+        "timing_guest_trace_runner_ms=41000",
+        "timing_guest_trace_lowerer_ms=35000",
+        "timing_guest_trace_lower_ms=33000",
+        "timing_guest_trace_stream_elapsed_ms=43000",
+        "timing_guest_trace_stream_ms=22000",
+        "timing_guest_segment_commit_ms=21000",
+        "timing_guest_trace_segment_receive_wait_ms=22000",
+        "timing_guest_trace_pending_receive_wait_ms=1000",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("prove timing root summary should print a header");
+    let row = lines
+        .next()
+        .expect("prove timing root summary should print a data row");
+    let headers = header.split(',').collect::<Vec<_>>();
+    let fields = row.split(',').collect::<Vec<_>>();
+    let hint_index = headers
+        .iter()
+        .position(|header| *header == "trace_pipeline_action_hint")
+        .expect("summary should expose trace pipeline action hint");
+    assert_eq!(
+        fields.get(hint_index),
+        Some(&"trace_generation_and_commit_pipeline_candidate"),
+        "trace-heavy run with a large commit gate should point at the combined pipeline lever: stdout={stdout}"
     );
 }
 

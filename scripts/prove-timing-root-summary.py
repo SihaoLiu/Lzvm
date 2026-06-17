@@ -326,7 +326,8 @@ HEADER = (
     "trace_report_visit_residual_ns_per_row,"
     "trace_report_descriptor_ns_per_row,"
     "external_op_runs,external_op_avg_run,external_op_max_run,"
-    "copy_runs,copy_avg_run,copy_max_run,trace_shape_run_hint"
+    "copy_runs,copy_avg_run,copy_max_run,trace_shape_run_hint,"
+    "trace_pipeline_action_hint"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -648,6 +649,59 @@ def proof_target_gap_hint(
     if gpu_or_opening_ms >= float(trace_floor_ms) * 1.5:
         return "gpu_or_opening_dominant_gap"
     return "mixed_pipeline_gap"
+
+
+def trace_pipeline_action_hint(
+    total_ms: int,
+    runner_ms: int,
+    lowerer_ms: int,
+    trace_lower_ms: int,
+    stream_elapsed_ms: int,
+    segment_commit_ms: int,
+    segment_receive_wait_ms: int,
+    pending_receive_wait_ms: int,
+    parallel_lower_workers: int,
+) -> str:
+    if total_ms <= 0:
+        return "unknown"
+    if total_ms <= PROOF_TARGET_MS:
+        return "within_target"
+
+    trace_floor_ms = max(runner_ms, lowerer_ms, trace_lower_ms, stream_elapsed_ms)
+    if trace_floor_ms <= 0 and segment_commit_ms <= 0:
+        return "timing_breakdown_needed"
+
+    trace_is_long = trace_floor_ms >= PROOF_TARGET_MS or trace_floor_ms >= total_ms * 0.55
+    commit_is_long = (
+        segment_commit_ms >= PROOF_TARGET_MS
+        or segment_commit_ms >= total_ms * 0.25
+        or (
+            segment_receive_wait_ms >= total_ms * 0.30
+            and segment_commit_ms >= total_ms * 0.15
+        )
+    )
+    queue_wait_is_long = (
+        segment_receive_wait_ms >= total_ms * 0.25
+        or pending_receive_wait_ms >= total_ms * 0.15
+    )
+
+    if trace_is_long and commit_is_long and queue_wait_is_long:
+        return "trace_generation_and_commit_pipeline_candidate"
+    if trace_is_long:
+        if lowerer_ms >= runner_ms * 0.75 and trace_lower_ms >= lowerer_ms * 0.70:
+            if parallel_lower_workers <= 1:
+                return "parallel_trace_lowering_candidate"
+            return "parallel_trace_lowering_active"
+        if runner_ms >= lowerer_ms * 1.25:
+            return "guest_runner_parallelism_candidate"
+        return "trace_generation_parallelism_candidate"
+    if commit_is_long and queue_wait_is_long:
+        return "commit_trace_overlap_candidate"
+    if commit_is_long:
+        return "segment_commit_candidate"
+    if queue_wait_is_long:
+        return "trace_queue_backpressure_candidate"
+    return "balanced_pipeline"
 
 
 def cpu_trace_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
@@ -1696,6 +1750,17 @@ def summarize_profile_values(
         leaf_kernel_ms,
         direct_d2h_wait_ms,
     )
+    trace_pipeline_hint = trace_pipeline_action_hint(
+        total_ms,
+        runner_ms,
+        lowerer_ms,
+        trace_lower_ms,
+        stream_elapsed_ms,
+        segment_commit_ms,
+        segment_receive_wait_ms,
+        pending_receive_wait_ms,
+        parallel_lower_workers,
+    )
     if perf_hotspots is None:
         perf_hotspots = parse_perf_self_hotspots("")
     pending_drop_pct = perf_hotspots.get(
@@ -1855,7 +1920,8 @@ def summarize_profile_values(
         f"{trace_report_descriptor_ns_per_row:.3f},"
         f"{external_op_runs},{external_op_avg_run:.3f},"
         f"{external_op_max_run},{copy_runs},{copy_avg_run:.3f},"
-        f"{copy_max_run},{trace_shape_run}"
+        f"{copy_max_run},{trace_shape_run},"
+        f"{trace_pipeline_hint}"
     )
 
 
