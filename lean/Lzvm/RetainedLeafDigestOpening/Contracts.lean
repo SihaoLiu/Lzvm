@@ -197,19 +197,28 @@ theorem runtime_retained_leaf_digest_nary_opening_source_and_core_contract_from_
         accepted)
       (And.intro
         (runtime_retained_leaf_digest_opening_checked_acceptance_shifted_row_source_contract
-          validation
-          artifact
-          publicInput
-          proof
-          accepted)
-        (And.intro
-          (runtime_retained_leaf_digest_opening_checked_acceptance_retained_rows_contract
-            assumptions
             validation
             artifact
             publicInput
             proof
             accepted)
+        (And.intro
+          (runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_contract
+            validation
+            artifact
+            publicInput
+            proof
+            False
+            (runtime_retained_leaf_digest_nary_opening_checked_acceptance_evidence_from_bundle
+              assumptions
+              validation
+              centralized
+              binding
+              artifact
+              publicInput
+              proof
+              False
+              accepted))
           (runtime_retained_leaf_digest_opening_checked_acceptance_verifier_core_contract
             assumptions
             validation
