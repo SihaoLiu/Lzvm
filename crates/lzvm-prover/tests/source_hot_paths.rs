@@ -2212,7 +2212,8 @@ fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
         "fn build_layout_zisk_main_trace_segment_from_device_material",
     );
     assert!(
-        device_material_body.contains("ZiskMainReportValidationContext {\n                columns: None,"),
+        device_material_body
+            .contains("ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?"),
         "device material lowering should not repeat per-row trace-column validation after layout support is known"
     );
 
@@ -2223,7 +2224,7 @@ fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
     );
     assert!(
         host_write_body
-            .contains("ZiskMainReportValidationContext {\n            columns: Some(columns),"),
+            .contains("ZiskMainReportValidationContext::new(Some(columns), row_count, segment)?"),
         "host trace lowering should retain per-row trace-column validation for generic layouts"
     );
 }
