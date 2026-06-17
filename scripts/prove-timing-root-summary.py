@@ -265,6 +265,7 @@ HEADER = (
     "trace_report_detail_hotspot,trace_report_detail_hotspot_pct,"
     "trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,"
     "trace_report_row_validation_explained_pct,trace_report_row_validation_residual_pct,"
+    "trace_report_source_values_lookup_pct,trace_report_source_values_residual_pct,"
     "trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,"
     "trace_report_visit_residual_pct,"
     "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms"
@@ -902,6 +903,22 @@ def trace_report_row_validation_coverage(values: dict[str, int]) -> tuple[float,
     )
 
 
+def trace_report_source_values_lookup_coverage(
+    values: dict[str, int],
+) -> tuple[float, float]:
+    source_values_ns = values.get(TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY, 0)
+    if source_values_ns <= 0:
+        return (0.0, 0.0)
+    lookup_ns = values.get(TRACE_REPORT_SOURCE_A_VALUE_SAMPLED_NS_KEY, 0) + values.get(
+        TRACE_REPORT_SOURCE_B_VALUE_SAMPLED_NS_KEY, 0
+    )
+    residual_ns = max(source_values_ns - lookup_ns, 0)
+    return (
+        lookup_ns * 100.0 / source_values_ns,
+        residual_ns * 100.0 / source_values_ns,
+    )
+
+
 def trace_structure_hint(
     total_ms: int,
     runner_ms: int,
@@ -1040,6 +1057,10 @@ def summarize_profile_values(
         trace_report_row_validation_explained_pct,
         trace_report_row_validation_residual_pct,
     ) = trace_report_row_validation_coverage(values)
+    (
+        trace_report_source_values_lookup_pct,
+        trace_report_source_values_residual_pct,
+    ) = trace_report_source_values_lookup_coverage(values)
     trace_report_detail_visit_pct = (
         values.get(TRACE_REPORT_VISIT_SAMPLED_NS_KEY, 0) * 100.0
         / values.get(TRACE_REPORT_SAMPLED_NS_KEY, 0)
@@ -1344,6 +1365,8 @@ def summarize_profile_values(
         f"{trace_report_row_validation_hotspot_pct:.3f},"
         f"{trace_report_row_validation_explained_pct:.3f},"
         f"{trace_report_row_validation_residual_pct:.3f},"
+        f"{trace_report_source_values_lookup_pct:.3f},"
+        f"{trace_report_source_values_residual_pct:.3f},"
         f"{trace_report_detail_visit_pct:.3f},"
         f"{trace_report_visit_descriptor_pct:.3f},"
         f"{trace_report_visit_residual_pct:.3f},"
