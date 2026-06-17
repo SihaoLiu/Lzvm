@@ -42,6 +42,8 @@ TRACE_AMO_REPORTS_KEY = "timing_guest_trace_amo_reports"
 TRACE_STORE_CONDITIONAL_REPORTS_KEY = "timing_guest_trace_store_conditional_reports"
 TRACE_EXTERNAL_OP_ROWS_KEY = "timing_guest_trace_external_op_rows"
 TRACE_COPY_ROWS_KEY = "timing_guest_trace_copy_rows"
+TRACE_EXTERNAL_OP_ROW_LOWER_MS_KEY = "timing_guest_trace_external_op_row_lower_ms"
+TRACE_COPY_ROW_LOWER_MS_KEY = "timing_guest_trace_copy_row_lower_ms"
 TRACE_FLAG_ROWS_KEY = "timing_guest_trace_flag_rows"
 TRACE_PRECOMPILE_ROWS_KEY = "timing_guest_trace_precompile_rows"
 TRACE_INDIRECT_MEMORY_ROWS_KEY = "timing_guest_trace_indirect_memory_rows"
@@ -58,6 +60,8 @@ TRACE_SHAPE_KEYS = (
     TRACE_STORE_CONDITIONAL_REPORTS_KEY,
     TRACE_EXTERNAL_OP_ROWS_KEY,
     TRACE_COPY_ROWS_KEY,
+    TRACE_EXTERNAL_OP_ROW_LOWER_MS_KEY,
+    TRACE_COPY_ROW_LOWER_MS_KEY,
     TRACE_FLAG_ROWS_KEY,
     TRACE_PRECOMPILE_ROWS_KEY,
     TRACE_INDIRECT_MEMORY_ROWS_KEY,
@@ -301,7 +305,9 @@ HEADER = (
     "trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,"
     "trace_report_visit_residual_pct,"
     "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms,"
-    "external_op_row_pct,copy_row_pct,trace_shape_row_mix_hint"
+    "external_op_row_pct,copy_row_pct,trace_shape_row_mix_hint,"
+    "external_op_row_lower_ms,copy_row_lower_ms,"
+    "external_op_row_lower_pct,copy_row_lower_pct,trace_shape_duration_hint"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -341,6 +347,8 @@ TIMING_KEYS = {
     TRACE_STORE_CONDITIONAL_REPORTS_KEY,
     TRACE_EXTERNAL_OP_ROWS_KEY,
     TRACE_COPY_ROWS_KEY,
+    TRACE_EXTERNAL_OP_ROW_LOWER_MS_KEY,
+    TRACE_COPY_ROW_LOWER_MS_KEY,
     TRACE_FLAG_ROWS_KEY,
     TRACE_PRECOMPILE_ROWS_KEY,
     TRACE_INDIRECT_MEMORY_ROWS_KEY,
@@ -919,6 +927,21 @@ def trace_shape_row_mix_hint(
     return "mixed_trace_rows"
 
 
+def trace_shape_duration_hint(
+    external_op_row_lower_pct: float,
+    copy_row_lower_pct: float,
+) -> str:
+    if copy_row_lower_pct >= 45.0 and external_op_row_lower_pct >= 40.0:
+        return "copy_and_external_op_duration_dominate"
+    if external_op_row_lower_pct >= 45.0:
+        return "external_op_duration_dominates"
+    if copy_row_lower_pct >= 45.0:
+        return "copy_duration_dominates"
+    if external_op_row_lower_pct > 0.0 or copy_row_lower_pct > 0.0:
+        return "mixed_trace_shape_duration"
+    return "none"
+
+
 DETAIL_SAMPLE_HOTSPOT_KEYS = [
     ("row_validation", TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY),
     ("lowering", TRACE_REPORT_LOWERING_SAMPLED_NS_KEY),
@@ -1203,6 +1226,18 @@ def summarize_profile_values(
         external_op_row_pct,
         copy_row_pct,
         indirect_memory_row_pct,
+    )
+    external_op_row_lower_ms = values.get(TRACE_EXTERNAL_OP_ROW_LOWER_MS_KEY, 0)
+    copy_row_lower_ms = values.get(TRACE_COPY_ROW_LOWER_MS_KEY, 0)
+    external_op_row_lower_pct = (
+        external_op_row_lower_ms * 100.0 / trace_lower_ms if trace_lower_ms else 0.0
+    )
+    copy_row_lower_pct = (
+        copy_row_lower_ms * 100.0 / trace_lower_ms if trace_lower_ms else 0.0
+    )
+    trace_shape_duration = trace_shape_duration_hint(
+        external_op_row_lower_pct,
+        copy_row_lower_pct,
     )
     trace_report_detail_samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
     trace_report_detail_sample_pct = (
@@ -1679,7 +1714,10 @@ def summarize_profile_values(
         f"{trace_report_visit_residual_pct:.3f},"
         f"{direct_d2h_hot_bytes},{direct_d2h_hot_count},"
         f"{direct_d2h_hot_wait_ms:.3f},"
-        f"{external_op_row_pct:.3f},{copy_row_pct:.3f},{trace_shape_row_mix}"
+        f"{external_op_row_pct:.3f},{copy_row_pct:.3f},{trace_shape_row_mix},"
+        f"{external_op_row_lower_ms},{copy_row_lower_ms},"
+        f"{external_op_row_lower_pct:.3f},{copy_row_lower_pct:.3f},"
+        f"{trace_shape_duration}"
     )
 
 

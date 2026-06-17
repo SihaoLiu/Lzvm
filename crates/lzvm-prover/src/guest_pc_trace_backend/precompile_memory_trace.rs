@@ -59,6 +59,7 @@ pub(super) fn write_layout_precompile_memory_trace(
             },
             None,
             false,
+            false,
             |_, _, _| Ok(()),
         )?;
         for access in &report.precompile_memory_accesses {

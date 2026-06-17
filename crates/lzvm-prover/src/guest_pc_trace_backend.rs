@@ -195,6 +195,8 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_pending_dma_report_duration: Duration,
     trace_amo_report_duration: Duration,
     trace_store_conditional_report_duration: Duration,
+    trace_external_op_row_duration: Duration,
+    trace_copy_row_duration: Duration,
     trace_report_lowering_duration: Duration,
     trace_report_row_validation_duration: Duration,
     trace_report_memory_columns_duration: Duration,
@@ -272,6 +274,8 @@ impl GuestPcTraceStreamTiming {
         self.trace_amo_report_duration += other.trace_amo_report_duration;
         self.trace_store_conditional_report_duration +=
             other.trace_store_conditional_report_duration;
+        self.trace_external_op_row_duration += other.trace_external_op_row_duration;
+        self.trace_copy_row_duration += other.trace_copy_row_duration;
         self.trace_report_lowering_duration += other.trace_report_lowering_duration;
         self.trace_report_row_validation_duration += other.trace_report_row_validation_duration;
         self.trace_report_memory_columns_duration += other.trace_report_memory_columns_duration;
@@ -388,6 +392,14 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_store_conditional_report_duration(&self) -> Duration {
         self.trace_store_conditional_report_duration
+    }
+
+    pub fn trace_external_op_row_duration(&self) -> Duration {
+        self.trace_external_op_row_duration
+    }
+
+    pub fn trace_copy_row_duration(&self) -> Duration {
+        self.trace_copy_row_duration
     }
 
     pub fn trace_report_lowering_duration(&self) -> Duration {
@@ -3984,6 +3996,7 @@ fn validate_and_apply_zisk_main_report(
     context: ZiskMainReportValidationContext<'_>,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
     detail_timing: bool,
+    shape_timing: bool,
     mut visit: impl FnMut(
         usize,
         ZiskMainReportTraceValues,
@@ -4009,6 +4022,7 @@ fn validate_and_apply_zisk_main_report(
             context,
             timing,
             detail_timing,
+            shape_timing,
             &mut visit,
         )?;
         state.pending_dma = None;
@@ -4036,6 +4050,7 @@ fn validate_and_apply_zisk_main_report(
             context,
             timing,
             detail_timing,
+            shape_timing,
             visit,
         )?;
         state.pending_dma = zisk_main_pending_dma(report);
@@ -4064,6 +4079,7 @@ fn validate_and_apply_zisk_main_report(
             context,
             timing,
             detail_timing,
+            shape_timing,
             visit,
         )?;
         state.pending_dma = zisk_main_pending_dma(report);
@@ -4084,6 +4100,7 @@ fn validate_and_apply_zisk_main_report(
         context,
         timing,
         detail_timing,
+        shape_timing,
         &mut visit,
     )?;
     state.pending_dma = zisk_main_pending_dma(report);
@@ -4099,6 +4116,7 @@ fn validate_and_apply_zisk_main_lowered_report_rows(
     context: ZiskMainReportValidationContext<'_>,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
     detail_timing: bool,
+    shape_timing: bool,
     mut visit: impl FnMut(
         usize,
         ZiskMainReportTraceValues,
@@ -4130,6 +4148,7 @@ fn validate_and_apply_zisk_main_lowered_report_rows(
             context,
             reborrow_trace_timing(&mut timing),
             detail_timing,
+            shape_timing,
             &mut visit,
         )?;
     }
@@ -4163,14 +4182,21 @@ fn apply_zisk_main_lowered_report_row(
     context: ZiskMainReportValidationContext<'_>,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
     detail_timing: bool,
+    shape_timing: bool,
     visit: &mut impl FnMut(
         usize,
         ZiskMainReportTraceValues,
         Option<&mut GuestPcTraceStreamTiming>,
     ) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<(), GuestPcTraceBackendError> {
+    let shape_started = timing
+        .as_ref()
+        .filter(|_| shape_timing)
+        .map(|_| Instant::now());
     let validation_started = detail_duration_started(&timing, detail_timing);
     let instruction = lowered_row.instruction;
+    let is_external_op = instruction.is_external_op;
+    let is_copy = matches!(instruction.op, ZiskMainOp::CopyB);
     if let Some(columns) = context.columns {
         let memory_columns_started = detail_duration_started(&timing, detail_timing);
         validate_zisk_main_memory_columns(output_row, &instruction, columns)?;
@@ -4294,6 +4320,9 @@ fn apply_zisk_main_lowered_report_row(
     record_detail_duration(visit_started, &mut timing, |timing| {
         &mut timing.trace_report_visit_duration
     });
+    if let (Some(timing), Some(started)) = (timing, shape_started) {
+        record_trace_lowered_row_duration(timing, is_external_op, is_copy, started.elapsed());
+    }
     result
 }
 
@@ -4413,6 +4442,20 @@ fn record_trace_lowered_row_shape(
             timing.trace_memory_store_row_count += 1;
         }
         ZiskMainStore::None => timing.trace_no_store_row_count += 1,
+    }
+}
+
+fn record_trace_lowered_row_duration(
+    timing: &mut GuestPcTraceStreamTiming,
+    is_external_op: bool,
+    is_copy: bool,
+    duration: Duration,
+) {
+    if is_external_op {
+        timing.trace_external_op_row_duration += duration;
+    }
+    if is_copy {
+        timing.trace_copy_row_duration += duration;
     }
 }
 
@@ -5235,6 +5278,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
             },
             row_timing,
             report_detail_timing,
+            shape_timing,
             |_, values, mut visit_timing| {
                 if shape_timing {
                     if let Some(timing) = visit_timing.as_deref_mut() {
@@ -5428,6 +5472,7 @@ fn advance_zisk_main_segment_seed(
                 segment,
             },
             None,
+            false,
             false,
             |_, _, _| Ok(()),
         )?;
@@ -5980,6 +6025,7 @@ fn write_zisk_main_report_columns(
         },
         reborrow_trace_timing(&mut timing),
         _detail_timing,
+        shape_timing,
         |output_row, values, mut visit_timing| {
             #[cfg(feature = "cuda")]
             if let Some(descriptors) = device_trace_descriptors.as_mut() {

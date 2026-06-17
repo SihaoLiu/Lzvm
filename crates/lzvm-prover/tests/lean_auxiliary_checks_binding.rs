@@ -930,6 +930,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "\"guest_trace_store_conditional_report_lower\"",
             "guest_trace_store_conditional_report_duration()",
         ),
+        (
+            "\"guest_trace_external_op_row_lower\"",
+            "guest_trace_external_op_row_duration()",
+        ),
+        (
+            "\"guest_trace_copy_row_lower\"",
+            "guest_trace_copy_row_duration()",
+        ),
         ("\"guest_trace_reports\"", "guest_trace_report_count()"),
         (
             "\"guest_trace_report_rows\"",

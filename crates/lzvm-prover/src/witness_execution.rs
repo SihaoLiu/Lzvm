@@ -426,6 +426,8 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_pending_dma_report_duration: Duration,
     guest_trace_amo_report_duration: Duration,
     guest_trace_store_conditional_report_duration: Duration,
+    guest_trace_external_op_row_duration: Duration,
+    guest_trace_copy_row_duration: Duration,
     guest_trace_report_lowering_duration: Duration,
     guest_trace_report_row_validation_duration: Duration,
     guest_trace_report_memory_columns_duration: Duration,
@@ -625,6 +627,8 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_amo_report_duration: stream_timing.trace_amo_report_duration(),
             guest_trace_store_conditional_report_duration: stream_timing
                 .trace_store_conditional_report_duration(),
+            guest_trace_external_op_row_duration: stream_timing.trace_external_op_row_duration(),
+            guest_trace_copy_row_duration: stream_timing.trace_copy_row_duration(),
             guest_trace_report_lowering_duration: stream_timing.trace_report_lowering_duration(),
             guest_trace_report_row_validation_duration: stream_timing
                 .trace_report_row_validation_duration(),
@@ -930,6 +934,14 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_store_conditional_report_duration(&self) -> Duration {
         self.guest_trace_store_conditional_report_duration
+    }
+
+    pub fn guest_trace_external_op_row_duration(&self) -> Duration {
+        self.guest_trace_external_op_row_duration
+    }
+
+    pub fn guest_trace_copy_row_duration(&self) -> Duration {
+        self.guest_trace_copy_row_duration
     }
 
     pub fn guest_trace_report_lowering_duration(&self) -> Duration {

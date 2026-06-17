@@ -137,6 +137,14 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_store_conditional_report_duration(),
     );
     timings.record(
+        "guest_trace_external_op_row_lower",
+        timing.guest_trace_external_op_row_duration(),
+    );
+    timings.record(
+        "guest_trace_copy_row_lower",
+        timing.guest_trace_copy_row_duration(),
+    );
+    timings.record(
         "guest_trace_report_lowering",
         timing.guest_trace_report_lowering_duration(),
     );
