@@ -1395,6 +1395,33 @@ fn matching_memory_access_rejects_duplicate_matches() {
 }
 
 #[test]
+fn zisk_main_source_value_requires_ordered_memory_access() {
+    let accesses = [memory_read(72, 13), memory_read(64, 96)];
+    let effects = ZiskMainReportEffects {
+        register_writes: &[],
+        memory_accesses: &accesses,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let state = ZiskMainTraceState::new();
+    let report = addi_report();
+
+    let error = zisk_main_source_value(ZiskMainSourceValueRequest {
+        row: 9,
+        source: ZiskMainSource::Memory(64),
+        state: &state,
+        report: &report,
+        effects,
+        base: None,
+        ind_width: 0,
+        memory_access_index: 0,
+    })
+    .expect_err("source values should consume the expected memory access position");
+
+    assert!(error.to_string().contains("expected Read at 64"));
+}
+
+#[test]
 fn zisk_main_memory_access_validation_preserves_source_then_store_order() {
     let mut instruction = zisk_main_base_instruction(
         0x8000_0000,
