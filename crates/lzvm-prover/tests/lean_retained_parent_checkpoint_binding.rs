@@ -16,7 +16,10 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
         crate_root.join("../../lean/Lzvm/RetainedParentCheckpointOpening/Contracts.lean");
     let contracts_source = std::fs::read_to_string(&contracts_path)
         .expect("Lean retained parent checkpoint opening contracts source should read");
-    let lean_source = format!("{core_source}\n{contracts_source}");
+    let arity_path = crate_root.join("../../lean/Lzvm/RetainedParentCheckpointOpening/Arity.lean");
+    let arity_source = std::fs::read_to_string(&arity_path)
+        .expect("Lean retained parent checkpoint opening arity source should read");
+    let lean_source = format!("{core_source}\n{contracts_source}\n{arity_source}");
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
@@ -85,10 +88,14 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_concrete_path_opening_and_core_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_path_position_bound_from_no_collision",
             "runtime_retained_parent_checkpoint_nary_path_position_bound_from_bundle",
+            "runtime_retained_parent_checkpoint_nary_path_arity_four_position_bound_from_no_collision",
+            "runtime_retained_parent_checkpoint_nary_path_arity_four_position_bound_from_bundle",
             "runtime_retained_parent_checkpoint_nary_path_digest_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_path_opening_and_core_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_position_bound_from_no_collision",
             "runtime_retained_parent_checkpoint_nary_opening_position_bound_from_bundle",
+            "runtime_retained_parent_checkpoint_nary_opening_arity_four_position_bound_from_no_collision",
+            "runtime_retained_parent_checkpoint_nary_opening_arity_four_position_bound_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_opening_and_core_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_source_and_core_contract_from_bundle",
@@ -118,6 +125,41 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_path_arity_four_position_bound_from_no_collision",
+        &[
+            "RuntimeRetainedParentCheckpointNAryConcretePathBinding",
+            "NAryMerkleCompressionNoCollision compress",
+            "NAryMerklePathHasArity 4",
+            "retainedParentCheckpointStitchedPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_path_arity_four_position_bound_from_no_collision",
+        &[
+            "verified_concrete_nary_merkle_path_arity_four_implies_root_commits_to_leaf_at_index_from_no_collision",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_path_arity_four_position_bound_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedParentCheckpointNAryConcretePathBinding",
+            "NAryMerklePathHasArity 4",
+            "retainedParentCheckpointStitchedPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_path_arity_four_position_bound_from_bundle",
+        &[
+            "runtime_retained_parent_checkpoint_nary_path_arity_four_position_bound_from_no_collision",
+        ],
+    );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_retained_parent_checkpoint_nary_path_position_bound_from_no_collision",
@@ -139,6 +181,41 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
         "runtime_retained_parent_checkpoint_nary_opening_position_bound_from_no_collision",
         &[
             "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_arity_four_position_bound_from_no_collision",
+        &[
+            "RuntimeRetainedParentCheckpointNAryConcreteOpeningBinding",
+            "NAryMerkleCompressionNoCollision compress",
+            "NAryMerklePathHasArity 4",
+            "retainedParentCheckpointStitchedPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_arity_four_position_bound_from_no_collision",
+        &[
+            "verified_concrete_nary_merkle_opening_arity_four_implies_root_commits_to_leaf_at_index_from_no_collision",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_arity_four_position_bound_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedParentCheckpointNAryConcreteOpeningBinding",
+            "NAryMerklePathHasArity 4",
+            "retainedParentCheckpointStitchedPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_arity_four_position_bound_from_bundle",
+        &[
+            "runtime_retained_parent_checkpoint_nary_opening_arity_four_position_bound_from_no_collision",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -360,6 +437,11 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
     assert!(
         opening_source.contains("import Lzvm.RetainedParentCheckpointOpening.Contracts"),
         "retained parent checkpoint opening module should aggregate the contracts module"
+    );
+    assert!(
+        opening_source.contains("import Lzvm.RetainedParentCheckpointOpening.Arity")
+            && top_level_source.contains("import Lzvm.RetainedParentCheckpointOpening.Arity"),
+        "top-level Lean modules should import retained parent checkpoint arity binding"
     );
     assert!(
         merkle_source.contains("opening_path_prefix_for_source_row")

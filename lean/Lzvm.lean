@@ -26,8 +26,10 @@ import Lzvm.PipelineBinding.Accepts
 import Lzvm.PipelineBinding.Contracts
 import Lzvm.QueryPlanBinding
 import Lzvm.RetainedLeafDigestOpening
+import Lzvm.RetainedLeafDigestOpening.Arity
 import Lzvm.RetainedLeafDigestOpening.Contracts
 import Lzvm.RetainedParentCheckpointOpening
+import Lzvm.RetainedParentCheckpointOpening.Arity
 import Lzvm.RequiredExternalSource
 import Lzvm.RuntimeExternalSource
 import Lzvm.RuntimeSoundness

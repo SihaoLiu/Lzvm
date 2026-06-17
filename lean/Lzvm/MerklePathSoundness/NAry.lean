@@ -225,6 +225,63 @@ theorem nary_merkle_path_arity_four_index_implies_same_position
                   sameRestIndex
                   (Nat.succ.inj sameDepth)
 
+theorem nary_merkle_path_same_position_preserves_arity
+    {Digest : Type uDigest}
+    (arity : Nat) :
+    forall path otherPath : List (NAryMerklePathLayer Digest),
+      NAryMerklePathHasArity arity path ->
+        NAryMerklePathSamePosition path otherPath ->
+          NAryMerklePathHasArity arity otherPath := by
+  intro path
+  induction path with
+  | nil =>
+      intro otherPath _pathArity samePosition
+      cases otherPath with
+      | nil =>
+          simp [NAryMerklePathHasArity]
+      | cons _ _ =>
+          simp [NAryMerklePathSamePosition] at samePosition
+  | cons layer rest ih =>
+      intro otherPath pathArity samePosition
+      cases otherPath with
+      | nil =>
+          simp [NAryMerklePathSamePosition] at samePosition
+      | cons otherLayer otherRest =>
+          have sameLeft :
+              layer.leftSiblings.length =
+                otherLayer.leftSiblings.length := by
+            exact samePosition.left
+          have sameRight :
+              layer.rightSiblings.length =
+                otherLayer.rightSiblings.length := by
+            exact samePosition.right.left
+          have sameRest :
+              NAryMerklePathSamePosition rest otherRest := by
+            exact samePosition.right.right
+          have layerShape :
+              layer.leftSiblings.length + 1 + layer.rightSiblings.length =
+                arity := by
+            simpa [
+              NAryMerklePathLayerHasArity,
+              NAryMerklePathLayer.arity,
+            ] using pathArity.left
+          have otherLayerShape :
+              otherLayer.leftSiblings.length + 1 +
+                  otherLayer.rightSiblings.length =
+                arity := by
+            rw [sameLeft.symm, sameRight.symm]
+            exact layerShape
+          have otherLayerArity :
+              NAryMerklePathLayerHasArity arity otherLayer := by
+            simpa [
+              NAryMerklePathLayerHasArity,
+              NAryMerklePathLayer.arity,
+            ] using otherLayerShape
+          exact
+            And.intro
+              otherLayerArity
+              (ih otherRest pathArity.right sameRest)
+
 theorem nary_merkle_children_current_eq_of_eq
     {Digest : Type uDigest} :
     forall leftSiblings otherLeftSiblings : List Digest,

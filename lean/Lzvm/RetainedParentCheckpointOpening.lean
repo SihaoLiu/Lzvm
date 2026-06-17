@@ -4,6 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
+import Lzvm.RetainedParentCheckpointOpening.Arity
 import Lzvm.RetainedParentCheckpointOpening.Contracts
 
 /-!

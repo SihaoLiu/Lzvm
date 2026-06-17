@@ -11,10 +11,16 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
         .expect("Lean retained leaf digest opening source should read");
     let contracts_path =
         crate_root.join("../../lean/Lzvm/RetainedLeafDigestOpening/Contracts.lean");
+    let arity_path = crate_root.join("../../lean/Lzvm/RetainedLeafDigestOpening/Arity.lean");
     lean_source.push('\n');
     lean_source.push_str(
         &std::fs::read_to_string(&contracts_path)
             .expect("Lean retained leaf digest opening contracts source should read"),
+    );
+    lean_source.push('\n');
+    lean_source.push_str(
+        &std::fs::read_to_string(&arity_path)
+            .expect("Lean retained leaf digest opening arity source should read"),
     );
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
@@ -80,9 +86,13 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "runtime_retained_leaf_digest_concrete_path_opening_and_core_contract_from_bundle",
             "runtime_retained_leaf_digest_nary_path_position_bound_from_no_collision",
             "runtime_retained_leaf_digest_nary_path_position_bound_from_bundle",
+            "runtime_retained_leaf_digest_nary_path_arity_four_position_bound_from_no_collision",
+            "runtime_retained_leaf_digest_nary_path_arity_four_position_bound_from_bundle",
             "runtime_retained_leaf_digest_nary_path_digest_contract_from_bundle",
             "runtime_retained_leaf_digest_nary_opening_position_bound_from_no_collision",
             "runtime_retained_leaf_digest_nary_opening_position_bound_from_bundle",
+            "runtime_retained_leaf_digest_nary_opening_arity_four_position_bound_from_no_collision",
+            "runtime_retained_leaf_digest_nary_opening_arity_four_position_bound_from_bundle",
             "runtime_retained_leaf_digest_nary_opening_checked_acceptance_evidence_from_bundle",
             "runtime_retained_leaf_digest_nary_opening_digest_contract_from_bundle",
             "runtime_retained_leaf_digest_nary_opening_opening_and_core_contract_from_bundle",
@@ -111,6 +121,39 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_path_arity_four_position_bound_from_no_collision",
+        &[
+            "RuntimeRetainedLeafDigestNAryConcretePathBinding",
+            "NAryMerkleCompressionNoCollision compress",
+            "NAryMerklePathHasArity 4",
+            "retainedLeafDigestPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_path_arity_four_position_bound_from_no_collision",
+        &[
+            "verified_concrete_nary_merkle_path_arity_four_implies_root_commits_to_leaf_at_index_from_no_collision",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_path_arity_four_position_bound_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedLeafDigestNAryConcretePathBinding",
+            "NAryMerklePathHasArity 4",
+            "retainedLeafDigestPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_path_arity_four_position_bound_from_bundle",
+        &["runtime_retained_leaf_digest_nary_path_arity_four_position_bound_from_no_collision"],
+    );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_retained_leaf_digest_nary_path_position_bound_from_no_collision",
@@ -133,6 +176,39 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
         &[
             "verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_arity_four_position_bound_from_no_collision",
+        &[
+            "RuntimeRetainedLeafDigestNAryConcreteOpeningBinding",
+            "NAryMerkleCompressionNoCollision compress",
+            "NAryMerklePathHasArity 4",
+            "retainedLeafDigestPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_arity_four_position_bound_from_no_collision",
+        &[
+            "verified_concrete_nary_merkle_opening_arity_four_implies_root_commits_to_leaf_at_index_from_no_collision",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_arity_four_position_bound_from_bundle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedLeafDigestNAryConcreteOpeningBinding",
+            "NAryMerklePathHasArity 4",
+            "retainedLeafDigestPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_arity_four_position_bound_from_bundle",
+        &["runtime_retained_leaf_digest_nary_opening_arity_four_position_bound_from_no_collision"],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
@@ -335,6 +411,7 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
     );
     assert!(
         top_level_source.contains("import Lzvm.RetainedLeafDigestOpening")
+            && top_level_source.contains("import Lzvm.RetainedLeafDigestOpening.Arity")
             && top_level_source.contains("import Lzvm.RetainedLeafDigestOpening.Contracts"),
         "top-level Lean module should import retained leaf digest opening binding"
     );
