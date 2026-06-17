@@ -276,6 +276,116 @@ theorem runtime_pipeline_binding_checked_acceptance_core_obligations
       proof
       accepted
 
+theorem runtime_pipeline_query_opening_checked_contract_without_assumptions
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingEvidence
+            system
+            validation.queryPlanBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeChallengeSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.challengeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningCheckedAcceptance
+            system
+            validation.queryPlanBindingValidation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof accepted
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have queryPlanEvidence :=
+    runtime_query_plan_binding_checked_acceptance_evidence
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+  have challengeAccepted :=
+    runtime_query_plan_binding_checked_acceptance_challenge
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+  have challengeEvidence :=
+    runtime_challenge_segment_binding_checked_acceptance_evidence
+      validation.queryPlanBindingValidation.challengeValidation
+      artifact
+      publicInput
+      proof
+      challengeAccepted
+  have openingSegmentAccepted :=
+    runtime_query_plan_binding_checked_acceptance_opening
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+  have openingSegmentEvidence :=
+    runtime_query_plan_binding_checked_acceptance_opening_segment_evidence
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+  have openingAccepted :=
+    runtime_opening_segment_binding_checked_acceptance_opening
+      validation.queryPlanBindingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentAccepted
+  have transcriptBound :=
+    runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have pcsAndFri :=
+    runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    ⟨queryPlanEvidence,
+      challengeEvidence,
+      openingSegmentEvidence,
+      openingAccepted,
+      transcriptBound,
+      pcsAndFri.left,
+      pcsAndFri.right⟩
+
 theorem runtime_pipeline_binding_checked_acceptance_query_opening_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -316,29 +426,30 @@ theorem runtime_pipeline_binding_checked_acceptance_query_opening_evidence
           /\ system.pcsOpeningsValid publicInput proof
           /\ system.friQueriesValid publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have sound :=
-    runtime_pipeline_binding_checked_acceptance_sound
-      assumptions
+  have checkedContract :=
+    runtime_pipeline_query_opening_checked_contract_without_assumptions
       validation
       artifact
       publicInput
       proof
-      requiresExternalSource
       accepted
-  rcases sound.left with
-    ⟨_ethEvidence,
-      _artifactEvidence,
-      _runtimeArtifactEvidence,
-      _tracePreflightEvidence,
-      _traceConstraintEvidence,
-      queryPlanEvidence,
+  rcases checkedContract with
+    ⟨queryPlanEvidence,
       challengeEvidence,
       openingSegmentEvidence,
-      openingEvidence,
+      openingAccepted,
       transcriptBound,
-      _publicInputBound,
       pcsOpeningsValid,
       friQueriesValid⟩
+  have openingEvidence :=
+    runtime_opening_checked_acceptance_evidence
+      assumptions
+      validation.queryPlanBindingValidation.openingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
   exact
     ⟨queryPlanEvidence,
       challengeEvidence,
