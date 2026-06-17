@@ -50,6 +50,8 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_cuda_direct_copy_d2h_hot_bytes",
         "timing_cuda_direct_copy_d2h_hot_count",
         "timing_cuda_direct_copy_d2h_hot_wait_ns",
+        "direct_d2h_hot_wait_pct",
+        "direct_d2h_action_hint",
         "timing_cuda_allocator_host_register_wait_ns",
         "timing_cuda_allocator_copy_h2d_bytes",
         "timing_cuda_allocator_copy_h2d_wait_ns",
@@ -745,6 +747,23 @@ fn prove_timing_root_summary_reports_direct_d2h_hot_copy_shape() {
         stdout.contains(",1152,41,3389.723"),
         "prove timing root summary should report the dominant direct D2H wait bucket: stdout={stdout}"
     );
+    let lines = stdout.lines().collect::<Vec<_>>();
+    let headers = lines[0].split(',').collect::<Vec<_>>();
+    let fields = lines[1].split(',').collect::<Vec<_>>();
+    for (header, expected) in [
+        ("direct_d2h_hot_wait_pct", "81.551"),
+        ("direct_d2h_action_hint", "batch_hot_direct_d2h_root_reads"),
+    ] {
+        let index = headers
+            .iter()
+            .position(|candidate| *candidate == header)
+            .unwrap_or_else(|| panic!("summary should expose {header}: stdout={stdout}"));
+        assert_eq!(
+            fields.get(index),
+            Some(&expected),
+            "summary should report {header}: stdout={stdout}"
+        );
+    }
 }
 
 #[test]

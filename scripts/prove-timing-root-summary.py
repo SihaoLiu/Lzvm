@@ -270,6 +270,7 @@ OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
 CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD = 8 * 1024 * 1024 * 1024
 CUDA_TRANSFER_WAIT_MS_THRESHOLD = 500.0
 CUDA_TRANSFER_HOT_COPY_COUNT_THRESHOLD = 8
+DIRECT_D2H_HOT_WAIT_PCT_THRESHOLD = 50.0
 SEGMENT_COMMIT_MEMORY_PRESSURE_PCT_THRESHOLD = 8.0
 SEGMENT_COMMIT_MEMORY_THIN_MARGIN_PCT_THRESHOLD = 15.0
 PROOF_TARGET_MS = 12_000
@@ -357,6 +358,7 @@ HEADER = (
     "trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,"
     "trace_report_visit_residual_pct,"
     "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms,"
+    "direct_d2h_hot_wait_pct,direct_d2h_action_hint,"
     "cuda_host_register_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
     "segment_commit_cuda_memory_total_bytes,"
     "segment_commit_cuda_memory_initial_free_bytes,"
@@ -829,6 +831,32 @@ def cuda_transfer_action_hint_from_values(values: dict[str, int]) -> str:
     if h2d_bytes >= CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD:
         return "inspect_bulk_h2d_source_uploads"
     return "none"
+
+
+def direct_d2h_action_hint(
+    direct_d2h_wait_ms: float,
+    direct_d2h_hot_count: int,
+    direct_d2h_hot_wait_pct: float,
+    root_count: int,
+    materialization_groups: int,
+    materialization_max_group_size: int,
+) -> str:
+    if direct_d2h_wait_ms < CUDA_TRANSFER_WAIT_MS_THRESHOLD:
+        return "none"
+    hot_bucket = (
+        direct_d2h_hot_count >= CUDA_TRANSFER_HOT_COPY_COUNT_THRESHOLD
+        and direct_d2h_hot_wait_pct >= DIRECT_D2H_HOT_WAIT_PCT_THRESHOLD
+    )
+    single_root_groups = (
+        root_count > 1
+        and materialization_groups >= root_count
+        and materialization_max_group_size <= 1
+    )
+    if hot_bucket and single_root_groups:
+        return "batch_hot_direct_d2h_root_reads"
+    if hot_bucket:
+        return "keep_hot_direct_d2h_on_device"
+    return "inspect_direct_d2h_waits"
 
 
 def segment_commit_memory_pressure_hint_from_values(values: dict[str, int]) -> str:
@@ -1865,6 +1893,19 @@ def summarize_profile_values(
     direct_d2h_hot_bytes = values.get(DIRECT_D2H_HOT_BYTES_KEY, 0)
     direct_d2h_hot_count = values.get(DIRECT_D2H_HOT_COUNT_KEY, 0)
     direct_d2h_hot_wait_ms = values.get(DIRECT_D2H_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
+    direct_d2h_hot_wait_pct = (
+        direct_d2h_hot_wait_ms * 100.0 / direct_d2h_wait_ms
+        if direct_d2h_wait_ms
+        else 0.0
+    )
+    direct_d2h_hint = direct_d2h_action_hint(
+        direct_d2h_wait_ms,
+        direct_d2h_hot_count,
+        direct_d2h_hot_wait_pct,
+        root_count,
+        groups,
+        max_group_size,
+    )
     cuda_host_register_wait_ms = (
         values.get(CUDA_HOST_REGISTER_WAIT_NS_KEY, 0) / 1_000_000.0
     )
@@ -2091,7 +2132,8 @@ def summarize_profile_values(
         f"{trace_report_visit_descriptor_pct:.3f},"
         f"{trace_report_visit_residual_pct:.3f},"
         f"{direct_d2h_hot_bytes},{direct_d2h_hot_count},"
-        f"{direct_d2h_hot_wait_ms:.3f},"
+        f"{direct_d2h_hot_wait_ms:.3f},{direct_d2h_hot_wait_pct:.3f},"
+        f"{direct_d2h_hint},"
         f"{cuda_host_register_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
         f"{segment_commit_cuda_memory_total_bytes},"
         f"{segment_commit_cuda_memory_initial_free_bytes},"
