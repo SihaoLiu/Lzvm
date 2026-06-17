@@ -18,6 +18,7 @@ CONSTANT_MATERIAL_VALIDATION_JOIN_WAIT_MS_KEY = (
 )
 RUNNER_MS_KEY = "timing_guest_trace_runner_ms"
 LOWERER_MS_KEY = "timing_guest_trace_lowerer_ms"
+TRACE_LOWER_MS_KEY = "timing_guest_trace_lower_ms"
 STREAM_ELAPSED_MS_KEY = "timing_guest_trace_stream_elapsed_ms"
 STREAM_WORKER_MS_KEY = "timing_guest_trace_stream_ms"
 SEGMENT_COMMIT_MS_KEY = "timing_guest_segment_commit_ms"
@@ -224,7 +225,8 @@ PERF_CALLCHAIN_PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)%--(.*)$")
 HEADER = (
     "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,"
     "constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
-    "runner_ms,lowerer_ms,stream_elapsed_ms,stream_worker_ms,"
+    "runner_ms,lowerer_ms,trace_lower_ms,trace_runner_lowerer_overlap_ms,"
+    "trace_lowerer_non_lower_ms,stream_elapsed_ms,stream_worker_ms,"
     "segment_commit_ms,segment_commit_initial_workers,"
     "segment_commit_effective_workers,segment_commit_oom_retries,"
     "stream_commit_residual_ms,segment_receive_wait_ms,"
@@ -314,6 +316,7 @@ TIMING_KEYS = {
     CONSTANT_MATERIAL_VALIDATION_JOIN_WAIT_MS_KEY,
     RUNNER_MS_KEY,
     LOWERER_MS_KEY,
+    TRACE_LOWER_MS_KEY,
     STREAM_ELAPSED_MS_KEY,
     STREAM_WORKER_MS_KEY,
     SEGMENT_COMMIT_MS_KEY,
@@ -550,6 +553,7 @@ def primary_bottleneck(
     total_ms: int,
     runner_ms: int,
     lowerer_ms: int,
+    trace_lower_ms: int,
     stream_elapsed_ms: int,
     stream_worker_ms: int,
     segment_commit_ms: int,
@@ -561,6 +565,7 @@ def primary_bottleneck(
     candidates = [
         ("trace_runner", float(runner_ms)),
         ("trace_lowerer", float(lowerer_ms)),
+        ("trace_lower", float(trace_lower_ms)),
         ("stream_elapsed", float(stream_elapsed_ms)),
         ("stream_worker", float(stream_worker_ms)),
         ("segment_commit", float(segment_commit_ms)),
@@ -577,6 +582,7 @@ def proof_target_gap_hint(
     total_ms: int,
     runner_ms: int,
     lowerer_ms: int,
+    trace_lower_ms: int,
     stream_elapsed_ms: int,
     segment_commit_ms: int,
     finish_opening_ms: int,
@@ -587,7 +593,8 @@ def proof_target_gap_hint(
         return "unknown"
     if total_ms <= PROOF_TARGET_MS:
         return "within_12s_target"
-    trace_floor_ms = max(runner_ms, lowerer_ms, stream_elapsed_ms)
+    trace_work_ms = max(runner_ms, trace_lower_ms or lowerer_ms)
+    trace_floor_ms = max(trace_work_ms, lowerer_ms, stream_elapsed_ms)
     gpu_or_opening_ms = max(
         float(segment_commit_ms),
         float(finish_opening_ms),
@@ -1095,6 +1102,17 @@ def summarize_profile_values(
     runner_ms = values.get(RUNNER_MS_KEY, 0)
     lowerer_ms = values.get(LOWERER_MS_KEY, 0)
     stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
+    trace_lower_ms = values.get(TRACE_LOWER_MS_KEY, 0)
+    trace_runner_lowerer_overlap_ms = (
+        max(runner_ms + lowerer_ms - stream_elapsed_ms, 0)
+        if runner_ms > 0 and lowerer_ms > 0 and stream_elapsed_ms > 0
+        else 0
+    )
+    trace_lowerer_non_lower_ms = (
+        max(lowerer_ms - trace_lower_ms, 0)
+        if TRACE_LOWER_MS_KEY in values and lowerer_ms > 0
+        else 0
+    )
     stream_worker_ms = values.get(STREAM_WORKER_MS_KEY, 0)
     segment_commit_ms = values.get(SEGMENT_COMMIT_MS_KEY, 0)
     segment_commit_initial_workers = values.get(SEGMENT_COMMIT_INITIAL_WORKERS_KEY, 0)
@@ -1169,84 +1187,89 @@ def summarize_profile_values(
         trace_report_detail_hotspot_name,
         trace_report_detail_hotspot_pct,
     ) = trace_report_detail_hotspot(values)
+    trace_lowerer_share_scale_ms = (
+        trace_lower_ms
+        if TRACE_LOWER_MS_KEY in values and trace_lower_ms > 0
+        else lowerer_ms
+    )
     trace_report_detail_share_ms = trace_report_detail_lowerer_share_ms(
         values,
         TRACE_REPORT_SAMPLED_NS_KEY,
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     trace_report_row_validation_share_ms = trace_report_detail_lowerer_share_ms(
         values,
         TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY,
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     trace_report_memory_columns_share_ms = trace_report_detail_lowerer_share_ms(
         values,
         TRACE_REPORT_MEMORY_COLUMNS_SAMPLED_NS_KEY,
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     trace_report_source_values_share_ms = trace_report_detail_lowerer_share_ms(
         values,
         TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY,
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     trace_report_source_lookup_share_ms = trace_report_sampled_ns_lowerer_share_ms(
         values,
         trace_report_source_lookup_sampled_ns(values),
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     trace_report_source_values_residual_share_ms = (
         trace_report_sampled_ns_lowerer_share_ms(
             values,
             trace_report_source_values_residual_sampled_ns(values),
-            lowerer_ms,
+            trace_lowerer_share_scale_ms,
         )
     )
     trace_report_precompile_memory_share_ms = trace_report_detail_lowerer_share_ms(
         values,
         TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY,
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     trace_report_instruction_result_share_ms = trace_report_detail_lowerer_share_ms(
         values,
         TRACE_REPORT_INSTRUCTION_RESULT_SAMPLED_NS_KEY,
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     trace_report_next_pc_share_ms = trace_report_detail_lowerer_share_ms(
         values,
         TRACE_REPORT_NEXT_PC_SAMPLED_NS_KEY,
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     trace_report_register_access_share_ms = trace_report_detail_lowerer_share_ms(
         values,
         TRACE_REPORT_REGISTER_ACCESS_SAMPLED_NS_KEY,
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     trace_report_memory_access_share_ms = trace_report_detail_lowerer_share_ms(
         values,
         TRACE_REPORT_MEMORY_ACCESS_SAMPLED_NS_KEY,
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     trace_report_store_apply_share_ms = trace_report_detail_lowerer_share_ms(
         values,
         TRACE_REPORT_STORE_APPLY_SAMPLED_NS_KEY,
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     trace_report_row_validation_residual_share_ms = (
         trace_report_sampled_ns_lowerer_share_ms(
             values,
             trace_report_row_validation_residual_sampled_ns(values),
-            lowerer_ms,
+            trace_lowerer_share_scale_ms,
         )
     )
     trace_report_visit_share_ms = trace_report_detail_lowerer_share_ms(
         values,
         TRACE_REPORT_VISIT_SAMPLED_NS_KEY,
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     trace_report_descriptor_share_ms = trace_report_detail_lowerer_share_ms(
         values,
         TRACE_DESCRIPTOR_SAMPLED_NS_KEY,
-        lowerer_ms,
+        trace_lowerer_share_scale_ms,
     )
     (
         trace_report_row_validation_hotspot_name,
@@ -1445,6 +1468,7 @@ def summarize_profile_values(
         total_ms,
         runner_ms,
         lowerer_ms,
+        trace_lower_ms,
         stream_elapsed_ms,
         stream_worker_ms,
         segment_commit_ms,
@@ -1467,6 +1491,7 @@ def summarize_profile_values(
         total_ms,
         runner_ms,
         lowerer_ms,
+        trace_lower_ms,
         stream_elapsed_ms,
         segment_commit_ms,
         finish_opening_ms,
@@ -1527,6 +1552,8 @@ def summarize_profile_values(
         f"{label},{input_bytes},{total_ms},"
         f"{constant_material_elapsed_ms},{constant_material_join_wait_ms},"
         f"{constant_material_hint},{runner_ms},{lowerer_ms},"
+        f"{trace_lower_ms},{trace_runner_lowerer_overlap_ms},"
+        f"{trace_lowerer_non_lower_ms},"
         f"{stream_elapsed_ms},{stream_worker_ms},{segment_commit_ms},"
         f"{segment_commit_initial_workers},{segment_commit_effective_workers},"
         f"{segment_commit_oom_retries},"
