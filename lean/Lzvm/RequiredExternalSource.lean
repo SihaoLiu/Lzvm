@@ -199,6 +199,68 @@ theorem runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_
   exact And.intro externalEvidence pcsAndFri
 
 set_option linter.style.longLine false in
+theorem runtime_guarded_external_source_required_pcs_and_fri_from_concrete_opening
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system)
+    (openingValidation : RuntimeOpeningValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeGuardedExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeOpeningCheckedAcceptance
+          system
+          openingValidation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          ExternalSourceOpeningEvidence system sourceValidation publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked openingAccepted required
+  exact
+    runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_opening
+      assumptions.crypto.hashCollisionResistance
+      runtimeValidation
+      sourceValidation
+      openingValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      openingAccepted
+      required
+
+set_option linter.style.longLine false in
 theorem runtime_guarded_external_source_required_hash_concrete_opening_sound
     {Digest : Type uDigest}
     {system : VerifierModel}
@@ -347,10 +409,17 @@ theorem runtime_guarded_external_source_required_audited_hash_concrete_opening_s
             /\ RuntimeVerifierCoreContract system publicInput proof
             /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked openingAccepted required
-  exact
-    runtime_guarded_external_source_required_hash_concrete_opening_sound
+  have artifactAccepted := checked.left
+  have artifactEvidence :=
+    runtime_artifact_checked_acceptance_evidence
+      runtimeValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have concretePcsFri :=
+    runtime_guarded_external_source_required_pcs_and_fri_from_concrete_opening
       assumptions
-      assumptions.crypto.hashCollisionResistance
       runtimeValidation
       sourceValidation
       openingValidation
@@ -364,5 +433,22 @@ theorem runtime_guarded_external_source_required_audited_hash_concrete_opening_s
       checked
       openingAccepted
       required
+  have verifierAccepts :=
+    runtime_artifact_checked_acceptance_implies_verifier_accepts
+      runtimeValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have soundWitness :=
+    abstract_verifier_sound assumptions publicInput proof verifierAccepts
+  have coreContract :=
+    sound_witness_implies_verifier_core_contract soundWitness
+  exact
+    And.intro artifactEvidence
+      (And.intro concretePcsFri.left
+        (And.intro concretePcsFri.right.left
+          (And.intro concretePcsFri.right.right
+            (And.intro coreContract soundWitness))))
 
 end Lzvm
