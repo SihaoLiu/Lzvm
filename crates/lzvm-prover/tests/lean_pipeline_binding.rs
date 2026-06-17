@@ -88,6 +88,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
             "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
             "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_concrete_nary_merkle",
+            "runtime_pipeline_binding_checked_acceptance_accepts_concrete_opening_sound_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract",
             "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
@@ -400,6 +401,40 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_concrete_nary_merkle",
         &[
             "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening",
+            "HashCollisionResistanceAssumption",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_accepts_concrete_opening_sound_witness_contract",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "assumptions.crypto.hashCollisionResistance",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "RuntimePipelineBindingCheckedAcceptance",
+            "system.accepts publicInput proof",
+            "RuntimeSoundnessEvidence",
+            "(runtime_pipeline_runtime_soundness_validation validation)",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_accepts_concrete_opening_sound_witness_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
+            "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_concrete_nary_merkle",
+            "runtime_pipeline_binding_checked_acceptance_verifier_sound_witness",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_accepts_concrete_opening_sound_witness_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
+            "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
             "HashCollisionResistanceAssumption",
         ],
     );
