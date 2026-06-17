@@ -1058,7 +1058,7 @@ def opening_batching_hint(
         and row_value_device_rows > 1
         and row_value_device_download_batches == 0
     ):
-        return "cross_query_unit_device_row_value_batching_candidate"
+        return "multi_buffer_device_row_value_gather_candidate"
     if (
         retained_leaf_openings > 1
         and retained_leaf_rows == retained_leaf_openings

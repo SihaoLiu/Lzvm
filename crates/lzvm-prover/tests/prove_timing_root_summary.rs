@@ -1331,9 +1331,9 @@ fn prove_timing_root_summary_reports_retained_parent_checkpoint_opening_shape() 
     );
     assert!(
         stdout.contains(
-            ",43,0,77,77,yes,0,79,79,yes,0,0,79,0,0,790,0,0,43,0,0,0,cross_query_unit_device_row_value_batching_candidate,"
+            ",43,0,77,77,yes,0,79,79,yes,0,0,79,0,0,790,0,0,43,0,0,0,multi_buffer_device_row_value_gather_candidate,"
         ),
-        "prove timing root summary should classify single-query device row-value openings as a cross-unit batching target: stdout={stdout}"
+        "prove timing root summary should classify single-query device row-value openings as a multi-buffer gather target: stdout={stdout}"
     );
 }
 
@@ -1529,8 +1529,8 @@ fn prove_timing_root_summary_reports_device_row_value_single_download_stage_shap
         "prove timing root summary should expose stage-level device single-download shape: stdout={stdout}"
     );
     assert!(
-        stdout.contains(",0,43,2,31,41,cross_query_unit_device_row_value_batching_candidate,"),
-        "prove timing root summary should estimate cross-unit row-value batching savings: stdout={stdout}"
+        stdout.contains(",0,43,2,31,41,multi_buffer_device_row_value_gather_candidate,"),
+        "prove timing root summary should estimate multi-buffer row-value gather savings: stdout={stdout}"
     );
 }
 
