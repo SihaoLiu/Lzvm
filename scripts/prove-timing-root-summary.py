@@ -214,6 +214,18 @@ CUDA_COPY_H2D_WAIT_NS_KEY = "timing_cuda_allocator_copy_h2d_wait_ns"
 CUDA_COPY_H2D_HOT_BYTES_KEY = "timing_cuda_allocator_copy_h2d_hot_bytes"
 CUDA_COPY_H2D_HOT_COUNT_KEY = "timing_cuda_allocator_copy_h2d_hot_count"
 CUDA_COPY_H2D_HOT_WAIT_NS_KEY = "timing_cuda_allocator_copy_h2d_hot_wait_ns"
+DESCRIPTOR_RETENTION_ATTEMPTS_KEY = "timing_guest_descriptor_buffer_retention_attempts"
+DESCRIPTOR_RETENTION_RETAINED_KEY = "timing_guest_descriptor_buffer_retention_retained"
+DESCRIPTOR_RETENTION_REJECTED_KEY = "timing_guest_descriptor_buffer_retention_rejected"
+DESCRIPTOR_RETENTION_RETAINED_BYTES_KEY = (
+    "timing_guest_descriptor_buffer_retention_retained_bytes"
+)
+DESCRIPTOR_RETENTION_REJECTED_BYTES_KEY = (
+    "timing_guest_descriptor_buffer_retention_rejected_bytes"
+)
+DESCRIPTOR_RETENTION_LIMIT_BYTES_KEY = (
+    "timing_guest_descriptor_buffer_retention_limit_bytes"
+)
 PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
 PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
 PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY = "perf_memmove_guest_machine_pct"
@@ -326,6 +338,9 @@ HEADER = (
     "trace_report_visit_residual_pct,"
     "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms,"
     "cuda_host_register_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
+    "descriptor_retention_attempts,descriptor_retention_retained,"
+    "descriptor_retention_rejected,descriptor_retention_retained_bytes,"
+    "descriptor_retention_rejected_bytes,descriptor_retention_limit_bytes,"
     "external_op_row_pct,copy_row_pct,trace_shape_row_mix_hint,"
     "external_op_row_lower_ms,copy_row_lower_ms,"
     "external_op_row_lower_ns_per_row,copy_row_lower_ns_per_row,"
@@ -471,6 +486,12 @@ TIMING_KEYS = {
     CUDA_COPY_H2D_HOT_BYTES_KEY,
     CUDA_COPY_H2D_HOT_COUNT_KEY,
     CUDA_COPY_H2D_HOT_WAIT_NS_KEY,
+    DESCRIPTOR_RETENTION_ATTEMPTS_KEY,
+    DESCRIPTOR_RETENTION_RETAINED_KEY,
+    DESCRIPTOR_RETENTION_REJECTED_KEY,
+    DESCRIPTOR_RETENTION_RETAINED_BYTES_KEY,
+    DESCRIPTOR_RETENTION_REJECTED_BYTES_KEY,
+    DESCRIPTOR_RETENTION_LIMIT_BYTES_KEY,
 }
 
 
@@ -746,7 +767,16 @@ def cuda_transfer_action_hint_from_values(values: dict[str, int]) -> str:
     h2d_hot_wait_ms = values.get(CUDA_COPY_H2D_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
     d2h_hot_count = values.get(DIRECT_D2H_HOT_COUNT_KEY, 0)
     d2h_hot_wait_ms = values.get(DIRECT_D2H_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
+    descriptor_retained = values.get(DESCRIPTOR_RETENTION_RETAINED_KEY, 0)
+    descriptor_rejected = values.get(DESCRIPTOR_RETENTION_REJECTED_KEY, 0)
 
+    if (
+        descriptor_retained > 0
+        and descriptor_rejected > 0
+        and d2h_hot_count >= CUDA_TRANSFER_HOT_COPY_COUNT_THRESHOLD
+        and d2h_hot_wait_ms >= CUDA_TRANSFER_WAIT_MS_THRESHOLD
+    ):
+        return "retained_descriptor_d2h_tradeoff"
     if (
         h2d_bytes >= CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD
         and max(h2d_wait_ms, host_register_wait_ms) >= CUDA_TRANSFER_WAIT_MS_THRESHOLD
@@ -1755,6 +1785,18 @@ def summarize_profile_values(
         values.get(CUDA_HOST_REGISTER_WAIT_NS_KEY, 0) / 1_000_000.0
     )
     cuda_h2d_bytes = values.get(CUDA_COPY_H2D_BYTES_KEY, 0)
+    descriptor_retention_attempts = values.get(DESCRIPTOR_RETENTION_ATTEMPTS_KEY, 0)
+    descriptor_retention_retained = values.get(DESCRIPTOR_RETENTION_RETAINED_KEY, 0)
+    descriptor_retention_rejected = values.get(DESCRIPTOR_RETENTION_REJECTED_KEY, 0)
+    descriptor_retention_retained_bytes = values.get(
+        DESCRIPTOR_RETENTION_RETAINED_BYTES_KEY, 0
+    )
+    descriptor_retention_rejected_bytes = values.get(
+        DESCRIPTOR_RETENTION_REJECTED_BYTES_KEY, 0
+    )
+    descriptor_retention_limit_bytes = values.get(
+        DESCRIPTOR_RETENTION_LIMIT_BYTES_KEY, 0
+    )
     opening_source_hint = opening_source_shape_hint(
         opening_query_units,
         opening_single_query_units,
@@ -1967,6 +2009,9 @@ def summarize_profile_values(
         f"{direct_d2h_hot_bytes},{direct_d2h_hot_count},"
         f"{direct_d2h_hot_wait_ms:.3f},"
         f"{cuda_host_register_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
+        f"{descriptor_retention_attempts},{descriptor_retention_retained},"
+        f"{descriptor_retention_rejected},{descriptor_retention_retained_bytes},"
+        f"{descriptor_retention_rejected_bytes},{descriptor_retention_limit_bytes},"
         f"{external_op_row_pct:.3f},{copy_row_pct:.3f},{trace_shape_row_mix},"
         f"{external_op_row_lower_ms},{copy_row_lower_ms},"
         f"{external_op_row_lower_ns_per_row:.3f},"

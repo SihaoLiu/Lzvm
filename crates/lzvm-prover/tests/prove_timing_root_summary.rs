@@ -553,6 +553,76 @@ fn prove_timing_root_summary_aggregates_cuda_transfer_action() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_descriptor_retention_shape() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join("../../temp/prove-timing-descriptor-retention");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("timing summary fixture directory should be created");
+
+    let input = [
+        "input_bytes=12447640",
+        "timing_total_ms=58706",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_cuda_allocator_copy_h2d_bytes=80369229896",
+        "timing_cuda_allocator_copy_h2d_wait_ns=3444077241",
+        "timing_cuda_direct_copy_d2h_hot_bytes=1152",
+        "timing_cuda_direct_copy_d2h_hot_count=61",
+        "timing_cuda_direct_copy_d2h_hot_wait_ns=4960767295",
+        "timing_guest_descriptor_buffer_retention_attempts=120",
+        "timing_guest_descriptor_buffer_retention_retained=21",
+        "timing_guest_descriptor_buffer_retention_rejected=99",
+        "timing_guest_descriptor_buffer_retention_retained_bytes=7751073792",
+        "timing_guest_descriptor_buffer_retention_rejected_bytes=36241643328",
+        "timing_guest_descriptor_buffer_retention_limit_bytes=8000000000",
+    ]
+    .join("\n");
+    let path = dir.join("sample.log");
+    std::fs::write(&path, input).expect("sample timing log should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&path)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let lines = stdout.lines().collect::<Vec<_>>();
+    let headers = lines[0].split(',').collect::<Vec<_>>();
+    let fields = lines[1].split(',').collect::<Vec<_>>();
+    for (header, expected) in [
+        ("descriptor_retention_attempts", "120"),
+        ("descriptor_retention_retained", "21"),
+        ("descriptor_retention_rejected", "99"),
+        ("descriptor_retention_retained_bytes", "7751073792"),
+        ("descriptor_retention_rejected_bytes", "36241643328"),
+        ("descriptor_retention_limit_bytes", "8000000000"),
+        (
+            "cuda_transfer_action_hint",
+            "retained_descriptor_d2h_tradeoff",
+        ),
+    ] {
+        let index = headers
+            .iter()
+            .position(|candidate| *candidate == header)
+            .unwrap_or_else(|| panic!("summary should expose {header}: stdout={stdout}"));
+        assert_eq!(
+            fields.get(index),
+            Some(&expected),
+            "summary should report {header}: stdout={stdout}"
+        );
+    }
+}
+
+#[test]
 fn prove_timing_root_summary_reports_direct_d2h_hot_copy_shape() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
