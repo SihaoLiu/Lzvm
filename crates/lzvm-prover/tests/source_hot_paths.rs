@@ -3535,12 +3535,23 @@ fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
         "fn copy_extended_row_values_batch_from_device",
     );
     assert!(
-        leaf_digest_body.contains("extended_row_values_from_source_cuda(*row"),
-        "retained leaf digest openings should use the shifted-row source extension helper with its residue weight cache"
+        leaf_digest_body.contains("extended_row_values_batch_from_source_cuda(rows"),
+        "retained leaf digest openings should batch source-derived row values"
     );
     assert!(
         !leaf_digest_body.contains("extended_selected_row_values_from_source_cuda"),
         "retained leaf digest openings should avoid the selected-row extension API while it recomputes and uploads per-query weights"
+    );
+    let source_batch_body = function_body(
+        &values_source,
+        "fn extended_row_values_batch_from_source_cuda",
+        "fn open_with_recomputed_leaf_level_cuda",
+    );
+    assert!(
+        source_batch_body.contains("cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device")
+            && source_batch_body
+                .contains("cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device"),
+        "batched compact source row values should use the shifted-row helpers with their residue weight cache"
     );
 }
 
