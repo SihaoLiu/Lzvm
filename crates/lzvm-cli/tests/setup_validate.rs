@@ -441,6 +441,10 @@ struct GuestPcTraceProofRun {
     proof_bytes: Vec<u8>,
     stage_roots: Vec<(u32, u32, u32, [u64; 4])>,
     transcript_segments: Vec<(u32, Vec<u8>)>,
+    root_materialization_root_count: usize,
+    root_materialization_groups: usize,
+    root_materialization_max_group_size: usize,
+    root_materialization_needs_pipeline: bool,
 }
 
 fn sample_proof_with_material(
@@ -1525,13 +1529,41 @@ fn run_lzvm_segmented_guest_pc_proof_with_cross_segment_roots_env(
     assert!(stdout.contains("trace_instance_index=0\n"), "{stdout}");
     assert!(stdout.contains("trace_instance_index=1\n"), "{stdout}");
 
+    let root_materialization_root_count =
+        timing_usize(&stdout, "timing_guest_stage_tree_commit_root_count");
+    let root_materialization_groups = timing_usize(
+        &stdout,
+        "timing_guest_stage_tree_commit_root_materialization_groups",
+    );
+    let root_materialization_max_group_size = timing_usize(
+        &stdout,
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size",
+    );
+    let root_materialization_needs_pipeline = timing_usize(
+        &stdout,
+        "timing_guest_stage_tree_commit_root_materialization_needs_cross_segment_pipeline",
+    ) != 0;
     let proof_bytes = fs::read(output_dir.join("proof.bin")).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
     GuestPcTraceProofRun {
         proof_bytes,
         stage_roots: witness_stage_root_sequence(&proof),
         transcript_segments: transcript_relevant_proof_segments(&proof),
+        root_materialization_root_count,
+        root_materialization_groups,
+        root_materialization_max_group_size,
+        root_materialization_needs_pipeline,
     }
+}
+
+fn timing_usize(stdout: &str, key: &str) -> usize {
+    let prefix = format!("{key}=");
+    stdout
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .unwrap_or_else(|| panic!("timing key {key} should be present in stdout:\n{stdout}"))
+        .parse()
+        .unwrap_or_else(|err| panic!("timing key {key} should parse as usize: {err}"))
 }
 
 fn witness_stage_root_sequence(proof: &ProofArtifact) -> Vec<(u32, u32, u32, [u64; 4])> {
@@ -2281,6 +2313,20 @@ fn write_execution_ready_setup_directory_with_main_trace_unit(root: &Path) {
     run_generate_key_command(root);
 }
 
+fn write_execution_ready_setup_directory_with_main_device_trace_unit(root: &Path) {
+    write_global_files(root);
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    for unit in &layout.units {
+        write_unit_files_with_setup_info_verifier_and_regular_constraints(
+            unit,
+            &sample_main_device_trace_setup_info(),
+            &fixtures::sample_verifier_info(),
+            sample_regular_constraint_program(),
+        );
+    }
+    run_generate_key_command(root);
+}
+
 fn sample_main_trace_setup_info() -> UnitSetupInfo {
     let mut setup = fixtures::sample_setup_info();
     setup.n_stages = 1;
@@ -2310,6 +2356,15 @@ fn sample_main_trace_setup_info() -> UnitSetupInfo {
             lengths: vec![1],
         },
     ];
+    setup
+}
+
+fn sample_main_device_trace_setup_info() -> UnitSetupInfo {
+    let mut setup = sample_main_trace_setup_info();
+    setup.section_widths.clear();
+    setup.section_widths.insert("cm1".to_owned(), 38);
+    setup.section_widths.insert("cm2".to_owned(), 1);
+    setup.commitment_columns = main_device_trace_commitment_columns();
     setup
 }
 
@@ -2345,6 +2400,45 @@ fn main_trace_commitment_columns() -> Vec<CommitmentColumn> {
         commitment_column("b_reg_prev_mem_step", 30, 1),
         commitment_column("store_reg_prev_mem_step", 31, 1),
         commitment_column("store_reg_prev_value", 32, 2),
+    ]
+}
+
+fn main_device_trace_commitment_columns() -> Vec<CommitmentColumn> {
+    vec![
+        commitment_column("a", 0, 2),
+        commitment_column("b", 2, 2),
+        commitment_column("c", 4, 2),
+        commitment_column("flag", 6, 1),
+        commitment_column("pc", 7, 1),
+        commitment_column("a_src_imm", 8, 1),
+        commitment_column("a_src_mem", 9, 1),
+        commitment_column("a_offset_imm0", 10, 1),
+        commitment_column("air.a_imm1", 11, 1),
+        commitment_column("is_precompiled", 12, 1),
+        commitment_column("b_src_imm", 13, 1),
+        commitment_column("b_src_mem", 14, 1),
+        commitment_column("b_offset_imm0", 15, 1),
+        commitment_column("air.b_imm1", 16, 1),
+        commitment_column("b_src_ind", 17, 1),
+        commitment_column("ind_width", 18, 1),
+        commitment_column("is_external_op", 19, 1),
+        commitment_column("op", 20, 1),
+        commitment_column("store_pc", 21, 1),
+        commitment_column("store_mem", 22, 1),
+        commitment_column("store_ind", 23, 1),
+        commitment_column("store_offset", 24, 1),
+        commitment_column("set_pc", 25, 1),
+        commitment_column("jmp_offset1", 26, 1),
+        commitment_column("jmp_offset2", 27, 1),
+        commitment_column("m32", 28, 1),
+        commitment_column("air.addr1", 29, 1),
+        commitment_column("a_reg_prev_mem_step", 30, 1),
+        commitment_column("b_reg_prev_mem_step", 31, 1),
+        commitment_column("store_reg_prev_mem_step", 32, 1),
+        commitment_column("store_reg_prev_value", 33, 2),
+        commitment_column("a_src_reg", 35, 1),
+        commitment_column("b_src_reg", 36, 1),
+        commitment_column("store_reg", 37, 1),
     ]
 }
 
@@ -6518,7 +6612,7 @@ fn builds_segmented_guest_pc_trace_proof_output() {
 fn segmented_guest_pc_cross_segment_roots_match_immediate_proof_bytes() {
     let dir = temp_dir("prove-witness-segmented-guest-pc-root-parity");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory_with_main_trace_unit(&dir);
+    write_execution_ready_setup_directory_with_main_device_trace_unit(&dir);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let default_output_dir = dir.join("proof-default");
@@ -6556,6 +6650,28 @@ fn segmented_guest_pc_cross_segment_roots_match_immediate_proof_bytes() {
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
+    #[cfg(feature = "cuda")]
+    {
+        assert!(
+            default_run.root_materialization_groups < default_run.root_materialization_root_count,
+            "default run should batch root materialization groups: roots={}, groups={}",
+            default_run.root_materialization_root_count,
+            default_run.root_materialization_groups,
+        );
+        assert!(
+            default_run.root_materialization_max_group_size > 1,
+            "default run should materialize more than one root per group: max_group_size={}",
+            default_run.root_materialization_max_group_size,
+        );
+        assert!(!default_run.root_materialization_needs_pipeline);
+        assert_eq!(
+            immediate_run.root_materialization_groups,
+            immediate_run.root_materialization_root_count,
+            "immediate run should materialize one group per root"
+        );
+        assert_eq!(immediate_run.root_materialization_max_group_size, 1);
+        assert!(immediate_run.root_materialization_needs_pipeline);
+    }
     assert_eq!(default_run.stage_roots, immediate_run.stage_roots);
     assert_eq!(
         default_run.transcript_segments,
