@@ -877,55 +877,26 @@ theorem runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_c
       proof
       _requiresExternalSource
       accepted
-  have transcriptBound :=
-    runtime_pipeline_binding_checked_acceptance_transcript_bound
-      assumptions
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
       validation
       artifact
       publicInput
       proof
       accepted
-  have publicInputBound :=
-    runtime_pipeline_binding_checked_acceptance_public_input_bound
+  have queryPlanContract :=
+    runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_opening_and_core_contract
       assumptions
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  have pcsAndFri :=
-    runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle
       hashAssumptions
-      validation
+      validation.queryPlanBindingValidation
       centralized
       constantBinding
       witnessBinding
       artifact
       publicInput
       proof
-      accepted
-  have seedBinds :=
-    runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  have seededFriOpeningChecked :=
-    runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  have coreContract :=
-    runtime_pipeline_binding_checked_acceptance_verifier_core_contract
-      assumptions
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
+      _requiresExternalSource
+      queryPlanAccepted
   have executionObligations :=
     runtime_pipeline_binding_checked_acceptance_execution_obligations
       assumptions
@@ -939,15 +910,38 @@ theorem runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_c
       proofSystemSound,
       verifierAccepts,
       soundWitness⟩
-  rcases coreContract with ⟨_verifierAccepts, verifierCore⟩
+  rcases queryPlanContract with
+    ⟨seededContract,
+      _queryPlanBound,
+      _openingSegmentBound,
+      _openingEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      verifierCore⟩
+  have seedBinds :=
+    runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      seededContract
+  have seededFriOpeningChecked :=
+    runtime_query_plan_binding_seeded_contract_implies_seeded_fri_opening_requirements_checked
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      seededContract
   exact
     ⟨auditedAssumptions,
       proofSystemSound,
       verifierAccepts,
       transcriptBound,
       publicInputBound,
-      pcsAndFri.left,
-      pcsAndFri.right,
+      pcsOpenings,
+      friQueries,
       seedBinds,
       seededFriOpeningChecked,
       verifierCore,
