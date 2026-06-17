@@ -980,6 +980,7 @@ fn read_merkle_path_soundness_sources(crate_root: &Path) -> String {
         "../../lean/Lzvm/MerklePathSoundness.lean",
         "../../lean/Lzvm/MerklePathSoundness/Core.lean",
         "../../lean/Lzvm/MerklePathSoundness/NAry.lean",
+        "../../lean/Lzvm/MerklePathSoundness/NAryOpening.lean",
         "../../lean/Lzvm/MerklePathSoundness/NAryLeafEq.lean",
         "../../lean/Lzvm/MerklePathSoundness/Binary.lean",
     ]

@@ -5,6 +5,7 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.MerklePathSoundness.NAry
+import Lzvm.MerklePathSoundness.NAryOpening
 import Lzvm.MerklePathSoundness.NAryLeafEq
 import Lzvm.MerklePathSoundness.Binary
 

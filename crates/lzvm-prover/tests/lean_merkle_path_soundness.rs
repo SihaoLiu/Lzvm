@@ -12,6 +12,9 @@ fn lean_merkle_path_soundness_exposes_direct_leaf_binding_theorems() {
     let nary_path = crate_root.join("../../lean/Lzvm/MerklePathSoundness/NAry.lean");
     let nary_source =
         std::fs::read_to_string(&nary_path).expect("N-ary Merkle path source should read");
+    let nary_opening_path = crate_root.join("../../lean/Lzvm/MerklePathSoundness/NAryOpening.lean");
+    let nary_opening_source = std::fs::read_to_string(&nary_opening_path)
+        .expect("N-ary Merkle path opening source should read");
     let nary_leaf_eq_path = crate_root.join("../../lean/Lzvm/MerklePathSoundness/NAryLeafEq.lean");
     let nary_leaf_eq_source = std::fs::read_to_string(&nary_leaf_eq_path)
         .expect("N-ary Merkle path leaf-equality source should read");
@@ -57,8 +60,14 @@ fn lean_merkle_path_soundness_exposes_direct_leaf_binding_theorems() {
         "verified_concrete_nary_merkle_opening_arity_four_same_index_leaf_eq_from_bundle",
     ] {
         assert!(
-            nary_source.contains(theorem_name) || nary_leaf_eq_source.contains(theorem_name),
+            nary_source.contains(theorem_name)
+                || nary_opening_source.contains(theorem_name)
+                || nary_leaf_eq_source.contains(theorem_name),
             "N-ary Merkle path soundness should expose {theorem_name}"
         );
     }
+    assert!(
+        nary_source.lines().count() < 1300 && nary_opening_source.lines().count() < 1300,
+        "N-ary Merkle path soundness should keep core and opening binding modules focused"
+    );
 }
