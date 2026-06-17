@@ -1866,6 +1866,116 @@ impl WitnessStageCompactTreeStorage {
     }
 
     #[cfg(feature = "cuda")]
+    fn extended_row_values_batch_from_source_cuda(
+        &self,
+        rows: &[usize],
+        source_buffer: &SourceDeviceBuffer<'_>,
+        mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    ) -> Result<Vec<Vec<Felt>>, WitnessStageOpeningError> {
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+        if let [row] = rows {
+            let values = self.extended_row_values_from_source_cuda(
+                *row,
+                source_buffer,
+                timing.as_deref_mut(),
+            )?;
+            if let Some(timing) = timing {
+                timing.record_source_row_values(1, self.columns);
+            }
+            return Ok(vec![values]);
+        }
+        for row in rows {
+            if *row >= self.extended_rows {
+                return Err(WitnessStageOpeningError::LengthOverflow);
+            }
+        }
+        let row_byte_count = self
+            .columns
+            .checked_mul(WORD_BYTES)
+            .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+        let row_buffers = record_row_value_duration(
+            timing.as_deref_mut(),
+            RowValueTimingKind::SourceExtend,
+            || {
+                let mut row_buffers = Vec::with_capacity(rows.len());
+                for row in rows {
+                    let mut row_buffer = CudaDeviceBuffer::new(row_byte_count)
+                        .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+                    if source_buffer.is_compact_for(self.columns) {
+                        cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device(
+                            source_buffer.as_buffer(),
+                            &mut row_buffer,
+                            self.columns,
+                            self.source_bits,
+                            self.target_bits,
+                            *row,
+                        )
+                        .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+                    } else {
+                        cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device(
+                            source_buffer.as_buffer(),
+                            &mut row_buffer,
+                            CudaRowMajorColumnView {
+                                source_rows: self.source_rows,
+                                source_row_stride: source_buffer.row_stride(),
+                                column_offset: source_buffer.column_offset(),
+                                column_count: self.columns,
+                            },
+                            self.source_bits,
+                            self.target_bits,
+                            *row,
+                        )
+                        .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+                    }
+                    row_buffers.push(row_buffer);
+                }
+                Ok(row_buffers)
+            },
+        )?;
+        let byte_count = rows
+            .len()
+            .checked_mul(row_byte_count)
+            .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+        let values = record_row_value_duration(
+            timing.as_deref_mut(),
+            RowValueTimingKind::SourceDownload,
+            || {
+                let row_refs = row_buffers
+                    .iter()
+                    .map(|buffer| (buffer, 1, 0))
+                    .collect::<Vec<_>>();
+                let row_buffer =
+                    CudaDeviceBuffer::from_device_row_major_u64_rows(&row_refs, self.columns)
+                        .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+                let mut bytes = vec![0_u8; byte_count];
+                row_buffer
+                    .copy_range_to(0, &mut bytes)
+                    .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+                bytes
+                    .chunks_exact(row_byte_count)
+                    .map(|row_bytes| {
+                        row_bytes
+                            .chunks_exact(WORD_BYTES)
+                            .map(|chunk| {
+                                let value = u64::from_le_bytes(
+                                    chunk.try_into().expect("slice length checked"),
+                                );
+                                Felt::from_canonical(value).map_err(WitnessStageOpeningError::Field)
+                            })
+                            .collect()
+                    })
+                    .collect()
+            },
+        )?;
+        if let Some(timing) = timing {
+            timing.record_source_row_values(rows.len(), self.columns);
+        }
+        Ok(values)
+    }
+
+    #[cfg(feature = "cuda")]
     fn open_with_recomputed_leaf_level_cuda(
         &self,
         row: usize,
@@ -2250,23 +2360,20 @@ impl WitnessStageCompactTreeStorage {
             return Err(WitnessStageOpeningError::LengthOverflow);
         }
 
+        let values_by_row = self
+            .extended_row_values_batch_from_source_cuda(rows, source_buffer, timing)
+            .map_err(|source| {
+                WitnessStageOpeningError::context(
+                    "compact retained leaf digest parent checkpoint row values",
+                    source,
+                )
+            })?;
         let mut openings = Vec::with_capacity(rows.len());
-        for ((row, lower_prefix), upper_suffix) in rows
-            .iter()
+        for ((values, lower_prefix), upper_suffix) in values_by_row
+            .into_iter()
             .zip(lower_prefixes.into_iter())
             .zip(upper_suffixes.into_iter())
         {
-            let values = self
-                .extended_row_values_from_source_cuda(*row, source_buffer, timing.as_deref_mut())
-                .map_err(|source| {
-                    WitnessStageOpeningError::context(
-                        "compact retained leaf digest parent checkpoint row values",
-                        source,
-                    )
-                })?;
-            if let Some(timing) = timing.as_deref_mut() {
-                timing.record_source_row_values(1, self.columns);
-            }
             let mut siblings = lower_prefix;
             siblings.extend(upper_suffix);
             openings.push((values, siblings));
@@ -2322,19 +2429,13 @@ impl WitnessStageCompactTreeStorage {
                 launch_count,
             );
         }
+        let values_by_row = self
+            .extended_row_values_batch_from_source_cuda(rows, source_buffer, timing)
+            .map_err(|source| {
+                WitnessStageOpeningError::context("compact retained leaf digest row values", source)
+            })?;
         let mut openings = Vec::with_capacity(rows.len());
-        for (row, siblings) in rows.iter().zip(siblings_by_row.into_iter()) {
-            let values = self
-                .extended_row_values_from_source_cuda(*row, source_buffer, timing.as_deref_mut())
-                .map_err(|source| {
-                    WitnessStageOpeningError::context(
-                        "compact retained leaf digest row values",
-                        source,
-                    )
-                })?;
-            if let Some(timing) = timing.as_deref_mut() {
-                timing.record_source_row_values(1, self.columns);
-            }
+        for (values, siblings) in values_by_row.into_iter().zip(siblings_by_row.into_iter()) {
             openings.push((values, siblings));
         }
         Ok(openings)
@@ -2758,5 +2859,60 @@ mod tests {
         assert_eq!(timing.row_values_source_row_count, 0);
         assert_eq!(timing.row_values_word_count, 12);
         assert_eq!(timing.row_values_byte_count, 12 * WORD_BYTES);
+    }
+
+    #[test]
+    fn source_row_value_batch_matches_single_rows_and_records_source_rows() {
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let columns = 3;
+        let storage = WitnessStageCompactTreeStorage {
+            source_rows,
+            extended_rows,
+            columns,
+            source_bits,
+            target_bits,
+            arity: 4,
+            source_values: (0..source_rows * columns)
+                .map(|value| Felt::from_u64(value as u64 + 1))
+                .collect(),
+            raw_leaf_bytes: extended_rows * columns * WORD_BYTES,
+            logical_tree_bytes: 0,
+            digest_tree: None,
+            zero_source: false,
+            external_source_required: false,
+            retained_source_device: None,
+            retained_leaf_digest_level: None,
+            retained_parent_checkpoint_level: None,
+            materialized_tree: OnceLock::new(),
+        };
+        let source_buffer = storage
+            .source_device_buffer(None)
+            .expect("source values should upload");
+        let rows = [0_usize, 3, 7];
+        let mut timing = WitnessStageOpeningWorkTiming::default();
+
+        let batch_rows = storage
+            .extended_row_values_batch_from_source_cuda(&rows, &source_buffer, Some(&mut timing))
+            .expect("source row batch should decode");
+        let single_rows = rows
+            .iter()
+            .map(|row| {
+                storage
+                    .extended_row_values_from_source_cuda(*row, &source_buffer, None)
+                    .expect("single source row should decode")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(batch_rows, single_rows);
+        assert_eq!(timing.row_values_source_row_count, rows.len());
+        assert_eq!(timing.row_values_device_row_count, 0);
+        assert_eq!(timing.row_values_word_count, rows.len() * columns);
+        assert_eq!(
+            timing.row_values_byte_count,
+            rows.len() * columns * WORD_BYTES
+        );
     }
 }
