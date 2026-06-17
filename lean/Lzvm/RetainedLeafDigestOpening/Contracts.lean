@@ -14,6 +14,133 @@ namespace Lzvm
 
 universe uDigest
 
+theorem runtime_retained_leaf_digest_nary_opening_checked_acceptance_evidence_from_bundle
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeRetainedLeafDigestNAryConcreteOpeningBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedLeafDigestOpeningEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have batchAccepted :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesBatchRowsAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  have batchEvidence :=
+    runtime_batch_witness_opening_rows_checked_acceptance_evidence
+      assumptions
+      validation.batchRowsValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      batchAccepted
+  have queryPlanBound :=
+    validation.batchRowsValidation.batchWitnessOpeningRowsAcceptedImpliesQueryPlanBound
+      artifact
+      publicInput
+      proof
+      batchAccepted
+  have levelAvailable :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesLevelAvailable
+      artifact
+      publicInput
+      proof
+      accepted
+  have pathBound :=
+    runtime_retained_leaf_digest_nary_opening_position_bound_from_bundle
+      assumptions
+      validation
+      centralized
+      binding
+      artifact
+      publicInput
+      proof
+      accepted
+  have rootMatches :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRootMatchesExpectedRoot
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsFromSource :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRowsFromSource
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsBoundToQueryPlan :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRowsBoundToQueryPlan
+      artifact
+      publicInput
+      proof
+      accepted
+  have retainedPerRow :=
+    validation.retainedLeafDigestChecksImplyPerRowWitnessOpeningRowsBound
+      artifact
+      publicInput
+      proof
+      queryPlanBound
+      rowsBoundToQueryPlan
+      rowsFromSource
+      pathBound
+      rootMatches
+  let segmentValidation := validation.batchRowsValidation.openingSegmentValidation
+  let openingValidation := segmentValidation.openingValidation
+  have witnessSegments :=
+    validation.batchRowsValidation.perRowWitnessOpeningRowsImplyWitnessOpeningSegmentsValid
+      artifact
+      publicInput
+      proof
+      queryPlanBound
+      retainedPerRow
+  have witnessOpeningsBound : openingValidation.witnessOpeningsBound
+      artifact
+      publicInput
+      proof :=
+    segmentValidation.openingSegmentChecksImplyWitnessOpeningsBound
+      artifact
+      publicInput
+      proof
+      queryPlanBound
+      witnessSegments
+  exact
+    And.intro batchEvidence
+      (And.intro
+        (And.intro levelAvailable
+          (And.intro pathBound
+            (And.intro rootMatches
+              (And.intro rowsFromSource rowsBoundToQueryPlan))))
+        (And.intro rowsBoundToQueryPlan
+          (And.intro rowsFromSource
+            (And.intro retainedPerRow
+              (And.intro witnessSegments witnessOpeningsBound)))))
+
 theorem runtime_retained_leaf_digest_nary_opening_source_and_core_contract_from_bundle
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
