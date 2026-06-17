@@ -1001,10 +1001,12 @@ def trace_shape_run_hint(
         and copy_max_run <= 0
     ):
         return "none"
-    if external_op_avg_run >= 8.0 or external_op_max_run >= 32:
+    if external_op_avg_run >= 8.0:
         return "external_op_runs_long"
-    if copy_avg_run >= 8.0 or copy_max_run >= 32:
+    if copy_avg_run >= 8.0:
         return "copy_runs_long"
+    if external_op_max_run >= 32 or copy_max_run >= 32:
+        return "shape_runs_spiky"
     return "shape_runs_short"
 
 
