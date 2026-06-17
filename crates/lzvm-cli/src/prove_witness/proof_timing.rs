@@ -284,6 +284,10 @@ pub(super) fn record_proof_artifact_timing(
         timing.witness_opening_row_values_device_download_batch_count,
     );
     timings.record_count(
+        "finish_witness_opening_row_values_device_single_downloads",
+        timing.witness_opening_row_values_device_single_download_count,
+    );
+    timings.record_count(
         "finish_witness_opening_row_values_source_rows",
         timing.witness_opening_row_values_source_row_count,
     );
@@ -627,6 +631,13 @@ pub(super) fn record_proof_artifact_timing(
                 stage_work.stage_index
             ),
             stage_work.row_values_device_download_batch_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_row_values_device_single_downloads",
+                stage_work.stage_index
+            ),
+            stage_work.row_values_device_single_download_count,
         );
         timings.record_count_dynamic(
             format!(

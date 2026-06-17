@@ -86,6 +86,7 @@ pub(crate) struct WitnessStageOpeningWorkTiming {
     pub(crate) path_parent_hash_retained_parent_checkpoint_suffix_launch_count: usize,
     pub(crate) row_values_device_row_count: usize,
     pub(crate) row_values_device_download_batch_count: usize,
+    pub(crate) row_values_device_single_download_count: usize,
     pub(crate) row_values_source_row_count: usize,
     pub(crate) row_values_word_count: usize,
     pub(crate) row_values_byte_count: usize,
@@ -201,6 +202,11 @@ impl WitnessStageOpeningWorkTiming {
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
     pub(crate) fn record_device_row_value_download_batch(&mut self) {
         self.row_values_device_download_batch_count += 1;
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn record_device_row_value_single_download(&mut self) {
+        self.row_values_device_single_download_count += 1;
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
@@ -2342,6 +2348,7 @@ impl WitnessStageCompactTreeStorage {
             )?;
             if let Some(timing) = timing.as_deref_mut() {
                 timing.record_device_row_values(1, self.columns);
+                timing.record_device_row_value_single_download();
             }
             return Ok(vec![values]);
         }

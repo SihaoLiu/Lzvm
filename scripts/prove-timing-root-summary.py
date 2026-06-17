@@ -214,6 +214,9 @@ OPENING_PATH_PARENT_HASH_LAUNCHES_PER_STAGE_KEY = (
 OPENING_ROW_VALUE_DEVICE_DOWNLOAD_BATCHES_KEY = (
     "timing_finish_witness_opening_row_values_device_download_batches"
 )
+OPENING_ROW_VALUE_DEVICE_SINGLE_DOWNLOADS_KEY = (
+    "timing_finish_witness_opening_row_values_device_single_downloads"
+)
 LEAF_KERNEL_MS_KEY = "timing_guest_stage_leaf_kernel_work_ms"
 LEAF_COSET_CALLS_KEY = "timing_guest_stage_leaf_coset_extend_calls"
 LEAF_COSET_COLUMNS_KEY = "timing_guest_stage_leaf_coset_extend_columns"
@@ -311,7 +314,8 @@ HEADER = (
     "retained_parent_checkpoint_suffix_rows,retained_parent_checkpoint_suffix_bytes,"
     "retained_parent_checkpoint_suffix_launches,"
     "opening_path_parent_hash_launches_per_stage,"
-    "opening_row_value_device_download_batches,opening_batching_hint,"
+    "opening_row_value_device_download_batches,"
+    "opening_row_value_device_single_downloads,opening_batching_hint,"
     "root_count,materialization_groups,"
     "materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,"
     "root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
@@ -503,6 +507,7 @@ TIMING_KEYS = {
     OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_LAUNCHES_KEY,
     OPENING_PATH_PARENT_HASH_LAUNCHES_PER_STAGE_KEY,
     OPENING_ROW_VALUE_DEVICE_DOWNLOAD_BATCHES_KEY,
+    OPENING_ROW_VALUE_DEVICE_SINGLE_DOWNLOADS_KEY,
     ROOT_COUNT_KEY,
     ROOT_GROUPS_KEY,
     ROOT_MAX_GROUP_KEY,
@@ -1892,6 +1897,9 @@ def summarize_profile_values(
     opening_row_value_device_download_batches = values.get(
         OPENING_ROW_VALUE_DEVICE_DOWNLOAD_BATCHES_KEY, 0
     )
+    opening_row_value_device_single_downloads = values.get(
+        OPENING_ROW_VALUE_DEVICE_SINGLE_DOWNLOADS_KEY, 0
+    )
     root_count = values[ROOT_COUNT_KEY]
     groups = values[ROOT_GROUPS_KEY]
     max_group_size = values[ROOT_MAX_GROUP_KEY]
@@ -2105,6 +2113,7 @@ def summarize_profile_values(
         f"{retained_parent_checkpoint_suffix_launches},"
         f"{opening_path_parent_hash_launches_per_stage},"
         f"{opening_row_value_device_download_batches},"
+        f"{opening_row_value_device_single_downloads},"
         f"{opening_hint},"
         f"{root_count},{groups},{max_group_size},"
         f"{roots_per_group:.3f},{needs_cross_segment_root_pipeline},{policy_hint},"
