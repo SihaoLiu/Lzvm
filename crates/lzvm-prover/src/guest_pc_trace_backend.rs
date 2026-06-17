@@ -245,6 +245,8 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_descriptor_unpaired_high32_nonzero_count: usize,
     trace_descriptor_unpaired_high32_nonzero_row_count: usize,
     trace_descriptor_high32_field_counts: [u32; ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT],
+    trace_descriptor_high32_row_field_histogram:
+        [u32; ZISK_MAIN_UNPAIRED_DESCRIPTOR_HIGH32_HISTOGRAM_BUCKETS],
     trace_single_row_report_count: usize,
     trace_multi_row_report_count: usize,
     trace_pending_dma_report_count: usize,
@@ -350,6 +352,13 @@ impl GuestPcTraceStreamTiming {
             .zip(other.trace_descriptor_high32_field_counts)
         {
             *field_count = field_count.saturating_add(other_count);
+        }
+        for (bucket_count, other_count) in self
+            .trace_descriptor_high32_row_field_histogram
+            .iter_mut()
+            .zip(other.trace_descriptor_high32_row_field_histogram)
+        {
+            *bucket_count = bucket_count.saturating_add(other_count);
         }
         self.trace_single_row_report_count += other.trace_single_row_report_count;
         self.trace_multi_row_report_count += other.trace_multi_row_report_count;
@@ -648,6 +657,13 @@ impl GuestPcTraceStreamTiming {
             .map(|count| count as usize)
     }
 
+    pub fn trace_descriptor_high32_row_field_histogram(
+        &self,
+    ) -> [usize; ZISK_MAIN_UNPAIRED_DESCRIPTOR_HIGH32_HISTOGRAM_BUCKETS] {
+        self.trace_descriptor_high32_row_field_histogram
+            .map(|count| count as usize)
+    }
+
     pub fn trace_single_row_report_count(&self) -> usize {
         self.trace_single_row_report_count
     }
@@ -924,7 +940,7 @@ struct GuestPcTracePendingSegmentSlice {
 }
 
 enum GuestPcTraceSegmentStreamMessage {
-    Segment(GuestPcTraceSegmentTrace),
+    Segment(Box<GuestPcTraceSegmentTrace>),
     Complete(Box<GuestPcTraceStreamResult>),
     Error(GuestPcTraceBackendError),
 }
@@ -998,6 +1014,8 @@ pub(crate) struct ZiskMainDeviceTraceDescriptors {
     unpaired_high32_nonzero_count: usize,
     unpaired_high32_nonzero_row_count: usize,
     unpaired_high32_nonzero_field_counts: [u32; ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT],
+    unpaired_high32_nonzero_row_field_histogram:
+        [u32; ZISK_MAIN_UNPAIRED_DESCRIPTOR_HIGH32_HISTOGRAM_BUCKETS],
     record_unpaired_high32_stats_enabled: bool,
     row_count: usize,
     column_count: usize,
@@ -1063,6 +1081,8 @@ impl ZiskMainDeviceTraceDescriptors {
             unpaired_high32_nonzero_count: 0,
             unpaired_high32_nonzero_row_count: 0,
             unpaired_high32_nonzero_field_counts: [0; ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT],
+            unpaired_high32_nonzero_row_field_histogram: [0;
+                ZISK_MAIN_UNPAIRED_DESCRIPTOR_HIGH32_HISTOGRAM_BUCKETS],
             record_unpaired_high32_stats_enabled,
             row_count,
             column_count,
@@ -1097,6 +1117,12 @@ impl ZiskMainDeviceTraceDescriptors {
         self.unpaired_high32_nonzero_field_counts
     }
 
+    pub(crate) fn unpaired_high32_nonzero_row_field_histogram(
+        &self,
+    ) -> [u32; ZISK_MAIN_UNPAIRED_DESCRIPTOR_HIGH32_HISTOGRAM_BUCKETS] {
+        self.unpaired_high32_nonzero_row_field_histogram
+    }
+
     pub(crate) fn row_count(&self) -> usize {
         self.row_count
     }
@@ -1123,6 +1149,12 @@ impl ZiskMainDeviceTraceDescriptors {
         if high32_nonzero_count != 0 {
             self.unpaired_high32_nonzero_row_count += 1;
         }
+        if let Some(bucket_count) = self
+            .unpaired_high32_nonzero_row_field_histogram
+            .get_mut(high32_nonzero_count)
+        {
+            *bucket_count = bucket_count.saturating_add(1);
+        }
         for (field_count, value) in self
             .unpaired_high32_nonzero_field_counts
             .iter_mut()
@@ -1142,6 +1174,8 @@ const ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS: usize = 11;
 #[cfg(feature = "cuda")]
 const ZISK_MAIN_DEVICE_TRACE_WIDE_DESCRIPTOR_WORDS: usize = 14;
 pub(crate) const ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT: usize = 7;
+pub(crate) const ZISK_MAIN_UNPAIRED_DESCRIPTOR_HIGH32_HISTOGRAM_BUCKETS: usize =
+    ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT + 1;
 #[cfg(feature = "cuda")]
 const ZISK_MAIN_DEVICE_TRACE_SOURCE_MEMORY: u64 = 1;
 #[cfg(feature = "cuda")]
@@ -2625,7 +2659,7 @@ fn for_each_guest_pc_trace_segment<E>(
                 |segment| {
                     let send_started = Instant::now();
                     sender
-                        .send(GuestPcTraceSegmentStreamMessage::Segment(segment))
+                        .send(GuestPcTraceSegmentStreamMessage::Segment(Box::new(segment)))
                         .map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
                             message: "guest PC trace segment consumer stopped".to_owned(),
                         })?;
@@ -2658,7 +2692,7 @@ fn for_each_guest_pc_trace_segment<E>(
             match message {
                 GuestPcTraceSegmentStreamMessage::Segment(segment) => {
                     if emit_error.is_none() {
-                        if let Err(error) = emit(segment) {
+                        if let Err(error) = emit(*segment) {
                             emit_error = Some(error);
                         }
                     }
@@ -4518,6 +4552,13 @@ fn record_trace_descriptor_width_counts(
         .zip(descriptors.unpaired_high32_nonzero_field_counts())
     {
         *field_count += descriptor_count;
+    }
+    for (bucket_count, descriptor_count) in timing
+        .trace_descriptor_high32_row_field_histogram
+        .iter_mut()
+        .zip(descriptors.unpaired_high32_nonzero_row_field_histogram())
+    {
+        *bucket_count += descriptor_count;
     }
 }
 

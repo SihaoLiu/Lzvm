@@ -4158,8 +4158,10 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
                 .contains("guest_trace_descriptor_unpaired_high32_nonzero_count")
             && proof_trace_timing_fields
                 .contains("guest_trace_descriptor_unpaired_high32_nonzero_row_count")
-            && proof_trace_timing_fields.contains("guest_trace_descriptor_high32_field_counts"),
-        "proof guest PC timing should retain descriptor high-word occupancy and field counts"
+            && proof_trace_timing_fields.contains("guest_trace_descriptor_high32_field_counts")
+            && proof_trace_timing_fields
+                .contains("guest_trace_descriptor_high32_row_field_histogram"),
+        "proof guest PC timing should retain descriptor high-word occupancy, field counts, and row histogram"
     );
 
     let stage_timing_body = function_body(
@@ -4219,6 +4221,14 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "\"guest_trace_descriptor_high32_store_prev_value_values\"",
             "guest_trace_descriptor_high32_field_counts()",
+        ),
+        (
+            "\"guest_trace_descriptor_high32_rows_with_0_fields\"",
+            "guest_trace_descriptor_high32_row_field_histogram()",
+        ),
+        (
+            "\"guest_trace_descriptor_high32_rows_with_7_fields\"",
+            "guest_trace_descriptor_high32_row_field_histogram()",
         ),
         (
             "\"guest_stage_leaf_hash_rows\"",

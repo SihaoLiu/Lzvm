@@ -1331,6 +1331,10 @@ fn zisk_main_device_descriptor_counts_unpaired_high_words() {
         descriptors.unpaired_high32_nonzero_field_counts(),
         [1, 0, 1, 1, 0, 1, 1]
     );
+    assert_eq!(
+        descriptors.unpaired_high32_nonzero_row_field_histogram(),
+        [1, 0, 0, 0, 0, 1, 0, 0]
+    );
 }
 
 #[test]

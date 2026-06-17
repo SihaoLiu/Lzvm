@@ -169,6 +169,16 @@ DESCRIPTOR_HIGH32_STORE_PAYLOAD_VALUES_KEY = (
 DESCRIPTOR_HIGH32_STORE_PREV_VALUE_VALUES_KEY = (
     "timing_guest_trace_descriptor_high32_store_prev_value_values"
 )
+DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS = (
+    "timing_guest_trace_descriptor_high32_rows_with_0_fields",
+    "timing_guest_trace_descriptor_high32_rows_with_1_fields",
+    "timing_guest_trace_descriptor_high32_rows_with_2_fields",
+    "timing_guest_trace_descriptor_high32_rows_with_3_fields",
+    "timing_guest_trace_descriptor_high32_rows_with_4_fields",
+    "timing_guest_trace_descriptor_high32_rows_with_5_fields",
+    "timing_guest_trace_descriptor_high32_rows_with_6_fields",
+    "timing_guest_trace_descriptor_high32_rows_with_7_fields",
+)
 SEED_DIRECT_LIFT_ATTEMPTS_KEY = "timing_guest_trace_seed_direct_lift_attempts"
 SEED_DIRECT_LIFT_SUCCESSES_KEY = "timing_guest_trace_seed_direct_lift_successes"
 SEED_FULL_ADVANCES_KEY = "timing_guest_trace_seed_full_advances"
@@ -323,6 +333,10 @@ HEADER = (
     "descriptor_high32_a_payload_values,descriptor_high32_b_payload_values,"
     "descriptor_high32_store_payload_values,"
     "descriptor_high32_store_prev_value_values,"
+    "descriptor_high32_rows_with_0_fields,descriptor_high32_rows_with_1_fields,"
+    "descriptor_high32_rows_with_2_fields,descriptor_high32_rows_with_3_fields,"
+    "descriptor_high32_rows_with_4_fields,descriptor_high32_rows_with_5_fields,"
+    "descriptor_high32_rows_with_6_fields,descriptor_high32_rows_with_7_fields,"
     "descriptor_shape_hint,seed_direct_lift_attempts,"
     "seed_direct_lift_successes,seed_full_advances,"
     "finish_opening_ms,opening_query_units,opening_single_query_units,"
@@ -511,6 +525,7 @@ TIMING_KEYS = {
     DESCRIPTOR_HIGH32_B_PAYLOAD_VALUES_KEY,
     DESCRIPTOR_HIGH32_STORE_PAYLOAD_VALUES_KEY,
     DESCRIPTOR_HIGH32_STORE_PREV_VALUE_VALUES_KEY,
+    *DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS,
     SEED_DIRECT_LIFT_ATTEMPTS_KEY,
     SEED_DIRECT_LIFT_SUCCESSES_KEY,
     SEED_FULL_ADVANCES_KEY,
@@ -1895,6 +1910,9 @@ def summarize_profile_values(
     descriptor_high32_store_prev_value_values = values.get(
         DESCRIPTOR_HIGH32_STORE_PREV_VALUE_VALUES_KEY, 0
     )
+    descriptor_high32_row_field_histogram = [
+        values.get(key, 0) for key in DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS
+    ]
     descriptor_hint = descriptor_shape_hint(
         descriptor_rows,
         descriptor_compact_rows,
@@ -2170,7 +2188,9 @@ def summarize_profile_values(
         f"{descriptor_high32_b_values},{descriptor_high32_c_values},"
         f"{descriptor_high32_a_payload_values},{descriptor_high32_b_payload_values},"
         f"{descriptor_high32_store_payload_values},"
-        f"{descriptor_high32_store_prev_value_values},{descriptor_hint},"
+        f"{descriptor_high32_store_prev_value_values},"
+        f"{','.join(str(count) for count in descriptor_high32_row_field_histogram)},"
+        f"{descriptor_hint},"
         f"{seed_direct_lift_attempts},"
         f"{seed_direct_lift_successes},{seed_full_advances},"
         f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
@@ -2420,6 +2440,14 @@ def self_test() -> None:
                         f"{DESCRIPTOR_HIGH32_B_PAYLOAD_VALUES_KEY}=1",
                         f"{DESCRIPTOR_HIGH32_STORE_PAYLOAD_VALUES_KEY}=0",
                         f"{DESCRIPTOR_HIGH32_STORE_PREV_VALUE_VALUES_KEY}=2",
+                        f"{DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS[0]}=10",
+                        f"{DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS[1]}=3",
+                        f"{DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS[2]}=2",
+                        f"{DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS[3]}=1",
+                        f"{DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS[4]}=0",
+                        f"{DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS[5]}=1",
+                        f"{DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS[6]}=0",
+                        f"{DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS[7]}=0",
                         f"{SEED_DIRECT_LIFT_ATTEMPTS_KEY}=22",
                         f"{SEED_DIRECT_LIFT_SUCCESSES_KEY}=22",
                         f"{SEED_FULL_ADVANCES_KEY}=1",

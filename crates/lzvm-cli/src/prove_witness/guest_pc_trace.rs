@@ -420,6 +420,40 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_descriptor_high32_store_prev_value_values",
         descriptor_high32_store_prev_value_values,
     );
+    let [descriptor_high32_rows_with_0_fields, descriptor_high32_rows_with_1_fields, descriptor_high32_rows_with_2_fields, descriptor_high32_rows_with_3_fields, descriptor_high32_rows_with_4_fields, descriptor_high32_rows_with_5_fields, descriptor_high32_rows_with_6_fields, descriptor_high32_rows_with_7_fields] =
+        timing.guest_trace_descriptor_high32_row_field_histogram();
+    timings.record_count(
+        "guest_trace_descriptor_high32_rows_with_0_fields",
+        descriptor_high32_rows_with_0_fields,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_rows_with_1_fields",
+        descriptor_high32_rows_with_1_fields,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_rows_with_2_fields",
+        descriptor_high32_rows_with_2_fields,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_rows_with_3_fields",
+        descriptor_high32_rows_with_3_fields,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_rows_with_4_fields",
+        descriptor_high32_rows_with_4_fields,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_rows_with_5_fields",
+        descriptor_high32_rows_with_5_fields,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_rows_with_6_fields",
+        descriptor_high32_rows_with_6_fields,
+    );
+    timings.record_count(
+        "guest_trace_descriptor_high32_rows_with_7_fields",
+        descriptor_high32_rows_with_7_fields,
+    );
     timings.record_count(
         "guest_trace_single_row_reports",
         timing.guest_trace_single_row_report_count(),
