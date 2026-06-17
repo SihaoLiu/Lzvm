@@ -5,6 +5,7 @@ mod merkle;
 mod requests;
 mod validation;
 
+pub(crate) use build::build_pcs_fri_opening_unit_from_transcript_commitments_with_timing;
 pub use build::{
     build_pcs_fri_opening_unit, build_pcs_fri_opening_unit_with_timing,
     build_pcs_fri_transcript_commitments, build_pcs_fri_transcript_commitments_with_timing,

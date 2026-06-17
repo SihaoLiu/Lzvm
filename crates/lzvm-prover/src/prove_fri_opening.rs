@@ -26,9 +26,10 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_field::{Ext3, Felt, FieldError};
 
 use crate::pcs_fri::{
-    build_pcs_fri_opening_unit, build_pcs_fri_opening_unit_with_timing,
-    build_pcs_fri_transcript_commitments, build_pcs_fri_transcript_commitments_with_timing,
-    PcsFriOpeningBuildRequest, PcsFriOpeningBuildTiming, PcsFriTranscriptCommitmentRequest,
+    build_pcs_fri_opening_unit, build_pcs_fri_opening_unit_from_transcript_commitments_with_timing,
+    build_pcs_fri_opening_unit_with_timing, build_pcs_fri_transcript_commitments,
+    build_pcs_fri_transcript_commitments_with_timing, PcsFriOpeningBuildRequest,
+    PcsFriOpeningBuildTiming, PcsFriTranscriptCommitmentRequest,
 };
 use crate::pcs_transcript::{derive_pcs_transcript_prefix_challenges, PcsTranscriptPrefixInputs};
 #[cfg(not(feature = "cuda"))]
@@ -635,18 +636,75 @@ pub fn build_pcs_fri_opening_segment_from_transcript_values_with_timing(
     values: &[ProvePcsFriTranscriptValues],
     timing: Option<&mut PcsFriOpeningBuildTiming>,
 ) -> Result<ProofSegment, ProvePcsFriOpeningSegmentError> {
-    build_pcs_fri_opening_segment_from_value_refs_with_timing(
+    build_pcs_fri_opening_segment_from_transcript_values_cached_with_timing(
         schedule,
         query_segment,
-        values.iter().map(|value| PcsFriOpeningValueRef {
-            unit_index: value.unit_index,
-            trace_instance_index: value.trace_instance_index,
-            challenges: &value.commitments.challenges,
-            polynomial: &value.polynomial,
-        }),
-        values.len(),
+        values,
         timing,
     )
+}
+
+fn build_pcs_fri_opening_segment_from_transcript_values_cached_with_timing(
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    values: &[ProvePcsFriTranscriptValues],
+    mut timing: Option<&mut PcsFriOpeningBuildTiming>,
+) -> Result<ProofSegment, ProvePcsFriOpeningSegmentError> {
+    if query_segment.id != PCS_QUERY_PLAN_SEGMENT_ID {
+        return Err(ProvePcsFriOpeningSegmentError::InvalidQuerySegmentId {
+            segment_id: query_segment.id,
+        });
+    }
+    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
+    let mut seen_units = BTreeSet::new();
+    let mut units = Vec::with_capacity(values.len());
+    for input in values {
+        if !seen_units.insert((input.unit_index, input.trace_instance_index)) {
+            return Err(ProvePcsFriOpeningSegmentError::DuplicateUnitIndex {
+                unit_index: input.unit_index,
+            });
+        }
+        let unit = schedule.units.get(input.unit_index).ok_or(
+            ProvePcsFriOpeningSegmentError::UnitIndexOutOfRange {
+                unit_index: input.unit_index,
+                unit_count: schedule.units.len(),
+            },
+        )?;
+        let unit_index_u32 = u32::try_from(input.unit_index).map_err(|_| {
+            ProvePcsFriOpeningSegmentError::UnitIndexOverflow {
+                unit_index: input.unit_index,
+            }
+        })?;
+        let query_unit = query_plan
+            .units
+            .iter()
+            .find(|unit| {
+                unit.unit_index == unit_index_u32
+                    && unit.trace_instance_index == input.trace_instance_index
+            })
+            .ok_or(ProvePcsFriOpeningSegmentError::MissingQueryUnit {
+                unit_index: input.unit_index,
+            })?;
+        let opening = build_pcs_fri_opening_unit_from_transcript_commitments_with_timing(
+            unit,
+            unit_index_u32,
+            input.trace_instance_index,
+            &query_unit.queries,
+            &input.commitments,
+            timing.as_deref_mut(),
+        )
+        .map_err(|source| ProvePcsFriOpeningSegmentError::Build {
+            unit_index: input.unit_index,
+            source,
+        })?;
+        units.push(opening);
+    }
+
+    let segment = PcsFriOpeningSegment { units };
+    Ok(ProofSegment {
+        id: PCS_FRI_OPENING_SEGMENT_ID,
+        data: encode_pcs_fri_opening_segment(&segment)?,
+    })
 }
 
 pub fn build_pcs_fri_opening_segment_from_trace(

@@ -274,6 +274,13 @@ pub enum PcsFriOpeningBuildError {
         expected: u32,
         found: u32,
     },
+    LayerCountMismatch {
+        expected: usize,
+        found: usize,
+    },
+    LayerRootMismatch {
+        layer_index: usize,
+    },
     FoldingFactorMismatch {
         layer_index: usize,
         expected: usize,
@@ -324,6 +331,14 @@ impl fmt::Display for PcsFriOpeningBuildError {
                 f,
                 "PCS FRI opening build layer {layer_index} input bits {found} do not match expected {expected}"
             ),
+            Self::LayerCountMismatch { expected, found } => write!(
+                f,
+                "PCS FRI opening build expected {expected} layers, found {found}"
+            ),
+            Self::LayerRootMismatch { layer_index } => write!(
+                f,
+                "PCS FRI opening build cached layer {layer_index} root does not match transcript root"
+            ),
             Self::FoldingFactorMismatch {
                 layer_index,
                 expected,
@@ -368,6 +383,8 @@ impl std::error::Error for PcsFriOpeningBuildError {
             | Self::QueryRowCountMismatch { .. }
             | Self::InvalidLayerBits { .. }
             | Self::LayerInputMismatch { .. }
+            | Self::LayerCountMismatch { .. }
+            | Self::LayerRootMismatch { .. }
             | Self::FoldingFactorMismatch { .. }
             | Self::PolynomialLengthMismatch { .. }
             | Self::FinalLayerMismatch { .. }

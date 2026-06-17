@@ -11,7 +11,7 @@ use super::fold::verify_fri_fold;
 use super::merkle;
 use super::requests::{
     PcsFriOpeningBuildRequest, PcsFriOpeningBuildTiming, PcsFriTranscriptCommitmentRequest,
-    PcsFriTranscriptCommitments,
+    PcsFriTranscriptCommitments, PcsFriTranscriptLayerMaterial,
 };
 use crate::pcs_transcript::{absorb_binding_segments, absorb_commit_values, PcsTranscriptError};
 use crate::ProveUnitSchedule;
@@ -51,6 +51,7 @@ pub fn build_pcs_fri_transcript_commitments_with_timing(
     }
 
     let mut layer_roots = Vec::with_capacity(schedule.fri_layers.len());
+    let mut layer_materials = Vec::with_capacity(schedule.fri_layers.len());
     for (layer_index, layer) in schedule.fri_layers.iter().enumerate() {
         if layer.input_bits != current_bits {
             return Err(PcsFriOpeningBuildError::LayerInputMismatch {
@@ -122,6 +123,10 @@ pub fn build_pcs_fri_transcript_commitments_with_timing(
                 Ok::<Vec<Ext3>, PcsFriTranscriptCommitmentError>(next)
             },
         )?;
+        layer_materials.push(PcsFriTranscriptLayerMaterial {
+            grouped_values,
+            tree,
+        });
         current = next;
         current_bits = layer.output_bits;
     }
@@ -152,6 +157,7 @@ pub fn build_pcs_fri_transcript_commitments_with_timing(
         layer_roots,
         final_polynomial: current,
         final_query_challenge,
+        layer_materials,
     })
 }
 
@@ -342,6 +348,172 @@ pub fn build_pcs_fri_opening_unit_with_timing(
         trace_instance_index: request.trace_instance_index,
         layers,
         final_polynomial: current.iter().map(|value| value.to_u64s()).collect(),
+    };
+    if let (Some(timing), Some(started)) = (timing, unit_started) {
+        timing.add_unit_build(started.elapsed());
+    }
+    Ok(segment)
+}
+
+pub(crate) fn build_pcs_fri_opening_unit_from_transcript_commitments_with_timing(
+    schedule: &ProveUnitSchedule,
+    unit_index: u32,
+    trace_instance_index: u32,
+    query_rows: &[u64],
+    commitments: &PcsFriTranscriptCommitments,
+    mut timing: Option<&mut PcsFriOpeningBuildTiming>,
+) -> Result<PcsFriOpeningUnitSegment, PcsFriOpeningBuildError> {
+    let unit_started = timing.as_ref().map(|_| Instant::now());
+    if schedule.fri_layers.is_empty() {
+        return Err(PcsFriOpeningBuildError::EmptyFriLayers);
+    }
+
+    let query_count = usize::try_from(schedule.query_count)
+        .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+    if query_rows.len() != query_count {
+        return Err(PcsFriOpeningBuildError::QueryRowCountMismatch {
+            expected: query_count,
+            found: query_rows.len(),
+        });
+    }
+    if commitments.layer_materials.len() != schedule.fri_layers.len() {
+        return Err(PcsFriOpeningBuildError::LayerCountMismatch {
+            expected: schedule.fri_layers.len(),
+            found: commitments.layer_materials.len(),
+        });
+    }
+    if commitments.layer_roots.len() != schedule.fri_layers.len() {
+        return Err(PcsFriOpeningBuildError::LayerCountMismatch {
+            expected: schedule.fri_layers.len(),
+            found: commitments.layer_roots.len(),
+        });
+    }
+
+    let mut current_bits = schedule.fri_layers[0].input_bits;
+    let mut layers = Vec::with_capacity(schedule.fri_layers.len());
+    for (layer_index, (layer, material)) in schedule
+        .fri_layers
+        .iter()
+        .zip(commitments.layer_materials.iter())
+        .enumerate()
+    {
+        if layer.input_bits != current_bits {
+            return Err(PcsFriOpeningBuildError::LayerInputMismatch {
+                layer_index,
+                expected: current_bits,
+                found: layer.input_bits,
+            });
+        }
+        if layer.output_bits >= layer.input_bits {
+            return Err(PcsFriOpeningBuildError::InvalidLayerBits {
+                layer_index,
+                input_bits: layer.input_bits,
+                output_bits: layer.output_bits,
+            });
+        }
+
+        let output_size = build_domain_size(layer.output_bits)?;
+        let folding_factor = usize::try_from(layer.folding_factor)
+            .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+        let expected_folding_factor = build_domain_size(layer.input_bits - layer.output_bits)?;
+        if folding_factor != expected_folding_factor {
+            return Err(PcsFriOpeningBuildError::FoldingFactorMismatch {
+                layer_index,
+                expected: expected_folding_factor,
+                found: folding_factor,
+            });
+        }
+        if material.grouped_values.len() != output_size {
+            return Err(PcsFriOpeningBuildError::PolynomialLengthMismatch {
+                layer_index,
+                expected: output_size,
+                found: material.grouped_values.len(),
+            });
+        }
+        if let Some(found) = material
+            .grouped_values
+            .iter()
+            .map(Vec::len)
+            .find(|len| *len != folding_factor)
+        {
+            return Err(PcsFriOpeningBuildError::FoldingFactorMismatch {
+                layer_index,
+                expected: folding_factor,
+                found,
+            });
+        }
+        if material.tree.root != commitments.layer_roots[layer_index] {
+            return Err(PcsFriOpeningBuildError::LayerRootMismatch { layer_index });
+        }
+
+        let layer_index_u32 =
+            u32::try_from(layer_index).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+        let output_size_u64 =
+            u64::try_from(output_size).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+        let queries = record_fri_opening_duration(
+            timing.as_deref_mut(),
+            |timing, duration| timing.add_query_work(duration, query_rows.len()),
+            || {
+                query_rows
+                    .iter()
+                    .map(|query_row| {
+                        let row_index = *query_row % output_size_u64;
+                        let row_index_usize = usize::try_from(row_index)
+                            .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+                        let values = material.grouped_values[row_index_usize]
+                            .iter()
+                            .map(|value| value.to_u64s())
+                            .collect();
+                        let siblings = material.tree.query_siblings(row_index_usize)?;
+                        Ok(PcsFriOpeningQuerySegment {
+                            row_index,
+                            values,
+                            siblings,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, PcsFriOpeningBuildError>>()
+            },
+        )?;
+
+        layers.push(PcsFriOpeningLayerSegment {
+            layer_index: layer_index_u32,
+            root: merkle::digest_to_u64s(material.tree.root),
+            last_level: material
+                .tree
+                .last_level
+                .iter()
+                .copied()
+                .map(merkle::digest_to_u64s)
+                .collect(),
+            queries,
+        });
+        current_bits = layer.output_bits;
+    }
+
+    if current_bits != schedule.final_layer_bits {
+        return Err(PcsFriOpeningBuildError::FinalLayerMismatch {
+            expected: schedule.final_layer_bits,
+            found: current_bits,
+        });
+    }
+    let final_len = build_domain_size(schedule.final_layer_bits)?;
+    if commitments.final_polynomial.len() != final_len {
+        return Err(PcsFriOpeningBuildError::PolynomialLengthMismatch {
+            layer_index: schedule.fri_layers.len(),
+            expected: final_len,
+            found: commitments.final_polynomial.len(),
+        });
+    }
+
+    let segment = PcsFriOpeningUnitSegment {
+        unit_index,
+        trace_instance_index,
+        layers,
+        final_polynomial: commitments
+            .final_polynomial
+            .iter()
+            .map(|value| value.to_u64s())
+            .collect(),
     };
     if let (Some(timing), Some(started)) = (timing, unit_started) {
         timing.add_unit_build(started.elapsed());

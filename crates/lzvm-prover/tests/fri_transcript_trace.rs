@@ -29,11 +29,13 @@ use lzvm_prover::pcs_transcript::{derive_pcs_transcript_challenges, PcsTranscrip
 use lzvm_prover::witness_trace::parse_witness_trace;
 use lzvm_prover::{
     build_pcs_evaluation_segment, build_pcs_fri_opening_segment_from_trace_segments,
-    build_pcs_fri_opening_segment_from_transcript_values, build_pcs_fri_polynomial_values,
-    build_pcs_fri_transcript_values_from_trace_segments, build_pcs_material_manifest_segment,
-    build_pcs_query_nonce_segment, build_pcs_query_plan_segment_from_challenge,
-    derive_prove_schedule, ProveExecutionUnitArtifacts, ProvePcsEvaluationValues,
-    ProvePcsFriTranscriptTraceSegmentValues, ProveWitnessAuxiliaryInputs,
+    build_pcs_fri_opening_segment_from_transcript_values,
+    build_pcs_fri_opening_segment_from_transcript_values_with_timing,
+    build_pcs_fri_polynomial_values, build_pcs_fri_transcript_values_from_trace_segments,
+    build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
+    build_pcs_query_plan_segment_from_challenge, derive_prove_schedule,
+    ProveExecutionUnitArtifacts, ProvePcsEvaluationValues, ProvePcsFriTranscriptTraceSegmentValues,
+    ProveWitnessAuxiliaryInputs,
 };
 
 #[test]
@@ -193,9 +195,14 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
         nonce,
     )
     .expect("query segment should build");
-    let opening_segment =
-        build_pcs_fri_opening_segment_from_transcript_values(&schedule, &query_segment, &values)
-            .expect("FRI opening segment should build from transcript values");
+    let mut opening_timing = lzvm_prover::pcs_fri::PcsFriOpeningBuildTiming::default();
+    let opening_segment = build_pcs_fri_opening_segment_from_transcript_values_with_timing(
+        &schedule,
+        &query_segment,
+        &values,
+        Some(&mut opening_timing),
+    )
+    .expect("FRI opening segment should build from transcript values");
     let wrapped_opening_segment = build_pcs_fri_opening_segment_from_trace_segments(
         &schedule,
         &query_segment,
@@ -229,6 +236,25 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
     assert_eq!(transcript_value.commitments.challenges, expected_challenges);
     assert_eq!(transcript_value.polynomial, expected_polynomial);
     assert_eq!(wrapped_opening_segment, opening_segment);
+    assert_eq!(
+        opening_timing.layer_tree.as_nanos(),
+        0,
+        "opening from transcript values should reuse transcript layer trees"
+    );
+    assert_eq!(
+        opening_timing.fold_work.as_nanos(),
+        0,
+        "opening from transcript values should reuse transcript folded layers"
+    );
+    assert_eq!(opening_timing.unit_count, 1);
+    assert_eq!(
+        opening_timing.layer_count, 0,
+        "opening from transcript values should not rebuild layer trees"
+    );
+    assert_eq!(
+        opening_timing.query_count,
+        query_plan.units[0].queries.len() * unit.fri_layers.len()
+    );
     assert!(verify_fri_opening_folds(
         unit,
         PcsFriOpeningFoldRequest {

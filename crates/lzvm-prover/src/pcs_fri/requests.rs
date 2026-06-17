@@ -6,6 +6,7 @@ use lzvm_artifacts::verifier_info::VerifierCode;
 use lzvm_field::{Ext3, Felt};
 use std::time::Duration;
 
+use super::merkle::FriLayerTree;
 use crate::ProveSchedule;
 
 #[derive(Debug, Clone, Copy)]
@@ -108,4 +109,11 @@ pub struct PcsFriTranscriptCommitments {
     pub layer_roots: Vec<[Felt; 4]>,
     pub final_polynomial: Vec<Ext3>,
     pub final_query_challenge: Ext3,
+    pub(super) layer_materials: Vec<PcsFriTranscriptLayerMaterial>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct PcsFriTranscriptLayerMaterial {
+    pub(super) grouped_values: Vec<Vec<Ext3>>,
+    pub(super) tree: FriLayerTree,
 }
