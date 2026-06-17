@@ -553,6 +553,81 @@ fn prove_timing_root_summary_aggregates_cuda_transfer_action() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_segment_commit_memory_margin() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join("../../temp/prove-timing-segment-commit-memory");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("timing summary fixture directory should be created");
+
+    let input = [
+        "input_bytes=12447640",
+        "timing_total_ms=50142",
+        "timing_guest_segment_commit_initial_workers=3",
+        "timing_guest_segment_commit_effective_workers=3",
+        "timing_guest_segment_commit_oom_retries=0",
+        "timing_guest_segment_commit_cuda_memory_total_bytes=34359738368",
+        "timing_guest_segment_commit_cuda_memory_initial_free_bytes=12025908428",
+        "timing_guest_segment_commit_cuda_memory_effective_free_bytes=12025908428",
+        "timing_guest_segment_commit_cuda_memory_min_free_bytes=1717986918",
+        "timing_guest_segment_commit_cuda_allocator_initial_cached_bytes=0",
+        "timing_guest_segment_commit_cuda_allocator_effective_cached_bytes=0",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+    let path = dir.join("sample.log");
+    std::fs::write(&path, input).expect("sample timing log should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&path)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let lines = stdout.lines().collect::<Vec<_>>();
+    let headers = lines[0].split(',').collect::<Vec<_>>();
+    let fields = lines[1].split(',').collect::<Vec<_>>();
+    for (header, expected) in [
+        ("segment_commit_cuda_memory_total_bytes", "34359738368"),
+        (
+            "segment_commit_cuda_memory_initial_free_bytes",
+            "12025908428",
+        ),
+        (
+            "segment_commit_cuda_memory_effective_free_bytes",
+            "12025908428",
+        ),
+        ("segment_commit_cuda_memory_min_free_bytes", "1717986918"),
+        ("segment_commit_cuda_allocator_initial_cached_bytes", "0"),
+        ("segment_commit_cuda_allocator_effective_cached_bytes", "0"),
+        ("segment_commit_cuda_memory_min_free_pct", "5.000"),
+        (
+            "segment_commit_memory_pressure_hint",
+            "segment_commit_memory_pressure",
+        ),
+    ] {
+        let index = headers
+            .iter()
+            .position(|candidate| *candidate == header)
+            .unwrap_or_else(|| panic!("summary should expose {header}: stdout={stdout}"));
+        assert_eq!(
+            fields.get(index),
+            Some(&expected),
+            "summary should report {header}: stdout={stdout}"
+        );
+    }
+}
+
+#[test]
 fn prove_timing_root_summary_reports_descriptor_retention_shape() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

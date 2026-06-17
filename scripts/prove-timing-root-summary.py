@@ -27,6 +27,24 @@ SEGMENT_COMMIT_OOM_RETRY_MS_KEY = "timing_guest_segment_commit_oom_retry_ms"
 SEGMENT_COMMIT_INITIAL_WORKERS_KEY = "timing_guest_segment_commit_initial_workers"
 SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY = "timing_guest_segment_commit_effective_workers"
 SEGMENT_COMMIT_OOM_RETRIES_KEY = "timing_guest_segment_commit_oom_retries"
+SEGMENT_COMMIT_CUDA_MEMORY_TOTAL_BYTES_KEY = (
+    "timing_guest_segment_commit_cuda_memory_total_bytes"
+)
+SEGMENT_COMMIT_CUDA_MEMORY_INITIAL_FREE_BYTES_KEY = (
+    "timing_guest_segment_commit_cuda_memory_initial_free_bytes"
+)
+SEGMENT_COMMIT_CUDA_MEMORY_EFFECTIVE_FREE_BYTES_KEY = (
+    "timing_guest_segment_commit_cuda_memory_effective_free_bytes"
+)
+SEGMENT_COMMIT_CUDA_MEMORY_MIN_FREE_BYTES_KEY = (
+    "timing_guest_segment_commit_cuda_memory_min_free_bytes"
+)
+SEGMENT_COMMIT_CUDA_ALLOCATOR_INITIAL_CACHED_BYTES_KEY = (
+    "timing_guest_segment_commit_cuda_allocator_initial_cached_bytes"
+)
+SEGMENT_COMMIT_CUDA_ALLOCATOR_EFFECTIVE_CACHED_BYTES_KEY = (
+    "timing_guest_segment_commit_cuda_allocator_effective_cached_bytes"
+)
 SEGMENT_RECEIVE_WAIT_MS_KEY = "timing_guest_trace_segment_receive_wait_ms"
 PENDING_RECEIVE_WAIT_MS_KEY = "timing_guest_trace_pending_receive_wait_ms"
 PENDING_SEND_WAIT_MS_KEY = "timing_guest_trace_pending_send_wait_ms"
@@ -252,6 +270,8 @@ OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
 CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD = 8 * 1024 * 1024 * 1024
 CUDA_TRANSFER_WAIT_MS_THRESHOLD = 500.0
 CUDA_TRANSFER_HOT_COPY_COUNT_THRESHOLD = 8
+SEGMENT_COMMIT_MEMORY_PRESSURE_PCT_THRESHOLD = 8.0
+SEGMENT_COMMIT_MEMORY_THIN_MARGIN_PCT_THRESHOLD = 15.0
 PROOF_TARGET_MS = 12_000
 PERF_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
 PERF_SECOND_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
@@ -338,6 +358,14 @@ HEADER = (
     "trace_report_visit_residual_pct,"
     "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms,"
     "cuda_host_register_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
+    "segment_commit_cuda_memory_total_bytes,"
+    "segment_commit_cuda_memory_initial_free_bytes,"
+    "segment_commit_cuda_memory_effective_free_bytes,"
+    "segment_commit_cuda_memory_min_free_bytes,"
+    "segment_commit_cuda_allocator_initial_cached_bytes,"
+    "segment_commit_cuda_allocator_effective_cached_bytes,"
+    "segment_commit_cuda_memory_min_free_pct,"
+    "segment_commit_memory_pressure_hint,"
     "descriptor_retention_attempts,descriptor_retention_retained,"
     "descriptor_retention_rejected,descriptor_retention_retained_bytes,"
     "descriptor_retention_rejected_bytes,descriptor_retention_limit_bytes,"
@@ -379,6 +407,12 @@ TIMING_KEYS = {
     SEGMENT_COMMIT_INITIAL_WORKERS_KEY,
     SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY,
     SEGMENT_COMMIT_OOM_RETRIES_KEY,
+    SEGMENT_COMMIT_CUDA_MEMORY_TOTAL_BYTES_KEY,
+    SEGMENT_COMMIT_CUDA_MEMORY_INITIAL_FREE_BYTES_KEY,
+    SEGMENT_COMMIT_CUDA_MEMORY_EFFECTIVE_FREE_BYTES_KEY,
+    SEGMENT_COMMIT_CUDA_MEMORY_MIN_FREE_BYTES_KEY,
+    SEGMENT_COMMIT_CUDA_ALLOCATOR_INITIAL_CACHED_BYTES_KEY,
+    SEGMENT_COMMIT_CUDA_ALLOCATOR_EFFECTIVE_CACHED_BYTES_KEY,
     SEGMENT_RECEIVE_WAIT_MS_KEY,
     PENDING_RECEIVE_WAIT_MS_KEY,
     PENDING_SEND_WAIT_MS_KEY,
@@ -795,6 +829,30 @@ def cuda_transfer_action_hint_from_values(values: dict[str, int]) -> str:
     if h2d_bytes >= CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD:
         return "inspect_bulk_h2d_source_uploads"
     return "none"
+
+
+def segment_commit_memory_pressure_hint_from_values(values: dict[str, int]) -> str:
+    total_bytes = values.get(SEGMENT_COMMIT_CUDA_MEMORY_TOTAL_BYTES_KEY, 0)
+    min_free_bytes = values.get(SEGMENT_COMMIT_CUDA_MEMORY_MIN_FREE_BYTES_KEY, 0)
+    initial_workers = values.get(SEGMENT_COMMIT_INITIAL_WORKERS_KEY, 0)
+    effective_workers = values.get(SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY, 0)
+    oom_retries = values.get(SEGMENT_COMMIT_OOM_RETRIES_KEY, 0)
+
+    if oom_retries > 0 or (
+        initial_workers > 0
+        and effective_workers > 0
+        and effective_workers < initial_workers
+    ):
+        return "segment_commit_oom_fallback"
+    if total_bytes <= 0:
+        return "memory_timing_missing"
+
+    min_free_pct = min_free_bytes * 100.0 / total_bytes
+    if min_free_pct <= SEGMENT_COMMIT_MEMORY_PRESSURE_PCT_THRESHOLD:
+        return "segment_commit_memory_pressure"
+    if min_free_pct <= SEGMENT_COMMIT_MEMORY_THIN_MARGIN_PCT_THRESHOLD:
+        return "segment_commit_memory_thin_margin"
+    return "segment_commit_memory_margin_ok"
 
 
 def cpu_trace_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
@@ -1395,6 +1453,32 @@ def summarize_profile_values(
     segment_commit_initial_workers = values.get(SEGMENT_COMMIT_INITIAL_WORKERS_KEY, 0)
     segment_commit_effective_workers = values.get(SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY, 0)
     segment_commit_oom_retries = values.get(SEGMENT_COMMIT_OOM_RETRIES_KEY, 0)
+    segment_commit_cuda_memory_total_bytes = values.get(
+        SEGMENT_COMMIT_CUDA_MEMORY_TOTAL_BYTES_KEY, 0
+    )
+    segment_commit_cuda_memory_initial_free_bytes = values.get(
+        SEGMENT_COMMIT_CUDA_MEMORY_INITIAL_FREE_BYTES_KEY, 0
+    )
+    segment_commit_cuda_memory_effective_free_bytes = values.get(
+        SEGMENT_COMMIT_CUDA_MEMORY_EFFECTIVE_FREE_BYTES_KEY, 0
+    )
+    segment_commit_cuda_memory_min_free_bytes = values.get(
+        SEGMENT_COMMIT_CUDA_MEMORY_MIN_FREE_BYTES_KEY, 0
+    )
+    segment_commit_cuda_allocator_initial_cached_bytes = values.get(
+        SEGMENT_COMMIT_CUDA_ALLOCATOR_INITIAL_CACHED_BYTES_KEY, 0
+    )
+    segment_commit_cuda_allocator_effective_cached_bytes = values.get(
+        SEGMENT_COMMIT_CUDA_ALLOCATOR_EFFECTIVE_CACHED_BYTES_KEY, 0
+    )
+    segment_commit_cuda_memory_min_free_pct = (
+        segment_commit_cuda_memory_min_free_bytes
+        * 100.0
+        / segment_commit_cuda_memory_total_bytes
+        if segment_commit_cuda_memory_total_bytes > 0
+        else 0.0
+    )
+    segment_commit_memory_hint = segment_commit_memory_pressure_hint_from_values(values)
     stream_commit_residual_ms = (
         stream_elapsed_ms - stream_worker_ms - segment_commit_ms
     )
@@ -2009,6 +2093,14 @@ def summarize_profile_values(
         f"{direct_d2h_hot_bytes},{direct_d2h_hot_count},"
         f"{direct_d2h_hot_wait_ms:.3f},"
         f"{cuda_host_register_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
+        f"{segment_commit_cuda_memory_total_bytes},"
+        f"{segment_commit_cuda_memory_initial_free_bytes},"
+        f"{segment_commit_cuda_memory_effective_free_bytes},"
+        f"{segment_commit_cuda_memory_min_free_bytes},"
+        f"{segment_commit_cuda_allocator_initial_cached_bytes},"
+        f"{segment_commit_cuda_allocator_effective_cached_bytes},"
+        f"{segment_commit_cuda_memory_min_free_pct:.3f},"
+        f"{segment_commit_memory_hint},"
         f"{descriptor_retention_attempts},{descriptor_retention_retained},"
         f"{descriptor_retention_rejected},{descriptor_retention_retained_bytes},"
         f"{descriptor_retention_rejected_bytes},{descriptor_retention_limit_bytes},"
