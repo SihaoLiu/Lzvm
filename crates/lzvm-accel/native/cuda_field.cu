@@ -388,6 +388,24 @@ __global__ void copy_d2d_selected_row_major_rows_kernel(
     dst[word_index] = src[static_cast<size_t>(source_row) * row_width_words + column];
 }
 
+__global__ void copy_d2d_row_major_rows_kernel(
+    uint64_t* dst,
+    const uintptr_t* sources,
+    const uint64_t* rows,
+    size_t selected_row_count,
+    size_t row_width_words) {
+    const size_t word_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const size_t total_words = selected_row_count * row_width_words;
+    if (word_index >= total_words) {
+        return;
+    }
+    const size_t selected_row_index = word_index / row_width_words;
+    const size_t column = word_index - selected_row_index * row_width_words;
+    const uint64_t source_row = rows[selected_row_index];
+    const uint64_t* src = reinterpret_cast<const uint64_t*>(sources[selected_row_index]);
+    dst[word_index] = src[static_cast<size_t>(source_row) * row_width_words + column];
+}
+
 int run_poseidon2_width4_on_device(
     const uint64_t* device_values,
     uint64_t* device_out,
@@ -553,6 +571,35 @@ extern "C" int lzvm_cuda_copy_d2d_selected_row_major_rows(
         rows,
         selected_row_count,
         source_row_count,
+        row_width_words);
+    return lzvm_cuda_check_launch();
+}
+
+extern "C" int lzvm_cuda_copy_d2d_row_major_rows(
+    void* dst,
+    const uintptr_t* sources,
+    const uint64_t* rows,
+    size_t selected_row_count,
+    size_t row_width_words) {
+    if (selected_row_count == 0) {
+        return 0;
+    }
+    if (dst == nullptr || sources == nullptr || rows == nullptr) {
+        return -1;
+    }
+    if (row_width_words == 0) {
+        return -2;
+    }
+    if (selected_row_count > std::numeric_limits<size_t>::max() / row_width_words) {
+        return -2;
+    }
+    const size_t total_words = selected_row_count * row_width_words;
+    const size_t blocks = (total_words + kThreads - 1) / kThreads;
+    copy_d2d_row_major_rows_kernel<<<blocks, kThreads>>>(
+        static_cast<uint64_t*>(dst),
+        sources,
+        rows,
+        selected_row_count,
         row_width_words);
     return lzvm_cuda_check_launch();
 }
