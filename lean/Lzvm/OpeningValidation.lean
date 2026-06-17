@@ -1060,6 +1060,53 @@ theorem runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_
           (And.intro coreContract.right.left
             (And.intro runtimeAccepted.right pcsAndFri))))
 
+set_option linter.style.longLine false in
+theorem runtime_opening_checked_acceptance_runtime_soundness_evidence_from_concrete_nary_merkle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeSoundnessEvidence
+          system
+          validation.runtimeSoundnessValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  exact
+    runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening
+      assumptions
+      assumptions.crypto.hashCollisionResistance
+      validation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+
 theorem runtime_opening_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
