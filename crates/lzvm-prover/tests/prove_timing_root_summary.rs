@@ -478,6 +478,59 @@ fn prove_timing_root_summary_marks_trace_shape_timing_disabled_or_zero() {
 }
 
 #[test]
+fn prove_timing_root_summary_requests_shape_profile_after_detail_only_trace_sample() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=63027",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_lower_ms=38619",
+        "timing_guest_trace_reports=499520693",
+        "timing_guest_trace_report_rows=499917240",
+        "timing_guest_trace_single_row_reports=0",
+        "timing_guest_trace_indirect_memory_rows=0",
+        "timing_guest_trace_memory_source_reads=0",
+        "timing_guest_trace_memory_store_rows=0",
+        "timing_guest_trace_no_store_rows=0",
+        "timing_guest_trace_report_detail_samples=596",
+        "timing_guest_trace_report_sampled_ns=1861501",
+        "timing_guest_trace_report_row_validation_sampled_ns=987695",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("shape_timing_missing_for_detail_profile"),
+        "prove timing root summary should request shape timing when detail samples exist but shape counters are absent: stdout={stdout}"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_tiny_detail_sample_coverage_ppm() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

@@ -891,6 +891,11 @@ def trace_shape_sample_hint(values: dict[str, int], rows: int) -> str:
         return "none"
     if any(values.get(key, 0) > 0 for key in TRACE_SHAPE_KEYS):
         return "shape_timing_enabled"
+    if (
+        values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0) > 0
+        and values.get(TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY, 0) > 0
+    ):
+        return "shape_timing_missing_for_detail_profile"
     return "shape_timing_disabled_or_zero"
 
 
