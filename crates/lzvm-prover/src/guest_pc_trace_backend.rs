@@ -2324,7 +2324,10 @@ fn run_guest_pc_trace_segment_slice_inner<const TRACK_BOUNDARY: bool>(
             return Ok(GuestPcTraceSegmentSlice {
                 executed_instructions,
                 trace_rows,
-                status: GuestMachineTraceSliceStatus::Paused { pc },
+                status: GuestMachineTraceSliceStatus::Paused {
+                    pc,
+                    instruction: current,
+                },
                 report_capacity: reports.capacity(),
                 reports,
             });
@@ -2344,7 +2347,10 @@ fn run_guest_pc_trace_segment_slice_inner<const TRACK_BOUNDARY: bool>(
             return Ok(GuestPcTraceSegmentSlice {
                 executed_instructions,
                 trace_rows,
-                status: GuestMachineTraceSliceStatus::Paused { pc },
+                status: GuestMachineTraceSliceStatus::Paused {
+                    pc,
+                    instruction: current,
+                },
                 report_capacity: reports.capacity(),
                 reports,
             });
@@ -2382,7 +2388,10 @@ fn run_guest_pc_trace_segment_slice_inner<const TRACK_BOUNDARY: bool>(
             let status = if current == RiscvInstruction::Ecall {
                 GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall { address: pc })
             } else {
-                GuestMachineTraceSliceStatus::Paused { pc }
+                GuestMachineTraceSliceStatus::Paused {
+                    pc,
+                    instruction: current,
+                }
             };
             return Ok(GuestPcTraceSegmentSlice {
                 executed_instructions,
@@ -2489,10 +2498,7 @@ fn compute_guest_pc_trace_segments(
             GuestMachineTraceSliceStatus::Halted(halt) => {
                 (true, guest_machine_halt_pc(&halt), None)
             }
-            GuestMachineTraceSliceStatus::Paused { pc } => {
-                let instruction = decode_current_guest_instruction(&memory, pc)
-                    .map_err(GuestMachineRunError::from)
-                    .map_err(GuestPcTraceBackendError::GuestRun)?;
+            GuestMachineTraceSliceStatus::Paused { pc, instruction } => {
                 (false, pc, Some(instruction))
             }
         };
@@ -2818,10 +2824,7 @@ fn produce_guest_pc_trace_pending_slices(
             GuestMachineTraceSliceStatus::Halted(halt) => {
                 (true, guest_machine_halt_pc(&halt), None)
             }
-            GuestMachineTraceSliceStatus::Paused { pc } => {
-                let instruction = decode_current_guest_instruction(&memory, pc)
-                    .map_err(GuestMachineRunError::from)
-                    .map_err(GuestPcTraceBackendError::GuestRun)?;
+            GuestMachineTraceSliceStatus::Paused { pc, instruction } => {
                 (false, pc, Some(instruction))
             }
         };

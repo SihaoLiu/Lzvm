@@ -460,7 +460,10 @@ pub struct GuestMachineExecutionTrace {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum GuestMachineTraceSliceStatus {
     Halted(GuestMachineHalt),
-    Paused { pc: u64 },
+    Paused {
+        pc: u64,
+        instruction: RiscvInstruction,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

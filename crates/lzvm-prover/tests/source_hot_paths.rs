@@ -7529,6 +7529,61 @@ fn guest_pc_trace_slice_reuses_prepared_instruction_for_advance() {
 }
 
 #[test]
+fn guest_pc_trace_paused_slice_carries_boundary_lookahead() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let machine_path = crate_root.join("src/guest_machine/mod.rs");
+    let machine_source =
+        std::fs::read_to_string(&machine_path).expect("guest machine source should read");
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace source should read");
+
+    assert!(
+        machine_source.contains("Paused")
+            && machine_source.contains("pc: u64")
+            && machine_source.contains("instruction: RiscvInstruction"),
+        "paused trace slices should carry the already decoded boundary instruction"
+    );
+
+    let run_slice_body = function_body(
+        &backend_source,
+        "fn run_guest_pc_trace_segment_slice",
+        "fn zisk_main_instruction_max_rows",
+    );
+    assert!(
+        run_slice_body.contains("GuestMachineTraceSliceStatus::Paused")
+            && run_slice_body.contains("instruction: current"),
+        "row-limit trace slices should preserve the decoded boundary instruction"
+    );
+
+    let compute_body = function_body(
+        &backend_source,
+        "fn compute_guest_pc_trace_segments",
+        "fn stream_backend_error",
+    );
+    assert!(
+        compute_body.contains("GuestMachineTraceSliceStatus::Paused { pc, instruction }")
+            && compute_body.contains("(false, pc, Some(instruction))"),
+        "direct trace construction should reuse the paused boundary instruction as lookahead"
+    );
+    let produce_body = function_body(
+        &backend_source,
+        "fn produce_guest_pc_trace_pending_slices",
+        "fn lower_guest_pc_trace_pending_segments",
+    );
+    assert!(
+        produce_body.contains("GuestMachineTraceSliceStatus::Paused { pc, instruction }")
+            && produce_body.contains("(false, pc, Some(instruction))"),
+        "streamed trace construction should reuse the paused boundary instruction as lookahead"
+    );
+    assert!(
+        !compute_body.contains("decode_current_guest_instruction(&memory, pc)")
+            && !produce_body.contains("decode_current_guest_instruction(&memory, pc)"),
+        "outer trace construction should not decode the paused boundary PC a second time"
+    );
+}
+
+#[test]
 fn guest_pc_trace_segments_report_buffer_capacity_shape() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
