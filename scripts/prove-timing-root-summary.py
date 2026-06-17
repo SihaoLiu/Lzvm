@@ -279,6 +279,8 @@ HEADER = (
     "trace_report_detail_samples,trace_report_detail_sample_pct,"
     "trace_report_detail_sample_ppm,trace_report_detail_sample_hint,"
     "trace_report_detail_avg_ns,"
+    "trace_report_detail_lowerer_share_ms,trace_report_row_validation_lowerer_share_ms,"
+    "trace_report_visit_lowerer_share_ms,trace_report_descriptor_lowerer_share_ms,"
     "trace_report_detail_hotspot,trace_report_detail_hotspot_pct,"
     "trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,"
     "trace_report_row_validation_explained_pct,trace_report_row_validation_residual_pct,"
@@ -983,6 +985,17 @@ def trace_report_source_values_lookup_coverage(
     )
 
 
+def trace_report_detail_lowerer_share_ms(
+    values: dict[str, int],
+    sample_key: str,
+    lowerer_ms: int,
+) -> float:
+    sampled_ns = values.get(TRACE_REPORT_SAMPLED_NS_KEY, 0)
+    if sampled_ns <= 0 or lowerer_ms <= 0:
+        return 0.0
+    return values.get(sample_key, 0) * lowerer_ms / sampled_ns
+
+
 def trace_structure_hint(
     total_ms: int,
     runner_ms: int,
@@ -1113,6 +1126,26 @@ def summarize_profile_values(
         trace_report_detail_hotspot_name,
         trace_report_detail_hotspot_pct,
     ) = trace_report_detail_hotspot(values)
+    trace_report_detail_share_ms = trace_report_detail_lowerer_share_ms(
+        values,
+        TRACE_REPORT_SAMPLED_NS_KEY,
+        lowerer_ms,
+    )
+    trace_report_row_validation_share_ms = trace_report_detail_lowerer_share_ms(
+        values,
+        TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY,
+        lowerer_ms,
+    )
+    trace_report_visit_share_ms = trace_report_detail_lowerer_share_ms(
+        values,
+        TRACE_REPORT_VISIT_SAMPLED_NS_KEY,
+        lowerer_ms,
+    )
+    trace_report_descriptor_share_ms = trace_report_detail_lowerer_share_ms(
+        values,
+        TRACE_DESCRIPTOR_SAMPLED_NS_KEY,
+        lowerer_ms,
+    )
     (
         trace_report_row_validation_hotspot_name,
         trace_report_row_validation_hotspot_pct,
@@ -1455,6 +1488,10 @@ def summarize_profile_values(
         f"{trace_report_detail_samples},{trace_report_detail_sample_pct:.3f},"
         f"{trace_report_detail_sample_ppm:.3f},{trace_report_detail_hint},"
         f"{trace_report_detail_avg_ns},"
+        f"{trace_report_detail_share_ms:.3f},"
+        f"{trace_report_row_validation_share_ms:.3f},"
+        f"{trace_report_visit_share_ms:.3f},"
+        f"{trace_report_descriptor_share_ms:.3f},"
         f"{trace_report_detail_hotspot_name},{trace_report_detail_hotspot_pct:.3f},"
         f"{trace_report_row_validation_hotspot_name},"
         f"{trace_report_row_validation_hotspot_pct:.3f},"
