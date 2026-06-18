@@ -2196,7 +2196,6 @@ impl WitnessStageCompactTreeStorage {
                         rows,
                         checkpoint.folded_level_count(),
                     )
-                    .and_then(|siblings| siblings.into_siblings())
                     .map_err(WitnessStageOpeningError::from)
             },
         )
@@ -2213,16 +2212,12 @@ impl WitnessStageCompactTreeStorage {
                 launch_count,
             );
         }
-        if lower_prefixes.len() != rows.len() {
-            return Err(WitnessStageOpeningError::LengthOverflow);
-        }
         let upper_suffixes = record_path_parent_hash_duration(
             timing.as_deref_mut(),
             PathParentHashTimingKind::RetainedParentCheckpointSuffix,
             || {
                 checkpoint
                     .opening_path_siblings_batch_device_for_source_rows(rows)
-                    .and_then(|siblings| siblings.into_siblings())
                     .map_err(WitnessStageOpeningError::from)
             },
         )
@@ -2239,7 +2234,20 @@ impl WitnessStageCompactTreeStorage {
                 launch_count,
             );
         }
-        if upper_suffixes.len() != rows.len() {
+        let siblings_by_row = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+            || {
+                lower_prefixes
+                    .concat_levels(upper_suffixes)
+                    .and_then(|siblings| siblings.into_siblings())
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context("compact parent checkpoint suffix path", source)
+        })?;
+        if siblings_by_row.len() != rows.len() {
             return Err(WitnessStageOpeningError::LengthOverflow);
         }
         let values_by_row = self
@@ -2248,13 +2256,7 @@ impl WitnessStageCompactTreeStorage {
                 WitnessStageOpeningError::context("compact parent checkpoint row values", source)
             })?;
         let mut openings = Vec::with_capacity(rows.len());
-        for ((values, lower_prefix), upper_suffix) in values_by_row
-            .into_iter()
-            .zip(lower_prefixes.into_iter())
-            .zip(upper_suffixes.into_iter())
-        {
-            let mut siblings = lower_prefix;
-            siblings.extend(upper_suffix);
+        for (values, siblings) in values_by_row.into_iter().zip(siblings_by_row.into_iter()) {
             openings.push((values, siblings));
         }
         Ok(openings)
@@ -2311,7 +2313,6 @@ impl WitnessStageCompactTreeStorage {
                         rows,
                         checkpoint.folded_level_count(),
                     )
-                    .and_then(|siblings| siblings.into_siblings())
                     .map_err(WitnessStageOpeningError::from)
             },
         )
@@ -2331,16 +2332,12 @@ impl WitnessStageCompactTreeStorage {
                 launch_count,
             );
         }
-        if lower_prefixes.len() != rows.len() {
-            return Err(WitnessStageOpeningError::LengthOverflow);
-        }
         let upper_suffixes = record_path_parent_hash_duration(
             timing.as_deref_mut(),
             PathParentHashTimingKind::RetainedParentCheckpointSuffix,
             || {
                 checkpoint
                     .opening_path_siblings_batch_device_for_source_rows(rows)
-                    .and_then(|siblings| siblings.into_siblings())
                     .map_err(WitnessStageOpeningError::from)
             },
         )
@@ -2360,7 +2357,23 @@ impl WitnessStageCompactTreeStorage {
                 launch_count,
             );
         }
-        if upper_suffixes.len() != rows.len() {
+        let siblings_by_row = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+            || {
+                lower_prefixes
+                    .concat_levels(upper_suffixes)
+                    .and_then(|siblings| siblings.into_siblings())
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context(
+                "compact retained leaf digest parent checkpoint suffix path",
+                source,
+            )
+        })?;
+        if siblings_by_row.len() != rows.len() {
             return Err(WitnessStageOpeningError::LengthOverflow);
         }
 
@@ -2373,13 +2386,7 @@ impl WitnessStageCompactTreeStorage {
                 )
             })?;
         let mut openings = Vec::with_capacity(rows.len());
-        for ((values, lower_prefix), upper_suffix) in values_by_row
-            .into_iter()
-            .zip(lower_prefixes.into_iter())
-            .zip(upper_suffixes.into_iter())
-        {
-            let mut siblings = lower_prefix;
-            siblings.extend(upper_suffix);
+        for (values, siblings) in values_by_row.into_iter().zip(siblings_by_row.into_iter()) {
             openings.push((values, siblings));
         }
         Ok(openings)

@@ -1090,8 +1090,9 @@ fn cuda_retained_checkpoint_opening_batches_lower_prefix_work() {
     );
     assert!(
         checkpoint_body.contains("opening_path_prefix_batch_device_for_source_rows")
+            && checkpoint_body.contains("concat_levels(")
             && checkpoint_body.contains(".into_siblings()"),
-        "retained checkpoint batch openings should keep lower-prefix siblings in a typed device buffer until the existing host decode boundary"
+        "retained checkpoint batch openings should keep lower-prefix siblings in a typed device buffer and concatenate them with suffix siblings before the existing host decode boundary"
     );
     assert!(
         !checkpoint_body.contains("opening_path_prefix_for_source_row"),
@@ -1170,6 +1171,7 @@ fn cuda_compact_opening_avoids_redundant_path_root_downloads() {
     );
     assert!(
         checkpoint_body.contains("opening_path_siblings_batch_device_for_source_rows(rows)")
+            && checkpoint_body.contains("concat_levels(")
             && checkpoint_body.contains(".into_siblings()")
             && !checkpoint_body.contains("opening_path_for_source_row(")
             && !checkpoint_body.contains("upper_suffix.root !="),

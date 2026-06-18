@@ -406,6 +406,29 @@ __global__ void copy_d2d_row_major_rows_kernel(
     dst[word_index] = src[static_cast<size_t>(source_row) * row_width_words + column];
 }
 
+__global__ void copy_d2d_row_major_concat_words_kernel(
+    uint64_t* dst,
+    const uint64_t* left,
+    const uint64_t* right,
+    size_t row_count,
+    size_t left_width_words,
+    size_t right_width_words) {
+    const size_t output_width_words = left_width_words + right_width_words;
+    const size_t word_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const size_t total_words = row_count * output_width_words;
+    if (word_index >= total_words) {
+        return;
+    }
+    const size_t row_index = word_index / output_width_words;
+    const size_t column = word_index - row_index * output_width_words;
+    if (column < left_width_words) {
+        dst[word_index] = left[row_index * left_width_words + column];
+    } else {
+        const size_t right_column = column - left_width_words;
+        dst[word_index] = right[row_index * right_width_words + right_column];
+    }
+}
+
 int run_poseidon2_width4_on_device(
     const uint64_t* device_values,
     uint64_t* device_out,
@@ -601,6 +624,43 @@ extern "C" int lzvm_cuda_copy_d2d_row_major_rows(
         rows,
         selected_row_count,
         row_width_words);
+    return lzvm_cuda_check_launch();
+}
+
+extern "C" int lzvm_cuda_copy_d2d_row_major_concat_words(
+    void* dst,
+    const void* left,
+    const void* right,
+    size_t row_count,
+    size_t left_width_words,
+    size_t right_width_words) {
+    if (row_count == 0) {
+        return 0;
+    }
+    if (left_width_words > std::numeric_limits<size_t>::max() - right_width_words) {
+        return -2;
+    }
+    const size_t output_width_words = left_width_words + right_width_words;
+    if (output_width_words == 0) {
+        return 0;
+    }
+    if (dst == nullptr ||
+        (left_width_words != 0 && left == nullptr) ||
+        (right_width_words != 0 && right == nullptr)) {
+        return -1;
+    }
+    if (row_count > std::numeric_limits<size_t>::max() / output_width_words) {
+        return -2;
+    }
+    const size_t total_words = row_count * output_width_words;
+    const size_t blocks = (total_words + kThreads - 1) / kThreads;
+    copy_d2d_row_major_concat_words_kernel<<<blocks, kThreads>>>(
+        static_cast<uint64_t*>(dst),
+        static_cast<const uint64_t*>(left),
+        static_cast<const uint64_t*>(right),
+        row_count,
+        left_width_words,
+        right_width_words);
     return lzvm_cuda_check_launch();
 }
 

@@ -157,6 +157,28 @@ impl CudaMerkleSiblingBatchDeviceBuffer {
             self.arity,
         )
     }
+
+    pub(crate) fn concat_levels(self, suffix: Self) -> Result<Self, MerkleHashError> {
+        if self.row_count != suffix.row_count || self.arity != suffix.arity {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let prefix_row_words = merkle_sibling_row_word_count(self.level_count, self.arity)?;
+        let suffix_row_words = merkle_sibling_row_word_count(suffix.level_count, suffix.arity)?;
+        let level_count = self
+            .level_count
+            .checked_add(suffix.level_count)
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        let buffer = CudaDeviceBuffer::from_device_row_major_u64_row_concat(
+            &self.buffer,
+            self.row_count,
+            prefix_row_words,
+            &suffix.buffer,
+            suffix.row_count,
+            suffix_row_words,
+        )
+        .map_err(MerkleHashError::Accel)?;
+        Self::new(buffer, self.row_count, level_count, self.arity)
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -2435,6 +2457,65 @@ mod tests {
             .expect("device checkpoint suffix should hash")
             .into_siblings()
             .expect("device checkpoint suffix should decode");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn cuda_merkle_sibling_device_batches_concat_levels_like_host_decode() {
+        let level = (0..70)
+            .map(|index| {
+                digest([
+                    2100 + index * 4,
+                    2101 + index * 4,
+                    2102 + index * 4,
+                    2103 + index * 4,
+                ])
+            })
+            .collect::<Vec<_>>();
+        let query_rows = vec![0, 3, 16, 17, 35, 69];
+        let words = digest_words(&level);
+        let buffer = CudaDeviceBuffer::from_u64_words(&words).expect("digests should upload");
+        let digest_level = CudaDigestLevel::new(
+            buffer,
+            level.len(),
+            4,
+            cuda_poseidon2_width16_merkle_digest_root_device,
+        );
+        let checkpoint = digest_level
+            .parent_checkpoint_level(2)
+            .expect("checkpoint level should hash")
+            .expect("checkpoint should fold multiple levels");
+
+        let lower = digest_level
+            .opening_path_prefix_batch_for_source_rows(&query_rows, checkpoint.folded_level_count())
+            .expect("host lower prefixes should decode");
+        let upper = checkpoint
+            .opening_path_siblings_batch_for_source_rows(&query_rows)
+            .expect("host upper suffixes should decode");
+        let expected = lower
+            .into_iter()
+            .zip(upper)
+            .map(|(mut lower, upper)| {
+                lower.extend(upper);
+                lower
+            })
+            .collect::<Vec<_>>();
+
+        let actual = digest_level
+            .opening_path_prefix_batch_device_for_source_rows(
+                &query_rows,
+                checkpoint.folded_level_count(),
+            )
+            .expect("device lower prefixes should hash")
+            .concat_levels(
+                checkpoint
+                    .opening_path_siblings_batch_device_for_source_rows(&query_rows)
+                    .expect("device upper suffixes should hash"),
+            )
+            .expect("device sibling batches should concatenate")
+            .into_siblings()
+            .expect("combined device siblings should decode");
 
         assert_eq!(actual, expected);
     }

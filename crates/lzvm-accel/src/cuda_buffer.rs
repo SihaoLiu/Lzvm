@@ -72,6 +72,14 @@ unsafe extern "C" {
         selected_row_count: usize,
         row_width_words: usize,
     ) -> i32;
+    fn lzvm_cuda_copy_d2d_row_major_concat_words(
+        dst: *mut c_void,
+        left: *const c_void,
+        right: *const c_void,
+        row_count: usize,
+        left_width_words: usize,
+        right_width_words: usize,
+    ) -> i32;
     fn lzvm_cuda_copy_d2h_state_prefix_words(
         dst: *mut c_void,
         src: *const c_void,
@@ -435,6 +443,61 @@ fn validate_device_row_major_u64_rows_shape(
         })
 }
 
+fn validate_device_row_major_u64_row_concat_shape(
+    left_word_count: usize,
+    left_row_count: usize,
+    left_width_words: usize,
+    right_word_count: usize,
+    right_row_count: usize,
+    right_width_words: usize,
+) -> Result<usize, AccelError> {
+    if left_row_count != right_row_count {
+        return Err(AccelError::LengthMismatch {
+            lhs: left_row_count,
+            rhs: right_row_count,
+        });
+    }
+    let expected_left_words =
+        left_row_count
+            .checked_mul(left_width_words)
+            .ok_or(AccelError::InvalidDomain {
+                bits: left_width_words,
+                len: left_row_count,
+            })?;
+    if left_word_count != expected_left_words {
+        return Err(AccelError::LengthMismatch {
+            lhs: left_word_count,
+            rhs: expected_left_words,
+        });
+    }
+    let expected_right_words =
+        right_row_count
+            .checked_mul(right_width_words)
+            .ok_or(AccelError::InvalidDomain {
+                bits: right_width_words,
+                len: right_row_count,
+            })?;
+    if right_word_count != expected_right_words {
+        return Err(AccelError::LengthMismatch {
+            lhs: right_word_count,
+            rhs: expected_right_words,
+        });
+    }
+    let output_width =
+        left_width_words
+            .checked_add(right_width_words)
+            .ok_or(AccelError::InvalidDomain {
+                bits: left_width_words,
+                len: right_width_words,
+            })?;
+    left_row_count
+        .checked_mul(output_width)
+        .ok_or(AccelError::InvalidDomain {
+            bits: output_width,
+            len: left_row_count,
+        })
+}
+
 fn validate_device_state_prefix_shape(
     source_len: usize,
     state_count: usize,
@@ -730,6 +793,46 @@ impl CudaDeviceBuffer {
         let output_words = validate_device_row_major_u64_rows_shape(sources, row_width_words)?;
         let mut buffer = Self::new(u64_word_byte_len(output_words)?)?;
         buffer.copy_from_device_row_major_u64_rows(sources, row_width_words)?;
+        Ok(buffer)
+    }
+
+    pub fn from_device_row_major_u64_row_concat(
+        left: &Self,
+        left_row_count: usize,
+        left_width_words: usize,
+        right: &Self,
+        right_row_count: usize,
+        right_width_words: usize,
+    ) -> Result<Self, AccelError> {
+        if !left.len.is_multiple_of(8) {
+            return Err(AccelError::LengthMismatch {
+                lhs: left.len,
+                rhs: left.len / 8 * 8,
+            });
+        }
+        if !right.len.is_multiple_of(8) {
+            return Err(AccelError::LengthMismatch {
+                lhs: right.len,
+                rhs: right.len / 8 * 8,
+            });
+        }
+        let output_words = validate_device_row_major_u64_row_concat_shape(
+            left.len / 8,
+            left_row_count,
+            left_width_words,
+            right.len / 8,
+            right_row_count,
+            right_width_words,
+        )?;
+        let mut buffer = Self::new(u64_word_byte_len(output_words)?)?;
+        buffer.copy_from_device_row_major_u64_row_concat(
+            left,
+            left_row_count,
+            left_width_words,
+            right,
+            right_row_count,
+            right_width_words,
+        )?;
         Ok(buffer)
     }
 
@@ -1753,6 +1856,58 @@ impl CudaDeviceBuffer {
         cuda_status(code)
     }
 
+    pub fn copy_from_device_row_major_u64_row_concat(
+        &mut self,
+        left: &Self,
+        left_row_count: usize,
+        left_width_words: usize,
+        right: &Self,
+        right_row_count: usize,
+        right_width_words: usize,
+    ) -> Result<(), AccelError> {
+        if !left.len.is_multiple_of(8) {
+            return Err(AccelError::LengthMismatch {
+                lhs: left.len,
+                rhs: left.len / 8 * 8,
+            });
+        }
+        if !right.len.is_multiple_of(8) {
+            return Err(AccelError::LengthMismatch {
+                lhs: right.len,
+                rhs: right.len / 8 * 8,
+            });
+        }
+        let output_words = validate_device_row_major_u64_row_concat_shape(
+            left.len / 8,
+            left_row_count,
+            left_width_words,
+            right.len / 8,
+            right_row_count,
+            right_width_words,
+        )?;
+        let expected_len = u64_word_byte_len(output_words)?;
+        if expected_len != self.len {
+            return Err(AccelError::LengthMismatch {
+                lhs: self.len,
+                rhs: expected_len,
+            });
+        }
+        if self.len == 0 {
+            return Ok(());
+        }
+        let code = unsafe {
+            lzvm_cuda_copy_d2d_row_major_concat_words(
+                self.ptr,
+                left.ptr as *const c_void,
+                right.ptr as *const c_void,
+                left_row_count,
+                left_width_words,
+                right_width_words,
+            )
+        };
+        cuda_status(code)
+    }
+
     /// Enqueues a device-to-device row-major slice copy into this buffer.
     ///
     /// # Safety
@@ -2221,6 +2376,58 @@ mod tests {
                 .to_u64_words()
                 .expect("blocking row slice should download")
         );
+    }
+
+    #[test]
+    fn device_row_major_concat_combines_rows_on_device() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let row_count = 4;
+        let left_width = 3;
+        let right_width = 2;
+        let left_words = (0..row_count * left_width)
+            .map(|index| 100 + index as u64)
+            .collect::<Vec<_>>();
+        let right_words = (0..row_count * right_width)
+            .map(|index| 900 + index as u64)
+            .collect::<Vec<_>>();
+        let left = CudaDeviceBuffer::from_u64_words(&left_words).expect("left rows should upload");
+        let right =
+            CudaDeviceBuffer::from_u64_words(&right_words).expect("right rows should upload");
+
+        let combined = CudaDeviceBuffer::from_device_row_major_u64_row_concat(
+            &left,
+            row_count,
+            left_width,
+            &right,
+            row_count,
+            right_width,
+        )
+        .expect("device row concat should run");
+
+        let mut expected = Vec::new();
+        for row in 0..row_count {
+            expected.extend_from_slice(&left_words[row * left_width..(row + 1) * left_width]);
+            expected.extend_from_slice(&right_words[row * right_width..(row + 1) * right_width]);
+        }
+        assert_eq!(
+            combined
+                .to_u64_words()
+                .expect("combined rows should download"),
+            expected
+        );
+
+        let error = CudaDeviceBuffer::from_device_row_major_u64_row_concat(
+            &left,
+            row_count,
+            left_width,
+            &right,
+            row_count - 1,
+            right_width,
+        )
+        .expect_err("mismatched row counts should be rejected");
+        assert!(matches!(error, AccelError::LengthMismatch { .. }));
     }
 
     #[test]
