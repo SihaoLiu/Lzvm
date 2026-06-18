@@ -198,6 +198,9 @@ OPENING_EMBEDDED_SOURCE_COUNT_KEY = "timing_finish_witness_opening_embedded_sour
 OPENING_MISSING_SOURCE_COUNT_KEY = "timing_finish_witness_opening_missing_source_count"
 OPENING_ROW_VALUE_DEVICE_ROWS_KEY = "timing_finish_witness_opening_row_values_device_rows"
 OPENING_ROW_VALUE_SOURCE_ROWS_KEY = "timing_finish_witness_opening_row_values_source_rows"
+OPENING_ROW_VALUE_SOURCE_EXTEND_MS_KEY = (
+    "timing_finish_witness_opening_row_value_source_extend_ms"
+)
 OPENING_RETAINED_LEAF_COUNT_KEY = (
     "timing_finish_witness_opening_retained_leaf_digest_openings"
 )
@@ -306,6 +309,7 @@ CUDA_TRANSFER_HOT_COPY_COUNT_THRESHOLD = 8
 DIRECT_D2H_HOT_WAIT_PCT_THRESHOLD = 50.0
 SEGMENT_COMMIT_MEMORY_PRESSURE_PCT_THRESHOLD = 8.0
 SEGMENT_COMMIT_MEMORY_THIN_MARGIN_PCT_THRESHOLD = 15.0
+SOURCE_ROW_VALUE_SECONDARY_PCT_THRESHOLD = 5.0
 PROOF_TARGET_MS = 12_000
 PERF_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
 PERF_SECOND_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
@@ -347,7 +351,8 @@ HEADER = (
     "finish_opening_ms,opening_query_units,opening_single_query_units,"
     "opening_queries,opening_max_queries_per_unit,opening_stage_count,"
     "opening_source_shape_hint,opening_row_value_device_rows,"
-    "opening_row_value_source_rows,"
+    "opening_row_value_source_rows,opening_row_value_source_extend_ms,"
+    "opening_row_value_source_extend_pct,opening_source_row_value_action_hint,"
     "retained_leaf_openings,retained_leaf_rows,retained_leaf_all_single_row,"
     "retained_leaf_path_launches,retained_parent_checkpoint_openings,"
     "retained_parent_checkpoint_rows,retained_parent_checkpoint_all_single_row,"
@@ -549,6 +554,7 @@ TIMING_KEYS = {
     OPENING_MISSING_SOURCE_COUNT_KEY,
     OPENING_ROW_VALUE_DEVICE_ROWS_KEY,
     OPENING_ROW_VALUE_SOURCE_ROWS_KEY,
+    OPENING_ROW_VALUE_SOURCE_EXTEND_MS_KEY,
     OPENING_RETAINED_LEAF_COUNT_KEY,
     OPENING_RETAINED_LEAF_ROWS_KEY,
     OPENING_RETAINED_LEAF_ALL_SINGLE_ROW_KEY,
@@ -1248,6 +1254,31 @@ def opening_source_shape_hint(
         query_shape = "mixed_query_units"
 
     return f"{query_shape}_with_{source_shape}"
+
+
+def opening_source_row_value_action_hint(
+    total_ms: int,
+    source_extend_ms: int,
+    source_rows: int,
+    external_source_count: int,
+    query_units: int,
+    single_query_units: int,
+    trace_pipeline_hint: str,
+) -> str:
+    if source_rows <= 0 or source_extend_ms <= 0:
+        return "none"
+
+    source_extend_pct = source_extend_ms * 100.0 / total_ms if total_ms else 0.0
+    if (
+        trace_pipeline_hint == "trace_generation_and_commit_pipeline_candidate"
+        and source_extend_pct < SOURCE_ROW_VALUE_SECONDARY_PCT_THRESHOLD
+    ):
+        return "trace_pipeline_before_source_row_values"
+    if external_source_count > 0 and query_units > 0 and single_query_units >= query_units:
+        return "profile_external_source_row_value_rebuilds"
+    if source_extend_ms >= 1000:
+        return "reduce_source_row_value_extension"
+    return "source_row_values_secondary"
 
 
 def constant_material_overlap_hint(elapsed_ms: int, join_wait_ms: int) -> str:
@@ -2008,6 +2039,12 @@ def summarize_profile_values(
     opening_missing_source_count = values.get(OPENING_MISSING_SOURCE_COUNT_KEY, 0)
     opening_row_value_device_rows = values.get(OPENING_ROW_VALUE_DEVICE_ROWS_KEY, 0)
     opening_row_value_source_rows = values.get(OPENING_ROW_VALUE_SOURCE_ROWS_KEY, 0)
+    opening_row_value_source_extend_ms = values.get(
+        OPENING_ROW_VALUE_SOURCE_EXTEND_MS_KEY, 0
+    )
+    opening_row_value_source_extend_pct = (
+        opening_row_value_source_extend_ms * 100.0 / total_ms if total_ms else 0.0
+    )
     retained_leaf_openings = values.get(OPENING_RETAINED_LEAF_COUNT_KEY, 0)
     retained_leaf_rows = values.get(OPENING_RETAINED_LEAF_ROWS_KEY, 0)
     retained_leaf_all_single_row_value = values.get(
@@ -2193,6 +2230,15 @@ def summarize_profile_values(
         direct_d2h_wait_ms,
     )
     trace_pipeline_hint = trace_pipeline_action_hint_from_values(values)
+    opening_source_row_value_hint = opening_source_row_value_action_hint(
+        total_ms,
+        opening_row_value_source_extend_ms,
+        opening_row_value_source_rows,
+        opening_external_source_count,
+        opening_query_units,
+        opening_single_query_units,
+        trace_pipeline_hint,
+    )
     cuda_transfer_hint = cuda_transfer_action_hint_from_values(values)
     if perf_hotspots is None:
         perf_hotspots = parse_perf_self_hotspots("")
@@ -2283,7 +2329,8 @@ def summarize_profile_values(
         f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
         f"{opening_queries},{opening_max_queries_per_unit},{opening_stage_count},"
         f"{opening_source_hint},{opening_row_value_device_rows},"
-        f"{opening_row_value_source_rows},"
+        f"{opening_row_value_source_rows},{opening_row_value_source_extend_ms},"
+        f"{opening_row_value_source_extend_pct:.3f},{opening_source_row_value_hint},"
         f"{retained_leaf_openings},{retained_leaf_rows},"
         f"{retained_leaf_all_single_row},{retained_leaf_path_launches},"
         f"{retained_parent_checkpoint_openings},{retained_parent_checkpoint_rows},"

@@ -125,6 +125,10 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_finish_witness_opening_missing_source_count",
         "timing_finish_witness_opening_row_values_device_rows",
         "timing_finish_witness_opening_row_values_source_rows",
+        "timing_finish_witness_opening_row_value_source_extend_ms",
+        "opening_row_value_source_extend_ms",
+        "opening_row_value_source_extend_pct",
+        "opening_source_row_value_action_hint",
         "timing_finish_witness_opening_retained_leaf_digest_openings",
         "timing_finish_witness_opening_retained_leaf_digest_rows",
         "timing_finish_witness_opening_retained_leaf_digest_all_single_row_openings",
@@ -208,10 +212,10 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     for required in [
-        "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,runner_ms,lowerer_ms,trace_lower_ms,trace_runner_lowerer_overlap_ms,trace_lowerer_non_lower_ms,stream_elapsed_ms,stream_worker_ms,segment_commit_ms,segment_commit_initial_workers,segment_commit_effective_workers,segment_commit_oom_retries,segment_commit_attempt_ms,segment_commit_oom_retry_ms,stream_commit_residual_ms,segment_receive_wait_ms,pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,parallel_lower_max_reorder,trace_reports,trace_report_rows,trace_rows_per_report,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,trace_report_lifetime_hint,descriptor_rows,descriptor_compact_rows,descriptor_wide_rows,descriptor_upload_bytes,descriptor_bytes_per_row,descriptor_high32_nonzero_values,descriptor_high32_nonzero_rows,descriptor_high32_row_pct,descriptor_high32_a_values,descriptor_high32_b_values,descriptor_high32_c_values,descriptor_high32_a_payload_values,descriptor_high32_b_payload_values,descriptor_high32_store_payload_values,descriptor_high32_store_prev_value_values,descriptor_high32_rows_with_0_fields,descriptor_high32_rows_with_1_fields,descriptor_high32_rows_with_2_fields,descriptor_high32_rows_with_3_fields,descriptor_high32_rows_with_4_fields,descriptor_high32_rows_with_5_fields,descriptor_high32_rows_with_6_fields,descriptor_high32_rows_with_7_fields,descriptor_sparse_high32_estimated_upload_bytes,descriptor_sparse_high32_estimated_upload_savings_pct,descriptor_sparse_high32_high_words,descriptor_sparse_high32_shape_hint,descriptor_shape_hint,seed_direct_lift_attempts,seed_direct_lift_successes,seed_full_advances,finish_opening_ms,opening_query_units,opening_single_query_units,opening_queries,opening_max_queries_per_unit,opening_stage_count,opening_source_shape_hint,opening_row_value_device_rows,opening_row_value_source_rows,retained_leaf_openings,retained_leaf_rows,retained_leaf_all_single_row,retained_leaf_path_launches,retained_parent_checkpoint_openings,retained_parent_checkpoint_rows,retained_parent_checkpoint_all_single_row,retained_parent_checkpoint_prefix_rows,retained_parent_checkpoint_prefix_bytes,retained_parent_checkpoint_prefix_launches,retained_parent_checkpoint_suffix_rows,retained_parent_checkpoint_suffix_bytes,retained_parent_checkpoint_suffix_launches,retained_parent_checkpoint_path_launches,retained_parent_checkpoint_cross_stage_gather_estimated_launches,retained_parent_checkpoint_cross_stage_gather_launch_savings,opening_path_parent_hash_launches_per_stage,opening_row_value_device_download_batches,opening_row_value_device_single_downloads,opening_row_value_device_single_stage_count,opening_row_value_device_single_max_stage,opening_row_value_device_cross_unit_batch_savings,opening_batching_hint,root_count,materialization_groups,materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure,trace_to_leaf_ratio,primary_bottleneck,trace_structure_hint,proof_12s_gap_ms,proof_12s_gap_hint,perf_lowered_report_row_self_pct,perf_memmove_self_pct,perf_memmove_guest_machine_pct,perf_memmove_trace_slice_pct,perf_memmove_source_hint,perf_pending_segment_drop_self_pct,perf_sha256_self_pct,perf_sha256_source_hint,cpu_trace_hotspot_hint",
-        "single-root-groups,2758032,9050,0,0,none,7800,7812,0,5700,0,9912,7812,2100,2,2,0,0,0,0,6000,1200,345,2,23,23,23,1,93843537,93917088,1.001,94371840,4194304,528303,0.560,report_buffer_capacity_tight,tight_report_buffer_and_pending_drop,1000,1000,0,88000,88.000,6,4,0.400,1,0,2,0,1,0,2,10,3,2,1,0,1,0,0,72024,18.155,3,sparse_high32_descriptor_candidate,high32_sparse_compact_descriptor,22,22,1,476,23,23,0,0,0,single_query_cross_root_with_no_sources,0,0,23,23,yes,276,0,0,no,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,cross_segment_retained_leaf_opening_candidate,23,23,1,1.000,yes,enable_cross_segment_root_pipeline,858,23,874,41078,15732,23598,1786.000,192.974,yes,9.105,stream_elapsed,parallel_lower_waiting,0,within_12s_target,26.350,20.940,10.610,8.670,guest_machine_and_trace_slice,7.410,23.170,sha256_digest_unresolved,report_lifetime_and_data_movement",
-        "batched-roots,2758032,9050,0,0,none,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,0,0,0.000,none,none,0,0,0,0,0.000,0,0,0.000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,none,none,0,0,0,0,0,0,0,0,0,none,0,0,0,0,no,0,0,0,no,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,none,23,1,23,23.000,no,root_batches_already_grouped,0,0,0,0,0,0,0.000,0.000,no,0.000,total,none,0,within_12s_target,0.000,0.000,0.000,0.000,none,0.000,0.000,none,none",
-        "slow-sample,12447640,18100,0,0,none,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,0,0,0.000,none,none,0,0,0,0,0.000,0,0,0.000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,none,none,0,0,0,0,0,0,0,0,0,none,0,0,0,0,no,0,0,0,no,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,none,120,120,1,1.000,yes,large_input_root_pipeline_gated,0,0,0,0,0,0,0.000,0.000,no,0.000,total,none,6100,target_gap_needs_timing_breakdown,0.000,0.000,0.000,0.000,none,0.000,0.000,none,none",
+        "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,runner_ms,lowerer_ms,trace_lower_ms,trace_runner_lowerer_overlap_ms,trace_lowerer_non_lower_ms,stream_elapsed_ms,stream_worker_ms,segment_commit_ms,segment_commit_initial_workers,segment_commit_effective_workers,segment_commit_oom_retries,segment_commit_attempt_ms,segment_commit_oom_retry_ms,stream_commit_residual_ms,segment_receive_wait_ms,pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,parallel_lower_max_reorder,trace_reports,trace_report_rows,trace_rows_per_report,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,trace_report_lifetime_hint,descriptor_rows,descriptor_compact_rows,descriptor_wide_rows,descriptor_upload_bytes,descriptor_bytes_per_row,descriptor_high32_nonzero_values,descriptor_high32_nonzero_rows,descriptor_high32_row_pct,descriptor_high32_a_values,descriptor_high32_b_values,descriptor_high32_c_values,descriptor_high32_a_payload_values,descriptor_high32_b_payload_values,descriptor_high32_store_payload_values,descriptor_high32_store_prev_value_values,descriptor_high32_rows_with_0_fields,descriptor_high32_rows_with_1_fields,descriptor_high32_rows_with_2_fields,descriptor_high32_rows_with_3_fields,descriptor_high32_rows_with_4_fields,descriptor_high32_rows_with_5_fields,descriptor_high32_rows_with_6_fields,descriptor_high32_rows_with_7_fields,descriptor_sparse_high32_estimated_upload_bytes,descriptor_sparse_high32_estimated_upload_savings_pct,descriptor_sparse_high32_high_words,descriptor_sparse_high32_shape_hint,descriptor_shape_hint,seed_direct_lift_attempts,seed_direct_lift_successes,seed_full_advances,finish_opening_ms,opening_query_units,opening_single_query_units,opening_queries,opening_max_queries_per_unit,opening_stage_count,opening_source_shape_hint,opening_row_value_device_rows,opening_row_value_source_rows,opening_row_value_source_extend_ms,opening_row_value_source_extend_pct,opening_source_row_value_action_hint,retained_leaf_openings,retained_leaf_rows,retained_leaf_all_single_row,retained_leaf_path_launches,retained_parent_checkpoint_openings,retained_parent_checkpoint_rows,retained_parent_checkpoint_all_single_row,retained_parent_checkpoint_prefix_rows,retained_parent_checkpoint_prefix_bytes,retained_parent_checkpoint_prefix_launches,retained_parent_checkpoint_suffix_rows,retained_parent_checkpoint_suffix_bytes,retained_parent_checkpoint_suffix_launches,retained_parent_checkpoint_path_launches,retained_parent_checkpoint_cross_stage_gather_estimated_launches,retained_parent_checkpoint_cross_stage_gather_launch_savings,opening_path_parent_hash_launches_per_stage,opening_row_value_device_download_batches,opening_row_value_device_single_downloads,opening_row_value_device_single_stage_count,opening_row_value_device_single_max_stage,opening_row_value_device_cross_unit_batch_savings,opening_batching_hint,root_count,materialization_groups,materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,leaf_ntt_stage_launches,leaf_ntt_block_twiddle_launches,leaf_ntt_launches_per_call,direct_d2h_wait_ms,leaf_launch_pressure,trace_to_leaf_ratio,primary_bottleneck,trace_structure_hint,proof_12s_gap_ms,proof_12s_gap_hint,perf_lowered_report_row_self_pct,perf_memmove_self_pct,perf_memmove_guest_machine_pct,perf_memmove_trace_slice_pct,perf_memmove_source_hint,perf_pending_segment_drop_self_pct,perf_sha256_self_pct,perf_sha256_source_hint,cpu_trace_hotspot_hint",
+        "single-root-groups,2758032,9050,0,0,none,7800,7812,0,5700,0,9912,7812,2100,2,2,0,0,0,0,6000,1200,345,2,23,23,23,1,93843537,93917088,1.001,94371840,4194304,528303,0.560,report_buffer_capacity_tight,tight_report_buffer_and_pending_drop,1000,1000,0,88000,88.000,6,4,0.400,1,0,2,0,1,0,2,10,3,2,1,0,1,0,0,72024,18.155,3,sparse_high32_descriptor_candidate,high32_sparse_compact_descriptor,22,22,1,476,23,23,0,0,0,single_query_cross_root_with_no_sources,0,0,0,0.000,none,23,23,yes,276,0,0,no,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,cross_segment_retained_leaf_opening_candidate,23,23,1,1.000,yes,enable_cross_segment_root_pipeline,858,23,874,41078,15732,23598,1786.000,192.974,yes,9.105,stream_elapsed,parallel_lower_waiting,0,within_12s_target,26.350,20.940,10.610,8.670,guest_machine_and_trace_slice,7.410,23.170,sha256_digest_unresolved,report_lifetime_and_data_movement",
+        "batched-roots,2758032,9050,0,0,none,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,0,0,0.000,none,none,0,0,0,0,0.000,0,0,0.000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,none,none,0,0,0,0,0,0,0,0,0,none,0,0,0,0.000,none,0,0,no,0,0,0,no,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,none,23,1,23,23.000,no,root_batches_already_grouped,0,0,0,0,0,0,0.000,0.000,no,0.000,total,none,0,within_12s_target,0.000,0.000,0.000,0.000,none,0.000,0.000,none,none",
+        "slow-sample,12447640,18100,0,0,none,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,0,0,0.000,none,none,0,0,0,0,0.000,0,0,0.000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000,0,none,none,0,0,0,0,0,0,0,0,0,none,0,0,0,0.000,none,0,0,no,0,0,0,no,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,none,120,120,1,1.000,yes,large_input_root_pipeline_gated,0,0,0,0,0,0,0.000,0.000,no,0.000,total,none,6100,target_gap_needs_timing_breakdown,0.000,0.000,0.000,0.000,none,0.000,0.000,none,none",
         "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,total_median_ms,total_max_ms,sample_spread_pct,close_samples,max_outlier",
         "aggregate,3,3,9050,12066.667,9050.000,18100,100.000,no,yes",
     ] {
@@ -415,6 +419,86 @@ fn prove_timing_root_summary_classifies_trace_pipeline_action() {
         fields.get(hint_index),
         Some(&"trace_generation_and_commit_pipeline_candidate"),
         "trace-heavy run with a large commit gate should point at the combined pipeline lever: stdout={stdout}"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reports_source_row_value_extend_priority() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "input_bytes=12447640",
+        "timing_total_ms=52000",
+        "timing_guest_trace_runner_ms=41000",
+        "timing_guest_trace_lowerer_ms=35000",
+        "timing_guest_trace_lower_ms=33000",
+        "timing_guest_trace_stream_elapsed_ms=43000",
+        "timing_guest_trace_stream_ms=22000",
+        "timing_guest_segment_commit_ms=21000",
+        "timing_guest_trace_segment_receive_wait_ms=22000",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_finish_witness_opening_query_unit_count=120",
+        "timing_finish_witness_opening_single_query_unit_count=120",
+        "timing_finish_witness_opening_query_count=120",
+        "timing_finish_witness_opening_max_queries_per_unit=1",
+        "timing_finish_witness_opening_external_source_count=120",
+        "timing_finish_witness_opening_embedded_source_count=120",
+        "timing_finish_witness_opening_row_values_source_rows=77",
+        "timing_finish_witness_opening_row_value_source_extend_ms=1134",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("prove timing root summary should print a header");
+    let row = lines
+        .next()
+        .expect("prove timing root summary should print a data row");
+    let headers = header.split(',').collect::<Vec<_>>();
+    let fields = row.split(',').collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        fields
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("opening_row_value_source_extend_ms"), "1134");
+    assert_eq!(value("opening_row_value_source_extend_pct"), "2.181");
+    assert_eq!(
+        value("opening_source_row_value_action_hint"),
+        "trace_pipeline_before_source_row_values"
     );
 }
 
@@ -1342,7 +1426,7 @@ fn prove_timing_root_summary_reports_retained_parent_checkpoint_opening_shape() 
     );
     assert!(
         stdout.contains(
-            ",43,0,77,77,yes,0,79,79,yes,0,0,79,0,0,790,869,11,858,0,0,43,0,0,0,multi_buffer_device_row_value_gather_candidate,"
+            ",43,0,0,0.000,none,77,77,yes,0,79,79,yes,0,0,79,0,0,790,869,11,858,0,0,43,0,0,0,multi_buffer_device_row_value_gather_candidate,"
         ),
         "prove timing root summary should classify single-query device row-value openings as a multi-buffer gather target: stdout={stdout}"
     );
