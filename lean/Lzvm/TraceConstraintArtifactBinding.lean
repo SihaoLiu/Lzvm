@@ -328,15 +328,21 @@ theorem runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_co
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
-  have sound :=
-    runtime_trace_constraint_artifact_binding_checked_acceptance_sound
-      assumptions
+  have traceConstraintAccepted :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint
       validation
       artifact
       publicInput
       proof
-      False
       accepted
-  exact sound_witness_implies_verifier_core_contract sound.right.right
+  exact
+    runtime_trace_constraint_checked_acceptance_verifier_core_contract
+      assumptions
+      validation.traceConstraintValidation
+      artifact
+      publicInput
+      proof
+      False
+      traceConstraintAccepted
 
 end Lzvm

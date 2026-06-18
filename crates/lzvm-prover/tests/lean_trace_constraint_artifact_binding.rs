@@ -52,4 +52,20 @@ fn lean_trace_constraint_artifact_binding_exports_core_contract_projection() {
         "runtime_trace_constraint_artifact_binding_checked_acceptance_pcs_fri_backend_contract",
         &["AssumptionBundle"],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract",
+        &[
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint",
+            "runtime_trace_constraint_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract",
+        &[
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
 }
