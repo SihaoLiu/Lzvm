@@ -381,15 +381,20 @@ theorem runtime_transcript_binding_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
-  have sound :=
-    runtime_transcript_binding_checked_acceptance_sound
-      assumptions
-      validation
+  have artifactAccepted :=
+    validation.transcriptAcceptedImpliesArtifactBindingAccepted
       artifact
       publicInput
       proof
       accepted
-  exact sound_witness_implies_verifier_core_contract sound.right.right.right
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation.artifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
 
 theorem runtime_transcript_binding_checked_acceptance_transcript_and_core_contract
     {system : VerifierModel}
@@ -417,8 +422,35 @@ theorem runtime_transcript_binding_checked_acceptance_transcript_and_core_contra
           /\ system.transcriptBound publicInput proof
           /\ RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
-  have sound :=
-    runtime_transcript_binding_checked_acceptance_sound
+  have transcriptEvidence :=
+    runtime_transcript_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactAccepted :=
+    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactRuntimeEvidence :=
+    runtime_proof_artifact_binding_checked_acceptance_runtime_evidence
+      validation.artifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have transcriptBound :=
+    runtime_transcript_binding_evidence_implies_transcript_bound
+      validation
+      artifact
+      publicInput
+      proof
+      transcriptEvidence
+  have coreContract :=
+    runtime_transcript_binding_checked_acceptance_verifier_core_contract
       assumptions
       validation
       artifact
@@ -426,10 +458,8 @@ theorem runtime_transcript_binding_checked_acceptance_transcript_and_core_contra
       proof
       accepted
   exact
-    And.intro sound.left
-      (And.intro sound.right.left
-        (And.intro sound.right.right.left
-          (sound_witness_implies_verifier_core_contract
-            sound.right.right.right)))
+    And.intro transcriptEvidence
+      (And.intro artifactRuntimeEvidence
+        (And.intro transcriptBound coreContract))
 
 end Lzvm
