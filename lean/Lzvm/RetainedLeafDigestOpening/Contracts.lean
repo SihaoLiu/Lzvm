@@ -14,6 +14,113 @@ namespace Lzvm
 
 universe uDigest
 
+theorem runtime_retained_leaf_digest_nary_opening_position_bound_from_hash_assumption
+    {system : VerifierModel}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (binding :
+      RuntimeRetainedLeafDigestNAryConcreteOpeningBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedLeafDigestPathBound artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_retained_leaf_digest_nary_opening_position_bound_from_no_collision
+      validation
+      binding
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_retained_leaf_digest_nary_opening_digest_contract_from_hash_assumption
+    {system : VerifierModel}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (binding :
+      RuntimeRetainedLeafDigestNAryConcreteOpeningBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedLeafDigestOpeningDigestContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have levelAvailable :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesLevelAvailable
+      artifact
+      publicInput
+      proof
+      accepted
+  have pathBound :=
+    runtime_retained_leaf_digest_nary_opening_position_bound_from_hash_assumption
+      hashAssumptions
+      validation
+      centralized
+      binding
+      artifact
+      publicInput
+      proof
+      accepted
+  have rootMatches :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRootMatchesExpectedRoot
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsFromSource :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRowsFromSource
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsBoundToQueryPlan :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesRowsBoundToQueryPlan
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro levelAvailable
+      (And.intro pathBound
+        (And.intro rootMatches
+          (And.intro rowsFromSource rowsBoundToQueryPlan)))
+
 theorem runtime_retained_leaf_digest_nary_opening_checked_acceptance_evidence_from_bundle
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

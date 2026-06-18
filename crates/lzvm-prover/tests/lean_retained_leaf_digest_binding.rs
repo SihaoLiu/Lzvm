@@ -91,10 +91,12 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "runtime_retained_leaf_digest_nary_path_digest_contract_from_bundle",
             "runtime_retained_leaf_digest_nary_opening_position_bound_from_no_collision",
             "runtime_retained_leaf_digest_nary_opening_position_bound_from_bundle",
+            "runtime_retained_leaf_digest_nary_opening_position_bound_from_hash_assumption",
             "runtime_retained_leaf_digest_nary_opening_arity_four_position_bound_from_no_collision",
             "runtime_retained_leaf_digest_nary_opening_arity_four_position_bound_from_bundle",
             "runtime_retained_leaf_digest_nary_opening_checked_acceptance_evidence_from_bundle",
             "runtime_retained_leaf_digest_nary_opening_digest_contract_from_bundle",
+            "runtime_retained_leaf_digest_nary_opening_digest_contract_from_hash_assumption",
             "runtime_retained_leaf_digest_nary_opening_opening_and_core_contract_from_bundle",
             "runtime_retained_leaf_digest_nary_opening_source_and_core_contract_from_bundle",
             "runtime_retained_leaf_digest_nary_opening_source_core_sound_contract_from_bundle",
@@ -219,6 +221,26 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_position_bound_from_hash_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedLeafDigestNAryConcreteOpeningBinding",
+            "retainedLeafDigestPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_position_bound_from_hash_assumption",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_position_bound_from_hash_assumption",
+        &["runtime_retained_leaf_digest_nary_opening_position_bound_from_no_collision"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_retained_leaf_digest_nary_path_digest_contract_from_bundle",
         &[
             "AssumptionBundle system",
@@ -255,6 +277,31 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_retained_leaf_digest_nary_opening_digest_contract_from_bundle",
+        &["retainedLeafDigestOpeningAcceptedImpliesPathBound"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_digest_contract_from_hash_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedLeafDigestNAryConcreteOpeningBinding",
+            "RuntimeRetainedLeafDigestOpeningDigestContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_digest_contract_from_hash_assumption",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_digest_contract_from_hash_assumption",
+        &["runtime_retained_leaf_digest_nary_opening_position_bound_from_hash_assumption"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_leaf_digest_nary_opening_digest_contract_from_hash_assumption",
         &["retainedLeafDigestOpeningAcceptedImpliesPathBound"],
     );
     lean_binding::assert_theorem_prefix_contains(

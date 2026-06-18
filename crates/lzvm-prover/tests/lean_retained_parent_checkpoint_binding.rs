@@ -94,9 +94,11 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_nary_path_opening_and_core_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_position_bound_from_no_collision",
             "runtime_retained_parent_checkpoint_nary_opening_position_bound_from_bundle",
+            "runtime_retained_parent_checkpoint_nary_opening_position_bound_from_hash_assumption",
             "runtime_retained_parent_checkpoint_nary_opening_arity_four_position_bound_from_no_collision",
             "runtime_retained_parent_checkpoint_nary_opening_arity_four_position_bound_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_bundle",
+            "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_hash_assumption",
             "runtime_retained_parent_checkpoint_nary_opening_opening_and_core_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_source_and_core_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_source_core_sound_contract_from_bundle",
@@ -227,6 +229,26 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_position_bound_from_hash_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedParentCheckpointNAryConcreteOpeningBinding",
+            "retainedParentCheckpointStitchedPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_position_bound_from_hash_assumption",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_position_bound_from_hash_assumption",
+        &["runtime_retained_parent_checkpoint_nary_opening_position_bound_from_no_collision"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_retained_parent_checkpoint_nary_path_digest_contract_from_bundle",
         &[
             "AssumptionBundle system",
@@ -263,6 +285,31 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_bundle",
+        &["retainedParentCheckpointOpeningAcceptedImpliesStitchedPathBound"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_hash_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedParentCheckpointNAryConcreteOpeningBinding",
+            "RuntimeRetainedParentCheckpointOpeningDigestContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_hash_assumption",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_hash_assumption",
+        &["runtime_retained_parent_checkpoint_nary_opening_position_bound_from_hash_assumption"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_hash_assumption",
         &["retainedParentCheckpointOpeningAcceptedImpliesStitchedPathBound"],
     );
     lean_binding::assert_theorem_prefix_contains(

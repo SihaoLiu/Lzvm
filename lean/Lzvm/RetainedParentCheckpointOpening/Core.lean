@@ -558,6 +558,46 @@ theorem runtime_retained_parent_checkpoint_nary_opening_position_bound_from_bund
       proof
       accepted
 
+theorem runtime_retained_parent_checkpoint_nary_opening_position_bound_from_hash_assumption
+    {system : VerifierModel}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (binding :
+      RuntimeRetainedParentCheckpointNAryConcreteOpeningBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.retainedParentCheckpointStitchedPathBound
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_retained_parent_checkpoint_nary_opening_position_bound_from_no_collision
+      validation
+      binding
+      (Eq.mp
+        centralized
+        hashAssumptions.merkleHashCollisionResistance.evidence)
+      artifact
+      publicInput
+      proof
+      accepted
+
 def RuntimeRetainedParentCheckpointOpeningDigestContract
     (_system : VerifierModel)
     (validation : RuntimeRetainedParentCheckpointOpeningValidation _system)
@@ -1511,6 +1551,90 @@ theorem runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_bun
   have stitchedPath :=
     runtime_retained_parent_checkpoint_nary_opening_position_bound_from_bundle
       assumptions
+      validation
+      centralized
+      binding
+      artifact
+      publicInput
+      proof
+      accepted
+  have rootMatches :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesRootMatchesExpectedRoot
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsFromSource :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesRowsFromSource
+      artifact
+      publicInput
+      proof
+      accepted
+  have rowsBoundToQueryPlan :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesRowsBoundToQueryPlan
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro levelAvailable
+      (And.intro lowerPrefix
+        (And.intro upperSuffix
+          (And.intro stitchedPath
+            (And.intro rootMatches
+              (And.intro rowsFromSource rowsBoundToQueryPlan)))))
+
+theorem runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_hash_assumption
+    {system : VerifierModel}
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (binding :
+      RuntimeRetainedParentCheckpointNAryConcreteOpeningBinding
+        system
+        validation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedParentCheckpointOpeningDigestContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have levelAvailable :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesLevelAvailable
+      artifact
+      publicInput
+      proof
+      accepted
+  have lowerPrefix :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesLowerPrefixBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have upperSuffix :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesUpperSuffixBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have stitchedPath :=
+    runtime_retained_parent_checkpoint_nary_opening_position_bound_from_hash_assumption
+      hashAssumptions
       validation
       centralized
       binding
