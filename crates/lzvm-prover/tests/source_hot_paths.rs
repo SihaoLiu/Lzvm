@@ -2652,7 +2652,7 @@ fn trace_output_opening_batches_stage_query_rows() {
         "fn ensure_guest_pc_external_stage_sources",
     );
     assert!(
-        opening_body.contains("open_witness_stage_commitments_with_source_device_timing"),
+        opening_body.contains("open_witness_stage_commitment_batches_with_source_devices_timing"),
         "trace-output witness openings should batch same-stage query rows"
     );
     assert!(
@@ -2660,7 +2660,7 @@ fn trace_output_opening_batches_stage_query_rows() {
         "trace-output witness openings should not recompute same-stage CUDA work per query row"
     );
     assert!(
-        tree_source.contains("open_witness_stage_commitments_with_source_device_timing"),
+        tree_source.contains("open_witness_stage_commitment_batches_with_source_devices_timing"),
         "witness commitment tree should expose a batch opening helper for query rows"
     );
     assert!(
