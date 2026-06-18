@@ -152,6 +152,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "input_bytes",
         "needs_cross_segment_root_pipeline",
         "opening_batching_hint",
+        "opening_retained_parent_checkpoint_action_hint",
         "retained_parent_checkpoint_path_time_secondary",
         "leaf_launch_pressure",
         "primary_bottleneck",
@@ -1525,6 +1526,87 @@ fn prove_timing_root_summary_reports_retained_parent_checkpoint_opening_shape() 
             ",43,0,0,0.000,none,77,77,yes,0,79,79,yes,0,0,79,0,0,0,790,0,869,0,11,858,0,0,43,0,0,0,multi_buffer_device_row_value_gather_candidate,"
         ),
         "prove timing root summary should classify single-query device row-value openings as a multi-buffer gather target: stdout={stdout}"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reports_retained_parent_checkpoint_action_hint() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "input_bytes=12447640",
+        "timing_total_ms=52335",
+        "timing_finish_witness_opening_ms=9000",
+        "timing_cuda_direct_copy_d2h_wait_ns=3389670000",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_finish_witness_opening_query_unit_count=120",
+        "timing_finish_witness_opening_single_query_unit_count=120",
+        "timing_finish_witness_opening_retained_parent_checkpoint_openings=79",
+        "timing_finish_witness_opening_retained_parent_checkpoint_rows=79",
+        "timing_finish_witness_opening_retained_parent_checkpoint_all_single_row_openings=1",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launches=79",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_ms=1300",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches=790",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms=2600",
+        "timing_finish_witness_opening_row_values_device_rows=43",
+        "timing_finish_witness_opening_row_values_device_download_batches=0",
+        "timing_finish_witness_opening_row_values_device_single_downloads=43",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("prove timing root summary should print a header");
+    let row = lines
+        .next()
+        .expect("prove timing root summary should print a data row");
+    let headers = header.split(',').collect::<Vec<_>>();
+    let fields = row.split(',').collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        fields
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        value("opening_batching_hint"),
+        "multi_buffer_device_row_value_gather_candidate"
+    );
+    assert_eq!(
+        value("opening_retained_parent_checkpoint_action_hint"),
+        "cross_stage_retained_parent_checkpoint_prefix_suffix_gather_candidate"
     );
 }
 

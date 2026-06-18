@@ -376,7 +376,7 @@ HEADER = (
     "opening_row_value_device_single_stage_count,"
     "opening_row_value_device_single_max_stage,"
     "opening_row_value_device_cross_unit_batch_savings,"
-    "opening_batching_hint,"
+    "opening_batching_hint,opening_retained_parent_checkpoint_action_hint,"
     "root_count,materialization_groups,"
     "materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,"
     "root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
@@ -1227,6 +1227,29 @@ def retained_parent_checkpoint_cross_stage_gather_launch_shape(
     estimated_launches = prefix_group_launches + suffix_group_launches
     launch_savings = max(current_launches - estimated_launches, 0)
     return (current_launches, estimated_launches, launch_savings)
+
+
+def opening_retained_parent_checkpoint_action_hint(
+    openings: int,
+    rows: int,
+    all_single_row: int,
+    single_query_units: int,
+    path_launches: int,
+    path_ms: int,
+    cross_stage_gather_launch_savings: int,
+) -> str:
+    if (
+        openings <= 1
+        or rows != openings
+        or all_single_row <= 0
+        or single_query_units < openings
+        or path_launches <= openings
+        or cross_stage_gather_launch_savings <= 0
+    ):
+        return "none"
+    if path_ms > 0 and path_ms < RETAINED_PARENT_CHECKPOINT_PATH_SECONDARY_MS_THRESHOLD:
+        return "retained_parent_checkpoint_path_time_secondary"
+    return "cross_stage_retained_parent_checkpoint_prefix_suffix_gather_candidate"
 
 
 def opening_source_shape_hint(
@@ -2128,6 +2151,17 @@ def summarize_profile_values(
         retained_parent_checkpoint_prefix_launches,
         retained_parent_checkpoint_suffix_launches,
     )
+    retained_parent_checkpoint_action_hint = (
+        opening_retained_parent_checkpoint_action_hint(
+            retained_parent_checkpoint_openings,
+            retained_parent_checkpoint_rows,
+            retained_parent_checkpoint_all_single_row_value,
+            opening_single_query_units,
+            retained_parent_checkpoint_path_launches,
+            retained_parent_checkpoint_path_ms,
+            retained_parent_checkpoint_cross_stage_gather_launch_savings,
+        )
+    )
     opening_path_parent_hash_launches_per_stage = values.get(
         OPENING_PATH_PARENT_HASH_LAUNCHES_PER_STAGE_KEY, 0
     )
@@ -2385,7 +2419,7 @@ def summarize_profile_values(
         f"{opening_row_value_device_single_stage_count},"
         f"{opening_row_value_device_single_max_stage},"
         f"{opening_row_value_device_cross_unit_batch_savings},"
-        f"{opening_hint},"
+        f"{opening_hint},{retained_parent_checkpoint_action_hint},"
         f"{root_count},{groups},{max_group_size},"
         f"{roots_per_group:.3f},{needs_cross_segment_root_pipeline},{policy_hint},"
         f"{leaf_kernel_ms},{leaf_coset_calls},{leaf_coset_columns},{leaf_ntt_launches},"
