@@ -358,15 +358,21 @@ theorem runtime_challenge_segment_binding_checked_acceptance_verifier_core_contr
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
-  have sound :=
-    runtime_challenge_segment_binding_checked_acceptance_sound
-      assumptions
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
       validation
       artifact
       publicInput
       proof
       accepted
-  exact sound_witness_implies_verifier_core_contract sound.right.right.right
+  exact
+    runtime_transcript_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
 
 theorem runtime_challenge_segment_binding_checked_acceptance_challenge_and_core_contract
     {system : VerifierModel}
@@ -394,8 +400,36 @@ theorem runtime_challenge_segment_binding_checked_acceptance_challenge_and_core_
           /\ system.transcriptBound publicInput proof
           /\ RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
-  have sound :=
-    runtime_challenge_segment_binding_checked_acceptance_sound
+  have challengeEvidence :=
+    runtime_challenge_segment_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have transcriptEvidence :=
+    runtime_transcript_binding_checked_acceptance_evidence
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+  have transcriptBound :=
+    runtime_transcript_binding_evidence_implies_transcript_bound
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptEvidence
+  have coreContract :=
+    runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract
       assumptions
       validation
       artifact
@@ -403,10 +437,8 @@ theorem runtime_challenge_segment_binding_checked_acceptance_challenge_and_core_
       proof
       accepted
   exact
-    And.intro sound.left
-      (And.intro sound.right.left
-        (And.intro sound.right.right.left
-          (sound_witness_implies_verifier_core_contract
-            sound.right.right.right)))
+    And.intro challengeEvidence
+      (And.intro transcriptEvidence
+        (And.intro transcriptBound coreContract))
 
 end Lzvm

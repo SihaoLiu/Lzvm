@@ -113,4 +113,30 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
             "RuntimeVerifierCoreContract system publicInput proof",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract",
+        &["runtime_transcript_binding_checked_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract",
+        &[
+            "runtime_challenge_segment_binding_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_challenge_and_core_contract",
+        &["runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_challenge_and_core_contract",
+        &[
+            "runtime_challenge_segment_binding_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
 }
