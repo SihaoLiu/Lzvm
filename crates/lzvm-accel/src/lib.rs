@@ -245,6 +245,17 @@ unsafe extern "C" {
         column_count: usize,
         weight_shift: usize,
     ) -> i32;
+    #[link_name = "lzvm_cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device"]
+    fn lzvm_cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device_raw(
+        values: *const u64,
+        weights: *const u64,
+        weight_shifts: *const u64,
+        output_rows: *const u64,
+        out: *mut u64,
+        source_len: usize,
+        column_count: usize,
+        target_row_count: usize,
+    ) -> i32;
     #[link_name = "lzvm_cuda_goldilocks_coset_extend_row_major_columns_rows_device"]
     fn lzvm_cuda_goldilocks_coset_extend_row_major_columns_rows_device_raw(
         values: *const u64,
@@ -274,6 +285,19 @@ unsafe extern "C" {
         column_offset: usize,
         column_count: usize,
         weight_shift: usize,
+    ) -> i32;
+    #[link_name = "lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device"]
+    fn lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device_raw(
+        values: *const u64,
+        weights: *const u64,
+        weight_shifts: *const u64,
+        output_rows: *const u64,
+        out: *mut u64,
+        source_len: usize,
+        source_row_stride: usize,
+        column_offset: usize,
+        column_count: usize,
+        target_row_count: usize,
     ) -> i32;
     #[link_name = "lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_rows_device"]
     fn lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_rows_device_raw(
@@ -903,6 +927,48 @@ fn cached_coset_extend_residue_row_weights_device(
         });
     }
     Ok((weights, weight_shift))
+}
+
+#[cfg(feature = "cuda")]
+struct ShiftedRowWeightGroup {
+    residue_row: usize,
+    output_rows: Vec<u64>,
+    weight_shifts: Vec<u64>,
+}
+
+#[cfg(feature = "cuda")]
+fn shifted_row_weight_groups(
+    source_bits: usize,
+    target_bits: usize,
+    target_rows: &[usize],
+) -> Result<Vec<ShiftedRowWeightGroup>, AccelError> {
+    let mut groups: Vec<ShiftedRowWeightGroup> = Vec::new();
+    for (output_row, &target_row) in target_rows.iter().enumerate() {
+        let (residue_row, weight_shift) =
+            row_weight_shift_for_target_row(source_bits, target_bits, target_row)?;
+        let output_row = u64::try_from(output_row).map_err(|_| AccelError::InvalidDomain {
+            bits: target_bits,
+            len: target_rows.len(),
+        })?;
+        let weight_shift = u64::try_from(weight_shift).map_err(|_| AccelError::InvalidDomain {
+            bits: target_bits,
+            len: target_row,
+        })?;
+        if let Some(group) = groups
+            .iter_mut()
+            .find(|group| group.residue_row == residue_row)
+        {
+            group.output_rows.push(output_row);
+            group.weight_shifts.push(weight_shift);
+        } else {
+            groups.push(ShiftedRowWeightGroup {
+                residue_row,
+                output_rows: vec![output_row],
+                weight_shifts: vec![weight_shift],
+            });
+        }
+    }
+    Ok(groups)
 }
 
 #[cfg(feature = "cuda")]
@@ -2242,6 +2308,104 @@ pub fn cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device(
 }
 
 #[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device(
+    values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+    target_rows: &[usize],
+) -> Result<(), AccelError> {
+    if column_count == 0 {
+        if values.is_empty() && out.is_empty() && target_rows.is_empty() {
+            return Ok(());
+        }
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+    if !values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len(),
+            rhs: values.len() / 8 * 8,
+        });
+    }
+    if !out.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: out.len(),
+            rhs: out.len() / 8 * 8,
+        });
+    }
+
+    let source_words = values.len() / 8;
+    if !source_words.is_multiple_of(column_count) {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_words,
+        });
+    }
+    let source_rows = source_words / column_count;
+    let (source_len, target_len, source_root, target_root) =
+        coset_extend_domain(source_rows, source_bits, target_bits)?;
+    if source_rows != source_len {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_words,
+        });
+    }
+    let out_words =
+        target_rows
+            .len()
+            .checked_mul(column_count)
+            .ok_or(AccelError::InvalidDomain {
+                bits: target_bits,
+                len: target_rows.len(),
+            })?;
+    let out_bytes = out_words.checked_mul(8).ok_or(AccelError::InvalidDomain {
+        bits: target_bits,
+        len: out_words,
+    })?;
+    if out.len() != out_bytes {
+        return Err(AccelError::LengthMismatch {
+            lhs: out_bytes,
+            rhs: out.len(),
+        });
+    }
+    if target_rows.is_empty() {
+        return Ok(());
+    }
+    ensure_cuda_setup(target_bits)?;
+    for group in shifted_row_weight_groups(source_bits, target_bits, target_rows)? {
+        let (weights_buffer, _) = cached_coset_extend_residue_row_weights_device(
+            source_len,
+            target_len,
+            source_root,
+            target_root,
+            source_bits,
+            target_bits,
+            group.residue_row,
+        )?;
+        let shifts = CudaDeviceBuffer::from_u64_words(&group.weight_shifts)?;
+        let output_rows = CudaDeviceBuffer::from_u64_words(&group.output_rows)?;
+        let code = unsafe {
+            lzvm_cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device_raw(
+                values.as_raw_ptr() as *const u64,
+                weights_buffer.as_raw_ptr() as *const u64,
+                shifts.as_raw_ptr() as *const u64,
+                output_rows.as_raw_ptr() as *const u64,
+                out.as_raw_ptr() as *mut u64,
+                source_len,
+                column_count,
+                group.output_rows.len(),
+            )
+        };
+        cuda_status(code)?;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "cuda")]
 pub fn cuda_goldilocks_coset_extend_row_major_columns_rows_device(
     values: &CudaDeviceBuffer,
     out: &mut CudaDeviceBuffer,
@@ -2558,6 +2722,125 @@ pub fn cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device
         )
     };
     cuda_status(code)
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device(
+    values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    view: CudaRowMajorColumnView,
+    source_bits: usize,
+    target_bits: usize,
+    target_rows: &[usize],
+) -> Result<(), AccelError> {
+    let CudaRowMajorColumnView {
+        source_rows,
+        source_row_stride,
+        column_offset,
+        column_count,
+    } = view;
+    if column_count == 0 || source_row_stride == 0 {
+        if values.is_empty() && out.is_empty() && target_rows.is_empty() {
+            return Ok(());
+        }
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+    if column_offset > source_row_stride || column_count > source_row_stride - column_offset {
+        return Err(AccelError::InvalidDomain {
+            bits: source_row_stride,
+            len: column_count,
+        });
+    }
+    if !values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len(),
+            rhs: values.len() / 8 * 8,
+        });
+    }
+    if !out.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: out.len(),
+            rhs: out.len() / 8 * 8,
+        });
+    }
+
+    let (source_len, target_len, source_root, target_root) =
+        coset_extend_domain(source_rows, source_bits, target_bits)?;
+    if source_rows != source_len {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_rows,
+        });
+    }
+    let required_source_words = source_rows
+        .checked_sub(1)
+        .and_then(|last_row| last_row.checked_mul(source_row_stride))
+        .and_then(|base| base.checked_add(column_offset))
+        .and_then(|base| base.checked_add(column_count))
+        .ok_or(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_rows,
+        })?;
+    if values.len() / 8 < required_source_words {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len() / 8,
+            rhs: required_source_words,
+        });
+    }
+    let out_words =
+        target_rows
+            .len()
+            .checked_mul(column_count)
+            .ok_or(AccelError::InvalidDomain {
+                bits: target_bits,
+                len: target_rows.len(),
+            })?;
+    let out_bytes = out_words.checked_mul(8).ok_or(AccelError::InvalidDomain {
+        bits: target_bits,
+        len: out_words,
+    })?;
+    if out.len() != out_bytes {
+        return Err(AccelError::LengthMismatch {
+            lhs: out_bytes,
+            rhs: out.len(),
+        });
+    }
+    if target_rows.is_empty() {
+        return Ok(());
+    }
+    ensure_cuda_setup(target_bits)?;
+    for group in shifted_row_weight_groups(source_bits, target_bits, target_rows)? {
+        let (weights_buffer, _) = cached_coset_extend_residue_row_weights_device(
+            source_len,
+            target_len,
+            source_root,
+            target_root,
+            source_bits,
+            target_bits,
+            group.residue_row,
+        )?;
+        let shifts = CudaDeviceBuffer::from_u64_words(&group.weight_shifts)?;
+        let output_rows = CudaDeviceBuffer::from_u64_words(&group.output_rows)?;
+        let code = unsafe {
+            lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device_raw(
+                values.as_raw_ptr() as *const u64,
+                weights_buffer.as_raw_ptr() as *const u64,
+                shifts.as_raw_ptr() as *const u64,
+                output_rows.as_raw_ptr() as *const u64,
+                out.as_raw_ptr() as *mut u64,
+                source_len,
+                source_row_stride,
+                column_offset,
+                column_count,
+                group.output_rows.len(),
+            )
+        };
+        cuda_status(code)?;
+    }
+    Ok(())
 }
 
 #[cfg(feature = "cuda")]

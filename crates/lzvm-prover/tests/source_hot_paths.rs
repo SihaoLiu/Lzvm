@@ -3662,10 +3662,11 @@ fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
         "fn open_with_recomputed_leaf_level_cuda",
     );
     assert!(
-        source_batch_body.contains("cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device")
+        source_batch_body
+            .contains("cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device")
             && source_batch_body
-                .contains("cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device"),
-        "batched compact source row values should use the shifted-row helpers with their residue weight cache"
+                .contains("cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device"),
+        "batched compact source row values should use shifted-row batch helpers with their residue weight cache"
     );
 }
 

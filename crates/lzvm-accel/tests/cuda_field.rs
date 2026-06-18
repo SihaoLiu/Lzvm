@@ -12,12 +12,14 @@ use lzvm_accel::{
     cuda_goldilocks_coset_extend_row_major_columns_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device,
+    cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced,
     cuda_goldilocks_coset_extend_row_major_columns_strided_row_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device,
+    cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device,
     cuda_goldilocks_intt, cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16,
     cuda_poseidon2_width16_device, cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_device,
@@ -67,8 +69,10 @@ fn native_host_header_declares_row_range_extension_exports() {
     for symbol in [
         "lzvm_cuda_goldilocks_coset_extend_row_major_columns_rows_device",
         "lzvm_cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device",
+        "lzvm_cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device",
         "lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_rows_device",
         "lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device",
+        "lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device",
     ] {
         assert!(
             source.contains(symbol),
@@ -1598,6 +1602,54 @@ fn cuda_extends_shifted_row_major_coset_row_from_device_memory() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_extends_shifted_row_major_coset_rows_from_device_memory() {
+    let input = vec![5, 9, 2, 1, 9, 4, 3, 7, 6, 8, 11, 10];
+    let source_bits = 2;
+    let target_bits = 4;
+    let column_count = 3;
+    let target_rows = [11_usize, 2, 14, 2, 7];
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+    let mut expected = Vec::with_capacity(target_rows.len() * column_count);
+    for target_row in target_rows {
+        let mut row_buffer =
+            CudaDeviceBuffer::new(column_count * 8).expect("row output should allocate");
+        cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device(
+            &input_buffer,
+            &mut row_buffer,
+            column_count,
+            source_bits,
+            target_bits,
+            target_row,
+        )
+        .expect("single shifted row extension should run");
+        expected.extend(
+            row_buffer
+                .to_u64_words()
+                .expect("single shifted row should download"),
+        );
+    }
+
+    let mut output_buffer =
+        CudaDeviceBuffer::new(expected.len() * 8).expect("row output should allocate");
+    cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device(
+        &input_buffer,
+        &mut output_buffer,
+        column_count,
+        source_bits,
+        target_bits,
+        &target_rows,
+    )
+    .expect("batched shifted row extension should run");
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("batched shifted rows should download");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_extends_row_major_coset_row_range_from_device_memory() {
     let input = vec![5, 9, 2, 1, 9, 4, 3, 7, 6, 8, 11, 10];
     let source_bits = 2;
@@ -1792,6 +1844,71 @@ fn cuda_extends_shifted_strided_row_major_coset_row_from_device_memory() {
         .to_u64_words()
         .expect("device row output should copy back");
     let expected = expected[target_row * column_count..(target_row + 1) * column_count].to_vec();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_extends_shifted_strided_row_major_coset_rows_from_device_memory() {
+    let source_bits = 2;
+    let target_bits = 4;
+    let source_rows = 1_usize << source_bits;
+    let source_row_stride = 6;
+    let column_offset = 2;
+    let column_count = 3;
+    let target_rows = [11_usize, 2, 14, 2, 7];
+    let mut strided = Vec::with_capacity(source_rows * source_row_stride);
+    for row in 0..source_rows {
+        strided.push(80 + row as u64);
+        strided.push(90 + row as u64);
+        for column in 0..column_count {
+            strided.push((row * 10 + column + 1) as u64);
+        }
+        strided.push(190 + row as u64);
+    }
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&strided).expect("input device buffer should allocate");
+    let view = CudaRowMajorColumnView {
+        source_rows,
+        source_row_stride,
+        column_offset,
+        column_count,
+    };
+    let mut expected = Vec::with_capacity(target_rows.len() * column_count);
+    for target_row in target_rows {
+        let mut row_buffer =
+            CudaDeviceBuffer::new(column_count * 8).expect("row output should allocate");
+        cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device(
+            &input_buffer,
+            &mut row_buffer,
+            view,
+            source_bits,
+            target_bits,
+            target_row,
+        )
+        .expect("single strided shifted row extension should run");
+        expected.extend(
+            row_buffer
+                .to_u64_words()
+                .expect("single strided shifted row should download"),
+        );
+    }
+
+    let mut output_buffer =
+        CudaDeviceBuffer::new(expected.len() * 8).expect("row output should allocate");
+    cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device(
+        &input_buffer,
+        &mut output_buffer,
+        view,
+        source_bits,
+        target_bits,
+        &target_rows,
+    )
+    .expect("batched strided shifted row extension should run");
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("batched strided shifted rows should download");
 
     assert_eq!(actual, expected);
 }

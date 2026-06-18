@@ -301,6 +301,15 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_selected_rows
     std::size_t source_len,
     std::size_t column_count,
     std::size_t target_row_count);
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device(
+    const std::uint64_t* values,
+    const std::uint64_t* weights,
+    const std::uint64_t* weight_shifts,
+    const std::uint64_t* output_rows,
+    std::uint64_t* out,
+    std::size_t source_len,
+    std::size_t column_count,
+    std::size_t target_row_count);
 extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_row_device(
     const std::uint64_t* values,
     const std::uint64_t* weights,
@@ -321,6 +330,17 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_rows_
 extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device(
     const std::uint64_t* values,
     const std::uint64_t* weights,
+    std::uint64_t* out,
+    std::size_t source_len,
+    std::size_t source_row_stride,
+    std::size_t column_offset,
+    std::size_t column_count,
+    std::size_t target_row_count);
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device(
+    const std::uint64_t* values,
+    const std::uint64_t* weights,
+    const std::uint64_t* weight_shifts,
+    const std::uint64_t* output_rows,
     std::uint64_t* out,
     std::size_t source_len,
     std::size_t source_row_stride,
