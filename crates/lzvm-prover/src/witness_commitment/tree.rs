@@ -1330,11 +1330,11 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
             if row_values.column_count != column_count {
                 continue;
             }
-            for (row_position, row) in row_values.row_indices.iter().copied().enumerate() {
+            for row_position in 0..row_values.row_indices.len() {
                 sources.push(DeviceRowValueBatchSource {
-                    output_buffer: &row_values.output_buffer,
-                    extended_rows: row_values.extended_rows,
-                    row,
+                    output_buffer: &row_values.row_buffer,
+                    extended_rows: row_values.row_indices.len(),
+                    row: row_position,
                 });
                 positions.push((group_index, row_position));
             }

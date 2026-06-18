@@ -3830,6 +3830,50 @@ fn compact_cuda_opening_errors_name_failing_operation() {
 }
 
 #[test]
+fn compact_device_row_openings_extract_rows_before_returning() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let tree_path = crate_root.join("src/witness_commitment/tree.rs");
+    let values_source = std::fs::read_to_string(&values_path)
+        .expect("witness commitment values source should read");
+    let tree_source =
+        std::fs::read_to_string(&tree_path).expect("witness commitment tree source should read");
+
+    let device_rows_struct = function_body(
+        &values_source,
+        "pub(crate) struct CompactOnDemandOpeningDeviceRows",
+        "#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]",
+    );
+    assert!(
+        device_rows_struct.contains("row_buffer: CudaDeviceBuffer")
+            && !device_rows_struct.contains("output_buffer: CudaDeviceBuffer"),
+        "device-row openings should retain only selected rows, not the full extended buffer"
+    );
+
+    let checkpoint_body = function_body(
+        &values_source,
+        "fn open_batch_with_retained_parent_checkpoint_device_rows_cuda",
+        "fn open_batch_with_retained_leaf_digest_and_parent_checkpoint_cuda",
+    );
+    assert!(
+        checkpoint_body.contains("CudaDeviceBuffer::from_device_selected_row_major_u64_rows"),
+        "retained checkpoint device-row openings should gather selected rows before returning"
+    );
+
+    let batch_body = function_body(
+        &tree_source,
+        "pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing",
+        "fn checked_witness_stage_opening_rows",
+    );
+    assert!(
+        batch_body.contains("output_buffer: &row_values.row_buffer")
+            && batch_body.contains("extended_rows: row_values.row_indices.len()")
+            && batch_body.contains("row: row_position"),
+        "cross-request row-value batching should gather from compact row buffers by row position"
+    );
+}
+
+#[test]
 fn trace_less_guest_pc_segment_output_can_skip_host_trace_build() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

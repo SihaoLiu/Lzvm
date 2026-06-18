@@ -47,8 +47,7 @@ pub(crate) struct CompactOnDemandOpeningDeviceSiblings {
 
 #[cfg(feature = "cuda")]
 pub(crate) struct CompactOnDemandOpeningDeviceRows {
-    pub(crate) output_buffer: CudaDeviceBuffer,
-    pub(crate) extended_rows: usize,
+    pub(crate) row_buffer: CudaDeviceBuffer,
     pub(crate) row_indices: Vec<usize>,
     pub(crate) column_count: usize,
     pub(crate) siblings_by_row: Vec<Vec<Vec<[Felt; HASH_WORDS]>>>,
@@ -2477,6 +2476,22 @@ impl WitnessStageCompactTreeStorage {
             timing.record_leaf_hash_work(self.extended_rows, self.raw_leaf_bytes, self.arity);
             timing.record_retained_parent_checkpoint_opening(rows.len());
         }
+        let row_buffer = record_row_value_duration(
+            timing.as_deref_mut(),
+            RowValueTimingKind::DeviceDownload,
+            || {
+                CudaDeviceBuffer::from_device_selected_row_major_u64_rows(
+                    &output_buffer,
+                    self.extended_rows,
+                    self.columns,
+                    rows,
+                )
+                .map_err(|_| WitnessStageOpeningError::LengthOverflow)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context("compact parent checkpoint row values", source)
+        })?;
         let siblings_by_row = self.retained_parent_checkpoint_siblings_by_row_cuda(
             rows,
             &leaf_level,
@@ -2487,8 +2502,7 @@ impl WitnessStageCompactTreeStorage {
             return Err(WitnessStageOpeningError::LengthOverflow);
         }
         Ok(CompactOnDemandOpeningDeviceRows {
-            output_buffer,
-            extended_rows: self.extended_rows,
+            row_buffer,
             row_indices: rows.to_vec(),
             column_count: self.columns,
             siblings_by_row,
