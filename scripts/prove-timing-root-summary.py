@@ -878,7 +878,7 @@ def trace_pipeline_action_hint(
 
 
 def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
-    return trace_pipeline_action_hint(
+    base_hint = trace_pipeline_action_hint(
         values.get(TOTAL_MS_KEY, 0),
         values.get(RUNNER_MS_KEY, 0),
         values.get(LOWERER_MS_KEY, 0),
@@ -888,6 +888,67 @@ def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
         values.get(SEGMENT_RECEIVE_WAIT_MS_KEY, 0),
         values.get(PENDING_RECEIVE_WAIT_MS_KEY, 0),
         values.get(PARALLEL_LOWER_WORKERS_KEY, 0),
+    )
+    if base_hint in {
+        "trace_generation_and_commit_pipeline_candidate",
+        "parallel_trace_lowering_candidate",
+        "trace_generation_parallelism_candidate",
+    } and trace_shape_points_to_segment_reexecution(values):
+        return "parallel_segment_reexecution_candidate"
+    return base_hint
+
+
+def trace_shape_points_to_segment_reexecution(values: dict[str, int]) -> bool:
+    trace_report_rows = values.get(TRACE_REPORT_ROWS_KEY, 0)
+    if trace_report_rows <= 0:
+        return False
+    trace_shape_hint = trace_shape_sample_hint(values, trace_report_rows)
+    external_op_rows = values.get(TRACE_EXTERNAL_OP_ROWS_KEY, 0)
+    copy_rows = values.get(TRACE_COPY_ROWS_KEY, 0)
+    indirect_memory_rows = values.get(TRACE_INDIRECT_MEMORY_ROWS_KEY, 0)
+    external_op_row_pct = external_op_rows * 100.0 / trace_report_rows
+    copy_row_pct = copy_rows * 100.0 / trace_report_rows
+    indirect_memory_row_pct = indirect_memory_rows * 100.0 / trace_report_rows
+    trace_shape_row_mix = trace_shape_row_mix_hint(
+        trace_shape_hint,
+        external_op_row_pct,
+        copy_row_pct,
+        indirect_memory_row_pct,
+    )
+    trace_lower_ms = values.get(TRACE_LOWER_MS_KEY, 0)
+    external_op_row_lower_ms = values.get(TRACE_EXTERNAL_OP_ROW_LOWER_MS_KEY, 0)
+    copy_row_lower_ms = values.get(TRACE_COPY_ROW_LOWER_MS_KEY, 0)
+    external_op_row_lower_pct = (
+        external_op_row_lower_ms * 100.0 / trace_lower_ms if trace_lower_ms else 0.0
+    )
+    copy_row_lower_pct = (
+        copy_row_lower_ms * 100.0 / trace_lower_ms if trace_lower_ms else 0.0
+    )
+    external_op_row_lower_ns_per_row = ns_per_row_from_ms(
+        external_op_row_lower_ms,
+        external_op_rows,
+    )
+    copy_row_lower_ns_per_row = ns_per_row_from_ms(
+        copy_row_lower_ms,
+        copy_rows,
+    )
+    trace_shape_duration = trace_shape_duration_hint(
+        external_op_row_lower_pct,
+        copy_row_lower_pct,
+    )
+    trace_shape_unit_cost = trace_shape_unit_cost_hint(
+        external_op_row_lower_ns_per_row,
+        copy_row_lower_ns_per_row,
+        trace_shape_row_mix,
+    )
+    return (
+        trace_shape_hint == "shape_timing_enabled"
+        and trace_shape_row_mix == "copy_and_external_op_rows_dominate"
+        and trace_shape_duration in {
+            "copy_and_external_op_duration_dominate",
+            "mixed_trace_shape_duration",
+        }
+        and trace_shape_unit_cost == "row_volume_dominates_shape_duration"
     )
 
 
