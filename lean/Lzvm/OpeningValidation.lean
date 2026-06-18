@@ -1239,16 +1239,22 @@ theorem runtime_opening_checked_acceptance_verifier_core_contract
       RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof _requiresExternalSource accepted
-  have sound :=
-    runtime_opening_checked_acceptance_sound
-      assumptions
-      validation
+  have runtimeAccepted :=
+    validation.openingAcceptedImpliesRuntimeSoundnessAccepted
       artifact
       publicInput
       proof
       _requiresExternalSource
       accepted
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    runtime_soundness_checked_acceptance_verifier_core_contract
+      assumptions
+      validation.runtimeSoundnessValidation
+      artifact
+      publicInput
+      proof
+      _requiresExternalSource
+      runtimeAccepted
 
 theorem runtime_opening_required_external_source_sound
     {system : VerifierModel}

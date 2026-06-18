@@ -627,6 +627,22 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_checked_acceptance_verifier_core_contract",
+        &[
+            "openingAcceptedImpliesRuntimeSoundnessAccepted",
+            "runtime_soundness_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_opening_checked_acceptance_verifier_core_contract",
+        &[
+            "runtime_opening_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
 }
 
 fn theorem_prefix(source: &str, name: &str) -> String {
