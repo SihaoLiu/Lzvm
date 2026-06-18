@@ -388,6 +388,7 @@ HEADER = (
     "perf_memmove_trace_slice_pct,perf_memmove_source_hint,"
     "perf_pending_segment_drop_self_pct,perf_sha256_self_pct,"
     "perf_sha256_source_hint,cpu_trace_hotspot_hint,"
+    "cpu_trace_report_storage_action_hint,"
     "perf_prepare_instruction_self_pct,perf_trace_segment_build_self_pct,"
     "perf_advance_guest_machine_self_pct,perf_guest_memory_write_self_pct,"
     "perf_biguint_modpow_self_pct,perf_guest_memory_read_self_pct,"
@@ -989,6 +990,12 @@ def cpu_trace_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
     pending_drop_pct = perf_hotspots.get(
         PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY, 0.0
     )
+    if (
+        lowered_report_row_pct >= 15.0
+        and memmove_pct >= 10.0
+        and pending_drop_pct >= 5.0
+    ):
+        return "report_lifetime_and_data_movement"
     if lowered_report_row_pct >= 20.0 and memmove_pct >= 15.0:
         return "report_lifetime_and_data_movement"
     if lowered_report_row_pct >= 20.0:
@@ -997,6 +1004,28 @@ def cpu_trace_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
         return "guest_state_copies"
     if pending_drop_pct >= 5.0:
         return "pending_segment_lifetime"
+    return "none"
+
+
+def cpu_trace_report_storage_action_hint(perf_hotspots: dict[str, float]) -> str:
+    lowered_report_row_pct = perf_hotspots.get(
+        PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY, 0.0
+    )
+    memmove_pct = perf_hotspots.get(PERF_MEMMOVE_SELF_PCT_KEY, 0.0)
+    memmove_trace_slice_pct = perf_hotspots.get(
+        PERF_MEMMOVE_TRACE_SLICE_PCT_KEY, 0.0
+    )
+    pending_drop_pct = perf_hotspots.get(
+        PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY, 0.0
+    )
+    if (
+        lowered_report_row_pct >= 15.0
+        and pending_drop_pct >= 5.0
+        and (memmove_trace_slice_pct >= 5.0 or memmove_pct >= 10.0)
+    ):
+        return "report_sidecar_storage_candidate"
+    if pending_drop_pct >= 5.0 and memmove_trace_slice_pct >= 5.0:
+        return "trace_slice_drop_storage_candidate"
     return "none"
 
 
@@ -2330,6 +2359,7 @@ def summarize_profile_values(
     sha256_pct = perf_hotspots.get(PERF_SHA256_SELF_PCT_KEY, 0.0)
     sha256_hint = sha256_source_hint(perf_hotspots)
     cpu_hint = cpu_trace_hotspot_hint(perf_hotspots)
+    cpu_report_storage_hint = cpu_trace_report_storage_action_hint(perf_hotspots)
     prepare_instruction_pct = perf_hotspots.get(
         PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY, 0.0
     )
@@ -2430,6 +2460,7 @@ def summarize_profile_values(
         f"{lowered_report_row_pct:.3f},{memmove_pct:.3f},{memmove_guest_machine_pct:.3f},"
         f"{memmove_trace_slice_pct:.3f},{memmove_hint},"
         f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint},"
+        f"{cpu_report_storage_hint},"
         f"{prepare_instruction_pct:.3f},{trace_segment_build_pct:.3f},"
         f"{advance_guest_machine_pct:.3f},{guest_memory_write_pct:.3f},"
         f"{biguint_modpow_pct:.3f},{guest_memory_read_pct:.3f},"
