@@ -729,6 +729,200 @@ theorem runtime_query_plan_binding_checked_acceptance_sound
               (And.intro pcsAndFri.left
                 (And.intro pcsAndFri.right openingSound.right.right))))))
 
+set_option linter.style.longLine false in
+theorem runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeQueryPlanBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.openingValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.openingValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeChallengeSegmentBindingEvidence
+            system
+            validation.challengeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.transcriptBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have queryPlanEvidence :=
+    runtime_query_plan_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have challengeAccepted :=
+    runtime_query_plan_binding_checked_acceptance_challenge
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingAccepted :=
+    runtime_query_plan_binding_checked_acceptance_opening
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have challengeSound :=
+    runtime_challenge_segment_binding_checked_acceptance_sound
+      assumptions
+      validation.challengeValidation
+      artifact
+      publicInput
+      proof
+      challengeAccepted
+  have openingSound :=
+    runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening
+      assumptions
+      hashAssumptions
+      validation.openingValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
+  have pcsAndFri :=
+    runtime_opening_evidence_implies_pcs_and_fri
+      validation.openingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingSound.right.left
+  exact
+    And.intro queryPlanEvidence
+      (And.intro challengeSound.left
+        (And.intro openingSound.left
+          (And.intro openingSound.right.left
+            (And.intro challengeSound.right.right.left
+              (And.intro pcsAndFri.left
+                (And.intro pcsAndFri.right openingSound.right.right))))))
+
+set_option linter.style.longLine false in
+theorem runtime_query_plan_binding_checked_acceptance_sound_from_concrete_nary_merkle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeQueryPlanBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.openingValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.openingValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeChallengeSegmentBindingEvidence
+            system
+            validation.challengeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.transcriptBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  exact
+    runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening
+      assumptions
+      assumptions.crypto.hashCollisionResistance
+      validation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+
 theorem runtime_query_plan_binding_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -962,49 +1156,44 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_an
       publicInput
       proof
       accepted
-  have openingAndCore :=
-    runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
+  have concreteSound :=
+    runtime_query_plan_binding_checked_acceptance_sound_from_concrete_nary_merkle
       assumptions
       validation
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      accepted
-  have openingAccepted :=
-    runtime_query_plan_binding_checked_acceptance_opening
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  have concretePcsFri :=
-    runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle
-      assumptions
-      validation.openingValidation
       centralized
       constantBinding
       witnessBinding
       artifact
       publicInput
       proof
-      openingAccepted
-  rcases openingAndCore with
-    ⟨queryPlanBound,
-      openingSegmentBound,
+      requiresExternalSource
+      accepted
+  rcases concreteSound with
+    ⟨queryPlanEvidence,
+      _challengeEvidence,
+      openingSegmentEvidence,
       openingEvidence,
       transcriptBound,
-      _pcsOpeningsValid,
-      _friQueriesValid,
-      coreContract⟩
-  rcases coreContract with
-    ⟨_coreTranscriptBound,
-      publicInputBound,
-      _corePcsOpeningsValid,
-      _coreFriQueriesValid⟩
-  have concreteCore :
-      RuntimeVerifierCoreContract system publicInput proof :=
-    ⟨transcriptBound, publicInputBound, concretePcsFri.left, concretePcsFri.right⟩
+      pcsOpeningsValid,
+      friQueriesValid,
+      soundWitness⟩
+  have queryPlanBound :=
+    runtime_query_plan_binding_evidence_implies_bound_contract
+      validation
+      artifact
+      publicInput
+      proof
+      queryPlanEvidence
+  have openingSegmentBound :=
+    runtime_opening_segment_binding_evidence_implies_bound_contract
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentEvidence
+  have coreContract :=
+    sound_witness_implies_verifier_core_contract soundWitness
+  have publicInputBound := coreContract.right.left
   exact
     And.intro seededContract
       (And.intro queryPlanBound
@@ -1012,8 +1201,8 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_an
           (And.intro openingEvidence
             (And.intro transcriptBound
               (And.intro publicInputBound
-                (And.intro concretePcsFri.left
-                  (And.intro concretePcsFri.right concreteCore)))))))
+                (And.intro pcsOpeningsValid
+                  (And.intro friQueriesValid coreContract)))))))
 
 set_option linter.style.longLine false in
 theorem runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_opening_and_core_contract
@@ -1084,49 +1273,45 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_openi
       publicInput
       proof
       accepted
-  have openingAndCore :=
-    runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
+  have concreteSound :=
+    runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening
       assumptions
-      validation
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      accepted
-  have openingAccepted :=
-    runtime_query_plan_binding_checked_acceptance_opening
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  have concretePcsFri :=
-    runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle
       hashAssumptions
-      validation.openingValidation
+      validation
       centralized
       constantBinding
       witnessBinding
       artifact
       publicInput
       proof
-      openingAccepted
-  rcases openingAndCore with
-    ⟨queryPlanBound,
-      openingSegmentBound,
+      requiresExternalSource
+      accepted
+  rcases concreteSound with
+    ⟨queryPlanEvidence,
+      _challengeEvidence,
+      openingSegmentEvidence,
       openingEvidence,
       transcriptBound,
-      _pcsOpeningsValid,
-      _friQueriesValid,
-      coreContract⟩
-  rcases coreContract with
-    ⟨_coreTranscriptBound,
-      publicInputBound,
-      _corePcsOpeningsValid,
-      _coreFriQueriesValid⟩
-  have concreteCore :
-      RuntimeVerifierCoreContract system publicInput proof :=
-    ⟨transcriptBound, publicInputBound, concretePcsFri.left, concretePcsFri.right⟩
+      pcsOpeningsValid,
+      friQueriesValid,
+      soundWitness⟩
+  have queryPlanBound :=
+    runtime_query_plan_binding_evidence_implies_bound_contract
+      validation
+      artifact
+      publicInput
+      proof
+      queryPlanEvidence
+  have openingSegmentBound :=
+    runtime_opening_segment_binding_evidence_implies_bound_contract
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentEvidence
+  have coreContract :=
+    sound_witness_implies_verifier_core_contract soundWitness
+  have publicInputBound := coreContract.right.left
   exact
     And.intro seededContract
       (And.intro queryPlanBound
@@ -1134,7 +1319,7 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_openi
           (And.intro openingEvidence
             (And.intro transcriptBound
               (And.intro publicInputBound
-                (And.intro concretePcsFri.left
-                  (And.intro concretePcsFri.right concreteCore)))))))
+                (And.intro pcsOpeningsValid
+                  (And.intro friQueriesValid coreContract)))))))
 
 end Lzvm

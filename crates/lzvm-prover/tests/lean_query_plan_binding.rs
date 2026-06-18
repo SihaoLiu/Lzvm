@@ -68,6 +68,8 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_opening_segment_bound_contract",
             "runtime_query_plan_binding_checked_acceptance_pcs_and_fri",
             "runtime_query_plan_binding_checked_acceptance_sound",
+            "runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening",
+            "runtime_query_plan_binding_checked_acceptance_sound_from_concrete_nary_merkle",
             "runtime_query_plan_binding_checked_acceptance_verifier_core_contract",
             "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
             "runtime_query_plan_binding_checked_acceptance_seeded_opening_and_core_contract",
@@ -239,14 +241,16 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         "runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_and_core_contract",
         &[
             "runtime_query_plan_binding_checked_acceptance_seeded_contract",
-            "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
-            "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle",
+            "runtime_query_plan_binding_checked_acceptance_sound_from_concrete_nary_merkle",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_and_core_contract",
-        &["runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle"],
+        &[
+            "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
+            "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -275,14 +279,46 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         "runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_opening_and_core_contract",
         &[
             "runtime_query_plan_binding_checked_acceptance_seeded_contract",
-            "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
-            "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+            "runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_opening_and_core_contract",
-        &["assumptions.crypto.hashCollisionResistance"],
+        &[
+            "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
+            "assumptions.crypto.hashCollisionResistance",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening",
+        &[
+            "HashCollisionResistanceAssumption",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "RuntimeQueryPlanBindingEvidence",
+            "RuntimeOpeningEvidence",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening",
+        &[
+            "runtime_challenge_segment_binding_checked_acceptance_sound",
+            "runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening",
+        &["runtime_opening_segment_binding_checked_acceptance_sound\n"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_sound_from_concrete_nary_merkle",
+        &["runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
