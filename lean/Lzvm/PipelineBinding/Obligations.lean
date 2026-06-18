@@ -191,28 +191,88 @@ theorem runtime_pipeline_binding_required_external_source_verifier_core_contract
               proof
             /\ RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
-  have requiredSound :=
-    runtime_pipeline_binding_required_external_source_sound
-      assumptions
+  have traceAccepted :=
+    runtime_pipeline_binding_checked_acceptance_trace
       validation
       artifact
       publicInput
       proof
-      requiresExternalSource
       accepted
+  have traceConstraintAccepted :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint
+      validation.traceBindingValidation
+      artifact
+      publicInput
+      proof
+      traceAccepted
+  have traceRequired :=
+    runtime_trace_constraint_required_external_source_pcs_sound
+      assumptions
+      validation.traceBindingValidation.traceConstraintValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      traceConstraintAccepted
       required
-  cases requiredSound with
-  | intro _pipelineEvidence tail =>
-    cases tail with
-    | intro traceExternalEvidence tail =>
-      cases tail with
-      | intro openingExternalEvidence tail =>
-        cases tail with
-        | intro _pcsOpeningsValid soundWitness =>
-          exact
-            And.intro traceExternalEvidence
-              (And.intro openingExternalEvidence
-                (sound_witness_implies_verifier_core_contract soundWitness))
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingSegmentAccepted :=
+    runtime_query_plan_binding_checked_acceptance_opening
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+  have openingAccepted :=
+    runtime_opening_segment_binding_checked_acceptance_opening
+      validation.queryPlanBindingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentAccepted
+  have openingRequired :=
+    runtime_opening_required_external_source_sound
+      assumptions
+      validation.queryPlanBindingValidation.openingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
+      required
+  have transcriptBound :=
+    runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have publicInputBound :=
+    runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions
+      assumptions.semantic
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have pcsAndFri :=
+    runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    ⟨traceRequired.left,
+      openingRequired.right.left,
+      And.intro transcriptBound
+        (And.intro publicInputBound pcsAndFri)⟩
 
 theorem runtime_pipeline_binding_checked_acceptance_core_obligations_from_semantic_assumptions
     {system : VerifierModel}

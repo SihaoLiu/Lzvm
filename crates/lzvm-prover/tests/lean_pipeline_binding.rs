@@ -1384,6 +1384,25 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             .contains("RuntimeVerifierCoreContract system publicInput proof"),
         "pipeline required external-source projection should expose external evidence and verifier core contract"
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_verifier_core_contract",
+        &[
+            "runtime_trace_constraint_required_external_source_pcs_sound",
+            "runtime_opening_required_external_source_sound",
+            "runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions",
+            "runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions",
+            "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_verifier_core_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
     assert!(
         theorem_prefix(
             &lean_source,
@@ -1623,14 +1642,17 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_required_external_source_concrete_opening_core_contract",
         &[
-            "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract",
+            "runtime_pipeline_binding_required_external_source_verifier_core_contract",
             "runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_required_external_source_concrete_opening_core_contract",
-        &["runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"],
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract",
+            "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -1658,7 +1680,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_required_external_source_hash_concrete_opening_core_contract",
         &[
-            "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract",
+            "runtime_pipeline_binding_required_external_source_verifier_core_contract",
             "runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_contract",
         ],
     );
@@ -1666,6 +1688,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_required_external_source_hash_concrete_opening_core_contract",
         &[
+            "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract",
             "runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contract",
             "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract",
         ],

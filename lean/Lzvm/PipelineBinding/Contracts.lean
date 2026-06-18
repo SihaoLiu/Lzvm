@@ -1472,8 +1472,8 @@ theorem runtime_pipeline_required_external_source_concrete_opening_core_contract
                 /\ system.witnessMatchesTrace witness trace)
             /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
-  have externalContract :=
-    runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract
+  have externalCore :=
+    runtime_pipeline_binding_required_external_source_verifier_core_contract
       assumptions
       validation
       artifact
@@ -1494,24 +1494,21 @@ theorem runtime_pipeline_required_external_source_concrete_opening_core_contract
       proof
       requiresExternalSource
       accepted
-  rcases externalContract with
+  rcases externalCore with
+    ⟨traceExternalEvidence,
+      openingExternalEvidence,
+      verifierCore⟩
+  rcases concreteCore with
     ⟨auditedAssumptions,
       proofSystemSound,
       verifierAccepts,
-      traceExternalEvidence,
-      openingExternalEvidence,
-      _soundWitness⟩
-  rcases concreteCore with
-    ⟨_auditedAssumptions,
-      _proofSystemSound,
-      _verifierAccepts,
       transcriptBound,
       publicInputBound,
       pcsOpenings,
       friQueries,
       seedBinds,
       seededFriOpeningChecked,
-      verifierCore,
+      _verifierCore,
       executionObligations,
       soundWitness⟩
   exact
@@ -1593,8 +1590,8 @@ theorem runtime_pipeline_required_external_source_hash_concrete_opening_core_con
                 /\ system.witnessMatchesTrace witness trace)
             /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
-  have externalContract :=
-    runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract
+  have externalCore :=
+    runtime_pipeline_binding_required_external_source_verifier_core_contract
       assumptions
       validation
       artifact
@@ -1616,41 +1613,37 @@ theorem runtime_pipeline_required_external_source_hash_concrete_opening_core_con
       proof
       requiresExternalSource
       accepted
-  rcases externalContract with
+  rcases externalCore with
+    ⟨traceExternalEvidence,
+      openingExternalEvidence,
+      verifierCore⟩
+  rcases concreteCore with
     ⟨auditedAssumptions,
       proofSystemSound,
       verifierAccepts,
-      traceExternalEvidence,
-      openingExternalEvidence,
-      _soundWitness⟩
-  rcases concreteCore with
-    ⟨_auditedAssumptions,
-      _proofSystemSound,
-      _verifierAccepts,
       transcriptBound,
       publicInputBound,
       pcsOpenings,
       friQueries,
       seedBinds,
       seededFriOpeningChecked,
-      verifierCore,
+      _concreteVerifierCore,
       executionObligations,
       soundWitness⟩
   exact
-    ⟨auditedAssumptions,
-      proofSystemSound,
-      verifierAccepts,
-      traceExternalEvidence,
-      openingExternalEvidence,
-      transcriptBound,
-      publicInputBound,
-      pcsOpenings,
-      friQueries,
-      seedBinds,
-      seededFriOpeningChecked,
-      verifierCore,
-      executionObligations,
-      soundWitness⟩
+    And.intro auditedAssumptions
+      (And.intro proofSystemSound
+        (And.intro verifierAccepts
+          (And.intro traceExternalEvidence
+            (And.intro openingExternalEvidence
+              (And.intro transcriptBound
+                (And.intro publicInputBound
+                  (And.intro pcsOpenings
+                    (And.intro friQueries
+                      (And.intro seedBinds
+                        (And.intro seededFriOpeningChecked
+                          (And.intro verifierCore
+                            (And.intro executionObligations soundWitness))))))))))))
 
 theorem runtime_pipeline_binding_required_external_source_contracts_core_contract
     {system : VerifierModel}
