@@ -58,4 +58,30 @@ fn lean_runtime_external_source_binding_exports_core_contract_projection() {
             "system.pcsOpeningsValid publicInput proof",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_external_source_checked_acceptance_verifier_core_contract",
+        &["runtime_artifact_checked_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_external_source_checked_acceptance_verifier_core_contract",
+        &[
+            "runtime_external_source_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_guarded_external_source_checked_acceptance_verifier_core_contract",
+        &["runtime_artifact_checked_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_guarded_external_source_checked_acceptance_verifier_core_contract",
+        &[
+            "runtime_guarded_external_source_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
 }

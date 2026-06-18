@@ -201,16 +201,14 @@ theorem runtime_external_source_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof checked
-  have sound :=
-    runtime_external_source_checked_acceptance_sound
+  exact
+    runtime_artifact_checked_acceptance_verifier_core_contract
       assumptions
       runtimeValidation
-      sourceValidation
       artifact
       publicInput
       proof
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right.right.right
+      checked.left
 
 theorem runtime_guarded_external_source_checked_acceptance_sound
     {system : VerifierModel}
@@ -312,16 +310,13 @@ theorem runtime_guarded_external_source_checked_acceptance_verifier_core_contrac
           requiresExternalSource ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked
-  have sound :=
-    runtime_guarded_external_source_checked_acceptance_sound
+  exact
+    runtime_artifact_checked_acceptance_verifier_core_contract
       assumptions
       runtimeValidation
-      sourceValidation
       artifact
       publicInput
       proof
-      requiresExternalSource
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right.right.right
+      checked.left
 
 end Lzvm
