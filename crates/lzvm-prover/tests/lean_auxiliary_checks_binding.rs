@@ -219,11 +219,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "ignored_metadata_acceptance_sound",
         ],
     );
-    lean_binding::assert_theorem_body_contains(
-        &timing_source,
-        "guest_pc_trace_stream_elapsed_timing_acceptance_verifier_core_contract",
-        &["ignored_metadata_acceptance_verifier_core_contract_via_soundness"],
-    );
     assert!(
         timing_source.contains("IgnoredMetadataObservedAcceptance system observations")
             && lean_source
@@ -382,6 +377,48 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 .contains("guest_pc_trace_descriptor_upload_shape_acceptance_verifier_core_contract"),
         "Lean guest PC timing summary should prove descriptor upload byte and row counts are verifier-core-neutral"
     );
+    lean_binding::assert_theorem_declarations(
+        &timing_source,
+        &["guest_pc_trace_timing_some_summary_acceptance_verifier_core_contract"],
+    );
+    for theorem_name in [
+        "guest_pc_trace_stream_elapsed_timing_acceptance_verifier_core_contract",
+        "guest_pc_trace_descriptor_width_counts_acceptance_verifier_core_contract",
+        "guest_pc_trace_report_timing_acceptance_verifier_core_contract",
+        "guest_pc_trace_report_subtiming_acceptance_verifier_core_contract",
+        "guest_pc_trace_report_lower_subtiming_acceptance_verifier_core_contract",
+        "guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_contract",
+        "guest_pc_trace_device_source_timing_acceptance_verifier_core_contract",
+        "guest_pc_trace_regular_stage_timing_acceptance_verifier_core_contract",
+        "guest_pc_trace_shape_counts_acceptance_verifier_core_contract",
+        "guest_pc_trace_memory_access_shape_acceptance_verifier_core_contract",
+        "guest_pc_trace_report_buffer_capacity_acceptance_verifier_core_contract",
+        "guest_pc_trace_descriptor_upload_word_count_acceptance_verifier_core_contract",
+        "guest_pc_trace_descriptor_upload_shape_acceptance_verifier_core_contract",
+        "guest_pc_trace_source_retention_byte_counts_acceptance_verifier_core_contract",
+        "guest_pc_trace_source_retention_counts_acceptance_verifier_core_contract",
+        "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_verifier_core_contract",
+        "guest_pc_trace_descriptor_buffer_retention_counts_acceptance_verifier_core_contract",
+        "guest_pc_trace_leaf_output_cache_counts_acceptance_verifier_core_contract",
+        "guest_pc_trace_leaf_extend_timing_acceptance_verifier_core_contract",
+        "guest_pc_trace_leaf_setup_timing_acceptance_verifier_core_contract",
+        "guest_pc_trace_leaf_work_timing_acceptance_verifier_core_contract",
+        "guest_pc_trace_leaf_coset_timing_acceptance_verifier_core_contract",
+        "guest_pc_trace_tree_commit_timing_acceptance_verifier_core_contract",
+        "guest_pc_trace_segment_commit_worker_timing_acceptance_verifier_core_contract",
+        "guest_pc_trace_stage_timing_acceptance_verifier_core_contract",
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &timing_source,
+            theorem_name,
+            &["guest_pc_trace_timing_some_summary_acceptance_verifier_core_contract"],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &timing_source,
+            theorem_name,
+            &["sound_witness_implies_verifier_core_contract"],
+        );
+    }
     assert!(
         lean_source.contains("guestStageSourceRetentionRetainedByteCount")
             && lean_source.contains(
