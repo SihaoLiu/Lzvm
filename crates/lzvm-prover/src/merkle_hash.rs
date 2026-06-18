@@ -121,6 +121,14 @@ pub(crate) struct PendingCudaDigestRootMaterialization {
 }
 
 #[cfg(feature = "cuda")]
+pub(crate) struct PendingCudaDigestRootMaterializationBatch {
+    _roots: Vec<CudaDigestRoot>,
+    _gathered_roots: CudaDeviceBuffer,
+    output: CudaPinnedHostBuffer,
+    root_count: usize,
+}
+
+#[cfg(feature = "cuda")]
 impl CudaDigestRoot {
     fn new(root: CudaDeviceBuffer) -> Self {
         Self { root }
@@ -141,6 +149,38 @@ impl CudaDigestRoot {
             output,
         })
     }
+
+    pub(crate) fn begin_materialize_batch_on_default_stream(
+        roots: Vec<Self>,
+    ) -> Result<PendingCudaDigestRootMaterializationBatch, MerkleHashError> {
+        let root_count = roots.len();
+        if root_count == 0 {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let byte_count = root_count
+            .checked_mul(HASH_WORDS)
+            .and_then(|word_count| word_count.checked_mul(std::mem::size_of::<u64>()))
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        let root_rows = roots
+            .iter()
+            .map(|root| (&root.root, 1, 0))
+            .collect::<Vec<_>>();
+        let gathered_roots =
+            CudaDeviceBuffer::from_device_row_major_u64_rows(&root_rows, HASH_WORDS)
+                .map_err(MerkleHashError::Accel)?;
+        let mut output = CudaPinnedHostBuffer::new(byte_count).map_err(MerkleHashError::Accel)?;
+        unsafe {
+            gathered_roots
+                .copy_to_pinned_on_default_stream(&mut output)
+                .map_err(MerkleHashError::Accel)?;
+        }
+        Ok(PendingCudaDigestRootMaterializationBatch {
+            _roots: roots,
+            _gathered_roots: gathered_roots,
+            output,
+            root_count,
+        })
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -149,6 +189,30 @@ impl PendingCudaDigestRootMaterialization {
         self,
     ) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
         digest_from_state_bytes(unsafe { self.output.as_bytes() })
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl PendingCudaDigestRootMaterializationBatch {
+    pub(crate) fn finish_index_after_device_synchronize(
+        &self,
+        index: usize,
+    ) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
+        if index >= self.root_count {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let root_byte_count = HASH_WORDS * std::mem::size_of::<u64>();
+        let start = index
+            .checked_mul(root_byte_count)
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        let end = start
+            .checked_add(root_byte_count)
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        let bytes = unsafe { self.output.as_bytes() };
+        let root_bytes = bytes
+            .get(start..end)
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        digest_from_state_bytes(root_bytes)
     }
 }
 

@@ -2784,7 +2784,7 @@ fn cuda_source_device_commit_defers_root_downloads_until_batch_end() {
         "#[cfg(feature = \"cuda\")]\nfn commit_witness_stage_values_with_workers_and_timing_inner",
     );
     assert!(
-        group_materializer_body.contains("begin_pending_cuda_witness_stage_commitments")
+        group_materializer_body.contains("begin_pending_cuda_witness_stage_commitment_groups")
             && group_materializer_body.contains("attach_pending_cuda_root_sync_timing")
             && group_materializer_body.contains("finish_pending_cuda_witness_stage_materializations"),
         "group-capable materializer should begin all pending roots, synchronize once, then finish each group"
@@ -2793,12 +2793,16 @@ fn cuda_source_device_commit_defers_root_downloads_until_batch_end() {
         tree_source.contains("struct PendingCudaWitnessStageCommitment")
             && tree_source
                 .contains("commit_witness_stage_device_compact_with_leaf_hash_level_pending")
-            && tree_source.contains("CudaDigestRoot"),
-        "CUDA compact tree commitments should expose a pending-root path"
+            && tree_source.contains("CudaDigestRoot")
+            && tree_source.contains("begin_materialize_batch_with_timing"),
+        "CUDA compact tree commitments should expose a batchable pending-root path"
     );
     assert!(
-        merkle_source.contains("struct CudaDigestRoot") && merkle_source.contains("fn root_device"),
-        "Merkle CUDA digest levels should keep root digests on device until materialization"
+        merkle_source.contains("struct CudaDigestRoot")
+            && merkle_source.contains("struct PendingCudaDigestRootMaterializationBatch")
+            && merkle_source.contains("begin_materialize_batch_on_default_stream")
+            && merkle_source.contains("fn root_device"),
+        "Merkle CUDA digest levels should batch root downloads while keeping root digests on device until materialization"
     );
 }
 

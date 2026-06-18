@@ -1,6 +1,8 @@
 use lzvm_field::Felt;
 
 #[cfg(feature = "cuda")]
+use std::rc::Rc;
+#[cfg(feature = "cuda")]
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "cuda")]
@@ -11,7 +13,8 @@ use crate::merkle_hash::{
 #[cfg(feature = "cuda")]
 use crate::merkle_hash::{
     synchronize_cuda_digest_root_materializations, CudaDigestCheckpointLevel, CudaDigestRoot,
-    PendingCudaDigestRootMaterialization,
+    MerkleHashError, PendingCudaDigestRootMaterialization,
+    PendingCudaDigestRootMaterializationBatch,
 };
 use crate::witness_layout::WitnessTraceStageValues;
 
@@ -74,7 +77,7 @@ pub(crate) struct PendingCudaWitnessStageCommitment {
 pub(crate) struct PendingCudaWitnessStageCommitmentMaterialization {
     stage_index: usize,
     arity: usize,
-    root: PendingCudaDigestRootMaterialization,
+    root: PendingCudaWitnessStageRootMaterialization,
     leaf_level: PendingCanonicalCudaDigestLevel,
     parent_checkpoint: Option<CudaDigestCheckpointLevel>,
     retained_source_device: Option<WitnessStageSourceDeviceView>,
@@ -90,11 +93,35 @@ pub(crate) struct PendingCudaWitnessStageCommitmentMaterialization {
 }
 
 #[cfg(feature = "cuda")]
+struct PendingCudaWitnessStageCommitmentParts {
+    stage_index: usize,
+    arity: usize,
+    leaf_level: PendingCanonicalCudaDigestLevel,
+    parent_checkpoint: Option<CudaDigestCheckpointLevel>,
+    retained_source_device: Option<WitnessStageSourceDeviceView>,
+    source_rows: usize,
+    extended_rows: usize,
+    columns: usize,
+    source_bits: usize,
+    target_bits: usize,
+    raw_leaf_bytes: usize,
+    logical_tree_bytes: usize,
+    external_source_required: bool,
+    expected_source_bytes: usize,
+}
+
+#[cfg(feature = "cuda")]
+enum PendingCudaWitnessStageRootMaterialization {
+    Single(PendingCudaDigestRootMaterialization),
+    Batch {
+        batch: Rc<PendingCudaDigestRootMaterializationBatch>,
+        index: usize,
+    },
+}
+
+#[cfg(feature = "cuda")]
 impl PendingCudaWitnessStageCommitment {
-    pub(crate) fn begin_materialize_with_timing(
-        self,
-        timing: &mut WitnessStageTreeCommitTiming,
-    ) -> Result<PendingCudaWitnessStageCommitmentMaterialization, WitnessStageCommitmentError> {
+    fn into_root_and_parts(self) -> (CudaDigestRoot, PendingCudaWitnessStageCommitmentParts) {
         let Self {
             stage_index,
             arity,
@@ -112,29 +139,119 @@ impl PendingCudaWitnessStageCommitment {
             external_source_required,
             expected_source_bytes,
         } = self;
+        (
+            root,
+            PendingCudaWitnessStageCommitmentParts {
+                stage_index,
+                arity,
+                leaf_level,
+                parent_checkpoint,
+                retained_source_device,
+                source_rows,
+                extended_rows,
+                columns,
+                source_bits,
+                target_bits,
+                raw_leaf_bytes,
+                logical_tree_bytes,
+                external_source_required,
+                expected_source_bytes,
+            },
+        )
+    }
+
+    pub(crate) fn begin_materialize_with_timing(
+        self,
+        timing: &mut WitnessStageTreeCommitTiming,
+    ) -> Result<PendingCudaWitnessStageCommitmentMaterialization, WitnessStageCommitmentError> {
+        let (root, parts) = self.into_root_and_parts();
         let root = record_stage_tree_commit_duration(Some(&mut timing.root_duration), || {
             root.begin_materialize_on_default_stream()
                 .map_err(WitnessStageCommitmentError::from)
         })?;
         timing.root_count += 1;
         timing.root_byte_count += HASH_WORDS * WORD_BYTES;
-        Ok(PendingCudaWitnessStageCommitmentMaterialization {
-            stage_index,
-            arity,
+        Ok(parts.into_materialization(PendingCudaWitnessStageRootMaterialization::Single(root)))
+    }
+
+    pub(crate) fn begin_materialize_batch_with_timing(
+        pending: Vec<Self>,
+        timing: &mut WitnessStageTreeCommitTiming,
+    ) -> Result<Vec<PendingCudaWitnessStageCommitmentMaterialization>, WitnessStageCommitmentError>
+    {
+        if pending.is_empty() {
+            return Ok(Vec::new());
+        }
+        if pending.len() == 1 {
+            return pending
+                .into_iter()
+                .map(|pending| pending.begin_materialize_with_timing(timing))
+                .collect();
+        }
+
+        let root_count = pending.len();
+        let mut roots = Vec::with_capacity(root_count);
+        let mut parts = Vec::with_capacity(root_count);
+        for pending in pending {
+            let (root, commitment_parts) = pending.into_root_and_parts();
+            roots.push(root);
+            parts.push(commitment_parts);
+        }
+        let batch = record_stage_tree_commit_duration(Some(&mut timing.root_duration), || {
+            CudaDigestRoot::begin_materialize_batch_on_default_stream(roots)
+                .map_err(WitnessStageCommitmentError::from)
+        })?;
+        timing.root_count += root_count;
+        timing.root_byte_count += root_count
+            .checked_mul(HASH_WORDS * WORD_BYTES)
+            .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
+        let batch = Rc::new(batch);
+        Ok(parts
+            .into_iter()
+            .enumerate()
+            .map(|(index, parts)| {
+                parts.into_materialization(PendingCudaWitnessStageRootMaterialization::Batch {
+                    batch: Rc::clone(&batch),
+                    index,
+                })
+            })
+            .collect())
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl PendingCudaWitnessStageCommitmentParts {
+    fn into_materialization(
+        self,
+        root: PendingCudaWitnessStageRootMaterialization,
+    ) -> PendingCudaWitnessStageCommitmentMaterialization {
+        PendingCudaWitnessStageCommitmentMaterialization {
+            stage_index: self.stage_index,
+            arity: self.arity,
             root,
-            leaf_level,
-            parent_checkpoint,
-            retained_source_device,
-            source_rows,
-            extended_rows,
-            columns,
-            source_bits,
-            target_bits,
-            raw_leaf_bytes,
-            logical_tree_bytes,
-            external_source_required,
-            expected_source_bytes,
-        })
+            leaf_level: self.leaf_level,
+            parent_checkpoint: self.parent_checkpoint,
+            retained_source_device: self.retained_source_device,
+            source_rows: self.source_rows,
+            extended_rows: self.extended_rows,
+            columns: self.columns,
+            source_bits: self.source_bits,
+            target_bits: self.target_bits,
+            raw_leaf_bytes: self.raw_leaf_bytes,
+            logical_tree_bytes: self.logical_tree_bytes,
+            external_source_required: self.external_source_required,
+            expected_source_bytes: self.expected_source_bytes,
+        }
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl PendingCudaWitnessStageRootMaterialization {
+    fn finish_after_device_synchronize(self) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
+        match self {
+            Self::Single(root) => root.finish_after_device_synchronize(),
+            Self::Batch { batch, index } => batch.finish_index_after_device_synchronize(index),
+        }
     }
 }
 
