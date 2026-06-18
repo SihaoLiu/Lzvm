@@ -39,6 +39,8 @@ fn lean_batch_opening_binding_tracks_runtime_batch_helpers() {
             "runtime_batch_witness_opening_rows_checked_acceptance_opening_segment_evidence",
             "runtime_batch_witness_opening_rows_checked_acceptance_opening_evidence",
             "runtime_batch_witness_opening_rows_checked_acceptance_bound_contract",
+            "runtime_batch_witness_opening_rows_checked_acceptance_sound_from_hash_concrete_opening",
+            "runtime_batch_witness_opening_rows_checked_acceptance_sound_from_concrete_nary_merkle",
             "runtime_batch_witness_opening_rows_checked_acceptance_sound",
             "runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract",
             "runtime_batch_witness_opening_rows_checked_acceptance_bound_and_core_contract",
@@ -62,12 +64,39 @@ fn lean_batch_opening_binding_tracks_runtime_batch_helpers() {
             "RuntimeVerifierCoreContract system publicInput proof",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_batch_witness_opening_rows_checked_acceptance_sound_from_hash_concrete_opening",
+        &[
+            "HashCollisionResistanceAssumption",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "RuntimeBatchWitnessOpeningRowsEvidence",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_batch_witness_opening_rows_checked_acceptance_sound_from_hash_concrete_opening",
+        &["runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_batch_witness_opening_rows_checked_acceptance_sound_from_hash_concrete_opening",
+        &["runtime_opening_segment_binding_checked_acceptance_sound\n"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_batch_witness_opening_rows_checked_acceptance_sound_from_concrete_nary_merkle",
+        &["runtime_batch_witness_opening_rows_checked_acceptance_sound_from_hash_concrete_opening"],
+    );
     assert!(
         top_level_source.contains("import Lzvm.BatchOpeningBinding"),
         "top-level Lean module should import batch opening binding"
     );
     assert!(
-        opening_source.contains("open_witness_stage_commitments_with_source_device_timing")
+        opening_source.contains("open_witness_stage_commitment_batches_with_source_devices_timing")
+            && opening_source.contains("WitnessStageOpeningBatchRequest")
             && opening_source.contains("open_witness_stage_commitments("),
         "runtime witness opening builder should call batch stage opening helpers"
     );

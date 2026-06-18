@@ -12,6 +12,8 @@ Runtime batch witness opening row obligations.
 
 namespace Lzvm
 
+universe uDigest
+
 structure RuntimeBatchWitnessOpeningRowsValidation (system : VerifierModel) where
   openingSegmentValidation : RuntimeOpeningSegmentBindingValidation system
   batchWitnessOpeningRowsAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
@@ -324,6 +326,159 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_bound_contract
       proof
       False
       evidence
+
+set_option linter.style.longLine false in
+theorem runtime_batch_witness_opening_rows_checked_acceptance_sound_from_hash_concrete_opening
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.openingSegmentValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.openingSegmentValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeBatchWitnessOpeningRowsCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeBatchWitnessOpeningRowsEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have segmentAccepted :=
+    validation.batchWitnessOpeningRowsAcceptedImpliesOpeningSegmentAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  have segmentSound :=
+    runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening
+      assumptions
+      hashAssumptions
+      validation.openingSegmentValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      segmentAccepted
+  have queryPlanBound :=
+    validation.batchWitnessOpeningRowsAcceptedImpliesQueryPlanBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have perRowWitnessOpeningRows :=
+    validation.batchWitnessOpeningRowsAcceptedImpliesPerRowWitnessOpeningRowsBound
+      artifact
+      publicInput
+      proof
+      accepted
+  have witnessOpeningSegments :=
+    validation.perRowWitnessOpeningRowsImplyWitnessOpeningSegmentsValid
+      artifact
+      publicInput
+      proof
+      queryPlanBound
+      perRowWitnessOpeningRows
+  have witnessOpeningsBound :=
+    validation.openingSegmentValidation.openingSegmentChecksImplyWitnessOpeningsBound
+      artifact
+      publicInput
+      proof
+      queryPlanBound
+      witnessOpeningSegments
+  have evidence :
+      RuntimeBatchWitnessOpeningRowsEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource :=
+    And.intro segmentSound.left
+      (And.intro segmentSound.right.left
+        (And.intro queryPlanBound
+          (And.intro perRowWitnessOpeningRows
+            (And.intro witnessOpeningSegments witnessOpeningsBound))))
+  exact And.intro evidence segmentSound.right.right
+
+set_option linter.style.longLine false in
+theorem runtime_batch_witness_opening_rows_checked_acceptance_sound_from_concrete_nary_merkle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.openingSegmentValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.openingSegmentValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeBatchWitnessOpeningRowsCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeBatchWitnessOpeningRowsEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  exact
+    runtime_batch_witness_opening_rows_checked_acceptance_sound_from_hash_concrete_opening
+      assumptions
+      assumptions.crypto.hashCollisionResistance
+      validation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
 
 theorem runtime_batch_witness_opening_rows_checked_acceptance_sound
     {system : VerifierModel}
