@@ -64,36 +64,47 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
         proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof observed
+  have accepted :=
+    proof_artifact_finish_timing_observed_acceptance_projects_verifier_acceptance
+      (some
+        { summary with
+          finishQueryPlanMilliseconds := queryPlanMilliseconds
+          finishConstantOpeningMilliseconds := constantOpeningMilliseconds
+          finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+          finishWitnessOpeningQueryCount := witnessOpeningQueryCount
+          finishWitnessOpeningQueryUnitCount := witnessOpeningQueryUnitCount
+          finishWitnessOpeningSingleQueryUnitCount := witnessOpeningSingleQueryUnitCount
+          finishWitnessOpeningMaxQueriesPerUnit := witnessOpeningMaxQueriesPerUnit
+          finishWitnessOpeningStageCount := witnessOpeningStageCount
+          finishWitnessOpeningRetainedSourceCount := witnessOpeningRetainedSourceCount
+          finishWitnessOpeningExternalSourceCount := witnessOpeningExternalSourceCount
+          finishWitnessOpeningEmbeddedSourceCount := witnessOpeningEmbeddedSourceCount
+          finishWitnessOpeningMissingSourceCount := witnessOpeningMissingSourceCount
+          finishWitnessOpeningRetainedLeafDigestOpeningCount :=
+            witnessOpeningRetainedLeafDigestOpeningCount
+          finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
+            witnessOpeningRetainedLeafDigestOpeningRowCount
+          finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+            witnessOpeningRetainedParentCheckpointOpeningCount
+          finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+            witnessOpeningRetainedParentCheckpointOpeningRowCount
+          finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
+          finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
+          finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
+          finishFriOpeningMilliseconds := friOpeningMilliseconds
+          finishProofEncodeMilliseconds := proofEncodeMilliseconds
+          finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
+          finishContributionVerifyMilliseconds := contributionVerifyMilliseconds })
+      publicInput
+      proof
+      observed
   exact
-    sound_witness_implies_verifier_core_contract
-      (proof_artifact_finish_aggregate_timing_acceptance_sound
-        assumptions
-        summary
-        queryPlanMilliseconds
-        constantOpeningMilliseconds
-        witnessOpeningMilliseconds
-        witnessOpeningQueryCount
-        witnessOpeningQueryUnitCount
-        witnessOpeningSingleQueryUnitCount
-        witnessOpeningMaxQueriesPerUnit
-        witnessOpeningStageCount
-        witnessOpeningRetainedSourceCount
-        witnessOpeningExternalSourceCount
-        witnessOpeningEmbeddedSourceCount
-        witnessOpeningMissingSourceCount
-        witnessOpeningRetainedLeafDigestOpeningCount
-        witnessOpeningRetainedLeafDigestOpeningRowCount
-        witnessOpeningRetainedParentCheckpointOpeningCount
-        witnessOpeningRetainedParentCheckpointOpeningRowCount
-        descriptorUploadByteCount
-        descriptorUploadWordCount
-        descriptorUploadRowCount
-        friOpeningMilliseconds
-        proofEncodeMilliseconds
-        contributionSegmentMilliseconds
-        contributionVerifyMilliseconds
-        publicInput
-        proof
-        observed)
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof accepted)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof accepted)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
+          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 end Lzvm
