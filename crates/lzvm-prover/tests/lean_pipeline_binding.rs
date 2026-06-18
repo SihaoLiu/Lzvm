@@ -502,14 +502,15 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening",
         &[
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
-            "runtime_opening_segment_binding_checked_acceptance_opening",
-            "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening",
+            "runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening",
+            ".right.left.left",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening",
         &[
+            "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening",
             "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
             "runtime_pipeline_binding_checked_acceptance_sound",
             "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
@@ -539,14 +540,15 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_concrete_nary_merkle",
         &[
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
-            "runtime_opening_segment_binding_checked_acceptance_opening",
-            "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_concrete_nary_merkle",
+            "runtime_opening_segment_binding_checked_acceptance_sound_from_concrete_nary_merkle",
+            ".right.left.left",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_concrete_nary_merkle",
         &[
+            "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_concrete_nary_merkle",
             "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening",
             "HashCollisionResistanceAssumption",
         ],

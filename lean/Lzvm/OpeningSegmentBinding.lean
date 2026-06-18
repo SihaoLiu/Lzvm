@@ -700,6 +700,184 @@ theorem runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_conc
       proof
       accepted
 
+set_option linter.style.longLine false in
+theorem runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeOpeningSegmentBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningSegmentBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have segmentEvidence :=
+    runtime_opening_segment_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingAccepted :=
+    runtime_opening_segment_binding_checked_acceptance_opening
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have runtimeEvidence :=
+    runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening
+      assumptions
+      hashAssumptions
+      validation.openingValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
+  have boundPcsFri :=
+    runtime_opening_checked_acceptance_bound_pcs_fri_contract_from_hash_concrete_opening
+      hashAssumptions
+      validation.openingValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      openingAccepted
+  rcases boundPcsFri with
+    ⟨boundContract, pcsOpenings, friQueries⟩
+  rcases boundContract with
+    ⟨constantOpenings, witnessOpenings, friOpening⟩
+  have openingEvidence :
+      RuntimeOpeningEvidence
+        system
+        validation.openingValidation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource :=
+    And.intro runtimeEvidence
+      (And.intro constantOpenings
+        (And.intro witnessOpenings
+          (And.intro friOpening
+            (And.intro pcsOpenings friQueries))))
+  have runtimeAccepted :=
+    validation.openingValidation.openingAcceptedImpliesRuntimeSoundnessAccepted
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
+  have runtimeSound :=
+    runtime_soundness_checked_acceptance_sound
+      assumptions
+      validation.openingValidation.runtimeSoundnessValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      runtimeAccepted
+  exact And.intro segmentEvidence (And.intro openingEvidence runtimeSound.right)
+
+set_option linter.style.longLine false in
+theorem runtime_opening_segment_binding_checked_acceptance_sound_from_concrete_nary_merkle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningSegmentBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningSegmentBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  exact
+    runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening
+      assumptions
+      assumptions.crypto.hashCollisionResistance
+      validation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+
 theorem runtime_opening_segment_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

@@ -356,18 +356,11 @@ theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_f
       publicInput
       proof
       accepted
-  have openingAccepted :=
-    runtime_opening_segment_binding_checked_acceptance_opening
-      validation.queryPlanBindingValidation.openingValidation
-      artifact
-      publicInput
-      proof
-      openingSegmentAccepted
-  exact
-    runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening
+  have segmentSound :=
+    runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening
       assumptions
       hashAssumptions
-      validation.queryPlanBindingValidation.openingValidation.openingValidation
+      validation.queryPlanBindingValidation.openingValidation
       centralized
       constantBinding
       witnessBinding
@@ -375,7 +368,8 @@ theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_f
       publicInput
       proof
       requiresExternalSource
-      openingAccepted
+      openingSegmentAccepted
+  exact segmentSound.right.left.left
 
 set_option linter.style.longLine false in
 theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_from_concrete_nary_merkle
@@ -422,17 +416,10 @@ theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_f
       publicInput
       proof
       accepted
-  have openingAccepted :=
-    runtime_opening_segment_binding_checked_acceptance_opening
-      validation.queryPlanBindingValidation.openingValidation
-      artifact
-      publicInput
-      proof
-      openingSegmentAccepted
-  exact
-    runtime_opening_checked_acceptance_runtime_soundness_evidence_from_concrete_nary_merkle
+  have segmentSound :=
+    runtime_opening_segment_binding_checked_acceptance_sound_from_concrete_nary_merkle
       assumptions
-      validation.queryPlanBindingValidation.openingValidation.openingValidation
+      validation.queryPlanBindingValidation.openingValidation
       centralized
       constantBinding
       witnessBinding
@@ -440,7 +427,8 @@ theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_evidence_f
       publicInput
       proof
       requiresExternalSource
-      openingAccepted
+      openingSegmentAccepted
+  exact segmentSound.right.left.left
 
 set_option linter.style.longLine false in
 theorem runtime_pipeline_binding_checked_acceptance_accepts_concrete_opening_sound_witness_contract

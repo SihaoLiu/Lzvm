@@ -43,6 +43,8 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_checked_acceptance_bound_pcs_fri_contract",
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle",
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
+            "runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening",
+            "runtime_opening_segment_binding_checked_acceptance_sound_from_concrete_nary_merkle",
             "runtime_opening_segment_binding_checked_acceptance_sound",
             "runtime_opening_segment_binding_checked_acceptance_verifier_core_contract",
             "runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract",
@@ -251,6 +253,68 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
             "assumptions.crypto.hashCollisionResistance",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening",
+        &[
+            "AssumptionBundle system",
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "RuntimeOpeningSegmentBindingEvidence",
+            "RuntimeOpeningEvidence",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening",
+        &[
+            "runtime_opening_segment_binding_checked_acceptance_evidence",
+            "runtime_opening_segment_binding_checked_acceptance_opening",
+            "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening",
+            "runtime_opening_checked_acceptance_bound_pcs_fri_contract_from_hash_concrete_opening",
+            "runtime_soundness_checked_acceptance_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening",
+        &[
+            "runtime_opening_checked_acceptance_sound",
+            "runtime_opening_segment_binding_checked_acceptance_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_sound_from_concrete_nary_merkle",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "assumptions.crypto.hashCollisionResistance",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "RuntimeOpeningSegmentBindingEvidence",
+            "RuntimeOpeningEvidence",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_sound_from_concrete_nary_merkle",
+        &[
+            "runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening",
+            "assumptions.crypto.hashCollisionResistance",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_sound_from_concrete_nary_merkle",
+        &["runtime_opening_segment_binding_checked_acceptance_sound\n"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
