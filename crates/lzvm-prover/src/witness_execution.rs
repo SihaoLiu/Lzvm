@@ -6371,6 +6371,18 @@ mod tests {
         derive_witness_trace_layout, reset_stage_trace_count, stage_trace_count,
     };
     use crate::witness_trace::parse_witness_trace;
+    #[cfg(feature = "cuda")]
+    use crate::{
+        proof_artifact_timing::WitnessProofArtifactTiming,
+        witness_commitment::{
+            commit_witness_stage_device_compact_with_leaf_hash_level,
+            compact_witness_stage_leaf_hash_level_from_source_device_timing,
+            WitnessStageDeviceCompactCommitInput, WitnessStageLeafExtendTiming,
+        },
+        witness_opening::build_witness_opening_segment_batch_from_trace_outputs_with_timing,
+    };
+    #[cfg(feature = "cuda")]
+    use lzvm_accel::CudaDeviceBuffer;
     use lzvm_artifacts::constraint_program::{ConstraintEntry, ConstraintProgram};
     use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn};
     use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
@@ -6382,10 +6394,19 @@ mod tests {
         SOURCE_UNSUPPORTED_STATEMENT_HINT,
     };
     use lzvm_artifacts::key_directory::KeyUnitKind;
+    #[cfg(feature = "cuda")]
+    use lzvm_artifacts::pcs_query_segment::{
+        encode_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanUnit,
+        PCS_QUERY_PLAN_SEGMENT_ID,
+    };
+    #[cfg(feature = "cuda")]
+    use lzvm_artifacts::proof::ProofSegment;
     use lzvm_artifacts::setup_info::{
         CommitmentColumn, ConstantColumn, FriStep, StarkStruct, UnitSetupInfo,
     };
     use lzvm_artifacts::trace_bundle::{TraceBundle, TraceBundleUnit};
+    #[cfg(feature = "cuda")]
+    use lzvm_field::Felt;
     use sha2::{Digest, Sha256};
     use std::cell::Cell;
     #[cfg(feature = "cuda")]
@@ -6437,6 +6458,81 @@ mod tests {
     }
 
     #[cfg(feature = "cuda")]
+    #[test]
+    fn trace_output_witness_openings_batch_device_row_downloads_across_outputs() {
+        let retained_env = TestEnvVarGuard::new("LZVM_CUDA_RETAINED_SOURCE_BYTES");
+        retained_env.set("1048576");
+        let source_bits = 2;
+        let target_bits = 20;
+        let column_count = 6;
+        let arity = 4;
+        let schedule = crate::ProveSchedule {
+            setup_hash: [0; 32],
+            unit_count: 1,
+            total_fixed_bytes: 0,
+            total_pcs_material_bytes: 0,
+            pcs_material_unit_count: 0,
+            total_query_count: 2,
+            max_extended_domain_bits: target_bits as u32,
+            units: vec![opening_batch_unit(
+                source_bits,
+                target_bits,
+                column_count,
+                arity,
+            )],
+        };
+        let output_a = opening_batch_trace_output(0, source_bits, target_bits, column_count, arity);
+        let output_b = opening_batch_trace_output(1, source_bits, target_bits, column_count, arity);
+        let query_segment = ProofSegment {
+            id: PCS_QUERY_PLAN_SEGMENT_ID,
+            data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+                units: vec![
+                    PcsQueryPlanUnit {
+                        unit_index: 0,
+                        trace_instance_index: 0,
+                        queries: vec![0],
+                    },
+                    PcsQueryPlanUnit {
+                        unit_index: 0,
+                        trace_instance_index: 1,
+                        queries: vec![3891],
+                    },
+                ],
+            })
+            .expect("query plan should encode"),
+        };
+        let mut timing = WitnessProofArtifactTiming::default();
+
+        let segment = build_witness_opening_segment_batch_from_trace_outputs_with_timing(
+            &schedule,
+            &query_segment,
+            &[&output_a, &output_b],
+            &mut timing,
+        )
+        .expect("witness opening segment should build");
+
+        assert_eq!(
+            segment.id,
+            lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID
+        );
+        assert_eq!(timing.witness_opening_row_values_device_row_count, 2);
+        assert_eq!(
+            timing.witness_opening_row_values_device_download_batch_count,
+            1
+        );
+        assert_eq!(
+            timing.witness_opening_row_values_device_single_download_count,
+            0
+        );
+        assert_eq!(timing.witness_opening_query_unit_count, 2);
+        assert_eq!(timing.witness_opening_single_query_unit_count, 2);
+        assert_eq!(
+            timing.witness_opening_retained_parent_checkpoint_opening_row_count,
+            2
+        );
+    }
+
+    #[cfg(feature = "cuda")]
     impl TestEnvVarGuard {
         fn new(name: &'static str) -> Self {
             let lock = crate::CUDA_TEST_ENV_LOCK
@@ -6456,6 +6552,130 @@ mod tests {
 
         fn unset(&self) {
             std::env::remove_var(self.name);
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    fn opening_batch_unit(
+        source_bits: usize,
+        target_bits: usize,
+        column_count: usize,
+        arity: usize,
+    ) -> crate::ProveUnitSchedule {
+        crate::ProveUnitSchedule {
+            kind: KeyUnitKind::Basic,
+            group_id: Some(0),
+            unit_id: Some(0),
+            group_name: Some("group".to_owned()),
+            unit_name: Some("unit".to_owned()),
+            base_domain_bits: source_bits as u32,
+            extended_domain_bits: target_bits as u32,
+            base_domain_size: 1_u64 << source_bits,
+            extended_domain_size: 1_u64 << target_bits,
+            blowup_factor: 1_u64 << (target_bits - source_bits),
+            query_count: 1,
+            proof_of_work_bits: 0,
+            merkle_tree_arity: arity as u32,
+            last_level_verification: 0,
+            transcript_arity: Some(arity as u32),
+            hash_commits: true,
+            transcript_root_challenge_draws: vec![1],
+            challenge_count: 0,
+            evaluation_value_count: 0,
+            evaluation_map: Vec::new(),
+            transcript_evaluation_challenge_draws: 0,
+            constant_width: 0,
+            stage_commit_widths: vec![column_count as u32],
+            commitment_columns: Vec::new(),
+            unit_value_map: Vec::new(),
+            group_value_map: Vec::new(),
+            opening_points: vec![0],
+            fri_layers: Vec::new(),
+            final_layer_bits: 0,
+            fixed_bytes: 0,
+            constant_tree_root: None,
+            pcs_material_bytes: None,
+            pcs_material_plan_digest: None,
+            pcs_material_fixed_column_digest: None,
+            pcs_material_constant_tree_digest: None,
+            pcs_material_constant_tree_root: None,
+            pcs_material_fixed_byte_count: None,
+            pcs_material_constant_tree_byte_count: None,
+            pcs_material_leaf_byte_count: None,
+            pcs_material_node_byte_count: None,
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    fn opening_batch_trace_output(
+        trace_instance_index: u32,
+        source_bits: usize,
+        target_bits: usize,
+        column_count: usize,
+        arity: usize,
+    ) -> ProveWitnessTraceCommitments {
+        let source_rows = 1_usize << source_bits;
+        let source_values = (0..source_rows * column_count)
+            .map(|value| Felt::from_u64((value as u64 + 1) * (trace_instance_index as u64 + 1)))
+            .collect::<Vec<_>>();
+        let source_device = std::sync::Arc::new(
+            CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&source_values))
+                .expect("source values should upload"),
+        );
+        let mut leaf_timing = WitnessStageLeafExtendTiming::default();
+        let leaf_level = compact_witness_stage_leaf_hash_level_from_source_device_timing(
+            source_rows,
+            column_count,
+            source_bits,
+            target_bits,
+            arity,
+            source_device.as_ref(),
+            &mut leaf_timing,
+        )
+        .expect("leaf level should build");
+        let mut commitment = commit_witness_stage_device_compact_with_leaf_hash_level(
+            WitnessStageDeviceCompactCommitInput {
+                stage_index: 1,
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                external_source_required: false,
+            },
+            leaf_level,
+            Some(WitnessStageSourceDeviceView::new(
+                source_rows,
+                column_count,
+                column_count,
+                0,
+                source_device,
+            )),
+        )
+        .expect("compact commitment should build");
+        assert!(commitment.drop_retained_leaf_digest_level_for_test());
+        let commitments = WitnessTraceCommitments::new(vec![commitment]);
+        ProveWitnessTraceCommitments {
+            commitments: ProveWitnessCommitments {
+                identity: ProveTraceIdentity::new(0, trace_instance_index),
+                input_byte_count: 0,
+                trace_rows: source_rows,
+                trace_columns: column_count,
+                stage_commitments: commitments,
+            },
+            trace: None,
+            trace_constraint_checks: ProveWitnessTraceConstraintChecks {
+                regular_constraint_count: 0,
+                trace_extracted: true,
+                regular_constraints_evaluated: true,
+                witness_values_committed: true,
+                constraint_checker_conformant: true,
+            },
+            stage_source_devices: Vec::new(),
+            guest_pc_device_descriptor_buffer: None,
+            guest_pc_device_segment_material: None,
+            publics: Vec::new(),
+            auxiliary_inputs: std::sync::Arc::new(ProveWitnessAuxiliaryInputs::default()),
         }
     }
 
