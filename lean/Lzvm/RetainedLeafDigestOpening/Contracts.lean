@@ -403,6 +403,91 @@ theorem runtime_retained_leaf_digest_nary_opening_source_core_sound_contract_fro
         (And.intro sourceCore.right.right.left
           (And.intro sourceCore.right.right.right sound.right)))
 
+set_option linter.style.longLine false in
+theorem runtime_retained_leaf_digest_nary_opening_source_core_sound_contract_from_concrete_opening_bundle
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (binding :
+      RuntimeRetainedLeafDigestNAryConcreteOpeningBinding
+        system
+        validation
+        Digest
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.batchRowsValidation.openingSegmentValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.batchRowsValidation.openingSegmentValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedLeafDigestOpeningDigestContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedLeafDigestOpeningShiftedRowSourceContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedLeafDigestOpeningRetainedRowsContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sourceCore :=
+    runtime_retained_leaf_digest_nary_opening_source_and_core_contract_from_bundle
+      assumptions
+      validation
+      centralized
+      binding
+      artifact
+      publicInput
+      proof
+      accepted
+  have sound :=
+    runtime_retained_leaf_digest_opening_checked_acceptance_sound_from_concrete_nary_merkle
+      assumptions
+      validation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  exact
+    And.intro sourceCore.left
+      (And.intro sourceCore.right.left
+        (And.intro sourceCore.right.right.left
+          (And.intro sourceCore.right.right.right sound.right)))
+
 theorem runtime_retained_leaf_digest_opening_checked_acceptance_source_and_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
