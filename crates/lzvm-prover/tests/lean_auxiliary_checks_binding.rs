@@ -2347,4 +2347,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &auxiliary_source,
+        "witness_leaf_digest_checked_acceptance_verifier_core_contract",
+        &[
+            "witness_leaf_digest_checked_acceptance_projects_verifier_acceptance",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &auxiliary_source,
+        "witness_leaf_digest_checked_acceptance_verifier_core_contract",
+        &[
+            "witness_leaf_digest_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
 }

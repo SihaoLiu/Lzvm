@@ -1261,14 +1261,20 @@ theorem witness_leaf_digest_checked_acceptance_verifier_core_contract
       WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    witness_leaf_digest_acceptance_sound
-      assumptions
+  have accepted :=
+    witness_leaf_digest_checked_acceptance_projects_verifier_acceptance
       validation
       publicInput
       proof
       checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof accepted)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof accepted)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
+          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 theorem gpu_canonical_leaf_checked_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
