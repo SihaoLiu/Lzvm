@@ -2672,6 +2672,34 @@ fn trace_output_cuda_opening_batches_device_sibling_decodes() {
 }
 
 #[test]
+fn trace_output_external_source_openings_flush_to_bound_device_memory() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let opening_path = crate_root.join("src/witness_opening.rs");
+    let opening_source =
+        std::fs::read_to_string(&opening_path).expect("witness opening source should read");
+
+    let batch_body = function_body(
+        &opening_source,
+        "fn build_witness_opening_segment_from_trace_outputs_cuda_batched",
+        "fn trace_output_opening_unit_needs_external_source",
+    );
+    assert!(
+        !opening_source.contains("LZVM_CUDA_WITNESS_OPENING_BATCH_EXTERNAL_UNITS"),
+        "external-source witness opening batching should not expose an unbounded cross-unit device-memory gate"
+    );
+    assert!(
+        batch_body.contains("if trace_output_opening_unit_needs_external_source(output) {"),
+        "trace-output witness opening batching should flush external-source units conservatively"
+    );
+    assert!(
+        batch_body.contains("std::mem::take(&mut pending_works)")
+            && batch_body.contains("append_trace_output_opening_units_from_prepared_cuda_batch")
+            && batch_body.contains("vec![work]"),
+        "external-source units should be opened one unit at a time after flushing retained-source work"
+    );
+}
+
+#[test]
 fn trace_less_guest_pc_outputs_keep_budgeted_stage_source_views() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let execution_path = crate_root.join("src/witness_execution.rs");
