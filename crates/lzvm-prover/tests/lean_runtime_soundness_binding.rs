@@ -233,6 +233,16 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             .contains("SoundWitness system publicInput proof"),
         "audited runtime core contract should package crypto evidence, verifier core obligations, and sound witness"
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_core_contract",
+        &["runtime_soundness_checked_acceptance_core_obligations"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_core_contract",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
     assert!(
         theorem_prefix(
             &lean_source,
