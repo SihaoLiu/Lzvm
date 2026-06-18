@@ -551,6 +551,128 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_mer
       soundWitness
 
 set_option linter.style.longLine false in
+theorem runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_opening
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimePipelineBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimePipelineBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have ethAccepted :=
+    runtime_pipeline_binding_checked_acceptance_eth
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceAccepted :=
+    runtime_pipeline_binding_checked_acceptance_trace
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have ethSound :=
+    runtime_eth_block_public_input_binding_checked_acceptance_sound
+      assumptions
+      validation.ethBindingValidation
+      artifact
+      publicInput
+      proof
+      ethAccepted
+  have traceSound :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_sound
+      assumptions
+      validation.traceBindingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      traceAccepted
+  have queryPlanSound :=
+    runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening
+      assumptions
+      hashAssumptions
+      validation.queryPlanBindingValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      queryPlanAccepted
+  have ethEvidence := ethSound.left
+  have artifactEvidence := ethSound.right.left
+  have runtimeArtifactEvidence := ethSound.right.right.left
+  have tracePreflightEvidence := traceSound.left
+  have traceConstraintEvidence := traceSound.right.left
+  have queryPlanEvidence := queryPlanSound.left
+  have challengeEvidence := queryPlanSound.right.left
+  have openingSegmentEvidence := queryPlanSound.right.right.left
+  have openingEvidence := queryPlanSound.right.right.right.left
+  have transcriptBound := queryPlanSound.right.right.right.right.left
+  have pcsOpeningsValid := queryPlanSound.right.right.right.right.right.left
+  have friQueriesValid := queryPlanSound.right.right.right.right.right.right.left
+  have soundWitness := queryPlanSound.right.right.right.right.right.right.right
+  have publicInputBound : system.publicInputBound publicInput proof :=
+    (sound_witness_implies_verifier_core_contract soundWitness).right.left
+  exact
+    And.intro
+      (And.intro ethEvidence
+        (And.intro artifactEvidence
+          (And.intro runtimeArtifactEvidence
+            (And.intro tracePreflightEvidence
+              (And.intro traceConstraintEvidence
+                (And.intro queryPlanEvidence
+                  (And.intro challengeEvidence
+                    (And.intro openingSegmentEvidence
+                      (And.intro openingEvidence
+                        (And.intro transcriptBound
+                          (And.intro publicInputBound
+                            (And.intro pcsOpeningsValid friQueriesValid))))))))))))
+      soundWitness
+
+set_option linter.style.longLine false in
 theorem runtime_pipeline_binding_checked_acceptance_accepts_concrete_opening_sound_witness_contract
     {Digest : Type uDigest}
     {system : VerifierModel}
@@ -1128,10 +1250,24 @@ theorem runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_c
               /\ system.witnessMatchesTrace witness trace)
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof _requiresExternalSource accepted
-  have compactContract :=
-    runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract
-      assumptions
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_crypto_evidence assumptions
+  have proofSystemSound := abstract_verifier_sound assumptions
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
       validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have pipelineSound :=
+    runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_opening
+      assumptions
+      hashAssumptions
+      validation
+      centralized
+      constantBinding
+      witnessBinding
       artifact
       publicInput
       proof
@@ -1165,11 +1301,6 @@ theorem runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_c
       publicInput
       proof
       accepted
-  rcases compactContract with
-    ⟨auditedAssumptions,
-      proofSystemSound,
-      verifierAccepts,
-      soundWitness⟩
   rcases queryPlanContract with
     ⟨seededContract,
       _queryPlanBound,
@@ -1206,7 +1337,7 @@ theorem runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_c
       seededFriOpeningChecked,
       verifierCore,
       executionObligations,
-      soundWitness⟩
+      pipelineSound.right⟩
 
 theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract
     {system : VerifierModel}
