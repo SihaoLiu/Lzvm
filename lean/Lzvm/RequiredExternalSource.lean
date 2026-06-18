@@ -346,7 +346,16 @@ theorem runtime_guarded_external_source_required_hash_concrete_opening_sound
   have soundWitness :=
     abstract_verifier_sound assumptions publicInput proof verifierAccepts
   have coreContract :=
-    sound_witness_implies_verifier_core_contract soundWitness
+    runtime_guarded_external_source_required_verifier_core_contract
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
   exact
     And.intro artifactEvidence
       (And.intro concretePcsFri.left
@@ -441,7 +450,16 @@ theorem runtime_guarded_external_source_required_audited_hash_concrete_opening_s
   have soundWitness :=
     abstract_verifier_sound assumptions publicInput proof verifierAccepts
   have coreContract :=
-    sound_witness_implies_verifier_core_contract soundWitness
+    runtime_guarded_external_source_required_verifier_core_contract
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
   exact
     And.intro artifactEvidence
       (And.intro concretePcsFri.left
