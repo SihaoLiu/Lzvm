@@ -298,6 +298,8 @@ PERF_SHA256_GUEST_MACHINE_PCT_KEY = "perf_sha256_guest_machine_pct"
 PERF_SHA256_TRACE_SLICE_PCT_KEY = "perf_sha256_trace_slice_pct"
 PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY = "perf_prepare_instruction_self_pct"
 PERF_TRACE_SEGMENT_BUILD_SELF_PCT_KEY = "perf_trace_segment_build_self_pct"
+PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY = "perf_append_descriptor_self_pct"
+PERF_SOURCE_VALUE_SELF_PCT_KEY = "perf_source_value_self_pct"
 PERF_ADVANCE_GUEST_MACHINE_SELF_PCT_KEY = "perf_advance_guest_machine_self_pct"
 PERF_GUEST_MEMORY_WRITE_SELF_PCT_KEY = "perf_guest_memory_write_self_pct"
 PERF_BIGUINT_MODPOW_SELF_PCT_KEY = "perf_biguint_modpow_self_pct"
@@ -389,6 +391,8 @@ HEADER = (
     "perf_pending_segment_drop_self_pct,perf_sha256_self_pct,"
     "perf_sha256_source_hint,cpu_trace_hotspot_hint,"
     "cpu_trace_report_storage_action_hint,"
+    "perf_append_descriptor_self_pct,perf_source_value_self_pct,"
+    "cpu_trace_lowerer_action_hint,"
     "perf_prepare_instruction_self_pct,perf_trace_segment_build_self_pct,"
     "perf_advance_guest_machine_self_pct,perf_guest_memory_write_self_pct,"
     "perf_biguint_modpow_self_pct,perf_guest_memory_read_self_pct,"
@@ -648,6 +652,8 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
         PERF_SHA256_TRACE_SLICE_PCT_KEY: 0.0,
         PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY: 0.0,
         PERF_TRACE_SEGMENT_BUILD_SELF_PCT_KEY: 0.0,
+        PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY: 0.0,
+        PERF_SOURCE_VALUE_SELF_PCT_KEY: 0.0,
         PERF_ADVANCE_GUEST_MACHINE_SELF_PCT_KEY: 0.0,
         PERF_GUEST_MEMORY_WRITE_SELF_PCT_KEY: 0.0,
         PERF_BIGUINT_MODPOW_SELF_PCT_KEY: 0.0,
@@ -700,6 +706,10 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
                 key = PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY
             elif "build_layout_zisk_main_trace_segment_for_segment_output" in symbol_text:
                 key = PERF_TRACE_SEGMENT_BUILD_SELF_PCT_KEY
+            elif "append_main_device_trace_descriptor" in symbol_text:
+                key = PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY
+            elif "zisk_main_source_value" in symbol_text:
+                key = PERF_SOURCE_VALUE_SELF_PCT_KEY
             elif "advance_guest_machine_prepared_inner" in symbol_text:
                 key = PERF_ADVANCE_GUEST_MACHINE_SELF_PCT_KEY
             elif "GuestMachineMemorySegment::write_range" in symbol_text:
@@ -1028,6 +1038,23 @@ def cpu_trace_report_storage_action_hint(perf_hotspots: dict[str, float]) -> str
     if pending_drop_pct >= 5.0 and memmove_trace_slice_pct >= 5.0:
         return "trace_slice_drop_storage_candidate"
     return "none"
+
+
+def cpu_trace_lowerer_action_hint(perf_hotspots: dict[str, float]) -> str:
+    lowered_report_row_pct = perf_hotspots.get(
+        PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY, 0.0
+    )
+    append_descriptor_pct = perf_hotspots.get(
+        PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY, 0.0
+    )
+    source_value_pct = perf_hotspots.get(PERF_SOURCE_VALUE_SELF_PCT_KEY, 0.0)
+    if lowered_report_row_pct < 10.0:
+        return "none"
+    if append_descriptor_pct >= 5.0:
+        return "descriptor_append_candidate"
+    if source_value_pct >= 2.5:
+        return "source_value_candidate"
+    return "lowered_report_row_candidate"
 
 
 def cpu_runner_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
@@ -2394,6 +2421,11 @@ def summarize_profile_values(
     sha256_hint = sha256_source_hint(perf_hotspots)
     cpu_hint = cpu_trace_hotspot_hint(perf_hotspots)
     cpu_report_storage_hint = cpu_trace_report_storage_action_hint(perf_hotspots)
+    append_descriptor_pct = perf_hotspots.get(
+        PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY, 0.0
+    )
+    source_value_pct = perf_hotspots.get(PERF_SOURCE_VALUE_SELF_PCT_KEY, 0.0)
+    lowerer_hint = cpu_trace_lowerer_action_hint(perf_hotspots)
     prepare_instruction_pct = perf_hotspots.get(
         PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY, 0.0
     )
@@ -2495,6 +2527,7 @@ def summarize_profile_values(
         f"{memmove_trace_slice_pct:.3f},{memmove_hint},"
         f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint},"
         f"{cpu_report_storage_hint},"
+        f"{append_descriptor_pct:.3f},{source_value_pct:.3f},{lowerer_hint},"
         f"{prepare_instruction_pct:.3f},{trace_segment_build_pct:.3f},"
         f"{advance_guest_machine_pct:.3f},{guest_memory_write_pct:.3f},"
         f"{biguint_modpow_pct:.3f},{guest_memory_read_pct:.3f},"
