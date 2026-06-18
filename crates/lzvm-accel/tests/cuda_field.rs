@@ -24,6 +24,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
     cuda_poseidon2_width16_merkle_digest_opening_path_device,
     cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device,
+    cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_buffer,
     cuda_poseidon2_width16_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width16_merkle_digest_parent_device,
     cuda_poseidon2_width16_merkle_digest_root_device,
@@ -36,6 +37,7 @@ use lzvm_accel::{
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
     cuda_poseidon2_width8_merkle_digest_opening_path_device,
     cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device,
+    cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer,
     cuda_poseidon2_width8_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width8_merkle_digest_parent_device,
     cuda_poseidon2_width8_merkle_digest_root_device,
@@ -2416,6 +2418,35 @@ fn cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_matches_path_
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer_matches_host_batch() {
+    let digests = (0..17_u64)
+        .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
+        .collect::<Vec<_>>();
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests).expect("digest buffer should allocate");
+    let query_indices = [0_usize, 8, 16];
+    let folded_level_count = 3;
+    let expected = cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device(
+        &input_buffer,
+        &query_indices,
+        folded_level_count,
+    )
+    .expect("host batch prefix should run");
+
+    let actual = cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer(
+        &input_buffer,
+        &query_indices,
+        folded_level_count,
+    )
+    .expect("device-buffer batch prefix should run")
+    .to_u64_words()
+    .expect("device-buffer batch prefix should download");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_hashes_poseidon2_width_16_states() {
     let input = (0_u64..32).collect::<Vec<_>>();
     let expected = input
@@ -2803,6 +2834,35 @@ fn cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_matches_path
         folded_level_count,
     )
     .expect("cuda compact digest opening prefix batch should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_buffer_matches_host_batch() {
+    let digests = (0..70_u64)
+        .flat_map(|child| (1..=4).map(move |word| child * 10 + word))
+        .collect::<Vec<_>>();
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&digests).expect("digest buffer should allocate");
+    let query_indices = [0_usize, 21, 69];
+    let folded_level_count = 3;
+    let expected = cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device(
+        &input_buffer,
+        &query_indices,
+        folded_level_count,
+    )
+    .expect("host batch prefix should run");
+
+    let actual = cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_buffer(
+        &input_buffer,
+        &query_indices,
+        folded_level_count,
+    )
+    .expect("device-buffer batch prefix should run")
+    .to_u64_words()
+    .expect("device-buffer batch prefix should download");
 
     assert_eq!(actual, expected);
 }
