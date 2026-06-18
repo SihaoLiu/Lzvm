@@ -942,16 +942,21 @@ theorem runtime_opening_segment_binding_checked_acceptance_verifier_core_contrac
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof _requiresExternalSource accepted
-  have sound :=
-    runtime_opening_segment_binding_checked_acceptance_sound
+  have openingAccepted :=
+    validation.openingSegmentBindingAcceptedImpliesOpeningAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_checked_acceptance_verifier_core_contract
       assumptions
-      validation
+      validation.openingValidation
       artifact
       publicInput
       proof
       _requiresExternalSource
-      accepted
-  exact sound_witness_implies_verifier_core_contract sound.right.right
+      openingAccepted
 
 theorem runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract
     {system : VerifierModel}
