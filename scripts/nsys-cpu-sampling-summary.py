@@ -107,6 +107,68 @@ def application_rows(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
     return [row for row in all_rows if is_application_module(str(row["module"]))][:limit]
 
 
+def hot_libc_nearest_application_callers(
+    conn: sqlite3.Connection, limit: int
+) -> list[sqlite3.Row]:
+    return conn.execute(
+        f"""
+        with frames as (
+            select
+                e.id as event_id,
+                c.stackDepth as stack_depth,
+                coalesce(sym.value, 'symbol=' || c.symbol) as symbol,
+                coalesce(mod.value, 'module=' || c.module) as module
+            from {COMPOSITE_EVENTS_TABLE} e
+            join {SAMPLING_CALLCHAINS_TABLE} c
+              on c.id = e.id
+            left join {STRING_TABLE} sym on sym.id = c.symbol
+            left join {STRING_TABLE} mod on mod.id = c.module
+        ),
+        libc_events as (
+            select event_id, symbol as libc_symbol
+            from frames
+            where stack_depth = 0
+              and (
+                    symbol like '%memcpy%'
+                 or symbol like '%memmove%'
+                 or symbol like '%memset%'
+              )
+              and not (
+                    module = 'lzvm'
+                 or module like '%/target/release/lzvm'
+              )
+        ),
+        nearest_app_depth as (
+            select
+                f.event_id,
+                min(f.stack_depth) as stack_depth
+            from frames f
+            join libc_events e on e.event_id = f.event_id
+            where f.stack_depth > 0
+              and (
+                    f.module = 'lzvm'
+                 or f.module like '%/target/release/lzvm'
+              )
+            group by f.event_id
+        )
+        select
+            e.libc_symbol as libc_symbol,
+            f.symbol as nearest_app_symbol,
+            f.module as nearest_app_module,
+            count(*) as samples
+        from nearest_app_depth d
+        join libc_events e on e.event_id = d.event_id
+        join frames f
+          on f.event_id = d.event_id
+         and f.stack_depth = d.stack_depth
+        group by e.libc_symbol, f.symbol, f.module
+        order by samples desc, e.libc_symbol asc, f.symbol asc, f.module asc
+        limit ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
 def emit_summary(conn: sqlite3.Connection, limit: int) -> None:
     require_tables(conn)
     total_samples = sample_count(conn)
@@ -140,6 +202,24 @@ def emit_summary(conn: sqlite3.Connection, limit: int) -> None:
                     csv_cell(row["module"]),
                     str(samples),
                     pct(samples, app_total),
+                ]
+            )
+        )
+
+    libc_caller_rows = hot_libc_nearest_application_callers(conn, limit)
+    libc_caller_total = sum(int(row["samples"] or 0) for row in libc_caller_rows)
+    print("hot_libc_nearest_application_callers")
+    print("libc_symbol,nearest_app_symbol,nearest_app_module,samples,libc_sample_pct")
+    for row in libc_caller_rows:
+        samples = int(row["samples"] or 0)
+        print(
+            ",".join(
+                [
+                    csv_cell(row["libc_symbol"]),
+                    csv_cell(row["nearest_app_symbol"]),
+                    csv_cell(row["nearest_app_module"]),
+                    str(samples),
+                    pct(samples, libc_caller_total),
                 ]
             )
         )
@@ -183,6 +263,7 @@ def run_self_test() -> None:
             (3, "__memcpy_avx512_unaligned_erms"),
             (4, "lzvm"),
             (5, "/usr/lib64/libc.so.6"),
+            (6, "run_guest_pc_trace_segment_slice"),
         ],
     )
     conn.executemany(
@@ -198,16 +279,18 @@ def run_self_test() -> None:
         insert into {SAMPLING_CALLCHAINS_TABLE}
             (id, symbol, module, kernelMode, thumbCode, unresolved, specialEntry,
              originalIP, unwindMethod, stackDepth)
-        values (?, ?, ?, 0, 0, 0, 0, 0, 0, 0)
+        values (?, ?, ?, 0, 0, 0, 0, 0, 0, ?)
         """,
         [
-            (1, 1, 4),
-            (2, 1, 4),
-            (3, 1, 4),
-            (4, 2, 4),
-            (5, 2, 4),
-            (6, 3, 5),
-            (7, 3, 5),
+            (1, 1, 4, 0),
+            (2, 1, 4, 0),
+            (3, 1, 4, 0),
+            (4, 2, 4, 0),
+            (5, 2, 4, 0),
+            (6, 3, 5, 0),
+            (7, 3, 5, 0),
+            (6, 6, 4, 1),
+            (7, 6, 4, 1),
         ],
     )
     emit_summary(conn, 10)
