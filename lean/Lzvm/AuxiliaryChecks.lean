@@ -125,9 +125,21 @@ theorem ignored_metadata_acceptance_verifier_core_contract
     forall publicInput proof,
       IgnoredMetadataObservedAcceptance system metadata publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  have accepted :=
+    ignored_metadata_observed_acceptance_projects_verifier_acceptance
+      metadata
+      publicInput
+      proof
+      observed
   exact
-    ignored_metadata_acceptance_verifier_core_contract_via_soundness
-      (ignored_metadata_acceptance_sound assumptions metadata)
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof accepted)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof accepted)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
+          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 structure TimingObservation where
   label : Nat
