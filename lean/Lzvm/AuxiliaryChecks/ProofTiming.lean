@@ -121,20 +121,20 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_verifier_core_cont
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof observed
   exact
-    sound_witness_implies_verifier_core_contract
-      (witness_opening_row_value_aggregate_timing_acceptance_sound
-        assumptions
-        summary
-        sourceExtendMilliseconds
-        sourceDownloadMilliseconds
-        deviceDownloadMilliseconds
-        deviceRows
-        sourceRows
-        words
-        bytes
-        publicInput
-        proof
-        observed)
+    witness_opening_row_value_timing_acceptance_verifier_core_contract
+      assumptions
+      (some
+        { summary with
+          rowValueSourceExtendMilliseconds := sourceExtendMilliseconds
+          rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds
+          rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds
+          deviceRowCount := deviceRows
+          sourceRowCount := sourceRows
+          wordCount := words
+          byteCount := bytes })
+      publicInput
+      proof
+      observed
 
 def ConstantMaterialValidationTimingObservedAcceptance
     (system : VerifierModel)
@@ -234,17 +234,17 @@ theorem constant_material_validation_aggregate_timing_acceptance_verifier_core_c
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof observed
   exact
-    sound_witness_implies_verifier_core_contract
-      (constant_material_validation_aggregate_timing_acceptance_sound
-        assumptions
-        summary
-        elapsedMilliseconds
-        joinWaitMilliseconds
-        unitCount
-        byteCount
-        publicInput
-        proof
-        observed)
+    constant_material_validation_timing_acceptance_verifier_core_contract
+      assumptions
+      (some
+        { summary with
+          constantMaterialValidationElapsedMilliseconds := elapsedMilliseconds
+          constantMaterialValidationJoinWaitMilliseconds := joinWaitMilliseconds
+          constantMaterialValidationUnitCount := unitCount
+          constantMaterialValidationByteCount := byteCount })
+      publicInput
+      proof
+      observed
 
 def ProverGpuModeObservedAcceptance
     (system : VerifierModel)

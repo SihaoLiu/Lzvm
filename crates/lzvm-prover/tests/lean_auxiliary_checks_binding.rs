@@ -2557,6 +2557,32 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ],
     );
     lean_binding::assert_theorem_body_contains(
+        &lean_proof_timing_source,
+        "witness_opening_row_value_aggregate_timing_acceptance_verifier_core_contract",
+        &["witness_opening_row_value_timing_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_proof_timing_source,
+        "witness_opening_row_value_aggregate_timing_acceptance_verifier_core_contract",
+        &[
+            "witness_opening_row_value_aggregate_timing_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_proof_timing_source,
+        "constant_material_validation_aggregate_timing_acceptance_verifier_core_contract",
+        &["constant_material_validation_timing_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_proof_timing_source,
+        "constant_material_validation_aggregate_timing_acceptance_verifier_core_contract",
+        &[
+            "constant_material_validation_aggregate_timing_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
         &proof_timing_verifier_source,
         "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
         &[
