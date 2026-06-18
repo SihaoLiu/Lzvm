@@ -2798,19 +2798,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &proof_timing_verifier_source,
         "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
-        &[
-            "proof_artifact_finish_timing_observed_acceptance_projects_verifier_acceptance",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &proof_timing_verifier_source,
         "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
         &[
             "proof_artifact_finish_aggregate_timing_acceptance_sound",
+            "proof_artifact_finish_timing_observed_acceptance_projects_verifier_acceptance",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
     );
