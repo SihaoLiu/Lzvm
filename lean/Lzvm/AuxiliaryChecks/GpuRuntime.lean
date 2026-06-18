@@ -75,15 +75,14 @@ theorem gpu_setup_checked_acceptance_verifier_core_contract
       GpuSetupCheckedAcceptance system validation request publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_setup_checked_acceptance_sound
-      assumptions
-      validation
-      request
-      publicInput
-      proof
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof checked.left)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof checked.left)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
+          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
 
 theorem gpu_allocation_cache_reuse_preserves_written_contents
     (validation : GpuAllocationCacheValidation)
@@ -165,15 +164,14 @@ theorem gpu_allocation_checked_acceptance_verifier_core_contract
       GpuAllocationCheckedAcceptance system validation allocation publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_allocation_checked_acceptance_sound
-      assumptions
-      validation
-      allocation
-      publicInput
-      proof
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof checked.left)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof checked.left)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
+          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
 
 theorem gpu_host_device_copy_round_trip_implies_written_contents
     (validation : GpuHostDeviceCopyRoundTripValidation)
@@ -269,15 +267,14 @@ theorem gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contrac
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_host_device_copy_round_trip_checked_acceptance_sound
-      assumptions
-      validation
-      allocation
-      publicInput
-      proof
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof checked.left)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof checked.left)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
+          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
 
 theorem gpu_temporary_buffer_reuse_implies_same_request
     (validation : GpuTemporaryBufferReuseValidation)
