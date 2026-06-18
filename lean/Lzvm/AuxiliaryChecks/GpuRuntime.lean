@@ -405,16 +405,14 @@ theorem gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_temporary_buffer_reuse_checked_acceptance_sound
-      assumptions
-      validation
-      previous
-      next
-      publicInput
-      proof
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof checked.left)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof checked.left)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
+          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
 
 theorem gpu_allocator_no_wait_bypass_implies_same_request
     (validation : GpuAllocatorNoWaitBypassValidation)
@@ -593,16 +591,14 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_allocator_no_wait_bypass_checked_acceptance_sound
-      assumptions
-      validation
-      pending
-      fresh
-      publicInput
-      proof
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right.right.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof checked.left)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof checked.left)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
+          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
 
 theorem gpu_allocator_no_wait_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -663,15 +659,14 @@ theorem gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_allocator_no_wait_limit_checked_acceptance_sound
-      assumptions
-      validation
-      config
-      publicInput
-      proof
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof checked.left)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof checked.left)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
+          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
 
 theorem guest_pc_trace_segment_queue_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -732,15 +727,14 @@ theorem guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_segment_queue_checked_acceptance_sound
-      assumptions
-      validation
-      config
-      publicInput
-      proof
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof checked.left)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof checked.left)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
+          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
 
 theorem guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
     {system : VerifierModel}
