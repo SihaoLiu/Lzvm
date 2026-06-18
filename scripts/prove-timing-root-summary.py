@@ -223,6 +223,9 @@ OPENING_RETAINED_PARENT_CHECKPOINT_ALL_SINGLE_ROW_KEY = (
 OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_LAUNCHES_KEY = (
     "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launches"
 )
+OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_MS_KEY = (
+    "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_ms"
+)
 OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_ROWS_KEY = (
     "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_rows"
 )
@@ -231,6 +234,9 @@ OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_BYTES_KEY = (
 )
 OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_LAUNCHES_KEY = (
     "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches"
+)
+OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_MS_KEY = (
+    "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms"
 )
 OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_ROWS_KEY = (
     "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_rows"
@@ -303,6 +309,7 @@ PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY = (
 PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY = "perf_effect_record_memory_read_self_pct"
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
 OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
+RETAINED_PARENT_CHECKPOINT_PATH_SECONDARY_MS_THRESHOLD = 500
 CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD = 8 * 1024 * 1024 * 1024
 CUDA_TRANSFER_WAIT_MS_THRESHOLD = 500.0
 CUDA_TRANSFER_HOT_COPY_COUNT_THRESHOLD = 8
@@ -357,10 +364,10 @@ HEADER = (
     "retained_leaf_path_launches,retained_parent_checkpoint_openings,"
     "retained_parent_checkpoint_rows,retained_parent_checkpoint_all_single_row,"
     "retained_parent_checkpoint_prefix_rows,retained_parent_checkpoint_prefix_bytes,"
-    "retained_parent_checkpoint_prefix_launches,"
+    "retained_parent_checkpoint_prefix_launches,retained_parent_checkpoint_prefix_ms,"
     "retained_parent_checkpoint_suffix_rows,retained_parent_checkpoint_suffix_bytes,"
-    "retained_parent_checkpoint_suffix_launches,"
-    "retained_parent_checkpoint_path_launches,"
+    "retained_parent_checkpoint_suffix_launches,retained_parent_checkpoint_suffix_ms,"
+    "retained_parent_checkpoint_path_launches,retained_parent_checkpoint_path_ms,"
     "retained_parent_checkpoint_cross_stage_gather_estimated_launches,"
     "retained_parent_checkpoint_cross_stage_gather_launch_savings,"
     "opening_path_parent_hash_launches_per_stage,"
@@ -571,9 +578,11 @@ TIMING_KEYS = {
     OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_ROWS_KEY,
     OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_BYTES_KEY,
     OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_LAUNCHES_KEY,
+    OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_MS_KEY,
     OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_ROWS_KEY,
     OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_BYTES_KEY,
     OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_LAUNCHES_KEY,
+    OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_MS_KEY,
     OPENING_PATH_PARENT_HASH_LAUNCHES_PER_STAGE_KEY,
     OPENING_ROW_VALUE_DEVICE_DOWNLOAD_BATCHES_KEY,
     OPENING_ROW_VALUE_DEVICE_SINGLE_DOWNLOADS_KEY,
@@ -1137,6 +1146,7 @@ def opening_batching_hint(
     retained_parent_checkpoint_all_single_row: int,
     retained_parent_checkpoint_prefix_launches: int,
     retained_parent_checkpoint_suffix_launches: int,
+    retained_parent_checkpoint_path_ms: int,
     direct_d2h_wait_ms: float,
 ) -> str:
     if direct_d2h_wait_ms < OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD:
@@ -1168,6 +1178,12 @@ def opening_batching_hint(
         and single_query_units >= retained_parent_checkpoint_openings
         and retained_parent_checkpoint_path_launches > retained_parent_checkpoint_openings
     ):
+        if (
+            retained_parent_checkpoint_path_ms > 0
+            and retained_parent_checkpoint_path_ms
+            < RETAINED_PARENT_CHECKPOINT_PATH_SECONDARY_MS_THRESHOLD
+        ):
+            return "retained_parent_checkpoint_path_time_secondary"
         return "cross_stage_retained_parent_checkpoint_prefix_suffix_gather_candidate"
     return "none"
 
@@ -2083,6 +2099,9 @@ def summarize_profile_values(
     retained_parent_checkpoint_prefix_launches = values.get(
         OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_LAUNCHES_KEY, 0
     )
+    retained_parent_checkpoint_prefix_ms = values.get(
+        OPENING_RETAINED_PARENT_CHECKPOINT_PREFIX_MS_KEY, 0
+    )
     retained_parent_checkpoint_suffix_rows = values.get(
         OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_ROWS_KEY, 0
     )
@@ -2091,6 +2110,12 @@ def summarize_profile_values(
     )
     retained_parent_checkpoint_suffix_launches = values.get(
         OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_LAUNCHES_KEY, 0
+    )
+    retained_parent_checkpoint_suffix_ms = values.get(
+        OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_MS_KEY, 0
+    )
+    retained_parent_checkpoint_path_ms = (
+        retained_parent_checkpoint_prefix_ms + retained_parent_checkpoint_suffix_ms
     )
     (
         retained_parent_checkpoint_path_launches,
@@ -2195,6 +2220,7 @@ def summarize_profile_values(
         retained_parent_checkpoint_all_single_row_value,
         retained_parent_checkpoint_prefix_launches,
         retained_parent_checkpoint_suffix_launches,
+        retained_parent_checkpoint_path_ms,
         direct_d2h_wait_ms,
     )
     leaf_launch_pressure = "yes" if leaf_ntt_launches >= 10_000 else "no"
@@ -2344,10 +2370,13 @@ def summarize_profile_values(
         f"{retained_parent_checkpoint_prefix_rows},"
         f"{retained_parent_checkpoint_prefix_bytes},"
         f"{retained_parent_checkpoint_prefix_launches},"
+        f"{retained_parent_checkpoint_prefix_ms},"
         f"{retained_parent_checkpoint_suffix_rows},"
         f"{retained_parent_checkpoint_suffix_bytes},"
         f"{retained_parent_checkpoint_suffix_launches},"
+        f"{retained_parent_checkpoint_suffix_ms},"
         f"{retained_parent_checkpoint_path_launches},"
+        f"{retained_parent_checkpoint_path_ms},"
         f"{retained_parent_checkpoint_cross_stage_gather_estimated_launches},"
         f"{retained_parent_checkpoint_cross_stage_gather_launch_savings},"
         f"{opening_path_parent_hash_launches_per_stage},"

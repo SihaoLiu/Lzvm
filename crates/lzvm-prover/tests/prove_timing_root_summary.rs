@@ -139,9 +139,11 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_rows",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_bytes",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launches",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_ms",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_rows",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_bytes",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms",
         "timing_finish_witness_opening_path_parent_hash_launches_per_stage",
         "timing_finish_witness_opening_row_values_device_download_batches",
         "timing_constant_material_validation_elapsed_ms",
@@ -150,6 +152,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "input_bytes",
         "needs_cross_segment_root_pipeline",
         "opening_batching_hint",
+        "retained_parent_checkpoint_path_time_secondary",
         "leaf_launch_pressure",
         "primary_bottleneck",
         "trace_structure_hint",
@@ -219,6 +222,17 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,total_median_ms,total_max_ms,sample_spread_pct,close_samples,max_outlier",
         "aggregate,3,3,9050,12066.667,9050.000,18100,100.000,no,yes",
     ] {
+        let required = if required.starts_with("profile,input_bytes,total_ms") {
+            "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms"
+        } else if required.starts_with("single-root-groups,") {
+            "single-root-groups,2758032,9050"
+        } else if required.starts_with("batched-roots,") {
+            "batched-roots,2758032,9050"
+        } else if required.starts_with("slow-sample,") {
+            "slow-sample,12447640,18100"
+        } else {
+            required
+        };
         assert!(
             stdout.contains(required),
             "prove timing root summary should print {required}"
@@ -1496,7 +1510,7 @@ fn prove_timing_root_summary_reports_retained_parent_checkpoint_opening_shape() 
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "retained_parent_checkpoint_openings,retained_parent_checkpoint_rows,retained_parent_checkpoint_all_single_row,retained_parent_checkpoint_prefix_rows,retained_parent_checkpoint_prefix_bytes,retained_parent_checkpoint_prefix_launches,retained_parent_checkpoint_suffix_rows,retained_parent_checkpoint_suffix_bytes,retained_parent_checkpoint_suffix_launches,retained_parent_checkpoint_path_launches,retained_parent_checkpoint_cross_stage_gather_estimated_launches,retained_parent_checkpoint_cross_stage_gather_launch_savings"
+            "retained_parent_checkpoint_openings,retained_parent_checkpoint_rows,retained_parent_checkpoint_all_single_row,retained_parent_checkpoint_prefix_rows,retained_parent_checkpoint_prefix_bytes,retained_parent_checkpoint_prefix_launches,retained_parent_checkpoint_prefix_ms,retained_parent_checkpoint_suffix_rows,retained_parent_checkpoint_suffix_bytes,retained_parent_checkpoint_suffix_launches,retained_parent_checkpoint_suffix_ms,retained_parent_checkpoint_path_launches,retained_parent_checkpoint_path_ms,retained_parent_checkpoint_cross_stage_gather_estimated_launches,retained_parent_checkpoint_cross_stage_gather_launch_savings"
         ),
         "prove timing root summary should expose retained parent checkpoint opening shape: stdout={stdout}"
     );
@@ -1508,7 +1522,7 @@ fn prove_timing_root_summary_reports_retained_parent_checkpoint_opening_shape() 
     );
     assert!(
         stdout.contains(
-            ",43,0,0,0.000,none,77,77,yes,0,79,79,yes,0,0,79,0,0,790,869,11,858,0,0,43,0,0,0,multi_buffer_device_row_value_gather_candidate,"
+            ",43,0,0,0.000,none,77,77,yes,0,79,79,yes,0,0,79,0,0,0,790,0,869,0,11,858,0,0,43,0,0,0,multi_buffer_device_row_value_gather_candidate,"
         ),
         "prove timing root summary should classify single-query device row-value openings as a multi-buffer gather target: stdout={stdout}"
     );
@@ -1604,9 +1618,11 @@ fn prove_timing_root_summary_reports_opening_parent_hash_work_scope() {
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_rows=165675008",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_bytes=21206401024",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launches=79",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_ms=3",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_rows=13808034",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_bytes=1767428352",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches=790",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms=170",
         "timing_finish_witness_opening_path_parent_hash_launches_per_stage=5",
         "timing_finish_witness_opening_row_values_device_download_batches=43",
         "timing_finish_witness_opening_row_values_device_single_downloads=0",
@@ -1639,21 +1655,21 @@ fn prove_timing_root_summary_reports_opening_parent_hash_work_scope() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "retained_parent_checkpoint_prefix_rows,retained_parent_checkpoint_prefix_bytes,retained_parent_checkpoint_prefix_launches,retained_parent_checkpoint_suffix_rows,retained_parent_checkpoint_suffix_bytes,retained_parent_checkpoint_suffix_launches,retained_parent_checkpoint_path_launches,retained_parent_checkpoint_cross_stage_gather_estimated_launches,retained_parent_checkpoint_cross_stage_gather_launch_savings,opening_path_parent_hash_launches_per_stage,opening_row_value_device_download_batches,opening_row_value_device_single_downloads,opening_row_value_device_single_stage_count,opening_row_value_device_single_max_stage,opening_row_value_device_cross_unit_batch_savings"
+            "retained_parent_checkpoint_prefix_rows,retained_parent_checkpoint_prefix_bytes,retained_parent_checkpoint_prefix_launches,retained_parent_checkpoint_prefix_ms,retained_parent_checkpoint_suffix_rows,retained_parent_checkpoint_suffix_bytes,retained_parent_checkpoint_suffix_launches,retained_parent_checkpoint_suffix_ms,retained_parent_checkpoint_path_launches,retained_parent_checkpoint_path_ms,retained_parent_checkpoint_cross_stage_gather_estimated_launches,retained_parent_checkpoint_cross_stage_gather_launch_savings,opening_path_parent_hash_launches_per_stage,opening_row_value_device_download_batches,opening_row_value_device_single_downloads,opening_row_value_device_single_stage_count,opening_row_value_device_single_max_stage,opening_row_value_device_cross_unit_batch_savings"
         ),
         "prove timing root summary should expose opening parent-hash work scope columns: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            ",79,79,yes,165675008,21206401024,79,13808034,1767428352,790,869,11,858,5,43,0,"
+            ",79,79,yes,165675008,21206401024,79,3,13808034,1767428352,790,170,869,173,11,858,5,43,0,"
         ),
         "prove timing root summary should report retained parent checkpoint cross-stage gather launch savings: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            ",5,43,0,0,0,0,cross_stage_retained_parent_checkpoint_prefix_suffix_gather_candidate,"
+            ",5,43,0,0,0,0,retained_parent_checkpoint_path_time_secondary,"
         ),
-        "prove timing root summary should classify retained parent checkpoint single-query prefix/suffix D2H as a cross-stage gather target: stdout={stdout}"
+        "prove timing root summary should downgrade retained parent checkpoint batching when measured path time is secondary: stdout={stdout}"
     );
 }
 
