@@ -7688,6 +7688,29 @@ fn guest_machine_register_rollback_is_effect_local() {
 }
 
 #[test]
+fn guest_machine_zero_register_writes_return_before_rollback_lookup() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let body = function_body(
+        &source,
+        "fn write_reported_register",
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\nstruct GuestLoadResult",
+    );
+    let zero_register_guard = body
+        .find("if index == 0")
+        .expect("zero-register writes should have an early return");
+    let rollback_lookup = body
+        .find("read_decoded_register")
+        .expect("nonzero writes should still record rollback values");
+
+    assert!(
+        zero_register_guard < rollback_lookup,
+        "zero-register writes should return before reading old register values for rollback"
+    );
+}
+
+#[test]
 fn guest_machine_fetch_uses_specialized_memory_path() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_machine/mod.rs");

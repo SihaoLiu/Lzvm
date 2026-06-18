@@ -1090,6 +1090,9 @@ fn write_reported_register(
     index: u8,
     value: u64,
 ) {
+    if index == 0 {
+        return;
+    }
     let previous_value = state.read_decoded_register(index);
     state.write_decoded_register(index, value);
     effects.record_register_write(index, previous_value, value);
