@@ -196,16 +196,20 @@ theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_c
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
-  have sound :=
-    runtime_retained_parent_checkpoint_opening_checked_acceptance_sound
-      assumptions
-      validation
+  have batchAccepted :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesBatchRowsAccepted
       artifact
       publicInput
       proof
-      False
       accepted
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract
+      assumptions
+      validation.batchRowsValidation
+      artifact
+      publicInput
+      proof
+      batchAccepted
 
 theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_and_core_contract
     {system : VerifierModel}

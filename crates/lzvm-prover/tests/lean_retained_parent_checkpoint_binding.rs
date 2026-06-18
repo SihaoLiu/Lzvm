@@ -357,6 +357,22 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract",
+        &[
+            "retainedParentCheckpointOpeningAcceptedImpliesBatchRowsAccepted",
+            "runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract",
+        &[
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "runtime_retained_parent_checkpoint_nary_opening_source_core_sound_contract_from_bundle",
