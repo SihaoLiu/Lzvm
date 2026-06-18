@@ -311,6 +311,9 @@ PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY = (
 PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY = "perf_effect_record_memory_read_self_pct"
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
 OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
+SINGLE_QUERY_ROW_VALUE_BOUNDARY_HINT = (
+    "single_query_unit_boundary_blocks_row_value_batch"
+)
 RETAINED_PARENT_CHECKPOINT_PATH_SECONDARY_MS_THRESHOLD = 500
 CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD = 8 * 1024 * 1024 * 1024
 CUDA_TRANSFER_WAIT_MS_THRESHOLD = 500.0
@@ -1022,7 +1025,7 @@ def direct_d2h_action_hint(
         and opening_single_query_units >= opening_query_units
     )
     if hot_bucket and single_query_row_value_reads:
-        return "batch_single_query_device_row_value_reads"
+        return SINGLE_QUERY_ROW_VALUE_BOUNDARY_HINT
     if hot_bucket and single_root_groups:
         return "batch_hot_direct_d2h_root_reads"
     if hot_bucket:
@@ -1276,6 +1279,8 @@ def opening_batching_hint(
         and row_value_device_rows > 1
         and row_value_device_download_batches == 0
     ):
+        if single_query_units >= query_units:
+            return SINGLE_QUERY_ROW_VALUE_BOUNDARY_HINT
         return "multi_buffer_device_row_value_gather_candidate"
     if (
         retained_leaf_openings > 1
