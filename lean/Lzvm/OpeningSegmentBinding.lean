@@ -984,8 +984,31 @@ theorem runtime_opening_segment_binding_checked_acceptance_opening_and_core_cont
             requiresExternalSource
           /\ RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have sound :=
-    runtime_opening_segment_binding_checked_acceptance_sound
+  have segmentEvidence :=
+    runtime_opening_segment_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingAccepted :=
+    runtime_opening_segment_binding_checked_acceptance_opening
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingEvidence :=
+    runtime_opening_checked_acceptance_evidence
+      assumptions
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
+  have coreContract :=
+    runtime_opening_segment_binding_checked_acceptance_verifier_core_contract
       assumptions
       validation
       artifact
@@ -1000,9 +1023,7 @@ theorem runtime_opening_segment_binding_checked_acceptance_opening_and_core_cont
         artifact
         publicInput
         proof
-        sound.left)
-      (And.intro
-        sound.right.left
-        (sound_witness_implies_verifier_core_contract sound.right.right))
+        segmentEvidence)
+      (And.intro openingEvidence coreContract)
 
 end Lzvm
