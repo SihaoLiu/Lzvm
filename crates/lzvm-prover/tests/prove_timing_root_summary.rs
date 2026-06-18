@@ -123,6 +123,11 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_finish_witness_opening_external_source_count",
         "timing_finish_witness_opening_embedded_source_count",
         "timing_finish_witness_opening_missing_source_count",
+        "timing_guest_stage_source_retention_attempts",
+        "timing_guest_stage_source_retention_retained",
+        "timing_guest_stage_source_retention_rejected",
+        "timing_guest_stage_source_retention_limit_bytes",
+        "opening_source_rebuild_hint",
         "timing_finish_witness_opening_row_values_device_rows",
         "timing_finish_witness_opening_row_values_source_rows",
         "timing_finish_witness_opening_row_value_source_extend_ms",
@@ -243,6 +248,83 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
             "prove timing root summary should print {required}"
         );
     }
+}
+
+#[test]
+fn prove_timing_root_summary_reports_source_retention_rebuild_shape() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join("../../temp/prove-timing-source-retention");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("source retention fixture dir should be created");
+    let log_path = dir.join("source-retention.log");
+    let input = [
+        "timing_total_ms=51642",
+        "input_bytes=12447640",
+        "timing_guest_trace_stream_elapsed_ms=42310",
+        "timing_guest_segment_commit_ms=20214",
+        "timing_finish_witness_opening_ms=8993",
+        "timing_finish_witness_opening_query_unit_count=120",
+        "timing_finish_witness_opening_single_query_unit_count=120",
+        "timing_finish_witness_opening_query_count=120",
+        "timing_finish_witness_opening_stage_count=240",
+        "timing_finish_witness_opening_retained_source_count=0",
+        "timing_finish_witness_opening_external_source_count=240",
+        "timing_finish_witness_opening_embedded_source_count=0",
+        "timing_finish_witness_opening_missing_source_count=0",
+        "timing_guest_stage_source_retention_attempts=240",
+        "timing_guest_stage_source_retention_retained=0",
+        "timing_guest_stage_source_retention_rejected=240",
+        "timing_guest_stage_source_retention_retained_bytes=0",
+        "timing_guest_stage_source_retention_rejected_bytes=314069483520",
+        "timing_guest_stage_source_retention_limit_bytes=0",
+        "timing_cuda_allocator_copy_h2d_bytes=88120305952",
+        "timing_cuda_allocator_copy_h2d_wait_ns=7040040536",
+        "timing_cuda_allocator_host_register_wait_ns=1609017316",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+    std::fs::write(&log_path, input).expect("source retention fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should finish");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should parse source retention input: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines.next().expect("summary should include a header");
+    let row = lines.next().expect("summary should include a data row");
+    let headers = headers.split(',').collect::<Vec<_>>();
+    let row = row.split(',').collect::<Vec<_>>();
+    let value = |name: &str| -> &str {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("missing header {name}: {headers:?}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("missing value for {name}: {row:?}"))
+    };
+
+    assert_eq!(value("source_retention_attempts"), "240");
+    assert_eq!(value("source_retention_retained"), "0");
+    assert_eq!(value("source_retention_rejected"), "240");
+    assert_eq!(value("source_retention_retained_bytes"), "0");
+    assert_eq!(value("source_retention_rejected_bytes"), "314069483520");
+    assert_eq!(value("source_retention_limit_bytes"), "0");
+    assert_eq!(
+        value("opening_source_rebuild_hint"),
+        "retained_source_disabled_external_rebuild"
+    );
 }
 
 #[test]
@@ -1756,18 +1838,42 @@ fn prove_timing_root_summary_reports_opening_query_unit_scope() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
-    assert!(
-        stdout.contains(
-            "opening_queries,opening_max_queries_per_unit,opening_stage_count,opening_source_shape_hint,opening_row_value_device_rows,opening_row_value_source_rows"
-        ),
-        "prove timing root summary should expose opening query-unit scope columns: stdout={stdout}"
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("prove timing root summary should print a header");
+    let row = lines
+        .next()
+        .expect("prove timing root summary should print a data row");
+    let headers = header.split(',').collect::<Vec<_>>();
+    let fields = row.split(',').collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        fields
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("opening_queries"), "120");
+    assert_eq!(value("opening_max_queries_per_unit"), "1");
+    assert_eq!(value("opening_stage_count"), "240");
+    assert_eq!(
+        value("opening_source_shape_hint"),
+        "single_query_cross_root_with_mixed_sources"
     );
-    assert!(
-        stdout.contains(
-            ",120,120,120,1,240,single_query_cross_root_with_mixed_sources,79,77,"
-        ),
-        "prove timing root summary should classify single-query cross-root opening shape: stdout={stdout}"
+    assert_eq!(value("source_retention_attempts"), "0");
+    assert_eq!(value("source_retention_retained"), "0");
+    assert_eq!(value("source_retention_rejected"), "0");
+    assert_eq!(
+        value("opening_source_rebuild_hint"),
+        "mixed_retained_and_external_sources"
     );
+    assert_eq!(value("opening_row_value_device_rows"), "79");
+    assert_eq!(value("opening_row_value_source_rows"), "77");
 }
 
 #[test]

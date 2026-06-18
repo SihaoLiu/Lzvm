@@ -274,6 +274,12 @@ CUDA_COPY_H2D_WAIT_NS_KEY = "timing_cuda_allocator_copy_h2d_wait_ns"
 CUDA_COPY_H2D_HOT_BYTES_KEY = "timing_cuda_allocator_copy_h2d_hot_bytes"
 CUDA_COPY_H2D_HOT_COUNT_KEY = "timing_cuda_allocator_copy_h2d_hot_count"
 CUDA_COPY_H2D_HOT_WAIT_NS_KEY = "timing_cuda_allocator_copy_h2d_hot_wait_ns"
+SOURCE_RETENTION_ATTEMPTS_KEY = "timing_guest_stage_source_retention_attempts"
+SOURCE_RETENTION_RETAINED_KEY = "timing_guest_stage_source_retention_retained"
+SOURCE_RETENTION_REJECTED_KEY = "timing_guest_stage_source_retention_rejected"
+SOURCE_RETENTION_RETAINED_BYTES_KEY = "timing_guest_stage_source_retention_retained_bytes"
+SOURCE_RETENTION_REJECTED_BYTES_KEY = "timing_guest_stage_source_retention_rejected_bytes"
+SOURCE_RETENTION_LIMIT_BYTES_KEY = "timing_guest_stage_source_retention_limit_bytes"
 DESCRIPTOR_RETENTION_ATTEMPTS_KEY = "timing_guest_descriptor_buffer_retention_attempts"
 DESCRIPTOR_RETENTION_RETAINED_KEY = "timing_guest_descriptor_buffer_retention_retained"
 DESCRIPTOR_RETENTION_REJECTED_KEY = "timing_guest_descriptor_buffer_retention_rejected"
@@ -362,7 +368,11 @@ HEADER = (
     "seed_direct_lift_successes,seed_full_advances,"
     "finish_opening_ms,opening_query_units,opening_single_query_units,"
     "opening_queries,opening_max_queries_per_unit,opening_stage_count,"
-    "opening_source_shape_hint,opening_row_value_device_rows,"
+    "opening_source_shape_hint,"
+    "source_retention_attempts,source_retention_retained,"
+    "source_retention_rejected,source_retention_retained_bytes,"
+    "source_retention_rejected_bytes,source_retention_limit_bytes,"
+    "opening_source_rebuild_hint,opening_row_value_device_rows,"
     "opening_row_value_source_rows,opening_row_value_source_extend_ms,"
     "opening_row_value_source_extend_pct,opening_source_row_value_action_hint,"
     "retained_leaf_openings,retained_leaf_rows,retained_leaf_all_single_row,"
@@ -574,6 +584,12 @@ TIMING_KEYS = {
     OPENING_EXTERNAL_SOURCE_COUNT_KEY,
     OPENING_EMBEDDED_SOURCE_COUNT_KEY,
     OPENING_MISSING_SOURCE_COUNT_KEY,
+    SOURCE_RETENTION_ATTEMPTS_KEY,
+    SOURCE_RETENTION_RETAINED_KEY,
+    SOURCE_RETENTION_REJECTED_KEY,
+    SOURCE_RETENTION_RETAINED_BYTES_KEY,
+    SOURCE_RETENTION_REJECTED_BYTES_KEY,
+    SOURCE_RETENTION_LIMIT_BYTES_KEY,
     OPENING_ROW_VALUE_DEVICE_ROWS_KEY,
     OPENING_ROW_VALUE_SOURCE_ROWS_KEY,
     OPENING_ROW_VALUE_SOURCE_EXTEND_MS_KEY,
@@ -1424,6 +1440,35 @@ def opening_source_shape_hint(
     return f"{query_shape}_with_{source_shape}"
 
 
+def opening_source_rebuild_hint(
+    external_source_count: int,
+    retained_source_count: int,
+    source_retention_attempts: int,
+    source_retention_retained: int,
+    source_retention_rejected: int,
+    source_retention_limit_bytes: int,
+) -> str:
+    if external_source_count <= 0:
+        return "none"
+    if (
+        source_retention_attempts > 0
+        and source_retention_retained == 0
+        and source_retention_limit_bytes == 0
+    ):
+        return "retained_source_disabled_external_rebuild"
+    if (
+        source_retention_attempts > 0
+        and source_retention_retained == 0
+        and source_retention_rejected > 0
+    ):
+        return "retained_source_budget_rejected_external_rebuild"
+    if 0 < source_retention_retained < source_retention_attempts:
+        return "partial_retained_source_external_rebuild"
+    if retained_source_count > 0 and external_source_count > 0:
+        return "mixed_retained_and_external_sources"
+    return "external_source_rebuild"
+
+
 def opening_source_row_value_action_hint(
     total_ms: int,
     source_extend_ms: int,
@@ -2238,6 +2283,12 @@ def summarize_profile_values(
     opening_external_source_count = values.get(OPENING_EXTERNAL_SOURCE_COUNT_KEY, 0)
     opening_embedded_source_count = values.get(OPENING_EMBEDDED_SOURCE_COUNT_KEY, 0)
     opening_missing_source_count = values.get(OPENING_MISSING_SOURCE_COUNT_KEY, 0)
+    source_retention_attempts = values.get(SOURCE_RETENTION_ATTEMPTS_KEY, 0)
+    source_retention_retained = values.get(SOURCE_RETENTION_RETAINED_KEY, 0)
+    source_retention_rejected = values.get(SOURCE_RETENTION_REJECTED_KEY, 0)
+    source_retention_retained_bytes = values.get(SOURCE_RETENTION_RETAINED_BYTES_KEY, 0)
+    source_retention_rejected_bytes = values.get(SOURCE_RETENTION_REJECTED_BYTES_KEY, 0)
+    source_retention_limit_bytes = values.get(SOURCE_RETENTION_LIMIT_BYTES_KEY, 0)
     opening_row_value_device_rows = values.get(OPENING_ROW_VALUE_DEVICE_ROWS_KEY, 0)
     opening_row_value_source_rows = values.get(OPENING_ROW_VALUE_SOURCE_ROWS_KEY, 0)
     opening_row_value_source_extend_ms = values.get(
@@ -2395,6 +2446,14 @@ def summarize_profile_values(
         opening_external_source_count,
         opening_embedded_source_count,
         opening_missing_source_count,
+    )
+    source_rebuild_hint = opening_source_rebuild_hint(
+        opening_external_source_count,
+        opening_retained_source_count,
+        source_retention_attempts,
+        source_retention_retained,
+        source_retention_rejected,
+        source_retention_limit_bytes,
     )
     opening_hint = opening_batching_hint(
         opening_query_units,
@@ -2556,7 +2615,11 @@ def summarize_profile_values(
         f"{seed_direct_lift_successes},{seed_full_advances},"
         f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
         f"{opening_queries},{opening_max_queries_per_unit},{opening_stage_count},"
-        f"{opening_source_hint},{opening_row_value_device_rows},"
+        f"{opening_source_hint},"
+        f"{source_retention_attempts},{source_retention_retained},"
+        f"{source_retention_rejected},{source_retention_retained_bytes},"
+        f"{source_retention_rejected_bytes},{source_retention_limit_bytes},"
+        f"{source_rebuild_hint},{opening_row_value_device_rows},"
         f"{opening_row_value_source_rows},{opening_row_value_source_extend_ms},"
         f"{opening_row_value_source_extend_pct:.3f},{opening_source_row_value_hint},"
         f"{retained_leaf_openings},{retained_leaf_rows},"
