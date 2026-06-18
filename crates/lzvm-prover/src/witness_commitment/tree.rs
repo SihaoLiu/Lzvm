@@ -19,7 +19,10 @@ use crate::merkle_hash::{
 use crate::witness_layout::WitnessTraceStageValues;
 
 #[cfg(feature = "cuda")]
-use super::WitnessStageOpeningWorkTiming;
+use super::{
+    copy_extended_row_values_batch_from_devices, DeviceRowValueBatchSource,
+    WitnessStageOpeningWorkTiming,
+};
 #[cfg(feature = "cuda")]
 use super::{
     retain_leaf_digest_level, retain_parent_checkpoint_level, retain_source_device_view,
@@ -1226,6 +1229,10 @@ enum PendingWitnessStageOpeningGroup {
         row_indices: Vec<u64>,
         values_by_row: Vec<Vec<Felt>>,
     },
+    DeviceRows {
+        row_indices: Vec<u64>,
+        row_values: super::CompactOnDemandOpeningDeviceRows,
+    },
 }
 
 #[cfg(feature = "cuda")]
@@ -1267,16 +1274,92 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
                 });
             }
             None => {
-                let openings = open_witness_stage_commitments_inner(
-                    request.commitment,
-                    request.row_indices,
-                    request.row_count,
-                    request.column_count,
-                    request.source_device,
-                    Some(timing),
-                )?;
-                pending_groups.push(PendingWitnessStageOpeningGroup::Ready(openings));
+                match request
+                    .commitment
+                    .open_compact_batch_on_demand_device_rows_with_source_device(
+                        &query_rows,
+                        usize::try_from(request.row_count)
+                            .map_err(|_| WitnessStageOpeningError::LengthOverflow)?,
+                        request.column_count,
+                        request.source_device,
+                        Some(timing),
+                    )? {
+                    Some(row_values) => {
+                        pending_groups.push(PendingWitnessStageOpeningGroup::DeviceRows {
+                            row_indices: request.row_indices.to_vec(),
+                            row_values,
+                        });
+                    }
+                    None => {
+                        let openings = open_witness_stage_commitments_inner(
+                            request.commitment,
+                            request.row_indices,
+                            request.row_count,
+                            request.column_count,
+                            request.source_device,
+                            Some(timing),
+                        )?;
+                        pending_groups.push(PendingWitnessStageOpeningGroup::Ready(openings));
+                    }
+                }
             }
+        }
+    }
+
+    let mut decoded_device_rows = (0..pending_groups.len())
+        .map(|_| Vec::new())
+        .collect::<Vec<Vec<Vec<Felt>>>>();
+    let mut column_counts = pending_groups
+        .iter()
+        .filter_map(|group| match group {
+            PendingWitnessStageOpeningGroup::DeviceRows { row_values, .. } => {
+                Some(row_values.column_count)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    column_counts.sort_unstable();
+    column_counts.dedup();
+    for column_count in column_counts {
+        let mut sources = Vec::new();
+        let mut positions = Vec::new();
+        for (group_index, group) in pending_groups.iter().enumerate() {
+            let PendingWitnessStageOpeningGroup::DeviceRows { row_values, .. } = group else {
+                continue;
+            };
+            if row_values.column_count != column_count {
+                continue;
+            }
+            for (row_position, row) in row_values.row_indices.iter().copied().enumerate() {
+                sources.push(DeviceRowValueBatchSource {
+                    output_buffer: &row_values.output_buffer,
+                    extended_rows: row_values.extended_rows,
+                    row,
+                });
+                positions.push((group_index, row_position));
+            }
+        }
+        if sources.is_empty() {
+            continue;
+        }
+        let timing_index = positions
+            .first()
+            .map(|(group_index, _)| *group_index)
+            .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+        let values = copy_extended_row_values_batch_from_devices(
+            column_count,
+            &sources,
+            timings.get_mut(timing_index),
+        )?;
+        if values.len() != positions.len() {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        for ((group_index, row_position), values) in positions.into_iter().zip(values) {
+            let output = &mut decoded_device_rows[group_index];
+            if output.len() != row_position {
+                return Err(WitnessStageOpeningError::LengthOverflow);
+            }
+            output.push(values);
         }
     }
 
@@ -1284,7 +1367,7 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
         .map_err(WitnessStageOpeningError::from)?;
     let mut decoded_siblings = decoded_siblings.into_iter();
     let mut outputs = Vec::with_capacity(pending_groups.len());
-    for group in pending_groups {
+    for (group_index, group) in pending_groups.into_iter().enumerate() {
         match group {
             PendingWitnessStageOpeningGroup::Ready(openings) => outputs.push(openings),
             PendingWitnessStageOpeningGroup::DeviceSiblings {
@@ -1304,6 +1387,27 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
                         .into_iter()
                         .zip(values_by_row)
                         .zip(siblings_by_row)
+                        .map(|((row_index, values), siblings)| {
+                            WitnessStageOpening::new(row_index, values, siblings)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                );
+            }
+            PendingWitnessStageOpeningGroup::DeviceRows {
+                row_indices,
+                row_values,
+            } => {
+                let values_by_row = std::mem::take(&mut decoded_device_rows[group_index]);
+                if row_indices.len() != values_by_row.len()
+                    || row_indices.len() != row_values.siblings_by_row.len()
+                {
+                    return Err(WitnessStageOpeningError::LengthOverflow);
+                }
+                outputs.push(
+                    row_indices
+                        .into_iter()
+                        .zip(values_by_row)
+                        .zip(row_values.siblings_by_row)
                         .map(|((row_index, values), siblings)| {
                             WitnessStageOpening::new(row_index, values, siblings)
                         })
@@ -2791,7 +2895,7 @@ mod tests {
                 &mut timing,
             )
             .expect("device leaf hash level should build");
-        let device = commit_witness_stage_device_compact_with_leaf_hash_level(
+        let mut device = commit_witness_stage_device_compact_with_leaf_hash_level(
             WitnessStageDeviceCompactCommitInput {
                 stage_index: 1,
                 source_rows,
@@ -2811,9 +2915,10 @@ mod tests {
             )),
         )
         .expect("device compact commitment should build");
+        assert!(device.drop_retained_leaf_digest_level_for_test());
 
         let rows_a = [0_u64];
-        let rows_b = [3891_u64, 4095_u64];
+        let rows_b = [3891_u64];
         let mut expected_timing_a = WitnessStageOpeningWorkTiming::default();
         let expected_a = open_witness_stage_commitments_with_source_device_timing(
             &device,
@@ -2859,6 +2964,29 @@ mod tests {
         .expect("opening groups should build");
 
         assert_eq!(actual, vec![expected_a, expected_b]);
+        assert_eq!(
+            timings
+                .iter()
+                .map(|timing| timing.row_values_device_row_count)
+                .sum::<usize>(),
+            rows_a.len() + rows_b.len()
+        );
+        assert_eq!(
+            timings
+                .iter()
+                .map(|timing| timing.row_values_device_download_batch_count)
+                .sum::<usize>(),
+            1,
+            "single-row retained parent checkpoint values from multiple requests should use one device row-value gather"
+        );
+        assert_eq!(
+            timings
+                .iter()
+                .map(|timing| timing.row_values_device_single_download_count)
+                .sum::<usize>(),
+            0,
+            "cross-request row-value gather should avoid per-request single-row D2H"
+        );
         for group in actual {
             for opening in group {
                 assert!(
