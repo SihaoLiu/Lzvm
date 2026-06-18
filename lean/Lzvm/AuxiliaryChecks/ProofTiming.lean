@@ -796,13 +796,12 @@ theorem proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contr
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof observed
   exact
-    sound_witness_implies_verifier_core_contract
-      (proof_artifact_finish_timing_some_summary_acceptance_sound
-        assumptions
-        summary
-        publicInput
-        proof
-        observed)
+    proof_artifact_finish_timing_acceptance_verifier_core_contract
+      assumptions
+      (some summary)
+      publicInput
+      proof
+      observed
 
 theorem proof_artifact_finish_top_level_timing_acceptance_sound
     {system : VerifierModel}
@@ -866,20 +865,19 @@ theorem proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof observed
   exact
-    sound_witness_implies_verifier_core_contract
-      (proof_artifact_finish_top_level_timing_acceptance_sound
-        assumptions
-        summary
-        queryPlanMilliseconds
-        constantOpeningMilliseconds
-        witnessOpeningMilliseconds
-        friOpeningMilliseconds
-        proofEncodeMilliseconds
-        contributionSegmentMilliseconds
-        contributionVerifyMilliseconds
-        publicInput
-        proof
-        observed)
+    proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract
+      assumptions
+      { summary with
+        finishQueryPlanMilliseconds := queryPlanMilliseconds
+        finishConstantOpeningMilliseconds := constantOpeningMilliseconds
+        finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+        finishFriOpeningMilliseconds := friOpeningMilliseconds
+        finishProofEncodeMilliseconds := proofEncodeMilliseconds
+        finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
+        finishContributionVerifyMilliseconds := contributionVerifyMilliseconds }
+      publicInput
+      proof
+      observed
 
 theorem proof_artifact_finish_witness_opening_shape_acceptance_sound
     {system : VerifierModel}
