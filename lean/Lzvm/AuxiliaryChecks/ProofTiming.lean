@@ -604,44 +604,49 @@ theorem cuda_allocator_aggregate_timing_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof observed
   exact
-    sound_witness_implies_verifier_core_contract
-      (cuda_allocator_aggregate_timing_acceptance_sound
-        assumptions
-        summary
-        mallocCalls
-        mallocBytes
-        mallocWaitNanoseconds
-        mallocMaxWaitNanoseconds
-        hostRegisterCalls
-        hostRegisterBytes
-        hostRegisterWaitNanoseconds
-        hostRegisterMaxWaitNanoseconds
-        hostUnregisterCalls
-        hostUnregisterWaitNanoseconds
-        hostUnregisterMaxWaitNanoseconds
-        deviceSynchronizeCalls
-        deviceSynchronizeWaitNanoseconds
-        deviceSynchronizeMaxWaitNanoseconds
-        cachedBlocks
-        cachedBytes
-        eventQueryCalls
-        eventQueryReadyCount
-        eventQueryNotReadyCount
-        eventSynchronizeCalls
-        eventSynchronizeBytes
-        eventSynchronizeMaxBytes
-        eventSynchronizeWaitNanoseconds
-        eventSynchronizeMaxWaitNanoseconds
-        eventSynchronizeHotBytes
-        eventSynchronizeHotCount
-        eventSynchronizeHotWaitNanoseconds
-        cachedReuseCount
-        pendingReuseCount
-        noWaitBypassCount
-        noWaitBypassBytes
-        publicInput
-        proof
-        observed)
+    cuda_allocator_timing_acceptance_verifier_core_contract
+      assumptions
+      (some
+        { summary with
+          cudaAllocatorMallocCallCount := mallocCalls
+          cudaAllocatorMallocByteCount := mallocBytes
+          cudaAllocatorMallocWaitNanoseconds := mallocWaitNanoseconds
+          cudaAllocatorMallocMaxWaitNanoseconds := mallocMaxWaitNanoseconds
+          cudaAllocatorHostRegisterCallCount := hostRegisterCalls
+          cudaAllocatorHostRegisterByteCount := hostRegisterBytes
+          cudaAllocatorHostRegisterWaitNanoseconds := hostRegisterWaitNanoseconds
+          cudaAllocatorHostRegisterMaxWaitNanoseconds := hostRegisterMaxWaitNanoseconds
+          cudaAllocatorHostUnregisterCallCount := hostUnregisterCalls
+          cudaAllocatorHostUnregisterWaitNanoseconds := hostUnregisterWaitNanoseconds
+          cudaAllocatorHostUnregisterMaxWaitNanoseconds :=
+            hostUnregisterMaxWaitNanoseconds
+          cudaAllocatorDeviceSynchronizeCallCount := deviceSynchronizeCalls
+          cudaAllocatorDeviceSynchronizeWaitNanoseconds :=
+            deviceSynchronizeWaitNanoseconds
+          cudaAllocatorDeviceSynchronizeMaxWaitNanoseconds :=
+            deviceSynchronizeMaxWaitNanoseconds
+          cudaAllocatorCachedBlockCount := cachedBlocks
+          cudaAllocatorCachedByteCount := cachedBytes
+          cudaAllocatorEventQueryCallCount := eventQueryCalls
+          cudaAllocatorEventQueryReadyCount := eventQueryReadyCount
+          cudaAllocatorEventQueryNotReadyCount := eventQueryNotReadyCount
+          cudaAllocatorEventSynchronizeCallCount := eventSynchronizeCalls
+          cudaAllocatorEventSynchronizeByteCount := eventSynchronizeBytes
+          cudaAllocatorEventSynchronizeMaxByteCount := eventSynchronizeMaxBytes
+          cudaAllocatorEventSynchronizeWaitNanoseconds := eventSynchronizeWaitNanoseconds
+          cudaAllocatorEventSynchronizeMaxWaitNanoseconds :=
+            eventSynchronizeMaxWaitNanoseconds
+          cudaAllocatorEventSynchronizeHotByteCount := eventSynchronizeHotBytes
+          cudaAllocatorEventSynchronizeHotCount := eventSynchronizeHotCount
+          cudaAllocatorEventSynchronizeHotWaitNanoseconds :=
+            eventSynchronizeHotWaitNanoseconds
+          cudaAllocatorCachedReuseCount := cachedReuseCount
+          cudaAllocatorPendingReuseCount := pendingReuseCount
+          cudaAllocatorNoWaitBypassCount := noWaitBypassCount
+          cudaAllocatorNoWaitBypassByteCount := noWaitBypassBytes })
+      publicInput
+      proof
+      observed
 
 theorem cuda_allocator_host_registration_timing_acceptance_sound
     {system : VerifierModel}
@@ -709,20 +714,21 @@ theorem cuda_allocator_host_registration_timing_acceptance_verifier_core_contrac
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof observed
   exact
-    sound_witness_implies_verifier_core_contract
-      (cuda_allocator_host_registration_timing_acceptance_sound
-        assumptions
-        summary
-        hostRegisterCalls
-        hostRegisterBytes
-        hostRegisterWaitNanoseconds
-        hostRegisterMaxWaitNanoseconds
-        hostUnregisterCalls
-        hostUnregisterWaitNanoseconds
-        hostUnregisterMaxWaitNanoseconds
-        publicInput
-        proof
-        observed)
+    cuda_allocator_timing_acceptance_verifier_core_contract
+      assumptions
+      (some
+        { summary with
+          cudaAllocatorHostRegisterCallCount := hostRegisterCalls
+          cudaAllocatorHostRegisterByteCount := hostRegisterBytes
+          cudaAllocatorHostRegisterWaitNanoseconds := hostRegisterWaitNanoseconds
+          cudaAllocatorHostRegisterMaxWaitNanoseconds := hostRegisterMaxWaitNanoseconds
+          cudaAllocatorHostUnregisterCallCount := hostUnregisterCalls
+          cudaAllocatorHostUnregisterWaitNanoseconds := hostUnregisterWaitNanoseconds
+          cudaAllocatorHostUnregisterMaxWaitNanoseconds :=
+            hostUnregisterMaxWaitNanoseconds })
+      publicInput
+      proof
+      observed
 
 def ProofArtifactFinishTimingObservedAcceptance
     (system : VerifierModel)
