@@ -1689,7 +1689,7 @@ theorem runtime_pipeline_binding_required_external_source_contracts_core_contrac
                 /\ system.witnessMatchesTrace witness trace)
             /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
-  exact
+  have auditedCore :=
     runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract
       assumptions
       validation
@@ -1699,5 +1699,49 @@ theorem runtime_pipeline_binding_required_external_source_contracts_core_contrac
       requiresExternalSource
       accepted
       required
+  have externalCore :=
+    runtime_pipeline_binding_required_external_source_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  rcases externalCore with
+    ⟨traceExternalEvidence,
+      openingExternalEvidence,
+      verifierCore⟩
+  rcases auditedCore with
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      _traceExternalEvidence,
+      _openingExternalEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      _auditedVerifierCore,
+      executionObligations,
+      soundWitness⟩
+  exact
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      executionObligations,
+      soundWitness⟩
 
 end Lzvm

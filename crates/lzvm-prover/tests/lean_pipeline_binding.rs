@@ -1616,7 +1616,15 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_pipeline_binding_required_external_source_contracts_core_contract",
-        &["runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"],
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract",
+            "runtime_pipeline_binding_required_external_source_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_contracts_core_contract",
+        &["exact\n    runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
