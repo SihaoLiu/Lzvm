@@ -1103,10 +1103,16 @@ fn cuda_retained_checkpoint_opening_batches_lower_prefix_work() {
         "impl CudaDigestCheckpointLevel",
     );
     assert!(
-        batch_body.contains("cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device")
+        batch_body.contains("cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer")
             && batch_body
-                .contains("cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device"),
-        "CUDA digest opening prefix batches should call the native batch prefix primitives"
+                .contains("cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_buffer"),
+        "CUDA digest opening prefix batches should keep batch prefixes in a device buffer before host materialization"
+    );
+    assert!(
+        !batch_body.contains("cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device(")
+            && !batch_body
+                .contains("cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device("),
+        "CUDA digest opening prefix batches should avoid the host-returning batch prefix API"
     );
 }
 

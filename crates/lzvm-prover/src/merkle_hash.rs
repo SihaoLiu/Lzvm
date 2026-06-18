@@ -8,7 +8,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
     cuda_poseidon2_width16_merkle_digest_opening_path_device,
-    cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device,
+    cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_buffer,
     cuda_poseidon2_width16_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width16_merkle_digest_parent_device,
     cuda_poseidon2_width16_merkle_digest_root_device,
@@ -17,7 +17,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
     cuda_poseidon2_width8_merkle_digest_opening_path_device,
-    cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device,
+    cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer,
     cuda_poseidon2_width8_merkle_digest_opening_prefix_device,
     cuda_poseidon2_width8_merkle_digest_parent_device,
     cuda_poseidon2_width8_merkle_digest_root_device,
@@ -565,13 +565,13 @@ impl CudaDigestLevel {
             return Err(MerkleHashError::LengthOverflow);
         }
 
-        let sibling_words = match self.arity {
-            2 => cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device(
+        let sibling_buffer = match self.arity {
+            2 => cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer(
                 &self.digests,
                 source_rows,
                 folded_level_count,
             ),
-            4 => cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device(
+            4 => cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_buffer(
                 &self.digests,
                 source_rows,
                 folded_level_count,
@@ -579,6 +579,9 @@ impl CudaDigestLevel {
             _ => return Err(MerkleHashError::UnsupportedArity { arity: self.arity }),
         }
         .map_err(MerkleHashError::Accel)?;
+        let sibling_words = sibling_buffer
+            .to_u64_words()
+            .map_err(MerkleHashError::Accel)?;
         let row_words = folded_level_count
             .checked_mul(self.arity.saturating_sub(1))
             .and_then(|count| count.checked_mul(HASH_WORDS))
