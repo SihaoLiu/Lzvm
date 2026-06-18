@@ -2126,6 +2126,10 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
             });
         let (root_materialization_groups, max_root_materialization_group_size) =
             timing_groups.expect("timed segmented run should report root materialization shape");
+        assert!(
+            outputs.len() > 1,
+            "{label} pending-root parity fixture should produce multiple trace segments"
+        );
 
         let witness_segments = outputs
             .iter()
