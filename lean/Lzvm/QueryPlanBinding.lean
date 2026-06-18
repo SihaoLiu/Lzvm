@@ -1189,7 +1189,7 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_an
       transcriptBound,
       pcsOpeningsValid,
       friQueriesValid,
-      soundWitness⟩
+      _soundWitness⟩
   have queryPlanBound :=
     runtime_query_plan_binding_evidence_implies_bound_contract
       validation
@@ -1205,8 +1205,16 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_an
       proof
       openingSegmentEvidence
   have coreContract :=
-    sound_witness_implies_verifier_core_contract soundWitness
-  have publicInputBound := coreContract.right.left
+    runtime_query_plan_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  rcases coreContract with
+    ⟨coreTranscriptBound, publicInputBound, corePcsOpeningsValid, coreFriQueriesValid⟩
   exact
     And.intro seededContract
       (And.intro queryPlanBound
@@ -1215,7 +1223,10 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_an
             (And.intro transcriptBound
               (And.intro publicInputBound
                 (And.intro pcsOpeningsValid
-                  (And.intro friQueriesValid coreContract)))))))
+                  (And.intro friQueriesValid
+                    (And.intro coreTranscriptBound
+                      (And.intro publicInputBound
+                        (And.intro corePcsOpeningsValid coreFriQueriesValid))))))))))
 
 set_option linter.style.longLine false in
 theorem runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_opening_and_core_contract
@@ -1307,7 +1318,7 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_openi
       transcriptBound,
       pcsOpeningsValid,
       friQueriesValid,
-      soundWitness⟩
+      _soundWitness⟩
   have queryPlanBound :=
     runtime_query_plan_binding_evidence_implies_bound_contract
       validation
@@ -1323,8 +1334,16 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_openi
       proof
       openingSegmentEvidence
   have coreContract :=
-    sound_witness_implies_verifier_core_contract soundWitness
-  have publicInputBound := coreContract.right.left
+    runtime_query_plan_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  rcases coreContract with
+    ⟨coreTranscriptBound, publicInputBound, corePcsOpeningsValid, coreFriQueriesValid⟩
   exact
     And.intro seededContract
       (And.intro queryPlanBound
@@ -1333,6 +1352,9 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_openi
             (And.intro transcriptBound
               (And.intro publicInputBound
                 (And.intro pcsOpeningsValid
-                  (And.intro friQueriesValid coreContract)))))))
+                  (And.intro friQueriesValid
+                    (And.intro coreTranscriptBound
+                      (And.intro publicInputBound
+                        (And.intro corePcsOpeningsValid coreFriQueriesValid))))))))))
 
 end Lzvm
