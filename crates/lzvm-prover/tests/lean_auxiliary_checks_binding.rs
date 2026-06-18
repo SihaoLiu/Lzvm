@@ -196,9 +196,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("ignored_metadata_acceptance_sound"),
         "Lean auxiliary timing metadata should use one generic ignored-metadata acceptance wrapper"
     );
-    lean_binding::assert_theorem_declarations(
-        &auxiliary_source,
-        &["ignored_metadata_acceptance_verifier_core_contract_via_soundness"],
+    assert!(
+        !lean_binding::contains_theorem_declaration(
+            &auxiliary_source,
+            "ignored_metadata_acceptance_verifier_core_contract_via_soundness",
+        ),
+        "generic ignored-metadata verifier-core contracts should not keep a SoundWitness projection shortcut"
     );
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
