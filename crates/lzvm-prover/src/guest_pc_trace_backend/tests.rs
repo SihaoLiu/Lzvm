@@ -383,6 +383,47 @@ fn zisk_main_segment_seed_mirror_matches_written_continuation() {
 }
 
 #[test]
+fn zisk_main_streaming_unit_value_summary_matches_batch_reports() {
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let reports = [
+        addi_report_at(0x8000_0000, 1, 0, 7, 7),
+        addi_report_at(0x8000_0004, 2, 1, 3, 10),
+    ];
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+    let written = build_layout_zisk_main_trace_segment(
+        &layout,
+        &reports,
+        0x8000_0008,
+        &ZiskMainTraceState::new(),
+        None,
+        segment,
+        None,
+    )
+    .expect("segment should build")
+    .expect("layout should be supported");
+    let mut summary = ZiskMainSegmentUnitValueSummary::new();
+    for report in &reports {
+        summary.push_report(report);
+    }
+
+    assert_eq!(
+        summary.unit_values(
+            layout.row_count(),
+            written.trace_source_prefix_rows,
+            0x8000_0008,
+            &written.final_state,
+            segment,
+        ),
+        written.output.unit_values
+    );
+}
+
+#[test]
 fn direct_boundary_c_uses_register_store_write_value() {
     let report = addi_report_at(0x8000_0000, 3, 0, 11, 11);
     let instruction = lower_guest_report(&report).expect("report should lower");
@@ -1563,7 +1604,7 @@ fn streaming_device_segment_builder_matches_batch_device_material() {
             .expect("streaming report should append");
     }
     let streamed = streaming
-        .finish(&segment.reports, segment.terminal_pc, None)
+        .finish(segment.terminal_pc, None)
         .expect("streaming material should finish");
 
     assert_eq!(

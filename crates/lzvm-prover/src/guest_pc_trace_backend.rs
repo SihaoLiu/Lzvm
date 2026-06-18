@@ -4349,6 +4349,7 @@ struct ZiskMainStreamingDeviceSegmentBuilder {
     row_count: usize,
     segment: ZiskMainTraceSegmentInfo,
     context: ZiskMainReportValidationContext<'static>,
+    unit_value_summary: ZiskMainSegmentUnitValueSummary,
     device_trace_descriptors: ZiskMainDeviceTraceDescriptors,
     state: ZiskMainTraceState,
     output_row: usize,
@@ -4396,6 +4397,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
             row_count: layout.row_count(),
             segment,
             context: ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?,
+            unit_value_summary: ZiskMainSegmentUnitValueSummary::new(),
             device_trace_descriptors,
             state: initial_state.clone(),
             output_row: 0,
@@ -4452,6 +4454,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
                 }
             },
         )?;
+        self.unit_value_summary.push_report(report);
         if let Some(timing) = timing {
             timing.trace_report_count += 1;
             timing.trace_report_row_count += written_rows;
@@ -4485,7 +4488,6 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
 
     fn finish(
         mut self,
-        reports: &[GuestMachineReport],
         terminal_pc: u64,
         mut timing: Option<&mut GuestPcTraceStreamTiming>,
     ) -> Result<GuestPcTraceDeviceSegmentBuild, GuestPcTraceBackendError> {
@@ -4501,10 +4503,9 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
         }
         let continuation_state =
             zisk_main_continuation_state(self.row_count, &self.state, self.segment)?;
-        let unit_values = zisk_main_unit_values(
+        let unit_values = self.unit_value_summary.unit_values(
             self.row_count,
             self.output_row,
-            reports,
             terminal_pc,
             &self.state,
             self.segment,
@@ -5943,7 +5944,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
         )?;
     }
     record_aggregate_trace_report_duration(&mut timing, aggregate_report_started);
-    builder.finish(reports, terminal_pc, timing).map(Some)
+    builder.finish(terminal_pc, timing).map(Some)
 }
 
 #[cfg(feature = "cuda")]
@@ -6432,10 +6433,9 @@ fn build_layout_zisk_main_trace_segment(
                 output_len: usize::MAX,
             })?;
     let continuation_state = zisk_main_continuation_state(layout.row_count(), &state, segment)?;
-    let unit_values = zisk_main_unit_values(
+    let unit_values = ZiskMainSegmentUnitValueSummary::from_reports(reports).unit_values(
         layout.row_count(),
         output_row,
-        reports,
         terminal_pc,
         &state,
         segment,
@@ -6496,18 +6496,49 @@ fn zisk_main_continuation_state(
     Ok(continuation_state)
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ZiskMainSegmentUnitValueSummary {
+    segment_initial_pc: Option<u64>,
+}
+
+impl ZiskMainSegmentUnitValueSummary {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn from_reports(reports: &[GuestMachineReport]) -> Self {
+        let mut summary = Self::new();
+        for report in reports {
+            summary.push_report(report);
+        }
+        summary
+    }
+
+    fn push_report(&mut self, report: &GuestMachineReport) {
+        self.segment_initial_pc.get_or_insert(report.address);
+    }
+
+    fn unit_values(
+        self,
+        row_count: usize,
+        written_rows: usize,
+        terminal_pc: u64,
+        state: &ZiskMainTraceState,
+        segment: ZiskMainTraceSegmentInfo,
+    ) -> Vec<WitnessTraceUnitValue> {
+        zisk_main_unit_values(row_count, written_rows, self, terminal_pc, state, segment)
+    }
+}
+
 fn zisk_main_unit_values(
     row_count: usize,
     written_rows: usize,
-    reports: &[GuestMachineReport],
+    summary: ZiskMainSegmentUnitValueSummary,
     terminal_pc: u64,
     state: &ZiskMainTraceState,
     segment: ZiskMainTraceSegmentInfo,
 ) -> Vec<WitnessTraceUnitValue> {
-    let segment_initial_pc = reports
-        .first()
-        .map(|report| report.address)
-        .unwrap_or(terminal_pc);
+    let segment_initial_pc = summary.segment_initial_pc.unwrap_or(terminal_pc);
     let segment_last_c = if segment.is_last_segment && written_rows < row_count {
         0
     } else {

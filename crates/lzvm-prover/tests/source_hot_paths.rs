@@ -2255,7 +2255,7 @@ fn guest_pc_trace_device_material_builder_does_not_construct_host_trace() {
         "device material should build compact CUDA descriptors while validating reports"
     );
     assert!(
-        builder_impl_body.contains("zisk_main_unit_values"),
+        builder_impl_body.contains("unit_value_summary.unit_values"),
         "device material should still produce unit values for public binding"
     );
     assert!(
