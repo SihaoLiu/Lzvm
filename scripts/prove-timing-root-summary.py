@@ -355,6 +355,9 @@ HEADER = (
     "retained_parent_checkpoint_prefix_launches,"
     "retained_parent_checkpoint_suffix_rows,retained_parent_checkpoint_suffix_bytes,"
     "retained_parent_checkpoint_suffix_launches,"
+    "retained_parent_checkpoint_path_launches,"
+    "retained_parent_checkpoint_cross_stage_gather_estimated_launches,"
+    "retained_parent_checkpoint_cross_stage_gather_launch_savings,"
     "opening_path_parent_hash_launches_per_stage,"
     "opening_row_value_device_download_batches,"
     "opening_row_value_device_single_downloads,"
@@ -1170,6 +1173,32 @@ def opening_device_single_stage_shape(values: dict[str, int]) -> tuple[int, int,
     max_stage_count = max(stage_counts)
     batch_savings = sum(count - 1 for count in stage_counts)
     return (stage_count, max_stage_count, batch_savings)
+
+
+def retained_parent_checkpoint_cross_stage_gather_launch_shape(
+    openings: int,
+    rows: int,
+    all_single_row: int,
+    prefix_launches: int,
+    suffix_launches: int,
+) -> tuple[int, int, int]:
+    current_launches = prefix_launches + suffix_launches
+    if (
+        openings <= 1
+        or rows != openings
+        or all_single_row <= 0
+        or current_launches <= 0
+    ):
+        return (current_launches, 0, 0)
+    prefix_group_launches = (
+        (prefix_launches + openings - 1) // openings if prefix_launches > 0 else 0
+    )
+    suffix_group_launches = (
+        (suffix_launches + openings - 1) // openings if suffix_launches > 0 else 0
+    )
+    estimated_launches = prefix_group_launches + suffix_group_launches
+    launch_savings = max(current_launches - estimated_launches, 0)
+    return (current_launches, estimated_launches, launch_savings)
 
 
 def opening_source_shape_hint(
@@ -2020,6 +2049,17 @@ def summarize_profile_values(
     retained_parent_checkpoint_suffix_launches = values.get(
         OPENING_RETAINED_PARENT_CHECKPOINT_SUFFIX_LAUNCHES_KEY, 0
     )
+    (
+        retained_parent_checkpoint_path_launches,
+        retained_parent_checkpoint_cross_stage_gather_estimated_launches,
+        retained_parent_checkpoint_cross_stage_gather_launch_savings,
+    ) = retained_parent_checkpoint_cross_stage_gather_launch_shape(
+        retained_parent_checkpoint_openings,
+        retained_parent_checkpoint_rows,
+        retained_parent_checkpoint_all_single_row_value,
+        retained_parent_checkpoint_prefix_launches,
+        retained_parent_checkpoint_suffix_launches,
+    )
     opening_path_parent_hash_launches_per_stage = values.get(
         OPENING_PATH_PARENT_HASH_LAUNCHES_PER_STAGE_KEY, 0
     )
@@ -2254,6 +2294,9 @@ def summarize_profile_values(
         f"{retained_parent_checkpoint_suffix_rows},"
         f"{retained_parent_checkpoint_suffix_bytes},"
         f"{retained_parent_checkpoint_suffix_launches},"
+        f"{retained_parent_checkpoint_path_launches},"
+        f"{retained_parent_checkpoint_cross_stage_gather_estimated_launches},"
+        f"{retained_parent_checkpoint_cross_stage_gather_launch_savings},"
         f"{opening_path_parent_hash_launches_per_stage},"
         f"{opening_row_value_device_download_batches},"
         f"{opening_row_value_device_single_downloads},"
