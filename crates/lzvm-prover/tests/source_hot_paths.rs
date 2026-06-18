@@ -2236,28 +2236,37 @@ fn guest_pc_trace_device_material_builder_does_not_construct_host_trace() {
         backend_source.contains("struct GuestPcTraceDeviceSegmentMaterial"),
         "guest PC trace lowering should have an explicit device-backed segment material"
     );
-    let body = function_body(
+    let device_material_body = function_body(
         &backend_source,
         "fn build_layout_zisk_main_trace_segment_device_material",
         "fn build_layout_zisk_main_trace_segment",
     );
+    let builder_impl_body = function_body(
+        &backend_source,
+        "impl ZiskMainStreamingDeviceSegmentBuilder",
+        "struct ZiskMainReportTraceValues",
+    );
     assert!(
-        body.contains("validate_and_apply_zisk_main_report"),
+        builder_impl_body.contains("validate_and_apply_zisk_main_report"),
         "device material should keep the same Zisk Main validation and state transition path"
     );
     assert!(
-        body.contains("append_main_device_trace_descriptor"),
+        builder_impl_body.contains("append_main_device_trace_descriptor"),
         "device material should build compact CUDA descriptors while validating reports"
     );
     assert!(
-        body.contains("zisk_main_unit_values"),
+        builder_impl_body.contains("zisk_main_unit_values"),
         "device material should still produce unit values for public binding"
     );
     assert!(
-        !body.contains("trace_builder()")
-            && !body.contains("write_zisk_main_row_columns")
-            && !body.contains("write_zisk_main_terminal_row")
-            && !body.contains("builder.build()"),
+        !device_material_body.contains("trace_builder()")
+            && !device_material_body.contains("write_zisk_main_row_columns")
+            && !device_material_body.contains("write_zisk_main_terminal_row")
+            && !device_material_body.contains("builder.build()")
+            && !builder_impl_body.contains("trace_builder()")
+            && !builder_impl_body.contains("write_zisk_main_row_columns")
+            && !builder_impl_body.contains("write_zisk_main_terminal_row")
+            && !builder_impl_body.contains("builder.build()"),
         "device material should not allocate or fill a full host trace"
     );
 }
@@ -2284,36 +2293,46 @@ fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
         "fn build_layout_zisk_main_trace_segment_device_material",
         "fn build_layout_zisk_main_trace_segment_from_device_material",
     );
+    let builder_impl_body = function_body(
+        &backend_source,
+        "impl ZiskMainStreamingDeviceSegmentBuilder",
+        "struct ZiskMainReportTraceValues",
+    );
+    let push_report_body = function_body(&backend_source, "fn push_report_at", "fn finish");
     assert!(
-        device_material_body
-            .contains("ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?"),
+        builder_impl_body.contains(
+            "ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?"
+        ),
         "device material lowering should not repeat per-row trace-column validation after layout support is known"
     );
     let cached_context_constructor = concat!(
-        "let context = ",
+        "context: ",
         "Zi",
         "sk",
-        "MainReportValidationContext::new(None, layout.row_count(), segment)?;"
+        "MainReportValidationContext::new(None, layout.row_count(), segment)?"
     );
     let context_constructor = concat!("Zi", "sk", "MainReportValidationContext::new(");
     assert!(
-        device_material_body.contains(cached_context_constructor),
+        builder_impl_body.contains(cached_context_constructor),
         "device material lowering should build the validation context once per segment"
     );
-    let loop_index = device_material_body
-        .find("for (report_index, report) in reports.iter().enumerate()")
-        .expect("device material builder should iterate reports");
-    let context_index = device_material_body
+    let push_report_index = builder_impl_body
+        .find("fn push_report_at")
+        .expect("device material builder should expose report push");
+    let context_index = builder_impl_body
         .find(cached_context_constructor)
         .expect("device material builder should construct the validation context");
     assert!(
-        context_index < loop_index,
-        "device material validation context should be a segment invariant outside the report loop"
+        context_index < push_report_index,
+        "device material validation context should be a builder invariant before report pushes"
     );
-    let loop_body = &device_material_body[loop_index..];
     assert!(
-        !loop_body.contains(context_constructor),
+        !push_report_body.contains(context_constructor),
         "device material lowering should not recompute the validation context per report"
+    );
+    assert!(
+        device_material_body.contains("for (report_index, report) in reports.iter().enumerate()"),
+        "device material builder should iterate reports"
     );
 
     let host_write_body = function_body(
@@ -3062,15 +3081,34 @@ fn guest_trace_detail_timing_keeps_aggregate_report_and_sampled_fields_separate(
     let cli_source =
         std::fs::read_to_string(&cli_path).expect("guest PC trace timing source should read");
 
-    let function_names = [
-        format!(
-            "fn build_layout_{}_main_trace_segment_device_material",
-            concat!("zi", "sk")
-        ),
-        format!("fn build_layout_{}_main_trace_segment", concat!("zi", "sk")),
-    ];
-    for function_name in function_names {
-        let body = function_body(&backend_source, &function_name, "fn guest_pc_trace");
+    let device_function_name = format!(
+        "fn build_layout_{}_main_trace_segment_device_material",
+        concat!("zi", "sk")
+    );
+    let host_function_name = format!(
+        "fn build_layout_{}_main_trace_segment(",
+        concat!("zi", "sk")
+    );
+    let timing_config_body = function_body(
+        &backend_source,
+        "impl ZiskMainTraceLowerTimingConfig",
+        "impl ZiskMainStreamingDeviceSegmentBuilder",
+    );
+    let push_report_body = function_body(&backend_source, "fn push_report_at", "fn finish");
+    let mut device_body =
+        function_body(&backend_source, &device_function_name, "fn guest_pc_trace").to_owned();
+    device_body.push_str(timing_config_body);
+    device_body.push_str(push_report_body);
+    let host_body = function_body(
+        &backend_source,
+        &host_function_name,
+        "fn serialize_trace_to_output",
+    )
+    .to_owned();
+    for (function_name, body) in [
+        (device_function_name.as_str(), device_body.as_str()),
+        (host_function_name.as_str(), host_body.as_str()),
+    ] {
         assert!(
             body.contains("trace_report_sample_duration += duration")
                 && !body.contains(".filter(|_| !detail_timing)"),
@@ -6156,33 +6194,40 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
     );
     let device_material_body =
         function_body(&backend_source, &device_material_start, device_material_end);
+    let timing_config_body = function_body(
+        &backend_source,
+        "impl ZiskMainTraceLowerTimingConfig",
+        "impl ZiskMainStreamingDeviceSegmentBuilder",
+    );
+    let push_report_body = function_body(&backend_source, "fn push_report_at", "fn finish");
     assert!(
-        device_material_body.contains("guest_pc_trace_lower_detail_timing_enabled()"),
+        timing_config_body.contains("guest_pc_trace_lower_detail_timing_enabled()"),
         "guest PC lower detail timing should be explicitly gated"
     );
     assert!(
-        device_material_body.contains("let detail_timing ="),
+        timing_config_body.contains("let detail_timing ="),
         "guest PC lower detail timing should compute the gate once per segment"
     );
     assert!(
-        device_material_body.contains("guest_pc_trace_shape_timing_enabled()"),
+        timing_config_body.contains("guest_pc_trace_shape_timing_enabled()"),
         "guest PC lower shape timing should be explicitly gated"
     );
     assert!(
-        device_material_body.contains("let row_timing_enabled = detail_timing || shape_timing;"),
+        timing_config_body.contains("row_timing_enabled: detail_timing || shape_timing,"),
         "guest PC device material lowerer should skip per-row timing plumbing unless row timing is enabled"
     );
     assert!(
-        device_material_body.contains(
-            "let row_timing = if row_timing_enabled && (report_detail_timing || shape_timing)"
-        ) && device_material_body.contains("timing.as_deref_mut()")
-            && device_material_body.contains("} else {\n            None\n        };"),
+        device_material_body
+            .contains("let timing_config = ZiskMainTraceLowerTimingConfig::from_env();")
+            && push_report_body.contains("if timing_config.row_timing_enabled")
+            && push_report_body.contains("timing.as_deref_mut()")
+            && push_report_body.contains("} else {\n                None\n            },"),
         "guest PC device material lowerer should gate per-row timing before validation"
     );
-    let descriptor_timer_index = device_material_body
+    let descriptor_timer_index = push_report_body
         .find("let _descriptor_timer = DurationTimer::new")
         .expect("guest PC device material lowerer should retain descriptor detail timing");
-    let descriptor_detail_branch_index = device_material_body[..descriptor_timer_index]
+    let descriptor_detail_branch_index = push_report_body[..descriptor_timer_index]
         .rfind("if report_detail_timing {")
         .expect("guest PC device material lowerer should branch before descriptor timing");
     assert!(
@@ -6439,11 +6484,28 @@ fn guest_pc_trace_lower_records_aggregate_report_timing_alongside_detail_timers(
         &host_segment_start,
         "fn serialize_trace_to_output",
     );
+    let timing_config_body = function_body(
+        &backend_source,
+        "impl ZiskMainTraceLowerTimingConfig",
+        "impl ZiskMainStreamingDeviceSegmentBuilder",
+    );
+    let push_report_body = function_body(&backend_source, "fn push_report_at", "fn finish");
+    let device_material_combined =
+        format!("{device_material_body}\n{timing_config_body}\n{push_report_body}");
 
     for (label, body) in [
-        ("device material", device_material_body),
+        ("device material", device_material_combined.as_str()),
         ("host segment", host_segment_body),
     ] {
+        let has_sample_stride = body
+            .contains("let detail_sample_stride = guest_pc_trace_detail_timing_sample_stride();")
+            || body.contains("detail_sample_stride: guest_pc_trace_detail_timing_sample_stride(),");
+        let has_report_detail_gate = body.contains(
+            "let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;",
+        ) || body
+            .contains("report_index.is_multiple_of(timing_config.detail_sample_stride)");
+        let has_row_timing =
+            body.contains("row_timing,") || body.contains("timing_config.row_timing_enabled");
         assert!(
             body.contains("let aggregate_report_started")
                 && body.contains("let aggregate_report_started = timing.as_ref().map(|_| Instant::now());")
@@ -6451,12 +6513,10 @@ fn guest_pc_trace_lower_records_aggregate_report_timing_alongside_detail_timers(
             "guest PC {label} lowerer should start one aggregate report-loop timer even when sampled detail timing is enabled"
         );
         assert!(
-            body.contains("let detail_sample_stride = guest_pc_trace_detail_timing_sample_stride();")
-                && body.contains(
-                    "let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;"
-                )
+            has_sample_stride
+                && has_report_detail_gate
                 && body.contains("trace_report_sample_duration += duration")
-                && body.contains("row_timing,")
+                && has_row_timing
                 && body.contains("report_detail_timing"),
             "guest PC {label} lowerer should store sampled detail timing separately from the aggregate report timer"
         );
