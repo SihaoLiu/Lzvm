@@ -369,6 +369,40 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         );
     }
     assert!(
+        runtime_performance_source
+            .contains("structure RuntimePerformanceObservationProjectedCoreContracts")
+            && runtime_performance_source.contains("timingObservations :")
+            && runtime_performance_source.contains("proofArtifactFinishTiming :"),
+        "Lean runtime performance checks should batch projected wrapper core contracts"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &runtime_performance_source,
+        "runtime_performance_observation_projected_core_contracts",
+        &[
+            "runtime_performance_observation_timing_observations_acceptance_verifier_core_contract",
+            "runtime_performance_observation_guest_pc_trace_timing_acceptance_verifier_core_contract",
+            "runtime_performance_observation_row_value_timing_acceptance_verifier_core_contract",
+            "runtime_performance_observation_constant_material_timing_acceptance_verifier_core_contract",
+            "runtime_performance_observation_prover_gpu_mode_acceptance_verifier_core_contract",
+            "runtime_performance_observation_gpu_run_options_acceptance_verifier_core_contract",
+            "runtime_performance_observation_cuda_backend_acceptance_verifier_core_contract",
+            concat!(
+                "runtime_performance_observation_cuda_allocator_timing_",
+                "acceptance_verifier_core_contract"
+            ),
+            "runtime_performance_observation_finish_timing_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &runtime_performance_source,
+        "runtime_performance_observation_projected_core_contracts",
+        &[
+            "ignored_metadata_acceptance_verifier_core_contract",
+            "abstract_verifier_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    assert!(
         gpu_runtime_source.contains("private theorem checked_acceptance_sound_witness"),
         "Lean GPU runtime checks should centralize checked-acceptance SoundWitness projection"
     );
@@ -2455,6 +2489,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_projects_proof_artifact_finish_timing",
             "runtime_performance_observation_finish_timing_acceptance_sound",
             "runtime_performance_observation_finish_timing_acceptance_verifier_core_contract",
+            "runtime_performance_observation_projected_core_contracts",
             "gpu_setup_checked_acceptance_projects_constants_sound",
             "gpu_setup_checked_acceptance_sound",
             "gpu_setup_checked_acceptance_verifier_core_contract",

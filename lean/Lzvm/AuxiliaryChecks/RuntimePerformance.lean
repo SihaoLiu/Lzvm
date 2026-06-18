@@ -537,4 +537,100 @@ theorem runtime_performance_observation_finish_timing_acceptance_verifier_core_c
         proof
         observed)
 
+structure RuntimePerformanceObservationProjectedCoreContracts
+    (system : VerifierModel)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop where
+  timingObservations :
+    RuntimeVerifierCoreContract system publicInput proof
+  guestPcTraceTiming :
+    RuntimeVerifierCoreContract system publicInput proof
+  witnessOpeningRowValueTiming :
+    RuntimeVerifierCoreContract system publicInput proof
+  constantMaterialValidationTiming :
+    RuntimeVerifierCoreContract system publicInput proof
+  proverGpuMode :
+    RuntimeVerifierCoreContract system publicInput proof
+  gpuRunOptions :
+    RuntimeVerifierCoreContract system publicInput proof
+  cudaBackend :
+    RuntimeVerifierCoreContract system publicInput proof
+  cudaAllocatorTiming :
+    RuntimeVerifierCoreContract system publicInput proof
+  proofArtifactFinishTiming :
+    RuntimeVerifierCoreContract system publicInput proof
+
+theorem runtime_performance_observation_projected_core_contracts
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimePerformanceObservationProjectedCoreContracts system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    { timingObservations :=
+        runtime_performance_observation_timing_observations_acceptance_verifier_core_contract
+          assumptions
+          summary
+          publicInput
+          proof
+          observed
+      guestPcTraceTiming :=
+        runtime_performance_observation_guest_pc_trace_timing_acceptance_verifier_core_contract
+          assumptions
+          summary
+          publicInput
+          proof
+          observed
+      witnessOpeningRowValueTiming :=
+        runtime_performance_observation_row_value_timing_acceptance_verifier_core_contract
+          assumptions
+          summary
+          publicInput
+          proof
+          observed
+      constantMaterialValidationTiming :=
+        runtime_performance_observation_constant_material_timing_acceptance_verifier_core_contract
+          assumptions
+          summary
+          publicInput
+          proof
+          observed
+      proverGpuMode :=
+        runtime_performance_observation_prover_gpu_mode_acceptance_verifier_core_contract
+          assumptions
+          summary
+          publicInput
+          proof
+          observed
+      gpuRunOptions :=
+        runtime_performance_observation_gpu_run_options_acceptance_verifier_core_contract
+          assumptions
+          summary
+          publicInput
+          proof
+          observed
+      cudaBackend :=
+        runtime_performance_observation_cuda_backend_acceptance_verifier_core_contract
+          assumptions
+          summary
+          publicInput
+          proof
+          observed
+      cudaAllocatorTiming :=
+        runtime_performance_observation_cuda_allocator_timing_acceptance_verifier_core_contract
+          assumptions
+          summary
+          publicInput
+          proof
+          observed
+      proofArtifactFinishTiming :=
+        runtime_performance_observation_finish_timing_acceptance_verifier_core_contract
+          assumptions
+          summary
+          publicInput
+          proof
+          observed }
+
 end Lzvm
