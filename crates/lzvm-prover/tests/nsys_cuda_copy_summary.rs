@@ -877,7 +877,7 @@ lzvm_prover::witness_commitment::values::copy_extended_row_values_from_device@lz
 }
 
 #[test]
-fn nsys_cuda_copy_summary_skips_native_poseidon_d2h_wrapper_for_app_frame() {
+fn nsys_cuda_copy_summary_skips_poseidon_and_device_buffer_d2h_wrappers_for_app_frame() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root.join("../..");
     let script_path = workspace_root.join("scripts/nsys-cuda-copy-summary.py");
@@ -950,20 +950,26 @@ conn.executemany("insert into StringIds (id, value) values (?, ?)", [
 conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", [
     (1, "Device-to-Host"),
 ])
-conn.execute("""
+conn.executemany("""
 insert into CUPTI_ACTIVITY_KIND_RUNTIME
     (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
-values (0, 8_000_000, 0, 7, 45, 1, 0, 401)
-""")
-conn.execute("""
+values (?, ?, 0, 7, ?, 1, 0, ?)
+""", [
+    (0, 8_000_000, 45, 401),
+    (9_000_000, 16_000_000, 46, 402),
+])
+conn.executemany("""
 insert into CUPTI_ACTIVITY_KIND_MEMCPY
     (start, end, deviceId, contextId, greenContextId, streamId, correlationId,
      globalPid, bytes, copyKind, deprecatedSrcId, srcKind, dstKind, srcDeviceId,
      srcContextId, dstDeviceId, dstContextId, migrationCause, graphNodeId,
      virtualAddress, copyCount)
-values (1000, 2000, 0, 0, null, 3, 45, 1, 192, 1, null, null, null,
+values (?, ?, 0, 0, null, 3, ?, 1, 192, 1, null, null, null,
         null, null, null, null, null, null, null, 1)
-""")
+""", [
+    (1000, 2000, 45),
+    (9_001_000, 9_002_000, 46),
+])
 conn.executemany("""
 insert into OSRT_CALLCHAINS
     (id, symbol, module, kernelMode, thumbCode, unresolved, specialEntry,
@@ -978,6 +984,12 @@ values (?, ?, ?, 0, 0, 0, 0, 0, 0, ?)
     (401, "lzvm_accel::cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device", "lzvm", 5),
     (401, "lzvm_prover::merkle_hash::CudaDigestLevel::opening_path_prefix_batch_for_source_rows", "lzvm", 6),
     (401, "lzvm_prover::witness_commitment::values::WitnessStageCompactTreeStorage::open_batch_with_recomputed_leaf_level_cuda", "lzvm", 7),
+    (402, "cudaMemcpy", "libcudart.so", 0),
+    (402, "(anonymous namespace)::record_direct_d2h_copy(void*, void const*, unsigned long)", "lzvm", 1),
+    (402, "lzvm_cuda_record_direct_copy_d2h_wait", "lzvm", 2),
+    (402, "lzvm_accel::cuda_buffer::CudaDeviceBuffer::to_u64_words", "lzvm", 3),
+    (402, "lzvm_prover::merkle_hash::CudaDigestLevel::opening_path_prefix_batch_for_source_rows", "lzvm", 4),
+    (402, "lzvm_prover::witness_commitment::values::WitnessStageCompactTreeStorage::open_batch_with_retained_parent_checkpoint_level_cuda", "lzvm", 5),
 ])
 conn.commit()
 conn.close()
@@ -1010,10 +1022,10 @@ conn.close()
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains(
-            "192,1,8.000,0.001,8.000,\
+            "192,2,15.000,0.002,8.000,\
 lzvm_prover::merkle_hash::CudaDigestLevel::opening_path_prefix_batch_for_source_rows@lzvm"
         ),
-        "D2H app-frame summary should skip native and accel Poseidon wrappers: {stdout}"
+        "D2H app-frame summary should skip native, accel, and device-buffer wrappers: {stdout}"
     );
 }
 
