@@ -5767,6 +5767,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
     let shape_timing = guest_pc_trace_shape_timing_enabled();
     let detail_sample_stride = guest_pc_trace_detail_timing_sample_stride();
     let row_timing_enabled = detail_timing || shape_timing;
+    let context = ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?;
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
     for (report_index, report) in reports.iter().enumerate() {
         let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;
@@ -5786,7 +5787,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
             report,
             &mut || guest_report_next_instruction(reports, report_index, lookahead_instruction),
             &mut state,
-            ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?,
+            context,
             row_timing,
             report_detail_timing,
             shape_timing,

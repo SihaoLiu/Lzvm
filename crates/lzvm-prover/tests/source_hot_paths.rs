@@ -2289,6 +2289,32 @@ fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
             .contains("ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?"),
         "device material lowering should not repeat per-row trace-column validation after layout support is known"
     );
+    let cached_context_constructor = concat!(
+        "let context = ",
+        "Zi",
+        "sk",
+        "MainReportValidationContext::new(None, layout.row_count(), segment)?;"
+    );
+    let context_constructor = concat!("Zi", "sk", "MainReportValidationContext::new(");
+    assert!(
+        device_material_body.contains(cached_context_constructor),
+        "device material lowering should build the validation context once per segment"
+    );
+    let loop_index = device_material_body
+        .find("for (report_index, report) in reports.iter().enumerate()")
+        .expect("device material builder should iterate reports");
+    let context_index = device_material_body
+        .find(cached_context_constructor)
+        .expect("device material builder should construct the validation context");
+    assert!(
+        context_index < loop_index,
+        "device material validation context should be a segment invariant outside the report loop"
+    );
+    let loop_body = &device_material_body[loop_index..];
+    assert!(
+        !loop_body.contains(context_constructor),
+        "device material lowering should not recompute the validation context per report"
+    );
 
     let host_write_body = function_body(
         &backend_source,
