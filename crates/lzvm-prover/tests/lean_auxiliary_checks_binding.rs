@@ -15,9 +15,17 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let timing_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/Timing.lean");
     let timing_source =
         std::fs::read_to_string(&timing_path).expect("Lean timing checks should read");
+    let timing_projected_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/TimingProjected.lean");
+    let timing_projected_source = std::fs::read_to_string(&timing_projected_path)
+        .expect("Lean projected timing checks should read");
     let proof_timing_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming.lean");
     let lean_proof_timing_source =
         std::fs::read_to_string(&proof_timing_path).expect("Lean proof timing checks should read");
+    let proof_timing_projected_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTimingProjected.lean");
+    let proof_timing_projected_source = std::fs::read_to_string(&proof_timing_projected_path)
+        .expect("Lean projected proof timing checks should read");
     let proof_timing_verifier_path =
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTimingVerifier.lean");
     let proof_timing_verifier_source = std::fs::read_to_string(&proof_timing_verifier_path)
@@ -26,9 +34,17 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/RuntimePerformance.lean");
     let runtime_performance_source = std::fs::read_to_string(&runtime_performance_path)
         .expect("Lean runtime performance checks should read");
-    let lean_source = format!(
-        "{auxiliary_source}\n{gpu_runtime_source}\n{timing_source}\n{lean_proof_timing_source}\n{proof_timing_verifier_source}\n{runtime_performance_source}"
-    );
+    let lean_source = [
+        auxiliary_source.as_str(),
+        gpu_runtime_source.as_str(),
+        timing_source.as_str(),
+        timing_projected_source.as_str(),
+        lean_proof_timing_source.as_str(),
+        proof_timing_projected_source.as_str(),
+        proof_timing_verifier_source.as_str(),
+        runtime_performance_source.as_str(),
+    ]
+    .join("\n");
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
@@ -83,6 +99,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         top_level_source.contains("import Lzvm.AuxiliaryChecks")
             && top_level_source.contains("import Lzvm.AuxiliaryChecks.GpuRuntime")
             && top_level_source.contains("import Lzvm.AuxiliaryChecks.Timing")
+            && top_level_source.contains("import Lzvm.AuxiliaryChecks.TimingProjected")
+            && top_level_source.contains("import Lzvm.AuxiliaryChecks.ProofTimingProjected")
             && top_level_source.contains("import Lzvm.AuxiliaryChecks.RuntimePerformance"),
         "top-level Lean module should import auxiliary checks"
     );
@@ -396,6 +414,57 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_omits(
         &runtime_performance_source,
         "runtime_performance_observation_projected_core_contracts",
+        &[
+            "ignored_metadata_acceptance_verifier_core_contract",
+            "abstract_verifier_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    assert!(
+        timing_projected_source.contains("structure TimingProjectedCoreContracts")
+            && timing_projected_source.contains("timingObservations :")
+            && timing_projected_source.contains("guestPcTraceTiming :"),
+        "Lean timing checks should batch top-level timing wrapper core contracts"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &timing_projected_source,
+        "timing_projected_core_contracts",
+        &[
+            "timing_observation_acceptance_verifier_core_contract",
+            "guest_pc_trace_timing_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &timing_projected_source,
+        "timing_projected_core_contracts",
+        &[
+            "ignored_metadata_acceptance_verifier_core_contract",
+            "abstract_verifier_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    assert!(
+        proof_timing_projected_source.contains("structure ProofTimingProjectedCoreContracts")
+            && proof_timing_projected_source.contains("witnessOpeningRowValueTiming :")
+            && proof_timing_projected_source.contains("proofArtifactFinishTiming :"),
+        "Lean proof timing checks should batch top-level proof timing wrapper core contracts"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &proof_timing_projected_source,
+        "proof_timing_projected_core_contracts",
+        &[
+            "witness_opening_row_value_timing_acceptance_verifier_core_contract",
+            "constant_material_validation_timing_acceptance_verifier_core_contract",
+            "prover_gpu_mode_acceptance_verifier_core_contract",
+            "gpu_run_options_acceptance_verifier_core_contract",
+            "cuda_backend_acceptance_verifier_core_contract",
+            "cuda_allocator_timing_acceptance_verifier_core_contract",
+            "proof_artifact_finish_timing_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &proof_timing_projected_source,
+        "proof_timing_projected_core_contracts",
         &[
             "ignored_metadata_acceptance_verifier_core_contract",
             "abstract_verifier_sound",
@@ -2403,6 +2472,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_tree_commit_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_segment_commit_worker_timing_acceptance_sound",
             "guest_pc_trace_segment_commit_worker_timing_acceptance_verifier_core_contract",
+            "timing_projected_core_contracts",
             "witness_opening_row_value_timing_observed_acceptance_projects_verifier_acceptance",
             "witness_opening_row_value_timing_acceptance_sound",
             "witness_opening_row_value_timing_acceptance_verifier_core_contract",
@@ -2456,6 +2526,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_descriptor_upload_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_aggregate_timing_acceptance_sound",
             "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
+            "proof_timing_projected_core_contracts",
             "runtime_performance_observed_acceptance_projects_verifier_acceptance",
             "runtime_performance_observation_acceptance_sound",
             "runtime_performance_observation_acceptance_verifier_core_contract",
