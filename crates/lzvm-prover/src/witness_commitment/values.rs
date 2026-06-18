@@ -32,7 +32,7 @@ use crate::merkle_hash::{
 #[cfg(feature = "cuda")]
 use crate::merkle_hash::{
     linear_hash_level_from_validated_row_major_device_buffer, CudaDigestCheckpointLevel,
-    CudaDigestLevel,
+    CudaDigestLevel, CudaMerkleSiblingBatchDeviceBuffer,
 };
 
 type CompactOnDemandOpening = (Vec<Felt>, Vec<Vec<[Felt; HASH_WORDS]>>);
@@ -472,13 +472,13 @@ impl RetainedCudaLeafDigestLevel {
         self.level.opening_path_siblings_batch(query_rows)
     }
 
-    fn opening_path_prefix_batch_for_source_rows(
+    fn opening_path_prefix_batch_device_for_source_rows(
         &self,
         source_rows: &[usize],
         folded_level_count: usize,
-    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, crate::merkle_hash::MerkleHashError> {
+    ) -> Result<CudaMerkleSiblingBatchDeviceBuffer, crate::merkle_hash::MerkleHashError> {
         self.level
-            .opening_path_prefix_batch_for_source_rows(source_rows, folded_level_count)
+            .opening_path_prefix_batch_device_for_source_rows(source_rows, folded_level_count)
     }
 }
 
@@ -510,12 +510,12 @@ impl RetainedCudaParentCheckpointLevel {
         self.level.opening_path_for_source_row(source_row)
     }
 
-    fn opening_path_siblings_batch_for_source_rows(
+    fn opening_path_siblings_batch_device_for_source_rows(
         &self,
         source_rows: &[usize],
-    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, crate::merkle_hash::MerkleHashError> {
+    ) -> Result<CudaMerkleSiblingBatchDeviceBuffer, crate::merkle_hash::MerkleHashError> {
         self.level
-            .opening_path_siblings_batch_for_source_rows(source_rows)
+            .opening_path_siblings_batch_device_for_source_rows(source_rows)
     }
 }
 
@@ -2192,10 +2192,11 @@ impl WitnessStageCompactTreeStorage {
             PathParentHashTimingKind::RetainedParentCheckpointPrefix,
             || {
                 leaf_level
-                    .opening_path_prefix_batch_for_source_rows(
+                    .opening_path_prefix_batch_device_for_source_rows(
                         rows,
                         checkpoint.folded_level_count(),
                     )
+                    .and_then(|siblings| siblings.into_siblings())
                     .map_err(WitnessStageOpeningError::from)
             },
         )
@@ -2220,7 +2221,8 @@ impl WitnessStageCompactTreeStorage {
             PathParentHashTimingKind::RetainedParentCheckpointSuffix,
             || {
                 checkpoint
-                    .opening_path_siblings_batch_for_source_rows(rows)
+                    .opening_path_siblings_batch_device_for_source_rows(rows)
+                    .and_then(|siblings| siblings.into_siblings())
                     .map_err(WitnessStageOpeningError::from)
             },
         )
@@ -2305,10 +2307,11 @@ impl WitnessStageCompactTreeStorage {
             PathParentHashTimingKind::RetainedParentCheckpointPrefix,
             || {
                 leaf_level
-                    .opening_path_prefix_batch_for_source_rows(
+                    .opening_path_prefix_batch_device_for_source_rows(
                         rows,
                         checkpoint.folded_level_count(),
                     )
+                    .and_then(|siblings| siblings.into_siblings())
                     .map_err(WitnessStageOpeningError::from)
             },
         )
@@ -2336,7 +2339,8 @@ impl WitnessStageCompactTreeStorage {
             PathParentHashTimingKind::RetainedParentCheckpointSuffix,
             || {
                 checkpoint
-                    .opening_path_siblings_batch_for_source_rows(rows)
+                    .opening_path_siblings_batch_device_for_source_rows(rows)
+                    .and_then(|siblings| siblings.into_siblings())
                     .map_err(WitnessStageOpeningError::from)
             },
         )
