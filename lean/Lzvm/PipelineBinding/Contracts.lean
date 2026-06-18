@@ -899,10 +899,23 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_con
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof _requiresExternalSource accepted
-  have compactContract :=
-    runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_crypto_evidence assumptions
+  have proofSystemSound := abstract_verifier_sound assumptions
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have pipelineSound :=
+    runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_merkle
       assumptions
       validation
+      centralized
+      constantBinding
+      witnessBinding
       artifact
       publicInput
       proof
@@ -958,9 +971,9 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_con
       proof
       accepted
   exact
-    And.intro compactContract.left
-      (And.intro compactContract.right.left
-        (And.intro compactContract.right.right.left
+    And.intro auditedAssumptions
+      (And.intro proofSystemSound
+        (And.intro verifierAccepts
           (And.intro transcriptBound
             (And.intro publicInputBound
               (And.intro pcsAndFri.left
@@ -968,7 +981,7 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_con
                   (And.intro seedBinds
                     (And.intro seededFriOpeningChecked
                       (And.intro coreContract.right
-                        compactContract.right.right.right)))))))))
+                        pipelineSound.right)))))))))
 
 theorem runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contract
     {Digest : Type uDigest}

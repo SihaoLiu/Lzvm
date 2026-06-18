@@ -1248,14 +1248,18 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle",
-            "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
+            "runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_merkle",
+            "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
             "runtime_pipeline_binding_checked_acceptance_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_contract",
-        &["runtime_pipeline_binding_checked_acceptance_pcs_and_fri\n"],
+        &[
+            "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
+            "runtime_pipeline_binding_checked_acceptance_pcs_and_fri\n",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
