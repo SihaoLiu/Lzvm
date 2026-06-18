@@ -1718,12 +1718,17 @@ fn zisk_main_descriptor_expansion_writes_rows_without_full_zero_prefill() {
         "__global__ void expand_zisk_main_trace_descriptors_kernel",
         "extern \"C\" int lzvm_cuda_expand_zisk_main_trace_descriptors",
     );
+    let terminal_body = function_body(
+        &cuda_source,
+        "__device__ void zisk_main_write_terminal_row",
+        "__device__ void zisk_main_write_descriptor_row",
+    );
     assert!(
         !body.contains("for (size_t column = 0; column < kZiskMainTraceColumns; ++column)"),
         "descriptor expansion should not prefill every row with zero before writing known columns"
     );
     assert!(
-        body.contains("row[38] = 0"),
+        terminal_body.contains("row[38] = 0"),
         "descriptor expansion should still explicitly bind the unused trace column to zero"
     );
     assert!(
@@ -1743,6 +1748,54 @@ fn zisk_main_descriptor_expansion_writes_rows_without_full_zero_prefill() {
     assert!(
         !wrapper_body.contains("lzvm_cuda_synchronize"),
         "descriptor expansion should not force a device-wide synchronization"
+    );
+}
+
+#[test]
+fn selected_zisk_main_descriptor_rows_expand_without_full_trace_materialization() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cuda_path = crate_root.join("../lzvm-accel/native/cuda_zisk_main_trace.cuh");
+    let cuda_source =
+        std::fs::read_to_string(&cuda_path).expect("CUDA trace descriptor source should read");
+    let accel_path = crate_root.join("../lzvm-accel/src/cuda_buffer.rs");
+    let accel_source =
+        std::fs::read_to_string(&accel_path).expect("CUDA buffer source should read");
+    let header_path = crate_root.join("../lzvm-accel/native/cuda_host.hpp");
+    let header_source =
+        std::fs::read_to_string(&header_path).expect("CUDA host header should read");
+
+    assert!(
+        accel_source
+            .contains("from_zisk_main_trace_descriptors_device_selected_row_major_u64_slice")
+            && header_source.contains(
+                "lzvm_cuda_expand_zisk_main_trace_descriptor_selected_row_major_u64_slice"
+            ),
+        "selected descriptor rows should have Rust and native exports"
+    );
+    let kernel_body = function_body(
+        &cuda_source,
+        "__global__ void expand_selected_zisk_main_trace_descriptor_rows_kernel",
+        "__global__ void expand_sparse_zisk_main_trace_descriptors_kernel",
+    );
+    assert!(
+        kernel_body.contains("zisk_main_write_descriptor_row")
+            && kernel_body.contains("zisk_main_write_terminal_row"),
+        "selected descriptor rows should use the same row expansion helpers as full descriptor expansion"
+    );
+    assert!(
+        !kernel_body.contains("expand_zisk_main_trace_descriptors_kernel")
+            && !kernel_body.contains("launch_expand_zisk_main_trace_descriptors"),
+        "selected descriptor rows should not materialize the full trace first"
+    );
+    let wrapped_source = format!("{cuda_source}\n__source_end");
+    let wrapper_body = function_body(
+        &wrapped_source,
+        "extern \"C\" int lzvm_cuda_expand_zisk_main_trace_descriptor_selected_row_major_u64_slice",
+        "__source_end",
+    );
+    assert!(
+        !wrapper_body.contains("lzvm_cuda_synchronize"),
+        "selected descriptor row expansion should not force a device-wide synchronization"
     );
 }
 

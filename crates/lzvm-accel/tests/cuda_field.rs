@@ -363,6 +363,55 @@ fn cuda_expands_zisk_main_trace_descriptors() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_expands_selected_zisk_main_trace_descriptor_rows_like_full_trace_slice() {
+    const WORDS_PER_DESCRIPTOR: usize = 11;
+    let descriptors = (0..(WORDS_PER_DESCRIPTOR * 2))
+        .map(|word| (word as u64 + 11) * 17)
+        .collect::<Vec<_>>();
+    let full = CudaDeviceBuffer::from_zisk_main_trace_descriptors(
+        descriptors.as_slice(),
+        WORDS_PER_DESCRIPTOR,
+        2,
+        5,
+        39,
+        0x5000,
+    )
+    .expect("full descriptor expansion should run");
+    let selected_rows = [4_usize, 0, 2];
+    let selected_full =
+        CudaDeviceBuffer::from_device_selected_row_major_u64_rows(&full, 5, 39, &selected_rows)
+            .expect("selected full rows should copy");
+    let expected = CudaDeviceBuffer::from_device_row_major_u64_slice(
+        &selected_full,
+        selected_rows.len(),
+        39,
+        6,
+        17,
+    )
+    .expect("selected full row slice should copy")
+    .to_u64_words()
+    .expect("selected full row slice should download");
+
+    let actual = CudaDeviceBuffer::from_zisk_main_trace_descriptor_selected_row_major_u64_slice(
+        descriptors.as_slice(),
+        WORDS_PER_DESCRIPTOR,
+        2,
+        5,
+        39,
+        0x5000,
+        &selected_rows,
+        6,
+        17,
+    )
+    .expect("selected descriptor expansion should run")
+    .to_u64_words()
+    .expect("selected descriptor expansion should download");
+
+    assert_same_words(&actual, &expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_expands_sparse_zisk_main_trace_descriptors_like_compact() {
     const WORDS_PER_DESCRIPTOR: usize = 11;
     const SPARSE_WORDS_PER_DESCRIPTOR: usize = 9;

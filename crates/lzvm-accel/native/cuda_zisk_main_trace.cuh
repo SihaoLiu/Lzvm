@@ -194,21 +194,7 @@ __device__ uint64_t zisk_main_sparse_value(
             << 32);
 }
 
-__global__ void expand_zisk_main_trace_descriptors_kernel(
-    uint64_t* dst,
-    const uint64_t* descriptors,
-    size_t descriptor_words,
-    size_t descriptor_count,
-    size_t row_count,
-    uint64_t terminal_pc) {
-    const size_t row_index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row_index >= row_count) {
-        return;
-    }
-
-    uint64_t* row = dst + row_index * kZiskMainTraceColumns;
-
-    if (row_index >= descriptor_count) {
+__device__ void zisk_main_write_terminal_row(uint64_t* row, uint64_t terminal_pc) {
         row[0] = 0;
         row[1] = 0;
         row[2] = 0;
@@ -248,10 +234,12 @@ __global__ void expand_zisk_main_trace_descriptors_kernel(
         row[36] = 0;
         row[37] = 0;
         row[38] = 0;
-        return;
-    }
+}
 
-    const uint64_t* descriptor = descriptors + row_index * descriptor_words;
+__device__ void zisk_main_write_descriptor_row(
+    uint64_t* row,
+    const uint64_t* descriptor,
+    size_t descriptor_words) {
     const uint64_t a = descriptor[0];
     const uint64_t b = descriptor[1];
     const uint64_t c = descriptor[2];
@@ -316,6 +304,61 @@ __global__ void expand_zisk_main_trace_descriptors_kernel(
         store_prev_value);
 }
 
+__global__ void expand_zisk_main_trace_descriptors_kernel(
+    uint64_t* dst,
+    const uint64_t* descriptors,
+    size_t descriptor_words,
+    size_t descriptor_count,
+    size_t row_count,
+    uint64_t terminal_pc) {
+    const size_t row_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row_index >= row_count) {
+        return;
+    }
+
+    uint64_t* row = dst + row_index * kZiskMainTraceColumns;
+
+    if (row_index >= descriptor_count) {
+        zisk_main_write_terminal_row(row, terminal_pc);
+        return;
+    }
+
+    zisk_main_write_descriptor_row(
+        row, descriptors + row_index * descriptor_words, descriptor_words);
+}
+
+__global__ void expand_selected_zisk_main_trace_descriptor_rows_kernel(
+    uint64_t* dst,
+    const uint64_t* descriptors,
+    size_t descriptor_words,
+    size_t descriptor_count,
+    uint64_t terminal_pc,
+    const uint64_t* rows,
+    size_t selected_row_count,
+    size_t start_word,
+    size_t slice_width_words) {
+    const size_t selected_row_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (selected_row_index >= selected_row_count) {
+        return;
+    }
+
+    uint64_t expanded[kZiskMainTraceColumns];
+    const uint64_t source_row = rows[selected_row_index];
+    if (source_row >= descriptor_count) {
+        zisk_main_write_terminal_row(expanded, terminal_pc);
+    } else {
+        zisk_main_write_descriptor_row(
+            expanded,
+            descriptors + static_cast<size_t>(source_row) * descriptor_words,
+            descriptor_words);
+    }
+
+    uint64_t* output_row = dst + selected_row_index * slice_width_words;
+    for (size_t column = 0; column < slice_width_words; ++column) {
+        output_row[column] = expanded[start_word + column];
+    }
+}
+
 __global__ void expand_sparse_zisk_main_trace_descriptors_kernel(
     uint64_t* dst,
     const uint64_t* descriptors,
@@ -332,45 +375,7 @@ __global__ void expand_sparse_zisk_main_trace_descriptors_kernel(
     uint64_t* row = dst + row_index * kZiskMainTraceColumns;
 
     if (row_index >= descriptor_count) {
-        row[0] = 0;
-        row[1] = 0;
-        row[2] = 0;
-        row[3] = 0;
-        row[4] = 0;
-        row[5] = 0;
-        row[6] = 0;
-        row[7] = terminal_pc;
-        row[8] = 1;
-        row[9] = 0;
-        row[10] = 0;
-        row[11] = 0;
-        row[12] = 0;
-        row[13] = 1;
-        row[14] = 0;
-        row[15] = 0;
-        row[16] = 0;
-        row[17] = 0;
-        row[18] = 0;
-        row[19] = 0;
-        row[20] = 1;
-        row[21] = 0;
-        row[22] = 0;
-        row[23] = 0;
-        row[24] = 0;
-        row[25] = 0;
-        row[26] = 0;
-        row[27] = 0;
-        row[28] = 0;
-        row[29] = 0;
-        row[30] = 0;
-        row[31] = 0;
-        row[32] = 0;
-        row[33] = 0;
-        row[34] = 0;
-        row[35] = 0;
-        row[36] = 0;
-        row[37] = 0;
-        row[38] = 0;
+        zisk_main_write_terminal_row(row, terminal_pc);
         return;
     }
 
@@ -501,6 +506,56 @@ int launch_expand_sparse_zisk_main_trace_descriptors(
     return 0;
 }
 
+int launch_expand_selected_zisk_main_trace_descriptor_rows(
+    uint64_t* dst,
+    const uint64_t* descriptors,
+    size_t descriptor_words,
+    size_t descriptor_count,
+    size_t row_count,
+    size_t row_width_words,
+    uint64_t terminal_pc,
+    const uint64_t* rows,
+    size_t selected_row_count,
+    size_t start_word,
+    size_t slice_width_words,
+    cudaStream_t stream) {
+    if (selected_row_count == 0 || slice_width_words == 0) {
+        return 0;
+    }
+    if (dst == nullptr || rows == nullptr || (descriptor_count > 0 && descriptors == nullptr)) {
+        return -1;
+    }
+    if (descriptor_words != kZiskMainCompactDescriptorWords &&
+        descriptor_words != kZiskMainWideDescriptorWords) {
+        return -2;
+    }
+    if (row_width_words != kZiskMainTraceColumns || descriptor_count > row_count ||
+        start_word > row_width_words || slice_width_words > row_width_words - start_word) {
+        return -2;
+    }
+
+    const size_t blocks = (selected_row_count + kThreads - 1) / kThreads;
+    if (blocks > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return -2;
+    }
+    expand_selected_zisk_main_trace_descriptor_rows_kernel<<<
+        static_cast<int>(blocks),
+        kThreads,
+        0,
+        stream>>>(
+        dst,
+        descriptors,
+        descriptor_words,
+        descriptor_count,
+        terminal_pc,
+        rows,
+        selected_row_count,
+        start_word,
+        slice_width_words);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    return 0;
+}
+
 extern "C" int lzvm_cuda_expand_zisk_main_trace_descriptors(
     uint64_t* dst,
     const uint64_t* descriptors,
@@ -538,6 +593,33 @@ extern "C" int lzvm_cuda_expand_zisk_main_trace_descriptors_on_stream(
         row_width_words,
         terminal_pc,
         static_cast<cudaStream_t>(stream_raw));
+}
+
+extern "C" int lzvm_cuda_expand_zisk_main_trace_descriptor_selected_row_major_u64_slice(
+    uint64_t* dst,
+    const uint64_t* descriptors,
+    size_t descriptor_words,
+    size_t descriptor_count,
+    size_t row_count,
+    size_t row_width_words,
+    uint64_t terminal_pc,
+    const uint64_t* rows,
+    size_t selected_row_count,
+    size_t start_word,
+    size_t slice_width_words) {
+    return launch_expand_selected_zisk_main_trace_descriptor_rows(
+        dst,
+        descriptors,
+        descriptor_words,
+        descriptor_count,
+        row_count,
+        row_width_words,
+        terminal_pc,
+        rows,
+        selected_row_count,
+        start_word,
+        slice_width_words,
+        nullptr);
 }
 
 extern "C" int lzvm_cuda_expand_sparse_zisk_main_trace_descriptors(

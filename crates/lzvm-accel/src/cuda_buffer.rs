@@ -161,6 +161,19 @@ unsafe extern "C" {
         terminal_pc: u64,
         stream: *mut c_void,
     ) -> i32;
+    fn lzvm_cuda_expand_zisk_main_trace_descriptor_selected_row_major_u64_slice(
+        dst: *mut u64,
+        descriptors: *const u64,
+        descriptor_words: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        rows: *const u64,
+        selected_row_count: usize,
+        start_word: usize,
+        slice_width_words: usize,
+    ) -> i32;
     fn lzvm_cuda_expand_sparse_zisk_main_trace_descriptors(
         dst: *mut u64,
         descriptors: *const u64,
@@ -389,6 +402,65 @@ fn validate_selected_row_major_u64_rows_shape(
         .checked_mul(row_width_words)
         .ok_or(AccelError::InvalidDomain {
             bits: row_width_words,
+            len: rows.len(),
+        })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_zisk_main_trace_descriptor_selected_row_major_u64_slice_shape(
+    descriptor_byte_len: usize,
+    descriptor_words: usize,
+    descriptor_count: usize,
+    row_count: usize,
+    row_width_words: usize,
+    rows: &[usize],
+    start_word: usize,
+    slice_width_words: usize,
+) -> Result<usize, AccelError> {
+    if !zisk_main_trace_descriptor_words_supported(descriptor_words)
+        || row_width_words != ZISK_MAIN_TRACE_WIDTH_WORDS
+        || descriptor_count > row_count
+    {
+        return Err(AccelError::InvalidDomain {
+            bits: descriptor_words,
+            len: descriptor_count,
+        });
+    }
+    let expected_descriptor_words =
+        descriptor_count
+            .checked_mul(descriptor_words)
+            .ok_or(AccelError::InvalidDomain {
+                bits: descriptor_words,
+                len: descriptor_count,
+            })?;
+    let expected_descriptor_len = u64_word_byte_len(expected_descriptor_words)?;
+    if descriptor_byte_len != expected_descriptor_len {
+        return Err(AccelError::LengthMismatch {
+            lhs: descriptor_byte_len,
+            rhs: expected_descriptor_len,
+        });
+    }
+    if rows.is_empty() || slice_width_words == 0 {
+        return Ok(0);
+    }
+    if start_word > row_width_words || slice_width_words > row_width_words - start_word {
+        return Err(AccelError::InvalidDomain {
+            bits: row_width_words,
+            len: slice_width_words,
+        });
+    }
+    for &row in rows {
+        if row >= row_count {
+            return Err(AccelError::InvalidDomain {
+                bits: row_count,
+                len: row,
+            });
+        }
+    }
+    rows.len()
+        .checked_mul(slice_width_words)
+        .ok_or(AccelError::InvalidDomain {
+            bits: slice_width_words,
             len: rows.len(),
         })
 }
@@ -1036,6 +1108,43 @@ impl CudaDeviceBuffer {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_zisk_main_trace_descriptor_selected_row_major_u64_slice(
+        descriptors: &[u64],
+        descriptor_words: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        rows: &[usize],
+        start_word: usize,
+        slice_width_words: usize,
+    ) -> Result<Self, AccelError> {
+        let descriptor_byte_len = u64_word_byte_len(descriptors.len())?;
+        validate_zisk_main_trace_descriptor_selected_row_major_u64_slice_shape(
+            descriptor_byte_len,
+            descriptor_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+            rows,
+            start_word,
+            slice_width_words,
+        )?;
+        let descriptor_buffer = Self::from_u64_words(descriptors)?;
+        Self::from_zisk_main_trace_descriptors_device_selected_row_major_u64_slice(
+            &descriptor_buffer,
+            descriptor_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+            terminal_pc,
+            rows,
+            start_word,
+            slice_width_words,
+        )
+    }
+
     pub fn from_sparse_zisk_main_trace_descriptors(
         descriptors: &[u64],
         high_words: &[u64],
@@ -1093,6 +1202,61 @@ impl CudaDeviceBuffer {
                 row_count,
                 row_width_words,
                 terminal_pc,
+            )
+        };
+        cuda_status(code)?;
+        Ok(buffer)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_zisk_main_trace_descriptors_device_selected_row_major_u64_slice(
+        descriptors: &Self,
+        descriptor_words: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        rows: &[usize],
+        start_word: usize,
+        slice_width_words: usize,
+    ) -> Result<Self, AccelError> {
+        let output_words = validate_zisk_main_trace_descriptor_selected_row_major_u64_slice_shape(
+            descriptors.len,
+            descriptor_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+            rows,
+            start_word,
+            slice_width_words,
+        )?;
+        let buffer = Self::new(u64_word_byte_len(output_words)?)?;
+        if output_words == 0 {
+            return Ok(buffer);
+        }
+        let row_indices = rows
+            .iter()
+            .copied()
+            .map(u64::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| AccelError::InvalidDomain {
+                bits: row_count,
+                len: rows.len(),
+            })?;
+        let row_buffer = Self::from_u64_words(&row_indices)?;
+        let code = unsafe {
+            lzvm_cuda_expand_zisk_main_trace_descriptor_selected_row_major_u64_slice(
+                buffer.ptr.cast(),
+                descriptors.ptr.cast(),
+                descriptor_words,
+                descriptor_count,
+                row_count,
+                row_width_words,
+                terminal_pc,
+                row_buffer.ptr.cast(),
+                rows.len(),
+                start_word,
+                slice_width_words,
             )
         };
         cuda_status(code)?;
