@@ -119,8 +119,8 @@ theorem runtime_guarded_external_source_required_verifier_core_contract
         requiresExternalSource ->
           RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked required
-  have sound :=
-    runtime_guarded_external_source_required_sound
+  exact
+    runtime_guarded_external_source_checked_acceptance_verifier_core_contract
       assumptions
       runtimeValidation
       sourceValidation
@@ -129,8 +129,6 @@ theorem runtime_guarded_external_source_required_verifier_core_contract
       proof
       requiresExternalSource
       checked
-      required
-  exact sound_witness_implies_verifier_core_contract sound.right.right.right
 
 set_option linter.style.longLine false in
 theorem runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_opening

@@ -35,6 +35,19 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
             "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_guarded_external_source_required_verifier_core_contract",
+        &["runtime_guarded_external_source_checked_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_guarded_external_source_required_verifier_core_contract",
+        &[
+            "runtime_guarded_external_source_required_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_opening",
