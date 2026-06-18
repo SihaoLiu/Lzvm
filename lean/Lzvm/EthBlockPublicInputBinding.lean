@@ -233,14 +233,20 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
-  have sound :=
-    runtime_eth_block_public_input_binding_checked_acceptance_sound
-      assumptions
+  have artifactAccepted :=
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
       validation
       artifact
       publicInput
       proof
       accepted
-  exact sound_witness_implies_verifier_core_contract sound.right.right.right
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
 
 end Lzvm
