@@ -1316,8 +1316,8 @@ theorem runtime_opening_required_external_source_verifier_core_contract
         requiresExternalSource ->
           RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
-  have sound :=
-    runtime_opening_required_external_source_sound
+  exact
+    runtime_opening_checked_acceptance_verifier_core_contract
       assumptions
       validation
       artifact
@@ -1325,7 +1325,5 @@ theorem runtime_opening_required_external_source_verifier_core_contract
       proof
       requiresExternalSource
       accepted
-      required
-  exact sound_witness_implies_verifier_core_contract sound.right.right
 
 end Lzvm

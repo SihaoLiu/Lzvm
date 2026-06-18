@@ -643,6 +643,19 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_required_external_source_verifier_core_contract",
+        &["runtime_opening_checked_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_opening_required_external_source_verifier_core_contract",
+        &[
+            "runtime_opening_required_external_source_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
 }
 
 fn theorem_prefix(source: &str, name: &str) -> String {
