@@ -680,8 +680,8 @@ theorem runtime_soundness_checked_acceptance_core_obligations
           requiresExternalSource ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked
-  have sound :=
-    runtime_soundness_checked_acceptance_sound
+  have evidence :=
+    runtime_soundness_checked_acceptance_evidence
       assumptions
       validation
       artifact
@@ -689,19 +689,14 @@ theorem runtime_soundness_checked_acceptance_core_obligations
       proof
       requiresExternalSource
       checked
-  rcases sound.right with
-    ⟨_witness,
-      _trace,
-      _constraints,
-      transcriptBound,
-      publicInputBound,
-      pcsOpeningsValid,
-      friQueriesValid,
-      _traceConsistent,
-      _constraintsSatisfied,
-      _witnessMatchesTrace⟩
   exact
-    ⟨transcriptBound, publicInputBound, pcsOpeningsValid, friQueriesValid⟩
+    runtime_soundness_evidence_implies_core_obligations
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
 
 theorem runtime_soundness_checked_acceptance_verifier_core_contract
     {system : VerifierModel}

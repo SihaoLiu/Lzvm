@@ -1099,6 +1099,19 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             .contains("RuntimeArtifactSoundnessObligations"),
         "checked runtime artifact contracts wrapper should keep the compact artifact-core surface"
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_core_obligations",
+        &[
+            "runtime_soundness_checked_acceptance_evidence",
+            "runtime_soundness_evidence_implies_core_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_core_obligations",
+        &["runtime_soundness_checked_acceptance_sound", "sound.right"],
+    );
 }
 
 fn theorem_prefix(source: &str, name: &str) -> String {
