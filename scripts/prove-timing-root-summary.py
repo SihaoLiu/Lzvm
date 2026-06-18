@@ -418,6 +418,7 @@ HEADER = (
     "trace_report_row_validation_residual_lowerer_share_ms,"
     "trace_report_visit_lowerer_share_ms,trace_report_descriptor_lowerer_share_ms,"
     "trace_report_detail_hotspot,trace_report_detail_hotspot_pct,"
+    "trace_report_detail_action_hint,"
     "trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,"
     "trace_report_row_validation_explained_pct,trace_report_row_validation_residual_pct,"
     "trace_report_source_values_lookup_pct,trace_report_source_values_residual_pct,"
@@ -1412,6 +1413,32 @@ def trace_report_detail_sample_hint(reports: int, detail_samples: int) -> str:
     return "detail_timing_sampled"
 
 
+def trace_report_detail_action_hint(
+    hotspot_name: str,
+    hotspot_pct: float,
+    row_validation_residual_pct: float,
+    source_values_residual_pct: float,
+    visit_descriptor_pct: float,
+) -> str:
+    if hotspot_name == "none" or hotspot_pct <= 0.0:
+        return "none"
+    if hotspot_name == "row_validation":
+        if row_validation_residual_pct >= 50.0:
+            return "profile_row_validation_residual"
+        return "profile_row_validation"
+    if hotspot_name == "source_values":
+        if source_values_residual_pct >= 50.0:
+            return "profile_source_values_residual"
+        return "profile_source_values"
+    if hotspot_name == "visit":
+        if visit_descriptor_pct >= 50.0:
+            return "profile_descriptor_write"
+        return "profile_visit"
+    if hotspot_name == "descriptor":
+        return "profile_descriptor_write"
+    return f"profile_{hotspot_name}"
+
+
 def trace_shape_sample_hint(values: dict[str, int], rows: int) -> str:
     if rows <= 0:
         return "none"
@@ -1999,6 +2026,13 @@ def summarize_profile_values(
         if trace_report_visit_sampled_ns
         else 0.0
     )
+    trace_report_detail_action = trace_report_detail_action_hint(
+        trace_report_detail_hotspot_name,
+        trace_report_detail_hotspot_pct,
+        trace_report_row_validation_residual_pct,
+        trace_report_source_values_residual_pct,
+        trace_report_visit_descriptor_pct,
+    )
     trace_report_visit_residual_pct = (
         max(trace_report_visit_sampled_ns - trace_descriptor_sampled_ns, 0)
         * 100.0
@@ -2493,6 +2527,7 @@ def summarize_profile_values(
         f"{trace_report_visit_share_ms:.3f},"
         f"{trace_report_descriptor_share_ms:.3f},"
         f"{trace_report_detail_hotspot_name},{trace_report_detail_hotspot_pct:.3f},"
+        f"{trace_report_detail_action},"
         f"{trace_report_row_validation_hotspot_name},"
         f"{trace_report_row_validation_hotspot_pct:.3f},"
         f"{trace_report_row_validation_explained_pct:.3f},"

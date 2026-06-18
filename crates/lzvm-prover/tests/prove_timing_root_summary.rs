@@ -196,6 +196,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "trace_pipeline_action_hint",
         "timing_guest_trace_report_detail_samples",
         "trace_report_detail_sample_hint",
+        "trace_report_detail_action_hint",
     ] {
         assert!(
             source.contains(required),
@@ -296,13 +297,13 @@ fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "trace_report_detail_samples,trace_report_detail_sample_pct,trace_report_detail_sample_ppm,trace_report_detail_sample_hint,trace_report_detail_avg_ns,trace_report_detail_lowerer_share_ms,trace_report_row_validation_lowerer_share_ms,trace_report_memory_columns_lowerer_share_ms,trace_report_source_values_lowerer_share_ms,trace_report_source_lookup_lowerer_share_ms,trace_report_source_values_residual_lowerer_share_ms,trace_report_precompile_memory_lowerer_share_ms,trace_report_instruction_result_lowerer_share_ms,trace_report_next_pc_lowerer_share_ms,trace_report_register_access_lowerer_share_ms,trace_report_memory_access_lowerer_share_ms,trace_report_store_apply_lowerer_share_ms,trace_report_row_validation_residual_lowerer_share_ms,trace_report_visit_lowerer_share_ms,trace_report_descriptor_lowerer_share_ms,trace_report_detail_hotspot,trace_report_detail_hotspot_pct,trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,trace_report_row_validation_explained_pct,trace_report_row_validation_residual_pct,trace_report_source_values_lookup_pct,trace_report_source_values_residual_pct,trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,trace_report_visit_residual_pct"
+            "trace_report_detail_samples,trace_report_detail_sample_pct,trace_report_detail_sample_ppm,trace_report_detail_sample_hint,trace_report_detail_avg_ns,trace_report_detail_lowerer_share_ms,trace_report_row_validation_lowerer_share_ms,trace_report_memory_columns_lowerer_share_ms,trace_report_source_values_lowerer_share_ms,trace_report_source_lookup_lowerer_share_ms,trace_report_source_values_residual_lowerer_share_ms,trace_report_precompile_memory_lowerer_share_ms,trace_report_instruction_result_lowerer_share_ms,trace_report_next_pc_lowerer_share_ms,trace_report_register_access_lowerer_share_ms,trace_report_memory_access_lowerer_share_ms,trace_report_store_apply_lowerer_share_ms,trace_report_row_validation_residual_lowerer_share_ms,trace_report_visit_lowerer_share_ms,trace_report_descriptor_lowerer_share_ms,trace_report_detail_hotspot,trace_report_detail_hotspot_pct,trace_report_detail_action_hint,trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,trace_report_row_validation_explained_pct,trace_report_row_validation_residual_pct,trace_report_source_values_lookup_pct,trace_report_source_values_residual_pct,trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,trace_report_visit_residual_pct"
         ),
         "prove timing root summary should expose detail sample, lowerer-share cost, source-value, and visit drilldown columns: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            ",10,1.000,10000.000,detail_timing_sampled,100,1500.000,750.000,90.000,270.000,345.000,0.000,30.000,0.000,0.000,150.000,120.000,0.000,15.000,300.000,75.000,row_validation,50.000,source_a_value,28.000,98.000,2.000,127.778,0.000,20.000,25.000,75.000"
+            ",10,1.000,10000.000,detail_timing_sampled,100,1500.000,750.000,90.000,270.000,345.000,0.000,30.000,0.000,0.000,150.000,120.000,0.000,15.000,300.000,75.000,row_validation,50.000,profile_row_validation,source_a_value,28.000,98.000,2.000,127.778,0.000,20.000,25.000,75.000"
         ),
         "prove timing root summary should classify sampled detail, scale costs by actual trace lower work, source-value lookup coverage, row-validation, and visit hotspots: stdout={stdout}"
     );
