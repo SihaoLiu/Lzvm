@@ -37,6 +37,12 @@ use crate::merkle_hash::{
 
 type CompactOnDemandOpening = (Vec<Felt>, Vec<Vec<[Felt; HASH_WORDS]>>);
 
+#[cfg(feature = "cuda")]
+pub(crate) struct CompactOnDemandOpeningDeviceSiblings {
+    pub(crate) values_by_row: Vec<Vec<Felt>>,
+    pub(crate) siblings_by_row: CudaMerkleSiblingBatchDeviceBuffer,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
 pub(crate) struct WitnessStageOpeningWorkTiming {
@@ -1317,6 +1323,30 @@ impl WitnessStageCommitment {
         }
     }
 
+    #[cfg(feature = "cuda")]
+    pub(crate) fn open_compact_batch_on_demand_device_siblings_with_source_device(
+        &self,
+        row_indices: &[usize],
+        row_count: usize,
+        column_count: usize,
+        source_device: Option<&WitnessStageSourceDeviceView>,
+        timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    ) -> Result<Option<CompactOnDemandOpeningDeviceSiblings>, WitnessStageOpeningError> {
+        match &self.tree {
+            WitnessStageTreeStorage::Host(_) => Ok(None),
+            WitnessStageTreeStorage::Compact(storage) => storage
+                .open_compact_batch_on_demand_device_siblings_with_source_device(
+                    row_indices,
+                    row_count,
+                    column_count,
+                    self.arity,
+                    self.root,
+                    source_device,
+                    timing,
+                ),
+        }
+    }
+
     pub(crate) fn read_digest_at(
         &self,
         level_offset: usize,
@@ -1556,6 +1586,48 @@ impl WitnessStageCompactTreeStorage {
             let _ = expected_root;
             Err(WitnessStageOpeningError::LengthOverflow)
         }
+    }
+
+    #[cfg(feature = "cuda")]
+    #[allow(clippy::too_many_arguments)]
+    fn open_compact_batch_on_demand_device_siblings_with_source_device(
+        &self,
+        row_indices: &[usize],
+        row_count: usize,
+        column_count: usize,
+        arity: usize,
+        expected_root: [Felt; HASH_WORDS],
+        source_device: Option<&WitnessStageSourceDeviceView>,
+        timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    ) -> Result<Option<CompactOnDemandOpeningDeviceSiblings>, WitnessStageOpeningError> {
+        let should_open_on_demand = self.digest_tree.is_none();
+        if !should_open_on_demand {
+            return Ok(None);
+        }
+        if row_count != self.extended_rows || column_count != self.columns || arity != self.arity {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        if self.zero_source {
+            return Ok(None);
+        }
+        let (Some(retained_leaf_digest_level), Some(retained_parent_checkpoint_level)) = (
+            &self.retained_leaf_digest_level,
+            &self.retained_parent_checkpoint_level,
+        ) else {
+            return Ok(None);
+        };
+        prepare_gpu_setup(self.target_bits)
+            .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+        let source_buffer = self.source_device_buffer(source_device)?;
+        self.open_batch_with_retained_leaf_digest_and_parent_checkpoint_device_siblings_cuda(
+            row_indices,
+            expected_root,
+            &source_buffer,
+            retained_leaf_digest_level,
+            retained_parent_checkpoint_level,
+            timing,
+        )
+        .map(Some)
     }
 
     fn open_zero_compact_on_demand(
@@ -2450,6 +2522,133 @@ impl WitnessStageCompactTreeStorage {
             openings.push((values, siblings));
         }
         Ok(openings)
+    }
+
+    #[cfg(feature = "cuda")]
+    fn open_batch_with_retained_leaf_digest_and_parent_checkpoint_device_siblings_cuda(
+        &self,
+        rows: &[usize],
+        _expected_root: [Felt; HASH_WORDS],
+        source_buffer: &SourceDeviceBuffer<'_>,
+        leaf_level: &RetainedCudaLeafDigestLevel,
+        checkpoint: &RetainedCudaParentCheckpointLevel,
+        mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    ) -> Result<CompactOnDemandOpeningDeviceSiblings, WitnessStageOpeningError> {
+        if leaf_level.state_count() != self.extended_rows
+            || leaf_level.arity() != self.arity
+            || checkpoint.source_state_count() != self.extended_rows
+            || checkpoint.arity() != self.arity
+            || checkpoint.folded_level_count() == 0
+        {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.record_retained_leaf_digest_opening(rows.len());
+            timing.record_retained_parent_checkpoint_opening(rows.len());
+        }
+        let lower_prefix_parent_work = if timing.is_some() {
+            Some(
+                merkle_opening_path_prefix_parent_work(
+                    self.extended_rows,
+                    self.arity,
+                    checkpoint.folded_level_count(),
+                )
+                .ok_or(WitnessStageOpeningError::LengthOverflow)?,
+            )
+        } else {
+            None
+        };
+        let upper_suffix_parent_work = if timing.is_some() {
+            Some(
+                merkle_opening_path_parent_work(checkpoint.state_count(), self.arity)
+                    .ok_or(WitnessStageOpeningError::LengthOverflow)?,
+            )
+        } else {
+            None
+        };
+        let lower_prefixes = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::RetainedParentCheckpointPrefix,
+            || {
+                leaf_level
+                    .opening_path_prefix_batch_device_for_source_rows(
+                        rows,
+                        checkpoint.folded_level_count(),
+                    )
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context(
+                "compact retained leaf digest parent checkpoint prefix path",
+                source,
+            )
+        })?;
+        if let (Some(timing), Some((row_count, byte_count, launch_count))) =
+            (timing.as_deref_mut(), lower_prefix_parent_work)
+        {
+            timing.record_path_parent_hash_work(
+                PathParentHashTimingKind::RetainedParentCheckpointPrefix,
+                row_count,
+                byte_count,
+                launch_count,
+            );
+        }
+        let upper_suffixes = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+            || {
+                checkpoint
+                    .opening_path_siblings_batch_device_for_source_rows(rows)
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context(
+                "compact retained leaf digest parent checkpoint suffix path",
+                source,
+            )
+        })?;
+        if let (Some(timing), Some((row_count, byte_count, launch_count))) =
+            (timing.as_deref_mut(), upper_suffix_parent_work)
+        {
+            timing.record_path_parent_hash_work(
+                PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+                row_count,
+                byte_count,
+                launch_count,
+            );
+        }
+        let siblings_by_row = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+            || {
+                lower_prefixes
+                    .concat_levels(upper_suffixes)
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context(
+                "compact retained leaf digest parent checkpoint suffix path",
+                source,
+            )
+        })?;
+        let values_by_row = self
+            .extended_row_values_batch_from_source_cuda(rows, source_buffer, timing)
+            .map_err(|source| {
+                WitnessStageOpeningError::context(
+                    "compact retained leaf digest parent checkpoint row values",
+                    source,
+                )
+            })?;
+        if values_by_row.len() != rows.len() {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        Ok(CompactOnDemandOpeningDeviceSiblings {
+            values_by_row,
+            siblings_by_row,
+        })
     }
 
     #[cfg(feature = "cuda")]

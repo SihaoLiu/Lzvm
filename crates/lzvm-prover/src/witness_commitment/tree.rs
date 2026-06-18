@@ -13,7 +13,7 @@ use crate::merkle_hash::{
 #[cfg(feature = "cuda")]
 use crate::merkle_hash::{
     synchronize_cuda_digest_root_materializations, CudaDigestCheckpointLevel, CudaDigestRoot,
-    MerkleHashError, PendingCudaDigestRootMaterialization,
+    CudaMerkleSiblingBatchDeviceBuffer, MerkleHashError, PendingCudaDigestRootMaterialization,
     PendingCudaDigestRootMaterializationBatch,
 };
 use crate::witness_layout::WitnessTraceStageValues;
@@ -1190,6 +1190,7 @@ pub(crate) fn open_witness_stage_commitment_with_source_device(
 }
 
 #[cfg(feature = "cuda")]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn open_witness_stage_commitments_with_source_device_timing(
     commitment: &WitnessStageCommitment,
     row_indices: &[u64],
@@ -1208,17 +1209,121 @@ pub(crate) fn open_witness_stage_commitments_with_source_device_timing(
     )
 }
 
-fn open_witness_stage_commitments_inner(
+#[cfg(feature = "cuda")]
+#[derive(Clone, Copy)]
+pub(crate) struct WitnessStageOpeningBatchRequest<'a> {
+    pub(crate) commitment: &'a WitnessStageCommitment,
+    pub(crate) row_indices: &'a [u64],
+    pub(crate) row_count: u64,
+    pub(crate) column_count: usize,
+    pub(crate) source_device: Option<&'a WitnessStageSourceDeviceView>,
+}
+
+#[cfg(feature = "cuda")]
+enum PendingWitnessStageOpeningGroup {
+    Ready(Vec<WitnessStageOpening>),
+    DeviceSiblings {
+        row_indices: Vec<u64>,
+        values_by_row: Vec<Vec<Felt>>,
+    },
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
+    requests: &[WitnessStageOpeningBatchRequest<'_>],
+    timings: &mut [WitnessStageOpeningWorkTiming],
+) -> Result<Vec<Vec<WitnessStageOpening>>, WitnessStageOpeningError> {
+    if requests.len() != timings.len() {
+        return Err(WitnessStageOpeningError::LengthOverflow);
+    }
+    let mut pending_groups = Vec::with_capacity(requests.len());
+    let mut sibling_batches = Vec::new();
+    for (request, timing) in requests.iter().zip(timings.iter_mut()) {
+        if request.row_indices.is_empty() {
+            pending_groups.push(PendingWitnessStageOpeningGroup::Ready(Vec::new()));
+            continue;
+        }
+        let query_rows = checked_witness_stage_opening_rows(
+            request.commitment,
+            request.row_indices,
+            request.row_count,
+            request.column_count,
+        )?;
+        match request
+            .commitment
+            .open_compact_batch_on_demand_device_siblings_with_source_device(
+                &query_rows,
+                usize::try_from(request.row_count)
+                    .map_err(|_| WitnessStageOpeningError::LengthOverflow)?,
+                request.column_count,
+                request.source_device,
+                Some(timing),
+            )? {
+            Some(device_siblings) => {
+                sibling_batches.push(device_siblings.siblings_by_row);
+                pending_groups.push(PendingWitnessStageOpeningGroup::DeviceSiblings {
+                    row_indices: request.row_indices.to_vec(),
+                    values_by_row: device_siblings.values_by_row,
+                });
+            }
+            None => {
+                let openings = open_witness_stage_commitments_inner(
+                    request.commitment,
+                    request.row_indices,
+                    request.row_count,
+                    request.column_count,
+                    request.source_device,
+                    Some(timing),
+                )?;
+                pending_groups.push(PendingWitnessStageOpeningGroup::Ready(openings));
+            }
+        }
+    }
+
+    let decoded_siblings = CudaMerkleSiblingBatchDeviceBuffer::into_siblings_many(sibling_batches)
+        .map_err(WitnessStageOpeningError::from)?;
+    let mut decoded_siblings = decoded_siblings.into_iter();
+    let mut outputs = Vec::with_capacity(pending_groups.len());
+    for group in pending_groups {
+        match group {
+            PendingWitnessStageOpeningGroup::Ready(openings) => outputs.push(openings),
+            PendingWitnessStageOpeningGroup::DeviceSiblings {
+                row_indices,
+                values_by_row,
+            } => {
+                let siblings_by_row = decoded_siblings
+                    .next()
+                    .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+                if row_indices.len() != values_by_row.len()
+                    || row_indices.len() != siblings_by_row.len()
+                {
+                    return Err(WitnessStageOpeningError::LengthOverflow);
+                }
+                outputs.push(
+                    row_indices
+                        .into_iter()
+                        .zip(values_by_row)
+                        .zip(siblings_by_row)
+                        .map(|((row_index, values), siblings)| {
+                            WitnessStageOpening::new(row_index, values, siblings)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                );
+            }
+        }
+    }
+    if decoded_siblings.next().is_some() {
+        return Err(WitnessStageOpeningError::LengthOverflow);
+    }
+    Ok(outputs)
+}
+
+fn checked_witness_stage_opening_rows(
     commitment: &WitnessStageCommitment,
     row_indices: &[u64],
     row_count: u64,
     column_count: usize,
-    #[cfg(feature = "cuda")] source_device: Option<&WitnessStageSourceDeviceView>,
-    #[cfg(feature = "cuda")] mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
-) -> Result<Vec<WitnessStageOpening>, WitnessStageOpeningError> {
-    if row_indices.is_empty() {
-        return Ok(Vec::new());
-    }
+) -> Result<Vec<usize>, WitnessStageOpeningError> {
     validate_witness_commitment_arity(commitment.arity())?;
     if row_count == 0 {
         return Err(WitnessStageOpeningError::ZeroRows);
@@ -1249,6 +1354,23 @@ fn open_witness_stage_commitments_inner(
             usize::try_from(*row_index).map_err(|_| WitnessStageOpeningError::LengthOverflow)?,
         );
     }
+    Ok(query_rows)
+}
+
+fn open_witness_stage_commitments_inner(
+    commitment: &WitnessStageCommitment,
+    row_indices: &[u64],
+    row_count: u64,
+    column_count: usize,
+    #[cfg(feature = "cuda")] source_device: Option<&WitnessStageSourceDeviceView>,
+    #[cfg(feature = "cuda")] mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+) -> Result<Vec<WitnessStageOpening>, WitnessStageOpeningError> {
+    if row_indices.is_empty() {
+        return Ok(Vec::new());
+    }
+    let query_rows =
+        checked_witness_stage_opening_rows(commitment, row_indices, row_count, column_count)?;
+    let rows = usize::try_from(row_count).map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
 
     #[cfg(feature = "cuda")]
     let compact_openings = commitment.open_compact_batch_on_demand_with_source_device(
@@ -1559,9 +1681,11 @@ mod tests {
     use super::{
         commit_witness_stage_device_compact_with_leaf_hash_level,
         commit_witness_stage_leaves_compact_with_leaf_hash_level,
+        open_witness_stage_commitment_batches_with_source_devices_timing,
         open_witness_stage_commitments_with_source_device_timing,
         retained_parent_checkpoint_max_states, WitnessStageDeviceCompactCommitInput,
-        WitnessStageSourceDeviceView, RETAINED_PARENT_CHECKPOINT_MAX_STATES,
+        WitnessStageOpeningBatchRequest, WitnessStageSourceDeviceView,
+        RETAINED_PARENT_CHECKPOINT_MAX_STATES,
     };
     use super::{
         commit_witness_stage_leaves, commit_witness_stage_leaves_compact_with_leaf_hashes,
@@ -2636,6 +2760,113 @@ mod tests {
         );
         assert_eq!(batch_timing.row_values_source_row_count, rows.len());
         assert_eq!(batch_timing.row_values_device_row_count, 0);
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn compact_device_opening_groups_batch_retained_parent_checkpoint_sibling_decode() {
+        let _retained_source_budget = retained_source_device_budget_for_test();
+        let source_bits = 2;
+        let target_bits = 20;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let column_count = 6;
+        let arity = 4;
+        let source_values = (0..source_rows * column_count)
+            .map(|value| Felt::from_u64(value as u64 + 1))
+            .collect::<Vec<_>>();
+        let source_device = std::sync::Arc::new(
+            lzvm_accel::CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&source_values))
+                .expect("source values should upload"),
+        );
+        let mut timing = crate::witness_commitment::WitnessStageLeafExtendTiming::default();
+        let leaf_level =
+            crate::witness_commitment::compact_witness_stage_leaf_hash_level_from_source_device_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                source_device.as_ref(),
+                &mut timing,
+            )
+            .expect("device leaf hash level should build");
+        let device = commit_witness_stage_device_compact_with_leaf_hash_level(
+            WitnessStageDeviceCompactCommitInput {
+                stage_index: 1,
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                external_source_required: false,
+            },
+            leaf_level,
+            Some(WitnessStageSourceDeviceView::new(
+                source_rows,
+                column_count,
+                column_count,
+                0,
+                source_device,
+            )),
+        )
+        .expect("device compact commitment should build");
+
+        let rows_a = [0_u64];
+        let rows_b = [3891_u64, 4095_u64];
+        let mut expected_timing_a = WitnessStageOpeningWorkTiming::default();
+        let expected_a = open_witness_stage_commitments_with_source_device_timing(
+            &device,
+            &rows_a,
+            extended_rows as u64,
+            column_count,
+            None,
+            &mut expected_timing_a,
+        )
+        .expect("first opening group should build");
+        let mut expected_timing_b = WitnessStageOpeningWorkTiming::default();
+        let expected_b = open_witness_stage_commitments_with_source_device_timing(
+            &device,
+            &rows_b,
+            extended_rows as u64,
+            column_count,
+            None,
+            &mut expected_timing_b,
+        )
+        .expect("second opening group should build");
+
+        let requests = [
+            WitnessStageOpeningBatchRequest {
+                commitment: &device,
+                row_indices: &rows_a,
+                row_count: extended_rows as u64,
+                column_count,
+                source_device: None,
+            },
+            WitnessStageOpeningBatchRequest {
+                commitment: &device,
+                row_indices: &rows_b,
+                row_count: extended_rows as u64,
+                column_count,
+                source_device: None,
+            },
+        ];
+        let mut timings = vec![WitnessStageOpeningWorkTiming::default(); requests.len()];
+        let actual = open_witness_stage_commitment_batches_with_source_devices_timing(
+            &requests,
+            &mut timings,
+        )
+        .expect("opening groups should build");
+
+        assert_eq!(actual, vec![expected_a, expected_b]);
+        for group in actual {
+            for opening in group {
+                assert!(
+                    verify_witness_stage_opening_root(device.root(), arity, &opening)
+                        .expect("group opening should verify")
+                );
+            }
+        }
     }
 
     #[cfg(feature = "cuda")]

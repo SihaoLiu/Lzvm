@@ -2556,6 +2556,43 @@ fn trace_less_guest_pc_opening_does_not_rebuild_external_source_when_retained() 
 }
 
 #[test]
+fn trace_output_cuda_opening_batches_device_sibling_decodes() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let opening_path = crate_root.join("src/witness_opening.rs");
+    let opening_source =
+        std::fs::read_to_string(&opening_path).expect("witness opening source should read");
+    let tree_path = crate_root.join("src/witness_commitment/tree.rs");
+    let tree_source =
+        std::fs::read_to_string(&tree_path).expect("witness commitment tree source should read");
+
+    let opening_body = function_body(
+        &opening_source,
+        "fn build_witness_opening_unit_segment_from_trace_output",
+        "fn guest_pc_external_stage_sources",
+    );
+    assert!(
+        opening_body.contains("WitnessStageOpeningBatchRequest")
+            && opening_body
+                .contains("open_witness_stage_commitment_batches_with_source_devices_timing"),
+        "trace-output CUDA openings should batch per-stage opening requests"
+    );
+    assert!(
+        !opening_body.contains("open_witness_stage_commitments_with_source_device_timing("),
+        "trace-output CUDA openings should not decode device siblings one stage at a time"
+    );
+
+    let batch_body = function_body(
+        &tree_source,
+        "pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing",
+        "fn checked_witness_stage_opening_rows",
+    );
+    assert!(
+        batch_body.contains("CudaMerkleSiblingBatchDeviceBuffer::into_siblings_many"),
+        "batched witness openings should decode all ready device sibling buffers together"
+    );
+}
+
+#[test]
 fn trace_less_guest_pc_outputs_keep_budgeted_stage_source_views() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let execution_path = crate_root.join("src/witness_execution.rs");

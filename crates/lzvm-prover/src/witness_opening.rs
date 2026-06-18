@@ -33,8 +33,8 @@ use crate::witness_commitment::{
 };
 #[cfg(feature = "cuda")]
 use crate::witness_commitment::{
-    open_witness_stage_commitments_with_source_device_timing, WitnessStageOpeningWorkTiming,
-    WitnessStageSourceDevice,
+    open_witness_stage_commitment_batches_with_source_devices_timing,
+    WitnessStageOpeningBatchRequest, WitnessStageOpeningWorkTiming, WitnessStageSourceDevice,
 };
 use crate::witness_execution::{ProveWitnessCommitments, ProveWitnessTraceCommitments};
 #[cfg(feature = "cuda")]
@@ -824,13 +824,15 @@ fn build_witness_opening_unit_segment_from_trace_output(
     let mut query_stages = (0..query_unit.queries.len())
         .map(|_| Vec::with_capacity(stage_count))
         .collect::<Vec<_>>();
-    for commitment in commitments.stage_commitments().commitments() {
-        let stage_index = commitment.stage_index();
-        let width = witness_stage_width(unit, stage_index)?;
-        #[cfg(feature = "cuda")]
-        let openings = {
+    #[cfg(feature = "cuda")]
+    {
+        let mut stage_entries = Vec::with_capacity(stage_count);
+        let mut stage_source_views = Vec::with_capacity(stage_count);
+        for commitment in commitments.stage_commitments().commitments() {
+            let stage_index = commitment.stage_index();
+            let width = witness_stage_width(unit, stage_index)?;
             let stage_opening_start = Instant::now();
-            let retained_source_view = output.stage_source_device_view(stage_index);
+            let retained_source_view = output.stage_source_device_view(stage_index).cloned();
             let external_source_view =
                 if retained_source_view.is_none() && commitment.requires_external_source() {
                     let external_source_start = Instant::now();
@@ -858,7 +860,6 @@ fn build_witness_opening_unit_segment_from_trace_output(
                 } else {
                     None
                 };
-            let source_view = retained_source_view.or(external_source_view.as_ref());
             let source_kind = if retained_source_view.is_some() {
                 WitnessOpeningSourceKind::Retained
             } else if external_source_view.is_some() {
@@ -868,10 +869,11 @@ fn build_witness_opening_unit_segment_from_trace_output(
             } else {
                 WitnessOpeningSourceKind::Embedded
             };
+            let has_source_view = retained_source_view.is_some() || external_source_view.is_some();
             if let Some(timing) = timing.as_deref_mut() {
                 timing.add_witness_stage_opening_source(stage_index, source_kind);
             }
-            if commitment.requires_external_source() && source_view.is_none() {
+            if commitment.requires_external_source() && !has_source_view {
                 let provider_stage_count =
                     guest_pc_external_stage_sources.as_ref().map_or(0, Vec::len);
                 return Err(ProveWitnessOpeningSegmentError::ExternalSource {
@@ -883,22 +885,79 @@ fn build_witness_opening_unit_segment_from_trace_output(
                     ),
                 });
             }
-            let mut opening_work_timing = WitnessStageOpeningWorkTiming::default();
-            let openings = open_witness_stage_commitments_with_source_device_timing(
+            stage_entries.push((
                 commitment,
-                &query_unit.queries,
-                unit.extended_domain_size,
+                stage_index,
                 width,
-                source_view,
-                &mut opening_work_timing,
+                source_kind,
+                stage_opening_start,
+            ));
+            stage_source_views.push(retained_source_view.or(external_source_view));
+        }
+
+        let stage_requests = stage_entries
+            .iter()
+            .zip(stage_source_views.iter())
+            .map(
+                |((commitment, _stage_index, width, _source_kind, _start), source_view)| {
+                    WitnessStageOpeningBatchRequest {
+                        commitment,
+                        row_indices: &query_unit.queries,
+                        row_count: unit.extended_domain_size,
+                        column_count: *width,
+                        source_device: source_view.as_ref(),
+                    }
+                },
             )
-            .map_err(|source| ProveWitnessOpeningSegmentError::StageOpening {
+            .collect::<Vec<_>>();
+        let mut opening_work_timings =
+            vec![WitnessStageOpeningWorkTiming::default(); stage_requests.len()];
+        let stage_opening_groups =
+            open_witness_stage_commitment_batches_with_source_devices_timing(
+                &stage_requests,
+                &mut opening_work_timings,
+            )
+            .map_err(|source| {
+                let (stage_index, source_kind) = stage_entries
+                    .first()
+                    .map(|(_, stage_index, _, source_kind, _)| (*stage_index, *source_kind))
+                    .unwrap_or((0, WitnessOpeningSourceKind::Embedded));
+                ProveWitnessOpeningSegmentError::StageOpening {
+                    unit_index: commitments.unit_index(),
+                    trace_instance_index: commitments.trace_instance_index(),
+                    stage_index,
+                    source_kind: source_kind.as_str(),
+                    source,
+                }
+            })?;
+        if stage_opening_groups.len() != stage_entries.len() {
+            let (stage_index, source_kind) = stage_entries
+                .first()
+                .map(|(_, stage_index, _, source_kind, _)| (*stage_index, *source_kind))
+                .unwrap_or((0, WitnessOpeningSourceKind::Embedded));
+            return Err(ProveWitnessOpeningSegmentError::StageOpening {
                 unit_index: commitments.unit_index(),
                 trace_instance_index: commitments.trace_instance_index(),
                 stage_index,
                 source_kind: source_kind.as_str(),
-                source,
-            })?;
+                source: WitnessStageOpeningError::LengthOverflow,
+            });
+        }
+        for ((stage_entry, opening_work_timing), openings) in stage_entries
+            .into_iter()
+            .zip(opening_work_timings)
+            .zip(stage_opening_groups)
+        {
+            let (_commitment, stage_index, _width, source_kind, stage_opening_start) = stage_entry;
+            if openings.len() != query_stages.len() {
+                return Err(ProveWitnessOpeningSegmentError::StageOpening {
+                    unit_index: commitments.unit_index(),
+                    trace_instance_index: commitments.trace_instance_index(),
+                    stage_index,
+                    source_kind: source_kind.as_str(),
+                    source: WitnessStageOpeningError::LengthOverflow,
+                });
+            }
             if let Some(timing) = timing.as_deref_mut() {
                 timing.add_witness_stage_opening_setup(stage_index, opening_work_timing.setup);
                 timing.add_witness_stage_opening_leaf_extend(
@@ -913,9 +972,19 @@ fn build_witness_opening_unit_segment_from_trace_output(
                 );
                 timing.add_witness_stage_opening(stage_index, stage_opening_start.elapsed());
             }
-            openings
-        };
-        #[cfg(not(feature = "cuda"))]
+            for (stages, opening) in query_stages.iter_mut().zip(openings.iter()) {
+                stages.push(witness_opening_stage_segment(
+                    stage_index,
+                    unit.stage_commit_widths.len(),
+                    opening,
+                )?);
+            }
+        }
+    }
+    #[cfg(not(feature = "cuda"))]
+    for commitment in commitments.stage_commitments().commitments() {
+        let stage_index = commitment.stage_index();
+        let width = witness_stage_width(unit, stage_index)?;
         let openings = {
             let stage_opening_start = Instant::now();
             let openings = open_witness_stage_commitments(
