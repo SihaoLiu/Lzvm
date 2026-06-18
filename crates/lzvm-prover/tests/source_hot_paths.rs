@@ -7662,6 +7662,32 @@ fn guest_machine_advance_avoids_full_state_clone() {
 }
 
 #[test]
+fn guest_machine_register_rollback_is_effect_local() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let checkpoint_body = function_body(
+        &source,
+        "struct GuestMachineStateCheckpoint",
+        "impl GuestMachineStateCheckpoint",
+    );
+    let effects_body = function_body(
+        &source,
+        "struct GuestInstructionEffects",
+        "impl GuestInstructionEffects",
+    );
+
+    assert!(
+        !checkpoint_body.contains("registers: [u64; GUEST_REGISTER_COUNT]"),
+        "guest machine checkpoint should not copy the full register file on every instruction"
+    );
+    assert!(
+        effects_body.contains("register_rollback"),
+        "guest instruction effects should retain old register values for error rollback"
+    );
+}
+
+#[test]
 fn guest_machine_fetch_uses_specialized_memory_path() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_machine/mod.rs");

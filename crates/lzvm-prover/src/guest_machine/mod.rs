@@ -289,7 +289,6 @@ impl GuestMachineState {
 
 struct GuestMachineStateCheckpoint {
     pc: u64,
-    registers: [u64; GUEST_REGISTER_COUNT],
     reservation: Option<GuestMemoryReservation>,
     pending_dma: Option<GuestDmaPrepare>,
     fcall_params: Option<Vec<GuestFcallParam>>,
@@ -314,7 +313,6 @@ impl GuestMachineStateCheckpoint {
 
         Self {
             pc: state.pc,
-            registers: state.registers,
             reservation: state.reservation,
             pending_dma: state.pending_dma,
             fcall_params: preserves_fcall_params.then(|| state.fcall_params.clone()),
@@ -326,7 +324,6 @@ impl GuestMachineStateCheckpoint {
 
     fn restore(self, state: &mut GuestMachineState) {
         state.pc = self.pc;
-        state.registers = self.registers;
         state.reservation = self.reservation;
         state.pending_dma = self.pending_dma;
         if let Some(fcall_params) = self.fcall_params {
@@ -361,21 +358,30 @@ pub struct GuestMemoryAccess {
 }
 
 pub type GuestRegisterWriteList = SmallVec<[GuestRegisterWrite; 1]>;
+type GuestRegisterRollbackList = SmallVec<[(u8, u64); 1]>;
 pub type GuestMemoryAccessList = SmallVec<[GuestMemoryAccess; 2]>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct GuestInstructionEffects {
     register_writes: GuestRegisterWriteList,
+    register_rollback: GuestRegisterRollbackList,
     memory_accesses: GuestMemoryAccessList,
     precompile_memory_accesses: Vec<GuestMemoryAccess>,
     precompile_result: Option<u64>,
 }
 
 impl GuestInstructionEffects {
-    fn record_register_write(&mut self, index: u8, value: u64) {
+    fn record_register_write(&mut self, index: u8, previous_value: u64, value: u64) {
         if index != 0 {
+            self.register_rollback.push((index, previous_value));
             self.register_writes
                 .push(GuestRegisterWrite { index, value });
+        }
+    }
+
+    fn restore_registers(&self, state: &mut GuestMachineState) {
+        for &(index, value) in self.register_rollback.iter().rev() {
+            state.write_decoded_register(index, value);
         }
     }
 
@@ -822,6 +828,7 @@ fn advance_guest_machine_prepared_inner(
         &mut effects,
         handler,
     ) {
+        effects.restore_registers(state);
         checkpoint.restore(state);
         return Err(error);
     }
@@ -1083,8 +1090,9 @@ fn write_reported_register(
     index: u8,
     value: u64,
 ) {
+    let previous_value = state.read_decoded_register(index);
     state.write_decoded_register(index, value);
-    effects.record_register_write(index, value);
+    effects.record_register_write(index, previous_value, value);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1824,6 +1832,28 @@ mod tests {
         assert_eq!(actual, expected);
         assert_eq!(prepared_state, regular_state);
         assert_eq!(prepared_memory, regular_memory);
+    }
+
+    #[test]
+    fn register_write_effect_restores_old_value_without_changing_reported_write() {
+        let mut state = GuestMachineState::new(TEST_ENTRY);
+        state
+            .set_register(1, 42)
+            .expect("test register should be writable");
+        let mut effects = GuestInstructionEffects::default();
+
+        write_reported_register(&mut state, &mut effects, 1, 99);
+        assert_eq!(state.register(1), Some(99));
+        assert_eq!(
+            effects.register_writes.as_slice(),
+            &[GuestRegisterWrite {
+                index: 1,
+                value: 99,
+            }]
+        );
+
+        effects.restore_registers(&mut state);
+        assert_eq!(state.register(1), Some(42));
     }
 
     #[test]
