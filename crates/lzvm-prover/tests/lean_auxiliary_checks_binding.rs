@@ -236,6 +236,25 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         gpu_runtime_source.contains("private theorem checked_acceptance_sound_witness"),
         "Lean GPU runtime checks should centralize checked-acceptance SoundWitness projection"
     );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "checked_acceptance_verifier_core_contract",
+        &[
+            "checked.left",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "checked_acceptance_verifier_core_contract",
+        &[
+            "checked_acceptance_sound_witness",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
     for theorem_name in [
         "guest_pc_trace_large_gpu_gate_checked_acceptance_sound",
         "guest_pc_trace_traceless_commitment_input_checked_acceptance_sound",
