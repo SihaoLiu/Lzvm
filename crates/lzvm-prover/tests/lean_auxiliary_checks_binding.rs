@@ -251,6 +251,60 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "{module_name} should not duplicate abstract verifier soundness for ignored metadata"
         );
     }
+    for theorem_name in [
+        "runtime_performance_observation_timing_observations_acceptance_sound",
+        "runtime_performance_observation_guest_pc_trace_timing_acceptance_sound",
+        "runtime_performance_observation_row_value_timing_acceptance_sound",
+        "runtime_performance_observation_constant_material_timing_acceptance_sound",
+        "runtime_performance_observation_prover_gpu_mode_acceptance_sound",
+        "runtime_performance_observation_gpu_run_options_acceptance_sound",
+        "runtime_performance_observation_cuda_backend_acceptance_sound",
+        "runtime_performance_observation_cuda_allocator_timing_acceptance_sound",
+        "runtime_performance_observation_finish_timing_acceptance_sound",
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &runtime_performance_source,
+            theorem_name,
+            &["runtime_performance_observation_acceptance_sound"],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &runtime_performance_source,
+            theorem_name,
+            &[
+                "timing_observation_acceptance_sound",
+                "guest_pc_trace_timing_acceptance_sound",
+                "witness_opening_row_value_timing_acceptance_sound",
+                "constant_material_validation_timing_acceptance_sound",
+                "prover_gpu_mode_acceptance_sound",
+                "gpu_run_options_acceptance_sound",
+                "cuda_backend_acceptance_sound",
+                "cuda_allocator_timing_acceptance_sound",
+                "proof_artifact_finish_timing_acceptance_sound",
+            ],
+        );
+    }
+    for theorem_name in [
+        "runtime_performance_observation_timing_observations_acceptance_verifier_core_contract",
+        "runtime_performance_observation_guest_pc_trace_timing_acceptance_verifier_core_contract",
+        "runtime_performance_observation_row_value_timing_acceptance_verifier_core_contract",
+        "runtime_performance_observation_constant_material_timing_acceptance_verifier_core_contract",
+        "runtime_performance_observation_prover_gpu_mode_acceptance_verifier_core_contract",
+        "runtime_performance_observation_gpu_run_options_acceptance_verifier_core_contract",
+        "runtime_performance_observation_cuda_backend_acceptance_verifier_core_contract",
+        "runtime_performance_observation_cuda_allocator_timing_acceptance_verifier_core_contract",
+        "runtime_performance_observation_finish_timing_acceptance_verifier_core_contract",
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &runtime_performance_source,
+            theorem_name,
+            &["runtime_performance_observation_acceptance_verifier_core_contract"],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &runtime_performance_source,
+            theorem_name,
+            &["sound_witness_implies_verifier_core_contract"],
+        );
+    }
     assert!(
         gpu_runtime_source.contains("private theorem checked_acceptance_sound_witness"),
         "Lean GPU runtime checks should centralize checked-acceptance SoundWitness projection"
