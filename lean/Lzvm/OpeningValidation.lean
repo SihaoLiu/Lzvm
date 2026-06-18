@@ -1047,17 +1047,15 @@ theorem runtime_opening_checked_acceptance_runtime_soundness_evidence_from_openi
       proof
       requiresExternalSource
       accepted
-  have transcriptSound :=
-    runtime_transcript_binding_checked_acceptance_sound
+  have transcriptCore :=
+    runtime_transcript_binding_checked_acceptance_transcript_and_core_contract
       assumptions
       validation.runtimeSoundnessValidation.transcriptValidation
       artifact
       publicInput
       proof
       runtimeAccepted.left
-  have coreContract :=
-    sound_witness_implies_verifier_core_contract
-      transcriptSound.right.right.right
+  have coreContract := transcriptCore.right.right.right
   have pcsAndFri :=
     runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions
       validation
@@ -1066,9 +1064,9 @@ theorem runtime_opening_checked_acceptance_runtime_soundness_evidence_from_openi
       proof
       accepted
   exact
-    And.intro transcriptSound.left
-      (And.intro transcriptSound.right.left
-        (And.intro transcriptSound.right.right.left
+    And.intro transcriptCore.left
+      (And.intro transcriptCore.right.left
+        (And.intro transcriptCore.right.right.left
           (And.intro coreContract.right.left
             (And.intro runtimeAccepted.right pcsAndFri))))
 
@@ -1113,17 +1111,15 @@ theorem runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_
       proof
       requiresExternalSource
       accepted
-  have transcriptSound :=
-    runtime_transcript_binding_checked_acceptance_sound
+  have transcriptCore :=
+    runtime_transcript_binding_checked_acceptance_transcript_and_core_contract
       assumptions
       validation.runtimeSoundnessValidation.transcriptValidation
       artifact
       publicInput
       proof
       runtimeAccepted.left
-  have coreContract :=
-    sound_witness_implies_verifier_core_contract
-      transcriptSound.right.right.right
+  have coreContract := transcriptCore.right.right.right
   have pcsAndFri :=
     runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle
       hashAssumptions
@@ -1136,9 +1132,9 @@ theorem runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_
       proof
       accepted
   exact
-    And.intro transcriptSound.left
-      (And.intro transcriptSound.right.left
-        (And.intro transcriptSound.right.right.left
+    And.intro transcriptCore.left
+      (And.intro transcriptCore.right.left
+        (And.intro transcriptCore.right.right.left
           (And.intro coreContract.right.left
             (And.intro runtimeAccepted.right pcsAndFri))))
 

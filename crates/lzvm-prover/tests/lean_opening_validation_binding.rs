@@ -169,7 +169,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_opening_checks",
         &[
-            "runtime_transcript_binding_checked_acceptance_sound",
+            "runtime_transcript_binding_checked_acceptance_transcript_and_core_contract",
             "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
             "validation.openingAcceptedImpliesRuntimeSoundnessAccepted",
         ],
@@ -181,6 +181,8 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "required_crypto_assumptions_pcs_opening_soundness",
             "required_crypto_assumptions_fri_query_soundness",
             "runtime_soundness_checked_acceptance_evidence",
+            "runtime_transcript_binding_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -202,7 +204,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_opening_checked_acceptance_runtime_soundness_evidence_from_hash_concrete_opening",
         &[
-            "runtime_transcript_binding_checked_acceptance_sound",
+            "runtime_transcript_binding_checked_acceptance_transcript_and_core_contract",
             "runtime_opening_checked_acceptance_pcs_and_fri_from_hash_assumption_concrete_nary_merkle",
             "validation.openingAcceptedImpliesRuntimeSoundnessAccepted",
         ],
@@ -214,6 +216,8 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_opening_checked_acceptance_evidence",
             "runtime_soundness_checked_acceptance_evidence",
+            "runtime_transcript_binding_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
