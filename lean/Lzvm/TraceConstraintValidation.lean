@@ -946,8 +946,8 @@ theorem runtime_trace_constraint_required_external_source_verifier_core_contract
         requiresExternalSource ->
           RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
-  have sound :=
-    runtime_trace_constraint_required_external_source_sound
+  exact
+    runtime_trace_constraint_checked_acceptance_verifier_core_contract
       assumptions
       validation
       artifact
@@ -955,8 +955,6 @@ theorem runtime_trace_constraint_required_external_source_verifier_core_contract
       proof
       requiresExternalSource
       accepted
-      required
-  exact sound_witness_implies_verifier_core_contract sound.right.right
 
 theorem runtime_trace_constraint_required_external_source_pcs_sound
     {system : VerifierModel}
@@ -1043,6 +1041,15 @@ theorem runtime_trace_constraint_required_external_source_accepts_backend_core_s
       requiresExternalSource
       accepted
       required
+  have coreContract :=
+    runtime_trace_constraint_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
   have backendContract :=
     runtime_trace_constraint_evidence_implies_backend_contract
       validation
@@ -1051,8 +1058,6 @@ theorem runtime_trace_constraint_required_external_source_accepts_backend_core_s
       proof
       requiresExternalSource
       requiredSound.left
-  have coreContract :=
-    sound_witness_implies_verifier_core_contract requiredSound.right.right
   exact
     And.intro verifierAccepts
       (And.intro requiredSound.right.left
