@@ -539,16 +539,21 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_cont
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
-  have sound :=
-    runtime_batch_witness_opening_rows_checked_acceptance_sound
+  have segmentAccepted :=
+    validation.batchWitnessOpeningRowsAcceptedImpliesOpeningSegmentAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_segment_binding_checked_acceptance_verifier_core_contract
       assumptions
-      validation
+      validation.openingSegmentValidation
       artifact
       publicInput
       proof
       False
-      accepted
-  exact sound_witness_implies_verifier_core_contract sound.right
+      segmentAccepted
 
 theorem runtime_batch_witness_opening_rows_checked_acceptance_bound_and_core_contract
     {system : VerifierModel}

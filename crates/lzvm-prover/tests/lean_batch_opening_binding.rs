@@ -90,6 +90,22 @@ fn lean_batch_opening_binding_tracks_runtime_batch_helpers() {
         "runtime_batch_witness_opening_rows_checked_acceptance_sound_from_concrete_nary_merkle",
         &["runtime_batch_witness_opening_rows_checked_acceptance_sound_from_hash_concrete_opening"],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract",
+        &[
+            "batchWitnessOpeningRowsAcceptedImpliesOpeningSegmentAccepted",
+            "runtime_opening_segment_binding_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_batch_witness_opening_rows_checked_acceptance_verifier_core_contract",
+        &[
+            "runtime_batch_witness_opening_rows_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
     assert!(
         top_level_source.contains("import Lzvm.BatchOpeningBinding"),
         "top-level Lean module should import batch opening binding"
