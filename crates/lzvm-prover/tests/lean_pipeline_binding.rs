@@ -177,6 +177,21 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         .contains("AssumptionBundle"),
         "runtime artifact evidence projection should not require cryptographic assumptions"
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_sound",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_query_plan_binding_checked_acceptance_sound",
+            "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
+            "assumptions.semantic.public_input_binding",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_sound",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_merkle",
@@ -195,7 +210,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_binding_checked_acceptance_query_plan",
             "runtime_query_plan_binding_checked_acceptance_sound_from_concrete_nary_merkle",
-            "sound_witness_implies_verifier_core_contract",
+            "runtime_pipeline_binding_checked_acceptance_core_obligations",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -204,6 +219,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_query_plan_binding_checked_acceptance_sound\n",
             "runtime_pipeline_binding_checked_acceptance_sound\n",
+            "sound_witness_implies_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -226,7 +242,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_binding_checked_acceptance_query_plan",
             "runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening",
-            "sound_witness_implies_verifier_core_contract",
+            "runtime_pipeline_binding_checked_acceptance_core_obligations",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -235,6 +251,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_query_plan_binding_checked_acceptance_sound\n",
             "runtime_pipeline_binding_checked_acceptance_sound\n",
+            "sound_witness_implies_verifier_core_contract",
         ],
     );
     assert!(

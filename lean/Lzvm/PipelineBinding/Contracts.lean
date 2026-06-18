@@ -532,8 +532,18 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_mer
   have pcsOpeningsValid := queryPlanSound.right.right.right.right.right.left
   have friQueriesValid := queryPlanSound.right.right.right.right.right.right.left
   have soundWitness := queryPlanSound.right.right.right.right.right.right.right
+  have coreContract :=
+    runtime_pipeline_binding_checked_acceptance_core_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  rcases coreContract with
+    ⟨_coreTranscriptBound, corePublicInputBound, _corePcsOpeningsValid, _coreFriQueriesValid⟩
   have publicInputBound : system.publicInputBound publicInput proof :=
-    (sound_witness_implies_verifier_core_contract soundWitness).right.left
+    corePublicInputBound
   exact
     And.intro
       (And.intro ethEvidence
@@ -654,8 +664,18 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_ope
   have pcsOpeningsValid := queryPlanSound.right.right.right.right.right.left
   have friQueriesValid := queryPlanSound.right.right.right.right.right.right.left
   have soundWitness := queryPlanSound.right.right.right.right.right.right.right
+  have coreContract :=
+    runtime_pipeline_binding_checked_acceptance_core_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  rcases coreContract with
+    ⟨_coreTranscriptBound, corePublicInputBound, _corePcsOpeningsValid, _coreFriQueriesValid⟩
   have publicInputBound : system.publicInputBound publicInput proof :=
-    (sound_witness_implies_verifier_core_contract soundWitness).right.left
+    corePublicInputBound
   exact
     And.intro
       (And.intro ethEvidence

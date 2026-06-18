@@ -747,8 +747,18 @@ theorem runtime_pipeline_binding_checked_acceptance_sound
   have pcsOpeningsValid := queryPlanSound.right.right.right.right.right.left
   have friQueriesValid := queryPlanSound.right.right.right.right.right.right.left
   have soundWitness := queryPlanSound.right.right.right.right.right.right.right
+  have verifierAccepted :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   have publicInputBound : system.publicInputBound publicInput proof :=
-    (sound_witness_implies_verifier_core_contract soundWitness).right.left
+    assumptions.semantic.public_input_binding
+      publicInput
+      proof
+      verifierAccepted
   exact
     And.intro
       (And.intro ethEvidence
