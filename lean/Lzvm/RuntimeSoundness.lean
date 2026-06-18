@@ -231,6 +231,29 @@ theorem runtime_soundness_evidence_implies_runtime_artifact_core_contract
         requiresExternalSource
         evidence)
 
+theorem runtime_soundness_checked_acceptance_core_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    runtime_transcript_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      checked.left
+
 theorem runtime_soundness_checked_acceptance_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -290,9 +313,17 @@ theorem runtime_soundness_checked_acceptance_evidence
     pcsOpeningSound publicInput proof verifierAccepts
   have friQueries :=
     friQuerySound publicInput proof verifierAccepts
+  have coreContract :=
+    runtime_soundness_checked_acceptance_core_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
   have publicInputBound :=
-    (sound_witness_implies_verifier_core_contract
-      transcriptSound.right.right.right).right.left
+    coreContract.right.left
   exact
     And.intro transcriptSound.left
       (And.intro transcriptSound.right.left
@@ -601,38 +632,6 @@ theorem runtime_soundness_checked_acceptance_audited_assumptions
       requiresExternalSource
       checked
   exact And.intro audited sound
-
-theorem runtime_soundness_checked_acceptance_core_obligations
-    {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
-    (validation : RuntimeSoundnessValidation system) :
-    forall artifact publicInput proof requiresExternalSource,
-      RuntimeSoundnessCheckedAcceptance
-          system
-          validation
-          artifact
-          publicInput
-          proof
-          requiresExternalSource ->
-        RuntimeVerifierCoreContract system publicInput proof := by
-  intro artifact publicInput proof requiresExternalSource checked
-  have evidence :=
-    runtime_soundness_checked_acceptance_evidence
-      assumptions
-      validation
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      checked
-  exact
-    runtime_soundness_evidence_implies_core_obligations
-      validation
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      evidence
 
 theorem runtime_soundness_checked_acceptance_audited_core_contract
     {system : VerifierModel}
