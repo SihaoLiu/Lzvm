@@ -650,6 +650,88 @@ fn prove_timing_root_summary_aggregates_cuda_transfer_action() {
 }
 
 #[test]
+fn prove_timing_root_summary_groups_aggregate_samples_by_input_size() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join("../../temp/prove-timing-input-size-aggregate");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("timing summary fixture directory should be created");
+
+    let sample = |input_bytes: u64, total_ms: u64| {
+        [
+            format!("input_bytes={input_bytes}"),
+            format!("timing_total_ms={total_ms}"),
+            "timing_guest_trace_runner_ms=41000".to_owned(),
+            "timing_guest_trace_lowerer_ms=35000".to_owned(),
+            "timing_guest_trace_lower_ms=33000".to_owned(),
+            "timing_guest_trace_stream_elapsed_ms=43000".to_owned(),
+            "timing_guest_trace_stream_ms=22000".to_owned(),
+            "timing_guest_segment_commit_ms=21000".to_owned(),
+            "timing_guest_trace_segment_receive_wait_ms=22000".to_owned(),
+            "timing_guest_trace_pending_receive_wait_ms=1000".to_owned(),
+            "timing_guest_stage_tree_commit_root_count=120".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_groups=120".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1".to_owned(),
+        ]
+        .join("\n")
+    };
+    let fixtures = [
+        (2_758_032_u64, 8_270_u64),
+        (12_447_640, 50_650),
+        (2_758_032, 8_330),
+        (12_447_640, 51_026),
+        (2_758_032, 8_365),
+        (12_447_640, 50_792),
+    ];
+    let paths = fixtures
+        .into_iter()
+        .enumerate()
+        .map(|(index, (input_bytes, total_ms))| {
+            let path = dir.join(format!("sample-{index}.log"));
+            std::fs::write(&path, sample(input_bytes, total_ms))
+                .expect("sample timing log should be written");
+            path
+        })
+        .collect::<Vec<_>>();
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .args(&paths)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("aggregate,6,6,8270,29572.167,29507.500,51026,144.899,no,yes"),
+        "global aggregate should still show mixed small and large samples are not close: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "aggregate_by_input_bytes,input_bytes,total_count,valid_total_count,total_min_ms,total_mean_ms,total_median_ms,total_max_ms,sample_spread_pct,close_samples,max_outlier"
+        ),
+        "grouped aggregate should expose the input size discriminator: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "aggregate_by_input_bytes,2758032,3,3,8270,8321.667,8330.000,8365,1.140,yes,no"
+        ),
+        "small samples should be summarized as a close input-size group: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "aggregate_by_input_bytes,12447640,3,3,50650,50822.667,50792.000,51026,0.740,yes,no"
+        ),
+        "large samples should be summarized as a close input-size group: stdout={stdout}"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_segment_commit_memory_margin() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

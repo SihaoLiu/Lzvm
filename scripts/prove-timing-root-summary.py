@@ -448,6 +448,12 @@ AGGREGATE_HEADER = (
     "dominant_trace_pipeline_action_hint,trace_pipeline_action_consensus,"
     "dominant_cuda_transfer_action_hint,cuda_transfer_action_consensus"
 )
+AGGREGATE_BY_INPUT_BYTES_HEADER = (
+    "aggregate_by_input_bytes,input_bytes,total_count,valid_total_count,total_min_ms,"
+    "total_mean_ms,total_median_ms,total_max_ms,sample_spread_pct,close_samples,"
+    "max_outlier,dominant_trace_pipeline_action_hint,trace_pipeline_action_consensus,"
+    "dominant_cuda_transfer_action_hint,cuda_transfer_action_consensus"
+)
 CLOSE_SAMPLE_SPREAD_PCT = 5.0
 OUTLIER_RATIO_THRESHOLD = 1.5
 
@@ -2517,6 +2523,28 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
     )
 
 
+def summarize_total_samples_by_input_bytes(
+    input_bytes: int,
+    parsed_inputs: list[tuple[str, dict[str, int]]],
+) -> str:
+    summary = summarize_total_samples(parsed_inputs)
+    return f"aggregate_by_input_bytes,{input_bytes},{summary.split(',', 1)[1]}"
+
+
+def grouped_total_samples_by_input_bytes(
+    parsed_inputs: list[tuple[str, dict[str, int]]],
+) -> list[tuple[int, list[tuple[str, dict[str, int]]]]]:
+    groups: dict[int, list[tuple[str, dict[str, int]]]] = {}
+    order: list[int] = []
+    for label, values in parsed_inputs:
+        input_bytes = values.get(INPUT_BYTES_KEY, 0)
+        if input_bytes not in groups:
+            groups[input_bytes] = []
+            order.append(input_bytes)
+        groups[input_bytes].append((label, values))
+    return [(input_bytes, groups[input_bytes]) for input_bytes in order]
+
+
 def print_summary(inputs: list[tuple[str, str]]) -> None:
     parsed_inputs = [
         (label, parse_timing_log(text), parse_perf_self_hotspots(text))
@@ -2532,6 +2560,13 @@ def print_summary(inputs: list[tuple[str, str]]) -> None:
                 [(label, values) for label, values, _ in parsed_inputs]
             )
         )
+        grouped_inputs = grouped_total_samples_by_input_bytes(
+            [(label, values) for label, values, _ in parsed_inputs]
+        )
+        if len(grouped_inputs) > 1:
+            print(AGGREGATE_BY_INPUT_BYTES_HEADER)
+            for input_bytes, group in grouped_inputs:
+                print(summarize_total_samples_by_input_bytes(input_bytes, group))
 
 
 def self_test() -> None:
