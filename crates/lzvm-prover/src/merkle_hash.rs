@@ -110,6 +110,57 @@ pub(crate) struct CudaDigestCheckpointLevel {
 
 #[cfg(feature = "cuda")]
 #[derive(Debug)]
+pub(crate) struct CudaMerkleSiblingBatchDeviceBuffer {
+    buffer: CudaDeviceBuffer,
+    row_count: usize,
+    level_count: usize,
+    arity: usize,
+}
+
+#[cfg(feature = "cuda")]
+impl CudaMerkleSiblingBatchDeviceBuffer {
+    fn new(
+        buffer: CudaDeviceBuffer,
+        row_count: usize,
+        level_count: usize,
+        arity: usize,
+    ) -> Result<Self, MerkleHashError> {
+        let row_words = merkle_sibling_row_word_count(level_count, arity)?;
+        let expected_bytes = row_count
+            .checked_mul(row_words)
+            .and_then(|words| words.checked_mul(std::mem::size_of::<u64>()))
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        if buffer.len() != expected_bytes {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        Ok(Self {
+            buffer,
+            row_count,
+            level_count,
+            arity,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn buffer(&self) -> &CudaDeviceBuffer {
+        &self.buffer
+    }
+
+    pub(crate) fn into_siblings(
+        self,
+    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, MerkleHashError> {
+        let sibling_words = self.buffer.to_u64_words().map_err(MerkleHashError::Accel)?;
+        decoded_merkle_siblings_from_words(
+            &sibling_words,
+            self.row_count,
+            self.level_count,
+            self.arity,
+        )
+    }
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug)]
 pub(crate) struct CudaDigestRoot {
     root: CudaDeviceBuffer,
 }
@@ -233,6 +284,77 @@ fn digest_from_state_bytes(bytes: &[u8]) -> Result<[Felt; HASH_WORDS], MerkleHas
         *word = u64::from_le_bytes(raw);
     }
     digest_from_state_words(&words)
+}
+
+#[cfg(feature = "cuda")]
+fn merkle_sibling_row_word_count(
+    level_count: usize,
+    arity: usize,
+) -> Result<usize, MerkleHashError> {
+    match arity {
+        2 | 4 => level_count
+            .checked_mul(arity - 1)
+            .and_then(|count| count.checked_mul(HASH_WORDS))
+            .ok_or(MerkleHashError::LengthOverflow),
+        _ => Err(MerkleHashError::UnsupportedArity { arity }),
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn merkle_opening_level_count(
+    mut state_count: usize,
+    arity: usize,
+) -> Result<usize, MerkleHashError> {
+    match arity {
+        2 | 4 => {}
+        _ => return Err(MerkleHashError::UnsupportedArity { arity }),
+    }
+    let mut level_count = 0usize;
+    while state_count > 1 {
+        level_count = level_count
+            .checked_add(1)
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        state_count = state_count.div_ceil(arity);
+    }
+    Ok(level_count)
+}
+
+#[cfg(feature = "cuda")]
+fn decoded_merkle_siblings_from_words(
+    sibling_words: &[u64],
+    row_count: usize,
+    level_count: usize,
+    arity: usize,
+) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, MerkleHashError> {
+    let row_words = merkle_sibling_row_word_count(level_count, arity)?;
+    let expected_words = row_count
+        .checked_mul(row_words)
+        .ok_or(MerkleHashError::LengthOverflow)?;
+    if sibling_words.len() != expected_words {
+        return Err(MerkleHashError::LengthOverflow);
+    }
+
+    let mut batch_siblings = Vec::with_capacity(row_count);
+    for row_words_slice in sibling_words.chunks_exact(row_words) {
+        let mut cursor = 0usize;
+        let mut siblings = Vec::with_capacity(level_count);
+        for _ in 0..level_count {
+            let mut level_siblings = Vec::with_capacity(arity - 1);
+            for _ in 0..arity - 1 {
+                let end = cursor
+                    .checked_add(HASH_WORDS)
+                    .ok_or(MerkleHashError::LengthOverflow)?;
+                let words = row_words_slice
+                    .get(cursor..end)
+                    .ok_or(MerkleHashError::LengthOverflow)?;
+                level_siblings.push(digest_from_state_words(words)?);
+                cursor = end;
+            }
+            siblings.push(level_siblings);
+        }
+        batch_siblings.push(siblings);
+    }
+    Ok(batch_siblings)
 }
 
 #[cfg(feature = "cuda")]
@@ -538,29 +660,19 @@ impl CudaDigestLevel {
         Ok(siblings)
     }
 
-    pub(crate) fn opening_path_prefix_batch_for_source_rows(
+    pub(crate) fn opening_path_prefix_batch_device_for_source_rows(
         &self,
         source_rows: &[usize],
         folded_level_count: usize,
-    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, MerkleHashError> {
+    ) -> Result<CudaMerkleSiblingBatchDeviceBuffer, MerkleHashError> {
         if source_rows
             .iter()
             .any(|source_row| *source_row >= self.state_count)
         {
             return Err(MerkleHashError::LengthOverflow);
         }
-        if folded_level_count == 0 {
-            return Ok(vec![Vec::new(); source_rows.len()]);
-        }
 
-        let mut path_level_count = 0usize;
-        let mut state_count = self.state_count;
-        while state_count > 1 {
-            path_level_count = path_level_count
-                .checked_add(1)
-                .ok_or(MerkleHashError::LengthOverflow)?;
-            state_count = state_count.div_ceil(self.arity);
-        }
+        let path_level_count = merkle_opening_level_count(self.state_count, self.arity)?;
         if folded_level_count > path_level_count {
             return Err(MerkleHashError::LengthOverflow);
         }
@@ -579,42 +691,21 @@ impl CudaDigestLevel {
             _ => return Err(MerkleHashError::UnsupportedArity { arity: self.arity }),
         }
         .map_err(MerkleHashError::Accel)?;
-        let sibling_words = sibling_buffer
-            .to_u64_words()
-            .map_err(MerkleHashError::Accel)?;
-        let row_words = folded_level_count
-            .checked_mul(self.arity.saturating_sub(1))
-            .and_then(|count| count.checked_mul(HASH_WORDS))
-            .ok_or(MerkleHashError::LengthOverflow)?;
-        let expected_words = source_rows
-            .len()
-            .checked_mul(row_words)
-            .ok_or(MerkleHashError::LengthOverflow)?;
-        if sibling_words.len() != expected_words {
-            return Err(MerkleHashError::LengthOverflow);
-        }
+        CudaMerkleSiblingBatchDeviceBuffer::new(
+            sibling_buffer,
+            source_rows.len(),
+            folded_level_count,
+            self.arity,
+        )
+    }
 
-        let mut batch_siblings = Vec::with_capacity(source_rows.len());
-        for row_words_slice in sibling_words.chunks_exact(row_words) {
-            let mut cursor = 0usize;
-            let mut siblings = Vec::with_capacity(folded_level_count);
-            for _ in 0..folded_level_count {
-                let mut level_siblings = Vec::with_capacity(self.arity - 1);
-                for _ in 0..self.arity - 1 {
-                    let end = cursor
-                        .checked_add(HASH_WORDS)
-                        .ok_or(MerkleHashError::LengthOverflow)?;
-                    let words = row_words_slice
-                        .get(cursor..end)
-                        .ok_or(MerkleHashError::LengthOverflow)?;
-                    level_siblings.push(digest_from_state_words(words)?);
-                    cursor = end;
-                }
-                siblings.push(level_siblings);
-            }
-            batch_siblings.push(siblings);
-        }
-        Ok(batch_siblings)
+    pub(crate) fn opening_path_prefix_batch_for_source_rows(
+        &self,
+        source_rows: &[usize],
+        folded_level_count: usize,
+    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, MerkleHashError> {
+        self.opening_path_prefix_batch_device_for_source_rows(source_rows, folded_level_count)?
+            .into_siblings()
     }
 }
 
@@ -682,9 +773,6 @@ impl CudaDigestCheckpointLevel {
         &self,
         source_rows: &[usize],
     ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, MerkleHashError> {
-        if source_rows.is_empty() {
-            return Ok(Vec::new());
-        }
         if source_rows
             .iter()
             .any(|source_row| *source_row >= self.source_state_count)
@@ -697,6 +785,26 @@ impl CudaDigestCheckpointLevel {
             .map(|source_row| source_row / leaf_span)
             .collect::<Vec<_>>();
         self.level.opening_path_siblings_batch(&checkpoint_rows)
+    }
+
+    pub(crate) fn opening_path_siblings_batch_device_for_source_rows(
+        &self,
+        source_rows: &[usize],
+    ) -> Result<CudaMerkleSiblingBatchDeviceBuffer, MerkleHashError> {
+        if source_rows
+            .iter()
+            .any(|source_row| *source_row >= self.source_state_count)
+        {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let leaf_span = self.source_leaf_span()?;
+        let checkpoint_rows = source_rows
+            .iter()
+            .map(|source_row| source_row / leaf_span)
+            .collect::<Vec<_>>();
+        let level_count = merkle_opening_level_count(self.state_count(), self.arity())?;
+        self.level
+            .opening_path_prefix_batch_device_for_source_rows(&checkpoint_rows, level_count)
     }
 
     fn source_leaf_span(&self) -> Result<usize, MerkleHashError> {
@@ -2256,6 +2364,79 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(batched, expected);
+    }
+
+    #[test]
+    fn cuda_digest_opening_prefix_device_batch_decodes_like_host_batch() {
+        let level = (0..70)
+            .map(|index| {
+                digest([
+                    1300 + index * 4,
+                    1301 + index * 4,
+                    1302 + index * 4,
+                    1303 + index * 4,
+                ])
+            })
+            .collect::<Vec<_>>();
+        let query_rows = vec![0, 3, 16, 17, 35, 69];
+        let words = digest_words(&level);
+        let buffer = CudaDeviceBuffer::from_u64_words(&words).expect("digests should upload");
+        let digest_level = CudaDigestLevel::new(
+            buffer,
+            level.len(),
+            4,
+            cuda_poseidon2_width16_merkle_digest_root_device,
+        );
+        let prefix_level_count = 3;
+        let expected = digest_level
+            .opening_path_prefix_batch_for_source_rows(&query_rows, prefix_level_count)
+            .expect("host-decoded prefix batch should hash");
+
+        let actual = digest_level
+            .opening_path_prefix_batch_device_for_source_rows(&query_rows, prefix_level_count)
+            .expect("device prefix batch should hash")
+            .into_siblings()
+            .expect("device prefix batch should decode");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn cuda_digest_checkpoint_batched_suffix_device_decodes_like_host_batch() {
+        let level = (0..70)
+            .map(|index| {
+                digest([
+                    1700 + index * 4,
+                    1701 + index * 4,
+                    1702 + index * 4,
+                    1703 + index * 4,
+                ])
+            })
+            .collect::<Vec<_>>();
+        let query_rows = vec![0, 3, 16, 17, 35, 69];
+        let words = digest_words(&level);
+        let buffer = CudaDeviceBuffer::from_u64_words(&words).expect("digests should upload");
+        let digest_level = CudaDigestLevel::new(
+            buffer,
+            level.len(),
+            4,
+            cuda_poseidon2_width16_merkle_digest_root_device,
+        );
+        let checkpoint = digest_level
+            .parent_checkpoint_level(2)
+            .expect("checkpoint level should hash")
+            .expect("checkpoint should fold multiple levels");
+        let expected = checkpoint
+            .opening_path_siblings_batch_for_source_rows(&query_rows)
+            .expect("host-decoded checkpoint suffix should hash");
+
+        let actual = checkpoint
+            .opening_path_siblings_batch_device_for_source_rows(&query_rows)
+            .expect("device checkpoint suffix should hash")
+            .into_siblings()
+            .expect("device checkpoint suffix should decode");
+
+        assert_eq!(actual, expected);
     }
 
     #[test]

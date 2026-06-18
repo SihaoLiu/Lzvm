@@ -1099,8 +1099,8 @@ fn cuda_retained_checkpoint_opening_batches_lower_prefix_work() {
 
     let batch_body = function_body(
         &merkle_source,
+        "pub(crate) fn opening_path_prefix_batch_device_for_source_rows",
         "pub(crate) fn opening_path_prefix_batch_for_source_rows",
-        "impl CudaDigestCheckpointLevel",
     );
     assert!(
         batch_body.contains("cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer")
@@ -1113,6 +1113,16 @@ fn cuda_retained_checkpoint_opening_batches_lower_prefix_work() {
             && !batch_body
                 .contains("cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device("),
         "CUDA digest opening prefix batches should avoid the host-returning batch prefix API"
+    );
+    let host_batch_body = function_body(
+        &merkle_source,
+        "pub(crate) fn opening_path_prefix_batch_for_source_rows",
+        "impl CudaDigestCheckpointLevel",
+    );
+    assert!(
+        host_batch_body.contains("opening_path_prefix_batch_device_for_source_rows")
+            && host_batch_body.contains(".into_siblings()"),
+        "host decoded prefix batches should materialize from the typed device sibling buffer"
     );
 }
 
