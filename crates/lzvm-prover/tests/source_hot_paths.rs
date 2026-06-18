@@ -7711,6 +7711,27 @@ fn guest_machine_zero_register_writes_return_before_rollback_lookup() {
 }
 
 #[test]
+fn guest_machine_nonzero_register_writes_skip_second_zero_branch() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let body = function_body(
+        &source,
+        "fn write_reported_register",
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\nstruct GuestLoadResult",
+    );
+
+    assert!(
+        body.contains("write_nonzero_decoded_register"),
+        "nonzero register writes should use a helper that does not repeat the x0 branch"
+    );
+    assert!(
+        !body.contains("write_decoded_register(index, value)"),
+        "write_reported_register should not re-enter the generic x0-checking write helper after its early return"
+    );
+}
+
+#[test]
 fn guest_machine_fetch_uses_specialized_memory_path() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_machine/mod.rs");

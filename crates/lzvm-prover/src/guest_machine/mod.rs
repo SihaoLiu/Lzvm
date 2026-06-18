@@ -145,11 +145,9 @@ impl GuestMachineState {
         self.pc = pc;
     }
 
-    fn write_decoded_register(&mut self, index: u8, value: u64) {
-        let index = usize::from(index);
-        if index != 0 {
-            self.registers[index] = value;
-        }
+    fn write_nonzero_decoded_register(&mut self, index: u8, value: u64) {
+        debug_assert_ne!(index, 0);
+        self.registers[usize::from(index)] = value;
     }
 
     fn read_decoded_register(&self, index: u8) -> u64 {
@@ -381,7 +379,7 @@ impl GuestInstructionEffects {
 
     fn restore_registers(&self, state: &mut GuestMachineState) {
         for &(index, value) in self.register_rollback.iter().rev() {
-            state.write_decoded_register(index, value);
+            state.write_nonzero_decoded_register(index, value);
         }
     }
 
@@ -1094,7 +1092,7 @@ fn write_reported_register(
         return;
     }
     let previous_value = state.read_decoded_register(index);
-    state.write_decoded_register(index, value);
+    state.write_nonzero_decoded_register(index, value);
     effects.record_register_write(index, previous_value, value);
 }
 
