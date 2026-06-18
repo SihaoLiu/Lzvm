@@ -4344,6 +4344,183 @@ struct GuestPcTraceDeviceSegmentBuild {
     continuation_state: ZiskMainTraceState,
 }
 
+#[cfg(feature = "cuda")]
+struct ZiskMainStreamingDeviceSegmentBuilder {
+    row_count: usize,
+    segment: ZiskMainTraceSegmentInfo,
+    context: ZiskMainReportValidationContext<'static>,
+    device_trace_descriptors: ZiskMainDeviceTraceDescriptors,
+    state: ZiskMainTraceState,
+    output_row: usize,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Clone, Copy)]
+struct ZiskMainTraceLowerTimingConfig {
+    detail_timing: bool,
+    shape_timing: bool,
+    detail_sample_stride: usize,
+    row_timing_enabled: bool,
+}
+
+#[cfg(feature = "cuda")]
+impl ZiskMainTraceLowerTimingConfig {
+    fn from_env() -> Self {
+        let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
+        let shape_timing = guest_pc_trace_shape_timing_enabled();
+        Self {
+            detail_timing,
+            shape_timing,
+            detail_sample_stride: guest_pc_trace_detail_timing_sample_stride(),
+            row_timing_enabled: detail_timing || shape_timing,
+        }
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl ZiskMainStreamingDeviceSegmentBuilder {
+    fn new(
+        layout: &WitnessTraceLayout,
+        initial_state: &ZiskMainTraceState,
+        segment: ZiskMainTraceSegmentInfo,
+    ) -> Result<Option<Self>, GuestPcTraceBackendError> {
+        let Some(columns) = zisk_main_trace_columns(layout)? else {
+            return Ok(None);
+        };
+        let Some(device_trace_descriptors) =
+            main_device_trace_descriptors(layout, &columns, 0, segment)
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            row_count: layout.row_count(),
+            segment,
+            context: ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?,
+            device_trace_descriptors,
+            state: initial_state.clone(),
+            output_row: 0,
+        }))
+    }
+
+    #[inline(always)]
+    fn push_report_at(
+        &mut self,
+        report_index: usize,
+        report: &GuestMachineReport,
+        next_instruction: impl FnMut() -> Option<RiscvInstruction>,
+        timing_config: ZiskMainTraceLowerTimingConfig,
+        mut timing: Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<usize, GuestPcTraceBackendError> {
+        let report_detail_timing = timing_config.detail_timing
+            && report_index.is_multiple_of(timing_config.detail_sample_stride);
+        let report_started = timing
+            .as_ref()
+            .filter(|_| report_detail_timing)
+            .map(|_| Instant::now());
+        let descriptor_rows_before = self.device_trace_descriptors.descriptor_rows();
+        let pending_report = self.state.pending_dma.is_some();
+        let written_rows = validate_and_apply_zisk_main_report(
+            self.output_row,
+            report,
+            next_instruction,
+            &mut self.state,
+            self.context,
+            if timing_config.row_timing_enabled
+                && (report_detail_timing || timing_config.shape_timing)
+            {
+                timing.as_deref_mut()
+            } else {
+                None
+            },
+            report_detail_timing,
+            timing_config.shape_timing,
+            |_, values, mut visit_timing| {
+                if timing_config.shape_timing {
+                    if let Some(timing) = visit_timing.as_deref_mut() {
+                        record_trace_lowered_row_shape(timing, &values.instruction);
+                    }
+                }
+                if report_detail_timing {
+                    let _descriptor_timer = DurationTimer::new(
+                        visit_timing
+                            .as_deref_mut()
+                            .map(|timing| &mut timing.trace_descriptor_duration),
+                    );
+                    append_main_device_trace_descriptor(&mut self.device_trace_descriptors, &values)
+                } else {
+                    append_main_device_trace_descriptor(&mut self.device_trace_descriptors, &values)
+                }
+            },
+        )?;
+        if let Some(timing) = timing {
+            timing.trace_report_count += 1;
+            timing.trace_report_row_count += written_rows;
+            timing.trace_descriptor_row_count += self
+                .device_trace_descriptors
+                .descriptor_rows()
+                .saturating_sub(descriptor_rows_before);
+            if timing_config.shape_timing {
+                record_trace_report_shape(timing, report, pending_report, written_rows);
+            }
+            if let Some(started) = report_started {
+                timing.trace_report_detail_sample_count += 1;
+                let duration = started.elapsed();
+                timing.trace_report_sample_duration += duration;
+                record_trace_report_duration(
+                    timing,
+                    report,
+                    pending_report,
+                    written_rows,
+                    duration,
+                );
+            }
+        }
+        self.output_row = self.output_row.checked_add(written_rows).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main row index overflow".to_owned(),
+            }
+        })?;
+        Ok(written_rows)
+    }
+
+    fn finish(
+        mut self,
+        reports: &[GuestMachineReport],
+        terminal_pc: u64,
+        mut timing: Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<GuestPcTraceDeviceSegmentBuild, GuestPcTraceBackendError> {
+        self.device_trace_descriptors.terminal_pc = terminal_pc;
+        record_trace_descriptor_width_counts(&mut timing, &self.device_trace_descriptors);
+        if self.output_row < self.row_count {
+            if !self.segment.is_last_segment {
+                return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "non-final Zisk Main segment does not fill layout rows".to_owned(),
+                });
+            }
+            validate_zisk_main_halt_pc(self.output_row, &self.state, terminal_pc)?;
+        }
+        let continuation_state =
+            zisk_main_continuation_state(self.row_count, &self.state, self.segment)?;
+        let unit_values = zisk_main_unit_values(
+            self.row_count,
+            self.output_row,
+            reports,
+            terminal_pc,
+            &self.state,
+            self.segment,
+        );
+        Ok(GuestPcTraceDeviceSegmentBuild {
+            device_segment_material: GuestPcTraceDeviceSegmentMaterial {
+                trace_source_prefix_rows: self.output_row,
+                device_trace_descriptors: self.device_trace_descriptors,
+            },
+            unit_values,
+            final_state: self.state,
+            continuation_state,
+        })
+    }
+}
+
 struct ZiskMainReportTraceValues {
     instruction: ZiskMainInstruction,
     a: u64,
@@ -5742,127 +5919,31 @@ fn build_layout_zisk_main_trace_segment_device_material(
     segment: ZiskMainTraceSegmentInfo,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<Option<GuestPcTraceDeviceSegmentBuild>, GuestPcTraceBackendError> {
-    let Some(columns) = zisk_main_trace_columns(layout)? else {
-        return Ok(None);
-    };
     if reports.len() > layout.row_count() {
         return Err(GuestPcTraceBackendError::OutputOverflow {
             produced_len: layout_trace_byte_len(reports.len(), layout.column_count()),
             output_len: layout_trace_byte_len(layout.row_count(), layout.column_count()),
         });
     }
-    let Some(mut device_trace_descriptors) =
-        main_device_trace_descriptors(layout, &columns, terminal_pc, segment)
+    let Some(mut builder) =
+        ZiskMainStreamingDeviceSegmentBuilder::new(layout, initial_state, segment)?
     else {
         return Ok(None);
     };
 
-    let mut state = initial_state.clone();
-    let mut output_row = 0_usize;
-    let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
-    let shape_timing = guest_pc_trace_shape_timing_enabled();
-    let detail_sample_stride = guest_pc_trace_detail_timing_sample_stride();
-    let row_timing_enabled = detail_timing || shape_timing;
-    let context = ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?;
+    let timing_config = ZiskMainTraceLowerTimingConfig::from_env();
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
     for (report_index, report) in reports.iter().enumerate() {
-        let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;
-        let report_started = timing
-            .as_ref()
-            .filter(|_| report_detail_timing)
-            .map(|_| Instant::now());
-        let descriptor_rows_before = device_trace_descriptors.descriptor_rows();
-        let pending_report = state.pending_dma.is_some();
-        let row_timing = if row_timing_enabled && (report_detail_timing || shape_timing) {
-            timing.as_deref_mut()
-        } else {
-            None
-        };
-        let written_rows = validate_and_apply_zisk_main_report(
-            output_row,
+        builder.push_report_at(
+            report_index,
             report,
-            &mut || guest_report_next_instruction(reports, report_index, lookahead_instruction),
-            &mut state,
-            context,
-            row_timing,
-            report_detail_timing,
-            shape_timing,
-            |_, values, mut visit_timing| {
-                if shape_timing {
-                    if let Some(timing) = visit_timing.as_deref_mut() {
-                        record_trace_lowered_row_shape(timing, &values.instruction);
-                    }
-                }
-                if report_detail_timing {
-                    let _descriptor_timer = DurationTimer::new(
-                        visit_timing
-                            .as_deref_mut()
-                            .map(|timing| &mut timing.trace_descriptor_duration),
-                    );
-                    append_main_device_trace_descriptor(&mut device_trace_descriptors, &values)
-                } else {
-                    append_main_device_trace_descriptor(&mut device_trace_descriptors, &values)
-                }
-            },
+            || guest_report_next_instruction(reports, report_index, lookahead_instruction),
+            timing_config,
+            timing.as_deref_mut(),
         )?;
-        if let Some(timing) = timing.as_deref_mut() {
-            timing.trace_report_count += 1;
-            timing.trace_report_row_count += written_rows;
-            timing.trace_descriptor_row_count += device_trace_descriptors
-                .descriptor_rows()
-                .saturating_sub(descriptor_rows_before);
-            if shape_timing {
-                record_trace_report_shape(timing, report, pending_report, written_rows);
-            }
-            if let Some(started) = report_started {
-                timing.trace_report_detail_sample_count += 1;
-                let duration = started.elapsed();
-                timing.trace_report_sample_duration += duration;
-                record_trace_report_duration(
-                    timing,
-                    report,
-                    pending_report,
-                    written_rows,
-                    duration,
-                );
-            }
-        }
-        output_row = output_row.checked_add(written_rows).ok_or_else(|| {
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "Zisk Main row index overflow".to_owned(),
-            }
-        })?;
     }
     record_aggregate_trace_report_duration(&mut timing, aggregate_report_started);
-    record_trace_descriptor_width_counts(&mut timing, &device_trace_descriptors);
-
-    if output_row < layout.row_count() {
-        if !segment.is_last_segment {
-            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "non-final Zisk Main segment does not fill layout rows".to_owned(),
-            });
-        }
-        validate_zisk_main_halt_pc(output_row, &state, terminal_pc)?;
-    }
-
-    let continuation_state = zisk_main_continuation_state(layout.row_count(), &state, segment)?;
-    let unit_values = zisk_main_unit_values(
-        layout.row_count(),
-        output_row,
-        reports,
-        terminal_pc,
-        &state,
-        segment,
-    );
-    Ok(Some(GuestPcTraceDeviceSegmentBuild {
-        device_segment_material: GuestPcTraceDeviceSegmentMaterial {
-            trace_source_prefix_rows: output_row,
-            device_trace_descriptors,
-        },
-        unit_values,
-        final_state: state,
-        continuation_state,
-    }))
+    builder.finish(reports, terminal_pc, timing).map(Some)
 }
 
 #[cfg(feature = "cuda")]

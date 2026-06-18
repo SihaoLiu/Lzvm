@@ -1477,6 +1477,126 @@ fn zisk_main_device_sparse_descriptor_falls_back_to_wide_words_when_values_do_no
 
 #[test]
 #[cfg(feature = "cuda")]
+fn streaming_device_segment_builder_matches_batch_device_material() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-streaming-device-builder");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_device_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let mut pending = Vec::new();
+
+    produce_guest_pc_trace_pending_slices(
+        32,
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        &[],
+        layout.row_count(),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
+    )
+    .expect("pending slices should produce");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let segment = pending
+        .iter()
+        .find(|segment| !segment.is_last_segment)
+        .expect("fixture should include a full non-final segment");
+    let seed = segment
+        .seed
+        .as_deref()
+        .expect("seed mirror should attach segment seed");
+    let segment_info = ZiskMainTraceSegmentInfo {
+        trace_instance_index: segment.trace_instance_index,
+        is_last_segment: segment.is_last_segment,
+        previous_c: seed.previous_c,
+    };
+    let batch = build_layout_zisk_main_trace_segment_device_material(
+        &layout,
+        &segment.reports,
+        segment.terminal_pc,
+        &seed.initial_state,
+        segment.lookahead_instruction,
+        segment_info,
+        None,
+    )
+    .expect("batch device material should build")
+    .expect("layout should support device material");
+    let mut streaming =
+        ZiskMainStreamingDeviceSegmentBuilder::new(&layout, &seed.initial_state, segment_info)
+            .expect("streaming builder should initialize")
+            .expect("layout should support streaming device material");
+    let timing_config = ZiskMainTraceLowerTimingConfig::from_env();
+    for (report_index, report) in segment.reports.iter().enumerate() {
+        streaming
+            .push_report_at(
+                report_index,
+                report,
+                || {
+                    guest_report_next_instruction(
+                        &segment.reports,
+                        report_index,
+                        segment.lookahead_instruction,
+                    )
+                },
+                timing_config,
+                None,
+            )
+            .expect("streaming report should append");
+    }
+    let streamed = streaming
+        .finish(&segment.reports, segment.terminal_pc, None)
+        .expect("streaming material should finish");
+
+    assert_eq!(
+        streamed.device_segment_material.trace_source_prefix_rows,
+        batch.device_segment_material.trace_source_prefix_rows
+    );
+    assert_eq!(
+        streamed
+            .device_segment_material
+            .device_trace_descriptors
+            .words(),
+        batch
+            .device_segment_material
+            .device_trace_descriptors
+            .words()
+    );
+    assert_eq!(
+        streamed
+            .device_segment_material
+            .device_trace_descriptors
+            .sparse_high_words(),
+        batch
+            .device_segment_material
+            .device_trace_descriptors
+            .sparse_high_words()
+    );
+    assert_eq!(streamed.unit_values, batch.unit_values);
+    assert_eq!(streamed.final_state, batch.final_state);
+    assert_eq!(streamed.continuation_state, batch.continuation_state);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn main_descriptor_width_tracks_segment_mem_step_capacity() {
     assert_eq!(
         main_segment_descriptor_words(120_000_000, 0),
@@ -2047,4 +2167,48 @@ fn sample_unit_with_zisk_main_columns_rows(row_count: u64) -> ProveUnitSchedule 
         pcs_material_leaf_byte_count: None,
         pcs_material_node_byte_count: None,
     }
+}
+
+#[cfg(feature = "cuda")]
+fn sample_unit_with_zisk_main_device_columns_rows(row_count: u64) -> ProveUnitSchedule {
+    let mut unit = sample_unit_with_zisk_main_columns_rows(row_count);
+    unit.stage_commit_widths = vec![39];
+    unit.commitment_columns = vec![
+        commitment_column("a", 1, 0, 2),
+        commitment_column("b", 1, 2, 2),
+        commitment_column("c", 1, 4, 2),
+        commitment_column("flag", 1, 6, 1),
+        commitment_column("pc", 1, 7, 1),
+        commitment_column("a_src_imm", 1, 8, 1),
+        commitment_column("a_src_mem", 1, 9, 1),
+        commitment_column("a_offset_imm0", 1, 10, 1),
+        commitment_column("a_imm1", 1, 11, 1),
+        commitment_column("is_precompiled", 1, 12, 1),
+        commitment_column("b_src_imm", 1, 13, 1),
+        commitment_column("b_src_mem", 1, 14, 1),
+        commitment_column("b_offset_imm0", 1, 15, 1),
+        commitment_column("b_imm1", 1, 16, 1),
+        commitment_column("b_src_ind", 1, 17, 1),
+        commitment_column("ind_width", 1, 18, 1),
+        commitment_column("is_external_op", 1, 19, 1),
+        commitment_column("op", 1, 20, 1),
+        commitment_column("store_pc", 1, 21, 1),
+        commitment_column("store_mem", 1, 22, 1),
+        commitment_column("store_ind", 1, 23, 1),
+        commitment_column("store_offset", 1, 24, 1),
+        commitment_column("set_pc", 1, 25, 1),
+        commitment_column("jmp_offset1", 1, 26, 1),
+        commitment_column("jmp_offset2", 1, 27, 1),
+        commitment_column("m32", 1, 28, 1),
+        commitment_column("addr1", 1, 29, 1),
+        commitment_column("a_reg_prev_mem_step", 1, 30, 1),
+        commitment_column("b_reg_prev_mem_step", 1, 31, 1),
+        commitment_column("store_reg_prev_mem_step", 1, 32, 1),
+        commitment_column("store_reg_prev_value", 1, 33, 2),
+        commitment_column("a_src_reg", 1, 35, 1),
+        commitment_column("b_src_reg", 1, 36, 1),
+        commitment_column("store_reg", 1, 37, 1),
+        commitment_column("known_zero", 1, 38, 1),
+    ];
+    unit
 }
