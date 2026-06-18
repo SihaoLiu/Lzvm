@@ -1167,14 +1167,20 @@ theorem source_lookup_checked_acceptance_verifier_core_contract
       SourceLookupCheckedAcceptance system auxiliary publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    source_lookup_auxiliary_acceptance_sound
-      assumptions
+  have accepted :=
+    source_lookup_checked_acceptance_projects_verifier_acceptance
       auxiliary
       publicInput
       proof
       checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof accepted)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof accepted)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
+          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 theorem witness_leaf_digest_checked_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
