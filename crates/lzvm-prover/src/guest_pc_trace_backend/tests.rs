@@ -201,6 +201,34 @@ fn precompile_memory_validation_rejects_precompile_rows_with_missing_accesses() 
 }
 
 #[test]
+fn precompile_memory_validation_required_matches_row_shape() {
+    let report = addi_report();
+    let instruction = lower_guest_report(&report).expect("report should lower");
+    assert!(!zisk_main_precompile_memory_validation_required(
+        &instruction,
+        ZiskMainReportEffects::from_report(&report),
+    ));
+
+    let mut non_precompile_with_access = addi_report();
+    non_precompile_with_access
+        .precompile_memory_accesses
+        .push(memory_read(64, 7));
+    let instruction = lower_guest_report(&non_precompile_with_access).expect("report should lower");
+    assert!(zisk_main_precompile_memory_validation_required(
+        &instruction,
+        ZiskMainReportEffects::from_report(&non_precompile_with_access),
+    ));
+
+    let mut precompile_without_access = add256_report();
+    precompile_without_access.precompile_memory_accesses.clear();
+    let instruction = lower_guest_report(&precompile_without_access).expect("report should lower");
+    assert!(zisk_main_precompile_memory_validation_required(
+        &instruction,
+        ZiskMainReportEffects::from_report(&precompile_without_access),
+    ));
+}
+
+#[test]
 fn builds_zisk_main_segment_trace_without_serialized_roundtrip() {
     let unit = sample_unit_with_zisk_main_columns_rows(2);
     let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
