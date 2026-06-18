@@ -121,13 +121,14 @@ theorem row_major_digest_prefix_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    row_major_digest_prefix_checked_acceptance_sound
-      assumptions
-      validation
-      publicInput
-      proof
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  have accepted := checked.left
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof accepted)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof accepted)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
+          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 end Lzvm

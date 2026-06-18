@@ -30,4 +30,22 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
             "row_major_digest_prefix_checked_acceptance_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "row_major_digest_prefix_checked_acceptance_verifier_core_contract",
+        &[
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "row_major_digest_prefix_checked_acceptance_verifier_core_contract",
+        &[
+            "row_major_digest_prefix_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
 }
