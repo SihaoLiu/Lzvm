@@ -148,6 +148,24 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "RuntimeVerifierCoreContract system publicInput proof",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_evidence",
+            "runtime_query_plan_binding_checked_acceptance_opening",
+            "runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract",
+            "runtime_query_plan_binding_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_seeded_contract",

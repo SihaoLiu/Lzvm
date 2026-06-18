@@ -988,24 +988,13 @@ theorem runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
           /\ system.friQueriesValid publicInput proof
           /\ RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have sound :=
-    runtime_query_plan_binding_checked_acceptance_sound
-      assumptions
+  have queryPlanEvidence :=
+    runtime_query_plan_binding_checked_acceptance_evidence
       validation
       artifact
       publicInput
       proof
-      requiresExternalSource
       accepted
-  rcases sound with
-    ⟨queryPlanEvidence,
-      _challengeEvidence,
-      openingSegmentEvidence,
-      openingEvidence,
-      transcriptBound,
-      pcsOpeningsValid,
-      friQueriesValid,
-      soundWitness⟩
   have queryPlanBound :=
     runtime_query_plan_binding_evidence_implies_bound_contract
       validation
@@ -1013,13 +1002,35 @@ theorem runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
       publicInput
       proof
       queryPlanEvidence
-  have openingSegmentBound :=
-    runtime_opening_segment_binding_evidence_implies_bound_contract
+  have openingAccepted :=
+    runtime_query_plan_binding_checked_acceptance_opening
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingAndCore :=
+    runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract
+      assumptions
       validation.openingValidation
       artifact
       publicInput
       proof
-      openingSegmentEvidence
+      requiresExternalSource
+      openingAccepted
+  rcases openingAndCore with
+    ⟨openingSegmentBound, openingEvidence, _openingCoreContract⟩
+  have coreContract :=
+    runtime_query_plan_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  rcases coreContract with
+    ⟨transcriptBound, publicInputBound, pcsOpeningsValid, friQueriesValid⟩
   exact
     And.intro queryPlanBound
       (And.intro openingSegmentBound
@@ -1027,7 +1038,9 @@ theorem runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
           (And.intro transcriptBound
             (And.intro pcsOpeningsValid
               (And.intro friQueriesValid
-                (sound_witness_implies_verifier_core_contract soundWitness))))))
+                (And.intro transcriptBound
+                  (And.intro publicInputBound
+                    (And.intro pcsOpeningsValid friQueriesValid))))))))
 
 theorem runtime_query_plan_binding_checked_acceptance_seeded_opening_and_core_contract
     {system : VerifierModel}
