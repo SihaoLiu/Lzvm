@@ -1634,6 +1634,47 @@ fn streaming_device_segment_builder_matches_batch_device_material() {
     assert_eq!(streamed.unit_values, batch.unit_values);
     assert_eq!(streamed.final_state, batch.final_state);
     assert_eq!(streamed.continuation_state, batch.continuation_state);
+
+    let mut fed_streaming =
+        ZiskMainStreamingDeviceSegmentBuilder::new(&layout, &seed.initial_state, segment_info)
+            .expect("fed streaming builder should initialize")
+            .expect("layout should support fed streaming device material");
+    let mut feeder = ZiskMainStreamingDeviceReportFeeder::new(timing_config);
+    for report in &segment.reports {
+        feeder
+            .push_report(&mut fed_streaming, report, None)
+            .expect("streaming feeder should append report when lookahead is available");
+    }
+    feeder
+        .finish(&mut fed_streaming, segment.lookahead_instruction, None)
+        .expect("streaming feeder should flush final report");
+    let fed = fed_streaming
+        .finish(segment.terminal_pc, None)
+        .expect("fed streaming material should finish");
+
+    assert_eq!(
+        fed.device_segment_material.trace_source_prefix_rows,
+        batch.device_segment_material.trace_source_prefix_rows
+    );
+    assert_eq!(
+        fed.device_segment_material.device_trace_descriptors.words(),
+        batch
+            .device_segment_material
+            .device_trace_descriptors
+            .words()
+    );
+    assert_eq!(
+        fed.device_segment_material
+            .device_trace_descriptors
+            .sparse_high_words(),
+        batch
+            .device_segment_material
+            .device_trace_descriptors
+            .sparse_high_words()
+    );
+    assert_eq!(fed.unit_values, batch.unit_values);
+    assert_eq!(fed.final_state, batch.final_state);
+    assert_eq!(fed.continuation_state, batch.continuation_state);
 }
 
 #[test]

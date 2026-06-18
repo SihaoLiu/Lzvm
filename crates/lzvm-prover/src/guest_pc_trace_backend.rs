@@ -4379,6 +4379,67 @@ impl ZiskMainTraceLowerTimingConfig {
 }
 
 #[cfg(feature = "cuda")]
+struct ZiskMainStreamingDeviceReportFeeder<'a> {
+    pending_report: Option<&'a GuestMachineReport>,
+    next_report_index: usize,
+    timing_config: ZiskMainTraceLowerTimingConfig,
+}
+
+#[cfg(feature = "cuda")]
+impl<'a> ZiskMainStreamingDeviceReportFeeder<'a> {
+    fn new(timing_config: ZiskMainTraceLowerTimingConfig) -> Self {
+        Self {
+            pending_report: None,
+            next_report_index: 0,
+            timing_config,
+        }
+    }
+
+    fn push_report(
+        &mut self,
+        builder: &mut ZiskMainStreamingDeviceSegmentBuilder,
+        report: &'a GuestMachineReport,
+        timing: Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<(), GuestPcTraceBackendError> {
+        if let Some(pending) = self.pending_report.take() {
+            let next_instruction = report.instruction;
+            builder.push_report_at(
+                self.next_report_index,
+                pending,
+                || Some(next_instruction),
+                self.timing_config,
+                timing,
+            )?;
+            self.next_report_index = self.next_report_index.checked_add(1).ok_or_else(|| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "Zisk Main report index overflow".to_owned(),
+                }
+            })?;
+        }
+        self.pending_report = Some(report);
+        Ok(())
+    }
+
+    fn finish(
+        mut self,
+        builder: &mut ZiskMainStreamingDeviceSegmentBuilder,
+        lookahead_instruction: Option<RiscvInstruction>,
+        timing: Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<(), GuestPcTraceBackendError> {
+        if let Some(pending) = self.pending_report.take() {
+            builder.push_report_at(
+                self.next_report_index,
+                pending,
+                || lookahead_instruction,
+                self.timing_config,
+                timing,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "cuda")]
 impl ZiskMainStreamingDeviceSegmentBuilder {
     fn new(
         layout: &WitnessTraceLayout,
@@ -5933,16 +5994,12 @@ fn build_layout_zisk_main_trace_segment_device_material(
     };
 
     let timing_config = ZiskMainTraceLowerTimingConfig::from_env();
+    let mut feeder = ZiskMainStreamingDeviceReportFeeder::new(timing_config);
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
-    for (report_index, report) in reports.iter().enumerate() {
-        builder.push_report_at(
-            report_index,
-            report,
-            || guest_report_next_instruction(reports, report_index, lookahead_instruction),
-            timing_config,
-            timing.as_deref_mut(),
-        )?;
+    for report in reports {
+        feeder.push_report(&mut builder, report, timing.as_deref_mut())?;
     }
+    feeder.finish(&mut builder, lookahead_instruction, timing.as_deref_mut())?;
     record_aggregate_trace_report_duration(&mut timing, aggregate_report_started);
     builder.finish(terminal_pc, timing).map(Some)
 }

@@ -2298,6 +2298,16 @@ fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
         "impl ZiskMainStreamingDeviceSegmentBuilder",
         "struct ZiskMainReportTraceValues",
     );
+    let feeder_struct_body = function_body(
+        &backend_source,
+        "struct ZiskMainStreamingDeviceReportFeeder",
+        "impl<'a> ZiskMainStreamingDeviceReportFeeder<'a>",
+    );
+    let feeder_impl_body = function_body(
+        &backend_source,
+        "impl<'a> ZiskMainStreamingDeviceReportFeeder<'a>",
+        "impl ZiskMainStreamingDeviceSegmentBuilder",
+    );
     let push_report_body = function_body(&backend_source, "fn push_report_at", "fn finish");
     assert!(
         builder_impl_body.contains(
@@ -2331,8 +2341,15 @@ fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
         "device material lowering should not recompute the validation context per report"
     );
     assert!(
-        device_material_body.contains("for (report_index, report) in reports.iter().enumerate()"),
+        device_material_body.contains("for report in reports")
+            && device_material_body.contains("feeder.push_report")
+            && device_material_body.contains("feeder.finish"),
         "device material builder should iterate reports"
+    );
+    assert!(
+        feeder_struct_body.contains("pending_report: Option<&'a GuestMachineReport>")
+            && feeder_impl_body.contains("pending_report.take()"),
+        "device material report feeder should retain only one pending report"
     );
 
     let host_write_body = function_body(
@@ -6194,6 +6211,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
     );
     let device_material_body =
         function_body(&backend_source, &device_material_start, device_material_end);
+    let feeder_impl_body = function_body(
+        &backend_source,
+        "impl<'a> ZiskMainStreamingDeviceReportFeeder<'a>",
+        "impl ZiskMainStreamingDeviceSegmentBuilder",
+    );
     let timing_config_body = function_body(
         &backend_source,
         "impl ZiskMainTraceLowerTimingConfig",
@@ -6235,11 +6257,15 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest PC device material lowerer should not construct descriptor timers when detail timing is disabled"
     );
     assert!(
-        device_material_body.contains("guest_report_next_instruction"),
-        "guest PC device material lowerer should use lazy next-instruction lookup"
+        feeder_impl_body.contains("let next_instruction = report.instruction;")
+            && feeder_impl_body.contains("|| Some(next_instruction)")
+            && feeder_impl_body.contains("|| lookahead_instruction"),
+        "guest PC device material lowerer should use one-report delayed lazy next-instruction lookup"
     );
     assert!(
-        !device_material_body.contains("let next_instruction = reports"),
+        !device_material_body.contains("guest_report_next_instruction")
+            && !device_material_body.contains("let next_instruction = reports")
+            && !feeder_impl_body.contains("guest_report_next_instruction"),
         "guest PC device material lowerer should not fetch the next instruction for every report"
     );
 
