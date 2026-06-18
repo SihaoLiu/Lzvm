@@ -4133,7 +4133,7 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             && material_body.contains("descriptor_upload_word_count")
             && material_body.contains("descriptor_upload_row_count")
             && material_body.contains("descriptors.words()")
-            && material_body.contains("descriptors.words().len()")
+            && material_body.contains("descriptors.upload_word_count()")
             && material_body.contains(".saturating_mul(std::mem::size_of::<u64>())")
             && material_body.contains("descriptors.descriptor_rows()"),
         "guest PC device material source build should count uploaded descriptor bytes, words, and rows"
@@ -6625,14 +6625,18 @@ fn fri_opening_from_transcript_values_borrows_large_vectors() {
         "FRI opening construction should borrow transcript polynomial values"
     );
     assert!(
-        body.contains("build_pcs_fri_opening_segment_from_value_refs"),
-        "FRI opening construction should use the borrowed opening builder"
+        body.contains("build_pcs_fri_opening_segment_from_transcript_values_cached_with_timing"),
+        "FRI opening construction should use the retained transcript commitment builder"
     );
 
     let helper_body = function_body(
         &source,
-        "fn build_pcs_fri_opening_segment_from_value_refs",
-        "pub fn build_pcs_fri_transcript_values_from_trace",
+        "fn build_pcs_fri_opening_segment_from_transcript_values_cached_with_timing",
+        "pub fn build_pcs_fri_opening_segment_from_trace",
+    );
+    assert!(
+        helper_body.contains("&query_unit.queries") && helper_body.contains("&input.commitments"),
+        "FRI opening construction should borrow query rows and retained transcript commitments"
     );
     for copy_operation in [
         "challenges.clone()",
