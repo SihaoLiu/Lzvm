@@ -1350,6 +1350,129 @@ theorem runtime_retained_leaf_digest_nary_opening_digest_contract_from_bundle
         (And.intro rootMatches
           (And.intro rowsFromSource rowsBoundToQueryPlan)))
 
+set_option linter.style.longLine false in
+theorem runtime_retained_leaf_digest_opening_checked_acceptance_sound_from_hash_concrete_opening
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.batchRowsValidation.openingSegmentValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.batchRowsValidation.openingSegmentValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedLeafDigestOpeningEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have evidence :=
+    runtime_retained_leaf_digest_opening_checked_acceptance_evidence
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have batchAccepted :=
+    validation.retainedLeafDigestOpeningAcceptedImpliesBatchRowsAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  have batchSound :=
+    runtime_batch_witness_opening_rows_checked_acceptance_sound_from_hash_concrete_opening
+      assumptions
+      hashAssumptions
+      validation.batchRowsValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      batchAccepted
+  exact And.intro evidence batchSound.right
+
+set_option linter.style.longLine false in
+theorem runtime_retained_leaf_digest_opening_checked_acceptance_sound_from_concrete_nary_merkle
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.batchRowsValidation.openingSegmentValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.batchRowsValidation.openingSegmentValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedLeafDigestOpeningEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  exact
+    runtime_retained_leaf_digest_opening_checked_acceptance_sound_from_hash_concrete_opening
+      assumptions
+      assumptions.crypto.hashCollisionResistance
+      validation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+
 theorem runtime_retained_leaf_digest_opening_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
