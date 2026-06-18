@@ -1549,14 +1549,20 @@ theorem gpu_coset_extension_checked_acceptance_verifier_core_contract
       GpuCosetExtensionCheckedAcceptance system validation publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_coset_extension_checked_acceptance_sound
-      assumptions
+  have accepted :=
+    gpu_coset_extension_checked_acceptance_projects_verifier_acceptance
       validation
       publicInput
       proof
       checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof accepted)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof accepted)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
+          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 theorem gpu_fri_interpolation_matches_host_implies_fri_folds_valid
     {system : VerifierModel}
@@ -1641,14 +1647,20 @@ theorem gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract
       GpuFriFoldInterpolationCheckedAcceptance system validation publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_fri_fold_interpolation_checked_acceptance_sound
-      assumptions
+  have accepted :=
+    gpu_fri_fold_interpolation_checked_acceptance_projects_verifier_acceptance
       validation
       publicInput
       proof
       checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof accepted)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof accepted)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
+          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 theorem gpu_merkle_digest_prefix_batch_matches_single_paths_implies_lower_prefixes_bound
     {system : VerifierModel}
@@ -1733,14 +1745,20 @@ theorem gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract
       GpuMerkleDigestPrefixBatchCheckedAcceptance system validation publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_merkle_digest_prefix_batch_checked_acceptance_sound
-      assumptions
+  have accepted :=
+    gpu_merkle_digest_prefix_batch_checked_acceptance_projects_verifier_acceptance
       validation
       publicInput
       proof
       checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof accepted)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof accepted)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
+          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 theorem gpu_setup_cache_reuse_sound
     (validation : GpuSetupCacheValidation)
