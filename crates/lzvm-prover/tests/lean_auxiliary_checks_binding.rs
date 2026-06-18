@@ -2751,6 +2751,47 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    for (theorem, sound_theorem) in [
+        (
+            "proof_artifact_finish_path_parent_hash_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_path_parent_hash_shape_acceptance_sound",
+        ),
+        (
+            "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound",
+        ),
+        (
+            "proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_row_values_shape_acceptance_sound",
+        ),
+        (
+            "proof_artifact_finish_external_source_timing_acceptance_verifier_core_contract",
+            "proof_artifact_finish_external_source_timing_acceptance_sound",
+        ),
+        (
+            "proof_artifact_finish_witness_opening_subtiming_acceptance_verifier_core_contract",
+            "proof_artifact_finish_witness_opening_subtiming_acceptance_sound",
+        ),
+        (
+            "proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract",
+            "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
+        ),
+        (
+            "proof_artifact_finish_descriptor_upload_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",
+        ),
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &lean_proof_timing_source,
+            theorem,
+            &["proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract"],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &lean_proof_timing_source,
+            theorem,
+            &[sound_theorem, "sound_witness_implies_verifier_core_contract"],
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &proof_timing_verifier_source,
         "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
