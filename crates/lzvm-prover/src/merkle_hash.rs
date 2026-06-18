@@ -118,6 +118,12 @@ pub(crate) struct CudaMerkleSiblingBatchDeviceBuffer {
 }
 
 #[cfg(feature = "cuda")]
+pub(crate) type CudaMerkleSiblingBatch = Vec<Vec<Vec<[Felt; HASH_WORDS]>>>;
+
+#[cfg(feature = "cuda")]
+pub(crate) type CudaMerkleSiblingBatchGroup = Vec<CudaMerkleSiblingBatch>;
+
+#[cfg(feature = "cuda")]
 impl CudaMerkleSiblingBatchDeviceBuffer {
     fn new(
         buffer: CudaDeviceBuffer,
@@ -146,9 +152,7 @@ impl CudaMerkleSiblingBatchDeviceBuffer {
         &self.buffer
     }
 
-    pub(crate) fn into_siblings(
-        self,
-    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, MerkleHashError> {
+    pub(crate) fn into_siblings(self) -> Result<CudaMerkleSiblingBatch, MerkleHashError> {
         let sibling_words = self.buffer.to_u64_words().map_err(MerkleHashError::Accel)?;
         decoded_merkle_siblings_from_words(
             &sibling_words,
@@ -156,6 +160,49 @@ impl CudaMerkleSiblingBatchDeviceBuffer {
             self.level_count,
             self.arity,
         )
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn into_siblings_many(
+        batches: Vec<Self>,
+    ) -> Result<CudaMerkleSiblingBatchGroup, MerkleHashError> {
+        let Some(first) = batches.first() else {
+            return Ok(Vec::new());
+        };
+        let level_count = first.level_count;
+        let arity = first.arity;
+        if batches
+            .iter()
+            .any(|batch| batch.level_count != level_count || batch.arity != arity)
+        {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let row_words = merkle_sibling_row_word_count(level_count, arity)?;
+        let total_rows = batches.iter().try_fold(0usize, |acc, batch| {
+            acc.checked_add(batch.row_count)
+                .ok_or(MerkleHashError::LengthOverflow)
+        })?;
+        let mut sources = Vec::with_capacity(total_rows);
+        for batch in &batches {
+            for row in 0..batch.row_count {
+                sources.push((&batch.buffer, batch.row_count, row));
+            }
+        }
+        let words = if sources.is_empty() {
+            Vec::new()
+        } else {
+            CudaDeviceBuffer::from_device_row_major_u64_rows(&sources, row_words)
+                .map_err(MerkleHashError::Accel)?
+                .to_u64_words()
+                .map_err(MerkleHashError::Accel)?
+        };
+        let decoded = decoded_merkle_siblings_from_words(&words, total_rows, level_count, arity)?;
+        let mut decoded = decoded.into_iter();
+        let mut out = Vec::with_capacity(batches.len());
+        for batch in batches {
+            out.push(decoded.by_ref().take(batch.row_count).collect());
+        }
+        Ok(out)
     }
 
     pub(crate) fn concat_levels(self, suffix: Self) -> Result<Self, MerkleHashError> {
@@ -1997,7 +2044,7 @@ mod tests {
         cuda_poseidon2_width16_device_words, cuda_poseidon2_width8_device_words, linear_hash,
         linear_hashes, linear_hashes_from_row_major_bytes, parent_hash, parent_hashes,
         parent_levels_from_digest_level, parent_levels_from_digest_level_on_cpu,
-        root_from_digest_level_on_cuda, CudaDigestLevel,
+        root_from_digest_level_on_cuda, CudaDigestLevel, CudaMerkleSiblingBatchDeviceBuffer,
     };
     use lzvm_accel::{
         cuda_poseidon2_width16_merkle_digest_root_device,
@@ -2516,6 +2563,76 @@ mod tests {
             .expect("device sibling batches should concatenate")
             .into_siblings()
             .expect("combined device siblings should decode");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn cuda_merkle_sibling_device_batches_decode_many_like_individual_decodes() {
+        let level = (0..70)
+            .map(|index| {
+                digest([
+                    2500 + index * 4,
+                    2501 + index * 4,
+                    2502 + index * 4,
+                    2503 + index * 4,
+                ])
+            })
+            .collect::<Vec<_>>();
+        let query_groups = [vec![0, 3], vec![16, 17, 35, 69]];
+        let words = digest_words(&level);
+        let buffer = CudaDeviceBuffer::from_u64_words(&words).expect("digests should upload");
+        let digest_level = CudaDigestLevel::new(
+            buffer,
+            level.len(),
+            4,
+            cuda_poseidon2_width16_merkle_digest_root_device,
+        );
+        let checkpoint = digest_level
+            .parent_checkpoint_level(2)
+            .expect("checkpoint level should hash")
+            .expect("checkpoint should fold multiple levels");
+
+        let mut expected = Vec::new();
+        let mut device_batches = Vec::new();
+        for query_rows in &query_groups {
+            let lower = digest_level
+                .opening_path_prefix_batch_for_source_rows(
+                    query_rows,
+                    checkpoint.folded_level_count(),
+                )
+                .expect("host lower prefixes should decode");
+            let upper = checkpoint
+                .opening_path_siblings_batch_for_source_rows(query_rows)
+                .expect("host upper suffixes should decode");
+            expected.push(
+                lower
+                    .into_iter()
+                    .zip(upper)
+                    .map(|(mut lower, upper)| {
+                        lower.extend(upper);
+                        lower
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            device_batches.push(
+                digest_level
+                    .opening_path_prefix_batch_device_for_source_rows(
+                        query_rows,
+                        checkpoint.folded_level_count(),
+                    )
+                    .expect("device lower prefixes should hash")
+                    .concat_levels(
+                        checkpoint
+                            .opening_path_siblings_batch_device_for_source_rows(query_rows)
+                            .expect("device upper suffixes should hash"),
+                    )
+                    .expect("device sibling batches should concatenate"),
+            );
+        }
+
+        let actual = CudaMerkleSiblingBatchDeviceBuffer::into_siblings_many(device_batches)
+            .expect("combined device sibling batches should decode");
 
         assert_eq!(actual, expected);
     }
