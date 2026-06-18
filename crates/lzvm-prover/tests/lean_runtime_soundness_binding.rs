@@ -481,6 +481,29 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             .contains("SoundWitness system publicInput proof"),
         "required external-source runtime soundness should package acceptance, external-source evidence, core obligations, and sound witness"
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_verifier_core_contract",
+        &["runtime_soundness_checked_acceptance_core_obligations"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_required_external_source_verifier_core_contract",
+        &[
+            "runtime_soundness_required_external_source_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_accepts_core_sound_witness",
+        &["runtime_soundness_required_external_source_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_required_external_source_accepts_core_sound_witness",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
     assert!(
         theorem_prefix(
             &lean_source,

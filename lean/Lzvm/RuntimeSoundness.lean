@@ -1227,8 +1227,8 @@ theorem runtime_soundness_required_external_source_verifier_core_contract
         requiresExternalSource ->
           RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked required
-  have sound :=
-    runtime_soundness_required_external_source_sound
+  exact
+    runtime_soundness_checked_acceptance_core_obligations
       assumptions
       validation
       artifact
@@ -1236,8 +1236,6 @@ theorem runtime_soundness_required_external_source_verifier_core_contract
       proof
       requiresExternalSource
       checked
-      required
-  exact sound_witness_implies_verifier_core_contract sound.right.right
 
 theorem runtime_soundness_required_external_source_accepts_core_sound_witness
     {system : VerifierModel}
@@ -1280,7 +1278,15 @@ theorem runtime_soundness_required_external_source_accepts_core_sound_witness
       checked
       required
   have coreContract :=
-    sound_witness_implies_verifier_core_contract requiredSound.right.right
+    runtime_soundness_required_external_source_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
   exact
     And.intro verifierAccepts
       (And.intro requiredSound.right.left
