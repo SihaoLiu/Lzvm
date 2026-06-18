@@ -3294,6 +3294,30 @@ fn rejects_seeded_fri_unit_proof_without_fri_opening_in_preflight() {
 }
 
 #[test]
+fn rejects_seeded_fri_unit_proof_with_unbound_opening_in_preflight() {
+    let mut fixture = seeded_fri_preflight_fixture("proof-artifact-seeded-fri-unbound-opening");
+    fixture.proof.segments.push(ProofSegment {
+        id: PCS_FRI_OPENING_SEGMENT_ID,
+        data: b"unbound".to_vec(),
+    });
+
+    let error = lzvm_prover::setup_preflight::validate_setup_preflight(
+        &fixture.catalog,
+        &fixture.proof,
+        &fixture.public_values,
+    )
+    .expect_err("seeded FRI unit proof with unbound opening should reject");
+    fs::remove_dir_all(&fixture.dir).expect("fixture directory should be removed");
+
+    assert!(
+        error
+            .to_string()
+            .contains("PCS FRI opening segment requires transcript query inputs"),
+        "{error}"
+    );
+}
+
+#[test]
 fn rejects_tampered_seeded_witness_commitment_in_preflight() {
     let mut fixture = seeded_fri_preflight_fixture("proof-artifact-seeded-fri-tampered-witness");
     tamper_seeded_witness_tree_digest(&mut fixture.proof);

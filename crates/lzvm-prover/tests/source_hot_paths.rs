@@ -1902,8 +1902,8 @@ fn improve_log_writer_uses_quoted_csv_rows() {
 fn improve_log_check_rejects_unquoted_summary_field() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/append-improve-log.py");
-    let log_path = crate_root.join(format!(
-        "../../temp/improve-log-unquoted-summary-check-{}.csv",
+    let log_path = crate_root.join("../..").join("temp").join(format!(
+        "improve-log-unquoted-summary-check-{}.csv",
         std::process::id()
     ));
     let _ = std::fs::remove_file(&log_path);
@@ -7218,6 +7218,9 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     let transcript_segments_path = crate_root.join("src/pcs_transcript_segments.rs");
     let transcript_segments_source = std::fs::read_to_string(&transcript_segments_path)
         .expect("PCS transcript segments source should read");
+    let prove_witness_tests_path = crate_root.join("tests/prove_witness.rs");
+    let prove_witness_tests_source = std::fs::read_to_string(&prove_witness_tests_path)
+        .expect("prove witness tests source should read");
 
     assert!(
         lean_root_source.contains("import Lzvm.QueryPlanBinding"),
@@ -7258,6 +7261,11 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
         query_plan_build_source.contains("hash_witness_commitment_segment_for_query_seed")
             && query_plan_build_source.contains("stage.tree_digest"),
         "seeded query plan derivation should bind witness tree digests"
+    );
+    assert!(
+        prove_witness_tests_source
+            .contains("rejects_seeded_fri_unit_proof_with_unbound_opening_in_preflight"),
+        "seeded FRI preflight should reject manually attached opening segments that are not transcript-bound"
     );
     assert!(
         transcript_segments_source.contains("derive_pcs_transcript_challenges_from_segments")
