@@ -1262,15 +1262,14 @@ theorem gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_retained_leaf_digest_limit_checked_acceptance_sound
-      assumptions
-      validation
-      config
-      publicInput
-      proof
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof checked.left)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof checked.left)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
+          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
 
 theorem gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
     {system : VerifierModel}
@@ -1331,15 +1330,14 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contra
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_retained_device_cache_budget_checked_acceptance_sound
-      assumptions
-      validation
-      budget
-      publicInput
-      proof
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof checked.left)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof checked.left)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
+          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
 
 theorem fri_fixed_column_cache_same_request_implies_cached_contents_bound
     (validation : FriFixedColumnCacheValidation)
@@ -1475,16 +1473,14 @@ theorem fri_fixed_column_cache_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    fri_fixed_column_cache_checked_acceptance_sound
-      assumptions
-      validation
-      cached
-      fresh
-      publicInput
-      proof
-      checked
-  exact sound_witness_implies_verifier_core_contract sound.right
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof checked.left)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof checked.left)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
+          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
 
 
 end Lzvm

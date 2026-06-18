@@ -2481,6 +2481,63 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ],
     );
     lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
+        &[
+            "checked.left",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
+        &[
+            "gpu_retained_leaf_digest_limit_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
+        &[
+            "checked.left",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
+        &[
+            "gpu_retained_device_cache_budget_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
+        &[
+            "checked.left",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
+        &[
+            "fri_fixed_column_cache_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
         "source_lookup_checked_acceptance_verifier_core_contract",
         &[
