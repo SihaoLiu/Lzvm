@@ -1170,6 +1170,18 @@ def trace_pipeline_action_hint(
         segment_receive_wait_ms >= total_ms * 0.25
         or pending_receive_wait_ms >= total_ms * 0.15
     )
+    pending_receive_wait_ratio = (
+        pending_receive_wait_ms / stream_elapsed_ms if stream_elapsed_ms else 0.0
+    )
+    runner_stream_ratio = runner_ms / stream_elapsed_ms if stream_elapsed_ms else 0.0
+
+    if (
+        trace_is_long
+        and parallel_lower_workers > 1
+        and pending_receive_wait_ratio >= 0.5
+        and runner_stream_ratio >= 0.75
+    ):
+        return "parallel_segment_reexecution_candidate"
 
     if trace_is_long and commit_is_long and queue_wait_is_long:
         return "trace_generation_and_commit_pipeline_candidate"
