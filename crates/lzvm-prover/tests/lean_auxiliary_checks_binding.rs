@@ -282,6 +282,24 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "ignored_metadata_acceptance_sound",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &auxiliary_source,
+        "auxiliary_checked_acceptance_verifier_core_contract",
+        &[
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &auxiliary_source,
+        "auxiliary_checked_acceptance_verifier_core_contract",
+        &[
+            "sound_witness_implies_verifier_core_contract",
+            "abstract_verifier_sound",
+        ],
+    );
     assert!(
         timing_source.contains("IgnoredMetadataObservedAcceptance system observations")
             && lean_source
