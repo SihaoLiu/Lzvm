@@ -2268,6 +2268,7 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
 #[test]
 fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     const STREAM_ENV: &str = "LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS";
+    const CHUNKS_ENV: &str = "LZVM_GUEST_PC_TRACE_REPORT_CHUNKS";
     const PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE";
     const PIPELINE_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
     const REPLAY_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY";
@@ -2293,6 +2294,11 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         parallel_lower_emitted_count: usize,
         parallel_lower_snapshot_replay_count: usize,
         parallel_lower_report_elided_count: usize,
+        report_chunk_sent_count: usize,
+        report_chunk_received_count: usize,
+        report_chunk_report_count: usize,
+        report_chunk_row_count: usize,
+        report_chunk_max_queued_count: usize,
         segment_commit_effective_worker_count: usize,
         segment_commit_worker_join_count: usize,
         segment_commit_worker_backpressure_join_count: usize,
@@ -2322,6 +2328,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         .lock()
         .expect("prove witness env lock should not be poisoned");
     let _stream_guard = TestEnvVarGuard::unset(STREAM_ENV);
+    let _chunks_guard = TestEnvVarGuard::unset(CHUNKS_ENV);
     let _pipeline_guard = TestEnvVarGuard::unset(PIPELINE_ENV);
     let _pipeline_workers_guard = TestEnvVarGuard::unset(PIPELINE_WORKERS_ENV);
     let _replay_guard = TestEnvVarGuard::unset(REPLAY_ENV);
@@ -2381,6 +2388,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         let mut parallel_lower_counts = None;
         let mut parallel_lower_snapshot_replay_count = None;
         let mut parallel_lower_report_elided_count = None;
+        let mut report_chunk_counts = None;
         let mut segment_commit_effective_worker_count = None;
         let mut segment_commit_worker_join_count = None;
         let mut segment_commit_worker_backpressure_join_count = None;
@@ -2409,6 +2417,13 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
                         Some(timing.guest_trace_parallel_lower_snapshot_replay_count());
                     parallel_lower_report_elided_count =
                         Some(timing.guest_trace_parallel_lower_report_elided_count());
+                    report_chunk_counts = Some((
+                        timing.guest_trace_report_chunk_sent_count(),
+                        timing.guest_trace_report_chunk_received_count(),
+                        timing.guest_trace_report_chunk_report_count(),
+                        timing.guest_trace_report_chunk_row_count(),
+                        timing.guest_trace_report_chunk_max_queued_count(),
+                    ));
                     segment_commit_effective_worker_count =
                         Some(timing.guest_segment_commit_effective_worker_count());
                     segment_commit_worker_join_count =
@@ -2439,6 +2454,13 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             .expect("timed run should report parallel lower replay count");
         let parallel_lower_report_elided_count = parallel_lower_report_elided_count
             .expect("timed run should report parallel lower report elision count");
+        let (
+            report_chunk_sent_count,
+            report_chunk_received_count,
+            report_chunk_report_count,
+            report_chunk_row_count,
+            report_chunk_max_queued_count,
+        ) = report_chunk_counts.expect("timed run should report chunk counts");
         let segment_commit_effective_worker_count = segment_commit_effective_worker_count
             .expect("timed run should report segment commit worker count");
         let segment_commit_worker_join_count = segment_commit_worker_join_count
@@ -2532,6 +2554,11 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             parallel_lower_emitted_count,
             parallel_lower_snapshot_replay_count,
             parallel_lower_report_elided_count,
+            report_chunk_sent_count,
+            report_chunk_received_count,
+            report_chunk_report_count,
+            report_chunk_row_count,
+            report_chunk_max_queued_count,
             segment_commit_effective_worker_count,
             segment_commit_worker_join_count,
             segment_commit_worker_backpressure_join_count,
@@ -2551,6 +2578,9 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     std::env::set_var(STREAM_ENV, "1");
     let stream_run = run("stream");
     std::env::remove_var(STREAM_ENV);
+    std::env::set_var(CHUNKS_ENV, "1");
+    let chunk_run = run("chunks");
+    std::env::remove_var(CHUNKS_ENV);
     std::env::set_var(PIPELINE_ENV, "1");
     std::env::set_var(PIPELINE_WORKERS_ENV, "2");
     let seed_pipeline_run = run("seed-pipeline");
@@ -2601,6 +2631,54 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert_eq!(
         stream_run.segment_replay_count, 0,
         "stream ingress alone should not use segment replay"
+    );
+    assert_eq!(
+        default_run.report_chunk_sent_count, 0,
+        "default path should not send report chunks"
+    );
+    assert_eq!(
+        default_run.report_chunk_received_count, 0,
+        "default path should not receive report chunks"
+    );
+    assert_eq!(
+        default_run.report_chunk_report_count, 0,
+        "default path should not count chunked reports"
+    );
+    assert_eq!(
+        default_run.report_chunk_row_count, 0,
+        "default path should not count chunked rows"
+    );
+    assert_eq!(
+        default_run.report_chunk_max_queued_count, 0,
+        "default path should not queue report chunks"
+    );
+    assert!(
+        chunk_run.report_chunk_sent_count > 0,
+        "chunk opt-in should send report chunks"
+    );
+    assert_eq!(
+        chunk_run.report_chunk_sent_count, chunk_run.report_chunk_received_count,
+        "chunk opt-in should receive every sent report chunk"
+    );
+    assert!(
+        chunk_run.report_chunk_report_count > 0,
+        "chunk opt-in should count reports carried by chunks"
+    );
+    assert!(
+        chunk_run.report_chunk_row_count > 0,
+        "chunk opt-in should count rows carried by chunks"
+    );
+    assert!(
+        chunk_run.report_chunk_max_queued_count > 0,
+        "chunk opt-in should record queued chunks"
+    );
+    assert_eq!(
+        chunk_run.segment_replay_count, 0,
+        "chunk opt-in should not replay trace segments"
+    );
+    assert_eq!(
+        chunk_run.parallel_lower_worker_count, 0,
+        "chunk opt-in should not enable parallel lower workers by itself"
     );
     assert_eq!(
         default_run.segment_commit_effective_worker_count, 1,
@@ -2778,6 +2856,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         combined_run.witness_segment_bytes
     );
     assert_eq!(default_run.stage_roots, stream_run.stage_roots);
+    assert_eq!(default_run.stage_roots, chunk_run.stage_roots);
     assert_eq!(default_run.stage_roots, seed_pipeline_run.stage_roots);
     assert_eq!(default_run.stage_roots, pipeline_run.stage_roots);
     assert_eq!(default_run.stage_roots, commit_worker_run.stage_roots);
@@ -2785,6 +2864,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert_eq!(
         default_run.transcript_segment_bytes,
         stream_run.transcript_segment_bytes
+    );
+    assert_eq!(
+        default_run.transcript_segment_bytes,
+        chunk_run.transcript_segment_bytes
     );
     assert_eq!(
         default_run.transcript_segment_bytes,
@@ -2808,6 +2891,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     );
     assert_eq!(
         default_run.public_values_bytes,
+        chunk_run.public_values_bytes
+    );
+    assert_eq!(
+        default_run.public_values_bytes,
         seed_pipeline_run.public_values_bytes
     );
     assert_eq!(
@@ -2823,6 +2910,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         combined_run.public_values_bytes
     );
     assert_eq!(default_run.proof_bytes, stream_run.proof_bytes);
+    assert_eq!(default_run.proof_bytes, chunk_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, seed_pipeline_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, pipeline_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, commit_worker_run.proof_bytes);

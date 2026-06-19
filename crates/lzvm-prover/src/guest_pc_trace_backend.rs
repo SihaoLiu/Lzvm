@@ -1085,6 +1085,17 @@ struct GuestPcTracePendingSegmentSlice {
     replay_snapshot: Option<GuestPcTraceSegmentReplaySnapshot>,
 }
 
+struct GuestPcTracePendingReportChunk {
+    trace_instance_index: u32,
+    reports: Vec<GuestMachineReport>,
+}
+
+#[derive(Default)]
+struct GuestPcTracePendingReportChunkGroup {
+    reports: Vec<GuestMachineReport>,
+    chunk_count: usize,
+}
+
 #[cfg(feature = "cuda")]
 #[allow(dead_code)]
 struct GuestPcTraceRunnerStreamingSegment {
@@ -1103,6 +1114,8 @@ enum GuestPcTraceSegmentStreamMessage {
 
 enum GuestPcTracePendingSegmentMessage {
     Segment(Box<GuestPcTracePendingSegmentSlice>),
+    ReportChunk(Box<GuestPcTracePendingReportChunk>),
+    SegmentFinished(Box<GuestPcTracePendingSegmentSlice>),
     Complete(Box<GuestPcTraceStreamResult>),
     Error(GuestPcTraceBackendError),
 }
@@ -3463,6 +3476,18 @@ fn guest_pc_trace_segment_queue_capacity() -> usize {
         .unwrap_or(1)
 }
 
+fn guest_pc_trace_report_chunks_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_REPORT_CHUNKS", false)
+}
+
+fn guest_pc_trace_report_chunk_capacity() -> usize {
+    std::env::var("LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(4096)
+}
+
 fn spawn_guest_pc_trace_thread<'scope, 'env, F, T>(
     scope: &'scope thread::Scope<'scope, 'env>,
     name: &'static str,
@@ -3504,27 +3529,79 @@ fn produce_guest_pc_trace_segments(
         let runner = spawn_guest_pc_trace_thread(scope, "lzvm-gp-runner", move || {
             let runner_started = Instant::now();
             let mut pending_send_wait_duration = Duration::ZERO;
+            let mut report_chunk_timing = GuestPcTraceStreamTiming::default();
+            let report_chunks_enabled = guest_pc_trace_report_chunks_enabled();
+            let report_chunk_capacity = guest_pc_trace_report_chunk_capacity();
             let produced = produce_guest_pc_trace_pending_slices(
                 instruction_limit,
                 context,
                 input,
                 row_count,
-                |pending| {
-                    let send_started = Instant::now();
-                    pending_sender
-                        .send(GuestPcTracePendingSegmentMessage::Segment(Box::new(
-                            pending,
-                        )))
-                        .map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
-                            message: "guest PC trace pending segment consumer stopped".to_owned(),
-                        })?;
-                    pending_send_wait_duration += send_started.elapsed();
-                    Ok(())
+                |mut pending| {
+                    let mut send_message =
+                        |message: GuestPcTracePendingSegmentMessage| -> Result<
+                            (),
+                            GuestPcTraceBackendError,
+                        > {
+                            let send_started = Instant::now();
+                            pending_sender.send(message).map_err(|_| {
+                                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                    message: "guest PC trace pending segment consumer stopped"
+                                        .to_owned(),
+                                }
+                            })?;
+                            pending_send_wait_duration += send_started.elapsed();
+                            Ok(())
+                        };
+                    if report_chunks_enabled
+                        && !pending.reports_elided
+                        && !pending.reports.is_empty()
+                    {
+                        let reports = std::mem::take(&mut pending.reports);
+                        let mut reports = reports.into_iter();
+                        loop {
+                            let mut chunk_reports = Vec::with_capacity(report_chunk_capacity);
+                            for _ in 0..report_chunk_capacity {
+                                let Some(report) = reports.next() else {
+                                    break;
+                                };
+                                chunk_reports.push(report);
+                            }
+                            if chunk_reports.is_empty() {
+                                break;
+                            }
+                            let chunk_report_count = chunk_reports.len();
+                            report_chunk_timing.trace_report_chunk_sent_count = report_chunk_timing
+                                .trace_report_chunk_sent_count
+                                .saturating_add(1);
+                            report_chunk_timing.trace_report_chunk_report_count =
+                                report_chunk_timing
+                                    .trace_report_chunk_report_count
+                                    .saturating_add(chunk_report_count);
+                            send_message(GuestPcTracePendingSegmentMessage::ReportChunk(
+                                Box::new(GuestPcTracePendingReportChunk {
+                                    trace_instance_index: pending.trace_instance_index,
+                                    reports: chunk_reports,
+                                }),
+                            ))?;
+                        }
+                        report_chunk_timing.trace_report_chunk_row_count = report_chunk_timing
+                            .trace_report_chunk_row_count
+                            .saturating_add(pending.trace_row_count);
+                        send_message(GuestPcTracePendingSegmentMessage::SegmentFinished(
+                            Box::new(pending),
+                        ))?;
+                        return Ok(());
+                    }
+                    send_message(GuestPcTracePendingSegmentMessage::Segment(Box::new(
+                        pending,
+                    )))
                 },
             );
             let message = match produced {
                 Ok(produced) => {
                     let mut timing = produced.timing;
+                    timing.add(report_chunk_timing);
                     timing.runner_duration += runner_started.elapsed();
                     timing.pending_send_wait_duration += pending_send_wait_duration;
                     GuestPcTracePendingSegmentMessage::Complete(Box::new(
@@ -4028,6 +4105,65 @@ fn lower_guest_pc_trace_seeded_pending_segments_with_timing(
     Ok(lowered.into_iter().map(|entry| entry.lowered).collect())
 }
 
+fn receive_guest_pc_trace_pending_report_chunk(
+    chunk: GuestPcTracePendingReportChunk,
+    pending_chunks: &mut BTreeMap<u32, GuestPcTracePendingReportChunkGroup>,
+    timing: &mut GuestPcTraceStreamTiming,
+) {
+    timing.trace_report_chunk_received_count =
+        timing.trace_report_chunk_received_count.saturating_add(1);
+    let group = pending_chunks
+        .entry(chunk.trace_instance_index)
+        .or_default();
+    group.chunk_count = group.chunk_count.saturating_add(1);
+    group.reports.extend(chunk.reports);
+    let queued_chunks = pending_chunks
+        .values()
+        .map(|group| group.chunk_count)
+        .sum::<usize>();
+    timing.trace_report_chunk_max_queued_count = timing
+        .trace_report_chunk_max_queued_count
+        .max(queued_chunks);
+}
+
+fn finish_guest_pc_trace_chunked_pending_segment(
+    mut pending: GuestPcTracePendingSegmentSlice,
+    pending_chunks: &mut BTreeMap<u32, GuestPcTracePendingReportChunkGroup>,
+) -> Result<GuestPcTracePendingSegmentSlice, GuestPcTraceBackendError> {
+    let Some(group) = pending_chunks.remove(&pending.trace_instance_index) else {
+        return Ok(pending);
+    };
+    if !pending.reports.is_empty() {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "guest PC trace report chunks overlap carried reports for segment {}",
+                pending.trace_instance_index
+            ),
+        });
+    }
+    pending.reports = group.reports;
+    if pending.reports.len() != pending.report_count {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "guest PC trace report chunks lost reports for segment {}",
+                pending.trace_instance_index
+            ),
+        });
+    }
+    Ok(pending)
+}
+
+fn validate_guest_pc_trace_no_pending_report_chunks(
+    pending_chunks: &BTreeMap<u32, GuestPcTracePendingReportChunkGroup>,
+) -> Result<(), GuestPcTraceBackendError> {
+    if pending_chunks.is_empty() {
+        return Ok(());
+    }
+    Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+        message: "guest PC trace report chunks missing segment finish".to_owned(),
+    })
+}
+
 fn lower_guest_pc_trace_pending_segments(
     layout: &WitnessTraceLayout,
     pending_receiver: mpsc::Receiver<GuestPcTracePendingSegmentMessage>,
@@ -4049,6 +4185,7 @@ fn lower_guest_pc_trace_pending_segments(
     }
 
     let mut current_seed = ZiskMainSegmentSeed::new();
+    let mut pending_chunks = BTreeMap::new();
     loop {
         let receive_started = Instant::now();
         let message = match pending_receiver.recv() {
@@ -4058,7 +4195,17 @@ fn lower_guest_pc_trace_pending_segments(
         timing.pending_receive_wait_duration += receive_started.elapsed();
         let pending = match message {
             GuestPcTracePendingSegmentMessage::Segment(pending) => *pending,
-            GuestPcTracePendingSegmentMessage::Complete(stream) => return Ok(*stream),
+            GuestPcTracePendingSegmentMessage::ReportChunk(chunk) => {
+                receive_guest_pc_trace_pending_report_chunk(*chunk, &mut pending_chunks, timing);
+                continue;
+            }
+            GuestPcTracePendingSegmentMessage::SegmentFinished(pending) => {
+                finish_guest_pc_trace_chunked_pending_segment(*pending, &mut pending_chunks)?
+            }
+            GuestPcTracePendingSegmentMessage::Complete(stream) => {
+                validate_guest_pc_trace_no_pending_report_chunks(&pending_chunks)?;
+                return Ok(*stream);
+            }
             GuestPcTracePendingSegmentMessage::Error(error) => return Err(error),
         };
         timing.trace_report_buffer_capacity += pending.report_capacity;
@@ -4257,6 +4404,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
             let mut dispatcher_timing = GuestPcTraceStreamTiming::default();
             let mut dispatched_count = 0_usize;
             let mut next_worker = 0_usize;
+            let mut pending_chunks = BTreeMap::new();
             loop {
                 let receive_started = Instant::now();
                 let message = match pending_receiver.recv() {
@@ -4303,7 +4451,69 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         }
                         dispatched_count = dispatched_count.saturating_add(1);
                     }
+                    GuestPcTracePendingSegmentMessage::ReportChunk(chunk) => {
+                        receive_guest_pc_trace_pending_report_chunk(
+                            *chunk,
+                            &mut pending_chunks,
+                            &mut dispatcher_timing,
+                        );
+                    }
+                    GuestPcTracePendingSegmentMessage::SegmentFinished(pending) => {
+                        let pending = match finish_guest_pc_trace_chunked_pending_segment(
+                            *pending,
+                            &mut pending_chunks,
+                        ) {
+                            Ok(pending) => pending,
+                            Err(error) => {
+                                let _ = dispatcher_sender.send(
+                                    GuestPcTraceParallelLowerMessage::Error {
+                                        error,
+                                        dispatched_count,
+                                        timing: dispatcher_timing,
+                                    },
+                                );
+                                break;
+                            }
+                        };
+                        dispatcher_timing.trace_report_buffer_capacity += pending.report_capacity;
+                        dispatcher_timing.trace_report_buffer_max_capacity = dispatcher_timing
+                            .trace_report_buffer_max_capacity
+                            .max(pending.report_capacity);
+                        dispatcher_timing.trace_report_buffer_excess_capacity += pending
+                            .report_capacity
+                            .saturating_sub(pending.reports.len());
+                        if dispatch_guest_pc_trace_parallel_lower_job(
+                            &job_senders,
+                            &mut next_worker,
+                            pending,
+                        )
+                        .is_err()
+                        {
+                            let _ =
+                                dispatcher_sender.send(GuestPcTraceParallelLowerMessage::Error {
+                                    error: GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                        message: "parallel guest PC trace lower worker stopped"
+                                            .to_owned(),
+                                    },
+                                    dispatched_count,
+                                    timing: dispatcher_timing,
+                                });
+                            break;
+                        }
+                        dispatched_count = dispatched_count.saturating_add(1);
+                    }
                     GuestPcTracePendingSegmentMessage::Complete(stream) => {
+                        if let Err(error) =
+                            validate_guest_pc_trace_no_pending_report_chunks(&pending_chunks)
+                        {
+                            let _ =
+                                dispatcher_sender.send(GuestPcTraceParallelLowerMessage::Error {
+                                    error,
+                                    dispatched_count,
+                                    timing: dispatcher_timing,
+                                });
+                            break;
+                        }
                         dispatcher_timing.parallel_lower_worker_count = dispatcher_timing
                             .parallel_lower_worker_count
                             .max(worker_count);
