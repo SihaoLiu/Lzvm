@@ -343,6 +343,8 @@ DESCRIPTOR_RETENTION_LIMIT_BYTES_KEY = (
 NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY = (
     "nsys_copy_trace_descriptor_residency_pipeline"
 )
+NSYS_COPY_GPU_RESIDENCY_HINT_KEY = "nsys_copy_gpu_residency_hint"
+NSYS_COPY_SMALL_D2H_BATCHING_HINT_KEY = "nsys_copy_small_d2h_batching_hint"
 PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
 PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
 PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY = "perf_memmove_guest_machine_pct"
@@ -527,6 +529,7 @@ HEADER = (
     "cuda_allocator_d2h_action_hint,"
     "cuda_host_register_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
     "data_residency_action_hint,"
+    "copy_summary_gpu_residency_hint,copy_summary_small_d2h_batching_hint,"
     "segment_commit_cuda_memory_total_bytes,"
     "segment_commit_cuda_memory_initial_free_bytes,"
     "segment_commit_cuda_memory_effective_free_bytes,"
@@ -743,8 +746,8 @@ TIMING_KEYS = {
 }
 
 
-def parse_timing_log(text: str) -> dict[str, int]:
-    values: dict[str, int] = {}
+def parse_timing_log(text: str) -> dict[str, int | str]:
+    values: dict[str, int | str] = {}
     nsys_copy_block = None
     for line in text.splitlines():
         stripped = line.strip()
@@ -768,6 +771,10 @@ def parse_timing_log(text: str) -> dict[str, int]:
                 and row[1].strip() == "trace_descriptor_residency_pipeline"
             ):
                 values[NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY] = 1
+            elif len(row) >= 2 and row[0].strip() == "gpu_residency_hint":
+                values[NSYS_COPY_GPU_RESIDENCY_HINT_KEY] = row[1].strip()
+            elif len(row) >= 2 and row[0].strip() == "small_d2h_batching_hint":
+                values[NSYS_COPY_SMALL_D2H_BATCHING_HINT_KEY] = row[1].strip()
             elif (
                 len(row) >= 3
                 and row[0].strip() == "h2d_bulk_app_frame_hint"
@@ -3021,6 +3028,12 @@ def summarize_profile_values(
         segment_commit_cuda_memory_total_bytes,
         values.get(NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY, 0) > 0,
     )
+    copy_summary_gpu_residency_hint = str(
+        values.get(NSYS_COPY_GPU_RESIDENCY_HINT_KEY, "none")
+    )
+    copy_summary_small_d2h_batching_hint = str(
+        values.get(NSYS_COPY_SMALL_D2H_BATCHING_HINT_KEY, "none")
+    )
     source_retention_total_exceeds_device_memory = (
         source_retention_exceeds_device_memory_hint(
             source_retention_rejected_bytes,
@@ -3249,6 +3262,7 @@ def summarize_profile_values(
         f"{cuda_allocator_d2h_hot_wait_pct:.3f},{cuda_allocator_d2h_hint},"
         f"{cuda_host_register_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
         f"{data_residency_hint},"
+        f"{copy_summary_gpu_residency_hint},{copy_summary_small_d2h_batching_hint},"
         f"{segment_commit_cuda_memory_total_bytes},"
         f"{segment_commit_cuda_memory_initial_free_bytes},"
         f"{segment_commit_cuda_memory_effective_free_bytes},"
@@ -3549,11 +3563,17 @@ def sibling_cpu_summary_paths(input_path: Path) -> list[Path]:
 
 
 def sibling_copy_summary_paths(input_path: Path) -> list[Path]:
+    stem = input_path.stem
+    name = input_path.name
     candidates = [
         input_path.with_suffix(".copy-summary.txt"),
         input_path.with_suffix(".copy.txt"),
         input_path.with_name(f"{input_path.name}.copy-summary.txt"),
         input_path.with_name(f"{input_path.name}.copy.txt"),
+        input_path.with_name(f"{stem}-copy-summary.txt"),
+        input_path.with_name(f"{stem}-copy.txt"),
+        input_path.with_name(f"{name}-copy-summary.txt"),
+        input_path.with_name(f"{name}-copy.txt"),
     ]
     paths = []
     seen = set()

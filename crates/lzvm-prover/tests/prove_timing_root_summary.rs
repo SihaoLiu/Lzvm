@@ -191,6 +191,8 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "cuda_transfer_action_hint",
         "dominant_cuda_transfer_action_hint",
         "cuda_transfer_action_consensus",
+        "copy_summary_gpu_residency_hint",
+        "copy_summary_small_d2h_batching_hint",
         "perf_lowered_report_row_self_pct",
         "perf_memmove_self_pct",
         "perf_memmove_guest_machine_pct",
@@ -436,6 +438,166 @@ fn prove_timing_root_summary_reads_sibling_nsys_copy_residency_hint() {
     assert_eq!(
         value("data_residency_action_hint"),
         "trace_descriptor_residency_pipeline"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reads_sibling_nsys_copy_small_d2h_hints() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("crate should live under workspace root");
+    let script_path = workspace_root.join("scripts/prove-timing-root-summary.py");
+    let dir = workspace_root.join("temp").join(format!(
+        "prove-timing-root-summary-copy-d2h-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("sample.log");
+    let copy_summary_path = dir.join("sample.copy-summary.txt");
+    std::fs::write(
+        &log_path,
+        [
+            "input_bytes=12447640",
+            "timing_total_ms=55693",
+            "timing_guest_stage_tree_commit_root_count=120",
+            "timing_guest_stage_tree_commit_root_materialization_groups=120",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+            "timing_cuda_allocator_copy_h2d_bytes=88120305500",
+            "timing_cuda_allocator_copy_h2d_wait_ns=2883439000",
+        ]
+        .join("\n"),
+    )
+    .expect("timing fixture should be written");
+    std::fs::write(
+        &copy_summary_path,
+        [
+            "cuda_transfer_triage",
+            "metric,value,detail",
+            "gpu_residency_hint,batch_or_keep_small_d2h_on_device,prioritize data residency before relying on Graph or fusion speedups",
+            "small_d2h_batching_hint,batch_small_d2h_by_size,bytes=1152 calls=41 host_api_ms=3387.322 previous_kernel=poseidon2_merkle_digest_parent_kernel",
+        ]
+        .join("\n"),
+    )
+    .expect("copy summary fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines
+        .next()
+        .expect("summary should include a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should include a data row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        value("copy_summary_gpu_residency_hint"),
+        "batch_or_keep_small_d2h_on_device"
+    );
+    assert_eq!(
+        value("copy_summary_small_d2h_batching_hint"),
+        "batch_small_d2h_by_size"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reads_hyphen_sibling_nsys_copy_summary() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("crate should live under workspace root");
+    let script_path = workspace_root.join("scripts/prove-timing-root-summary.py");
+    let dir = workspace_root.join("temp").join(format!(
+        "prove-timing-root-summary-hyphen-copy-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("sample.log");
+    let copy_summary_path = dir.join("sample-copy-summary.txt");
+    std::fs::write(
+        &log_path,
+        [
+            "input_bytes=2758032",
+            "timing_total_ms=8250",
+            "timing_guest_stage_tree_commit_root_count=23",
+            "timing_guest_stage_tree_commit_root_materialization_groups=23",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        ]
+        .join("\n"),
+    )
+    .expect("timing fixture should be written");
+    std::fs::write(
+        &copy_summary_path,
+        [
+            "cuda_transfer_triage",
+            "metric,value,detail",
+            "gpu_residency_hint,batch_or_keep_small_d2h_on_device,prioritize data residency before relying on Graph or fusion speedups",
+        ]
+        .join("\n"),
+    )
+    .expect("copy summary fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines
+        .next()
+        .expect("summary should include a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should include a data row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let index = headers
+        .iter()
+        .position(|header| *header == "copy_summary_gpu_residency_hint")
+        .unwrap_or_else(|| panic!("summary should expose copy hint: stdout={stdout}"));
+    assert_eq!(
+        row.get(index),
+        Some(&"batch_or_keep_small_d2h_on_device"),
+        "hyphen sibling copy summary should feed root summary: stdout={stdout}"
     );
 }
 
