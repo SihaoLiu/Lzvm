@@ -635,6 +635,16 @@ def graph_fusion_priority_hint(
             "defer_graph_or_fusion_until_stream_idle_is_explained",
             "top kernel stream is idle for more than half of its active window",
         )
+    if (
+        top_stream_window_ns > 0
+        and launch_ns > 0
+        and top_stream_idle_ns * 4 > top_stream_window_ns
+        and top_stream_idle_ns > launch_ns * 2
+    ):
+        return (
+            "defer_graph_or_fusion_until_stream_idle_is_explained",
+            "top kernel stream idle exceeds twice the CUDA launch-time upper bound",
+        )
     if sync_ns > launch_ns * 5 // 4:
         return (
             "defer_graph_or_fusion_until_sync_boundaries_are_reduced",
