@@ -91,6 +91,7 @@ class KernelMetrics:
     kernel: str
     profiles: int = 0
     duration_us: float = 0.0
+    duration_profiles: int = 0
     samples: dict[str, list[float]] = field(default_factory=dict)
 
     def add_sample(self, name: str, value: float | None) -> None:
@@ -105,7 +106,10 @@ class KernelMetrics:
 
     def add_row(self, row: dict[str, str]) -> None:
         self.profiles += 1
-        self.duration_us += parse_float(metric_value(row, METRIC_DURATION_US)) or 0.0
+        duration = parse_float(metric_value(row, METRIC_DURATION_US))
+        if duration is not None:
+            self.duration_profiles += 1
+            self.duration_us += duration
         for name in OPTIONAL_METRIC_COLUMNS:
             self.add_sample(name, parse_float(metric_value(row, name)))
 
@@ -459,6 +463,79 @@ def print_kernel_metric_summary(writer: csv.writer, rows: list[KernelMetrics], l
         writerow(writer, ["none", 0, "0.000", "0.000", "na", "na", "na", "na", "na", "na", "na"])
 
 
+def metric_collection_hint(rows: list[KernelMetrics]) -> str:
+    if not rows:
+        return "no_kernel_metrics"
+    duration_profiles = sum(metrics.duration_profiles for metrics in rows)
+    throughput_profiles = sum(
+        1
+        for metrics in rows
+        if any(
+            metrics.avg(name) is not None
+            for name in [
+                METRIC_SM_THROUGHPUT,
+                METRIC_DRAM_THROUGHPUT,
+                METRIC_MEMORY_THROUGHPUT,
+                METRIC_ISSUE_ACTIVE,
+            ]
+        )
+    )
+    if duration_profiles <= 0:
+        return "occupancy_only_missing_duration"
+    if throughput_profiles <= 0:
+        return "duration_only_missing_throughput"
+    if duration_profiles < sum(metrics.profiles for metrics in rows):
+        return "partial_duration_metrics"
+    return "duration_and_throughput_metrics"
+
+
+def print_metric_collection_quality(
+    writer: csv.writer, rows: list[KernelMetrics]
+) -> None:
+    print()
+    print("metric_collection_quality")
+    writerow(writer, ["metric", "value", "detail"])
+    total_profiles = sum(metrics.profiles for metrics in rows)
+    duration_profiles = sum(metrics.duration_profiles for metrics in rows)
+    throughput_profiles = sum(
+        1
+        for metrics in rows
+        if any(
+            metrics.avg(name) is not None
+            for name in [
+                METRIC_SM_THROUGHPUT,
+                METRIC_DRAM_THROUGHPUT,
+                METRIC_MEMORY_THROUGHPUT,
+                METRIC_ISSUE_ACTIVE,
+            ]
+        )
+    )
+    writerow(
+        writer,
+        [
+            "collection_hint",
+            metric_collection_hint(rows),
+            "occupancy-only rows must not be used as throughput or duration evidence",
+        ],
+    )
+    writerow(
+        writer,
+        [
+            "duration_profiles",
+            duration_profiles,
+            f"{duration_profiles} of {total_profiles} kernel rows carried duration metrics",
+        ],
+    )
+    writerow(
+        writer,
+        [
+            "throughput_kernels",
+            throughput_profiles,
+            f"{throughput_profiles} of {len(rows)} kernels carried throughput metrics",
+        ],
+    )
+
+
 def print_occupancy_limits(writer: csv.writer, rows: list[KernelMetrics], limit: int) -> None:
     print()
     print("occupancy_limits")
@@ -714,6 +791,7 @@ def summarize(rows: list[dict[str, str]], label: str, limit: int) -> None:
     metrics = summarize_rows(rows)
     writer = csv.writer(sys.stdout, lineterminator="\n")
     print(f"profile={label}")
+    print_metric_collection_quality(writer, metrics)
     print_kernel_metric_summary(writer, metrics, limit)
     print_occupancy_limits(writer, metrics, limit)
     print_memory_bound_candidates(writer, metrics, limit)

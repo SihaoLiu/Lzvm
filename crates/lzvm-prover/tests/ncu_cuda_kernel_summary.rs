@@ -252,6 +252,14 @@ fn ncu_cuda_kernel_summary_accepts_speed_of_light_launch_raw_without_duration() 
         "launch-only occupancy limits should still drive separation hints: {stdout}"
     );
     assert!(
+        stdout.contains("metric_collection_quality"),
+        "launch-only NCU CSV should expose metric collection quality: {stdout}"
+    );
+    assert!(
+        stdout.contains("occupancy_only_missing_duration"),
+        "launch-only NCU CSV should flag missing duration metrics before it is used as a throughput profile: {stdout}"
+    );
+    assert!(
         !stdout.contains("unsigned long"),
         "launch-only NCU CSV should print normalized short kernel names: {stdout}"
     );
