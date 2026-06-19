@@ -223,15 +223,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     assert!(
         lean_source.contains(
-            "source_lookup_checked_acceptance_projects_verifier_acceptance\n          auxiliary\n          publicInput\n          proof\n          acceptedWithLookupChecks"
+            "auxiliary_checked_acceptance_sound_witness\n        assumptions\n        publicInput\n        proof\n        acceptedWithLookupChecks"
         ),
-        "Lean source lookup soundness should reuse the checked-acceptance verifier projector"
+        "Lean source lookup soundness should reuse the checked-acceptance SoundWitness helper"
     );
     assert!(
         lean_source.contains(
-            "witness_leaf_digest_checked_acceptance_projects_verifier_acceptance\n          validation\n          publicInput\n          proof\n          acceptedWithLeafDigestChecks"
+            "auxiliary_checked_acceptance_sound_witness\n        assumptions\n        publicInput\n        proof\n        acceptedWithLeafDigestChecks"
         ),
-        "Lean witness leaf digest soundness should reuse the checked-acceptance verifier projector"
+        "Lean witness leaf digest soundness should reuse the checked-acceptance SoundWitness helper"
     );
     assert!(
         lean_source.contains(
@@ -300,6 +300,33 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "abstract_verifier_sound",
         ],
     );
+    lean_binding::assert_theorem_declarations(
+        &auxiliary_source,
+        &["auxiliary_checked_acceptance_sound_witness"],
+    );
+    for theorem_name in [
+        "source_lookup_auxiliary_acceptance_sound",
+        "witness_leaf_digest_acceptance_sound",
+        "gpu_canonical_leaf_checked_acceptance_sound",
+        "gpu_leaf_output_buffer_reuse_checked_acceptance_sound",
+        "gpu_coset_extension_checked_acceptance_sound",
+        "gpu_fri_fold_interpolation_checked_acceptance_sound",
+        "gpu_merkle_digest_prefix_batch_checked_acceptance_sound",
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &auxiliary_source,
+            theorem_name,
+            &["auxiliary_checked_acceptance_sound_witness"],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &auxiliary_source,
+            theorem_name,
+            &[
+                "abstract_verifier_sound",
+                "sound_witness_implies_verifier_core_contract",
+            ],
+        );
+    }
     assert!(
         timing_source.contains("IgnoredMetadataObservedAcceptance system observations")
             && lean_source

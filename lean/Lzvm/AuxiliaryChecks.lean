@@ -104,6 +104,17 @@ theorem ignored_metadata_acceptance_sound
         proof
         observed)
 
+theorem auxiliary_checked_acceptance_sound_witness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {auxiliaryAccepted : PublicInput -> Proof -> Prop} :
+    forall publicInput proof,
+      system.accepts publicInput proof
+        /\ auxiliaryAccepted publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact abstract_verifier_sound assumptions publicInput proof checked.left
+
 theorem ignored_metadata_acceptance_verifier_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1166,15 +1177,11 @@ theorem source_lookup_auxiliary_acceptance_sound
         publicInput
         proof
         acceptedWithLookupChecks)
-      (abstract_verifier_sound
+      (auxiliary_checked_acceptance_sound_witness
         assumptions
         publicInput
         proof
-        (source_lookup_checked_acceptance_projects_verifier_acceptance
-          auxiliary
-          publicInput
-          proof
-          acceptedWithLookupChecks))
+        acceptedWithLookupChecks)
 
 theorem source_lookup_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1252,15 +1259,11 @@ theorem witness_leaf_digest_acceptance_sound
         publicInput
         proof
         acceptedWithLeafDigestChecks)
-      (abstract_verifier_sound
+      (auxiliary_checked_acceptance_sound_witness
         assumptions
         publicInput
         proof
-        (witness_leaf_digest_checked_acceptance_projects_verifier_acceptance
-          validation
-          publicInput
-          proof
-          acceptedWithLeafDigestChecks))
+        acceptedWithLeafDigestChecks)
 
 theorem witness_leaf_digest_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1328,15 +1331,11 @@ theorem gpu_canonical_leaf_checked_acceptance_sound
         publicInput
         proof
         acceptedWithCanonicalFlag)
-      (abstract_verifier_sound
+      (auxiliary_checked_acceptance_sound_witness
         assumptions
         publicInput
         proof
-        (gpu_canonical_leaf_checked_acceptance_projects_verifier_acceptance
-          validation
-          publicInput
-          proof
-          acceptedWithCanonicalFlag))
+        acceptedWithCanonicalFlag)
 
 theorem gpu_canonical_leaf_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1426,15 +1425,14 @@ theorem gpu_leaf_output_buffer_reuse_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound
+      (auxiliary_checked_acceptance_sound_witness
         assumptions
+        (auxiliaryAccepted := fun publicInput proof =>
+          validation.leafOutputBufferLengthMatches publicInput proof
+            /\ validation.leafOutputBufferFullyOverwritten publicInput proof)
         publicInput
         proof
-        (gpu_leaf_output_buffer_reuse_checked_acceptance_projects_verifier_acceptance
-          validation
-          publicInput
-          proof
-          checked))
+        (And.intro checked.left (And.intro checked.right.left checked.right.right)))
 
 theorem gpu_leaf_output_buffer_reuse_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1519,15 +1517,11 @@ theorem gpu_coset_extension_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound
+      (auxiliary_checked_acceptance_sound_witness
         assumptions
         publicInput
         proof
-        (gpu_coset_extension_checked_acceptance_projects_verifier_acceptance
-          validation
-          publicInput
-          proof
-          checked))
+        checked)
 
 theorem gpu_coset_extension_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1609,15 +1603,11 @@ theorem gpu_fri_fold_interpolation_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound
+      (auxiliary_checked_acceptance_sound_witness
         assumptions
         publicInput
         proof
-        (gpu_fri_fold_interpolation_checked_acceptance_projects_verifier_acceptance
-          validation
-          publicInput
-          proof
-          checked))
+        checked)
 
 theorem gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1699,15 +1689,11 @@ theorem gpu_merkle_digest_prefix_batch_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound
+      (auxiliary_checked_acceptance_sound_witness
         assumptions
         publicInput
         proof
-        (gpu_merkle_digest_prefix_batch_checked_acceptance_projects_verifier_acceptance
-          validation
-          publicInput
-          proof
-          checked))
+        checked)
 
 theorem gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
