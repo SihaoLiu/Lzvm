@@ -353,6 +353,12 @@ NSYS_KERNEL_GRAPH_FUSION_UPPER_BOUND_MS_KEY = (
 )
 NSYS_KERNEL_TOP_STREAM_IDLE_MS_KEY = "nsys_kernel_top_stream_idle_ms"
 NSYS_KERNEL_SEPARATION_HINT_KEY = "nsys_kernel_separation_hint"
+NSYS_KERNEL_TOP_STREAM_IDLE_GAP_PREVIOUS_KEY = (
+    "nsys_kernel_top_stream_idle_gap_previous_kernel"
+)
+NSYS_KERNEL_TOP_STREAM_IDLE_GAP_NEXT_KEY = "nsys_kernel_top_stream_idle_gap_next_kernel"
+NSYS_KERNEL_TOP_STREAM_IDLE_GAP_CALLS_KEY = "nsys_kernel_top_stream_idle_gap_calls"
+NSYS_KERNEL_TOP_STREAM_IDLE_GAP_MS_KEY = "nsys_kernel_top_stream_idle_gap_ms"
 PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
 PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
 PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY = "perf_memmove_guest_machine_pct"
@@ -540,6 +546,9 @@ HEADER = (
     "copy_summary_gpu_residency_hint,copy_summary_small_d2h_batching_hint,"
     "kernel_graph_fusion_priority_hint,kernel_graph_fusion_upper_bound_ms,"
     "kernel_top_stream_idle_ms,kernel_separation_hint,"
+    "kernel_top_stream_idle_gap_previous_kernel,"
+    "kernel_top_stream_idle_gap_next_kernel,"
+    "kernel_top_stream_idle_gap_calls,kernel_top_stream_idle_gap_ms,"
     "segment_commit_cuda_memory_total_bytes,"
     "segment_commit_cuda_memory_initial_free_bytes,"
     "segment_commit_cuda_memory_effective_free_bytes,"
@@ -760,15 +769,23 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
     values: dict[str, int | str] = {}
     nsys_copy_block = None
     nsys_kernel_block = None
+    nsys_kernel_idle_gap_block = None
     for line in text.splitlines():
         stripped = line.strip()
         if stripped == "cuda_transfer_triage":
             nsys_copy_block = stripped
             nsys_kernel_block = None
+            nsys_kernel_idle_gap_block = None
+            continue
+        if stripped == "stream_idle_gap_hotspots":
+            nsys_kernel_idle_gap_block = stripped
+            nsys_copy_block = None
+            nsys_kernel_block = None
             continue
         if stripped == "cuda_graph_fusion_separation_triage":
             nsys_kernel_block = stripped
             nsys_copy_block = None
+            nsys_kernel_idle_gap_block = None
             continue
         if nsys_copy_block is not None:
             if not stripped:
@@ -803,6 +820,26 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
                 )
             ):
                 values[NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY] = 1
+            continue
+        if nsys_kernel_idle_gap_block is not None:
+            if not stripped:
+                nsys_kernel_idle_gap_block = None
+                continue
+            if stripped.startswith("previous_kernel,"):
+                continue
+            try:
+                row = next(csv.reader([line]))
+            except csv.Error:
+                nsys_kernel_idle_gap_block = None
+                continue
+            if (
+                len(row) >= 4
+                and NSYS_KERNEL_TOP_STREAM_IDLE_GAP_PREVIOUS_KEY not in values
+            ):
+                values[NSYS_KERNEL_TOP_STREAM_IDLE_GAP_PREVIOUS_KEY] = row[0].strip()
+                values[NSYS_KERNEL_TOP_STREAM_IDLE_GAP_NEXT_KEY] = row[1].strip()
+                values[NSYS_KERNEL_TOP_STREAM_IDLE_GAP_CALLS_KEY] = row[2].strip()
+                values[NSYS_KERNEL_TOP_STREAM_IDLE_GAP_MS_KEY] = row[3].strip()
             continue
         if nsys_kernel_block is not None:
             if not stripped:
@@ -3085,6 +3122,18 @@ def summarize_profile_values(
     kernel_separation_hint = str(
         values.get(NSYS_KERNEL_SEPARATION_HINT_KEY, "none")
     )
+    kernel_top_stream_idle_gap_previous = str(
+        values.get(NSYS_KERNEL_TOP_STREAM_IDLE_GAP_PREVIOUS_KEY, "none")
+    )
+    kernel_top_stream_idle_gap_next = str(
+        values.get(NSYS_KERNEL_TOP_STREAM_IDLE_GAP_NEXT_KEY, "none")
+    )
+    kernel_top_stream_idle_gap_calls = str(
+        values.get(NSYS_KERNEL_TOP_STREAM_IDLE_GAP_CALLS_KEY, "0")
+    )
+    kernel_top_stream_idle_gap_ms = str(
+        values.get(NSYS_KERNEL_TOP_STREAM_IDLE_GAP_MS_KEY, "0.000")
+    )
     source_retention_total_exceeds_device_memory = (
         source_retention_exceeds_device_memory_hint(
             source_retention_rejected_bytes,
@@ -3316,6 +3365,8 @@ def summarize_profile_values(
         f"{copy_summary_gpu_residency_hint},{copy_summary_small_d2h_batching_hint},"
         f"{kernel_graph_fusion_priority_hint},{kernel_graph_fusion_upper_bound_ms},"
         f"{kernel_top_stream_idle_ms},{kernel_separation_hint},"
+        f"{kernel_top_stream_idle_gap_previous},{kernel_top_stream_idle_gap_next},"
+        f"{kernel_top_stream_idle_gap_calls},{kernel_top_stream_idle_gap_ms},"
         f"{segment_commit_cuda_memory_total_bytes},"
         f"{segment_commit_cuda_memory_initial_free_bytes},"
         f"{segment_commit_cuda_memory_effective_free_bytes},"

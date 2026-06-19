@@ -197,6 +197,10 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "kernel_graph_fusion_upper_bound_ms",
         "kernel_top_stream_idle_ms",
         "kernel_separation_hint",
+        "kernel_top_stream_idle_gap_previous_kernel",
+        "kernel_top_stream_idle_gap_next_kernel",
+        "kernel_top_stream_idle_gap_calls",
+        "kernel_top_stream_idle_gap_ms",
         "perf_lowered_report_row_self_pct",
         "perf_memmove_self_pct",
         "perf_memmove_guest_machine_pct",
@@ -714,6 +718,10 @@ fn prove_timing_root_summary_reads_explicit_nsys_kernel_summary() {
     std::fs::write(
         &kernel_summary_path,
         [
+            "stream_idle_gap_hotspots",
+            "previous_kernel,next_kernel,calls,idle_gap_ms,max_idle_gap_ms",
+            "poseidon2_merkle_digest_parent_kernel,trace_descriptor_expand_kernel,120,22171.505,1776.126",
+            "",
             "cuda_graph_fusion_separation_triage",
             "metric,value,detail",
             "graph_or_fusion_upper_bound_ms,863.000,launch API time before synchronization or transfer costs",
@@ -771,6 +779,16 @@ fn prove_timing_root_summary_reads_explicit_nsys_kernel_summary() {
         value("kernel_separation_hint"),
         "use_ncu_occupancy_before_splitting"
     );
+    assert_eq!(
+        value("kernel_top_stream_idle_gap_previous_kernel"),
+        "poseidon2_merkle_digest_parent_kernel"
+    );
+    assert_eq!(
+        value("kernel_top_stream_idle_gap_next_kernel"),
+        "trace_descriptor_expand_kernel"
+    );
+    assert_eq!(value("kernel_top_stream_idle_gap_calls"), "120");
+    assert_eq!(value("kernel_top_stream_idle_gap_ms"), "22171.505");
 }
 
 #[test]
