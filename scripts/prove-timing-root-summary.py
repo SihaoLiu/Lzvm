@@ -433,6 +433,7 @@ HEADER = (
     "retained_parent_checkpoint_path_launches,retained_parent_checkpoint_path_ms,"
     "retained_parent_checkpoint_cross_stage_gather_estimated_launches,"
     "retained_parent_checkpoint_cross_stage_gather_launch_savings,"
+    "retained_parent_checkpoint_batching_hint,"
     "opening_path_parent_hash_launches_per_stage,"
     "opening_row_value_device_download_batches,"
     "opening_row_value_device_single_downloads,"
@@ -1513,6 +1514,29 @@ def retained_parent_checkpoint_cross_stage_gather_launch_shape(
     estimated_launches = prefix_group_launches + suffix_group_launches
     launch_savings = max(current_launches - estimated_launches, 0)
     return (current_launches, estimated_launches, launch_savings)
+
+
+def retained_parent_checkpoint_batching_hint(
+    openings: int,
+    rows: int,
+    all_single_row: int,
+    prefix_launches: int,
+    suffix_launches: int,
+    path_ms: int,
+    cross_stage_gather_launch_savings: int,
+) -> str:
+    path_launches = prefix_launches + suffix_launches
+    if openings <= 0 or rows <= 0 or path_launches <= 0:
+        return "none"
+    if rows != openings:
+        return "multi_row_openings_batched"
+    if all_single_row <= 0:
+        return "mixed_query_opening_shape"
+    if cross_stage_gather_launch_savings <= 0:
+        return "device_batched_per_stage"
+    if path_ms > 0 and path_ms < RETAINED_PARENT_CHECKPOINT_PATH_SECONDARY_MS_THRESHOLD:
+        return "device_batched_path_secondary"
+    return "device_batched_cross_stage_candidate"
 
 
 def opening_retained_parent_checkpoint_action_hint(
@@ -2627,6 +2651,17 @@ def summarize_profile_values(
         retained_parent_checkpoint_prefix_launches,
         retained_parent_checkpoint_suffix_launches,
     )
+    retained_parent_checkpoint_batching_hint_value = (
+        retained_parent_checkpoint_batching_hint(
+            retained_parent_checkpoint_openings,
+            retained_parent_checkpoint_rows,
+            retained_parent_checkpoint_all_single_row_value,
+            retained_parent_checkpoint_prefix_launches,
+            retained_parent_checkpoint_suffix_launches,
+            retained_parent_checkpoint_path_ms,
+            retained_parent_checkpoint_cross_stage_gather_launch_savings,
+        )
+    )
     retained_parent_checkpoint_action_hint = (
         opening_retained_parent_checkpoint_action_hint(
             retained_parent_checkpoint_openings,
@@ -2971,6 +3006,7 @@ def summarize_profile_values(
         f"{retained_parent_checkpoint_path_ms},"
         f"{retained_parent_checkpoint_cross_stage_gather_estimated_launches},"
         f"{retained_parent_checkpoint_cross_stage_gather_launch_savings},"
+        f"{retained_parent_checkpoint_batching_hint_value},"
         f"{opening_path_parent_hash_launches_per_stage},"
         f"{opening_row_value_device_download_batches},"
         f"{opening_row_value_device_single_downloads},"
