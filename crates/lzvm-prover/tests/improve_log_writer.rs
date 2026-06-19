@@ -59,6 +59,26 @@ fn improve_log_writer_accepts_summary_flag_and_keeps_csv_parseable() {
         rows[1]
     );
 
+    let csv_reader_check = Command::new("python3")
+        .arg("-c")
+        .arg(concat!(
+            "import csv, sys\n",
+            "with open(sys.argv[1], newline='') as f:\n",
+            "    reader = csv.reader(f)\n",
+            "    header = next(reader)\n",
+            "    assert header == ['timestamp', 'commit', 'small_proof_time_s', 'large_proof_time_s', 'summary']\n",
+            "    for index, row in enumerate(reader, start=2):\n",
+            "        assert len(row) == 5, (index, len(row), row)\n",
+        ))
+        .arg(&log_path)
+        .output()
+        .expect("csv.reader verification should run");
+    assert!(
+        csv_reader_check.status.success(),
+        "csv.reader should parse every improve-log row as five fields: stderr={}",
+        String::from_utf8_lossy(&csv_reader_check.stderr)
+    );
+
     let parsed = rows[1].split(',').collect::<Vec<_>>();
     assert_ne!(
         parsed.len(),
