@@ -1005,6 +1005,49 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         .contains("RuntimeSoundnessEvidence"),
         "compact checked runtime binding PCS/FRI core contract should not force callers to unpack full runtime evidence"
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_verifier_sound_witness",
+        &["runtime_soundness_checked_acceptance_sound", "sound.right"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_verifier_sound_witness",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_proof_system_sound",
+        &[
+            "abstract_verifier_sound",
+            "runtime_soundness_checked_acceptance_verifier_accepts",
+            "runtime_soundness_checked_acceptance_verifier_sound_witness",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_proof_system_sound",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
+        &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "abstract_verifier_sound",
+            "runtime_soundness_checked_acceptance_verifier_accepts",
+            "runtime_soundness_checked_acceptance_transcript_bound",
+            "runtime_soundness_checked_acceptance_public_input_bound",
+            "runtime_soundness_checked_acceptance_pcs_and_fri",
+            "runtime_soundness_checked_acceptance_verifier_core_contract",
+            "runtime_soundness_checked_acceptance_verifier_sound_witness",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
     assert!(
         theorem_prefix(
             &lean_source,
@@ -1070,6 +1113,22 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             )
             .contains("RuntimeArtifactSoundnessObligations"),
         "checked runtime contracts wrapper should keep the compact core surface"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_contracts_core_contract",
+        &[
+            "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
+            "runtime_soundness_checked_acceptance_execution_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_contracts_core_contract",
+        &[
+            "abstract_verifier_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
     assert!(
         theorem_prefix(
