@@ -2159,11 +2159,10 @@ fn register_mem_steps_preserve_same_register_access_order() {
         4,
     );
 
-    let segment_base = zisk_main_segment_mem_step_base(row_count, segment.trace_instance_index)
-        .expect("segment mem-step base should fit");
-    let values =
-        apply_zisk_main_register_access_values(row, &instruction, &mut state, segment_base)
-            .expect("same-register accesses should validate");
+    let row_base = zisk_main_row_mem_step_base(row_count, segment.trace_instance_index, row)
+        .expect("row mem-step base should fit");
+    let values = apply_zisk_main_register_access_values(row, &instruction, &mut state, row_base)
+        .expect("same-register accesses should validate");
 
     let a_step = zisk_main_row_mem_step(
         row_count,
@@ -2231,6 +2230,33 @@ fn segment_mem_step_base_matches_row_base_helper() {
                     .expect("precomputed row base should fit"),
                 zisk_main_row_mem_step_base(row_count, trace_instance_index, row)
                     .expect("direct row base should fit")
+            );
+        }
+    }
+}
+
+#[test]
+fn row_mem_step_cursor_matches_direct_offset_helper() {
+    let row_count = 120_000_000;
+    let trace_instance_index = 8;
+    let mut cursor = GuestPcTraceRowMemStepCursor::new(row_count, trace_instance_index)
+        .expect("cursor should initialize for supported row count");
+
+    for row in [0, 1, 42, 4_194_303, row_count - 1] {
+        cursor
+            .advance_to(row)
+            .expect("cursor should advance to requested row");
+        for offset in [
+            ZISK_MAIN_A_MEM_STEP_OFFSET,
+            ZISK_MAIN_B_MEM_STEP_OFFSET,
+            ZISK_MAIN_STORE_MEM_STEP_OFFSET,
+        ] {
+            assert_eq!(
+                cursor
+                    .step(offset)
+                    .expect("cursor offset mem-step should fit"),
+                zisk_main_row_mem_step(row_count, trace_instance_index, row, offset)
+                    .expect("direct row mem-step should fit")
             );
         }
     }

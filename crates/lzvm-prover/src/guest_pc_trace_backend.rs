@@ -5615,7 +5615,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
             report,
             next_instruction,
             &mut self.state,
-            self.context,
+            &mut self.context,
             if timing_config.row_timing_enabled
                 && (report_detail_timing || timing_config.shape_timing)
             {
@@ -5772,11 +5772,64 @@ struct ZiskMainReportWindow<'a> {
     next_instruction: &'a mut dyn FnMut() -> Option<RiscvInstruction>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
+struct GuestPcTraceRowMemStepCursor {
+    segment_base: u64,
+    current_row: usize,
+    current_base: u64,
+}
+
+impl GuestPcTraceRowMemStepCursor {
+    fn new(row_count: usize, trace_instance_index: u32) -> Result<Self, GuestPcTraceBackendError> {
+        let segment_base = zisk_main_segment_mem_step_base(row_count, trace_instance_index)?;
+        Ok(Self {
+            segment_base,
+            current_row: 0,
+            current_base: segment_base,
+        })
+    }
+
+    fn advance_to(&mut self, row: usize) -> Result<(), GuestPcTraceBackendError> {
+        if row == self.current_row {
+            return Ok(());
+        }
+        if row < self.current_row {
+            self.current_base =
+                zisk_main_row_mem_step_base_from_segment_base(self.segment_base, row)?;
+            self.current_row = row;
+            return Ok(());
+        }
+        let delta = row - self.current_row;
+        let row_offset = u64::try_from(delta)
+            .ok()
+            .and_then(|delta| ZISK_MAIN_MEM_STEPS_PER_ROW.checked_mul(delta))
+            .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace step is too large".to_owned(),
+            })?;
+        self.current_base = self.current_base.checked_add(row_offset).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace step is too large".to_owned(),
+            }
+        })?;
+        self.current_row = row;
+        Ok(())
+    }
+
+    fn base(&self) -> u64 {
+        self.current_base
+    }
+
+    #[cfg(test)]
+    fn step(&self, offset: u64) -> Result<u64, GuestPcTraceBackendError> {
+        zisk_main_mem_step_from_base(self.current_base, offset)
+    }
+}
+
+#[derive(Debug, Clone)]
 struct ZiskMainReportValidationContext<'a> {
     columns: Option<&'a ZiskMainTraceColumns<'a>>,
     row_count: usize,
-    row_mem_step_segment_base: u64,
+    row_mem_step_cursor: GuestPcTraceRowMemStepCursor,
 }
 
 impl<'a> ZiskMainReportValidationContext<'a> {
@@ -5785,13 +5838,19 @@ impl<'a> ZiskMainReportValidationContext<'a> {
         row_count: usize,
         segment: ZiskMainTraceSegmentInfo,
     ) -> Result<Self, GuestPcTraceBackendError> {
-        let row_mem_step_segment_base =
-            zisk_main_segment_mem_step_base(row_count, segment.trace_instance_index)?;
         Ok(Self {
             columns,
             row_count,
-            row_mem_step_segment_base,
+            row_mem_step_cursor: GuestPcTraceRowMemStepCursor::new(
+                row_count,
+                segment.trace_instance_index,
+            )?,
         })
+    }
+
+    fn row_mem_step_base(&mut self, row: usize) -> Result<u64, GuestPcTraceBackendError> {
+        self.row_mem_step_cursor.advance_to(row)?;
+        Ok(self.row_mem_step_cursor.base())
     }
 }
 
@@ -5809,7 +5868,7 @@ fn validate_and_apply_zisk_main_report(
     report: &GuestMachineReport,
     mut next_instruction: impl FnMut() -> Option<RiscvInstruction>,
     state: &mut ZiskMainTraceState,
-    context: ZiskMainReportValidationContext<'_>,
+    context: &mut ZiskMainReportValidationContext<'_>,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
     detail_timing: bool,
     shape_timing: bool,
@@ -5929,7 +5988,7 @@ fn validate_and_apply_zisk_main_lowered_report_rows(
     report: &GuestMachineReport,
     lowered: Vec<ZiskMainLoweredReportRow<'_>>,
     state: &mut ZiskMainTraceState,
-    context: ZiskMainReportValidationContext<'_>,
+    context: &mut ZiskMainReportValidationContext<'_>,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
     detail_timing: bool,
     shape_timing: bool,
@@ -5961,7 +6020,7 @@ fn validate_and_apply_zisk_main_lowered_report_rows(
             report,
             lowered_row,
             state,
-            context,
+            &mut *context,
             reborrow_trace_timing(&mut timing),
             detail_timing,
             shape_timing,
@@ -5995,7 +6054,7 @@ fn apply_zisk_main_lowered_report_row(
     report: &GuestMachineReport,
     lowered_row: ZiskMainLoweredReportRow<'_>,
     state: &mut ZiskMainTraceState,
-    context: ZiskMainReportValidationContext<'_>,
+    context: &mut ZiskMainReportValidationContext<'_>,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
     detail_timing: bool,
     shape_timing: bool,
@@ -6082,12 +6141,9 @@ fn apply_zisk_main_lowered_report_row(
     });
 
     let register_access_started = detail_duration_started(&timing, detail_timing);
-    let register_accesses = apply_zisk_main_register_access_values(
-        output_row,
-        &instruction,
-        state,
-        context.row_mem_step_segment_base,
-    )?;
+    let row_mem_step_base = context.row_mem_step_base(output_row)?;
+    let register_accesses =
+        apply_zisk_main_register_access_values(output_row, &instruction, state, row_mem_step_base)?;
     record_detail_duration(register_access_started, &mut timing, |timing| {
         &mut timing.trace_report_register_access_duration
     });
@@ -6853,7 +6909,7 @@ fn apply_zisk_main_register_access_values(
     row: usize,
     instruction: &ZiskMainInstruction,
     state: &mut ZiskMainTraceState,
-    row_mem_step_segment_base: u64,
+    row_mem_step_base: u64,
 ) -> Result<ZiskMainRegisterAccessValues, GuestPcTraceBackendError> {
     let a_index = zisk_main_source_register_index(row, instruction.a)?;
     let b_index = zisk_main_source_register_index(row, instruction.b)?;
@@ -6867,9 +6923,6 @@ fn apply_zisk_main_register_access_values(
     if a_index.is_none() && b_index.is_none() && store_index.is_none() {
         return Ok(values);
     }
-    let row_mem_step_base =
-        zisk_main_row_mem_step_base_from_segment_base(row_mem_step_segment_base, row)?;
-
     if let Some(index) = a_index {
         let next_step =
             zisk_main_mem_step_from_base(row_mem_step_base, ZISK_MAIN_A_MEM_STEP_OFFSET)?;
@@ -7231,6 +7284,7 @@ fn advance_zisk_main_segment_seed(
 
     let mut state = seed.initial_state.clone();
     let mut output_row = 0_usize;
+    let mut context = ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?;
     for (report_index, report) in reports.iter().enumerate() {
         let mut next_instruction =
             || guest_report_next_instruction(reports, report_index, lookahead_instruction);
@@ -7239,7 +7293,7 @@ fn advance_zisk_main_segment_seed(
             report,
             &mut next_instruction,
             &mut state,
-            ZiskMainReportValidationContext::new(None, layout.row_count(), segment)?,
+            &mut context,
             None,
             false,
             false,
@@ -7820,12 +7874,13 @@ fn write_zisk_main_report_columns(
         .as_ref()
         .map(ZiskMainDeviceTraceDescriptors::descriptor_rows)
         .unwrap_or(0);
+    let mut context = ZiskMainReportValidationContext::new(Some(columns), row_count, segment)?;
     validate_and_apply_zisk_main_report(
         row,
         reports.current,
         reports.next_instruction,
         state,
-        ZiskMainReportValidationContext::new(Some(columns), row_count, segment)?,
+        &mut context,
         reborrow_trace_timing(&mut timing),
         _detail_timing,
         shape_timing,

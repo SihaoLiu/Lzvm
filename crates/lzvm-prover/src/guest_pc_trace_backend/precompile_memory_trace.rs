@@ -45,6 +45,7 @@ pub(super) fn write_layout_precompile_memory_trace(
     };
     let mut output_row = 0_usize;
     let mut main_step = 0_usize;
+    let mut context = ZiskMainReportValidationContext::new(None, usize::MAX, segment)?;
     for (report_index, report) in reports.iter().enumerate() {
         let report_main_step = main_step;
         let written_rows = validate_and_apply_zisk_main_report(
@@ -52,7 +53,7 @@ pub(super) fn write_layout_precompile_memory_trace(
             report,
             &mut || guest_report_next_instruction(reports, report_index, None),
             &mut state,
-            ZiskMainReportValidationContext::new(None, usize::MAX, segment)?,
+            &mut context,
             None,
             false,
             false,
