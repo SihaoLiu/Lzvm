@@ -624,6 +624,33 @@ def next_action_hint(
     )
 
 
+def graph_fusion_priority_hint(
+    launch_ns: int,
+    sync_ns: int,
+    top_stream_window_ns: int,
+    top_stream_idle_ns: int,
+) -> tuple[str, str]:
+    if top_stream_window_ns > 0 and top_stream_idle_ns * 2 > top_stream_window_ns:
+        return (
+            "defer_graph_or_fusion_until_stream_idle_is_explained",
+            "top kernel stream is idle for more than half of its active window",
+        )
+    if sync_ns > launch_ns * 5 // 4:
+        return (
+            "defer_graph_or_fusion_until_sync_boundaries_are_reduced",
+            "synchronization time is larger than launch time",
+        )
+    if launch_ns > sync_ns * 5 // 4:
+        return (
+            "measure_cuda_graph_or_kernel_fusion",
+            "launch time is the larger host-side CUDA cost",
+        )
+    return (
+        "co_measure_graph_fusion_with_sync_changes",
+        "launch and synchronization costs are close enough to move together",
+    )
+
+
 def print_direction_triage(
     launch_rows: list[sqlite3.Row],
     graph_rows: list[sqlite3.Row],
@@ -654,6 +681,12 @@ def print_direction_triage(
         launch_ns,
         sync_ns,
         stream_count,
+        top_stream_window_ns,
+        top_stream_idle_ns,
+    )
+    graph_priority, graph_priority_detail = graph_fusion_priority_hint(
+        launch_ns,
+        sync_ns,
         top_stream_window_ns,
         top_stream_idle_ns,
     )
@@ -699,6 +732,7 @@ def print_direction_triage(
         "CUDA launch API time relative to top-stream idle time"
     )
     print(f"next_action_hint,{next_action},{next_action_detail}")
+    print(f"graph_fusion_priority_hint,{graph_priority},{graph_priority_detail}")
     if top_fusion is None:
         print("top_fusion_kernel,none,no repeated launch candidate")
     else:

@@ -27,6 +27,7 @@ fn nsys_cuda_kernel_summary_reports_kernel_launch_and_stream_shape() {
         "kernel_adjacency_candidates",
         "runtime_cuda_sync_api",
         "cuda_graph_fusion_separation_triage",
+        "graph_fusion_priority_hint",
         "transfer_residency_hint",
         "top_d2h_wait",
     ] {
@@ -80,6 +81,8 @@ fn nsys_cuda_kernel_summary_reports_kernel_launch_and_stream_shape() {
         "graph_launch_calls",
         "sync_to_launch_ratio",
         "next_action_hint",
+        "graph_fusion_priority_hint",
+        "defer_graph_or_fusion_until_stream_idle_is_explained",
         "top_stream_occupancy_ratio",
         "top_stream_idle_ms",
         "launch_to_top_stream_idle_ratio",
