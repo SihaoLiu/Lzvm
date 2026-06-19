@@ -69,6 +69,26 @@ PARALLEL_LOWER_REPORT_ELIDED_KEY = (
 SEGMENT_REPLAY_COUNT_KEY = "timing_guest_trace_segment_replay_count"
 TRACE_REPORTS_KEY = "timing_guest_trace_reports"
 TRACE_REPORT_ROWS_KEY = "timing_guest_trace_report_rows"
+TRACE_REPORT_VALIDATION_MS_KEY = "timing_guest_trace_report_validation_ms"
+TRACE_REPORT_LOWERING_MS_KEY = "timing_guest_trace_report_lowering_ms"
+TRACE_REPORT_ROW_VALIDATION_MS_KEY = "timing_guest_trace_report_row_validation_ms"
+TRACE_REPORT_MEMORY_COLUMNS_MS_KEY = "timing_guest_trace_report_memory_columns_ms"
+TRACE_REPORT_SOURCE_VALUES_MS_KEY = "timing_guest_trace_report_source_values_ms"
+TRACE_REPORT_SOURCE_A_VALUE_MS_KEY = "timing_guest_trace_report_source_a_value_ms"
+TRACE_REPORT_SOURCE_B_VALUE_MS_KEY = "timing_guest_trace_report_source_b_value_ms"
+TRACE_REPORT_PRECOMPILE_MEMORY_MS_KEY = (
+    "timing_guest_trace_report_precompile_memory_ms"
+)
+TRACE_REPORT_INSTRUCTION_RESULT_MS_KEY = (
+    "timing_guest_trace_report_instruction_result_ms"
+)
+TRACE_REPORT_NEXT_PC_MS_KEY = "timing_guest_trace_report_next_pc_ms"
+TRACE_REPORT_REGISTER_ACCESS_MS_KEY = "timing_guest_trace_report_register_access_ms"
+TRACE_REPORT_MEMORY_ACCESS_MS_KEY = "timing_guest_trace_report_memory_access_ms"
+TRACE_REPORT_STORE_APPLY_MS_KEY = "timing_guest_trace_report_store_apply_ms"
+TRACE_REPORT_VISIT_MS_KEY = "timing_guest_trace_report_visit_ms"
+TRACE_REPORT_EMIT_MS_KEY = "timing_guest_trace_emit_ms"
+TRACE_DESCRIPTOR_MS_KEY = "timing_guest_trace_descriptor_ms"
 TRACE_SINGLE_ROW_REPORTS_KEY = "timing_guest_trace_single_row_reports"
 TRACE_MULTI_ROW_REPORTS_KEY = "timing_guest_trace_multi_row_reports"
 TRACE_PENDING_DMA_REPORTS_KEY = "timing_guest_trace_pending_dma_reports"
@@ -529,6 +549,15 @@ HEADER = (
     "register_source_reads,memory_source_reads,memory_source_read_pct,"
     "register_store_rows,memory_store_rows,memory_store_row_pct,"
     "no_store_rows,no_store_row_pct,trace_shape_sample_hint,"
+    "trace_report_validation_ms,trace_report_emit_ms,trace_descriptor_ms,"
+    "trace_report_lowering_ms,trace_report_row_validation_ms,"
+    "trace_report_memory_columns_ms,trace_report_source_values_ms,"
+    "trace_report_source_a_value_ms,trace_report_source_b_value_ms,"
+    "trace_report_precompile_memory_ms,trace_report_instruction_result_ms,"
+    "trace_report_next_pc_ms,trace_report_register_access_ms,"
+    "trace_report_memory_access_ms,trace_report_store_apply_ms,"
+    "trace_report_visit_ms,trace_report_exact_hotspot,"
+    "trace_report_exact_hotspot_pct,trace_report_exact_action_hint,"
     "trace_report_detail_samples,trace_report_detail_sample_pct,"
     "trace_report_detail_sample_ppm,trace_report_detail_sample_hint,"
     "trace_report_detail_avg_ns,"
@@ -646,6 +675,22 @@ TIMING_KEYS = {
     SEGMENT_REPLAY_COUNT_KEY,
     TRACE_REPORTS_KEY,
     TRACE_REPORT_ROWS_KEY,
+    TRACE_REPORT_VALIDATION_MS_KEY,
+    TRACE_REPORT_LOWERING_MS_KEY,
+    TRACE_REPORT_ROW_VALIDATION_MS_KEY,
+    TRACE_REPORT_MEMORY_COLUMNS_MS_KEY,
+    TRACE_REPORT_SOURCE_VALUES_MS_KEY,
+    TRACE_REPORT_SOURCE_A_VALUE_MS_KEY,
+    TRACE_REPORT_SOURCE_B_VALUE_MS_KEY,
+    TRACE_REPORT_PRECOMPILE_MEMORY_MS_KEY,
+    TRACE_REPORT_INSTRUCTION_RESULT_MS_KEY,
+    TRACE_REPORT_NEXT_PC_MS_KEY,
+    TRACE_REPORT_REGISTER_ACCESS_MS_KEY,
+    TRACE_REPORT_MEMORY_ACCESS_MS_KEY,
+    TRACE_REPORT_STORE_APPLY_MS_KEY,
+    TRACE_REPORT_VISIT_MS_KEY,
+    TRACE_REPORT_EMIT_MS_KEY,
+    TRACE_DESCRIPTOR_MS_KEY,
     TRACE_SINGLE_ROW_REPORTS_KEY,
     TRACE_MULTI_ROW_REPORTS_KEY,
     TRACE_PENDING_DMA_REPORTS_KEY,
@@ -2203,6 +2248,23 @@ DETAIL_SAMPLE_HOTSPOT_KEYS = [
     ("precompile_memory", TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY),
 ]
 
+EXACT_REPORT_HOTSPOT_KEYS = [
+    ("row_validation", TRACE_REPORT_ROW_VALIDATION_MS_KEY),
+    ("lowering", TRACE_REPORT_LOWERING_MS_KEY),
+    ("visit", TRACE_REPORT_VISIT_MS_KEY),
+    ("descriptor", TRACE_DESCRIPTOR_MS_KEY),
+    ("source_values", TRACE_REPORT_SOURCE_VALUES_MS_KEY),
+    ("source_a_value", TRACE_REPORT_SOURCE_A_VALUE_MS_KEY),
+    ("source_b_value", TRACE_REPORT_SOURCE_B_VALUE_MS_KEY),
+    ("instruction_result", TRACE_REPORT_INSTRUCTION_RESULT_MS_KEY),
+    ("next_pc", TRACE_REPORT_NEXT_PC_MS_KEY),
+    ("register_access", TRACE_REPORT_REGISTER_ACCESS_MS_KEY),
+    ("memory_access", TRACE_REPORT_MEMORY_ACCESS_MS_KEY),
+    ("store_apply", TRACE_REPORT_STORE_APPLY_MS_KEY),
+    ("precompile_memory", TRACE_REPORT_PRECOMPILE_MEMORY_MS_KEY),
+    ("memory_columns", TRACE_REPORT_MEMORY_COLUMNS_MS_KEY),
+]
+
 SOURCE_VALUE_DETAIL_HOTSPOT_KEYS = [
     ("source_a_value", TRACE_REPORT_SOURCE_A_VALUE_SAMPLED_NS_KEY),
     ("source_b_value", TRACE_REPORT_SOURCE_B_VALUE_SAMPLED_NS_KEY),
@@ -2250,6 +2312,44 @@ def trace_report_detail_hotspot(values: dict[str, int]) -> tuple[int, str, float
             hotspot_ns = value
     hotspot_pct = hotspot_ns * 100.0 / sampled_ns if sampled_ns else 0.0
     return (avg_ns, hotspot_name, hotspot_pct)
+
+
+def trace_report_exact_action_hint(
+    hotspot_name: str, hotspot_pct: float, has_sampled_detail: bool
+) -> str:
+    if hotspot_name == "none" or hotspot_pct <= 0.0:
+        if has_sampled_detail:
+            return "use_sampled_detail_breakdown"
+        return "enable_detail_timing_for_report_breakdown"
+    if hotspot_name == "row_validation":
+        return "profile_row_validation"
+    if hotspot_name == "source_values":
+        return "profile_source_values"
+    if hotspot_name == "visit":
+        return "profile_visit"
+    if hotspot_name == "descriptor":
+        return "profile_descriptor_write"
+    return f"profile_{hotspot_name}"
+
+
+def trace_report_exact_hotspot(values: dict[str, int]) -> tuple[str, float, str]:
+    report_ms = values.get(TRACE_REPORT_MS_KEY, 0)
+    if report_ms <= 0:
+        return ("none", 0.0, "none")
+    hotspot_name = "none"
+    hotspot_ms = 0
+    for name, key in EXACT_REPORT_HOTSPOT_KEYS:
+        value = values.get(key, 0)
+        if value > hotspot_ms:
+            hotspot_name = name
+            hotspot_ms = value
+    hotspot_pct = hotspot_ms * 100.0 / report_ms if hotspot_ms else 0.0
+    has_sampled_detail = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0) > 0
+    return (
+        hotspot_name,
+        hotspot_pct,
+        trace_report_exact_action_hint(hotspot_name, hotspot_pct, has_sampled_detail),
+    )
 
 
 def trace_report_row_validation_hotspot(values: dict[str, int]) -> tuple[str, float]:
@@ -2572,6 +2672,33 @@ def summarize_profile_values(
         copy_max_run,
     )
     trace_shape_profile = trace_shape_profile_hint(trace_shape_hint)
+    trace_report_validation_ms = values.get(TRACE_REPORT_VALIDATION_MS_KEY, 0)
+    trace_report_emit_ms = values.get(TRACE_REPORT_EMIT_MS_KEY, 0)
+    trace_descriptor_ms = values.get(TRACE_DESCRIPTOR_MS_KEY, 0)
+    trace_report_lowering_ms = values.get(TRACE_REPORT_LOWERING_MS_KEY, 0)
+    trace_report_row_validation_ms = values.get(TRACE_REPORT_ROW_VALIDATION_MS_KEY, 0)
+    trace_report_memory_columns_ms = values.get(TRACE_REPORT_MEMORY_COLUMNS_MS_KEY, 0)
+    trace_report_source_values_ms = values.get(TRACE_REPORT_SOURCE_VALUES_MS_KEY, 0)
+    trace_report_source_a_value_ms = values.get(TRACE_REPORT_SOURCE_A_VALUE_MS_KEY, 0)
+    trace_report_source_b_value_ms = values.get(TRACE_REPORT_SOURCE_B_VALUE_MS_KEY, 0)
+    trace_report_precompile_memory_ms = values.get(
+        TRACE_REPORT_PRECOMPILE_MEMORY_MS_KEY, 0
+    )
+    trace_report_instruction_result_ms = values.get(
+        TRACE_REPORT_INSTRUCTION_RESULT_MS_KEY, 0
+    )
+    trace_report_next_pc_ms = values.get(TRACE_REPORT_NEXT_PC_MS_KEY, 0)
+    trace_report_register_access_ms = values.get(
+        TRACE_REPORT_REGISTER_ACCESS_MS_KEY, 0
+    )
+    trace_report_memory_access_ms = values.get(TRACE_REPORT_MEMORY_ACCESS_MS_KEY, 0)
+    trace_report_store_apply_ms = values.get(TRACE_REPORT_STORE_APPLY_MS_KEY, 0)
+    trace_report_visit_ms = values.get(TRACE_REPORT_VISIT_MS_KEY, 0)
+    (
+        trace_report_exact_hotspot_name,
+        trace_report_exact_hotspot_pct,
+        trace_report_exact_action,
+    ) = trace_report_exact_hotspot(values)
     trace_report_detail_samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
     trace_report_detail_sample_pct = (
         trace_report_detail_samples * 100.0 / trace_reports if trace_reports else 0.0
@@ -3401,6 +3528,16 @@ def summarize_profile_values(
         f"{memory_source_read_pct:.3f},{register_store_rows},"
         f"{memory_store_rows},{memory_store_row_pct:.3f},"
         f"{no_store_rows},{no_store_row_pct:.3f},{trace_shape_hint},"
+        f"{trace_report_validation_ms},{trace_report_emit_ms},{trace_descriptor_ms},"
+        f"{trace_report_lowering_ms},{trace_report_row_validation_ms},"
+        f"{trace_report_memory_columns_ms},{trace_report_source_values_ms},"
+        f"{trace_report_source_a_value_ms},{trace_report_source_b_value_ms},"
+        f"{trace_report_precompile_memory_ms},"
+        f"{trace_report_instruction_result_ms},{trace_report_next_pc_ms},"
+        f"{trace_report_register_access_ms},{trace_report_memory_access_ms},"
+        f"{trace_report_store_apply_ms},{trace_report_visit_ms},"
+        f"{trace_report_exact_hotspot_name},"
+        f"{trace_report_exact_hotspot_pct:.3f},{trace_report_exact_action},"
         f"{trace_report_detail_samples},{trace_report_detail_sample_pct:.3f},"
         f"{trace_report_detail_sample_ppm:.3f},{trace_report_detail_hint},"
         f"{trace_report_detail_avg_ns},"

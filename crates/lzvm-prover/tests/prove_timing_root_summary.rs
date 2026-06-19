@@ -236,6 +236,14 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_report_detail_samples",
         "trace_report_detail_sample_hint",
         "trace_report_detail_action_hint",
+        "timing_guest_trace_report_validation_ms",
+        "trace_report_validation_ms",
+        "timing_guest_trace_report_row_validation_ms",
+        "trace_report_row_validation_ms",
+        "timing_guest_trace_report_source_values_ms",
+        "trace_report_source_values_ms",
+        "trace_report_exact_hotspot",
+        "trace_report_exact_action_hint",
     ] {
         assert!(
             source.contains(required),
@@ -893,6 +901,7 @@ fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
         "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
         "timing_guest_trace_lowerer_ms=2000",
         "timing_guest_trace_lower_ms=1500",
+        "timing_guest_trace_report_ms=1500",
         "timing_guest_trace_reports=1000",
         "timing_guest_trace_report_rows=1000",
         "timing_guest_trace_report_detail_samples=10",
@@ -940,6 +949,10 @@ fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
             "trace_report_detail_samples,trace_report_detail_sample_pct,trace_report_detail_sample_ppm,trace_report_detail_sample_hint,trace_report_detail_avg_ns,trace_report_detail_lowerer_share_ms,trace_report_row_validation_lowerer_share_ms,trace_report_memory_columns_lowerer_share_ms,trace_report_source_values_lowerer_share_ms,trace_report_source_lookup_lowerer_share_ms,trace_report_source_values_residual_lowerer_share_ms,trace_report_precompile_memory_lowerer_share_ms,trace_report_instruction_result_lowerer_share_ms,trace_report_next_pc_lowerer_share_ms,trace_report_register_access_lowerer_share_ms,trace_report_memory_access_lowerer_share_ms,trace_report_store_apply_lowerer_share_ms,trace_report_row_validation_residual_lowerer_share_ms,trace_report_visit_lowerer_share_ms,trace_report_descriptor_lowerer_share_ms,trace_report_detail_hotspot,trace_report_detail_hotspot_pct,trace_report_detail_action_hint,trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,trace_report_row_validation_explained_pct,trace_report_row_validation_residual_pct,trace_report_source_values_lookup_pct,trace_report_source_values_residual_pct,trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,trace_report_visit_residual_pct"
         ),
         "prove timing root summary should expose detail sample, lowerer-share cost, source-value, and visit drilldown columns: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(",none,0.000,use_sampled_detail_breakdown,10,1.000,10000.000,detail_timing_sampled,"),
+        "prove timing root summary should route missing exact detail fields to sampled detail breakdown: stdout={stdout}"
     );
     assert!(
         stdout.contains(
@@ -1096,6 +1109,105 @@ fn prove_timing_root_summary_reports_trace_lower_work_and_wall_overlap() {
     assert!(
         stdout.contains(",7800,7812,6200,6100,100,5700,1612,9912,"),
         "prove timing root summary should compute overlap and non-lowerer work from timing_guest_trace_lower_ms: stdout={stdout}"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reports_trace_report_exact_breakdown() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "input_bytes=2758032",
+        "timing_total_ms=9900",
+        "timing_guest_trace_lower_ms=1200",
+        "timing_guest_trace_report_ms=1000",
+        "timing_guest_trace_report_validation_ms=900",
+        "timing_guest_trace_emit_ms=70",
+        "timing_guest_trace_descriptor_ms=40",
+        "timing_guest_trace_report_lowering_ms=80",
+        "timing_guest_trace_report_row_validation_ms=620",
+        "timing_guest_trace_report_memory_columns_ms=120",
+        "timing_guest_trace_report_source_values_ms=240",
+        "timing_guest_trace_report_source_a_value_ms=160",
+        "timing_guest_trace_report_source_b_value_ms=60",
+        "timing_guest_trace_report_precompile_memory_ms=10",
+        "timing_guest_trace_report_instruction_result_ms=30",
+        "timing_guest_trace_report_next_pc_ms=20",
+        "timing_guest_trace_report_register_access_ms=50",
+        "timing_guest_trace_report_memory_access_ms=40",
+        "timing_guest_trace_report_store_apply_ms=30",
+        "timing_guest_trace_report_visit_ms=140",
+        "timing_guest_stage_tree_commit_root_count=23",
+        "timing_guest_stage_tree_commit_root_materialization_groups=23",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("trace_report_validation_ms"), "900");
+    assert_eq!(value("trace_report_emit_ms"), "70");
+    assert_eq!(value("trace_report_lowering_ms"), "80");
+    assert_eq!(value("trace_report_row_validation_ms"), "620");
+    assert_eq!(value("trace_report_memory_columns_ms"), "120");
+    assert_eq!(value("trace_report_source_values_ms"), "240");
+    assert_eq!(value("trace_report_source_a_value_ms"), "160");
+    assert_eq!(value("trace_report_source_b_value_ms"), "60");
+    assert_eq!(value("trace_report_precompile_memory_ms"), "10");
+    assert_eq!(value("trace_report_instruction_result_ms"), "30");
+    assert_eq!(value("trace_report_next_pc_ms"), "20");
+    assert_eq!(value("trace_report_register_access_ms"), "50");
+    assert_eq!(value("trace_report_memory_access_ms"), "40");
+    assert_eq!(value("trace_report_store_apply_ms"), "30");
+    assert_eq!(value("trace_report_visit_ms"), "140");
+    assert_eq!(value("trace_report_exact_hotspot"), "row_validation");
+    assert_eq!(value("trace_report_exact_hotspot_pct"), "62.000");
+    assert_eq!(
+        value("trace_report_exact_action_hint"),
+        "profile_row_validation"
     );
 }
 
