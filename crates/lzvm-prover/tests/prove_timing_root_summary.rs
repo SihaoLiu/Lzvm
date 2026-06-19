@@ -136,6 +136,8 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_stage_source_retention_attempts",
         "timing_guest_stage_source_retention_retained",
         "timing_guest_stage_source_retention_rejected",
+        "timing_guest_stage_source_retention_max_retained_bytes",
+        "timing_guest_stage_source_retention_max_rejected_bytes",
         "timing_guest_stage_source_retention_limit_bytes",
         "opening_source_rebuild_hint",
         "timing_finish_witness_opening_row_values_device_rows",
@@ -287,6 +289,8 @@ fn prove_timing_root_summary_reports_source_retention_rebuild_shape() {
         "timing_guest_stage_source_retention_rejected=240",
         "timing_guest_stage_source_retention_retained_bytes=0",
         "timing_guest_stage_source_retention_rejected_bytes=314069483520",
+        "timing_guest_stage_source_retention_max_retained_bytes=0",
+        "timing_guest_stage_source_retention_max_rejected_bytes=1308622848",
         "timing_guest_stage_source_retention_limit_bytes=0",
         "timing_cuda_allocator_copy_h2d_bytes=88120305952",
         "timing_cuda_allocator_copy_h2d_wait_ns=7040040536",
@@ -330,6 +334,8 @@ fn prove_timing_root_summary_reports_source_retention_rebuild_shape() {
     assert_eq!(value("source_retention_rejected"), "240");
     assert_eq!(value("source_retention_retained_bytes"), "0");
     assert_eq!(value("source_retention_rejected_bytes"), "314069483520");
+    assert_eq!(value("source_retention_max_retained_bytes"), "0");
+    assert_eq!(value("source_retention_max_rejected_bytes"), "1308622848");
     assert_eq!(value("source_retention_limit_bytes"), "0");
     assert_eq!(
         value("opening_source_rebuild_hint"),

@@ -5232,6 +5232,8 @@ fn guest_pc_trace_timing_reports_stage_source_retention_budget() {
         "stage_source_retention_rejected_count",
         "stage_source_retention_retained_byte_count",
         "stage_source_retention_rejected_byte_count",
+        "stage_source_retention_max_retained_byte_count",
+        "stage_source_retention_max_rejected_byte_count",
         "stage_source_retention_limit_byte_count",
     ] {
         assert!(
@@ -5248,7 +5250,9 @@ fn guest_pc_trace_timing_reports_stage_source_retention_budget() {
     assert!(
         cache_body.contains("retained_source_device_limit()")
             && cache_body.contains("add_stage_source_retention")
-            && cache_body.contains("retained_byte_len()"),
+            && cache_body.contains("retained_byte_len()")
+            && cache_body.contains("max_retained_byte_count")
+            && cache_body.contains("max_rejected_byte_count"),
         "retained descriptor collection should record attempts, rejections, rejected bytes, and limit"
     );
     assert!(
@@ -5276,6 +5280,14 @@ fn guest_pc_trace_timing_reports_stage_source_retention_budget() {
         (
             "\"guest_stage_source_retention_rejected_bytes\"",
             "guest_stage_source_retention_rejected_byte_count()",
+        ),
+        (
+            "\"guest_stage_source_retention_max_retained_bytes\"",
+            "guest_stage_source_retention_max_retained_byte_count()",
+        ),
+        (
+            "\"guest_stage_source_retention_max_rejected_bytes\"",
+            "guest_stage_source_retention_max_rejected_byte_count()",
         ),
         (
             "\"guest_stage_source_retention_limit_bytes\"",

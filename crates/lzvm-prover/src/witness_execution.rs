@@ -521,6 +521,8 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_stage_source_retention_rejected_count: usize,
     guest_stage_source_retention_retained_byte_count: usize,
     guest_stage_source_retention_rejected_byte_count: usize,
+    guest_stage_source_retention_max_retained_byte_count: usize,
+    guest_stage_source_retention_max_rejected_byte_count: usize,
     guest_stage_source_retention_limit_byte_count: usize,
     guest_descriptor_buffer_retention_attempt_count: usize,
     guest_descriptor_buffer_retention_retained_count: usize,
@@ -794,6 +796,10 @@ impl ProveWitnessGuestPcTraceTiming {
                 .stage_source_retention_retained_byte_count,
             guest_stage_source_retention_rejected_byte_count: trace_timing
                 .stage_source_retention_rejected_byte_count,
+            guest_stage_source_retention_max_retained_byte_count: trace_timing
+                .stage_source_retention_max_retained_byte_count,
+            guest_stage_source_retention_max_rejected_byte_count: trace_timing
+                .stage_source_retention_max_rejected_byte_count,
             guest_stage_source_retention_limit_byte_count: trace_timing
                 .stage_source_retention_limit_byte_count,
             guest_descriptor_buffer_retention_attempt_count: trace_timing
@@ -1358,6 +1364,14 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_stage_source_retention_rejected_byte_count
     }
 
+    pub fn guest_stage_source_retention_max_retained_byte_count(&self) -> usize {
+        self.guest_stage_source_retention_max_retained_byte_count
+    }
+
+    pub fn guest_stage_source_retention_max_rejected_byte_count(&self) -> usize {
+        self.guest_stage_source_retention_max_rejected_byte_count
+    }
+
     pub fn guest_stage_source_retention_limit_byte_count(&self) -> usize {
         self.guest_stage_source_retention_limit_byte_count
     }
@@ -1910,6 +1924,8 @@ struct ProveWitnessTraceTimingAccumulator {
     stage_source_retention_rejected_count: usize,
     stage_source_retention_retained_byte_count: usize,
     stage_source_retention_rejected_byte_count: usize,
+    stage_source_retention_max_retained_byte_count: usize,
+    stage_source_retention_max_rejected_byte_count: usize,
     stage_source_retention_limit_byte_count: usize,
     descriptor_buffer_retention_attempt_count: usize,
     descriptor_buffer_retention_retained_count: usize,
@@ -1965,6 +1981,18 @@ struct ProveWitnessTraceTimingAccumulator {
     stage_timings: Vec<ProveWitnessGuestStageTiming>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct StageSourceRetentionTiming {
+    attempt_count: usize,
+    retained_count: usize,
+    rejected_count: usize,
+    retained_byte_count: usize,
+    rejected_byte_count: usize,
+    max_retained_byte_count: usize,
+    max_rejected_byte_count: usize,
+    limit_byte_count: usize,
+}
+
 impl ProveWitnessTraceTimingAccumulator {
     fn accumulate(&mut self, other: Self) {
         self.device_source_build_duration += other.device_source_build_duration;
@@ -1986,6 +2014,12 @@ impl ProveWitnessTraceTimingAccumulator {
             other.stage_source_retention_retained_byte_count;
         self.stage_source_retention_rejected_byte_count +=
             other.stage_source_retention_rejected_byte_count;
+        self.stage_source_retention_max_retained_byte_count = self
+            .stage_source_retention_max_retained_byte_count
+            .max(other.stage_source_retention_max_retained_byte_count);
+        self.stage_source_retention_max_rejected_byte_count = self
+            .stage_source_retention_max_rejected_byte_count
+            .max(other.stage_source_retention_max_rejected_byte_count);
         self.stage_source_retention_limit_byte_count = self
             .stage_source_retention_limit_byte_count
             .max(other.stage_source_retention_limit_byte_count);
@@ -2090,25 +2124,23 @@ impl ProveWitnessTraceTimingAccumulator {
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
-    fn add_stage_source_retention(
-        &mut self,
-        attempt_count: usize,
-        retained_count: usize,
-        rejected_count: usize,
-        retained_byte_count: usize,
-        rejected_byte_count: usize,
-        limit_byte_count: usize,
-    ) {
-        self.stage_source_retention_attempt_count += attempt_count;
-        self.stage_source_retention_retained_count += retained_count;
-        self.stage_source_retention_rejected_count += rejected_count;
+    fn add_stage_source_retention(&mut self, timing: StageSourceRetentionTiming) {
+        self.stage_source_retention_attempt_count += timing.attempt_count;
+        self.stage_source_retention_retained_count += timing.retained_count;
+        self.stage_source_retention_rejected_count += timing.rejected_count;
         self.stage_source_retention_retained_byte_count = self
             .stage_source_retention_retained_byte_count
-            .saturating_add(retained_byte_count);
-        self.stage_source_retention_rejected_byte_count += rejected_byte_count;
+            .saturating_add(timing.retained_byte_count);
+        self.stage_source_retention_rejected_byte_count += timing.rejected_byte_count;
+        self.stage_source_retention_max_retained_byte_count = self
+            .stage_source_retention_max_retained_byte_count
+            .max(timing.max_retained_byte_count);
+        self.stage_source_retention_max_rejected_byte_count = self
+            .stage_source_retention_max_rejected_byte_count
+            .max(timing.max_rejected_byte_count);
         self.stage_source_retention_limit_byte_count = self
             .stage_source_retention_limit_byte_count
-            .max(limit_byte_count);
+            .max(timing.limit_byte_count);
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
@@ -2615,6 +2647,8 @@ impl WitnessStageSourceDeviceCache {
         let mut rejected_count = 0usize;
         let mut retained_byte_count = 0usize;
         let mut rejected_byte_count = 0usize;
+        let mut max_retained_byte_count = 0usize;
+        let mut max_rejected_byte_count = 0usize;
         let mut retained_buffer_keys = HashSet::new();
         let mut retained = Vec::new();
         for source_device in self.descriptors() {
@@ -2624,26 +2658,30 @@ impl WitnessStageSourceDeviceCache {
             if let Some(source_device) = source_device.retain() {
                 if retained_buffer_keys.insert(retained_buffer_key) {
                     retained_byte_count = retained_byte_count.saturating_add(retained_byte_len);
+                    max_retained_byte_count = max_retained_byte_count.max(retained_byte_len);
                 }
                 retained.push(source_device);
             } else {
                 rejected_count += 1;
                 rejected_byte_count = rejected_byte_count.saturating_add(retained_byte_len);
+                max_rejected_byte_count = max_rejected_byte_count.max(retained_byte_len);
             }
         }
         if let Some(timing) = timing {
-            timing.add_stage_source_retention(
+            timing.add_stage_source_retention(StageSourceRetentionTiming {
                 attempt_count,
-                retained.len(),
+                retained_count: retained.len(),
                 rejected_count,
                 retained_byte_count,
                 rejected_byte_count,
-                retention_limit,
-            );
+                max_retained_byte_count,
+                max_rejected_byte_count,
+                limit_byte_count: retention_limit,
+            });
         }
         if debug_fri_stage_source_devices() {
             eprintln!(
-                "lzvm_cuda_fri_stage_source_retained={} attempts={attempt_count} retained_bytes={retained_byte_count} rejected={rejected_count} rejected_bytes={rejected_byte_count} limit_bytes={retention_limit}",
+                "lzvm_cuda_fri_stage_source_retained={} attempts={attempt_count} retained_bytes={retained_byte_count} max_retained_bytes={max_retained_byte_count} rejected={rejected_count} rejected_bytes={rejected_byte_count} max_rejected_bytes={max_rejected_byte_count} limit_bytes={retention_limit}",
                 retained.len(),
             );
         }

@@ -302,6 +302,12 @@ SOURCE_RETENTION_RETAINED_KEY = "timing_guest_stage_source_retention_retained"
 SOURCE_RETENTION_REJECTED_KEY = "timing_guest_stage_source_retention_rejected"
 SOURCE_RETENTION_RETAINED_BYTES_KEY = "timing_guest_stage_source_retention_retained_bytes"
 SOURCE_RETENTION_REJECTED_BYTES_KEY = "timing_guest_stage_source_retention_rejected_bytes"
+SOURCE_RETENTION_MAX_RETAINED_BYTES_KEY = (
+    "timing_guest_stage_source_retention_max_retained_bytes"
+)
+SOURCE_RETENTION_MAX_REJECTED_BYTES_KEY = (
+    "timing_guest_stage_source_retention_max_rejected_bytes"
+)
 SOURCE_RETENTION_LIMIT_BYTES_KEY = "timing_guest_stage_source_retention_limit_bytes"
 DESCRIPTOR_RETENTION_ATTEMPTS_KEY = "timing_guest_descriptor_buffer_retention_attempts"
 DESCRIPTOR_RETENTION_RETAINED_KEY = "timing_guest_descriptor_buffer_retention_retained"
@@ -405,7 +411,8 @@ HEADER = (
     "opening_source_shape_hint,"
     "source_retention_attempts,source_retention_retained,"
     "source_retention_rejected,source_retention_retained_bytes,"
-    "source_retention_rejected_bytes,source_retention_limit_bytes,"
+    "source_retention_rejected_bytes,source_retention_max_retained_bytes,"
+    "source_retention_max_rejected_bytes,source_retention_limit_bytes,"
     "opening_source_rebuild_hint,opening_row_value_device_rows,"
     "opening_row_value_source_rows,opening_row_value_source_extend_ms,"
     "opening_row_value_source_extend_pct,opening_source_row_value_action_hint,"
@@ -636,6 +643,8 @@ TIMING_KEYS = {
     SOURCE_RETENTION_REJECTED_KEY,
     SOURCE_RETENTION_RETAINED_BYTES_KEY,
     SOURCE_RETENTION_REJECTED_BYTES_KEY,
+    SOURCE_RETENTION_MAX_RETAINED_BYTES_KEY,
+    SOURCE_RETENTION_MAX_REJECTED_BYTES_KEY,
     SOURCE_RETENTION_LIMIT_BYTES_KEY,
     OPENING_ROW_VALUE_DEVICE_ROWS_KEY,
     OPENING_ROW_VALUE_SOURCE_ROWS_KEY,
@@ -2476,6 +2485,12 @@ def summarize_profile_values(
     source_retention_rejected = values.get(SOURCE_RETENTION_REJECTED_KEY, 0)
     source_retention_retained_bytes = values.get(SOURCE_RETENTION_RETAINED_BYTES_KEY, 0)
     source_retention_rejected_bytes = values.get(SOURCE_RETENTION_REJECTED_BYTES_KEY, 0)
+    source_retention_max_retained_bytes = values.get(
+        SOURCE_RETENTION_MAX_RETAINED_BYTES_KEY, 0
+    )
+    source_retention_max_rejected_bytes = values.get(
+        SOURCE_RETENTION_MAX_REJECTED_BYTES_KEY, 0
+    )
     source_retention_limit_bytes = values.get(SOURCE_RETENTION_LIMIT_BYTES_KEY, 0)
     opening_row_value_device_rows = values.get(OPENING_ROW_VALUE_DEVICE_ROWS_KEY, 0)
     opening_row_value_source_rows = values.get(OPENING_ROW_VALUE_SOURCE_ROWS_KEY, 0)
@@ -2851,7 +2866,8 @@ def summarize_profile_values(
         f"{opening_source_hint},"
         f"{source_retention_attempts},{source_retention_retained},"
         f"{source_retention_rejected},{source_retention_retained_bytes},"
-        f"{source_retention_rejected_bytes},{source_retention_limit_bytes},"
+        f"{source_retention_rejected_bytes},{source_retention_max_retained_bytes},"
+        f"{source_retention_max_rejected_bytes},{source_retention_limit_bytes},"
         f"{source_rebuild_hint},{opening_row_value_device_rows},"
         f"{opening_row_value_source_rows},{opening_row_value_source_extend_ms},"
         f"{opening_row_value_source_extend_pct:.3f},{opening_source_row_value_hint},"
