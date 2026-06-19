@@ -2237,6 +2237,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     const STREAM_ENV: &str = "LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS";
     const PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE";
     const PIPELINE_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
+    const COMMIT_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS";
     const ROOTS_ENV: &str = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS";
 
     struct StreamRun {
@@ -2245,6 +2246,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         stream_ingress_count: usize,
         parallel_lower_worker_count: usize,
         parallel_lower_emitted_count: usize,
+        segment_commit_effective_worker_count: usize,
     }
 
     let _env_lock = PROVE_WITNESS_ENV_LOCK
@@ -2253,6 +2255,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     let _stream_guard = TestEnvVarGuard::unset(STREAM_ENV);
     let _pipeline_guard = TestEnvVarGuard::unset(PIPELINE_ENV);
     let _pipeline_workers_guard = TestEnvVarGuard::unset(PIPELINE_WORKERS_ENV);
+    let _commit_workers_guard = TestEnvVarGuard::unset(COMMIT_WORKERS_ENV);
     let _roots_guard = TestEnvVarGuard::unset(ROOTS_ENV);
     std::env::set_var(ROOTS_ENV, "0");
 
@@ -2303,6 +2306,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     let run = |label: &str| -> StreamRun {
         let mut stream_ingress_count = None;
         let mut parallel_lower_counts = None;
+        let mut segment_commit_effective_worker_count = None;
         let outputs =
             run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_with_timings(
                 &plan,
@@ -2316,6 +2320,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
                         timing.guest_trace_parallel_lower_worker_count(),
                         timing.guest_trace_parallel_lower_emitted_count(),
                     ));
+                    segment_commit_effective_worker_count =
+                        Some(timing.guest_segment_commit_effective_worker_count());
                 },
             )
             .unwrap_or_else(|error| {
@@ -2325,6 +2331,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             stream_ingress_count.expect("timed run should report stream ingress count");
         let (parallel_lower_worker_count, parallel_lower_emitted_count) =
             parallel_lower_counts.expect("timed run should report parallel lower counts");
+        let segment_commit_effective_worker_count = segment_commit_effective_worker_count
+            .expect("timed run should report segment commit worker count");
         let witness_segments = outputs
             .iter()
             .map(|output| {
@@ -2371,6 +2379,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             stream_ingress_count,
             parallel_lower_worker_count,
             parallel_lower_emitted_count,
+            segment_commit_effective_worker_count,
         }
     };
 
@@ -2395,6 +2404,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         default_run.parallel_lower_worker_count, 0,
         "default path should not use the structural pipeline lowerer"
     );
+    assert_eq!(
+        default_run.segment_commit_effective_worker_count, 1,
+        "default path should keep segment commit serial"
+    );
     assert!(
         pipeline_run.parallel_lower_worker_count >= 2,
         "pipeline opt-in should use configured parallel lower workers"
@@ -2402,6 +2415,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert!(
         pipeline_run.parallel_lower_emitted_count > 0,
         "pipeline opt-in should emit lowered trace segments through the parallel lowerer"
+    );
+    assert!(
+        pipeline_run.segment_commit_effective_worker_count >= 2,
+        "pipeline opt-in should use segment commit workers"
     );
     assert_eq!(
         default_run.witness_segment_bytes,
