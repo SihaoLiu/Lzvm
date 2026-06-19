@@ -1758,9 +1758,14 @@ def trace_report_buffer_shape_hint(
     report_rows: int,
     buffer_capacity: int,
     buffer_excess_capacity: int,
+    buffer_capacity_present: bool,
 ) -> str:
     if reports <= 0 and report_rows <= 0 and buffer_capacity <= 0:
         return "none"
+    if not buffer_capacity_present:
+        return "report_buffer_capacity_missing"
+    if reports > 0 and buffer_capacity <= 0:
+        return "report_buffer_elided"
     if buffer_capacity <= 0:
         return "report_buffer_capacity_missing"
     excess_pct = buffer_excess_capacity * 100.0 / buffer_capacity
@@ -1773,11 +1778,19 @@ def trace_report_buffer_shape_hint(
 
 def trace_report_lifetime_hint(
     reports: int,
+    buffer_capacity: int,
+    buffer_capacity_present: bool,
     buffer_excess_pct: float,
     pending_drop_pct: float,
+    lowerer_ms: int,
+    stream_elapsed_ms: int,
 ) -> str:
     if reports <= 0:
         return "none"
+    if buffer_capacity_present and buffer_capacity <= 0:
+        if lowerer_ms <= 0 and stream_elapsed_ms > 0:
+            return "report_buffer_elided_but_trace_serialized"
+        return "report_buffer_elided"
     if buffer_excess_pct <= 1.0 and pending_drop_pct >= 5.0:
         return "tight_report_buffer_and_pending_drop"
     if pending_drop_pct >= 5.0:
@@ -2483,6 +2496,7 @@ def summarize_profile_values(
         trace_reports * trace_report_record_size_bytes,
     )
     trace_report_buffer_capacity = values.get(TRACE_REPORT_BUFFER_CAPACITY_KEY, 0)
+    trace_report_buffer_capacity_present = TRACE_REPORT_BUFFER_CAPACITY_KEY in values
     trace_report_buffer_max_capacity = values.get(
         TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY, 0
     )
@@ -2511,6 +2525,7 @@ def summarize_profile_values(
         trace_report_rows,
         trace_report_buffer_capacity,
         trace_report_buffer_excess_capacity,
+        trace_report_buffer_capacity_present,
     )
     descriptor_rows = values.get(DESCRIPTOR_ROWS_KEY, 0)
     descriptor_compact_rows = values.get(DESCRIPTOR_COMPACT_ROWS_KEY, 0)
@@ -2892,8 +2907,12 @@ def summarize_profile_values(
     )
     trace_lifetime_hint = trace_report_lifetime_hint(
         trace_reports,
+        trace_report_buffer_capacity,
+        trace_report_buffer_capacity_present,
         trace_report_buffer_excess_pct,
         pending_drop_pct,
+        lowerer_ms,
+        stream_elapsed_ms,
     )
     lowered_report_row_pct = perf_hotspots.get(
         PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY, 0.0

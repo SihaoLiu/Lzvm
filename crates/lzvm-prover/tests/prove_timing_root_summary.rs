@@ -2410,6 +2410,62 @@ fn prove_timing_root_summary_reports_trace_report_lifetime_pressure() {
 }
 
 #[test]
+fn prove_timing_root_summary_distinguishes_elided_report_buffer_from_missing_data() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=13203",
+        "timing_guest_trace_runner_ms=12433",
+        "timing_guest_trace_lowerer_ms=0",
+        "timing_guest_trace_stream_elapsed_ms=12582",
+        "timing_guest_trace_stream_ms=10816",
+        "timing_guest_segment_commit_ms=1766",
+        "timing_guest_trace_reports=93843537",
+        "timing_guest_trace_report_rows=93917088",
+        "timing_guest_trace_report_buffer_capacity=0",
+        "timing_guest_trace_report_buffer_max_capacity=0",
+        "timing_guest_trace_report_buffer_excess_capacity=0",
+        "timing_guest_trace_report_record_size_bytes=144",
+        "timing_guest_trace_report_storage_bytes=13513469328",
+        "timing_guest_trace_report_buffer_capacity_bytes=0",
+        "timing_guest_trace_report_buffer_excess_bytes=0",
+        "timing_guest_stage_tree_commit_root_count=23",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=23",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("report_buffer_elided,report_buffer_elided_but_trace_serialized"),
+        "prove timing root summary should distinguish elided report buffers from missing timing and warn when lowerer overlap is gone: stdout={stdout}"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_serial_trace_structure_hint() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
