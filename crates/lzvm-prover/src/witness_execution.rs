@@ -412,6 +412,9 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_segment_commit_oom_retry_duration: Duration,
     guest_segment_commit_initial_worker_count: usize,
     guest_segment_commit_effective_worker_count: usize,
+    guest_segment_commit_worker_submit_count: usize,
+    guest_segment_commit_worker_join_count: usize,
+    guest_segment_commit_worker_max_in_flight_count: usize,
     guest_segment_commit_oom_retry_count: usize,
     guest_segment_commit_cuda_memory_total_byte_count: usize,
     guest_segment_commit_cuda_memory_initial_free_byte_count: usize,
@@ -614,6 +617,18 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_segment_commit_effective_worker_count: run_timing
                 .segment_commit_worker_timing
                 .effective_worker_count,
+            guest_segment_commit_worker_submit_count: run_timing
+                .segment_commit_worker_timing
+                .pool_timing
+                .submit_count,
+            guest_segment_commit_worker_join_count: run_timing
+                .segment_commit_worker_timing
+                .pool_timing
+                .join_count,
+            guest_segment_commit_worker_max_in_flight_count: run_timing
+                .segment_commit_worker_timing
+                .pool_timing
+                .max_in_flight_count,
             guest_segment_commit_oom_retry_count: run_timing
                 .segment_commit_worker_timing
                 .oom_retry_count,
@@ -922,6 +937,18 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_segment_commit_effective_worker_count(&self) -> usize {
         self.guest_segment_commit_effective_worker_count
+    }
+
+    pub fn guest_segment_commit_worker_submit_count(&self) -> usize {
+        self.guest_segment_commit_worker_submit_count
+    }
+
+    pub fn guest_segment_commit_worker_join_count(&self) -> usize {
+        self.guest_segment_commit_worker_join_count
+    }
+
+    pub fn guest_segment_commit_worker_max_in_flight_count(&self) -> usize {
+        self.guest_segment_commit_worker_max_in_flight_count
     }
 
     pub fn guest_segment_commit_oom_retry_count(&self) -> usize {
@@ -3390,6 +3417,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
                     shared_inputs.input.len(),
                     worker_count_override,
                 ),
+            pool_timing: GuestPcTraceSegmentCommitPoolTiming::default(),
             oom_retry_count,
             attempt_duration: segment_commit_attempt_duration,
             oom_retry_duration: segment_commit_oom_retry_duration,
@@ -4038,6 +4066,7 @@ struct GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
     worker_count: usize,
     worker_state: GuestPcTraceSegmentCommitWorkerState,
     pending_workers: VecDeque<GuestPcTraceSegmentCommitWorkerHandle<'scope>>,
+    timing: GuestPcTraceSegmentCommitPoolTiming,
 }
 
 impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
@@ -4054,6 +4083,7 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
             ),
             worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
             pending_workers: VecDeque::new(),
+            timing: GuestPcTraceSegmentCommitPoolTiming::default(),
         }
     }
 
@@ -4065,7 +4095,10 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
         use_source_lookup_balance: bool,
         collect_timing: bool,
     ) -> Result<Vec<GuestPcTraceSegmentCommitResult>, ProveWitnessCommitmentError> {
+        self.timing.submit_count = self.timing.submit_count.saturating_add(1);
         if self.worker_count <= 1 {
+            self.timing.join_count = self.timing.join_count.saturating_add(1);
+            self.timing.max_in_flight_count = self.timing.max_in_flight_count.max(1);
             let result = self.worker_state.commit_segment(
                 context,
                 auxiliary_inputs,
@@ -4084,7 +4117,10 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
                 }
             })?;
             match join_guest_pc_trace_segment_commit_worker(handle) {
-                Ok(result) => ready_results.push(result),
+                Ok(result) => {
+                    self.timing.join_count = self.timing.join_count.saturating_add(1);
+                    ready_results.push(result);
+                }
                 Err(error) => {
                     let _ = self.finish();
                     return Err(error);
@@ -4102,6 +4138,10 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
                 collect_timing,
             )
         }));
+        self.timing.max_in_flight_count = self
+            .timing
+            .max_in_flight_count
+            .max(self.pending_workers.len());
         Ok(ready_results)
     }
 
@@ -4112,7 +4152,10 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
         let mut first_error = None;
         while let Some(handle) = self.pending_workers.pop_front() {
             match join_guest_pc_trace_segment_commit_worker(handle) {
-                Ok(result) => ready_results.push(result),
+                Ok(result) => {
+                    self.timing.join_count = self.timing.join_count.saturating_add(1);
+                    ready_results.push(result);
+                }
                 Err(error) => {
                     if first_error.is_none() {
                         first_error = Some(error);
@@ -4124,6 +4167,10 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
             return Err(error);
         }
         Ok(ready_results)
+    }
+
+    fn timing(&self) -> GuestPcTraceSegmentCommitPoolTiming {
+        self.timing
     }
 }
 
@@ -4202,10 +4249,25 @@ fn join_guest_pc_trace_segment_commit_worker(
 struct GuestPcTraceSegmentCommitWorkerTiming {
     initial_worker_count: usize,
     effective_worker_count: usize,
+    pool_timing: GuestPcTraceSegmentCommitPoolTiming,
     oom_retry_count: usize,
     attempt_duration: Duration,
     oom_retry_duration: Duration,
     memory_timing: GuestPcTraceSegmentCommitMemoryTiming,
+}
+
+impl GuestPcTraceSegmentCommitWorkerTiming {
+    fn with_pool_timing(mut self, pool_timing: GuestPcTraceSegmentCommitPoolTiming) -> Self {
+        self.pool_timing = pool_timing;
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct GuestPcTraceSegmentCommitPoolTiming {
+    submit_count: usize,
+    join_count: usize,
+    max_in_flight_count: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -4291,6 +4353,7 @@ struct GuestPcTraceSegmentCommitDriverOutput {
     guest_segment_commit_duration: Duration,
     trace_timing: ProveWitnessTraceTimingAccumulator,
     segment_count: usize,
+    worker_pool_timing: GuestPcTraceSegmentCommitPoolTiming,
 }
 
 impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
@@ -4404,6 +4467,7 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
             guest_segment_commit_duration: self.guest_segment_commit_duration,
             trace_timing: self.trace_timing,
             segment_count: self.segment_count,
+            worker_pool_timing: self.worker_pool.timing(),
         })
     }
 
@@ -4809,7 +4873,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                             guest_trace_proof_value_prerun_duration: Duration::ZERO,
                             guest_segment_commit_duration: commit_output
                                 .guest_segment_commit_duration,
-                            segment_commit_worker_timing,
+                            segment_commit_worker_timing: segment_commit_worker_timing
+                                .with_pool_timing(commit_output.worker_pool_timing),
                         },
                         stream_result.timing,
                         commit_output.trace_timing,
@@ -4881,7 +4946,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                         guest_trace_stream_duration,
                         guest_trace_proof_value_prerun_duration,
                         guest_segment_commit_duration: commit_output.guest_segment_commit_duration,
-                        segment_commit_worker_timing,
+                        segment_commit_worker_timing: segment_commit_worker_timing
+                            .with_pool_timing(commit_output.worker_pool_timing),
                     },
                     stream_timing,
                     commit_output.trace_timing,
@@ -6945,6 +7011,7 @@ mod tests {
                 worker_count: 2,
                 worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
                 pending_workers: VecDeque::from([first, second]),
+                timing: GuestPcTraceSegmentCommitPoolTiming::default(),
             };
 
             let error = match pool.finish() {

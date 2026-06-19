@@ -2249,6 +2249,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         parallel_lower_worker_count: usize,
         parallel_lower_emitted_count: usize,
         segment_commit_effective_worker_count: usize,
+        segment_commit_worker_max_in_flight_count: usize,
     }
 
     let _env_lock = PROVE_WITNESS_ENV_LOCK
@@ -2311,6 +2312,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         let mut segment_replay_count = None;
         let mut parallel_lower_counts = None;
         let mut segment_commit_effective_worker_count = None;
+        let mut segment_commit_worker_max_in_flight_count = None;
         let outputs =
             run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_with_timings(
                 &plan,
@@ -2327,6 +2329,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
                     ));
                     segment_commit_effective_worker_count =
                         Some(timing.guest_segment_commit_effective_worker_count());
+                    segment_commit_worker_max_in_flight_count =
+                        Some(timing.guest_segment_commit_worker_max_in_flight_count());
                 },
             )
             .unwrap_or_else(|error| {
@@ -2340,6 +2344,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             parallel_lower_counts.expect("timed run should report parallel lower counts");
         let segment_commit_effective_worker_count = segment_commit_effective_worker_count
             .expect("timed run should report segment commit worker count");
+        let segment_commit_worker_max_in_flight_count = segment_commit_worker_max_in_flight_count
+            .expect("timed run should report segment commit worker in-flight count");
         let witness_segments = outputs
             .iter()
             .map(|output| {
@@ -2388,6 +2394,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             parallel_lower_worker_count,
             parallel_lower_emitted_count,
             segment_commit_effective_worker_count,
+            segment_commit_worker_max_in_flight_count,
         }
     };
 
@@ -2399,6 +2406,11 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     std::env::set_var(PIPELINE_WORKERS_ENV, "2");
     std::env::set_var(REPLAY_ENV, "1");
     let pipeline_run = run("pipeline");
+    std::env::remove_var(PIPELINE_ENV);
+    std::env::remove_var(PIPELINE_WORKERS_ENV);
+    std::env::remove_var(REPLAY_ENV);
+    std::env::set_var(COMMIT_WORKERS_ENV, "2");
+    let commit_worker_run = run("commit-worker");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(
@@ -2442,6 +2454,14 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         "pipeline opt-in should keep segment commit workers explicit"
     );
     assert_eq!(
+        commit_worker_run.segment_commit_effective_worker_count, 2,
+        "explicit segment commit worker override should be visible in timing"
+    );
+    assert!(
+        commit_worker_run.segment_commit_worker_max_in_flight_count >= 2,
+        "explicit segment commit workers should report real cross-segment in-flight work"
+    );
+    assert_eq!(
         default_run.witness_segment_bytes,
         stream_run.witness_segment_bytes
     );
@@ -2449,8 +2469,13 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         default_run.witness_segment_bytes,
         pipeline_run.witness_segment_bytes
     );
+    assert_eq!(
+        default_run.witness_segment_bytes,
+        commit_worker_run.witness_segment_bytes
+    );
     assert_eq!(default_run.proof_bytes, stream_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, pipeline_run.proof_bytes);
+    assert_eq!(default_run.proof_bytes, commit_worker_run.proof_bytes);
 }
 
 #[test]
