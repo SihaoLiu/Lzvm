@@ -1518,7 +1518,7 @@ fn zisk_main_device_sparse_descriptor_falls_back_to_wide_words_when_values_do_no
 
 #[test]
 #[cfg(feature = "cuda")]
-fn streaming_device_segment_builder_matches_batch_device_material() {
+fn streaming_device_segment_builder_matches_host_trace_device_material() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
         .expect("guest PC trace env lock should not be poisoned");
@@ -1570,7 +1570,7 @@ fn streaming_device_segment_builder_matches_batch_device_material() {
         is_last_segment: segment.is_last_segment,
         previous_c: seed.previous_c,
     };
-    let batch = build_layout_zisk_main_trace_segment_device_material(
+    let host = build_layout_zisk_main_trace_segment(
         &layout,
         &segment.reports,
         segment.terminal_pc,
@@ -1579,8 +1579,8 @@ fn streaming_device_segment_builder_matches_batch_device_material() {
         segment_info,
         None,
     )
-    .expect("batch device material should build")
-    .expect("layout should support device material");
+    .expect("host trace should build")
+    .expect("layout should support host trace");
     let mut streaming =
         ZiskMainStreamingDeviceSegmentBuilder::new(&layout, &seed.initial_state, segment_info)
             .expect("streaming builder should initialize")
@@ -1607,33 +1607,7 @@ fn streaming_device_segment_builder_matches_batch_device_material() {
         .finish(segment.terminal_pc, None)
         .expect("streaming material should finish");
 
-    assert_eq!(
-        streamed.device_segment_material.trace_source_prefix_rows,
-        batch.device_segment_material.trace_source_prefix_rows
-    );
-    assert_eq!(
-        streamed
-            .device_segment_material
-            .device_trace_descriptors
-            .words(),
-        batch
-            .device_segment_material
-            .device_trace_descriptors
-            .words()
-    );
-    assert_eq!(
-        streamed
-            .device_segment_material
-            .device_trace_descriptors
-            .sparse_high_words(),
-        batch
-            .device_segment_material
-            .device_trace_descriptors
-            .sparse_high_words()
-    );
-    assert_eq!(streamed.unit_values, batch.unit_values);
-    assert_eq!(streamed.final_state, batch.final_state);
-    assert_eq!(streamed.continuation_state, batch.continuation_state);
+    assert_device_build_matches_host_trace(&streamed, &host);
 
     let mut fed_streaming =
         ZiskMainStreamingDeviceSegmentBuilder::new(&layout, &seed.initial_state, segment_info)
@@ -1652,29 +1626,119 @@ fn streaming_device_segment_builder_matches_batch_device_material() {
         .finish(segment.terminal_pc, None)
         .expect("fed streaming material should finish");
 
+    assert_device_build_matches_host_trace(&fed, &host);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn streaming_device_report_feeder_matches_host_trace_for_dma_prepare_lookahead() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let mut initial_state = ZiskMainTraceState::new();
+    initial_state.registers[5] = 0x100;
+    initial_state.registers[6] = 0x18;
+    initial_state.registers[8] = 0x200;
+    let prepare = dma_prepare_report_at(ENTRY, RiscvDmaKind::Memcpy, 5);
+    let execute = add_report_at(ENTRY + 4, 7, 8, 6, 0x200);
+
+    let unit = sample_unit_with_zisk_main_device_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    assert_device_material_matches_host_trace(
+        &layout,
+        &[prepare.clone(), execute.clone()],
+        execute.next_pc,
+        &initial_state,
+        None,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    );
+
+    let boundary_unit = sample_unit_with_zisk_main_device_columns_rows(1);
+    let boundary_layout =
+        derive_witness_trace_layout(&boundary_unit).expect("boundary layout should derive");
+    assert_device_material_matches_host_trace(
+        &boundary_layout,
+        std::slice::from_ref(&prepare),
+        prepare.next_pc,
+        &initial_state,
+        Some(execute.instruction),
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 1,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    );
+}
+
+#[cfg(feature = "cuda")]
+fn assert_device_material_matches_host_trace(
+    layout: &WitnessTraceLayout,
+    reports: &[GuestMachineReport],
+    terminal_pc: u64,
+    initial_state: &ZiskMainTraceState,
+    lookahead_instruction: Option<RiscvInstruction>,
+    segment: ZiskMainTraceSegmentInfo,
+) {
+    let host = build_layout_zisk_main_trace_segment(
+        layout,
+        reports,
+        terminal_pc,
+        initial_state,
+        lookahead_instruction,
+        segment,
+        None,
+    )
+    .expect("host trace should build")
+    .expect("host trace layout should be supported");
+    let trace_less = build_layout_zisk_main_trace_segment_device_material(
+        layout,
+        reports,
+        terminal_pc,
+        initial_state,
+        lookahead_instruction,
+        segment,
+        None,
+    )
+    .expect("trace-less device material should build")
+    .expect("trace-less device material should be supported");
+
+    assert_device_build_matches_host_trace(&trace_less, &host);
+}
+
+#[cfg(feature = "cuda")]
+fn assert_device_build_matches_host_trace(
+    device: &GuestPcTraceDeviceSegmentBuild,
+    host: &ZiskMainTraceSegmentWrite,
+) {
+    let host_material = host
+        .device_segment_material
+        .as_ref()
+        .expect("host trace should include device material");
     assert_eq!(
-        fed.device_segment_material.trace_source_prefix_rows,
-        batch.device_segment_material.trace_source_prefix_rows
+        device.device_segment_material.trace_source_prefix_rows,
+        host_material.trace_source_prefix_rows
     );
     assert_eq!(
-        fed.device_segment_material.device_trace_descriptors.words(),
-        batch
+        device
             .device_segment_material
             .device_trace_descriptors
-            .words()
+            .words(),
+        host_material.device_trace_descriptors.words()
     );
     assert_eq!(
-        fed.device_segment_material
+        device
+            .device_segment_material
             .device_trace_descriptors
             .sparse_high_words(),
-        batch
-            .device_segment_material
-            .device_trace_descriptors
-            .sparse_high_words()
+        host_material.device_trace_descriptors.sparse_high_words()
     );
-    assert_eq!(fed.unit_values, batch.unit_values);
-    assert_eq!(fed.final_state, batch.final_state);
-    assert_eq!(fed.continuation_state, batch.continuation_state);
+    assert_eq!(device.unit_values, host.output.unit_values);
+    assert_eq!(device.final_state, host.final_state);
+    assert_eq!(device.continuation_state, host.continuation_state);
 }
 
 #[test]
@@ -2025,6 +2089,39 @@ fn addi_report_at(address: u64, rd: u8, rs1: u8, immediate: i16, value: u64) -> 
         },
         next_pc: address + 4,
         register_writes: vec![GuestRegisterWrite { index: rd, value }].into(),
+        memory_accesses: Vec::new().into(),
+        precompile_memory_accesses: Vec::new(),
+        precompile_result: None,
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn add_report_at(address: u64, rd: u8, rs1: u8, rs2: u8, value: u64) -> GuestMachineReport {
+    GuestMachineReport {
+        address,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd,
+            rs1,
+            rs2,
+        },
+        next_pc: address + 4,
+        register_writes: vec![GuestRegisterWrite { index: rd, value }].into(),
+        memory_accesses: Vec::new().into(),
+        precompile_memory_accesses: Vec::new(),
+        precompile_result: None,
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn dma_prepare_report_at(address: u64, kind: RiscvDmaKind, rs1: u8) -> GuestMachineReport {
+    GuestMachineReport {
+        address,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::ZiskDmaPrepare { kind, rs1 },
+        next_pc: address + 4,
+        register_writes: Vec::new().into(),
         memory_accesses: Vec::new().into(),
         precompile_memory_accesses: Vec::new(),
         precompile_result: None,
