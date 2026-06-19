@@ -2235,18 +2235,24 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
 #[test]
 fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     const STREAM_ENV: &str = "LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS";
+    const PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE";
+    const PIPELINE_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
     const ROOTS_ENV: &str = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS";
 
     struct StreamRun {
         proof_bytes: Vec<u8>,
         witness_segment_bytes: Vec<(u32, Vec<u8>)>,
         stream_ingress_count: usize,
+        parallel_lower_worker_count: usize,
+        parallel_lower_emitted_count: usize,
     }
 
     let _env_lock = PROVE_WITNESS_ENV_LOCK
         .lock()
         .expect("prove witness env lock should not be poisoned");
     let _stream_guard = TestEnvVarGuard::unset(STREAM_ENV);
+    let _pipeline_guard = TestEnvVarGuard::unset(PIPELINE_ENV);
+    let _pipeline_workers_guard = TestEnvVarGuard::unset(PIPELINE_WORKERS_ENV);
     let _roots_guard = TestEnvVarGuard::unset(ROOTS_ENV);
     std::env::set_var(ROOTS_ENV, "0");
 
@@ -2296,6 +2302,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
 
     let run = |label: &str| -> StreamRun {
         let mut stream_ingress_count = None;
+        let mut parallel_lower_counts = None;
         let outputs =
             run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_with_timings(
                 &plan,
@@ -2305,6 +2312,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
                 &mut |timing| {
                     stream_ingress_count =
                         Some(timing.guest_device_source_descriptor_stream_ingress_count());
+                    parallel_lower_counts = Some((
+                        timing.guest_trace_parallel_lower_worker_count(),
+                        timing.guest_trace_parallel_lower_emitted_count(),
+                    ));
                 },
             )
             .unwrap_or_else(|error| {
@@ -2312,6 +2323,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             });
         let stream_ingress_count =
             stream_ingress_count.expect("timed run should report stream ingress count");
+        let (parallel_lower_worker_count, parallel_lower_emitted_count) =
+            parallel_lower_counts.expect("timed run should report parallel lower counts");
         let witness_segments = outputs
             .iter()
             .map(|output| {
@@ -2356,12 +2369,18 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             proof_bytes,
             witness_segment_bytes,
             stream_ingress_count,
+            parallel_lower_worker_count,
+            parallel_lower_emitted_count,
         }
     };
 
     let default_run = run("default");
     std::env::set_var(STREAM_ENV, "1");
     let stream_run = run("stream");
+    std::env::remove_var(STREAM_ENV);
+    std::env::set_var(PIPELINE_ENV, "1");
+    std::env::set_var(PIPELINE_WORKERS_ENV, "2");
+    let pipeline_run = run("pipeline");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(
@@ -2373,10 +2392,27 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         "opt-in path should use stream descriptor ingress"
     );
     assert_eq!(
+        default_run.parallel_lower_worker_count, 0,
+        "default path should not use the structural pipeline lowerer"
+    );
+    assert!(
+        pipeline_run.parallel_lower_worker_count >= 2,
+        "pipeline opt-in should use configured parallel lower workers"
+    );
+    assert!(
+        pipeline_run.parallel_lower_emitted_count > 0,
+        "pipeline opt-in should emit lowered trace segments through the parallel lowerer"
+    );
+    assert_eq!(
         default_run.witness_segment_bytes,
         stream_run.witness_segment_bytes
     );
+    assert_eq!(
+        default_run.witness_segment_bytes,
+        pipeline_run.witness_segment_bytes
+    );
     assert_eq!(default_run.proof_bytes, stream_run.proof_bytes);
+    assert_eq!(default_run.proof_bytes, pipeline_run.proof_bytes);
 }
 
 #[test]

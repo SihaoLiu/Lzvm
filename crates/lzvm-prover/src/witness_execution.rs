@@ -4534,10 +4534,16 @@ fn guest_pc_descriptor_buffer_retention_enabled(input_byte_count: usize) -> bool
 
 #[cfg(feature = "cuda")]
 fn guest_pc_parallel_lower_enabled_for_descriptor_retention() -> bool {
+    env_flag_present_and_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
+        || env_flag_present_and_enabled("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE")
+}
+
+#[cfg(feature = "cuda")]
+fn env_flag_present_and_enabled(name: &str) -> bool {
     !matches!(
-        std::env::var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER").as_deref(),
+        std::env::var(name).as_deref(),
         Ok("0" | "false" | "no" | "off" | "")
-    ) && std::env::var_os("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER").is_some()
+    ) && std::env::var_os(name).is_some()
 }
 
 fn commit_guest_pc_trace_segment_with_scratch(
