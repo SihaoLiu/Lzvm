@@ -2271,6 +2271,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     const PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE";
     const PIPELINE_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
     const REPLAY_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY";
+    const SNAPSHOT_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY_SNAPSHOT";
+    const WORKER_REPLAY_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT";
     const COMMIT_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS";
     const ROOTS_ENV: &str = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS";
 
@@ -2288,6 +2290,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         seed_full_advance_count: usize,
         parallel_lower_worker_count: usize,
         parallel_lower_emitted_count: usize,
+        parallel_lower_snapshot_replay_count: usize,
         segment_commit_effective_worker_count: usize,
         segment_commit_worker_max_in_flight_count: usize,
     }
@@ -2317,6 +2320,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     let _pipeline_guard = TestEnvVarGuard::unset(PIPELINE_ENV);
     let _pipeline_workers_guard = TestEnvVarGuard::unset(PIPELINE_WORKERS_ENV);
     let _replay_guard = TestEnvVarGuard::unset(REPLAY_ENV);
+    let _snapshot_guard = TestEnvVarGuard::unset(SNAPSHOT_ENV);
+    let _worker_replay_guard = TestEnvVarGuard::unset(WORKER_REPLAY_ENV);
     let _commit_workers_guard = TestEnvVarGuard::unset(COMMIT_WORKERS_ENV);
     let _roots_guard = TestEnvVarGuard::unset(ROOTS_ENV);
     std::env::set_var(ROOTS_ENV, "0");
@@ -2368,6 +2373,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         let mut segment_replay_count = None;
         let mut seed_counts = None;
         let mut parallel_lower_counts = None;
+        let mut parallel_lower_snapshot_replay_count = None;
         let mut segment_commit_effective_worker_count = None;
         let mut segment_commit_worker_max_in_flight_count = None;
         let outputs =
@@ -2389,6 +2395,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
                         timing.guest_trace_parallel_lower_worker_count(),
                         timing.guest_trace_parallel_lower_emitted_count(),
                     ));
+                    parallel_lower_snapshot_replay_count =
+                        Some(timing.guest_trace_parallel_lower_snapshot_replay_count());
                     segment_commit_effective_worker_count =
                         Some(timing.guest_segment_commit_effective_worker_count());
                     segment_commit_worker_max_in_flight_count =
@@ -2409,6 +2417,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         ) = seed_counts.expect("timed run should report runner seed counts");
         let (parallel_lower_worker_count, parallel_lower_emitted_count) =
             parallel_lower_counts.expect("timed run should report parallel lower counts");
+        let parallel_lower_snapshot_replay_count = parallel_lower_snapshot_replay_count
+            .expect("timed run should report parallel lower replay count");
         let segment_commit_effective_worker_count = segment_commit_effective_worker_count
             .expect("timed run should report segment commit worker count");
         let segment_commit_worker_max_in_flight_count = segment_commit_worker_max_in_flight_count
@@ -2493,6 +2503,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             seed_full_advance_count,
             parallel_lower_worker_count,
             parallel_lower_emitted_count,
+            parallel_lower_snapshot_replay_count,
             segment_commit_effective_worker_count,
             segment_commit_worker_max_in_flight_count,
         }
@@ -2512,16 +2523,22 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     std::env::set_var(PIPELINE_ENV, "1");
     std::env::set_var(PIPELINE_WORKERS_ENV, "2");
     std::env::set_var(REPLAY_ENV, "1");
+    std::env::set_var(SNAPSHOT_ENV, "1");
+    std::env::set_var(WORKER_REPLAY_ENV, "1");
     let pipeline_run = run("pipeline");
     std::env::remove_var(PIPELINE_ENV);
     std::env::remove_var(PIPELINE_WORKERS_ENV);
     std::env::remove_var(REPLAY_ENV);
+    std::env::remove_var(SNAPSHOT_ENV);
+    std::env::remove_var(WORKER_REPLAY_ENV);
     std::env::set_var(COMMIT_WORKERS_ENV, "2");
     let commit_worker_run = run("commit-worker");
     std::env::remove_var(COMMIT_WORKERS_ENV);
     std::env::set_var(PIPELINE_ENV, "1");
     std::env::set_var(PIPELINE_WORKERS_ENV, "2");
     std::env::set_var(REPLAY_ENV, "1");
+    std::env::set_var(SNAPSHOT_ENV, "1");
+    std::env::set_var(WORKER_REPLAY_ENV, "1");
     std::env::set_var(COMMIT_WORKERS_ENV, "2");
     let combined_run = run("combined");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -2570,6 +2587,11 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         pipeline_run.parallel_lower_emitted_count > 0,
         "pipeline opt-in should emit lowered trace segments through the parallel lowerer"
     );
+    assert_eq!(
+        pipeline_run.parallel_lower_snapshot_replay_count,
+        pipeline_run.parallel_lower_emitted_count,
+        "pipeline opt-in should lower from replayed worker snapshots"
+    );
     assert!(
         pipeline_run.segment_replay_count > 0,
         "pipeline replay opt-in should replay trace segments before proof assembly"
@@ -2605,6 +2627,11 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert!(
         combined_run.parallel_lower_emitted_count > 0,
         "combined opt-in should emit lowered trace segments through the parallel lowerer"
+    );
+    assert_eq!(
+        combined_run.parallel_lower_snapshot_replay_count,
+        combined_run.parallel_lower_emitted_count,
+        "combined opt-in should lower from replayed worker snapshots"
     );
     assert!(
         combined_run.segment_replay_count > 0,

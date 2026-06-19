@@ -5716,6 +5716,7 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
         "parallel_lower_received_count",
         "parallel_lower_emitted_count",
         "parallel_lower_max_reorder_count",
+        "parallel_lower_snapshot_replay_count",
     ] {
         assert!(
             backend_source.contains(field),
@@ -5758,6 +5759,7 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
         "guest_trace_parallel_lower_received_count",
         "guest_trace_parallel_lower_emitted_count",
         "guest_trace_parallel_lower_max_reorder_count",
+        "guest_trace_parallel_lower_snapshot_replay_count",
     ] {
         assert!(
             execution_source.contains(field),
@@ -5780,6 +5782,7 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
         "\"guest_trace_parallel_lower_received\"",
         "\"guest_trace_parallel_lower_emitted\"",
         "\"guest_trace_parallel_lower_max_reorder\"",
+        "\"guest_trace_parallel_lower_snapshot_replay_count\"",
     ] {
         assert!(
             cli_source.contains(line_name),

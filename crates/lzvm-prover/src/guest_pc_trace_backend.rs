@@ -228,6 +228,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     parallel_lower_received_count: usize,
     parallel_lower_emitted_count: usize,
     parallel_lower_max_reorder_count: usize,
+    parallel_lower_snapshot_replay_count: usize,
     seed_direct_lift_attempt_count: usize,
     seed_direct_lift_success_count: usize,
     seed_direct_lift_empty_segment_count: usize,
@@ -323,6 +324,7 @@ impl GuestPcTraceStreamTiming {
         self.parallel_lower_max_reorder_count = self
             .parallel_lower_max_reorder_count
             .max(other.parallel_lower_max_reorder_count);
+        self.parallel_lower_snapshot_replay_count += other.parallel_lower_snapshot_replay_count;
         self.seed_direct_lift_attempt_count += other.seed_direct_lift_attempt_count;
         self.seed_direct_lift_success_count += other.seed_direct_lift_success_count;
         self.seed_direct_lift_empty_segment_count += other.seed_direct_lift_empty_segment_count;
@@ -554,6 +556,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn parallel_lower_max_reorder_count(&self) -> usize {
         self.parallel_lower_max_reorder_count
+    }
+
+    pub fn parallel_lower_snapshot_replay_count(&self) -> usize {
+        self.parallel_lower_snapshot_replay_count
     }
 
     pub fn seed_direct_lift_attempt_count(&self) -> usize {
@@ -1026,6 +1032,9 @@ struct GuestPcTraceSegmentReplay {
 
 struct GuestPcTracePendingSegmentSlice {
     trace_instance_index: u32,
+    executed_instruction_count: u64,
+    trace_row_count: usize,
+    runner_remaining_instruction_limit: u64,
     report_capacity: usize,
     reports: Vec<GuestMachineReport>,
     terminal_pc: u64,
@@ -3756,6 +3765,9 @@ fn produce_guest_pc_trace_pending_slices(
         let report_capacity = slice.report_capacity;
         emit(GuestPcTracePendingSegmentSlice {
             trace_instance_index,
+            executed_instruction_count: slice.executed_instructions,
+            trace_row_count: slice.trace_rows,
+            runner_remaining_instruction_limit: remaining_limit,
             report_capacity,
             reports: slice.reports,
             terminal_pc,
@@ -4045,6 +4057,49 @@ enum GuestPcTraceParallelLowerMessage {
     },
 }
 
+fn replay_guest_pc_trace_pending_segment_reports(
+    layout: &WitnessTraceLayout,
+    pending: &mut GuestPcTracePendingSegmentSlice,
+    timing: &mut GuestPcTraceStreamTiming,
+) -> Result<(), GuestPcTraceBackendError> {
+    let snapshot = pending.replay_snapshot.take().ok_or_else(|| {
+        GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "parallel guest PC trace lower replay snapshot missing for segment {}",
+                pending.trace_instance_index
+            ),
+        }
+    })?;
+    let replay = replay_guest_pc_trace_segment_from_snapshot(
+        snapshot,
+        pending.runner_remaining_instruction_limit,
+        layout.row_count(),
+    )?;
+    let (is_last_segment, terminal_pc, lookahead_instruction) = match replay.slice.status {
+        GuestMachineTraceSliceStatus::Halted(halt) => (true, guest_machine_halt_pc(&halt), None),
+        GuestMachineTraceSliceStatus::Paused { pc, instruction } => (false, pc, Some(instruction)),
+    };
+    if replay.slice.executed_instructions != pending.executed_instruction_count
+        || replay.slice.trace_rows != pending.trace_row_count
+        || terminal_pc != pending.terminal_pc
+        || lookahead_instruction != pending.lookahead_instruction
+        || is_last_segment != pending.is_last_segment
+        || replay.slice.reports != pending.reports
+    {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "parallel guest PC trace lower replay diverged for segment {}",
+                pending.trace_instance_index
+            ),
+        });
+    }
+    pending.reports = replay.slice.reports;
+    timing.parallel_lower_snapshot_replay_count = timing
+        .parallel_lower_snapshot_replay_count
+        .saturating_add(1);
+    Ok(())
+}
+
 fn dispatch_guest_pc_trace_parallel_lower_job<T>(
     job_senders: &[mpsc::SyncSender<T>],
     next_worker: &mut usize,
@@ -4099,10 +4154,17 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                 scope,
                 "lzvm-gp-plow",
                 move || {
-                    while let Ok(pending) = job_receiver.recv() {
+                    while let Ok(mut pending) = job_receiver.recv() {
                         let trace_instance_index = pending.trace_instance_index;
                         let mut worker_timing = GuestPcTraceStreamTiming::default();
                         let result = (|| {
+                            if guest_pc_trace_parallel_lower_replay_snapshot_enabled() {
+                                replay_guest_pc_trace_pending_segment_reports(
+                                    layout,
+                                    &mut pending,
+                                    &mut worker_timing,
+                                )?;
+                            }
                             let seed = pending.seed.as_deref().ok_or_else(|| {
                                 GuestPcTraceBackendError::InvalidPcTraceLayout {
                                     message: format!(
@@ -4365,6 +4427,10 @@ fn guest_pc_trace_segment_replay_enabled() -> bool {
 
 fn guest_pc_trace_segment_replay_snapshot_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY_SNAPSHOT", false)
+}
+
+fn guest_pc_trace_parallel_lower_replay_snapshot_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT", false)
 }
 
 fn guest_pc_trace_runner_seed_snapshot_enabled() -> bool {

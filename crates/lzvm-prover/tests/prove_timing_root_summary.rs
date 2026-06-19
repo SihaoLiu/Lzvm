@@ -83,6 +83,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_parallel_lower_received",
         "timing_guest_trace_parallel_lower_emitted",
         "timing_guest_trace_parallel_lower_max_reorder",
+        "timing_guest_trace_parallel_lower_snapshot_replay_count",
         "timing_guest_trace_segment_replay_count",
         "timing_guest_trace_reports",
         "timing_guest_trace_report_rows",
