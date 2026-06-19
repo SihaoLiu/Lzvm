@@ -19,6 +19,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/TimingProjected.lean");
     let timing_projected_source = std::fs::read_to_string(&timing_projected_path)
         .expect("Lean projected timing checks should read");
+    let auxiliary_projected_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/Projected.lean");
+    let auxiliary_projected_source = std::fs::read_to_string(&auxiliary_projected_path)
+        .expect("Lean auxiliary projected checks should read");
     let proof_timing_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming.lean");
     let lean_proof_timing_source =
         std::fs::read_to_string(&proof_timing_path).expect("Lean proof timing checks should read");
@@ -39,6 +43,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         gpu_runtime_source.as_str(),
         timing_source.as_str(),
         timing_projected_source.as_str(),
+        auxiliary_projected_source.as_str(),
         lean_proof_timing_source.as_str(),
         proof_timing_projected_source.as_str(),
         proof_timing_verifier_source.as_str(),
@@ -100,6 +105,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && top_level_source.contains("import Lzvm.AuxiliaryChecks.GpuRuntime")
             && top_level_source.contains("import Lzvm.AuxiliaryChecks.Timing")
             && top_level_source.contains("import Lzvm.AuxiliaryChecks.TimingProjected")
+            && top_level_source.contains("import Lzvm.AuxiliaryChecks.Projected")
             && top_level_source.contains("import Lzvm.AuxiliaryChecks.ProofTimingProjected")
             && top_level_source.contains("import Lzvm.AuxiliaryChecks.RuntimePerformance"),
         "top-level Lean module should import auxiliary checks"
@@ -465,6 +471,40 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_omits(
         &proof_timing_projected_source,
         "proof_timing_projected_core_contracts",
+        &[
+            "ignored_metadata_acceptance_verifier_core_contract",
+            "abstract_verifier_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    assert!(
+        auxiliary_projected_source.contains("structure AuxiliaryProjectedCoreContracts")
+            && auxiliary_projected_source.contains("timing :")
+            && auxiliary_projected_source.contains("proofTiming :")
+            && auxiliary_projected_source.contains("runtimePerformance :"),
+        "Lean auxiliary projected checks should batch timing, proof timing, and runtime performance contracts"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &auxiliary_projected_source,
+        "runtime_performance_observation_auxiliary_projected_core_contracts",
+        &[
+            "timing_projected_core_contracts",
+            "proof_timing_projected_core_contracts",
+            "runtime_performance_observation_projected_core_contracts",
+            "runtime_performance_observation_projects_timing_observations",
+            "runtime_performance_observation_projects_guest_pc_trace_timing",
+            "runtime_performance_observation_projects_witness_opening_row_value_timing",
+            "runtime_performance_observation_projects_constant_material_validation_timing",
+            "runtime_performance_observation_projects_prover_gpu_mode",
+            "runtime_performance_observation_projects_gpu_run_options",
+            "runtime_performance_observation_projects_cuda_backend",
+            "runtime_performance_observation_projects_cuda_allocator_timing",
+            "runtime_performance_observation_projects_proof_artifact_finish_timing",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &auxiliary_projected_source,
+        "runtime_performance_observation_auxiliary_projected_core_contracts",
         &[
             "ignored_metadata_acceptance_verifier_core_contract",
             "abstract_verifier_sound",
