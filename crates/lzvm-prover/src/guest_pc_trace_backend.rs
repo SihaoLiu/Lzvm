@@ -5760,6 +5760,13 @@ struct ZiskMainSourceValueRequest<'a> {
     memory_access_index: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ZiskMainSourceValueResult {
+    value: u64,
+    access: Option<ExpectedMemoryAccess>,
+    register_index: Option<usize>,
+}
+
 #[derive(Debug, Clone)]
 struct ZiskMainLoweredReportRow<'a> {
     instruction: ZiskMainInstruction,
@@ -6081,7 +6088,7 @@ fn apply_zisk_main_lowered_report_row(
     }
     let source_values_started = detail_duration_started(&timing, detail_timing);
     let source_a_value_started = detail_duration_started(&timing, detail_timing);
-    let (a, a_access) = zisk_main_source_value(ZiskMainSourceValueRequest {
+    let a_value = zisk_main_source_value(ZiskMainSourceValueRequest {
         row: output_row,
         source: instruction.a,
         state,
@@ -6091,12 +6098,13 @@ fn apply_zisk_main_lowered_report_row(
         ind_width: 0,
         memory_access_index: 0,
     })?;
+    let a = a_value.value;
     record_detail_duration(source_a_value_started, &mut timing, |timing| {
         &mut timing.trace_report_source_a_value_duration
     });
     let source_b_value_started = detail_duration_started(&timing, detail_timing);
-    let b_memory_access_index = usize::from(a_access.is_some());
-    let (b, b_access) = zisk_main_source_value(ZiskMainSourceValueRequest {
+    let b_memory_access_index = usize::from(a_value.access.is_some());
+    let b_value = zisk_main_source_value(ZiskMainSourceValueRequest {
         row: output_row,
         source: instruction.b,
         state,
@@ -6106,6 +6114,7 @@ fn apply_zisk_main_lowered_report_row(
         ind_width: instruction.ind_width,
         memory_access_index: b_memory_access_index,
     })?;
+    let b = b_value.value;
     record_detail_duration(source_b_value_started, &mut timing, |timing| {
         &mut timing.trace_report_source_b_value_duration
     });
@@ -6142,14 +6151,21 @@ fn apply_zisk_main_lowered_report_row(
 
     let register_access_started = detail_duration_started(&timing, detail_timing);
     let row_mem_step_base = context.row_mem_step_base(output_row)?;
-    let register_accesses =
-        apply_zisk_main_register_access_values(output_row, &instruction, state, row_mem_step_base)?;
+    let register_accesses = apply_zisk_main_register_access_values(
+        output_row,
+        &instruction,
+        state,
+        row_mem_step_base,
+        a_value.register_index,
+        b_value.register_index,
+    )?;
     record_detail_duration(register_access_started, &mut timing, |timing| {
         &mut timing.trace_report_register_access_duration
     });
 
     let memory_access_started = detail_duration_started(&timing, detail_timing);
-    let validated_source_access_count = b_memory_access_index + usize::from(b_access.is_some());
+    let validated_source_access_count =
+        b_memory_access_index + usize::from(b_value.access.is_some());
     validate_zisk_main_memory_accesses_after_source_values(
         output_row,
         &instruction,
@@ -6910,9 +6926,9 @@ fn apply_zisk_main_register_access_values(
     instruction: &ZiskMainInstruction,
     state: &mut ZiskMainTraceState,
     row_mem_step_base: u64,
+    a_index: Option<usize>,
+    b_index: Option<usize>,
 ) -> Result<ZiskMainRegisterAccessValues, GuestPcTraceBackendError> {
-    let a_index = zisk_main_source_register_index(row, instruction.a)?;
-    let b_index = zisk_main_source_register_index(row, instruction.b)?;
     let store_index = zisk_main_store_register_index(row, instruction.store)?;
     let mut values = ZiskMainRegisterAccessValues {
         a_prev_mem_step: None,
@@ -6963,18 +6979,6 @@ fn read_then_update_register_mem_step(
     let previous = register_mem_steps[index];
     register_mem_steps[index] = value;
     previous
-}
-
-fn zisk_main_source_register_index(
-    row: usize,
-    source: ZiskMainSource,
-) -> Result<Option<usize>, GuestPcTraceBackendError> {
-    match source {
-        ZiskMainSource::Register(index) => zisk_main_register_index(index)
-            .map(Some)
-            .map_err(|()| GuestPcTraceBackendError::UnsupportedZiskMainSource { row }),
-        _ => Ok(None),
-    }
 }
 
 fn zisk_main_store_register_index(
@@ -8173,7 +8177,7 @@ fn validate_zisk_main_memory_columns(
 
 fn zisk_main_source_value(
     request: ZiskMainSourceValueRequest<'_>,
-) -> Result<(u64, Option<ExpectedMemoryAccess>), GuestPcTraceBackendError> {
+) -> Result<ZiskMainSourceValueResult, GuestPcTraceBackendError> {
     let ZiskMainSourceValueRequest {
         row,
         source,
@@ -8185,9 +8189,25 @@ fn zisk_main_source_value(
         memory_access_index,
     } = request;
     match source {
-        ZiskMainSource::LastC => Ok((state.last_c, None)),
-        ZiskMainSource::Immediate(value) => Ok((value, None)),
-        ZiskMainSource::Register(index) => Ok((state.registers[usize::from(index)], None)),
+        ZiskMainSource::LastC => Ok(ZiskMainSourceValueResult {
+            value: state.last_c,
+            access: None,
+            register_index: None,
+        }),
+        ZiskMainSource::Immediate(value) => Ok(ZiskMainSourceValueResult {
+            value,
+            access: None,
+            register_index: None,
+        }),
+        ZiskMainSource::Register(index) => {
+            let index = zisk_main_register_index(index)
+                .map_err(|()| GuestPcTraceBackendError::UnsupportedZiskMainSource { row })?;
+            Ok(ZiskMainSourceValueResult {
+                value: state.registers[index],
+                access: None,
+                register_index: Some(index),
+            })
+        }
         ZiskMainSource::Indirect(offset) => {
             let Some(base) = base else {
                 return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row });
@@ -8203,7 +8223,11 @@ fn zisk_main_source_value(
                 address,
                 byte_len,
             )?;
-            Ok((access.value, Some(access)))
+            Ok(ZiskMainSourceValueResult {
+                value: access.value,
+                access: Some(access),
+                register_index: None,
+            })
         }
         ZiskMainSource::Memory(address) => {
             zisk_main_memory_source_value(row, address, state, report, effects, memory_access_index)
@@ -8218,11 +8242,15 @@ fn zisk_main_memory_source_value(
     report: &GuestMachineReport,
     effects: ZiskMainReportEffects<'_>,
     memory_access_index: usize,
-) -> Result<(u64, Option<ExpectedMemoryAccess>), GuestPcTraceBackendError> {
+) -> Result<ZiskMainSourceValueResult, GuestPcTraceBackendError> {
     if address == ZISK_INPUT_ADDRESS {
         if let RiscvInstruction::ZiskFcallResult { rd } = report.instruction {
             let value = zisk_main_fcall_result_value(row, rd, effects)?;
-            return Ok((value, None));
+            return Ok(ZiskMainSourceValueResult {
+                value,
+                access: None,
+                register_index: None,
+            });
         }
     }
     if zisk_internal_memory_address(address) && effects.memory_accesses.is_empty() {
@@ -8232,7 +8260,11 @@ fn zisk_main_memory_source_value(
                 message: format!("missing internal memory value at {address}"),
             });
         };
-        return Ok((value, None));
+        return Ok(ZiskMainSourceValueResult {
+            value,
+            access: None,
+            register_index: None,
+        });
     }
     let access = ordered_memory_access(
         row,
@@ -8242,7 +8274,11 @@ fn zisk_main_memory_source_value(
         address,
         8,
     )?;
-    Ok((access.value, Some(access)))
+    Ok(ZiskMainSourceValueResult {
+        value: access.value,
+        access: Some(access),
+        register_index: None,
+    })
 }
 
 fn zisk_main_fcall_result_value(

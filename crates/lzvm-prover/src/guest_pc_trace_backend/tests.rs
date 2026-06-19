@@ -2038,6 +2038,33 @@ fn zisk_main_source_value_requires_ordered_memory_access() {
 }
 
 #[test]
+fn source_value_rejects_invalid_register_index() {
+    let state = ZiskMainTraceState::new();
+    let report = addi_report();
+    let result = std::panic::catch_unwind(|| {
+        zisk_main_source_value(ZiskMainSourceValueRequest {
+            row: 9,
+            source: ZiskMainSource::Register(32),
+            state: &state,
+            report: &report,
+            effects: ZiskMainReportEffects::empty(),
+            base: None,
+            ind_width: 0,
+            memory_access_index: 0,
+        })
+    });
+
+    assert!(
+        result.is_ok(),
+        "invalid register source should return an error instead of panicking"
+    );
+    let error = result
+        .expect("source lookup should not panic")
+        .expect_err("invalid register source should fail");
+    assert!(error.to_string().contains("unsupported"));
+}
+
+#[test]
 fn zisk_main_memory_access_validation_preserves_source_then_store_order() {
     let mut instruction = zisk_main_base_instruction(
         0x8000_0000,
@@ -2161,8 +2188,15 @@ fn register_mem_steps_preserve_same_register_access_order() {
 
     let row_base = zisk_main_row_mem_step_base(row_count, segment.trace_instance_index, row)
         .expect("row mem-step base should fit");
-    let values = apply_zisk_main_register_access_values(row, &instruction, &mut state, row_base)
-        .expect("same-register accesses should validate");
+    let values = apply_zisk_main_register_access_values(
+        row,
+        &instruction,
+        &mut state,
+        row_base,
+        Some(1),
+        Some(1),
+    )
+    .expect("same-register accesses should validate");
 
     let a_step = zisk_main_row_mem_step(
         row_count,
