@@ -1075,6 +1075,10 @@ def allocator_d2h_action_hint(
     allocator_d2h_wait_ms: float,
     allocator_d2h_hot_count: int,
     allocator_d2h_hot_wait_pct: float,
+    opening_query_units: int,
+    opening_single_query_units: int,
+    opening_row_value_device_rows: int,
+    opening_row_value_device_download_batches: int,
 ) -> str:
     if allocator_d2h_wait_ms < CUDA_TRANSFER_WAIT_MS_THRESHOLD:
         return "none"
@@ -1083,6 +1087,13 @@ def allocator_d2h_action_hint(
         and allocator_d2h_hot_wait_pct >= DIRECT_D2H_HOT_WAIT_PCT_THRESHOLD
     )
     if hot_bucket:
+        if (
+            opening_query_units > 1
+            and opening_single_query_units >= opening_query_units
+            and opening_row_value_device_rows > 0
+            and opening_row_value_device_download_batches == 0
+        ):
+            return "opening_row_value_d2h_wait_secondary"
         return "batch_or_keep_hot_allocator_d2h_on_device"
     return "inspect_allocator_d2h_waits"
 
@@ -2581,6 +2592,10 @@ def summarize_profile_values(
         cuda_allocator_d2h_wait_ms,
         cuda_allocator_d2h_hot_count,
         cuda_allocator_d2h_hot_wait_pct,
+        opening_query_units,
+        opening_single_query_units,
+        opening_row_value_device_rows,
+        opening_row_value_device_download_batches,
     )
     direct_d2h_hint = direct_d2h_action_hint(
         direct_d2h_wait_ms,
