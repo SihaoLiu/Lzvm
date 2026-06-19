@@ -7702,6 +7702,57 @@ fn zisk_main_memory_access_validation_avoids_temporary_vectors() {
 }
 
 #[test]
+fn guest_pc_memory_access_validation_has_no_store_fast_path() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let validate_body = function_body(
+        &source,
+        concat!(
+            "fn validate_",
+            "zi",
+            "sk",
+            "_main_memory_accesses_after_source_values"
+        ),
+        concat!("fn ", "zi", "sk", "_main_store_memory_access"),
+    );
+    let indirect_store = concat!("Zi", "sk", "MainStore::Indirect(_)");
+    let fast_path = format!("if !matches!(instruction.store, {indirect_store})");
+    let fast_path_index = validate_body
+        .find(&fast_path)
+        .expect("non-indirect store rows should return before store-access construction");
+    let store_access_index = validate_body
+        .find(concat!("zi", "sk", "_main_store_memory_access"))
+        .expect("indirect store rows should still construct and validate store access");
+    assert!(
+        fast_path_index < store_access_index,
+        "common no-store and register-store rows should avoid store-access construction"
+    );
+}
+
+#[test]
+fn guest_pc_store_apply_computes_store_value_only_for_value_stores() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let apply_body = function_body(
+        &source,
+        concat!("fn apply_", "zi", "sk", "_main_store"),
+        concat!("fn ", "zi", "sk", "_main_store_value"),
+    );
+    let match_index = apply_body
+        .find("match instruction.store")
+        .expect("store application should dispatch on store kind");
+    let eager_prefix = &apply_body[..match_index];
+    assert!(
+        !eager_prefix.contains(concat!("zi", "sk", "_main_store_value(")),
+        "store application should not compute store values before knowing the store kind"
+    );
+}
+
+#[test]
 fn zisk_main_precompile_memory_access_validation_avoids_temporary_vectors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");

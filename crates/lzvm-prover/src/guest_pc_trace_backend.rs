@@ -7750,6 +7750,19 @@ fn validate_zisk_main_memory_accesses_after_source_values(
     c: u64,
     validated_source_access_count: usize,
 ) -> Result<(), GuestPcTraceBackendError> {
+    if !matches!(instruction.store, ZiskMainStore::Indirect(_)) {
+        if effects.memory_accesses.len() != validated_source_access_count {
+            return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                row,
+                message: format!(
+                    "expected {} memory accesses, found {}",
+                    validated_source_access_count,
+                    effects.memory_accesses.len()
+                ),
+            });
+        }
+        return Ok(());
+    }
     let store_access = zisk_main_store_memory_access(row, instruction, a, c)?;
     let expected_len = validated_source_access_count + usize::from(store_access.is_some());
     if effects.memory_accesses.len() != expected_len {
@@ -8376,7 +8389,6 @@ fn apply_zisk_main_store(
     expected_next_pc: u64,
     state: &mut ZiskMainTraceState,
 ) -> Result<(), GuestPcTraceBackendError> {
-    let store_value = zisk_main_store_value(instruction, c);
     match instruction.store {
         ZiskMainStore::None => {
             if !effects.register_writes.is_empty() {
@@ -8387,6 +8399,7 @@ fn apply_zisk_main_store(
             }
         }
         ZiskMainStore::Register(index) => {
+            let store_value = zisk_main_store_value(instruction, c);
             let [write] = effects.register_writes else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
@@ -8416,6 +8429,7 @@ fn apply_zisk_main_store(
             }
         }
         ZiskMainStore::Memory(address) => {
+            let store_value = zisk_main_store_value(instruction, c);
             let Ok(address) = u64::try_from(address) else {
                 return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row });
             };
