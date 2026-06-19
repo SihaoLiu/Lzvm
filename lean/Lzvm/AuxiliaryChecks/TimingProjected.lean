@@ -12,6 +12,25 @@ Batched runtime timing core-contract projections.
 
 namespace Lzvm
 
+universe u
+
+theorem timing_projected_metadata_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {Metadata : Type u}
+    (metadata : Metadata) :
+    forall publicInput proof,
+      IgnoredMetadataObservedAcceptance system metadata publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_verifier_core_contract
+      assumptions
+      metadata
+      publicInput
+      proof
+      observed
+
 structure TimingProjectedCoreContracts
     (system : VerifierModel)
     (publicInput : PublicInput)
@@ -33,14 +52,14 @@ theorem timing_projected_core_contracts
   intro publicInput proof timingObserved guestPcTraceObserved
   exact
     { timingObservations :=
-        timing_observation_acceptance_verifier_core_contract
+        timing_projected_metadata_acceptance_verifier_core_contract
           assumptions
           observations
           publicInput
           proof
           timingObserved
       guestPcTraceTiming :=
-        guest_pc_trace_timing_acceptance_verifier_core_contract
+        timing_projected_metadata_acceptance_verifier_core_contract
           assumptions
           summary
           publicInput

@@ -491,18 +491,21 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && timing_projected_source.contains("guestPcTraceTiming :"),
         "Lean timing checks should batch top-level timing wrapper core contracts"
     );
+    lean_binding::assert_theorem_declarations(
+        &timing_projected_source,
+        &["timing_projected_metadata_acceptance_verifier_core_contract"],
+    );
     lean_binding::assert_theorem_body_contains(
         &timing_projected_source,
         "timing_projected_core_contracts",
-        &[
-            "timing_observation_acceptance_verifier_core_contract",
-            "guest_pc_trace_timing_acceptance_verifier_core_contract",
-        ],
+        &["timing_projected_metadata_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &timing_projected_source,
         "timing_projected_core_contracts",
         &[
+            "timing_observation_acceptance_verifier_core_contract",
+            "guest_pc_trace_timing_acceptance_verifier_core_contract",
             "ignored_metadata_acceptance_verifier_core_contract",
             "abstract_verifier_sound",
             "sound_witness_implies_verifier_core_contract",
@@ -514,7 +517,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && proof_timing_projected_source.contains("proofArtifactFinishTiming :"),
         "Lean proof timing checks should batch top-level proof timing wrapper core contracts"
     );
+    lean_binding::assert_theorem_declarations(
+        &proof_timing_projected_source,
+        &["proof_timing_projected_metadata_acceptance_verifier_core_contract"],
+    );
     lean_binding::assert_theorem_body_contains(
+        &proof_timing_projected_source,
+        "proof_timing_projected_core_contracts",
+        &["proof_timing_projected_metadata_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
         &proof_timing_projected_source,
         "proof_timing_projected_core_contracts",
         &[
@@ -525,12 +537,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "cuda_backend_acceptance_verifier_core_contract",
             "cuda_allocator_timing_acceptance_verifier_core_contract",
             "proof_artifact_finish_timing_acceptance_verifier_core_contract",
-        ],
-    );
-    lean_binding::assert_theorem_body_omits(
-        &proof_timing_projected_source,
-        "proof_timing_projected_core_contracts",
-        &[
             "ignored_metadata_acceptance_verifier_core_contract",
             "abstract_verifier_sound",
             "sound_witness_implies_verifier_core_contract",
