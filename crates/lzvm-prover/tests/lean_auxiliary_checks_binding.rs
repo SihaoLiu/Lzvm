@@ -107,6 +107,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && top_level_source.contains("import Lzvm.AuxiliaryChecks.TimingProjected")
             && top_level_source.contains("import Lzvm.AuxiliaryChecks.Projected")
             && top_level_source.contains("import Lzvm.AuxiliaryChecks.ProofTimingProjected")
+            && top_level_source.contains("import Lzvm.AuxiliaryChecks.ProofTimingVerifier")
             && top_level_source.contains("import Lzvm.AuxiliaryChecks.RuntimePerformance"),
         "top-level Lean module should import auxiliary checks"
     );
