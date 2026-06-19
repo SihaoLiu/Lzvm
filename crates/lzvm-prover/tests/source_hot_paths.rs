@@ -6523,6 +6523,17 @@ fn guest_pc_trace_register_mem_steps_use_single_lookup_updates() {
             && !backend_source.contains("SparseRegisterMem"),
         "register access lowering should update touched register mem-steps in place"
     );
+    assert!(
+        register_access_body.contains("if a_index.is_none() && b_index.is_none() && store_index.is_none()"),
+        "register access lowering should return before row mem-step arithmetic when no registers are touched"
+    );
+    assert!(
+        register_access_body.contains("let row_mem_step_base")
+            && register_access_body.contains("zisk_main_row_mem_step_base_from_segment_base")
+            && !register_access_body.contains("let mut row_mem_step_base = None")
+            && !register_access_body.contains("let mut row_mem_step = |offset|"),
+        "register access lowering should compute the row mem-step base once instead of through a per-row closure"
+    );
 }
 
 #[test]
