@@ -475,7 +475,7 @@ HEADER = (
     "trace_report_descriptor_ns_per_row,"
     "external_op_runs,external_op_avg_run,external_op_max_run,"
     "copy_runs,copy_avg_run,copy_max_run,trace_shape_run_hint,"
-    "trace_pipeline_action_hint"
+    "trace_pipeline_action_hint,performance_focus_hint"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -1402,6 +1402,34 @@ def opening_retained_parent_checkpoint_action_hint(
     if path_ms > 0 and path_ms < RETAINED_PARENT_CHECKPOINT_PATH_SECONDARY_MS_THRESHOLD:
         return "retained_parent_checkpoint_path_time_secondary"
     return "cross_stage_retained_parent_checkpoint_prefix_suffix_gather_candidate"
+
+
+def performance_focus_hint(
+    trace_pipeline_hint: str,
+    retained_parent_checkpoint_action_hint: str,
+) -> str:
+    trace_pipeline_hints = {
+        "trace_generation_and_commit_pipeline_candidate",
+        "parallel_segment_reexecution_candidate",
+        "parallel_trace_lowering_candidate",
+        "trace_generation_parallelism_candidate",
+        "commit_trace_overlap_candidate",
+        "segment_commit_candidate",
+        "trace_queue_backpressure_candidate",
+    }
+    if (
+        trace_pipeline_hint in trace_pipeline_hints
+        and retained_parent_checkpoint_action_hint
+        == "retained_parent_checkpoint_path_time_secondary"
+    ):
+        return "trace_pipeline_over_secondary_opening_launches"
+    if trace_pipeline_hint in trace_pipeline_hints:
+        return trace_pipeline_hint
+    if retained_parent_checkpoint_action_hint != "none":
+        return retained_parent_checkpoint_action_hint
+    if trace_pipeline_hint not in {"none", "unknown", "within_target", "balanced_pipeline"}:
+        return trace_pipeline_hint
+    return "none"
 
 
 def opening_source_shape_hint(
@@ -2541,6 +2569,10 @@ def summarize_profile_values(
         direct_d2h_wait_ms,
     )
     trace_pipeline_hint = trace_pipeline_action_hint_from_values(values)
+    performance_focus = performance_focus_hint(
+        trace_pipeline_hint,
+        retained_parent_checkpoint_action_hint,
+    )
     opening_source_row_value_hint = opening_source_row_value_action_hint(
         total_ms,
         opening_row_value_source_extend_ms,
@@ -2762,7 +2794,7 @@ def summarize_profile_values(
         f"{external_op_runs},{external_op_avg_run:.3f},"
         f"{external_op_max_run},{copy_runs},{copy_avg_run:.3f},"
         f"{copy_max_run},{trace_shape_run},"
-        f"{trace_pipeline_hint}"
+        f"{trace_pipeline_hint},{performance_focus}"
     )
 
 
