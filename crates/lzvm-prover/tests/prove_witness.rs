@@ -2294,6 +2294,9 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         parallel_lower_snapshot_replay_count: usize,
         parallel_lower_report_elided_count: usize,
         segment_commit_effective_worker_count: usize,
+        segment_commit_worker_join_count: usize,
+        segment_commit_worker_backpressure_join_count: usize,
+        segment_commit_worker_finish_join_count: usize,
         segment_commit_worker_max_in_flight_count: usize,
     }
 
@@ -2379,6 +2382,9 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         let mut parallel_lower_snapshot_replay_count = None;
         let mut parallel_lower_report_elided_count = None;
         let mut segment_commit_effective_worker_count = None;
+        let mut segment_commit_worker_join_count = None;
+        let mut segment_commit_worker_backpressure_join_count = None;
+        let mut segment_commit_worker_finish_join_count = None;
         let mut segment_commit_worker_max_in_flight_count = None;
         let outputs =
             run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_with_timings(
@@ -2405,6 +2411,12 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
                         Some(timing.guest_trace_parallel_lower_report_elided_count());
                     segment_commit_effective_worker_count =
                         Some(timing.guest_segment_commit_effective_worker_count());
+                    segment_commit_worker_join_count =
+                        Some(timing.guest_segment_commit_worker_join_count());
+                    segment_commit_worker_backpressure_join_count =
+                        Some(timing.guest_segment_commit_worker_backpressure_join_count());
+                    segment_commit_worker_finish_join_count =
+                        Some(timing.guest_segment_commit_worker_finish_join_count());
                     segment_commit_worker_max_in_flight_count =
                         Some(timing.guest_segment_commit_worker_max_in_flight_count());
                 },
@@ -2429,6 +2441,13 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             .expect("timed run should report parallel lower report elision count");
         let segment_commit_effective_worker_count = segment_commit_effective_worker_count
             .expect("timed run should report segment commit worker count");
+        let segment_commit_worker_join_count = segment_commit_worker_join_count
+            .expect("timed run should report segment commit worker join count");
+        let segment_commit_worker_backpressure_join_count =
+            segment_commit_worker_backpressure_join_count
+                .expect("timed run should report segment commit backpressure join count");
+        let segment_commit_worker_finish_join_count = segment_commit_worker_finish_join_count
+            .expect("timed run should report segment commit finish join count");
         let segment_commit_worker_max_in_flight_count = segment_commit_worker_max_in_flight_count
             .expect("timed run should report segment commit worker in-flight count");
         let witness_segments = outputs
@@ -2514,6 +2533,9 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             parallel_lower_snapshot_replay_count,
             parallel_lower_report_elided_count,
             segment_commit_effective_worker_count,
+            segment_commit_worker_join_count,
+            segment_commit_worker_backpressure_join_count,
+            segment_commit_worker_finish_join_count,
             segment_commit_worker_max_in_flight_count,
         }
     };
@@ -2678,6 +2700,16 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         commit_worker_run.segment_commit_worker_max_in_flight_count >= 2,
         "explicit segment commit workers should report real cross-segment in-flight work"
     );
+    assert_eq!(
+        commit_worker_run.segment_commit_worker_join_count,
+        commit_worker_run.segment_commit_worker_backpressure_join_count
+            + commit_worker_run.segment_commit_worker_finish_join_count,
+        "explicit segment commit workers should classify every worker join"
+    );
+    assert!(
+        commit_worker_run.segment_commit_worker_finish_join_count > 0,
+        "explicit segment commit workers should report final drain joins"
+    );
     assert!(
         combined_run.parallel_lower_worker_count >= 2,
         "combined opt-in should use configured parallel lower workers"
@@ -2718,6 +2750,12 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert!(
         combined_run.segment_commit_worker_max_in_flight_count >= 2,
         "combined opt-in should report real cross-segment commit in-flight work"
+    );
+    assert_eq!(
+        combined_run.segment_commit_worker_join_count,
+        combined_run.segment_commit_worker_backpressure_join_count
+            + combined_run.segment_commit_worker_finish_join_count,
+        "combined opt-in should classify every worker join"
     );
     assert_eq!(
         default_run.witness_segment_bytes,

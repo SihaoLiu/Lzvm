@@ -97,6 +97,22 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_segment_commit_worker_join_count(),
     );
     timings.record_count(
+        "guest_segment_commit_worker_backpressure_joins",
+        timing.guest_segment_commit_worker_backpressure_join_count(),
+    );
+    timings.record(
+        "guest_segment_commit_worker_backpressure_join",
+        timing.guest_segment_commit_worker_backpressure_join_duration(),
+    );
+    timings.record_count(
+        "guest_segment_commit_worker_finish_joins",
+        timing.guest_segment_commit_worker_finish_join_count(),
+    );
+    timings.record(
+        "guest_segment_commit_worker_finish_join",
+        timing.guest_segment_commit_worker_finish_join_duration(),
+    );
+    timings.record_count(
         "guest_segment_commit_worker_max_in_flight",
         timing.guest_segment_commit_worker_max_in_flight_count(),
     );

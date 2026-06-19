@@ -414,6 +414,10 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_segment_commit_effective_worker_count: usize,
     guest_segment_commit_worker_submit_count: usize,
     guest_segment_commit_worker_join_count: usize,
+    guest_segment_commit_worker_backpressure_join_count: usize,
+    guest_segment_commit_worker_backpressure_join_duration: Duration,
+    guest_segment_commit_worker_finish_join_count: usize,
+    guest_segment_commit_worker_finish_join_duration: Duration,
     guest_segment_commit_worker_max_in_flight_count: usize,
     guest_segment_commit_oom_retry_count: usize,
     guest_segment_commit_cuda_memory_total_byte_count: usize,
@@ -627,6 +631,22 @@ impl ProveWitnessGuestPcTraceTiming {
                 .segment_commit_worker_timing
                 .pool_timing
                 .join_count,
+            guest_segment_commit_worker_backpressure_join_count: run_timing
+                .segment_commit_worker_timing
+                .pool_timing
+                .backpressure_join_count,
+            guest_segment_commit_worker_backpressure_join_duration: run_timing
+                .segment_commit_worker_timing
+                .pool_timing
+                .backpressure_join_duration,
+            guest_segment_commit_worker_finish_join_count: run_timing
+                .segment_commit_worker_timing
+                .pool_timing
+                .finish_join_count,
+            guest_segment_commit_worker_finish_join_duration: run_timing
+                .segment_commit_worker_timing
+                .pool_timing
+                .finish_join_duration,
             guest_segment_commit_worker_max_in_flight_count: run_timing
                 .segment_commit_worker_timing
                 .pool_timing
@@ -951,6 +971,22 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_segment_commit_worker_join_count(&self) -> usize {
         self.guest_segment_commit_worker_join_count
+    }
+
+    pub fn guest_segment_commit_worker_backpressure_join_count(&self) -> usize {
+        self.guest_segment_commit_worker_backpressure_join_count
+    }
+
+    pub fn guest_segment_commit_worker_backpressure_join_duration(&self) -> Duration {
+        self.guest_segment_commit_worker_backpressure_join_duration
+    }
+
+    pub fn guest_segment_commit_worker_finish_join_count(&self) -> usize {
+        self.guest_segment_commit_worker_finish_join_count
+    }
+
+    pub fn guest_segment_commit_worker_finish_join_duration(&self) -> Duration {
+        self.guest_segment_commit_worker_finish_join_duration
     }
 
     pub fn guest_segment_commit_worker_max_in_flight_count(&self) -> usize {
@@ -4022,6 +4058,15 @@ enum GuestPcTraceSegmentCommitOutput {
 }
 
 impl GuestPcTraceSegmentCommitOutput {
+    #[cfg(test)]
+    fn trace_instance_index(&self) -> u32 {
+        match self {
+            Self::Ready(output) => output.commitments().trace_instance_index(),
+            #[cfg(feature = "cuda")]
+            Self::Pending(output) => output.identity().trace_instance_index(),
+        }
+    }
+
     fn set_trace_instance_index(&mut self, trace_instance_index: u32) {
         match self {
             Self::Ready(output) => {
@@ -4125,14 +4170,8 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
 
         let mut ready_results = Vec::new();
         while self.pending_workers.len() >= self.worker_count {
-            let handle = self.pending_workers.pop_front().ok_or_else(|| {
-                ProveWitnessCommitmentError::SegmentCommitOutputOrder {
-                    message: "segment commit worker queue unexpectedly empty".to_owned(),
-                }
-            })?;
-            match join_guest_pc_trace_segment_commit_worker(handle) {
+            match self.join_oldest_pending_for_backpressure() {
                 Ok(result) => {
-                    self.timing.join_count = self.timing.join_count.saturating_add(1);
                     ready_results.push(result);
                 }
                 Err(error) => {
@@ -4159,18 +4198,40 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
         Ok(ready_results)
     }
 
+    fn join_oldest_pending_for_backpressure(
+        &mut self,
+    ) -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
+        let handle = self.pending_workers.pop_front().ok_or_else(|| {
+            ProveWitnessCommitmentError::SegmentCommitOutputOrder {
+                message: "segment commit worker queue unexpectedly empty".to_owned(),
+            }
+        })?;
+        let join_started = Instant::now();
+        let result = join_guest_pc_trace_segment_commit_worker(handle);
+        self.timing.join_count = self.timing.join_count.saturating_add(1);
+        self.timing.backpressure_join_count = self.timing.backpressure_join_count.saturating_add(1);
+        self.timing.backpressure_join_duration += join_started.elapsed();
+        result
+    }
+
     fn finish(
         &mut self,
     ) -> Result<Vec<GuestPcTraceSegmentCommitResult>, ProveWitnessCommitmentError> {
         let mut ready_results = Vec::new();
         let mut first_error = None;
         while let Some(handle) = self.pending_workers.pop_front() {
+            let join_started = Instant::now();
             match join_guest_pc_trace_segment_commit_worker(handle) {
                 Ok(result) => {
                     self.timing.join_count = self.timing.join_count.saturating_add(1);
+                    self.timing.finish_join_count = self.timing.finish_join_count.saturating_add(1);
+                    self.timing.finish_join_duration += join_started.elapsed();
                     ready_results.push(result);
                 }
                 Err(error) => {
+                    self.timing.join_count = self.timing.join_count.saturating_add(1);
+                    self.timing.finish_join_count = self.timing.finish_join_count.saturating_add(1);
+                    self.timing.finish_join_duration += join_started.elapsed();
                     if first_error.is_none() {
                         first_error = Some(error);
                     }
@@ -4281,6 +4342,10 @@ impl GuestPcTraceSegmentCommitWorkerTiming {
 struct GuestPcTraceSegmentCommitPoolTiming {
     submit_count: usize,
     join_count: usize,
+    backpressure_join_count: usize,
+    backpressure_join_duration: Duration,
+    finish_join_count: usize,
+    finish_join_duration: Duration,
     max_in_flight_count: usize,
 }
 
@@ -6977,6 +7042,17 @@ mod tests {
         }
     }
 
+    fn dummy_segment_commit_result(trace_instance_index: u32) -> GuestPcTraceSegmentCommitResult {
+        GuestPcTraceSegmentCommitResult {
+            output: GuestPcTraceSegmentCommitOutput::Ready(dummy_trace_commitment_output(
+                trace_instance_index,
+            )),
+            source_lookup_balance: SourceLookupBalance::default(),
+            trace_timing: None,
+            guest_segment_commit_duration: None,
+        }
+    }
+
     #[test]
     fn guest_pc_segment_commit_output_collector_drains_trace_instances_in_order() {
         let mut collector = GuestPcTraceSegmentCommitOutputCollector::new();
@@ -7041,6 +7117,46 @@ mod tests {
                 pool.pending_workers.is_empty(),
                 "pool finish should drain every pending worker before returning an error"
             );
+        });
+    }
+
+    #[test]
+    fn guest_pc_segment_commit_worker_pool_tracks_join_wait_sources() {
+        thread::scope(|scope| {
+            let backpressure = scope.spawn(
+                || -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
+                    Ok(dummy_segment_commit_result(0))
+                },
+            );
+            let finish = scope.spawn(
+                || -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
+                    Ok(dummy_segment_commit_result(1))
+                },
+            );
+            let mut pool = GuestPcTraceSegmentCommitWorkerPool {
+                scope,
+                worker_count: 2,
+                worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
+                pending_workers: VecDeque::from([backpressure, finish]),
+                timing: GuestPcTraceSegmentCommitPoolTiming::default(),
+            };
+
+            let first = pool
+                .join_oldest_pending_for_backpressure()
+                .expect("backpressure join should succeed");
+            assert_eq!(first.output.trace_instance_index(), 0);
+
+            let rest = pool.finish().expect("finish join should succeed");
+            assert_eq!(
+                rest.into_iter()
+                    .map(|result| result.output.trace_instance_index())
+                    .collect::<Vec<_>>(),
+                [1]
+            );
+
+            assert_eq!(pool.timing.join_count, 2);
+            assert_eq!(pool.timing.backpressure_join_count, 1);
+            assert_eq!(pool.timing.finish_join_count, 1);
         });
     }
 

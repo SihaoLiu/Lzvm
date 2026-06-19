@@ -4184,6 +4184,10 @@ fn guest_pc_trace_timing_reports_segment_commit_cuda_memory_headroom() {
         "guest_segment_commit_cuda_allocator_effective_cached_byte_count",
         "guest_segment_commit_worker_submit_count",
         "guest_segment_commit_worker_join_count",
+        "guest_segment_commit_worker_backpressure_join_count",
+        "guest_segment_commit_worker_backpressure_join_duration",
+        "guest_segment_commit_worker_finish_join_count",
+        "guest_segment_commit_worker_finish_join_duration",
         "guest_segment_commit_worker_max_in_flight_count",
     ] {
         assert!(
@@ -4246,6 +4250,22 @@ fn guest_pc_trace_timing_reports_segment_commit_cuda_memory_headroom() {
         (
             "\"guest_segment_commit_worker_joins\"",
             "guest_segment_commit_worker_join_count()",
+        ),
+        (
+            "\"guest_segment_commit_worker_backpressure_joins\"",
+            "guest_segment_commit_worker_backpressure_join_count()",
+        ),
+        (
+            "\"guest_segment_commit_worker_backpressure_join\"",
+            "guest_segment_commit_worker_backpressure_join_duration()",
+        ),
+        (
+            "\"guest_segment_commit_worker_finish_joins\"",
+            "guest_segment_commit_worker_finish_join_count()",
+        ),
+        (
+            "\"guest_segment_commit_worker_finish_join\"",
+            "guest_segment_commit_worker_finish_join_duration()",
         ),
         (
             "\"guest_segment_commit_worker_max_in_flight\"",

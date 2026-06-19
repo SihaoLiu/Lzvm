@@ -30,6 +30,18 @@ SEGMENT_COMMIT_INITIAL_WORKERS_KEY = "timing_guest_segment_commit_initial_worker
 SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY = "timing_guest_segment_commit_effective_workers"
 SEGMENT_COMMIT_WORKER_SUBMITS_KEY = "timing_guest_segment_commit_worker_submits"
 SEGMENT_COMMIT_WORKER_JOINS_KEY = "timing_guest_segment_commit_worker_joins"
+SEGMENT_COMMIT_WORKER_BACKPRESSURE_JOINS_KEY = (
+    "timing_guest_segment_commit_worker_backpressure_joins"
+)
+SEGMENT_COMMIT_WORKER_BACKPRESSURE_JOIN_MS_KEY = (
+    "timing_guest_segment_commit_worker_backpressure_join_ms"
+)
+SEGMENT_COMMIT_WORKER_FINISH_JOINS_KEY = (
+    "timing_guest_segment_commit_worker_finish_joins"
+)
+SEGMENT_COMMIT_WORKER_FINISH_JOIN_MS_KEY = (
+    "timing_guest_segment_commit_worker_finish_join_ms"
+)
 SEGMENT_COMMIT_WORKER_MAX_IN_FLIGHT_KEY = (
     "timing_guest_segment_commit_worker_max_in_flight"
 )
@@ -452,7 +464,11 @@ HEADER = (
     "stream_elapsed_ms,stream_worker_ms,"
     "segment_commit_ms,segment_commit_initial_workers,"
     "segment_commit_effective_workers,segment_commit_worker_submits,"
-    "segment_commit_worker_joins,segment_commit_worker_max_in_flight,"
+    "segment_commit_worker_joins,"
+    "segment_commit_worker_backpressure_joins,"
+    "segment_commit_worker_backpressure_join_ms,"
+    "segment_commit_worker_finish_joins,segment_commit_worker_finish_join_ms,"
+    "segment_commit_worker_max_in_flight,"
     "segment_commit_oom_retries,"
     "segment_commit_attempt_ms,segment_commit_oom_retry_ms,"
     "stream_commit_residual_ms,segment_receive_wait_ms,"
@@ -659,6 +675,10 @@ TIMING_KEYS = {
     SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY,
     SEGMENT_COMMIT_WORKER_SUBMITS_KEY,
     SEGMENT_COMMIT_WORKER_JOINS_KEY,
+    SEGMENT_COMMIT_WORKER_BACKPRESSURE_JOINS_KEY,
+    SEGMENT_COMMIT_WORKER_BACKPRESSURE_JOIN_MS_KEY,
+    SEGMENT_COMMIT_WORKER_FINISH_JOINS_KEY,
+    SEGMENT_COMMIT_WORKER_FINISH_JOIN_MS_KEY,
     SEGMENT_COMMIT_WORKER_MAX_IN_FLIGHT_KEY,
     SEGMENT_COMMIT_OOM_RETRIES_KEY,
     SEGMENT_COMMIT_CUDA_MEMORY_TOTAL_BYTES_KEY,
@@ -2592,6 +2612,18 @@ def summarize_profile_values(
     segment_commit_effective_workers = values.get(SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY, 0)
     segment_commit_worker_submits = values.get(SEGMENT_COMMIT_WORKER_SUBMITS_KEY, 0)
     segment_commit_worker_joins = values.get(SEGMENT_COMMIT_WORKER_JOINS_KEY, 0)
+    segment_commit_worker_backpressure_joins = values.get(
+        SEGMENT_COMMIT_WORKER_BACKPRESSURE_JOINS_KEY, 0
+    )
+    segment_commit_worker_backpressure_join_ms = values.get(
+        SEGMENT_COMMIT_WORKER_BACKPRESSURE_JOIN_MS_KEY, 0
+    )
+    segment_commit_worker_finish_joins = values.get(
+        SEGMENT_COMMIT_WORKER_FINISH_JOINS_KEY, 0
+    )
+    segment_commit_worker_finish_join_ms = values.get(
+        SEGMENT_COMMIT_WORKER_FINISH_JOIN_MS_KEY, 0
+    )
     segment_commit_worker_max_in_flight = values.get(
         SEGMENT_COMMIT_WORKER_MAX_IN_FLIGHT_KEY, 0
     )
@@ -3485,6 +3517,9 @@ def summarize_profile_values(
         f"{stream_elapsed_ms},{stream_worker_ms},{segment_commit_ms},"
         f"{segment_commit_initial_workers},{segment_commit_effective_workers},"
         f"{segment_commit_worker_submits},{segment_commit_worker_joins},"
+        f"{segment_commit_worker_backpressure_joins},"
+        f"{segment_commit_worker_backpressure_join_ms},"
+        f"{segment_commit_worker_finish_joins},{segment_commit_worker_finish_join_ms},"
         f"{segment_commit_worker_max_in_flight},"
         f"{segment_commit_oom_retries},"
         f"{segment_commit_attempt_ms},{segment_commit_oom_retry_ms},"
