@@ -599,6 +599,7 @@ HEADER = (
     "kernel_top_stream_idle_gap_previous_kernel,"
     "kernel_top_stream_idle_gap_next_kernel,"
     "kernel_top_stream_idle_gap_calls,kernel_top_stream_idle_gap_ms,"
+    "kernel_stream_idle_boundary_hint,"
     "segment_commit_cuda_memory_total_bytes,"
     "segment_commit_cuda_memory_initial_free_bytes,"
     "segment_commit_cuda_memory_effective_free_bytes,"
@@ -2011,6 +2012,31 @@ def data_residency_action_hint(
     return "none"
 
 
+def kernel_stream_idle_boundary_hint(
+    previous_kernel: str,
+    next_kernel: str,
+    gap_calls: str,
+    root_count: int,
+) -> str:
+    try:
+        calls = int(gap_calls)
+    except ValueError:
+        return "none"
+    if calls <= 0:
+        return "none"
+    if root_count > 0 and calls != root_count:
+        return "none"
+
+    previous = previous_kernel.lower()
+    next_name = next_kernel.lower()
+    if (
+        "merkle_digest_parent" in previous
+        and "trace_descriptor" in next_name
+    ):
+        return "commit_root_to_trace_descriptor_idle"
+    return "none"
+
+
 def source_retention_exceeds_device_memory_hint(
     byte_count: int,
     device_memory_bytes: int,
@@ -3369,6 +3395,12 @@ def summarize_profile_values(
     kernel_top_stream_idle_gap_ms = str(
         values.get(NSYS_KERNEL_TOP_STREAM_IDLE_GAP_MS_KEY, "0.000")
     )
+    kernel_stream_idle_boundary = kernel_stream_idle_boundary_hint(
+        kernel_top_stream_idle_gap_previous,
+        kernel_top_stream_idle_gap_next,
+        kernel_top_stream_idle_gap_calls,
+        root_count,
+    )
     source_retention_total_exceeds_device_memory = (
         source_retention_exceeds_device_memory_hint(
             source_retention_rejected_bytes,
@@ -3617,6 +3649,7 @@ def summarize_profile_values(
         f"{kernel_top_stream_idle_ms},{kernel_separation_hint},"
         f"{kernel_top_stream_idle_gap_previous},{kernel_top_stream_idle_gap_next},"
         f"{kernel_top_stream_idle_gap_calls},{kernel_top_stream_idle_gap_ms},"
+        f"{kernel_stream_idle_boundary},"
         f"{segment_commit_cuda_memory_total_bytes},"
         f"{segment_commit_cuda_memory_initial_free_bytes},"
         f"{segment_commit_cuda_memory_effective_free_bytes},"

@@ -210,6 +210,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "kernel_top_stream_idle_gap_next_kernel",
         "kernel_top_stream_idle_gap_calls",
         "kernel_top_stream_idle_gap_ms",
+        "kernel_stream_idle_boundary_hint",
         "perf_lowered_report_row_self_pct",
         "perf_memmove_self_pct",
         "perf_memmove_guest_machine_pct",
@@ -806,6 +807,10 @@ fn prove_timing_root_summary_reads_explicit_nsys_kernel_summary() {
     );
     assert_eq!(value("kernel_top_stream_idle_gap_calls"), "120");
     assert_eq!(value("kernel_top_stream_idle_gap_ms"), "22171.505");
+    assert_eq!(
+        value("kernel_stream_idle_boundary_hint"),
+        "commit_root_to_trace_descriptor_idle"
+    );
 }
 
 #[test]
