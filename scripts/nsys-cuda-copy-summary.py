@@ -1039,6 +1039,14 @@ def top_direction(waits: dict[str, int]) -> tuple[str, int]:
     return max(waits.items(), key=lambda item: (item[1], item[0]))
 
 
+def is_guest_trace_descriptor_bulk_frame(app_frame: object) -> bool:
+    frame = str(app_frame)
+    return (
+        "guest_pc_trace_backend::build_guest_pc_trace_stage_source_devices_from_device_material"
+        in frame
+    )
+
+
 def print_transfer_triage(
     runtime_rows: list[sqlite3.Row],
     host_registration_rows: list[sqlite3.Row],
@@ -1093,6 +1101,7 @@ def print_transfer_triage(
             "h2d_bulk_app_frame_hint,none,"
             "no bulk H2D app-frame callchain hotspot"
         )
+        print("h2d_structural_hint,none,no bulk H2D hotspot")
     else:
         bulk_host_ns = int(top_h2d_bulk["host_ns"] or 0)
         bulk_gpu_ns = int(top_h2d_bulk["gpu_ns"] or 0)
@@ -1117,9 +1126,25 @@ def print_transfer_triage(
                 f"host_api_ms={ms(int(candidate['host_ns'])):.3f} "
                 f"app_frame={csv_cell(candidate['app_frame'])}"
             )
+            if is_guest_trace_descriptor_bulk_frame(candidate["app_frame"]):
+                print(
+                    "h2d_structural_hint,trace_descriptor_residency_pipeline,"
+                    f"bytes={int(candidate['bytes'])} "
+                    f"calls={int(candidate['calls'])} "
+                    f"host_api_ms={ms(int(candidate['host_ns'])):.3f}"
+                )
+            else:
+                print(
+                    "h2d_structural_hint,none,"
+                    "bulk H2D app frame is not the guest trace descriptor path"
+                )
         else:
             print(
                 "h2d_bulk_app_frame_hint,inspect_callchains,"
+                "bulk H2D exists but no application callchain frame was available"
+            )
+            print(
+                "h2d_structural_hint,inspect_callchains,"
                 "bulk H2D exists but no application callchain frame was available"
             )
     if top_d2h is None:
