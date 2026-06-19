@@ -106,4 +106,43 @@ theorem runtime_performance_observation_auxiliary_projected_core_contracts
           proof
           observed }
 
+structure RuntimePerformanceAuxiliaryContracts
+    (system : VerifierModel)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop where
+  soundWitness : SoundWitness system publicInput proof
+  verifierCore : RuntimeVerifierCoreContract system publicInput proof
+  projected : AuxiliaryProjectedCoreContracts system publicInput proof
+
+theorem runtime_performance_observation_auxiliary_contracts
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimePerformanceAuxiliaryContracts system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    { soundWitness :=
+        runtime_performance_observation_acceptance_sound
+          assumptions
+          summary
+          publicInput
+          proof
+          observed
+      verifierCore :=
+        runtime_performance_observation_acceptance_verifier_core_contract
+          assumptions
+          summary
+          publicInput
+          proof
+          observed
+      projected :=
+        runtime_performance_observation_auxiliary_projected_core_contracts
+          assumptions
+          summary
+          publicInput
+          proof
+          observed }
+
 end Lzvm
