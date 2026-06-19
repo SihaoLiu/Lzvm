@@ -609,6 +609,10 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_parallel_lower_snapshot_replay_count",
         timing.guest_trace_parallel_lower_snapshot_replay_count(),
     );
+    timings.record_count(
+        "guest_trace_parallel_lower_report_elided_count",
+        timing.guest_trace_parallel_lower_report_elided_count(),
+    );
     timings.record(
         "guest_device_source_build",
         timing.guest_device_source_build_duration(),

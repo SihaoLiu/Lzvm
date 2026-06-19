@@ -229,6 +229,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     parallel_lower_emitted_count: usize,
     parallel_lower_max_reorder_count: usize,
     parallel_lower_snapshot_replay_count: usize,
+    parallel_lower_report_elided_count: usize,
     seed_direct_lift_attempt_count: usize,
     seed_direct_lift_success_count: usize,
     seed_direct_lift_empty_segment_count: usize,
@@ -325,6 +326,7 @@ impl GuestPcTraceStreamTiming {
             .parallel_lower_max_reorder_count
             .max(other.parallel_lower_max_reorder_count);
         self.parallel_lower_snapshot_replay_count += other.parallel_lower_snapshot_replay_count;
+        self.parallel_lower_report_elided_count += other.parallel_lower_report_elided_count;
         self.seed_direct_lift_attempt_count += other.seed_direct_lift_attempt_count;
         self.seed_direct_lift_success_count += other.seed_direct_lift_success_count;
         self.seed_direct_lift_empty_segment_count += other.seed_direct_lift_empty_segment_count;
@@ -560,6 +562,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn parallel_lower_snapshot_replay_count(&self) -> usize {
         self.parallel_lower_snapshot_replay_count
+    }
+
+    pub fn parallel_lower_report_elided_count(&self) -> usize {
+        self.parallel_lower_report_elided_count
     }
 
     pub fn seed_direct_lift_attempt_count(&self) -> usize {
@@ -1035,8 +1041,10 @@ struct GuestPcTracePendingSegmentSlice {
     executed_instruction_count: u64,
     trace_row_count: usize,
     runner_remaining_instruction_limit: u64,
+    report_count: usize,
     report_capacity: usize,
     reports: Vec<GuestMachineReport>,
+    reports_elided: bool,
     terminal_pc: u64,
     lookahead_instruction: Option<RiscvInstruction>,
     is_last_segment: bool,
@@ -3545,7 +3553,9 @@ fn produce_guest_pc_trace_pending_slices(
     let mut timing = GuestPcTraceStreamTiming::default();
     let runner_seed_snapshot = guest_pc_trace_runner_seed_snapshot_enabled();
     let segment_replay = guest_pc_trace_segment_replay_enabled();
-    let carry_replay_snapshot = guest_pc_trace_segment_replay_snapshot_enabled();
+    let report_elision = guest_pc_trace_parallel_lower_report_elision_enabled()
+        && guest_pc_trace_parallel_lower_worker_count().is_some_and(|count| count > 1);
+    let carry_replay_snapshot = guest_pc_trace_segment_replay_snapshot_enabled() || report_elision;
     let mut seed_mirror = (guest_pc_trace_seed_mirror_enabled() || runner_seed_snapshot)
         .then(ZiskMainSegmentSeed::new);
     loop {
@@ -3762,14 +3772,25 @@ fn produce_guest_pc_trace_pending_slices(
                 });
             }
         }
+        let report_count = slice.reports.len();
         let report_capacity = slice.report_capacity;
+        let reports_elided = report_elision;
+        let reports = if reports_elided {
+            timing.parallel_lower_report_elided_count =
+                timing.parallel_lower_report_elided_count.saturating_add(1);
+            Vec::new()
+        } else {
+            slice.reports
+        };
         emit(GuestPcTracePendingSegmentSlice {
             trace_instance_index,
             executed_instruction_count: slice.executed_instructions,
             trace_row_count: slice.trace_rows,
             runner_remaining_instruction_limit: remaining_limit,
+            report_count,
             report_capacity,
-            reports: slice.reports,
+            reports,
+            reports_elided,
             terminal_pc,
             lookahead_instruction,
             is_last_segment,
@@ -4081,10 +4102,11 @@ fn replay_guest_pc_trace_pending_segment_reports(
     };
     if replay.slice.executed_instructions != pending.executed_instruction_count
         || replay.slice.trace_rows != pending.trace_row_count
+        || replay.slice.reports.len() != pending.report_count
         || terminal_pc != pending.terminal_pc
         || lookahead_instruction != pending.lookahead_instruction
         || is_last_segment != pending.is_last_segment
-        || replay.slice.reports != pending.reports
+        || (!pending.reports_elided && replay.slice.reports != pending.reports)
     {
         return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: format!(
@@ -4431,6 +4453,11 @@ fn guest_pc_trace_segment_replay_snapshot_enabled() -> bool {
 
 fn guest_pc_trace_parallel_lower_replay_snapshot_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT", false)
+        || guest_pc_trace_parallel_lower_report_elision_enabled()
+}
+
+fn guest_pc_trace_parallel_lower_report_elision_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY", false)
 }
 
 fn guest_pc_trace_runner_seed_snapshot_enabled() -> bool {
