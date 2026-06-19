@@ -340,6 +340,9 @@ DESCRIPTOR_RETENTION_REJECTED_BYTES_KEY = (
 DESCRIPTOR_RETENTION_LIMIT_BYTES_KEY = (
     "timing_guest_descriptor_buffer_retention_limit_bytes"
 )
+NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY = (
+    "nsys_copy_trace_descriptor_residency_pipeline"
+)
 PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
 PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
 PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY = "perf_memmove_guest_machine_pct"
@@ -742,7 +745,42 @@ TIMING_KEYS = {
 
 def parse_timing_log(text: str) -> dict[str, int]:
     values: dict[str, int] = {}
+    nsys_copy_block = None
     for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == "cuda_transfer_triage":
+            nsys_copy_block = stripped
+            continue
+        if nsys_copy_block is not None:
+            if not stripped:
+                nsys_copy_block = None
+                continue
+            if stripped.startswith("metric,"):
+                continue
+            try:
+                row = next(csv.reader([line]))
+            except csv.Error:
+                nsys_copy_block = None
+                continue
+            if (
+                len(row) >= 2
+                and row[0].strip() == "h2d_structural_hint"
+                and row[1].strip() == "trace_descriptor_residency_pipeline"
+            ):
+                values[NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY] = 1
+            elif (
+                len(row) >= 3
+                and row[0].strip() == "h2d_bulk_app_frame_hint"
+                and row[1].strip() == "reuse_device_source_for_hot_frame"
+                and (
+                    "guest_pc_trace_backend::record_device_source_build_duration"
+                    in row[2]
+                    or "build_guest_pc_trace_stage_source_devices_from_device_material_timing"
+                    in row[2]
+                )
+            ):
+                values[NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY] = 1
+            continue
         if "=" not in line:
             continue
         key, value = line.split("=", 1)
@@ -1748,6 +1786,7 @@ def data_residency_action_hint(
     cuda_transfer_hint: str,
     source_retention_rejected_bytes: int,
     segment_commit_cuda_memory_total_bytes: int,
+    trace_descriptor_residency_pipeline: bool,
 ) -> str:
     if (
         source_rebuild_hint
@@ -1775,6 +1814,8 @@ def data_residency_action_hint(
         and cuda_transfer_hint == "reduce_bulk_h2d_source_uploads"
     ):
         return "increase_source_residency_coverage"
+    if trace_descriptor_residency_pipeline:
+        return "trace_descriptor_residency_pipeline"
     return "none"
 
 
@@ -2978,6 +3019,7 @@ def summarize_profile_values(
         cuda_transfer_hint,
         source_retention_rejected_bytes,
         segment_commit_cuda_memory_total_bytes,
+        values.get(NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY, 0) > 0,
     )
     source_retention_total_exceeds_device_memory = (
         source_retention_exceeds_device_memory_hint(
@@ -3506,6 +3548,23 @@ def sibling_cpu_summary_paths(input_path: Path) -> list[Path]:
     return paths
 
 
+def sibling_copy_summary_paths(input_path: Path) -> list[Path]:
+    candidates = [
+        input_path.with_suffix(".copy-summary.txt"),
+        input_path.with_suffix(".copy.txt"),
+        input_path.with_name(f"{input_path.name}.copy-summary.txt"),
+        input_path.with_name(f"{input_path.name}.copy.txt"),
+    ]
+    paths = []
+    seen = set()
+    for candidate in candidates:
+        if candidate == input_path or candidate in seen:
+            continue
+        seen.add(candidate)
+        paths.append(candidate)
+    return paths
+
+
 def read_input(path: str | None) -> tuple[str, str]:
     if path is None or path == "-":
         return ("stdin", sys.stdin.read())
@@ -3514,7 +3573,9 @@ def read_input(path: str | None) -> tuple[str, str]:
     sibling_reports = [
         report_path.read_text(encoding="utf-8")
         for report_path in (
-            sibling_perf_report_paths(input_path) + sibling_cpu_summary_paths(input_path)
+            sibling_perf_report_paths(input_path)
+            + sibling_cpu_summary_paths(input_path)
+            + sibling_copy_summary_paths(input_path)
         )
         if report_path.is_file()
     ]

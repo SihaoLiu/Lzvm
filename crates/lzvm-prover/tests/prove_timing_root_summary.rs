@@ -357,6 +357,89 @@ fn prove_timing_root_summary_reports_source_retention_rebuild_shape() {
 }
 
 #[test]
+fn prove_timing_root_summary_reads_sibling_nsys_copy_residency_hint() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("crate should live under workspace root");
+    let script_path = workspace_root.join("scripts/prove-timing-root-summary.py");
+    let dir = std::env::temp_dir().join(format!(
+        "prove-timing-root-summary-copy-residency-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("sample.log");
+    let copy_summary_path = dir.join("sample.copy-summary.txt");
+    std::fs::write(
+        &log_path,
+        [
+            "input_bytes=2758032",
+            "timing_total_ms=8250",
+            "timing_guest_stage_tree_commit_root_count=23",
+            "timing_guest_stage_tree_commit_root_materialization_groups=23",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+            "timing_guest_device_source_descriptor_upload_bytes=8264703744",
+            "timing_guest_descriptor_buffer_retention_attempts=23",
+            "timing_guest_descriptor_buffer_retention_retained=23",
+            "timing_guest_descriptor_buffer_retention_rejected=0",
+        ]
+        .join("\n"),
+    )
+    .expect("timing fixture should be written");
+    std::fs::write(
+        &copy_summary_path,
+        [
+            "cuda_transfer_triage",
+            "metric,value,detail",
+            "h2d_bulk_app_frame_hint,reuse_device_source_for_hot_frame,bytes=369098752 calls=22 app_frame=lzvm_prover::guest_pc_trace_backend::record_device_source_build_duration::hash@/workspace/target/release/lzvm",
+        ]
+        .join("\n"),
+    )
+    .expect("copy summary fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines
+        .next()
+        .expect("summary should include a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should include a data row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        value("data_residency_action_hint"),
+        "trace_descriptor_residency_pipeline"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_seed_direct_lift_miss_reasons() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
