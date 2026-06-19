@@ -69,7 +69,13 @@ theorem gpu_setup_checked_acceptance_sound
         publicInput
         proof
         acceptedWithSetup)
-      (abstract_verifier_sound assumptions publicInput proof acceptedWithSetup.left)
+      (checked_acceptance_sound_witness
+        (auxiliaryAccepted := fun _publicInput _proof =>
+          validation.constantsSoundFor request.device request.requiredBits)
+        assumptions
+        publicInput
+        proof
+        acceptedWithSetup)
 
 theorem gpu_setup_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -81,13 +87,13 @@ theorem gpu_setup_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof checked.left)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof checked.left)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
-          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
+    checked_acceptance_verifier_core_contract
+      (auxiliaryAccepted := fun _publicInput _proof =>
+        validation.constantsSoundFor request.device request.requiredBits)
+      assumptions
+      publicInput
+      proof
+      checked
 
 theorem gpu_allocation_cache_reuse_preserves_written_contents
     (validation : GpuAllocationCacheValidation)
@@ -158,7 +164,11 @@ theorem gpu_allocation_checked_acceptance_sound
         publicInput
         proof
         acceptedWithAllocation)
-      (abstract_verifier_sound assumptions publicInput proof acceptedWithAllocation.left)
+      (checked_acceptance_sound_witness
+        assumptions
+        publicInput
+        proof
+        acceptedWithAllocation)
 
 theorem gpu_allocation_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -170,13 +180,11 @@ theorem gpu_allocation_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof checked.left)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof checked.left)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
-          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
+    checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
 
 theorem gpu_host_device_copy_round_trip_implies_written_contents
     (validation : GpuHostDeviceCopyRoundTripValidation)
@@ -256,7 +264,11 @@ theorem gpu_host_device_copy_round_trip_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound assumptions publicInput proof checked.left)
+      (checked_acceptance_sound_witness
+        assumptions
+        publicInput
+        proof
+        checked)
 
 theorem gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -273,13 +285,11 @@ theorem gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contrac
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof checked.left)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof checked.left)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
-          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
+    checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
 
 theorem gpu_temporary_buffer_reuse_implies_same_request
     (validation : GpuTemporaryBufferReuseValidation)
@@ -393,7 +403,11 @@ theorem gpu_temporary_buffer_reuse_checked_acceptance_sound
   exact
     And.intro sameRequest
       (And.intro pendingComplete
-        (abstract_verifier_sound assumptions publicInput proof checked.left))
+        (checked_acceptance_sound_witness
+          assumptions
+          publicInput
+          proof
+          checked))
 
 theorem gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -411,13 +425,11 @@ theorem gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof checked.left)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof checked.left)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
-          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
+    checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
 
 theorem gpu_allocator_no_wait_bypass_implies_same_request
     (validation : GpuAllocatorNoWaitBypassValidation)
@@ -579,7 +591,11 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_sound
     And.intro sameRequest
       (And.intro pendingNotReused
         (And.intro freshIssued
-          (abstract_verifier_sound assumptions publicInput proof checked.left)))
+          (checked_acceptance_sound_witness
+            assumptions
+            publicInput
+            proof
+            checked)))
 
 theorem gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -597,13 +613,11 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof checked.left)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof checked.left)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
-          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
+    checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
 
 theorem gpu_allocator_no_wait_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -648,7 +662,11 @@ theorem gpu_allocator_no_wait_limit_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound assumptions publicInput proof checked.left)
+      (checked_acceptance_sound_witness
+        assumptions
+        publicInput
+        proof
+        checked)
 
 theorem gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -665,13 +683,11 @@ theorem gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof checked.left)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof checked.left)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
-          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
+    checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
 
 theorem guest_pc_trace_segment_queue_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -716,7 +732,11 @@ theorem guest_pc_trace_segment_queue_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound assumptions publicInput proof checked.left)
+      (checked_acceptance_sound_witness
+        assumptions
+        publicInput
+        proof
+        checked)
 
 theorem guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -733,13 +753,11 @@ theorem guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof checked.left)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof checked.left)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
-          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
+    checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
 
 theorem guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -1246,7 +1264,11 @@ theorem gpu_retained_leaf_digest_limit_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound assumptions publicInput proof checked.left)
+      (checked_acceptance_sound_witness
+        assumptions
+        publicInput
+        proof
+        checked)
 
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1263,13 +1285,11 @@ theorem gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof checked.left)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof checked.left)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
-          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
+    checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
 
 theorem gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
     {system : VerifierModel}
@@ -1314,7 +1334,11 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound assumptions publicInput proof checked.left)
+      (checked_acceptance_sound_witness
+        assumptions
+        publicInput
+        proof
+        checked)
 
 theorem gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1331,13 +1355,11 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contra
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof checked.left)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof checked.left)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
-          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
+    checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
 
 theorem fri_fixed_column_cache_same_request_implies_cached_contents_bound
     (validation : FriFixedColumnCacheValidation)
@@ -1456,7 +1478,14 @@ theorem fri_fixed_column_cache_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (abstract_verifier_sound assumptions publicInput proof checked.left)
+      (checked_acceptance_sound_witness
+        (auxiliaryAccepted := fun publicInput proof =>
+          validation.fixedColumnCacheRequestBound cached fresh
+            /\ validation.allocationValidation.writtenContentsBound fresh publicInput proof)
+        assumptions
+        publicInput
+        proof
+        checked)
 
 theorem fri_fixed_column_cache_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1474,13 +1503,14 @@ theorem fri_fixed_column_cache_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof checked.left)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof checked.left)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
-          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
+    checked_acceptance_verifier_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.fixedColumnCacheRequestBound cached fresh
+          /\ validation.allocationValidation.writtenContentsBound fresh publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
 
 
 end Lzvm

@@ -274,6 +274,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "{module_name} should not duplicate abstract verifier soundness for ignored metadata"
         );
     }
+    assert_eq!(
+        gpu_runtime_source.matches("abstract_verifier_sound").count(),
+        1,
+        "Lean GPU runtime wrappers should centralize abstract verifier soundness in checked_acceptance_sound_witness"
+    );
     for (theorem_name, projector, wrapper) in [
         (
             "runtime_performance_observation_timing_observations_acceptance_sound",
@@ -2675,13 +2680,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_setup_checked_acceptance_verifier_core_contract",
-        &[
-            "checked.left",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -2694,13 +2693,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_allocation_checked_acceptance_verifier_core_contract",
-        &[
-            "checked.left",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -2713,13 +2706,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
-        &[
-            "checked.left",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -2732,13 +2719,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
-        &[
-            "checked.left",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -2751,13 +2732,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract",
-        &[
-            "checked.left",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -2770,13 +2745,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract",
-        &[
-            "checked.left",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -2789,13 +2758,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract",
-        &[
-            "checked.left",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -2808,13 +2771,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
-        &[
-            "checked.left",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -2827,13 +2784,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
-        &[
-            "checked.left",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -2846,13 +2797,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
-        &[
-            "checked.left",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
