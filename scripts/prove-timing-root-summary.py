@@ -292,6 +292,11 @@ CUDA_COPY_H2D_WAIT_NS_KEY = "timing_cuda_allocator_copy_h2d_wait_ns"
 CUDA_COPY_H2D_HOT_BYTES_KEY = "timing_cuda_allocator_copy_h2d_hot_bytes"
 CUDA_COPY_H2D_HOT_COUNT_KEY = "timing_cuda_allocator_copy_h2d_hot_count"
 CUDA_COPY_H2D_HOT_WAIT_NS_KEY = "timing_cuda_allocator_copy_h2d_hot_wait_ns"
+CUDA_COPY_D2H_BYTES_KEY = "timing_cuda_allocator_copy_d2h_bytes"
+CUDA_COPY_D2H_WAIT_NS_KEY = "timing_cuda_allocator_copy_d2h_wait_ns"
+CUDA_COPY_D2H_HOT_BYTES_KEY = "timing_cuda_allocator_copy_d2h_hot_bytes"
+CUDA_COPY_D2H_HOT_COUNT_KEY = "timing_cuda_allocator_copy_d2h_hot_count"
+CUDA_COPY_D2H_HOT_WAIT_NS_KEY = "timing_cuda_allocator_copy_d2h_hot_wait_ns"
 SOURCE_RETENTION_ATTEMPTS_KEY = "timing_guest_stage_source_retention_attempts"
 SOURCE_RETENTION_RETAINED_KEY = "timing_guest_stage_source_retention_retained"
 SOURCE_RETENTION_REJECTED_KEY = "timing_guest_stage_source_retention_rejected"
@@ -472,6 +477,10 @@ HEADER = (
     "trace_report_visit_residual_pct,"
     "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms,"
     "direct_d2h_hot_wait_pct,direct_d2h_action_hint,"
+    "cuda_allocator_d2h_bytes,cuda_allocator_d2h_wait_ms,"
+    "cuda_allocator_d2h_hot_bytes,cuda_allocator_d2h_hot_count,"
+    "cuda_allocator_d2h_hot_wait_ms,cuda_allocator_d2h_hot_wait_pct,"
+    "cuda_allocator_d2h_action_hint,"
     "cuda_host_register_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
     "segment_commit_cuda_memory_total_bytes,"
     "segment_commit_cuda_memory_initial_free_bytes,"
@@ -667,6 +676,11 @@ TIMING_KEYS = {
     CUDA_COPY_H2D_HOT_BYTES_KEY,
     CUDA_COPY_H2D_HOT_COUNT_KEY,
     CUDA_COPY_H2D_HOT_WAIT_NS_KEY,
+    CUDA_COPY_D2H_BYTES_KEY,
+    CUDA_COPY_D2H_WAIT_NS_KEY,
+    CUDA_COPY_D2H_HOT_BYTES_KEY,
+    CUDA_COPY_D2H_HOT_COUNT_KEY,
+    CUDA_COPY_D2H_HOT_WAIT_NS_KEY,
     DESCRIPTOR_RETENTION_ATTEMPTS_KEY,
     DESCRIPTOR_RETENTION_RETAINED_KEY,
     DESCRIPTOR_RETENTION_REJECTED_KEY,
@@ -1018,6 +1032,10 @@ def cuda_transfer_action_hint_from_values(values: dict[str, int]) -> str:
     h2d_hot_wait_ms = values.get(CUDA_COPY_H2D_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
     d2h_hot_count = values.get(DIRECT_D2H_HOT_COUNT_KEY, 0)
     d2h_hot_wait_ms = values.get(DIRECT_D2H_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
+    allocator_d2h_hot_count = values.get(CUDA_COPY_D2H_HOT_COUNT_KEY, 0)
+    allocator_d2h_hot_wait_ms = (
+        values.get(CUDA_COPY_D2H_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
     descriptor_retained = values.get(DESCRIPTOR_RETENTION_RETAINED_KEY, 0)
     descriptor_rejected = values.get(DESCRIPTOR_RETENTION_REJECTED_KEY, 0)
 
@@ -1043,9 +1061,30 @@ def cuda_transfer_action_hint_from_values(values: dict[str, int]) -> str:
         and d2h_hot_wait_ms >= CUDA_TRANSFER_WAIT_MS_THRESHOLD
     ):
         return "batch_or_keep_small_d2h_on_device"
+    if (
+        allocator_d2h_hot_count >= CUDA_TRANSFER_HOT_COPY_COUNT_THRESHOLD
+        and allocator_d2h_hot_wait_ms >= CUDA_TRANSFER_WAIT_MS_THRESHOLD
+    ):
+        return "batch_or_keep_small_d2h_on_device"
     if h2d_bytes >= CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD:
         return "inspect_bulk_h2d_source_uploads"
     return "none"
+
+
+def allocator_d2h_action_hint(
+    allocator_d2h_wait_ms: float,
+    allocator_d2h_hot_count: int,
+    allocator_d2h_hot_wait_pct: float,
+) -> str:
+    if allocator_d2h_wait_ms < CUDA_TRANSFER_WAIT_MS_THRESHOLD:
+        return "none"
+    hot_bucket = (
+        allocator_d2h_hot_count >= CUDA_TRANSFER_HOT_COPY_COUNT_THRESHOLD
+        and allocator_d2h_hot_wait_pct >= DIRECT_D2H_HOT_WAIT_PCT_THRESHOLD
+    )
+    if hot_bucket:
+        return "batch_or_keep_hot_allocator_d2h_on_device"
+    return "inspect_allocator_d2h_waits"
 
 
 def direct_d2h_action_hint(
@@ -2524,6 +2563,25 @@ def summarize_profile_values(
         if direct_d2h_wait_ms
         else 0.0
     )
+    cuda_allocator_d2h_bytes = values.get(CUDA_COPY_D2H_BYTES_KEY, 0)
+    cuda_allocator_d2h_wait_ms = (
+        values.get(CUDA_COPY_D2H_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_allocator_d2h_hot_bytes = values.get(CUDA_COPY_D2H_HOT_BYTES_KEY, 0)
+    cuda_allocator_d2h_hot_count = values.get(CUDA_COPY_D2H_HOT_COUNT_KEY, 0)
+    cuda_allocator_d2h_hot_wait_ms = (
+        values.get(CUDA_COPY_D2H_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_allocator_d2h_hot_wait_pct = (
+        cuda_allocator_d2h_hot_wait_ms * 100.0 / cuda_allocator_d2h_wait_ms
+        if cuda_allocator_d2h_wait_ms
+        else 0.0
+    )
+    cuda_allocator_d2h_hint = allocator_d2h_action_hint(
+        cuda_allocator_d2h_wait_ms,
+        cuda_allocator_d2h_hot_count,
+        cuda_allocator_d2h_hot_wait_pct,
+    )
     direct_d2h_hint = direct_d2h_action_hint(
         direct_d2h_wait_ms,
         direct_d2h_hot_count,
@@ -2835,6 +2893,10 @@ def summarize_profile_values(
         f"{direct_d2h_hot_bytes},{direct_d2h_hot_count},"
         f"{direct_d2h_hot_wait_ms:.3f},{direct_d2h_hot_wait_pct:.3f},"
         f"{direct_d2h_hint},"
+        f"{cuda_allocator_d2h_bytes},{cuda_allocator_d2h_wait_ms:.3f},"
+        f"{cuda_allocator_d2h_hot_bytes},{cuda_allocator_d2h_hot_count},"
+        f"{cuda_allocator_d2h_hot_wait_ms:.3f},"
+        f"{cuda_allocator_d2h_hot_wait_pct:.3f},{cuda_allocator_d2h_hint},"
         f"{cuda_host_register_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
         f"{segment_commit_cuda_memory_total_bytes},"
         f"{segment_commit_cuda_memory_initial_free_bytes},"

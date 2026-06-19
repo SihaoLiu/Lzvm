@@ -846,6 +846,74 @@ fn prove_timing_root_summary_aggregates_cuda_transfer_action() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_allocator_d2h_wait_shape() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "input_bytes=12447640",
+        "timing_total_ms=48396",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_cuda_allocator_copy_d2h_bytes=291360",
+        "timing_cuda_allocator_copy_d2h_wait_ns=3429156569",
+        "timing_cuda_allocator_copy_d2h_hot_bytes=304",
+        "timing_cuda_allocator_copy_d2h_hot_count=120",
+        "timing_cuda_allocator_copy_d2h_hot_wait_ns=3409364047",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let lines = stdout.lines().collect::<Vec<_>>();
+    let headers = lines[0].split(',').collect::<Vec<_>>();
+    let fields = lines[1].split(',').collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        fields
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("cuda_allocator_d2h_bytes"), "291360");
+    assert_eq!(value("cuda_allocator_d2h_wait_ms"), "3429.157");
+    assert_eq!(value("cuda_allocator_d2h_hot_bytes"), "304");
+    assert_eq!(value("cuda_allocator_d2h_hot_count"), "120");
+    assert_eq!(value("cuda_allocator_d2h_hot_wait_ms"), "3409.364");
+    assert_eq!(value("cuda_allocator_d2h_hot_wait_pct"), "99.423");
+    assert_eq!(
+        value("cuda_allocator_d2h_action_hint"),
+        "batch_or_keep_hot_allocator_d2h_on_device"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_groups_aggregate_samples_by_input_size() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
