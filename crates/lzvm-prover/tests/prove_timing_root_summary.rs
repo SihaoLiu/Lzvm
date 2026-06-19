@@ -1258,6 +1258,7 @@ fn prove_timing_root_summary_aggregates_trace_pipeline_action() {
             "timing_guest_segment_commit_ms=21000".to_owned(),
             "timing_guest_trace_segment_receive_wait_ms=22000".to_owned(),
             "timing_guest_trace_pending_receive_wait_ms=1000".to_owned(),
+            "timing_guest_trace_parallel_lower_workers=2".to_owned(),
             "timing_guest_stage_tree_commit_root_count=120".to_owned(),
             "timing_guest_stage_tree_commit_root_materialization_groups=120".to_owned(),
             "timing_guest_stage_tree_commit_root_materialization_max_group_size=1".to_owned(),
@@ -1288,14 +1289,16 @@ fn prove_timing_root_summary_aggregates_trace_pipeline_action() {
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
-        stdout.contains("dominant_trace_pipeline_action_hint,trace_pipeline_action_consensus"),
+        stdout.contains(
+            "dominant_trace_pipeline_action_hint,trace_pipeline_action_consensus,dominant_trace_structure_hint,trace_structure_consensus"
+        ),
         "aggregate summary should expose cross-sample action hint stability: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            "aggregate,3,3,51950,52016.667,52000.000,52100,0.288,yes,no,trace_generation_and_commit_pipeline_candidate,yes"
+            "aggregate,3,3,51950,52016.667,52000.000,52100,0.288,yes,no,trace_generation_and_commit_pipeline_candidate,yes,parallel_lower_waiting,yes"
         ),
-        "aggregate row should report the dominant trace pipeline action and consensus: stdout={stdout}"
+        "aggregate row should report the dominant trace pipeline action, trace structure, and consensus: stdout={stdout}"
     );
 }
 

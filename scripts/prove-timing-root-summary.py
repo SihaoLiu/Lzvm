@@ -585,12 +585,14 @@ AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
     "total_median_ms,total_max_ms,sample_spread_pct,close_samples,max_outlier,"
     "dominant_trace_pipeline_action_hint,trace_pipeline_action_consensus,"
+    "dominant_trace_structure_hint,trace_structure_consensus,"
     "dominant_cuda_transfer_action_hint,cuda_transfer_action_consensus"
 )
 AGGREGATE_BY_INPUT_BYTES_HEADER = (
     "aggregate_by_input_bytes,input_bytes,total_count,valid_total_count,total_min_ms,"
     "total_mean_ms,total_median_ms,total_max_ms,sample_spread_pct,close_samples,"
     "max_outlier,dominant_trace_pipeline_action_hint,trace_pipeline_action_consensus,"
+    "dominant_trace_structure_hint,trace_structure_consensus,"
     "dominant_cuda_transfer_action_hint,cuda_transfer_action_consensus"
 )
 CLOSE_SAMPLE_SPREAD_PCT = 5.0
@@ -2341,6 +2343,18 @@ def trace_structure_hint(
     return "none"
 
 
+def trace_structure_hint_from_values(values: dict[str, int]) -> str:
+    return trace_structure_hint(
+        values.get(TOTAL_MS_KEY, 0),
+        values.get(RUNNER_MS_KEY, 0),
+        values.get(LOWERER_MS_KEY, 0),
+        values.get(STREAM_ELAPSED_MS_KEY, 0),
+        values.get(SEGMENT_RECEIVE_WAIT_MS_KEY, 0),
+        values.get(PARALLEL_LOWER_WORKERS_KEY, 0),
+        values.get(LEAF_KERNEL_MS_KEY, 0),
+    )
+
+
 def summarize_profile_values(
     label: str,
     values: dict[str, int],
@@ -3458,7 +3472,10 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
     ]
     valid_total_count = len(totals)
     if not totals:
-        return f"aggregate,{total_count},0,0,0.000,0.000,0,0.000,no,no,none,no,none,no"
+        return (
+            f"aggregate,{total_count},0,0,0.000,0.000,0,0.000,no,no,"
+            "none,no,none,no,none,no"
+        )
 
     total_min_ms = min(totals)
     total_mean_ms = sum(totals) / valid_total_count
@@ -3484,6 +3501,13 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
         for _, values in valid_inputs
     ]
     dominant_action_hint, action_consensus = dominant_hint_and_consensus(action_hints)
+    trace_structure_hints = [
+        trace_structure_hint_from_values(values)
+        for _, values in valid_inputs
+    ]
+    dominant_trace_structure_hint, trace_structure_consensus = (
+        dominant_hint_and_consensus(trace_structure_hints)
+    )
     transfer_hints = [
         cuda_transfer_action_hint_from_values(values)
         for _, values in valid_inputs
@@ -3494,6 +3518,7 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
         f"{total_mean_ms:.3f},{total_median_ms:.3f},{total_max_ms},"
         f"{sample_spread_pct:.3f},{close_samples},{max_outlier},"
         f"{dominant_action_hint},{action_consensus},"
+        f"{dominant_trace_structure_hint},{trace_structure_consensus},"
         f"{dominant_transfer_hint},{transfer_consensus}"
     )
 
