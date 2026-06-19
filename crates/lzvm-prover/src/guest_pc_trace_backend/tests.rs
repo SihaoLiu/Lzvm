@@ -875,6 +875,11 @@ fn seeded_pending_segments_parallel_lower_matches_serial_output() {
             parallel.segment.trace_source_prefix_rows,
             serial.segment.trace_source_prefix_rows
         );
+        #[cfg(feature = "cuda")]
+        assert_eq!(
+            parallel.segment.device_segment_material,
+            serial.segment.device_segment_material
+        );
         assert_eq!(parallel.segment.trace, serial.segment.trace);
         assert_eq!(parallel.segment.unit_values, serial.segment.unit_values);
         assert_eq!(parallel.segment.proof_values, serial.segment.proof_values);
@@ -1019,6 +1024,11 @@ fn parallel_lower_env_stream_matches_serial_segments() {
         assert_eq!(
             parallel.trace_source_prefix_rows,
             serial.trace_source_prefix_rows
+        );
+        #[cfg(feature = "cuda")]
+        assert_eq!(
+            parallel.device_segment_material,
+            serial.device_segment_material
         );
         assert_eq!(parallel.trace, serial.trace);
         assert_eq!(parallel.unit_values, serial.unit_values);
