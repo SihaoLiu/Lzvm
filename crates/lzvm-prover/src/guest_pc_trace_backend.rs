@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::mem::size_of;
@@ -972,27 +973,55 @@ struct GuestPcTraceSegmentSlice {
     reports: Vec<GuestMachineReport>,
 }
 
-struct GuestPcTraceSegmentReplaySnapshot<H> {
-    memory: GuestMachineMemory,
-    state: GuestMachineState,
-    fcall_handler: H,
+trait GuestPcTraceReplayHandler: GuestFcallHandler + Any + Send + Sync {
+    fn clone_box(&self) -> Box<dyn GuestPcTraceReplayHandler>;
+    fn equals_any(&self, other: &dyn Any) -> bool;
 }
 
-impl<H: Clone> GuestPcTraceSegmentReplaySnapshot<H> {
-    fn capture(memory: &GuestMachineMemory, state: &GuestMachineState, fcall_handler: &H) -> Self {
+impl<H> GuestPcTraceReplayHandler for H
+where
+    H: GuestFcallHandler + Clone + PartialEq + Send + Sync + 'static,
+{
+    fn clone_box(&self) -> Box<dyn GuestPcTraceReplayHandler> {
+        Box::new(self.clone())
+    }
+
+    fn equals_any(&self, other: &dyn Any) -> bool {
+        other.downcast_ref::<H>() == Some(self)
+    }
+}
+
+impl Clone for Box<dyn GuestPcTraceReplayHandler> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
+#[derive(Clone)]
+struct GuestPcTraceSegmentReplaySnapshot {
+    memory: GuestMachineMemory,
+    state: GuestMachineState,
+    fcall_handler: Box<dyn GuestPcTraceReplayHandler>,
+}
+
+impl GuestPcTraceSegmentReplaySnapshot {
+    fn capture<H>(memory: &GuestMachineMemory, state: &GuestMachineState, fcall_handler: &H) -> Self
+    where
+        H: GuestPcTraceReplayHandler,
+    {
         Self {
             memory: memory.clone(),
             state: state.clone(),
-            fcall_handler: fcall_handler.clone(),
+            fcall_handler: fcall_handler.clone_box(),
         }
     }
 }
 
-struct GuestPcTraceSegmentReplay<H> {
+struct GuestPcTraceSegmentReplay {
     slice: GuestPcTraceSegmentSlice,
     memory: GuestMachineMemory,
     state: GuestMachineState,
-    fcall_handler: H,
+    fcall_handler: Box<dyn GuestPcTraceReplayHandler>,
 }
 
 struct GuestPcTracePendingSegmentSlice {
@@ -1003,6 +1032,8 @@ struct GuestPcTracePendingSegmentSlice {
     lookahead_instruction: Option<RiscvInstruction>,
     is_last_segment: bool,
     seed: Option<Box<ZiskMainSegmentSeed>>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    replay_snapshot: Option<GuestPcTraceSegmentReplaySnapshot>,
 }
 
 #[cfg(feature = "cuda")]
@@ -1022,7 +1053,7 @@ enum GuestPcTraceSegmentStreamMessage {
 }
 
 enum GuestPcTracePendingSegmentMessage {
-    Segment(GuestPcTracePendingSegmentSlice),
+    Segment(Box<GuestPcTracePendingSegmentSlice>),
     Complete(Box<GuestPcTraceStreamResult>),
     Error(GuestPcTraceBackendError),
 }
@@ -2725,11 +2756,11 @@ fn run_guest_pc_trace_segment_slice(
     )
 }
 
-fn replay_guest_pc_trace_segment_from_snapshot<H: GuestFcallHandler>(
-    snapshot: GuestPcTraceSegmentReplaySnapshot<H>,
+fn replay_guest_pc_trace_segment_from_snapshot(
+    snapshot: GuestPcTraceSegmentReplaySnapshot,
     instruction_limit: u64,
     row_limit: usize,
-) -> Result<GuestPcTraceSegmentReplay<H>, GuestPcTraceBackendError> {
+) -> Result<GuestPcTraceSegmentReplay, GuestPcTraceBackendError> {
     let GuestPcTraceSegmentReplaySnapshot {
         mut memory,
         mut state,
@@ -2738,7 +2769,7 @@ fn replay_guest_pc_trace_segment_from_snapshot<H: GuestFcallHandler>(
     let slice = run_guest_pc_trace_segment_slice(
         &mut memory,
         &mut state,
-        &mut fcall_handler,
+        &mut *fcall_handler,
         instruction_limit,
         row_limit,
     )?;
@@ -3432,7 +3463,9 @@ fn produce_guest_pc_trace_segments(
                 |pending| {
                     let send_started = Instant::now();
                     pending_sender
-                        .send(GuestPcTracePendingSegmentMessage::Segment(pending))
+                        .send(GuestPcTracePendingSegmentMessage::Segment(Box::new(
+                            pending,
+                        )))
                         .map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
                             message: "guest PC trace pending segment consumer stopped".to_owned(),
                         })?;
@@ -3503,11 +3536,12 @@ fn produce_guest_pc_trace_pending_slices(
     let mut timing = GuestPcTraceStreamTiming::default();
     let runner_seed_snapshot = guest_pc_trace_runner_seed_snapshot_enabled();
     let segment_replay = guest_pc_trace_segment_replay_enabled();
+    let carry_replay_snapshot = guest_pc_trace_segment_replay_snapshot_enabled();
     let mut seed_mirror = (guest_pc_trace_seed_mirror_enabled() || runner_seed_snapshot)
         .then(ZiskMainSegmentSeed::new);
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
-        let replay_snapshot = segment_replay
+        let replay_snapshot = (segment_replay || carry_replay_snapshot)
             .then(|| GuestPcTraceSegmentReplaySnapshot::capture(&memory, &state, &fcall_handler));
         let mut runner_boundary_snapshot = if runner_seed_snapshot {
             let seed = seed_mirror.as_ref().ok_or_else(|| {
@@ -3537,7 +3571,12 @@ fn produce_guest_pc_trace_pending_slices(
                 row_count,
             )?
         };
-        if let Some(replay_snapshot) = replay_snapshot {
+        if segment_replay {
+            let replay_snapshot = replay_snapshot.clone().ok_or_else(|| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace segment replay snapshot missing".to_owned(),
+                }
+            })?;
             let replay = replay_guest_pc_trace_segment_from_snapshot(
                 replay_snapshot,
                 remaining_limit,
@@ -3549,7 +3588,7 @@ fn produce_guest_pc_trace_pending_slices(
                 || replay.slice.reports != slice.reports
                 || replay.memory != memory
                 || replay.state != state
-                || replay.fcall_handler != fcall_handler
+                || !replay.fcall_handler.equals_any(&fcall_handler)
             {
                 return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
                     message: "guest PC trace segment replay diverged from serial runner".to_owned(),
@@ -3723,6 +3762,7 @@ fn produce_guest_pc_trace_pending_slices(
             lookahead_instruction,
             is_last_segment,
             seed: seed.map(Box::new),
+            replay_snapshot: carry_replay_snapshot.then_some(replay_snapshot).flatten(),
         })?;
         if let Some(next_seed) = next_seed {
             seed_mirror = Some(next_seed);
@@ -3952,7 +3992,7 @@ fn lower_guest_pc_trace_pending_segments(
         };
         timing.pending_receive_wait_duration += receive_started.elapsed();
         let pending = match message {
-            GuestPcTracePendingSegmentMessage::Segment(pending) => pending,
+            GuestPcTracePendingSegmentMessage::Segment(pending) => *pending,
             GuestPcTracePendingSegmentMessage::Complete(stream) => return Ok(*stream),
             GuestPcTracePendingSegmentMessage::Error(error) => return Err(error),
         };
@@ -4119,6 +4159,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                 dispatcher_timing.pending_receive_wait_duration += receive_started.elapsed();
                 match message {
                     GuestPcTracePendingSegmentMessage::Segment(pending) => {
+                        let pending = *pending;
                         dispatcher_timing.trace_report_buffer_capacity += pending.report_capacity;
                         dispatcher_timing.trace_report_buffer_max_capacity = dispatcher_timing
                             .trace_report_buffer_max_capacity
@@ -4320,6 +4361,10 @@ fn guest_pc_trace_seed_mirror_enabled() -> bool {
 
 fn guest_pc_trace_segment_replay_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY", false)
+}
+
+fn guest_pc_trace_segment_replay_snapshot_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY_SNAPSHOT", false)
 }
 
 fn guest_pc_trace_runner_seed_snapshot_enabled() -> bool {

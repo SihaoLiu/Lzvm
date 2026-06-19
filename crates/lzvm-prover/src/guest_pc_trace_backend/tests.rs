@@ -590,6 +590,9 @@ fn guest_pc_trace_seed_mirror_attaches_pending_segment_seeds_when_enabled() {
 
     assert_eq!(pending.len(), 2);
     assert!(pending.iter().all(|segment| segment.seed.is_some()));
+    assert!(pending
+        .iter()
+        .all(|segment| segment.replay_snapshot.is_none()));
     assert_eq!(produced.timing.seed_direct_lift_attempt_count(), 0);
     assert_eq!(produced.timing.seed_direct_lift_success_count(), 0);
     assert_eq!(produced.timing.seed_full_advance_count(), pending.len());
@@ -634,6 +637,7 @@ fn guest_pc_trace_runner_seed_snapshot_matches_mirror_when_enabled() {
 
     let _mirror_env = EnvGuard::new("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
     let _snapshot_env = EnvGuard::new("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT", "1");
+    let _replay_env = EnvGuard::new("LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY_SNAPSHOT", "1");
     let dir = repo_temp_dir("guest-pc-runner-seed-snapshot");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
@@ -669,6 +673,21 @@ fn guest_pc_trace_runner_seed_snapshot_matches_mirror_when_enabled() {
 
     assert_eq!(pending.len(), 2);
     assert!(pending.iter().all(|segment| segment.seed.is_some()));
+    assert!(pending
+        .iter()
+        .all(|segment| segment.replay_snapshot.is_some()));
+    for segment in &pending {
+        let replay = replay_guest_pc_trace_segment_from_snapshot(
+            segment
+                .replay_snapshot
+                .clone()
+                .expect("pending segment should carry replay snapshot"),
+            16,
+            layout.row_count(),
+        )
+        .expect("pending segment snapshot should replay");
+        assert_eq!(replay.slice.reports, segment.reports);
+    }
 }
 
 #[test]
@@ -962,7 +981,7 @@ fn guest_pc_trace_segment_replay_snapshot_matches_serial_slice() {
     assert_eq!(replay.slice.reports, serial.reports);
     assert_eq!(replay.memory, memory);
     assert_eq!(replay.state, state);
-    assert_eq!(replay.fcall_handler, fcall_handler);
+    assert!(replay.fcall_handler.equals_any(&fcall_handler));
 }
 
 #[test]
