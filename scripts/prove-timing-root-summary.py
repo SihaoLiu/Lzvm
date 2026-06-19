@@ -423,6 +423,9 @@ OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
 SINGLE_QUERY_ROW_VALUE_BOUNDARY_HINT = (
     "single_query_unit_boundary_blocks_row_value_batch"
 )
+EXTERNAL_SOURCE_ROW_VALUE_BOUNDARY_HINT = (
+    "external_source_unit_boundary_blocks_row_value_batch"
+)
 RETAINED_PARENT_CHECKPOINT_PATH_SECONDARY_MS_THRESHOLD = 500
 CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD = 8 * 1024 * 1024 * 1024
 CUDA_TRANSFER_WAIT_MS_THRESHOLD = 500.0
@@ -522,7 +525,8 @@ HEADER = (
     "opening_row_value_device_single_stage_count,"
     "opening_row_value_device_single_max_stage,"
     "opening_row_value_device_cross_unit_batch_savings,"
-    "opening_batching_hint,opening_retained_parent_checkpoint_action_hint,"
+    "opening_batching_hint,opening_external_source_boundary_hint,"
+    "opening_retained_parent_checkpoint_action_hint,"
     "root_count,materialization_groups,"
     "materialization_max_group_size,roots_per_group,needs_cross_segment_root_pipeline,"
     "root_pipeline_policy_hint,leaf_kernel_ms,leaf_coset_calls,leaf_coset_columns,leaf_ntt_launches,"
@@ -1745,6 +1749,28 @@ def opening_batching_hint(
             return "retained_parent_checkpoint_path_time_secondary"
         return "cross_stage_retained_parent_checkpoint_prefix_suffix_gather_candidate"
     return "none"
+
+
+def opening_external_source_boundary_hint(
+    external_source_count: int,
+    query_units: int,
+    single_query_units: int,
+    row_value_device_rows: int,
+    row_value_device_download_batches: int,
+    row_value_device_single_downloads: int,
+    direct_d2h_wait_ms: float,
+) -> str:
+    if direct_d2h_wait_ms < OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD:
+        return "none"
+    if external_source_count <= 0 or query_units <= 1:
+        return "none"
+    if single_query_units < query_units:
+        return "none"
+    if row_value_device_rows <= 1 or row_value_device_download_batches != 0:
+        return "none"
+    if row_value_device_single_downloads <= 1:
+        return "none"
+    return EXTERNAL_SOURCE_ROW_VALUE_BOUNDARY_HINT
 
 
 def opening_device_single_stage_shape(values: dict[str, int]) -> tuple[int, int, int]:
@@ -3243,6 +3269,15 @@ def summarize_profile_values(
         retained_parent_checkpoint_path_ms,
         direct_d2h_wait_ms,
     )
+    opening_external_source_boundary = opening_external_source_boundary_hint(
+        opening_external_source_count,
+        opening_query_units,
+        opening_single_query_units,
+        opening_row_value_device_rows,
+        opening_row_value_device_download_batches,
+        opening_row_value_device_single_downloads,
+        direct_d2h_wait_ms,
+    )
     leaf_launch_pressure = "yes" if leaf_ntt_launches >= 10_000 else "no"
     trace_to_leaf_ratio = (
         max(runner_ms, lowerer_ms) / leaf_kernel_ms if leaf_kernel_ms else 0.0
@@ -3502,7 +3537,8 @@ def summarize_profile_values(
         f"{opening_row_value_device_single_stage_count},"
         f"{opening_row_value_device_single_max_stage},"
         f"{opening_row_value_device_cross_unit_batch_savings},"
-        f"{opening_hint},{retained_parent_checkpoint_action_hint},"
+        f"{opening_hint},{opening_external_source_boundary},"
+        f"{retained_parent_checkpoint_action_hint},"
         f"{root_count},{groups},{max_group_size},"
         f"{roots_per_group:.3f},{needs_cross_segment_root_pipeline},{policy_hint},"
         f"{leaf_kernel_ms},{leaf_coset_calls},{leaf_coset_columns},{leaf_ntt_launches},"
