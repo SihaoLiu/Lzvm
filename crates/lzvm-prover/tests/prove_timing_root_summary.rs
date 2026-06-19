@@ -352,7 +352,7 @@ fn prove_timing_root_summary_reports_source_retention_rebuild_shape() {
     );
     assert_eq!(
         value("data_residency_action_hint"),
-        "full_source_retention_exceeds_device_memory"
+        "source_residency_requires_chunked_design"
     );
 }
 

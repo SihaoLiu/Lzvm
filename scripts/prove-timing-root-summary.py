@@ -1695,7 +1695,7 @@ def data_residency_action_hint(
         and segment_commit_cuda_memory_total_bytes > 0
         and source_retention_rejected_bytes > segment_commit_cuda_memory_total_bytes
     ):
-        return "full_source_retention_exceeds_device_memory"
+        return "source_residency_requires_chunked_design"
     if (
         source_rebuild_hint == "retained_source_disabled_external_rebuild"
         and cuda_transfer_hint == "reduce_bulk_h2d_source_uploads"
