@@ -482,6 +482,7 @@ HEADER = (
     "cuda_allocator_d2h_hot_wait_ms,cuda_allocator_d2h_hot_wait_pct,"
     "cuda_allocator_d2h_action_hint,"
     "cuda_host_register_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
+    "data_residency_action_hint,"
     "segment_commit_cuda_memory_total_bytes,"
     "segment_commit_cuda_memory_initial_free_bytes,"
     "segment_commit_cuda_memory_effective_free_bytes,"
@@ -1591,6 +1592,28 @@ def opening_source_rebuild_hint(
     if retained_source_count > 0 and external_source_count > 0:
         return "mixed_retained_and_external_sources"
     return "external_source_rebuild"
+
+
+def data_residency_action_hint(
+    source_rebuild_hint: str,
+    cuda_transfer_hint: str,
+) -> str:
+    if (
+        source_rebuild_hint == "retained_source_disabled_external_rebuild"
+        and cuda_transfer_hint == "reduce_bulk_h2d_source_uploads"
+    ):
+        return "source_retention_disabled_bulk_h2d_rebuild"
+    if (
+        source_rebuild_hint == "retained_source_budget_rejected_external_rebuild"
+        and cuda_transfer_hint == "reduce_bulk_h2d_source_uploads"
+    ):
+        return "reduce_source_retention_footprint_for_bulk_h2d"
+    if (
+        source_rebuild_hint == "partial_retained_source_external_rebuild"
+        and cuda_transfer_hint == "reduce_bulk_h2d_source_uploads"
+    ):
+        return "increase_source_residency_coverage"
+    return "none"
 
 
 def opening_source_row_value_action_hint(
@@ -2713,6 +2736,10 @@ def summarize_profile_values(
         trace_pipeline_hint,
     )
     cuda_transfer_hint = cuda_transfer_action_hint_from_values(values)
+    data_residency_hint = data_residency_action_hint(
+        source_rebuild_hint,
+        cuda_transfer_hint,
+    )
     if perf_hotspots is None:
         perf_hotspots = parse_perf_self_hotspots("")
     pending_drop_pct = perf_hotspots.get(
@@ -2913,6 +2940,7 @@ def summarize_profile_values(
         f"{cuda_allocator_d2h_hot_wait_ms:.3f},"
         f"{cuda_allocator_d2h_hot_wait_pct:.3f},{cuda_allocator_d2h_hint},"
         f"{cuda_host_register_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
+        f"{data_residency_hint},"
         f"{segment_commit_cuda_memory_total_bytes},"
         f"{segment_commit_cuda_memory_initial_free_bytes},"
         f"{segment_commit_cuda_memory_effective_free_bytes},"

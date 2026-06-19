@@ -335,6 +335,10 @@ fn prove_timing_root_summary_reports_source_retention_rebuild_shape() {
         value("opening_source_rebuild_hint"),
         "retained_source_disabled_external_rebuild"
     );
+    assert_eq!(
+        value("data_residency_action_hint"),
+        "source_retention_disabled_bulk_h2d_rebuild"
+    );
 }
 
 #[test]
