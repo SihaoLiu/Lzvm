@@ -3296,7 +3296,9 @@ def sibling_perf_report_paths(input_path: Path) -> list[Path]:
 def sibling_cpu_summary_paths(input_path: Path) -> list[Path]:
     candidates = [
         input_path.with_suffix(".cpu-summary.txt"),
+        input_path.with_suffix(".cpu.txt"),
         input_path.with_name(f"{input_path.name}.cpu-summary.txt"),
+        input_path.with_name(f"{input_path.name}.cpu.txt"),
     ]
     paths = []
     seen = set()
