@@ -520,7 +520,7 @@ HEADER = (
     "trace_report_descriptor_ns_per_row,"
     "external_op_runs,external_op_avg_run,external_op_max_run,"
     "copy_runs,copy_avg_run,copy_max_run,trace_shape_run_hint,"
-    "trace_pipeline_action_hint,performance_focus_hint"
+    "trace_pipeline_action_hint,performance_focus_hint,trace_shape_profile_hint"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -1913,6 +1913,12 @@ def trace_shape_run_hint(
     return "shape_runs_short"
 
 
+def trace_shape_profile_hint(trace_shape_hint: str) -> str:
+    if trace_shape_hint == "shape_timing_enabled":
+        return "diagnostic_only_shape_profile"
+    return "none"
+
+
 def avg_run_length(rows: int, runs: int) -> float:
     if rows <= 0 or runs <= 0:
         return 0.0
@@ -2275,6 +2281,7 @@ def summarize_profile_values(
         copy_avg_run,
         copy_max_run,
     )
+    trace_shape_profile = trace_shape_profile_hint(trace_shape_hint)
     trace_report_detail_samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
     trace_report_detail_sample_pct = (
         trace_report_detail_samples * 100.0 / trace_reports if trace_reports else 0.0
@@ -3101,7 +3108,7 @@ def summarize_profile_values(
         f"{external_op_runs},{external_op_avg_run:.3f},"
         f"{external_op_max_run},{copy_runs},{copy_avg_run:.3f},"
         f"{copy_max_run},{trace_shape_run},"
-        f"{trace_pipeline_hint},{performance_focus}"
+        f"{trace_pipeline_hint},{performance_focus},{trace_shape_profile}"
     )
 
 

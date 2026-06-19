@@ -1606,6 +1606,10 @@ fn prove_timing_root_summary_reports_parallel_reexecution_hint_for_row_volume_fl
         value("trace_pipeline_action_hint"),
         "parallel_segment_reexecution_candidate"
     );
+    assert_eq!(
+        value("trace_shape_profile_hint"),
+        "diagnostic_only_shape_profile"
+    );
 }
 
 #[test]
