@@ -90,7 +90,13 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_report_buffer_capacity",
         "timing_guest_trace_report_buffer_max_capacity",
         "timing_guest_trace_report_buffer_excess_capacity",
+        "timing_guest_trace_report_record_size_bytes",
+        "timing_guest_trace_report_storage_bytes",
+        "timing_guest_trace_report_buffer_capacity_bytes",
+        "timing_guest_trace_report_buffer_excess_bytes",
         "trace_report_buffer_shape_hint",
+        "trace_report_storage_gib",
+        "trace_report_buffer_capacity_gib",
         "timing_guest_trace_descriptor_rows",
         "timing_guest_trace_descriptor_compact_rows",
         "timing_guest_trace_descriptor_wide_rows",
@@ -2028,6 +2034,10 @@ fn prove_timing_root_summary_reports_trace_report_buffer_shape() {
         "timing_guest_trace_report_buffer_capacity=94371840",
         "timing_guest_trace_report_buffer_max_capacity=4194304",
         "timing_guest_trace_report_buffer_excess_capacity=528303",
+        "timing_guest_trace_report_record_size_bytes=128",
+        "timing_guest_trace_report_storage_bytes=12011972736",
+        "timing_guest_trace_report_buffer_capacity_bytes=12079595520",
+        "timing_guest_trace_report_buffer_excess_bytes=67622784",
     ]
     .join("\n");
 
@@ -2057,13 +2067,13 @@ fn prove_timing_root_summary_reports_trace_report_buffer_shape() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "trace_reports,trace_report_rows,trace_rows_per_report,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
+            "trace_reports,trace_report_rows,trace_rows_per_report,trace_report_record_size_bytes,trace_report_storage_bytes,trace_report_storage_gib,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,trace_report_buffer_capacity_gib,trace_report_buffer_excess_bytes,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
         ),
         "prove timing root summary should expose trace report buffer columns: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            "93843537,93917088,1.001,94371840,4194304,528303,0.560,report_buffer_capacity_tight,"
+            "93843537,93917088,1.001,128,12011972736,11.187,94371840,4194304,528303,12079595520,11.250,67622784,0.560,report_buffer_capacity_tight,"
         ),
         "prove timing root summary should classify tight report buffer capacity: stdout={stdout}"
     );

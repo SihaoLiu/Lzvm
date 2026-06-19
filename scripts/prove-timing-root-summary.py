@@ -140,6 +140,12 @@ TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY = "timing_guest_trace_report_buffer_max_cap
 TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY = (
     "timing_guest_trace_report_buffer_excess_capacity"
 )
+TRACE_REPORT_RECORD_SIZE_BYTES_KEY = "timing_guest_trace_report_record_size_bytes"
+TRACE_REPORT_STORAGE_BYTES_KEY = "timing_guest_trace_report_storage_bytes"
+TRACE_REPORT_BUFFER_CAPACITY_BYTES_KEY = (
+    "timing_guest_trace_report_buffer_capacity_bytes"
+)
+TRACE_REPORT_BUFFER_EXCESS_BYTES_KEY = "timing_guest_trace_report_buffer_excess_bytes"
 DESCRIPTOR_ROWS_KEY = "timing_guest_trace_descriptor_rows"
 DESCRIPTOR_COMPACT_ROWS_KEY = "timing_guest_trace_descriptor_compact_rows"
 DESCRIPTOR_WIDE_ROWS_KEY = "timing_guest_trace_descriptor_wide_rows"
@@ -345,8 +351,11 @@ HEADER = (
     "pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,"
     "parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,"
     "parallel_lower_max_reorder,trace_reports,trace_report_rows,"
-    "trace_rows_per_report,trace_report_buffer_capacity,"
-    "trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,"
+    "trace_rows_per_report,trace_report_record_size_bytes,"
+    "trace_report_storage_bytes,trace_report_storage_gib,"
+    "trace_report_buffer_capacity,trace_report_buffer_max_capacity,"
+    "trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,"
+    "trace_report_buffer_capacity_gib,trace_report_buffer_excess_bytes,"
     "trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
     "trace_report_lifetime_hint,"
     "descriptor_rows,descriptor_compact_rows,"
@@ -555,6 +564,10 @@ TIMING_KEYS = {
     TRACE_REPORT_BUFFER_CAPACITY_KEY,
     TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY,
     TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY,
+    TRACE_REPORT_RECORD_SIZE_BYTES_KEY,
+    TRACE_REPORT_STORAGE_BYTES_KEY,
+    TRACE_REPORT_BUFFER_CAPACITY_BYTES_KEY,
+    TRACE_REPORT_BUFFER_EXCESS_BYTES_KEY,
     DESCRIPTOR_ROWS_KEY,
     DESCRIPTOR_COMPACT_ROWS_KEY,
     DESCRIPTOR_WIDE_ROWS_KEY,
@@ -2194,12 +2207,29 @@ def summarize_profile_values(
     trace_rows_per_report = (
         trace_report_rows / trace_reports if trace_reports else 0.0
     )
+    trace_report_record_size_bytes = values.get(TRACE_REPORT_RECORD_SIZE_BYTES_KEY, 0)
+    trace_report_storage_bytes = values.get(
+        TRACE_REPORT_STORAGE_BYTES_KEY,
+        trace_reports * trace_report_record_size_bytes,
+    )
     trace_report_buffer_capacity = values.get(TRACE_REPORT_BUFFER_CAPACITY_KEY, 0)
     trace_report_buffer_max_capacity = values.get(
         TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY, 0
     )
     trace_report_buffer_excess_capacity = values.get(
         TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY, 0
+    )
+    trace_report_buffer_capacity_bytes = values.get(
+        TRACE_REPORT_BUFFER_CAPACITY_BYTES_KEY,
+        trace_report_buffer_capacity * trace_report_record_size_bytes,
+    )
+    trace_report_buffer_excess_bytes = values.get(
+        TRACE_REPORT_BUFFER_EXCESS_BYTES_KEY,
+        trace_report_buffer_excess_capacity * trace_report_record_size_bytes,
+    )
+    trace_report_storage_gib = trace_report_storage_bytes / (1024.0**3)
+    trace_report_buffer_capacity_gib = trace_report_buffer_capacity_bytes / (
+        1024.0**3
     )
     trace_report_buffer_excess_pct = (
         trace_report_buffer_excess_capacity * 100.0 / trace_report_buffer_capacity
@@ -2593,8 +2623,13 @@ def summarize_profile_values(
         f"{parallel_lower_received},{parallel_lower_emitted},"
         f"{parallel_lower_max_reorder},{trace_reports},"
         f"{trace_report_rows},{trace_rows_per_report:.3f},"
+        f"{trace_report_record_size_bytes},{trace_report_storage_bytes},"
+        f"{trace_report_storage_gib:.3f},"
         f"{trace_report_buffer_capacity},{trace_report_buffer_max_capacity},"
         f"{trace_report_buffer_excess_capacity},"
+        f"{trace_report_buffer_capacity_bytes},"
+        f"{trace_report_buffer_capacity_gib:.3f},"
+        f"{trace_report_buffer_excess_bytes},"
         f"{trace_report_buffer_excess_pct:.3f},{trace_report_buffer_hint},"
         f"{trace_lifetime_hint},"
         f"{descriptor_rows},"

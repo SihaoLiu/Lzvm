@@ -472,6 +472,10 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_report_buffer_capacity: usize,
     guest_trace_report_buffer_max_capacity: usize,
     guest_trace_report_buffer_excess_capacity: usize,
+    guest_trace_report_record_size_bytes: usize,
+    guest_trace_report_storage_bytes: usize,
+    guest_trace_report_buffer_capacity_bytes: usize,
+    guest_trace_report_buffer_excess_bytes: usize,
     guest_trace_descriptor_row_count: usize,
     guest_trace_descriptor_compact_row_count: usize,
     guest_trace_descriptor_wide_row_count: usize,
@@ -712,6 +716,12 @@ impl ProveWitnessGuestPcTraceTiming {
                 .trace_report_buffer_max_capacity(),
             guest_trace_report_buffer_excess_capacity: stream_timing
                 .trace_report_buffer_excess_capacity(),
+            guest_trace_report_record_size_bytes: stream_timing.trace_report_record_size_bytes(),
+            guest_trace_report_storage_bytes: stream_timing.trace_report_storage_bytes(),
+            guest_trace_report_buffer_capacity_bytes: stream_timing
+                .trace_report_buffer_capacity_bytes(),
+            guest_trace_report_buffer_excess_bytes: stream_timing
+                .trace_report_buffer_excess_bytes(),
             guest_trace_descriptor_row_count: stream_timing.trace_descriptor_row_count(),
             guest_trace_descriptor_compact_row_count: stream_timing
                 .trace_descriptor_compact_row_count(),
@@ -1138,6 +1148,22 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_report_buffer_excess_capacity(&self) -> usize {
         self.guest_trace_report_buffer_excess_capacity
+    }
+
+    pub fn guest_trace_report_record_size_bytes(&self) -> usize {
+        self.guest_trace_report_record_size_bytes
+    }
+
+    pub fn guest_trace_report_storage_bytes(&self) -> usize {
+        self.guest_trace_report_storage_bytes
+    }
+
+    pub fn guest_trace_report_buffer_capacity_bytes(&self) -> usize {
+        self.guest_trace_report_buffer_capacity_bytes
+    }
+
+    pub fn guest_trace_report_buffer_excess_bytes(&self) -> usize {
+        self.guest_trace_report_buffer_excess_bytes
     }
 
     pub fn guest_trace_descriptor_row_count(&self) -> usize {

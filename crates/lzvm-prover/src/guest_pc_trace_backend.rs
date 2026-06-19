@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
+use std::mem::size_of;
 use std::sync::mpsc;
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
@@ -624,6 +625,25 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_buffer_excess_capacity(&self) -> usize {
         self.trace_report_buffer_excess_capacity
+    }
+
+    pub fn trace_report_record_size_bytes(&self) -> usize {
+        size_of::<GuestMachineReport>()
+    }
+
+    pub fn trace_report_storage_bytes(&self) -> usize {
+        self.trace_report_count
+            .saturating_mul(self.trace_report_record_size_bytes())
+    }
+
+    pub fn trace_report_buffer_capacity_bytes(&self) -> usize {
+        self.trace_report_buffer_capacity
+            .saturating_mul(self.trace_report_record_size_bytes())
+    }
+
+    pub fn trace_report_buffer_excess_bytes(&self) -> usize {
+        self.trace_report_buffer_excess_capacity
+            .saturating_mul(self.trace_report_record_size_bytes())
     }
 
     pub fn trace_descriptor_row_count(&self) -> usize {
