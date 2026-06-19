@@ -2244,12 +2244,32 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     struct StreamRun {
         proof_bytes: Vec<u8>,
         witness_segment_bytes: Vec<(u32, Vec<u8>)>,
+        transcript_segment_bytes: Vec<(u32, Vec<u8>)>,
+        stage_roots: Vec<Vec<[u64; 4]>>,
         stream_ingress_count: usize,
         segment_replay_count: usize,
         parallel_lower_worker_count: usize,
         parallel_lower_emitted_count: usize,
         segment_commit_effective_worker_count: usize,
         segment_commit_worker_max_in_flight_count: usize,
+    }
+
+    fn transcript_related_segment_bytes(proof: &ProofArtifact) -> Vec<(u32, Vec<u8>)> {
+        proof
+            .segments
+            .iter()
+            .filter(|segment| {
+                matches!(
+                    segment.id,
+                    PCS_MATERIAL_MANIFEST_SEGMENT_ID
+                        | PCS_QUERY_PLAN_SEGMENT_ID
+                        | PCS_EVALUATION_SEGMENT_ID
+                        | PCS_FRI_OPENING_SEGMENT_ID
+                        | PCS_QUERY_NONCE_SEGMENT_ID
+                )
+            })
+            .map(|segment| (segment.id, segment.data.clone()))
+            .collect()
     }
 
     let _env_lock = PROVE_WITNESS_ENV_LOCK
@@ -2362,6 +2382,20 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             .iter()
             .map(|segment| (segment.id, segment.data.clone()))
             .collect::<Vec<_>>();
+        let stage_roots = witness_segments
+            .iter()
+            .map(|proof_segment| {
+                let segment =
+                    parse_witness_commitment_segment(&proof_segment.data).unwrap_or_else(|error| {
+                        panic!("{label} witness commitment segment should parse: {error}")
+                    });
+                segment
+                    .stages
+                    .iter()
+                    .map(|stage| stage.root)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
         let proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
             &lzvm_prover::WitnessAllUnitsProofRequest {
                 catalog: &catalog,
@@ -2383,12 +2417,19 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         )
         .unwrap_or_else(|error| panic!("{label} proof artifact should build: {error}"))
         .expect("proof artifact should exist");
+        let transcript_segment_bytes = transcript_related_segment_bytes(&proof);
+        assert!(
+            !transcript_segment_bytes.is_empty(),
+            "{label} proof artifact should include transcript-related segments"
+        );
         let proof_bytes = encode_proof_artifact(&proof)
             .unwrap_or_else(|error| panic!("{label} proof artifact should encode: {error}"));
 
         StreamRun {
             proof_bytes,
             witness_segment_bytes,
+            transcript_segment_bytes,
+            stage_roots,
             stream_ingress_count,
             segment_replay_count,
             parallel_lower_worker_count,
@@ -2502,6 +2543,26 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert_eq!(
         default_run.witness_segment_bytes,
         combined_run.witness_segment_bytes
+    );
+    assert_eq!(default_run.stage_roots, stream_run.stage_roots);
+    assert_eq!(default_run.stage_roots, pipeline_run.stage_roots);
+    assert_eq!(default_run.stage_roots, commit_worker_run.stage_roots);
+    assert_eq!(default_run.stage_roots, combined_run.stage_roots);
+    assert_eq!(
+        default_run.transcript_segment_bytes,
+        stream_run.transcript_segment_bytes
+    );
+    assert_eq!(
+        default_run.transcript_segment_bytes,
+        pipeline_run.transcript_segment_bytes
+    );
+    assert_eq!(
+        default_run.transcript_segment_bytes,
+        commit_worker_run.transcript_segment_bytes
+    );
+    assert_eq!(
+        default_run.transcript_segment_bytes,
+        combined_run.transcript_segment_bytes
     );
     assert_eq!(default_run.proof_bytes, stream_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, pipeline_run.proof_bytes);
