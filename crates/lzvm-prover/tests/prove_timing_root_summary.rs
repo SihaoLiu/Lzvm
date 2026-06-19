@@ -779,6 +779,94 @@ fn prove_timing_root_summary_aggregates_trace_pipeline_action() {
 }
 
 #[test]
+fn prove_timing_root_summary_excludes_diagnostic_shape_profiles_from_aggregate() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join("../../temp/prove-timing-aggregate-diagnostic-shape");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("timing summary fixture directory should be created");
+
+    let sample = |total_ms: u64, shape_profile: bool| {
+        let mut lines = vec![
+            "input_bytes=2758032".to_owned(),
+            format!("timing_total_ms={total_ms}"),
+            "timing_guest_trace_report_rows=1000".to_owned(),
+            "timing_guest_stage_tree_commit_root_count=23".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_groups=23".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1".to_owned(),
+        ];
+        if shape_profile {
+            lines.push("timing_guest_trace_external_op_rows=500".to_owned());
+        }
+        lines.join("\n")
+    };
+    let fixtures = [
+        (8_000_u64, false),
+        (8_100, false),
+        (8_200, false),
+        (20_000, true),
+    ];
+    let paths = fixtures
+        .into_iter()
+        .enumerate()
+        .map(|(index, (total_ms, shape_profile))| {
+            let path = dir.join(format!("sample-{index}.log"));
+            std::fs::write(&path, sample(total_ms, shape_profile))
+                .expect("sample timing log should be written");
+            path
+        })
+        .collect::<Vec<_>>();
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .args(&paths)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert!(
+        lines.len() >= 6,
+        "multi-sample summary should include data and aggregate rows: stdout={stdout}"
+    );
+    let profile_headers = lines[0].split(',').collect::<Vec<_>>();
+    let diagnostic_row = lines[4].split(',').collect::<Vec<_>>();
+    let profile_hint_index = profile_headers
+        .iter()
+        .position(|header| *header == "trace_shape_profile_hint")
+        .expect("summary should expose trace shape profile hint");
+    assert_eq!(
+        diagnostic_row.get(profile_hint_index),
+        Some(&"diagnostic_only_shape_profile"),
+        "shape-profile sample should be tagged before aggregation: stdout={stdout}"
+    );
+
+    let aggregate_headers = lines[5].split(',').collect::<Vec<_>>();
+    let aggregate_fields = lines[6].split(',').collect::<Vec<_>>();
+    let aggregate_value = |name: &str| {
+        let index = aggregate_headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("aggregate should expose {name}: stdout={stdout}"));
+        aggregate_fields
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("aggregate row should contain {name}: stdout={stdout}"))
+    };
+    assert_eq!(aggregate_value("total_count"), "4");
+    assert_eq!(aggregate_value("valid_total_count"), "3");
+    assert_eq!(aggregate_value("total_mean_ms"), "8100.000");
+    assert_eq!(aggregate_value("total_max_ms"), "8200");
+    assert_eq!(aggregate_value("close_samples"), "yes");
+}
+
+#[test]
 fn prove_timing_root_summary_aggregates_cuda_transfer_action() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

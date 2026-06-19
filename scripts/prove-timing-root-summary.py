@@ -1919,6 +1919,12 @@ def trace_shape_profile_hint(trace_shape_hint: str) -> str:
     return "none"
 
 
+def is_diagnostic_shape_profile(values: dict[str, int]) -> bool:
+    trace_report_rows = values.get(TRACE_REPORT_ROWS_KEY, 0)
+    trace_shape_hint = trace_shape_sample_hint(values, trace_report_rows)
+    return trace_shape_profile_hint(trace_shape_hint) == "diagnostic_only_shape_profile"
+
+
 def avg_run_length(rows: int, runs: int) -> float:
     if rows <= 0 or runs <= 0:
         return 0.0
@@ -3147,7 +3153,7 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
     valid_inputs = [
         (label, values)
         for label, values in parsed_inputs
-        if values.get(TOTAL_MS_KEY, 0) > 0
+        if values.get(TOTAL_MS_KEY, 0) > 0 and not is_diagnostic_shape_profile(values)
     ]
     totals = [
         values[TOTAL_MS_KEY]
