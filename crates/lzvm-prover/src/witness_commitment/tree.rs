@@ -1835,6 +1835,45 @@ mod tests {
     }
 
     #[cfg(feature = "cuda")]
+    struct RetainedSourceCopySiteStatsGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        previous_retained_source: Option<std::ffi::OsString>,
+        previous_copy_site_stats: Option<std::ffi::OsString>,
+    }
+
+    #[cfg(feature = "cuda")]
+    impl Drop for RetainedSourceCopySiteStatsGuard {
+        fn drop(&mut self) {
+            match &self.previous_retained_source {
+                Some(value) => std::env::set_var("LZVM_CUDA_RETAINED_SOURCE_BYTES", value),
+                None => std::env::remove_var("LZVM_CUDA_RETAINED_SOURCE_BYTES"),
+            }
+            match &self.previous_copy_site_stats {
+                Some(value) => std::env::set_var("LZVM_CUDA_COPY_SITE_STATS", value),
+                None => std::env::remove_var("LZVM_CUDA_COPY_SITE_STATS"),
+            }
+            lzvm_accel::cuda_copy_site_stats_clear();
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    fn retained_source_copy_site_stats_for_test() -> RetainedSourceCopySiteStatsGuard {
+        let lock = crate::CUDA_TEST_ENV_LOCK
+            .lock()
+            .expect("CUDA copy-site env lock should acquire");
+        let previous_retained_source = std::env::var_os("LZVM_CUDA_RETAINED_SOURCE_BYTES");
+        let previous_copy_site_stats = std::env::var_os("LZVM_CUDA_COPY_SITE_STATS");
+        std::env::set_var("LZVM_CUDA_RETAINED_SOURCE_BYTES", "1048576");
+        std::env::set_var("LZVM_CUDA_COPY_SITE_STATS", "1");
+        lzvm_accel::cuda_copy_site_stats_clear();
+        RetainedSourceCopySiteStatsGuard {
+            _lock: lock,
+            previous_retained_source,
+            previous_copy_site_stats,
+        }
+    }
+
+    #[cfg(feature = "cuda")]
     struct RetainedParentCheckpointMaxStatesGuard {
         _lock: std::sync::MutexGuard<'static, ()>,
         previous: Option<std::ffi::OsString>,
@@ -2637,6 +2676,109 @@ mod tests {
         assert_eq!(batch_timing.path_parent_hash_recomputed_launch_count, 2);
         assert_eq!(batch_timing.path_parent_hash_recomputed_row_count, 3);
         assert_eq!(batch_timing.row_values_device_download_batch_count, 1);
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn compact_device_opening_groups_batch_recomputed_sibling_decode() {
+        let _env_guard = retained_source_copy_site_stats_for_test();
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let extended_rows = 1_usize << target_bits;
+        let column_count = 6;
+        let arity = 4;
+        let source_values = (0..source_rows * column_count)
+            .map(|value| Felt::from_u64(value as u64 + 1))
+            .collect::<Vec<_>>();
+        let source_device = std::sync::Arc::new(
+            lzvm_accel::CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&source_values))
+                .expect("source values should upload"),
+        );
+        let mut timing = crate::witness_commitment::WitnessStageLeafExtendTiming::default();
+        let leaf_level =
+            crate::witness_commitment::compact_witness_stage_leaf_hash_level_from_source_device_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                source_device.as_ref(),
+                &mut timing,
+            )
+            .expect("device leaf hash level should build");
+        let mut device = commit_witness_stage_device_compact_with_leaf_hash_level(
+            WitnessStageDeviceCompactCommitInput {
+                stage_index: 1,
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                external_source_required: false,
+            },
+            leaf_level,
+            Some(WitnessStageSourceDeviceView::new(
+                source_rows,
+                column_count,
+                column_count,
+                0,
+                source_device,
+            )),
+        )
+        .expect("device compact commitment should build");
+        assert!(device.drop_retained_leaf_digest_level_for_test());
+        assert_eq!(device.retained_parent_checkpoint_shape_for_test(), None);
+        lzvm_accel::cuda_copy_site_stats_clear();
+
+        let rows_a = [0_u64];
+        let rows_b = [5_u64];
+        let requests = [
+            WitnessStageOpeningBatchRequest {
+                commitment: &device,
+                row_indices: &rows_a,
+                row_count: extended_rows as u64,
+                column_count,
+                source_device: None,
+            },
+            WitnessStageOpeningBatchRequest {
+                commitment: &device,
+                row_indices: &rows_b,
+                row_count: extended_rows as u64,
+                column_count,
+                source_device: None,
+            },
+        ];
+        let mut timings = vec![WitnessStageOpeningWorkTiming::default(); requests.len()];
+        let actual = open_witness_stage_commitment_batches_with_source_devices_timing(
+            &requests,
+            &mut timings,
+        )
+        .expect("opening groups should build");
+
+        assert_eq!(actual.len(), requests.len());
+        for group in &actual {
+            assert_eq!(group.len(), 1);
+            for opening in group {
+                assert!(
+                    verify_witness_stage_opening_root(device.root(), arity, opening)
+                        .expect("group opening should verify")
+                );
+            }
+        }
+        let sibling_download_calls = lzvm_accel::cuda_copy_site_stats_snapshot()
+            .into_iter()
+            .filter(|stat| {
+                stat.direction == lzvm_accel::CudaCopyDirection::D2h
+                    && stat.label == "to_u64_words"
+                    && stat.file.ends_with("merkle_hash.rs")
+            })
+            .map(|stat| stat.calls)
+            .sum::<usize>();
+        assert_eq!(
+            sibling_download_calls, 1,
+            "recomputed sibling buffers from multiple opening groups should decode through one D2H gather"
+        );
     }
 
     #[cfg(feature = "cuda")]

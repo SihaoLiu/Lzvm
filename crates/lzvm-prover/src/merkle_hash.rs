@@ -663,6 +663,20 @@ impl CudaDigestLevel {
         self.opening_path_prefix_batch_for_source_rows(query_rows, level_count)
     }
 
+    pub(crate) fn opening_path_siblings_batch_device(
+        &self,
+        query_rows: &[usize],
+    ) -> Result<CudaMerkleSiblingBatchDeviceBuffer, MerkleHashError> {
+        if query_rows
+            .iter()
+            .any(|query_row| *query_row >= self.state_count)
+        {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        let level_count = merkle_opening_level_count(self.state_count, self.arity)?;
+        self.opening_path_prefix_batch_device_for_source_rows(query_rows, level_count)
+    }
+
     #[allow(dead_code)]
     pub(crate) fn opening_path_prefix_for_source_row(
         &self,
