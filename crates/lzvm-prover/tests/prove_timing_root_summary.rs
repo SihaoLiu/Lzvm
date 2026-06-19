@@ -3917,6 +3917,8 @@ fn prove_timing_root_summary_reports_segment_replay_count() {
     let input = [
         "timing_total_ms=9000",
         "timing_guest_trace_segment_replay_count=23",
+        "timing_guest_trace_parallel_lower_snapshot_replay_count=23",
+        "timing_guest_trace_parallel_lower_report_elided_count=23",
         "timing_guest_stage_tree_commit_root_count=1",
         "timing_guest_stage_tree_commit_root_materialization_groups=1",
         "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
@@ -3963,11 +3965,18 @@ fn prove_timing_root_summary_reports_segment_replay_count() {
         row.len(),
         "summary header and row should have matching column counts: stdout={stdout}"
     );
-    let index = header
-        .iter()
-        .position(|header| *header == "segment_replay_count")
-        .unwrap_or_else(|| panic!("summary should expose segment_replay_count: stdout={stdout}"));
-    assert_eq!(row.get(index).copied(), Some("23"));
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+    assert_eq!(value("segment_replay_count"), "23");
+    assert_eq!(value("parallel_lower_snapshot_replay_count"), "23");
+    assert_eq!(value("parallel_lower_report_elided_count"), "23");
 }
 
 #[test]
