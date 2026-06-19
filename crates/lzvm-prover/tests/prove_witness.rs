@@ -2411,6 +2411,12 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     std::env::remove_var(REPLAY_ENV);
     std::env::set_var(COMMIT_WORKERS_ENV, "2");
     let commit_worker_run = run("commit-worker");
+    std::env::remove_var(COMMIT_WORKERS_ENV);
+    std::env::set_var(PIPELINE_ENV, "1");
+    std::env::set_var(PIPELINE_WORKERS_ENV, "2");
+    std::env::set_var(REPLAY_ENV, "1");
+    std::env::set_var(COMMIT_WORKERS_ENV, "2");
+    let combined_run = run("combined");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(
@@ -2461,6 +2467,26 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         commit_worker_run.segment_commit_worker_max_in_flight_count >= 2,
         "explicit segment commit workers should report real cross-segment in-flight work"
     );
+    assert!(
+        combined_run.parallel_lower_worker_count >= 2,
+        "combined opt-in should use configured parallel lower workers"
+    );
+    assert!(
+        combined_run.parallel_lower_emitted_count > 0,
+        "combined opt-in should emit lowered trace segments through the parallel lowerer"
+    );
+    assert!(
+        combined_run.segment_replay_count > 0,
+        "combined opt-in should replay trace segments before proof assembly"
+    );
+    assert_eq!(
+        combined_run.segment_commit_effective_worker_count, 2,
+        "combined opt-in should use explicit segment commit workers"
+    );
+    assert!(
+        combined_run.segment_commit_worker_max_in_flight_count >= 2,
+        "combined opt-in should report real cross-segment commit in-flight work"
+    );
     assert_eq!(
         default_run.witness_segment_bytes,
         stream_run.witness_segment_bytes
@@ -2473,9 +2499,14 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         default_run.witness_segment_bytes,
         commit_worker_run.witness_segment_bytes
     );
+    assert_eq!(
+        default_run.witness_segment_bytes,
+        combined_run.witness_segment_bytes
+    );
     assert_eq!(default_run.proof_bytes, stream_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, pipeline_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, commit_worker_run.proof_bytes);
+    assert_eq!(default_run.proof_bytes, combined_run.proof_bytes);
 }
 
 #[test]
