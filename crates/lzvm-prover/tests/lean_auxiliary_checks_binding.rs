@@ -3040,133 +3040,119 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
         "source_lookup_checked_acceptance_verifier_core_contract",
-        &[
-            "source_lookup_checked_acceptance_projects_verifier_acceptance",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["auxiliary_checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &auxiliary_source,
         "source_lookup_checked_acceptance_verifier_core_contract",
         &[
             "source_lookup_auxiliary_acceptance_sound",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
         "witness_leaf_digest_checked_acceptance_verifier_core_contract",
-        &[
-            "witness_leaf_digest_checked_acceptance_projects_verifier_acceptance",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["auxiliary_checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &auxiliary_source,
         "witness_leaf_digest_checked_acceptance_verifier_core_contract",
         &[
             "witness_leaf_digest_acceptance_sound",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
         "gpu_canonical_leaf_checked_acceptance_verifier_core_contract",
-        &[
-            "gpu_canonical_leaf_checked_acceptance_projects_verifier_acceptance",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["auxiliary_checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &auxiliary_source,
         "gpu_canonical_leaf_checked_acceptance_verifier_core_contract",
         &[
             "gpu_canonical_leaf_checked_acceptance_sound",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
         "gpu_leaf_output_buffer_reuse_checked_acceptance_verifier_core_contract",
-        &[
-            "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_verifier_acceptance",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["auxiliary_checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &auxiliary_source,
         "gpu_leaf_output_buffer_reuse_checked_acceptance_verifier_core_contract",
         &[
             "gpu_leaf_output_buffer_reuse_checked_acceptance_sound",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
         "gpu_coset_extension_checked_acceptance_verifier_core_contract",
-        &[
-            "gpu_coset_extension_checked_acceptance_projects_verifier_acceptance",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["auxiliary_checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &auxiliary_source,
         "gpu_coset_extension_checked_acceptance_verifier_core_contract",
         &[
             "gpu_coset_extension_checked_acceptance_sound",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
         "gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract",
-        &[
-            "gpu_fri_fold_interpolation_checked_acceptance_projects_verifier_acceptance",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["auxiliary_checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &auxiliary_source,
         "gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract",
         &[
             "gpu_fri_fold_interpolation_checked_acceptance_sound",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
         "gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract",
-        &[
-            "gpu_merkle_digest_prefix_batch_checked_acceptance_projects_verifier_acceptance",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-        ],
+        &["auxiliary_checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &auxiliary_source,
         "gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract",
         &[
             "gpu_merkle_digest_prefix_batch_checked_acceptance_sound",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
     );

@@ -128,6 +128,24 @@ theorem ignored_metadata_acceptance_verifier_core_contract
           (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
           (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
+theorem auxiliary_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {auxiliaryAccepted : PublicInput -> Proof -> Prop} :
+    forall publicInput proof,
+      system.accepts publicInput proof
+        /\ auxiliaryAccepted publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (assumptions.crypto.transcript_binding publicInput proof checked.left)
+      (And.intro
+        (assumptions.semantic.public_input_binding publicInput proof checked.left)
+        (And.intro
+          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
+          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
+
 structure TimingObservation where
   label : Nat
   milliseconds : Nat
@@ -1166,20 +1184,12 @@ theorem source_lookup_checked_acceptance_verifier_core_contract
       SourceLookupCheckedAcceptance system auxiliary publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have accepted :=
-    source_lookup_checked_acceptance_projects_verifier_acceptance
-      auxiliary
+  exact
+    auxiliary_checked_acceptance_verifier_core_contract
+      assumptions
       publicInput
       proof
       checked
-  exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof accepted)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof accepted)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
-          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 theorem witness_leaf_digest_checked_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
@@ -1260,20 +1270,12 @@ theorem witness_leaf_digest_checked_acceptance_verifier_core_contract
       WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have accepted :=
-    witness_leaf_digest_checked_acceptance_projects_verifier_acceptance
-      validation
+  exact
+    auxiliary_checked_acceptance_verifier_core_contract
+      assumptions
       publicInput
       proof
       checked
-  exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof accepted)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof accepted)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
-          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 theorem gpu_canonical_leaf_checked_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
@@ -1344,20 +1346,12 @@ theorem gpu_canonical_leaf_checked_acceptance_verifier_core_contract
       GpuCanonicalLeafCheckedAcceptance system validation publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have accepted :=
-    gpu_canonical_leaf_checked_acceptance_projects_verifier_acceptance
-      validation
+  exact
+    auxiliary_checked_acceptance_verifier_core_contract
+      assumptions
       publicInput
       proof
       checked
-  exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof accepted)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof accepted)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
-          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 theorem gpu_leaf_output_buffer_reuse_implies_canonical_leaf_bytes
     {system : VerifierModel}
@@ -1450,20 +1444,15 @@ theorem gpu_leaf_output_buffer_reuse_checked_acceptance_verifier_core_contract
       GpuLeafOutputBufferReuseCheckedAcceptance system validation publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have accepted :=
-    gpu_leaf_output_buffer_reuse_checked_acceptance_projects_verifier_acceptance
-      validation
+  exact
+    auxiliary_checked_acceptance_verifier_core_contract
+      assumptions
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.leafOutputBufferLengthMatches publicInput proof
+          /\ validation.leafOutputBufferFullyOverwritten publicInput proof)
       publicInput
       proof
       checked
-  exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof accepted)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof accepted)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
-          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 theorem gpu_coset_extension_matches_host_implies_leaf_bytes
     {system : VerifierModel}
@@ -1548,20 +1537,12 @@ theorem gpu_coset_extension_checked_acceptance_verifier_core_contract
       GpuCosetExtensionCheckedAcceptance system validation publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have accepted :=
-    gpu_coset_extension_checked_acceptance_projects_verifier_acceptance
-      validation
+  exact
+    auxiliary_checked_acceptance_verifier_core_contract
+      assumptions
       publicInput
       proof
       checked
-  exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof accepted)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof accepted)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
-          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 theorem gpu_fri_interpolation_matches_host_implies_fri_folds_valid
     {system : VerifierModel}
@@ -1646,20 +1627,12 @@ theorem gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract
       GpuFriFoldInterpolationCheckedAcceptance system validation publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have accepted :=
-    gpu_fri_fold_interpolation_checked_acceptance_projects_verifier_acceptance
-      validation
+  exact
+    auxiliary_checked_acceptance_verifier_core_contract
+      assumptions
       publicInput
       proof
       checked
-  exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof accepted)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof accepted)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
-          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 theorem gpu_merkle_digest_prefix_batch_matches_single_paths_implies_lower_prefixes_bound
     {system : VerifierModel}
@@ -1744,20 +1717,12 @@ theorem gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract
       GpuMerkleDigestPrefixBatchCheckedAcceptance system validation publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
-  have accepted :=
-    gpu_merkle_digest_prefix_batch_checked_acceptance_projects_verifier_acceptance
-      validation
+  exact
+    auxiliary_checked_acceptance_verifier_core_contract
+      assumptions
       publicInput
       proof
       checked
-  exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof accepted)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof accepted)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof accepted)
-          (assumptions.crypto.fri_query_sound publicInput proof accepted)))
 
 theorem gpu_setup_cache_reuse_sound
     (validation : GpuSetupCacheValidation)
