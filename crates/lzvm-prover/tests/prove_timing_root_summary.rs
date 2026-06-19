@@ -91,6 +91,10 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_report_buffer_max_capacity",
         "timing_guest_trace_report_buffer_excess_capacity",
         "timing_guest_trace_report_record_size_bytes",
+        "timing_guest_trace_report_instruction_size_bytes",
+        "timing_guest_trace_report_register_write_list_size_bytes",
+        "timing_guest_trace_report_memory_access_list_size_bytes",
+        "timing_guest_trace_report_precompile_access_list_size_bytes",
         "timing_guest_trace_report_storage_bytes",
         "timing_guest_trace_report_buffer_capacity_bytes",
         "timing_guest_trace_report_buffer_excess_bytes",
@@ -407,6 +411,78 @@ fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
     assert!(
         stdout.contains(",0.000,15000.000,225000.000,75000.000"),
         "prove timing root summary should scale residual and descriptor costs to ns per trace row: stdout={stdout}"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reports_trace_report_layout_breakdown() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=9000",
+        "timing_guest_trace_reports=1000",
+        "timing_guest_trace_report_record_size_bytes=192",
+        "timing_guest_trace_report_instruction_size_bytes=40",
+        "timing_guest_trace_report_register_write_list_size_bytes=24",
+        "timing_guest_trace_report_memory_access_list_size_bytes=80",
+        "timing_guest_trace_report_precompile_access_list_size_bytes=24",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("trace_report_instruction_size_bytes"), "40");
+    assert_eq!(value("trace_report_register_write_list_size_bytes"), "24");
+    assert_eq!(value("trace_report_memory_access_list_size_bytes"), "80");
+    assert_eq!(
+        value("trace_report_precompile_access_list_size_bytes"),
+        "24"
     );
 }
 
@@ -2067,13 +2143,13 @@ fn prove_timing_root_summary_reports_trace_report_buffer_shape() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "trace_reports,trace_report_rows,trace_rows_per_report,trace_report_record_size_bytes,trace_report_storage_bytes,trace_report_storage_gib,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,trace_report_buffer_capacity_gib,trace_report_buffer_excess_bytes,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
+            "trace_reports,trace_report_rows,trace_rows_per_report,trace_report_record_size_bytes,trace_report_instruction_size_bytes,trace_report_register_write_list_size_bytes,trace_report_memory_access_list_size_bytes,trace_report_precompile_access_list_size_bytes,trace_report_storage_bytes,trace_report_storage_gib,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,trace_report_buffer_capacity_gib,trace_report_buffer_excess_bytes,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
         ),
         "prove timing root summary should expose trace report buffer columns: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            "93843537,93917088,1.001,128,12011972736,11.187,94371840,4194304,528303,12079595520,11.250,67622784,0.560,report_buffer_capacity_tight,"
+            "93843537,93917088,1.001,128,0,0,0,0,12011972736,11.187,94371840,4194304,528303,12079595520,11.250,67622784,0.560,report_buffer_capacity_tight,"
         ),
         "prove timing root summary should classify tight report buffer capacity: stdout={stdout}"
     );

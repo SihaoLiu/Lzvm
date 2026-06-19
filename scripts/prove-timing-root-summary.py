@@ -141,6 +141,18 @@ TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY = (
     "timing_guest_trace_report_buffer_excess_capacity"
 )
 TRACE_REPORT_RECORD_SIZE_BYTES_KEY = "timing_guest_trace_report_record_size_bytes"
+TRACE_REPORT_INSTRUCTION_SIZE_BYTES_KEY = (
+    "timing_guest_trace_report_instruction_size_bytes"
+)
+TRACE_REPORT_REGISTER_WRITE_LIST_SIZE_BYTES_KEY = (
+    "timing_guest_trace_report_register_write_list_size_bytes"
+)
+TRACE_REPORT_MEMORY_ACCESS_LIST_SIZE_BYTES_KEY = (
+    "timing_guest_trace_report_memory_access_list_size_bytes"
+)
+TRACE_REPORT_PRECOMPILE_ACCESS_LIST_SIZE_BYTES_KEY = (
+    "timing_guest_trace_report_precompile_access_list_size_bytes"
+)
 TRACE_REPORT_STORAGE_BYTES_KEY = "timing_guest_trace_report_storage_bytes"
 TRACE_REPORT_BUFFER_CAPACITY_BYTES_KEY = (
     "timing_guest_trace_report_buffer_capacity_bytes"
@@ -352,6 +364,10 @@ HEADER = (
     "parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,"
     "parallel_lower_max_reorder,trace_reports,trace_report_rows,"
     "trace_rows_per_report,trace_report_record_size_bytes,"
+    "trace_report_instruction_size_bytes,"
+    "trace_report_register_write_list_size_bytes,"
+    "trace_report_memory_access_list_size_bytes,"
+    "trace_report_precompile_access_list_size_bytes,"
     "trace_report_storage_bytes,trace_report_storage_gib,"
     "trace_report_buffer_capacity,trace_report_buffer_max_capacity,"
     "trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,"
@@ -565,6 +581,10 @@ TIMING_KEYS = {
     TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY,
     TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY,
     TRACE_REPORT_RECORD_SIZE_BYTES_KEY,
+    TRACE_REPORT_INSTRUCTION_SIZE_BYTES_KEY,
+    TRACE_REPORT_REGISTER_WRITE_LIST_SIZE_BYTES_KEY,
+    TRACE_REPORT_MEMORY_ACCESS_LIST_SIZE_BYTES_KEY,
+    TRACE_REPORT_PRECOMPILE_ACCESS_LIST_SIZE_BYTES_KEY,
     TRACE_REPORT_STORAGE_BYTES_KEY,
     TRACE_REPORT_BUFFER_CAPACITY_BYTES_KEY,
     TRACE_REPORT_BUFFER_EXCESS_BYTES_KEY,
@@ -2245,6 +2265,18 @@ def summarize_profile_values(
         trace_report_rows / trace_reports if trace_reports else 0.0
     )
     trace_report_record_size_bytes = values.get(TRACE_REPORT_RECORD_SIZE_BYTES_KEY, 0)
+    trace_report_instruction_size_bytes = values.get(
+        TRACE_REPORT_INSTRUCTION_SIZE_BYTES_KEY, 0
+    )
+    trace_report_register_write_list_size_bytes = values.get(
+        TRACE_REPORT_REGISTER_WRITE_LIST_SIZE_BYTES_KEY, 0
+    )
+    trace_report_memory_access_list_size_bytes = values.get(
+        TRACE_REPORT_MEMORY_ACCESS_LIST_SIZE_BYTES_KEY, 0
+    )
+    trace_report_precompile_access_list_size_bytes = values.get(
+        TRACE_REPORT_PRECOMPILE_ACCESS_LIST_SIZE_BYTES_KEY, 0
+    )
     trace_report_storage_bytes = values.get(
         TRACE_REPORT_STORAGE_BYTES_KEY,
         trace_reports * trace_report_record_size_bytes,
@@ -2664,7 +2696,12 @@ def summarize_profile_values(
         f"{parallel_lower_received},{parallel_lower_emitted},"
         f"{parallel_lower_max_reorder},{trace_reports},"
         f"{trace_report_rows},{trace_rows_per_report:.3f},"
-        f"{trace_report_record_size_bytes},{trace_report_storage_bytes},"
+        f"{trace_report_record_size_bytes},"
+        f"{trace_report_instruction_size_bytes},"
+        f"{trace_report_register_write_list_size_bytes},"
+        f"{trace_report_memory_access_list_size_bytes},"
+        f"{trace_report_precompile_access_list_size_bytes},"
+        f"{trace_report_storage_bytes},"
         f"{trace_report_storage_gib:.3f},"
         f"{trace_report_buffer_capacity},{trace_report_buffer_max_capacity},"
         f"{trace_report_buffer_excess_capacity},"

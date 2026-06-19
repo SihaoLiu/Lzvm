@@ -367,6 +367,22 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_report_record_size_bytes(),
     );
     timings.record_count(
+        "guest_trace_report_instruction_size_bytes",
+        timing.guest_trace_report_instruction_size_bytes(),
+    );
+    timings.record_count(
+        "guest_trace_report_register_write_list_size_bytes",
+        timing.guest_trace_report_register_write_list_size_bytes(),
+    );
+    timings.record_count(
+        "guest_trace_report_memory_access_list_size_bytes",
+        timing.guest_trace_report_memory_access_list_size_bytes(),
+    );
+    timings.record_count(
+        "guest_trace_report_precompile_access_list_size_bytes",
+        timing.guest_trace_report_precompile_access_list_size_bytes(),
+    );
+    timings.record_count(
         "guest_trace_report_storage_bytes",
         timing.guest_trace_report_storage_bytes(),
     );

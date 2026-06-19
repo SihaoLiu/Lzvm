@@ -6874,6 +6874,10 @@ fn guest_machine_reports_inline_common_effect_storage() {
         "guest machine reports should inline common memory effect lists"
     );
     assert!(
+        source.contains("pub struct GuestMachineReport"),
+        "guest machine report layout should remain visible for timing diagnostics"
+    );
+    assert!(
         !body.contains("\n    register_writes: Vec<GuestRegisterWrite>"),
         "guest register writes should avoid one allocation per writing instruction"
     );
@@ -6881,6 +6885,43 @@ fn guest_machine_reports_inline_common_effect_storage() {
         !body.contains("\n    memory_accesses: Vec<GuestMemoryAccess>"),
         "guest memory accesses should avoid one allocation per memory instruction"
     );
+}
+
+#[test]
+fn guest_trace_timing_reports_guest_machine_report_layout_shape() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace source should read");
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source = std::fs::read_to_string(&cli_path).expect("CLI timing source should read");
+
+    for required in [
+        "trace_report_instruction_size_bytes",
+        "trace_report_register_write_list_size_bytes",
+        "trace_report_memory_access_list_size_bytes",
+        "trace_report_precompile_access_list_size_bytes",
+    ] {
+        assert!(
+            backend_source.contains(required),
+            "guest PC trace stream timing should expose {required}"
+        );
+    }
+
+    for required in [
+        "guest_trace_report_instruction_size_bytes",
+        "guest_trace_report_register_write_list_size_bytes",
+        "guest_trace_report_memory_access_list_size_bytes",
+        "guest_trace_report_precompile_access_list_size_bytes",
+    ] {
+        assert!(
+            execution_source.contains(required) && cli_source.contains(required),
+            "witness and CLI timing should publish {required}"
+        );
+    }
 }
 
 #[test]

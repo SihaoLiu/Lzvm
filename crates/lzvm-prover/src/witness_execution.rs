@@ -473,6 +473,10 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_report_buffer_max_capacity: usize,
     guest_trace_report_buffer_excess_capacity: usize,
     guest_trace_report_record_size_bytes: usize,
+    guest_trace_report_instruction_size_bytes: usize,
+    guest_trace_report_register_write_list_size_bytes: usize,
+    guest_trace_report_memory_access_list_size_bytes: usize,
+    guest_trace_report_precompile_access_list_size_bytes: usize,
     guest_trace_report_storage_bytes: usize,
     guest_trace_report_buffer_capacity_bytes: usize,
     guest_trace_report_buffer_excess_bytes: usize,
@@ -717,6 +721,14 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_report_buffer_excess_capacity: stream_timing
                 .trace_report_buffer_excess_capacity(),
             guest_trace_report_record_size_bytes: stream_timing.trace_report_record_size_bytes(),
+            guest_trace_report_instruction_size_bytes: stream_timing
+                .trace_report_instruction_size_bytes(),
+            guest_trace_report_register_write_list_size_bytes: stream_timing
+                .trace_report_register_write_list_size_bytes(),
+            guest_trace_report_memory_access_list_size_bytes: stream_timing
+                .trace_report_memory_access_list_size_bytes(),
+            guest_trace_report_precompile_access_list_size_bytes: stream_timing
+                .trace_report_precompile_access_list_size_bytes(),
             guest_trace_report_storage_bytes: stream_timing.trace_report_storage_bytes(),
             guest_trace_report_buffer_capacity_bytes: stream_timing
                 .trace_report_buffer_capacity_bytes(),
@@ -1152,6 +1164,22 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_report_record_size_bytes(&self) -> usize {
         self.guest_trace_report_record_size_bytes
+    }
+
+    pub fn guest_trace_report_instruction_size_bytes(&self) -> usize {
+        self.guest_trace_report_instruction_size_bytes
+    }
+
+    pub fn guest_trace_report_register_write_list_size_bytes(&self) -> usize {
+        self.guest_trace_report_register_write_list_size_bytes
+    }
+
+    pub fn guest_trace_report_memory_access_list_size_bytes(&self) -> usize {
+        self.guest_trace_report_memory_access_list_size_bytes
+    }
+
+    pub fn guest_trace_report_precompile_access_list_size_bytes(&self) -> usize {
+        self.guest_trace_report_precompile_access_list_size_bytes
     }
 
     pub fn guest_trace_report_storage_bytes(&self) -> usize {
