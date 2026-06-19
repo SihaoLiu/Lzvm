@@ -22,6 +22,8 @@ use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
+#[cfg(feature = "cuda")]
+use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input_for_metadata;
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
 use lzvm_artifacts::fixed::{
@@ -2031,6 +2033,8 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
 
     struct ParityRun {
         proof_bytes: Vec<u8>,
+        public_values_bytes: Vec<u8>,
+        public_value_names: Vec<String>,
         witness_segment_bytes: Vec<(u32, Vec<u8>)>,
         transcript_segment_bytes: Vec<(u32, Vec<u8>)>,
         stage_roots: Vec<Vec<[u64; 4]>>,
@@ -2088,13 +2092,13 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
     write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
-    let catalog = sample_catalog(unit);
-    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
-    let public_values = PublicValues {
-        schema_version: 1,
-        setup_hash,
-        values: Vec::new(),
-    };
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.n_publics = 8;
+    catalog.layout.global_info.publics_map = vec![PublicValue {
+        name: "eth_block_hash_u32_be".to_owned(),
+        stage: 0,
+        lengths: vec![8],
+    }];
     let plan = derive_prove_execution_plan(
         &catalog,
         sample_request(dir.join("out"), None),
@@ -2105,6 +2109,15 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
         },
     )
     .expect("execution plan should derive");
+    let block_input = build_eth_block_input(&sample_block_rlp_with_parent([0x11; 32]))
+        .expect("block input should build");
+    let public_values = public_values_from_eth_block_input_for_metadata(
+        plan.run_plan.schedule.setup_hash,
+        &block_input,
+        &catalog.layout.global_info,
+        None,
+    )
+    .expect("metadata ETH public values should derive");
 
     let run = |label: &str| -> ParityRun {
         let mut timing_groups = None;
@@ -2175,7 +2188,7 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
                 evaluation_values_segment: None,
                 verify_outputs: true,
                 program_image_cache: None,
-                eth_block_input: None,
+                eth_block_input: Some(&block_input),
                 challenge_values_segment: None,
                 include_contribution_segment: false,
             },
@@ -2189,9 +2202,18 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
         );
         let proof_bytes = encode_proof_artifact(&proof)
             .unwrap_or_else(|error| panic!("{label} proof artifact should encode: {error}"));
+        let public_values_bytes = encode_public_values(&public_values)
+            .unwrap_or_else(|error| panic!("{label} public values should encode: {error}"));
+        let public_value_names = public_values
+            .values
+            .iter()
+            .map(|entry| entry.name.clone())
+            .collect::<Vec<_>>();
 
         ParityRun {
             proof_bytes,
+            public_values_bytes,
+            public_value_names,
             witness_segment_bytes,
             transcript_segment_bytes,
             stage_roots,
@@ -2201,6 +2223,13 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
     };
 
     let default_run = run("default");
+    assert!(
+        default_run
+            .public_value_names
+            .iter()
+            .any(|name| name == "eth_block_hash_u32_be"),
+        "pending-root parity fixture should exercise ETH block public values"
+    );
     std::env::set_var(ROOTS_ENV, "0");
     let immediate_run = run("immediate");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -2227,6 +2256,10 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
     assert_eq!(
         default_run.transcript_segment_bytes,
         immediate_run.transcript_segment_bytes
+    );
+    assert_eq!(
+        default_run.public_values_bytes,
+        immediate_run.public_values_bytes
     );
     assert_eq!(default_run.proof_bytes, immediate_run.proof_bytes);
 }
