@@ -1090,6 +1090,10 @@ struct GuestPcTracePendingReportChunk {
     reports: Vec<GuestMachineReport>,
 }
 
+struct GuestPcTracePendingSegmentFinish {
+    trace_instance_index: u32,
+}
+
 #[derive(Default)]
 struct GuestPcTracePendingReportChunkGroup {
     reports: Vec<GuestMachineReport>,
@@ -1114,8 +1118,9 @@ enum GuestPcTraceSegmentStreamMessage {
 
 enum GuestPcTracePendingSegmentMessage {
     Segment(Box<GuestPcTracePendingSegmentSlice>),
+    SegmentStarted(Box<GuestPcTracePendingSegmentSlice>),
     ReportChunk(Box<GuestPcTracePendingReportChunk>),
-    SegmentFinished(Box<GuestPcTracePendingSegmentSlice>),
+    SegmentFinished(Box<GuestPcTracePendingSegmentFinish>),
     Complete(Box<GuestPcTraceStreamResult>),
     Error(GuestPcTraceBackendError),
 }
@@ -3557,7 +3562,12 @@ fn produce_guest_pc_trace_segments(
                         && !pending.reports_elided
                         && !pending.reports.is_empty()
                     {
+                        let trace_instance_index = pending.trace_instance_index;
+                        let trace_row_count = pending.trace_row_count;
                         let reports = std::mem::take(&mut pending.reports);
+                        send_message(GuestPcTracePendingSegmentMessage::SegmentStarted(Box::new(
+                            pending,
+                        )))?;
                         let mut reports = reports.into_iter();
                         loop {
                             let mut chunk_reports = Vec::with_capacity(report_chunk_capacity);
@@ -3580,16 +3590,18 @@ fn produce_guest_pc_trace_segments(
                                     .saturating_add(chunk_report_count);
                             send_message(GuestPcTracePendingSegmentMessage::ReportChunk(
                                 Box::new(GuestPcTracePendingReportChunk {
-                                    trace_instance_index: pending.trace_instance_index,
+                                    trace_instance_index,
                                     reports: chunk_reports,
                                 }),
                             ))?;
                         }
                         report_chunk_timing.trace_report_chunk_row_count = report_chunk_timing
                             .trace_report_chunk_row_count
-                            .saturating_add(pending.trace_row_count);
+                            .saturating_add(trace_row_count);
                         send_message(GuestPcTracePendingSegmentMessage::SegmentFinished(
-                            Box::new(pending),
+                            Box::new(GuestPcTracePendingSegmentFinish {
+                                trace_instance_index,
+                            }),
                         ))?;
                         return Ok(());
                     }
@@ -4126,12 +4138,136 @@ fn receive_guest_pc_trace_pending_report_chunk(
         .max(queued_chunks);
 }
 
+#[cfg(feature = "cuda")]
+struct GuestPcTraceActiveChunkedSegment {
+    pending: GuestPcTracePendingSegmentSlice,
+    seed: ZiskMainSegmentSeed,
+    builder: ZiskMainStreamingDeviceSegmentBuilder,
+    feeder: ZiskMainOwnedStreamingDeviceReportFeeder,
+    aggregate_report_started: Option<Instant>,
+}
+
+#[cfg(feature = "cuda")]
+impl GuestPcTraceActiveChunkedSegment {
+    fn new(
+        layout: &WitnessTraceLayout,
+        pending: GuestPcTracePendingSegmentSlice,
+        seed: ZiskMainSegmentSeed,
+        timing_enabled: bool,
+    ) -> Result<Result<Self, GuestPcTracePendingSegmentSlice>, GuestPcTraceBackendError> {
+        let segment = ZiskMainTraceSegmentInfo {
+            trace_instance_index: pending.trace_instance_index,
+            is_last_segment: pending.is_last_segment,
+            previous_c: seed.previous_c,
+        };
+        let Some(builder) =
+            ZiskMainStreamingDeviceSegmentBuilder::new(layout, &seed.initial_state, segment)?
+        else {
+            return Ok(Err(pending));
+        };
+        Ok(Ok(Self {
+            pending,
+            seed,
+            builder,
+            feeder: ZiskMainOwnedStreamingDeviceReportFeeder::new(
+                ZiskMainTraceLowerTimingConfig::from_env(),
+            ),
+            aggregate_report_started: timing_enabled.then(Instant::now),
+        }))
+    }
+
+    fn trace_instance_index(&self) -> u32 {
+        self.pending.trace_instance_index
+    }
+
+    fn push_chunk(
+        &mut self,
+        chunk: GuestPcTracePendingReportChunk,
+        timing: &mut GuestPcTraceStreamTiming,
+    ) -> Result<(), GuestPcTraceBackendError> {
+        if chunk.trace_instance_index != self.pending.trace_instance_index {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "guest PC trace report chunk for segment {} reached active segment {}",
+                    chunk.trace_instance_index, self.pending.trace_instance_index
+                ),
+            });
+        }
+        timing.trace_report_chunk_received_count =
+            timing.trace_report_chunk_received_count.saturating_add(1);
+        timing.trace_report_chunk_max_queued_count =
+            timing.trace_report_chunk_max_queued_count.max(1);
+        for report in chunk.reports {
+            self.feeder
+                .push_report(&mut self.builder, report, Some(timing))?;
+        }
+        Ok(())
+    }
+
+    fn finish(
+        mut self,
+        finish: GuestPcTracePendingSegmentFinish,
+        expected_proof_values: Option<&[WitnessTraceProofValue]>,
+        timing: &mut GuestPcTraceStreamTiming,
+    ) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
+        if finish.trace_instance_index != self.pending.trace_instance_index {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "guest PC trace segment finish {} reached active segment {}",
+                    finish.trace_instance_index, self.pending.trace_instance_index
+                ),
+            });
+        }
+        self.feeder.finish(
+            &mut self.builder,
+            self.pending.lookahead_instruction,
+            Some(timing),
+        )?;
+        let mut aggregate_timing = Some(&mut *timing);
+        record_aggregate_trace_report_duration(
+            &mut aggregate_timing,
+            self.aggregate_report_started,
+        );
+        let GuestPcTraceDeviceSegmentBuild {
+            device_segment_material,
+            unit_values,
+            final_state,
+            continuation_state,
+        } = self
+            .builder
+            .finish(self.pending.terminal_pc, Some(timing))?;
+        let next_seed = ZiskMainSegmentSeed {
+            initial_state: continuation_state.clone(),
+            previous_c: final_state.last_c,
+        };
+        Ok(GuestPcTraceSeededLoweredSegment {
+            seed: self.seed,
+            lowered: GuestPcTraceLoweredSegment {
+                segment: GuestPcTraceSegmentTrace {
+                    trace_instance_index: self.pending.trace_instance_index,
+                    trace_source_prefix_rows: device_segment_material.trace_source_prefix_rows,
+                    device_segment_material: Some(device_segment_material),
+                    trace: None,
+                    unit_values,
+                    proof_values: expected_proof_values.unwrap_or_default().to_vec(),
+                },
+                next_seed,
+            },
+        })
+    }
+}
+
 fn finish_guest_pc_trace_chunked_pending_segment(
     mut pending: GuestPcTracePendingSegmentSlice,
     pending_chunks: &mut BTreeMap<u32, GuestPcTracePendingReportChunkGroup>,
 ) -> Result<GuestPcTracePendingSegmentSlice, GuestPcTraceBackendError> {
     let Some(group) = pending_chunks.remove(&pending.trace_instance_index) else {
-        return Ok(pending);
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "guest PC trace report chunks missing for segment {}",
+                pending.trace_instance_index
+            ),
+        });
     };
     if !pending.reports.is_empty() {
         return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -4186,6 +4322,9 @@ fn lower_guest_pc_trace_pending_segments(
 
     let mut current_seed = ZiskMainSegmentSeed::new();
     let mut pending_chunks = BTreeMap::new();
+    let mut pending_chunked_segments = BTreeMap::new();
+    #[cfg(feature = "cuda")]
+    let mut active_chunked_segment: Option<GuestPcTraceActiveChunkedSegment> = None;
     loop {
         let receive_started = Instant::now();
         let message = match pending_receiver.recv() {
@@ -4195,15 +4334,110 @@ fn lower_guest_pc_trace_pending_segments(
         timing.pending_receive_wait_duration += receive_started.elapsed();
         let pending = match message {
             GuestPcTracePendingSegmentMessage::Segment(pending) => *pending,
+            GuestPcTracePendingSegmentMessage::SegmentStarted(pending) => {
+                let pending = *pending;
+                #[cfg(feature = "cuda")]
+                let pending = {
+                    if guest_pc_trace_less_segment_output_enabled() {
+                        if active_chunked_segment.is_some() {
+                            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                message: "guest PC trace report chunks overlapped active segment"
+                                    .to_owned(),
+                            });
+                        }
+                        validate_guest_pc_trace_pending_segment_seed(
+                            pending.trace_instance_index,
+                            pending.seed.as_deref(),
+                            &current_seed.initial_state,
+                            current_seed.previous_c,
+                        )?;
+                        let segment_seed = pending.seed.as_deref().unwrap_or(&current_seed).clone();
+                        match GuestPcTraceActiveChunkedSegment::new(
+                            layout,
+                            pending,
+                            segment_seed,
+                            true,
+                        )? {
+                            Ok(active) => {
+                                active_chunked_segment = Some(active);
+                                continue;
+                            }
+                            Err(returned_pending) => returned_pending,
+                        }
+                    } else {
+                        pending
+                    }
+                };
+                if pending_chunked_segments
+                    .insert(pending.trace_instance_index, pending)
+                    .is_some()
+                {
+                    return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace duplicate chunked segment start".to_owned(),
+                    });
+                }
+                continue;
+            }
             GuestPcTracePendingSegmentMessage::ReportChunk(chunk) => {
+                #[cfg(feature = "cuda")]
+                if let Some(active) = active_chunked_segment.as_mut() {
+                    if active.trace_instance_index() != chunk.trace_instance_index {
+                        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                            message: format!(
+                                "guest PC trace report chunk for segment {} arrived while segment {} is active",
+                                chunk.trace_instance_index,
+                                active.trace_instance_index()
+                            ),
+                        });
+                    }
+                    active.push_chunk(*chunk, timing)?;
+                    continue;
+                }
                 receive_guest_pc_trace_pending_report_chunk(*chunk, &mut pending_chunks, timing);
                 continue;
             }
-            GuestPcTracePendingSegmentMessage::SegmentFinished(pending) => {
-                finish_guest_pc_trace_chunked_pending_segment(*pending, &mut pending_chunks)?
+            GuestPcTracePendingSegmentMessage::SegmentFinished(finish) => {
+                #[cfg(feature = "cuda")]
+                if let Some(active) = active_chunked_segment.take() {
+                    if active.trace_instance_index() != finish.trace_instance_index {
+                        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                            message: format!(
+                                "guest PC trace segment finish {} arrived while segment {} is active",
+                                finish.trace_instance_index,
+                                active.trace_instance_index()
+                            ),
+                        });
+                    }
+                    let lowered = active.finish(*finish, expected_proof_values, timing)?;
+                    current_seed = lowered.lowered.next_seed.clone();
+                    let emit_started = Instant::now();
+                    emit(lowered.lowered.segment)?;
+                    timing.trace_emit_duration += emit_started.elapsed();
+                    continue;
+                }
+                let pending = pending_chunked_segments
+                    .remove(&finish.trace_instance_index)
+                    .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: format!(
+                            "guest PC trace chunked segment {} finished before start",
+                            finish.trace_instance_index
+                        ),
+                    })?;
+                finish_guest_pc_trace_chunked_pending_segment(pending, &mut pending_chunks)?
             }
             GuestPcTracePendingSegmentMessage::Complete(stream) => {
                 validate_guest_pc_trace_no_pending_report_chunks(&pending_chunks)?;
+                if !pending_chunked_segments.is_empty() {
+                    return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace chunked segment missing finish".to_owned(),
+                    });
+                }
+                #[cfg(feature = "cuda")]
+                if active_chunked_segment.is_some() {
+                    return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace active chunked segment missing finish".to_owned(),
+                    });
+                }
                 return Ok(*stream);
             }
             GuestPcTracePendingSegmentMessage::Error(error) => return Err(error),
@@ -4405,6 +4639,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
             let mut dispatched_count = 0_usize;
             let mut next_worker = 0_usize;
             let mut pending_chunks = BTreeMap::new();
+            let mut pending_chunked_segments = BTreeMap::new();
             loop {
                 let receive_started = Instant::now();
                 let message = match pending_receiver.recv() {
@@ -4451,6 +4686,24 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         }
                         dispatched_count = dispatched_count.saturating_add(1);
                     }
+                    GuestPcTracePendingSegmentMessage::SegmentStarted(pending) => {
+                        let pending = *pending;
+                        if pending_chunked_segments
+                            .insert(pending.trace_instance_index, pending)
+                            .is_some()
+                        {
+                            let _ =
+                                dispatcher_sender.send(GuestPcTraceParallelLowerMessage::Error {
+                                    error: GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                        message: "guest PC trace duplicate chunked segment start"
+                                            .to_owned(),
+                                    },
+                                    dispatched_count,
+                                    timing: dispatcher_timing,
+                                });
+                            break;
+                        }
+                    }
                     GuestPcTracePendingSegmentMessage::ReportChunk(chunk) => {
                         receive_guest_pc_trace_pending_report_chunk(
                             *chunk,
@@ -4458,11 +4711,21 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                             &mut dispatcher_timing,
                         );
                     }
-                    GuestPcTracePendingSegmentMessage::SegmentFinished(pending) => {
-                        let pending = match finish_guest_pc_trace_chunked_pending_segment(
-                            *pending,
-                            &mut pending_chunks,
-                        ) {
+                    GuestPcTracePendingSegmentMessage::SegmentFinished(finish) => {
+                        let pending = match pending_chunked_segments
+                            .remove(&finish.trace_instance_index)
+                            .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                message: format!(
+                                    "guest PC trace chunked segment {} finished before start",
+                                    finish.trace_instance_index
+                                ),
+                            })
+                            .and_then(|pending| {
+                                finish_guest_pc_trace_chunked_pending_segment(
+                                    pending,
+                                    &mut pending_chunks,
+                                )
+                            }) {
                             Ok(pending) => pending,
                             Err(error) => {
                                 let _ = dispatcher_sender.send(
@@ -4509,6 +4772,18 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                             let _ =
                                 dispatcher_sender.send(GuestPcTraceParallelLowerMessage::Error {
                                     error,
+                                    dispatched_count,
+                                    timing: dispatcher_timing,
+                                });
+                            break;
+                        }
+                        if !pending_chunked_segments.is_empty() {
+                            let _ =
+                                dispatcher_sender.send(GuestPcTraceParallelLowerMessage::Error {
+                                    error: GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                        message: "guest PC trace chunked segment missing finish"
+                                            .to_owned(),
+                                    },
                                     dispatched_count,
                                     timing: dispatcher_timing,
                                 });
@@ -5204,7 +5479,7 @@ impl<'a> ZiskMainStreamingDeviceReportFeeder<'a> {
             )?;
             self.next_report_index = self.next_report_index.checked_add(1).ok_or_else(|| {
                 GuestPcTraceBackendError::InvalidPcTraceLayout {
-                    message: "Zisk Main report index overflow".to_owned(),
+                    message: "guest PC trace report index overflow".to_owned(),
                 }
             })?;
         }
@@ -5222,6 +5497,67 @@ impl<'a> ZiskMainStreamingDeviceReportFeeder<'a> {
             builder.push_report_at(
                 self.next_report_index,
                 pending,
+                || lookahead_instruction,
+                self.timing_config,
+                timing,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "cuda")]
+struct ZiskMainOwnedStreamingDeviceReportFeeder {
+    pending_report: Option<GuestMachineReport>,
+    next_report_index: usize,
+    timing_config: ZiskMainTraceLowerTimingConfig,
+}
+
+#[cfg(feature = "cuda")]
+impl ZiskMainOwnedStreamingDeviceReportFeeder {
+    fn new(timing_config: ZiskMainTraceLowerTimingConfig) -> Self {
+        Self {
+            pending_report: None,
+            next_report_index: 0,
+            timing_config,
+        }
+    }
+
+    fn push_report(
+        &mut self,
+        builder: &mut ZiskMainStreamingDeviceSegmentBuilder,
+        report: GuestMachineReport,
+        timing: Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<(), GuestPcTraceBackendError> {
+        if let Some(pending) = self.pending_report.take() {
+            let next_instruction = report.instruction;
+            builder.push_report_at(
+                self.next_report_index,
+                &pending,
+                || Some(next_instruction),
+                self.timing_config,
+                timing,
+            )?;
+            self.next_report_index = self.next_report_index.checked_add(1).ok_or_else(|| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace report index overflow".to_owned(),
+                }
+            })?;
+        }
+        self.pending_report = Some(report);
+        Ok(())
+    }
+
+    fn finish(
+        mut self,
+        builder: &mut ZiskMainStreamingDeviceSegmentBuilder,
+        lookahead_instruction: Option<RiscvInstruction>,
+        timing: Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<(), GuestPcTraceBackendError> {
+        if let Some(pending) = self.pending_report.take() {
+            builder.push_report_at(
+                self.next_report_index,
+                &pending,
                 || lookahead_instruction,
                 self.timing_config,
                 timing,

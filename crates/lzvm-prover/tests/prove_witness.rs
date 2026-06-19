@@ -2299,6 +2299,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         report_chunk_report_count: usize,
         report_chunk_row_count: usize,
         report_chunk_max_queued_count: usize,
+        report_buffer_capacity: usize,
         segment_commit_effective_worker_count: usize,
         segment_commit_worker_join_count: usize,
         segment_commit_worker_backpressure_join_count: usize,
@@ -2389,6 +2390,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         let mut parallel_lower_snapshot_replay_count = None;
         let mut parallel_lower_report_elided_count = None;
         let mut report_chunk_counts = None;
+        let mut report_buffer_capacity = None;
         let mut segment_commit_effective_worker_count = None;
         let mut segment_commit_worker_join_count = None;
         let mut segment_commit_worker_backpressure_join_count = None;
@@ -2424,6 +2426,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
                         timing.guest_trace_report_chunk_row_count(),
                         timing.guest_trace_report_chunk_max_queued_count(),
                     ));
+                    report_buffer_capacity = Some(timing.guest_trace_report_buffer_capacity());
                     segment_commit_effective_worker_count =
                         Some(timing.guest_segment_commit_effective_worker_count());
                     segment_commit_worker_join_count =
@@ -2461,6 +2464,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             report_chunk_row_count,
             report_chunk_max_queued_count,
         ) = report_chunk_counts.expect("timed run should report chunk counts");
+        let report_buffer_capacity =
+            report_buffer_capacity.expect("timed run should report report buffer capacity");
         let segment_commit_effective_worker_count = segment_commit_effective_worker_count
             .expect("timed run should report segment commit worker count");
         let segment_commit_worker_join_count = segment_commit_worker_join_count
@@ -2559,6 +2564,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             report_chunk_report_count,
             report_chunk_row_count,
             report_chunk_max_queued_count,
+            report_buffer_capacity,
             segment_commit_effective_worker_count,
             segment_commit_worker_join_count,
             segment_commit_worker_backpressure_join_count,
@@ -2671,6 +2677,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert!(
         chunk_run.report_chunk_max_queued_count > 0,
         "chunk opt-in should record queued chunks"
+    );
+    assert_eq!(
+        chunk_run.report_buffer_capacity, 0,
+        "chunk opt-in should feed report chunks into the segment builder without reassembling a full segment report buffer"
     );
     assert_eq!(
         chunk_run.segment_replay_count, 0,
