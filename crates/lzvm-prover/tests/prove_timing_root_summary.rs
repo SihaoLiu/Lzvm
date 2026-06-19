@@ -339,6 +339,14 @@ fn prove_timing_root_summary_reports_source_retention_rebuild_shape() {
     assert_eq!(value("source_retention_max_rejected_bytes"), "1308622848");
     assert_eq!(value("source_retention_limit_bytes"), "0");
     assert_eq!(
+        value("source_retention_rejected_total_exceeds_device_memory"),
+        "yes"
+    );
+    assert_eq!(
+        value("source_retention_max_rejected_exceeds_device_memory"),
+        "no"
+    );
+    assert_eq!(
         value("opening_source_rebuild_hint"),
         "retained_source_disabled_external_rebuild"
     );

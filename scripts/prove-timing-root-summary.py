@@ -418,6 +418,8 @@ HEADER = (
     "source_retention_rejected,source_retention_retained_bytes,"
     "source_retention_rejected_bytes,source_retention_max_retained_bytes,"
     "source_retention_max_rejected_bytes,source_retention_limit_bytes,"
+    "source_retention_rejected_total_exceeds_device_memory,"
+    "source_retention_max_rejected_exceeds_device_memory,"
     "opening_source_rebuild_hint,opening_row_value_device_rows,"
     "opening_row_value_source_rows,opening_row_value_source_extend_ms,"
     "opening_row_value_source_extend_pct,opening_source_row_value_action_hint,"
@@ -1677,6 +1679,18 @@ def data_residency_action_hint(
     return "none"
 
 
+def source_retention_exceeds_device_memory_hint(
+    byte_count: int,
+    device_memory_bytes: int,
+    needs_byte_evidence: bool,
+) -> str:
+    if device_memory_bytes <= 0:
+        return "unknown"
+    if byte_count <= 0:
+        return "unknown" if needs_byte_evidence else "no"
+    return "yes" if byte_count > device_memory_bytes else "no"
+
+
 def opening_source_row_value_action_hint(
     total_ms: int,
     source_extend_ms: int,
@@ -2809,6 +2823,20 @@ def summarize_profile_values(
         source_retention_rejected_bytes,
         segment_commit_cuda_memory_total_bytes,
     )
+    source_retention_total_exceeds_device_memory = (
+        source_retention_exceeds_device_memory_hint(
+            source_retention_rejected_bytes,
+            segment_commit_cuda_memory_total_bytes,
+            source_retention_rejected > 0,
+        )
+    )
+    source_retention_max_exceeds_device_memory = (
+        source_retention_exceeds_device_memory_hint(
+            source_retention_max_rejected_bytes,
+            segment_commit_cuda_memory_total_bytes,
+            source_retention_rejected > 0,
+        )
+    )
     if perf_hotspots is None:
         perf_hotspots = parse_perf_self_hotspots("")
     pending_drop_pct = perf_hotspots.get(
@@ -2922,6 +2950,8 @@ def summarize_profile_values(
         f"{source_retention_rejected},{source_retention_retained_bytes},"
         f"{source_retention_rejected_bytes},{source_retention_max_retained_bytes},"
         f"{source_retention_max_rejected_bytes},{source_retention_limit_bytes},"
+        f"{source_retention_total_exceeds_device_memory},"
+        f"{source_retention_max_exceeds_device_memory},"
         f"{source_rebuild_hint},{opening_row_value_device_rows},"
         f"{opening_row_value_source_rows},{opening_row_value_source_extend_ms},"
         f"{opening_row_value_source_extend_pct:.3f},{opening_source_row_value_hint},"
