@@ -7150,7 +7150,10 @@ fn matching_memory_access(
 ) -> Result<ExpectedMemoryAccess, GuestPcTraceBackendError> {
     let mut matching = None;
     for access in effects.memory_accesses {
-        if access.kind == kind && access.address == address && access.byte_len == byte_len {
+        if access.kind == kind
+            && access.address == address
+            && usize::from(access.byte_len) == byte_len
+        {
             if matching.is_some() {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
@@ -7166,7 +7169,7 @@ fn matching_memory_access(
         Some(access) => Ok(ExpectedMemoryAccess {
             kind,
             address,
-            byte_len,
+            byte_len: usize::from(access.byte_len),
             value: access.value,
         }),
         None => Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
@@ -7276,7 +7279,7 @@ fn validate_expected_memory_access(
 ) -> Result<(), GuestPcTraceBackendError> {
     if found.kind != expected.kind
         || found.address != expected.address
-        || found.byte_len != expected.byte_len
+        || usize::from(found.byte_len) != expected.byte_len
         || found.value != expected.value
     {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
@@ -8201,7 +8204,7 @@ fn write_memory_columns(
     }
     write_column(builder, row, &columns.address, access.address)?;
     write_column(builder, row, &columns.value, access.value)?;
-    write_column(builder, row, &columns.byte_len, access.byte_len as u64)
+    write_column(builder, row, &columns.byte_len, u64::from(access.byte_len))
 }
 
 fn write_column(

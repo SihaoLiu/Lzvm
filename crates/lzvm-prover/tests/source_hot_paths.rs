@@ -6875,6 +6875,10 @@ fn guest_machine_reports_inline_common_effect_storage() {
         "guest reports should store rare precompile memory accesses out of line"
     );
     assert!(
+        source.contains("pub byte_len: u8"),
+        "guest memory access byte lengths should use compact byte storage"
+    );
+    assert!(
         body.contains("register_writes: GuestRegisterWriteList"),
         "guest machine reports should inline common small effect lists"
     );

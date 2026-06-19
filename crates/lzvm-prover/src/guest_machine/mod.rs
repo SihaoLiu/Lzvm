@@ -351,7 +351,7 @@ pub enum GuestMemoryAccessKind {
 pub struct GuestMemoryAccess {
     pub kind: GuestMemoryAccessKind,
     pub address: u64,
-    pub byte_len: usize,
+    pub byte_len: u8,
     pub value: u64,
 }
 
@@ -392,7 +392,7 @@ impl GuestInstructionEffects {
         self.precompile_memory_accesses.push(GuestMemoryAccess {
             kind: GuestMemoryAccessKind::Read,
             address,
-            byte_len,
+            byte_len: guest_memory_access_byte_len(byte_len),
             value,
         });
     }
@@ -401,7 +401,7 @@ impl GuestInstructionEffects {
         self.precompile_memory_accesses.push(GuestMemoryAccess {
             kind: GuestMemoryAccessKind::Write,
             address,
-            byte_len,
+            byte_len: guest_memory_access_byte_len(byte_len),
             value,
         });
     }
@@ -410,7 +410,7 @@ impl GuestInstructionEffects {
         self.memory_accesses.push(GuestMemoryAccess {
             kind: GuestMemoryAccessKind::Read,
             address,
-            byte_len,
+            byte_len: guest_memory_access_byte_len(byte_len),
             value,
         });
     }
@@ -419,10 +419,14 @@ impl GuestInstructionEffects {
         self.memory_accesses.push(GuestMemoryAccess {
             kind: GuestMemoryAccessKind::Write,
             address,
-            byte_len,
+            byte_len: guest_memory_access_byte_len(byte_len),
             value,
         });
     }
+}
+
+fn guest_memory_access_byte_len(byte_len: usize) -> u8 {
+    u8::try_from(byte_len).expect("guest memory access byte length should fit in u8")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

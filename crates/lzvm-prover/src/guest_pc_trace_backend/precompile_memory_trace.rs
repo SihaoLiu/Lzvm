@@ -114,7 +114,7 @@ fn write_precompile_memory_access(
     )?;
     write_column(builder, row, &columns.address, access.address)?;
     write_wide_column(builder, row, &columns.value, access.value)?;
-    write_optional_column(builder, row, &columns.byte_len, access.byte_len as u64)?;
+    write_optional_column(builder, row, &columns.byte_len, u64::from(access.byte_len))?;
     write_column(builder, row, &columns.selector, 1)
 }
 
