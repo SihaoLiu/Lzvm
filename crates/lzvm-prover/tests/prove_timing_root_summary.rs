@@ -1252,6 +1252,77 @@ fn prove_timing_root_summary_reports_descriptor_retention_shape() {
 }
 
 #[test]
+fn prove_timing_root_summary_classifies_initial_descriptor_upload_when_retained() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "input_bytes=2758032",
+        "timing_total_ms=8250",
+        "timing_guest_stage_tree_commit_root_count=23",
+        "timing_guest_stage_tree_commit_root_materialization_groups=23",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_cuda_allocator_copy_h2d_bytes=8264703744",
+        "timing_cuda_allocator_copy_h2d_wait_ns=645000000",
+        "timing_guest_device_source_descriptor_upload_bytes=8264703744",
+        "timing_guest_device_source_descriptor_upload_rows=93917088",
+        "timing_guest_descriptor_buffer_retention_attempts=23",
+        "timing_guest_descriptor_buffer_retention_retained=23",
+        "timing_guest_descriptor_buffer_retention_rejected=0",
+        "timing_guest_descriptor_buffer_retention_retained_bytes=8264703744",
+        "timing_guest_descriptor_buffer_retention_rejected_bytes=0",
+        "timing_guest_descriptor_buffer_retention_limit_bytes=10000000000",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let lines = stdout.lines().collect::<Vec<_>>();
+    let headers = lines[0].split(',').collect::<Vec<_>>();
+    let fields = lines[1].split(',').collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|candidate| *candidate == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        fields
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("descriptor_upload_bytes"), "8264703744");
+    assert_eq!(value("descriptor_retention_attempts"), "23");
+    assert_eq!(value("descriptor_retention_retained"), "23");
+    assert_eq!(value("descriptor_retention_rejected"), "0");
+    assert_eq!(
+        value("cuda_transfer_action_hint"),
+        "initial_descriptor_upload_retention_active"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_direct_d2h_hot_copy_shape() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

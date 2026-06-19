@@ -1088,9 +1088,19 @@ def cuda_transfer_action_hint_from_values(values: dict[str, int]) -> str:
     allocator_d2h_hot_wait_ms = (
         values.get(CUDA_COPY_D2H_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
     )
+    descriptor_upload_bytes = values.get(DESCRIPTOR_UPLOAD_BYTES_KEY, 0)
+    descriptor_attempts = values.get(DESCRIPTOR_RETENTION_ATTEMPTS_KEY, 0)
     descriptor_retained = values.get(DESCRIPTOR_RETENTION_RETAINED_KEY, 0)
     descriptor_rejected = values.get(DESCRIPTOR_RETENTION_REJECTED_KEY, 0)
 
+    if (
+        descriptor_upload_bytes > 0
+        and max(h2d_wait_ms, host_register_wait_ms) >= CUDA_TRANSFER_WAIT_MS_THRESHOLD
+        and descriptor_attempts > 0
+        and descriptor_retained == descriptor_attempts
+        and descriptor_rejected == 0
+    ):
+        return "initial_descriptor_upload_retention_active"
     if (
         descriptor_retained > 0
         and descriptor_rejected > 0
