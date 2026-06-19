@@ -6862,8 +6862,8 @@ fn guest_machine_reports_inline_common_effect_storage() {
         "guest register writes should keep one inline slot"
     );
     assert!(
-        source.contains("pub type GuestMemoryAccessList = SmallVec<[GuestMemoryAccess; 2]>;"),
-        "guest memory accesses should keep two inline slots"
+        source.contains("pub type GuestMemoryAccessList = SmallVec<[GuestMemoryAccess; 1]>;"),
+        "guest memory accesses should keep one inline slot for the dominant single-access case"
     );
     assert!(
         body.contains("register_writes: GuestRegisterWriteList"),

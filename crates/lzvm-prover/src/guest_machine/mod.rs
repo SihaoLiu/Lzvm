@@ -357,7 +357,7 @@ pub struct GuestMemoryAccess {
 
 pub type GuestRegisterWriteList = SmallVec<[GuestRegisterWrite; 1]>;
 type GuestRegisterRollbackList = SmallVec<[(u8, u64); 1]>;
-pub type GuestMemoryAccessList = SmallVec<[GuestMemoryAccess; 2]>;
+pub type GuestMemoryAccessList = SmallVec<[GuestMemoryAccess; 1]>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct GuestInstructionEffects {
