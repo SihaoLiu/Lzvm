@@ -309,6 +309,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "{module_name} should not duplicate abstract verifier soundness for ignored metadata"
         );
     }
+    lean_binding::assert_theorem_declarations(
+        &runtime_performance_source,
+        &[
+            "runtime_performance_observation_projects_metadata",
+            "runtime_performance_observation_projected_metadata_acceptance_sound",
+            "runtime_performance_observation_projected_metadata_acceptance_verifier_core_contract",
+        ],
+    );
     assert_eq!(
         gpu_runtime_source.matches("abstract_verifier_sound").count(),
         1,
@@ -364,12 +372,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_binding::assert_theorem_body_contains(
             &runtime_performance_source,
             theorem_name,
-            &[projector, wrapper],
+            &[
+                projector,
+                "runtime_performance_observation_projected_metadata_acceptance_sound",
+            ],
         );
         lean_binding::assert_theorem_body_omits(
             &runtime_performance_source,
             theorem_name,
-            &["runtime_performance_observation_acceptance_sound"],
+            &["runtime_performance_observation_acceptance_sound", wrapper],
         );
     }
     for (theorem_name, projector, wrapper) in [
@@ -422,7 +433,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_binding::assert_theorem_body_contains(
             &runtime_performance_source,
             theorem_name,
-            &[projector, wrapper],
+            &[
+                projector,
+                concat!(
+                    "runtime_performance_observation_projected_metadata_",
+                    "acceptance_verifier_core_contract"
+                ),
+            ],
         );
         lean_binding::assert_theorem_body_omits(
             &runtime_performance_source,
@@ -430,6 +447,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &[
                 "runtime_performance_observation_acceptance_verifier_core_contract",
                 "sound_witness_implies_verifier_core_contract",
+                wrapper,
             ],
         );
     }
