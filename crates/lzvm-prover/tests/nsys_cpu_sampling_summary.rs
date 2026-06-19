@@ -20,6 +20,8 @@ fn nsys_cpu_sampling_summary_reports_application_hotspots() {
         "application_sample_pct",
         "hot_libc_nearest_application_callers",
         "nearest_app_symbol",
+        "cpu_trace_memcpy_action_hints",
+        "trace_report_storage_structural_candidate",
     ] {
         assert!(
             script_source.contains(required),
@@ -51,6 +53,9 @@ fn nsys_cpu_sampling_summary_reports_application_hotspots() {
         "hot_libc_nearest_application_callers",
         "libc_symbol,nearest_app_symbol,nearest_app_module,samples,libc_sample_pct",
         "__memcpy_avx512_unaligned_erms,run_guest_pc_trace_segment_slice,lzvm,2,100.000",
+        "cpu_trace_memcpy_action_hints",
+        "nearest_app_symbol,samples,libc_sample_pct,action_hint",
+        "run_guest_pc_trace_segment_slice,2,100.000,trace_report_storage_structural_candidate",
     ] {
         assert!(
             stdout.contains(required),

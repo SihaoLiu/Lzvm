@@ -169,6 +169,22 @@ def hot_libc_nearest_application_callers(
     ).fetchall()
 
 
+def cpu_trace_memcpy_action_hint(nearest_app_symbol: str) -> str:
+    if "run_guest_pc_trace_segment_slice" in nearest_app_symbol:
+        return "trace_report_storage_structural_candidate"
+    if (
+        "GuestMachineMemory::read_range_into" in nearest_app_symbol
+        or "read_guest_load" in nearest_app_symbol
+    ):
+        return "guest_memory_read_candidate"
+    if (
+        "GuestMachineMemorySegment::write_range" in nearest_app_symbol
+        or "write_guest_store" in nearest_app_symbol
+    ):
+        return "guest_memory_write_candidate"
+    return "none"
+
+
 def emit_summary(conn: sqlite3.Connection, limit: int) -> None:
     require_tables(conn)
     total_samples = sample_count(conn)
@@ -220,6 +236,24 @@ def emit_summary(conn: sqlite3.Connection, limit: int) -> None:
                     csv_cell(row["nearest_app_module"]),
                     str(samples),
                     pct(samples, libc_caller_total),
+                ]
+            )
+        )
+
+    print("cpu_trace_memcpy_action_hints")
+    print("nearest_app_symbol,samples,libc_sample_pct,action_hint")
+    for row in libc_caller_rows:
+        action_hint = cpu_trace_memcpy_action_hint(str(row["nearest_app_symbol"]))
+        if action_hint == "none":
+            continue
+        samples = int(row["samples"] or 0)
+        print(
+            ",".join(
+                [
+                    csv_cell(row["nearest_app_symbol"]),
+                    str(samples),
+                    pct(samples, libc_caller_total),
+                    action_hint,
                 ]
             )
         )
