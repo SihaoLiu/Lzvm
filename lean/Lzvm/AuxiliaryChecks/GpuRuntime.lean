@@ -33,13 +33,11 @@ private theorem checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    And.intro
-      (assumptions.crypto.transcript_binding publicInput proof checked.left)
-      (And.intro
-        (assumptions.semantic.public_input_binding publicInput proof checked.left)
-        (And.intro
-          (assumptions.crypto.pcs_opening_sound publicInput proof checked.left)
-          (assumptions.crypto.fri_query_sound publicInput proof checked.left)))
+    auxiliary_checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
 
 theorem gpu_setup_checked_acceptance_projects_constants_sound
     {system : VerifierModel}
