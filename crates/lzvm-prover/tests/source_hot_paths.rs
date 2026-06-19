@@ -1014,11 +1014,15 @@ fn cuda_compact_witness_opening_uses_retained_parent_checkpoint_after_leaf_diges
         .find("open_batch_with_retained_parent_checkpoint_level_cuda")
         .expect("recomputed opening should contain retained parent checkpoint branch");
     let full_path_index = recompute_body
-        .find(".opening_path_siblings(*row)")
-        .expect("recomputed opening should keep full siblings fallback");
+        .find(".opening_path_siblings_batch(rows)")
+        .expect("recomputed opening should keep batched full siblings fallback");
     assert!(
         checkpoint_branch_index < full_path_index,
         "checkpoint openings should be attempted before the full leaf-level opening fallback"
+    );
+    assert!(
+        !recompute_body.contains(".opening_path_siblings(*row)"),
+        "recomputed full leaf-level fallback should not reintroduce per-row sibling downloads"
     );
     assert!(
         values_source.contains("retained_parent_checkpoint_opening_count")

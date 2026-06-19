@@ -2249,29 +2249,28 @@ impl WitnessStageCompactTreeStorage {
         } else {
             None
         };
-        let mut siblings_by_row = Vec::with_capacity(rows.len());
-        for row in rows {
-            let siblings = record_path_parent_hash_duration(
-                timing.as_deref_mut(),
+        let siblings_by_row = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::Recomputed,
+            || {
+                leaf_level
+                    .opening_path_siblings_batch(rows)
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| WitnessStageOpeningError::context("compact full path", source))?;
+        if siblings_by_row.len() != rows.len() {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        if let (Some(timing), Some((row_count, byte_count, launch_count))) =
+            (timing.as_deref_mut(), path_parent_work)
+        {
+            timing.record_path_parent_hash_work(
                 PathParentHashTimingKind::Recomputed,
-                || {
-                    leaf_level
-                        .opening_path_siblings(*row)
-                        .map_err(WitnessStageOpeningError::from)
-                },
-            )
-            .map_err(|source| WitnessStageOpeningError::context("compact full path", source))?;
-            if let (Some(timing), Some((row_count, byte_count, launch_count))) =
-                (timing.as_deref_mut(), path_parent_work)
-            {
-                timing.record_path_parent_hash_work(
-                    PathParentHashTimingKind::Recomputed,
-                    row_count,
-                    byte_count,
-                    launch_count,
-                );
-            }
-            siblings_by_row.push(siblings);
+                row_count,
+                byte_count,
+                launch_count,
+            );
         }
         let values_by_row = self
             .copy_extended_row_values_batch_from_device(&output_buffer, rows, timing)
