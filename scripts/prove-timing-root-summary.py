@@ -202,6 +202,24 @@ SPARSE_HIGH32_DESCRIPTOR_BASE_WORDS_PER_ROW = 9
 WORD_BYTES = 8
 SEED_DIRECT_LIFT_ATTEMPTS_KEY = "timing_guest_trace_seed_direct_lift_attempts"
 SEED_DIRECT_LIFT_SUCCESSES_KEY = "timing_guest_trace_seed_direct_lift_successes"
+SEED_DIRECT_LIFT_EMPTY_SEGMENTS_KEY = (
+    "timing_guest_trace_seed_direct_lift_empty_segments"
+)
+SEED_DIRECT_LIFT_PENDING_DMA_SINGLE_REPORTS_KEY = (
+    "timing_guest_trace_seed_direct_lift_pending_dma_single_reports"
+)
+SEED_DIRECT_LIFT_AMO_BOUNDARIES_KEY = (
+    "timing_guest_trace_seed_direct_lift_amo_boundaries"
+)
+SEED_DIRECT_LIFT_STORE_CONDITIONAL_BOUNDARIES_KEY = (
+    "timing_guest_trace_seed_direct_lift_store_conditional_boundaries"
+)
+SEED_DIRECT_LIFT_DMA_PREPARE_MISSING_LOOKAHEADS_KEY = (
+    "timing_guest_trace_seed_direct_lift_dma_prepare_missing_lookaheads"
+)
+SEED_DIRECT_LIFT_BOUNDARY_C_UNAVAILABLE_KEY = (
+    "timing_guest_trace_seed_direct_lift_boundary_c_unavailable"
+)
 SEED_FULL_ADVANCES_KEY = "timing_guest_trace_seed_full_advances"
 FINISH_OPENING_MS_KEY = "timing_finish_witness_opening_ms"
 OPENING_QUERY_COUNT_KEY = "timing_finish_witness_opening_query_count"
@@ -414,7 +432,11 @@ HEADER = (
     "descriptor_sparse_high32_estimated_upload_savings_pct,"
     "descriptor_sparse_high32_high_words,descriptor_sparse_high32_shape_hint,"
     "descriptor_shape_hint,seed_direct_lift_attempts,"
-    "seed_direct_lift_successes,seed_full_advances,"
+    "seed_direct_lift_successes,seed_direct_lift_empty_segments,"
+    "seed_direct_lift_pending_dma_single_reports,seed_direct_lift_amo_boundaries,"
+    "seed_direct_lift_store_conditional_boundaries,"
+    "seed_direct_lift_dma_prepare_missing_lookaheads,"
+    "seed_direct_lift_boundary_c_unavailable,seed_full_advances,"
     "finish_opening_ms,opening_query_units,opening_single_query_units,"
     "opening_queries,opening_max_queries_per_unit,opening_stage_count,"
     "opening_source_shape_hint,"
@@ -639,6 +661,12 @@ TIMING_KEYS = {
     *DESCRIPTOR_HIGH32_ROW_FIELD_HISTOGRAM_KEYS,
     SEED_DIRECT_LIFT_ATTEMPTS_KEY,
     SEED_DIRECT_LIFT_SUCCESSES_KEY,
+    SEED_DIRECT_LIFT_EMPTY_SEGMENTS_KEY,
+    SEED_DIRECT_LIFT_PENDING_DMA_SINGLE_REPORTS_KEY,
+    SEED_DIRECT_LIFT_AMO_BOUNDARIES_KEY,
+    SEED_DIRECT_LIFT_STORE_CONDITIONAL_BOUNDARIES_KEY,
+    SEED_DIRECT_LIFT_DMA_PREPARE_MISSING_LOOKAHEADS_KEY,
+    SEED_DIRECT_LIFT_BOUNDARY_C_UNAVAILABLE_KEY,
     SEED_FULL_ADVANCES_KEY,
     FINISH_OPENING_MS_KEY,
     OPENING_QUERY_COUNT_KEY,
@@ -2634,6 +2662,24 @@ def summarize_profile_values(
     )
     seed_direct_lift_attempts = values.get(SEED_DIRECT_LIFT_ATTEMPTS_KEY, 0)
     seed_direct_lift_successes = values.get(SEED_DIRECT_LIFT_SUCCESSES_KEY, 0)
+    seed_direct_lift_empty_segments = values.get(
+        SEED_DIRECT_LIFT_EMPTY_SEGMENTS_KEY, 0
+    )
+    seed_direct_lift_pending_dma_single_reports = values.get(
+        SEED_DIRECT_LIFT_PENDING_DMA_SINGLE_REPORTS_KEY, 0
+    )
+    seed_direct_lift_amo_boundaries = values.get(
+        SEED_DIRECT_LIFT_AMO_BOUNDARIES_KEY, 0
+    )
+    seed_direct_lift_store_conditional_boundaries = values.get(
+        SEED_DIRECT_LIFT_STORE_CONDITIONAL_BOUNDARIES_KEY, 0
+    )
+    seed_direct_lift_dma_prepare_missing_lookaheads = values.get(
+        SEED_DIRECT_LIFT_DMA_PREPARE_MISSING_LOOKAHEADS_KEY, 0
+    )
+    seed_direct_lift_boundary_c_unavailable = values.get(
+        SEED_DIRECT_LIFT_BOUNDARY_C_UNAVAILABLE_KEY, 0
+    )
     seed_full_advances = values.get(SEED_FULL_ADVANCES_KEY, 0)
     finish_opening_ms = values.get(FINISH_OPENING_MS_KEY, 0)
     opening_queries = values.get(OPENING_QUERY_COUNT_KEY, 0)
@@ -3056,7 +3102,12 @@ def summarize_profile_values(
         f"{sparse_high32_high_words},{sparse_high32_shape_hint},"
         f"{descriptor_hint},"
         f"{seed_direct_lift_attempts},"
-        f"{seed_direct_lift_successes},{seed_full_advances},"
+        f"{seed_direct_lift_successes},{seed_direct_lift_empty_segments},"
+        f"{seed_direct_lift_pending_dma_single_reports},"
+        f"{seed_direct_lift_amo_boundaries},"
+        f"{seed_direct_lift_store_conditional_boundaries},"
+        f"{seed_direct_lift_dma_prepare_missing_lookaheads},"
+        f"{seed_direct_lift_boundary_c_unavailable},{seed_full_advances},"
         f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
         f"{opening_queries},{opening_max_queries_per_unit},{opening_stage_count},"
         f"{opening_source_hint},"

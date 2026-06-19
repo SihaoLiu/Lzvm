@@ -357,6 +357,88 @@ fn prove_timing_root_summary_reports_source_retention_rebuild_shape() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_seed_direct_lift_miss_reasons() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=9000",
+        "timing_guest_trace_seed_direct_lift_attempts=8",
+        "timing_guest_trace_seed_direct_lift_successes=2",
+        "timing_guest_trace_seed_direct_lift_empty_segments=1",
+        "timing_guest_trace_seed_direct_lift_pending_dma_single_reports=2",
+        "timing_guest_trace_seed_direct_lift_amo_boundaries=3",
+        "timing_guest_trace_seed_direct_lift_store_conditional_boundaries=4",
+        "timing_guest_trace_seed_direct_lift_dma_prepare_missing_lookaheads=5",
+        "timing_guest_trace_seed_direct_lift_boundary_c_unavailable=6",
+        "timing_guest_trace_seed_full_advances=6",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    assert_eq!(
+        header.len(),
+        row.len(),
+        "summary header and row should have matching column counts: stdout={stdout}"
+    );
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("seed_direct_lift_empty_segments"), "1");
+    assert_eq!(value("seed_direct_lift_pending_dma_single_reports"), "2");
+    assert_eq!(value("seed_direct_lift_amo_boundaries"), "3");
+    assert_eq!(value("seed_direct_lift_store_conditional_boundaries"), "4");
+    assert_eq!(
+        value("seed_direct_lift_dma_prepare_missing_lookaheads"),
+        "5"
+    );
+    assert_eq!(value("seed_direct_lift_boundary_c_unavailable"), "6");
+}
+
+#[test]
 fn prove_timing_root_summary_reports_trace_report_detail_sample_coverage() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
