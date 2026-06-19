@@ -507,8 +507,7 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_detail_sample_count
     }
 
-    #[cfg(test)]
-    fn segment_replay_count(&self) -> usize {
+    pub fn segment_replay_count(&self) -> usize {
         self.segment_replay_count
     }
 

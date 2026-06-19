@@ -447,6 +447,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_emit_duration: Duration,
     guest_trace_descriptor_duration: Duration,
     guest_trace_report_detail_sample_count: usize,
+    guest_trace_segment_replay_count: usize,
     guest_trace_seed_direct_lift_duration: Duration,
     guest_trace_seed_full_advance_duration: Duration,
     guest_trace_pending_send_wait_duration: Duration,
@@ -682,6 +683,7 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_descriptor_duration: stream_timing.trace_descriptor_duration(),
             guest_trace_report_detail_sample_count: stream_timing
                 .trace_report_detail_sample_count(),
+            guest_trace_segment_replay_count: stream_timing.segment_replay_count(),
             guest_trace_seed_direct_lift_duration: stream_timing.seed_direct_lift_duration(),
             guest_trace_seed_full_advance_duration: stream_timing.seed_full_advance_duration(),
             guest_trace_pending_send_wait_duration: stream_timing.pending_send_wait_duration(),
@@ -1110,6 +1112,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_parallel_lower_max_reorder_count(&self) -> usize {
         self.guest_trace_parallel_lower_max_reorder_count
+    }
+
+    pub fn guest_trace_segment_replay_count(&self) -> usize {
+        self.guest_trace_segment_replay_count
     }
 
     pub fn guest_trace_seed_direct_lift_attempt_count(&self) -> usize {

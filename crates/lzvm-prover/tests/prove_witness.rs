@@ -2237,6 +2237,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     const STREAM_ENV: &str = "LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS";
     const PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE";
     const PIPELINE_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
+    const REPLAY_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY";
     const COMMIT_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS";
     const ROOTS_ENV: &str = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS";
 
@@ -2244,6 +2245,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         proof_bytes: Vec<u8>,
         witness_segment_bytes: Vec<(u32, Vec<u8>)>,
         stream_ingress_count: usize,
+        segment_replay_count: usize,
         parallel_lower_worker_count: usize,
         parallel_lower_emitted_count: usize,
         segment_commit_effective_worker_count: usize,
@@ -2255,6 +2257,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     let _stream_guard = TestEnvVarGuard::unset(STREAM_ENV);
     let _pipeline_guard = TestEnvVarGuard::unset(PIPELINE_ENV);
     let _pipeline_workers_guard = TestEnvVarGuard::unset(PIPELINE_WORKERS_ENV);
+    let _replay_guard = TestEnvVarGuard::unset(REPLAY_ENV);
     let _commit_workers_guard = TestEnvVarGuard::unset(COMMIT_WORKERS_ENV);
     let _roots_guard = TestEnvVarGuard::unset(ROOTS_ENV);
     std::env::set_var(ROOTS_ENV, "0");
@@ -2305,6 +2308,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
 
     let run = |label: &str| -> StreamRun {
         let mut stream_ingress_count = None;
+        let mut segment_replay_count = None;
         let mut parallel_lower_counts = None;
         let mut segment_commit_effective_worker_count = None;
         let outputs =
@@ -2316,6 +2320,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
                 &mut |timing| {
                     stream_ingress_count =
                         Some(timing.guest_device_source_descriptor_stream_ingress_count());
+                    segment_replay_count = Some(timing.guest_trace_segment_replay_count());
                     parallel_lower_counts = Some((
                         timing.guest_trace_parallel_lower_worker_count(),
                         timing.guest_trace_parallel_lower_emitted_count(),
@@ -2329,6 +2334,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             });
         let stream_ingress_count =
             stream_ingress_count.expect("timed run should report stream ingress count");
+        let segment_replay_count =
+            segment_replay_count.expect("timed run should report segment replay count");
         let (parallel_lower_worker_count, parallel_lower_emitted_count) =
             parallel_lower_counts.expect("timed run should report parallel lower counts");
         let segment_commit_effective_worker_count = segment_commit_effective_worker_count
@@ -2377,6 +2384,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             proof_bytes,
             witness_segment_bytes,
             stream_ingress_count,
+            segment_replay_count,
             parallel_lower_worker_count,
             parallel_lower_emitted_count,
             segment_commit_effective_worker_count,
@@ -2389,6 +2397,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     std::env::remove_var(STREAM_ENV);
     std::env::set_var(PIPELINE_ENV, "1");
     std::env::set_var(PIPELINE_WORKERS_ENV, "2");
+    std::env::set_var(REPLAY_ENV, "1");
     let pipeline_run = run("pipeline");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
@@ -2405,6 +2414,14 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         "default path should not use the structural pipeline lowerer"
     );
     assert_eq!(
+        default_run.segment_replay_count, 0,
+        "default path should not use segment replay"
+    );
+    assert_eq!(
+        stream_run.segment_replay_count, 0,
+        "stream ingress alone should not use segment replay"
+    );
+    assert_eq!(
         default_run.segment_commit_effective_worker_count, 1,
         "default path should keep segment commit serial"
     );
@@ -2415,6 +2432,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert!(
         pipeline_run.parallel_lower_emitted_count > 0,
         "pipeline opt-in should emit lowered trace segments through the parallel lowerer"
+    );
+    assert!(
+        pipeline_run.segment_replay_count > 0,
+        "pipeline replay opt-in should replay trace segments before proof assembly"
     );
     assert_eq!(
         pipeline_run.segment_commit_effective_worker_count, 1,
