@@ -4,7 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
-import Lzvm.RetainedLeafDigestOpening
+import Lzvm.RetainedLeafDigestOpening.Core
 
 /-!
 Fixed-arity retained leaf digest opening wrappers.

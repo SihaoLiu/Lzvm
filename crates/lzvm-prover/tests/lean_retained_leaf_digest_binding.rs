@@ -7,8 +7,11 @@ mod lean_binding;
 fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_path = crate_root.join("../../lean/Lzvm/RetainedLeafDigestOpening.lean");
-    let mut lean_source = std::fs::read_to_string(&lean_path)
+    let wrapper_source = std::fs::read_to_string(&lean_path)
         .expect("Lean retained leaf digest opening source should read");
+    let core_path = crate_root.join("../../lean/Lzvm/RetainedLeafDigestOpening/Core.lean");
+    let mut lean_source = std::fs::read_to_string(&core_path)
+        .expect("Lean retained leaf digest opening core source should read");
     let contracts_path =
         crate_root.join("../../lean/Lzvm/RetainedLeafDigestOpening/Contracts.lean");
     let arity_path = crate_root.join("../../lean/Lzvm/RetainedLeafDigestOpening/Arity.lean");
@@ -537,6 +540,11 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             && top_level_source.contains("import Lzvm.RetainedLeafDigestOpening.Arity")
             && top_level_source.contains("import Lzvm.RetainedLeafDigestOpening.Contracts"),
         "top-level Lean module should import retained leaf digest opening binding"
+    );
+    assert!(
+        wrapper_source.contains("import Lzvm.RetainedLeafDigestOpening.Arity")
+            && wrapper_source.contains("import Lzvm.RetainedLeafDigestOpening.Contracts"),
+        "retained leaf digest opening wrapper should aggregate arity and contracts modules"
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

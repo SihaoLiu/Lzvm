@@ -4,7 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
-import Lzvm.RetainedLeafDigestOpening
+import Lzvm.RetainedLeafDigestOpening.Core
 
 /-!
 Compact source/core contracts for retained leaf digest opening checks.
