@@ -10,6 +10,7 @@ SAMPLING_CALLCHAINS_TABLE = "SAMPLING_CALLCHAINS"
 SAMPLING_THREAD_STATE_TABLE = "ENUM_SAMPLING_THREAD_STATE"
 THREAD_NAMES_TABLE = "ThreadNames"
 STRING_TABLE = "StringIds"
+MAX_APPLICATION_CALLCHAIN_FRAMES = 8
 
 
 def csv_cell(value: object) -> str:
@@ -169,6 +170,83 @@ def hot_libc_nearest_application_callers(
     ).fetchall()
 
 
+def hot_libc_application_callchains(
+    conn: sqlite3.Connection, limit: int
+) -> list[dict[str, object]]:
+    rows = conn.execute(
+        f"""
+        with frames as (
+            select
+                e.id as event_id,
+                c.stackDepth as stack_depth,
+                coalesce(sym.value, 'symbol=' || c.symbol) as symbol,
+                coalesce(mod.value, 'module=' || c.module) as module
+            from {COMPOSITE_EVENTS_TABLE} e
+            join {SAMPLING_CALLCHAINS_TABLE} c
+              on c.id = e.id
+            left join {STRING_TABLE} sym on sym.id = c.symbol
+            left join {STRING_TABLE} mod on mod.id = c.module
+        ),
+        libc_events as (
+            select event_id, symbol as libc_symbol
+            from frames
+            where stack_depth = 0
+              and (
+                    symbol like '%memcpy%'
+                 or symbol like '%memmove%'
+                 or symbol like '%memset%'
+              )
+              and not (
+                    module = 'lzvm'
+                 or module like '%/target/release/lzvm'
+              )
+        )
+        select
+            e.libc_symbol as libc_symbol,
+            f.event_id as event_id,
+            f.stack_depth as stack_depth,
+            f.symbol as symbol,
+            f.module as module
+        from libc_events e
+        join frames f on f.event_id = e.event_id
+        where f.stack_depth > 0
+          and (
+                f.module = 'lzvm'
+             or f.module like '%/target/release/lzvm'
+          )
+        order by e.libc_symbol asc, f.event_id asc, f.stack_depth asc
+        """
+    ).fetchall()
+
+    event_frames: dict[tuple[str, int], list[str]] = {}
+    for row in rows:
+        key = (str(row["libc_symbol"]), int(row["event_id"]))
+        frames = event_frames.setdefault(key, [])
+        if len(frames) < MAX_APPLICATION_CALLCHAIN_FRAMES:
+            frames.append(str(row["symbol"]))
+
+    chain_counts: dict[tuple[str, str], int] = {}
+    for (libc_symbol, _event_id), frames in event_frames.items():
+        if not frames:
+            continue
+        chain = " <= ".join(frames)
+        key = (libc_symbol, chain)
+        chain_counts[key] = chain_counts.get(key, 0) + 1
+
+    sorted_counts = sorted(
+        chain_counts.items(),
+        key=lambda item: (-item[1], item[0][0], item[0][1]),
+    )
+    return [
+        {
+            "libc_symbol": libc_symbol,
+            "application_callchain": application_callchain,
+            "samples": samples,
+        }
+        for (libc_symbol, application_callchain), samples in sorted_counts[:limit]
+    ]
+
+
 def cpu_trace_memcpy_action_hint(nearest_app_symbol: str) -> str:
     if "run_guest_pc_trace_segment_slice" in nearest_app_symbol:
         return "trace_report_storage_structural_candidate"
@@ -240,6 +318,23 @@ def emit_summary(conn: sqlite3.Connection, limit: int) -> None:
             )
         )
 
+    libc_callchain_rows = hot_libc_application_callchains(conn, limit)
+    libc_callchain_total = sum(int(row["samples"] or 0) for row in libc_callchain_rows)
+    print("hot_libc_application_callchains")
+    print("libc_symbol,application_callchain,samples,libc_sample_pct")
+    for row in libc_callchain_rows:
+        samples = int(row["samples"] or 0)
+        print(
+            ",".join(
+                [
+                    csv_cell(row["libc_symbol"]),
+                    csv_cell(row["application_callchain"]),
+                    str(samples),
+                    pct(samples, libc_callchain_total),
+                ]
+            )
+        )
+
     print("cpu_trace_memcpy_action_hints")
     print("nearest_app_symbol,samples,libc_sample_pct,action_hint")
     for row in libc_caller_rows:
@@ -298,6 +393,7 @@ def run_self_test() -> None:
             (4, "lzvm"),
             (5, "/usr/lib64/libc.so.6"),
             (6, "run_guest_pc_trace_segment_slice"),
+            (7, "produce_guest_pc_trace_pending_slices"),
         ],
     )
     conn.executemany(
@@ -325,6 +421,8 @@ def run_self_test() -> None:
             (7, 3, 5, 0),
             (6, 6, 4, 1),
             (7, 6, 4, 1),
+            (6, 7, 4, 2),
+            (7, 7, 4, 2),
         ],
     )
     emit_summary(conn, 10)
@@ -336,7 +434,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         description="Summarize Nsight Systems CPU sampling self frames from SQLite exports."
     )
     parser.add_argument("sqlite", nargs="*", help="Nsight Systems SQLite export paths")
-    parser.add_argument("--limit", type=int, default=25)
+    parser.add_argument("--limit", "--top", dest="limit", type=int, default=25)
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args(argv)
 
