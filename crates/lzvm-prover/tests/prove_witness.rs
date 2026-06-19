@@ -2243,6 +2243,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
 
     struct StreamRun {
         proof_bytes: Vec<u8>,
+        public_values_bytes: Vec<u8>,
+        public_value_names: Vec<String>,
         witness_segment_bytes: Vec<(u32, Vec<u8>)>,
         transcript_segment_bytes: Vec<(u32, Vec<u8>)>,
         stage_roots: Vec<Vec<[u64; 4]>>,
@@ -2310,12 +2312,6 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
     write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let catalog = sample_catalog(unit);
-    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
-    let public_values = PublicValues {
-        schema_version: 1,
-        setup_hash,
-        values: Vec::new(),
-    };
     let plan = derive_prove_execution_plan(
         &catalog,
         sample_request(dir.join("out"), None),
@@ -2326,6 +2322,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         },
     )
     .expect("execution plan should derive");
+    let block_input = build_eth_block_input(&sample_block_rlp_with_parent([0x11; 32]))
+        .expect("block input should build");
+    let public_values =
+        public_values_from_eth_block_input(plan.run_plan.schedule.setup_hash, &block_input);
 
     let run = |label: &str| -> StreamRun {
         let mut stream_ingress_count = None;
@@ -2410,7 +2410,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
                 evaluation_values_segment: None,
                 verify_outputs: false,
                 program_image_cache: None,
-                eth_block_input: None,
+                eth_block_input: Some(&block_input),
                 challenge_values_segment: None,
                 include_contribution_segment: false,
             },
@@ -2424,9 +2424,18 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         );
         let proof_bytes = encode_proof_artifact(&proof)
             .unwrap_or_else(|error| panic!("{label} proof artifact should encode: {error}"));
+        let public_values_bytes = encode_public_values(&public_values)
+            .unwrap_or_else(|error| panic!("{label} public values should encode: {error}"));
+        let public_value_names = public_values
+            .values
+            .iter()
+            .map(|entry| entry.name.clone())
+            .collect::<Vec<_>>();
 
         StreamRun {
             proof_bytes,
+            public_values_bytes,
+            public_value_names,
             witness_segment_bytes,
             transcript_segment_bytes,
             stage_roots,
@@ -2440,6 +2449,13 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     };
 
     let default_run = run("default");
+    assert!(
+        default_run
+            .public_value_names
+            .iter()
+            .any(|name| name == "eth_block_hash_u32_be"),
+        "trace pipeline parity fixture should exercise ETH block public values"
+    );
     std::env::set_var(STREAM_ENV, "1");
     let stream_run = run("stream");
     std::env::remove_var(STREAM_ENV);
@@ -2563,6 +2579,22 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert_eq!(
         default_run.transcript_segment_bytes,
         combined_run.transcript_segment_bytes
+    );
+    assert_eq!(
+        default_run.public_values_bytes,
+        stream_run.public_values_bytes
+    );
+    assert_eq!(
+        default_run.public_values_bytes,
+        pipeline_run.public_values_bytes
+    );
+    assert_eq!(
+        default_run.public_values_bytes,
+        commit_worker_run.public_values_bytes
+    );
+    assert_eq!(
+        default_run.public_values_bytes,
+        combined_run.public_values_bytes
     );
     assert_eq!(default_run.proof_bytes, stream_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, pipeline_run.proof_bytes);
