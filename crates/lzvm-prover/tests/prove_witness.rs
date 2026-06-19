@@ -2283,6 +2283,9 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         stage_roots: Vec<Vec<[u64; 4]>>,
         stream_ingress_count: usize,
         segment_replay_count: usize,
+        seed_direct_lift_attempt_count: usize,
+        seed_direct_lift_success_count: usize,
+        seed_full_advance_count: usize,
         parallel_lower_worker_count: usize,
         parallel_lower_emitted_count: usize,
         segment_commit_effective_worker_count: usize,
@@ -2363,6 +2366,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     let run = |label: &str| -> StreamRun {
         let mut stream_ingress_count = None;
         let mut segment_replay_count = None;
+        let mut seed_counts = None;
         let mut parallel_lower_counts = None;
         let mut segment_commit_effective_worker_count = None;
         let mut segment_commit_worker_max_in_flight_count = None;
@@ -2376,6 +2380,11 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
                     stream_ingress_count =
                         Some(timing.guest_device_source_descriptor_stream_ingress_count());
                     segment_replay_count = Some(timing.guest_trace_segment_replay_count());
+                    seed_counts = Some((
+                        timing.guest_trace_seed_direct_lift_attempt_count(),
+                        timing.guest_trace_seed_direct_lift_success_count(),
+                        timing.guest_trace_seed_full_advance_count(),
+                    ));
                     parallel_lower_counts = Some((
                         timing.guest_trace_parallel_lower_worker_count(),
                         timing.guest_trace_parallel_lower_emitted_count(),
@@ -2393,6 +2402,11 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             stream_ingress_count.expect("timed run should report stream ingress count");
         let segment_replay_count =
             segment_replay_count.expect("timed run should report segment replay count");
+        let (
+            seed_direct_lift_attempt_count,
+            seed_direct_lift_success_count,
+            seed_full_advance_count,
+        ) = seed_counts.expect("timed run should report runner seed counts");
         let (parallel_lower_worker_count, parallel_lower_emitted_count) =
             parallel_lower_counts.expect("timed run should report parallel lower counts");
         let segment_commit_effective_worker_count = segment_commit_effective_worker_count
@@ -2474,6 +2488,9 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             stage_roots,
             stream_ingress_count,
             segment_replay_count,
+            seed_direct_lift_attempt_count,
+            seed_direct_lift_success_count,
+            seed_full_advance_count,
             parallel_lower_worker_count,
             parallel_lower_emitted_count,
             segment_commit_effective_worker_count,
@@ -2533,6 +2550,18 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         default_run.segment_commit_effective_worker_count, 1,
         "default path should keep segment commit serial"
     );
+    assert_eq!(
+        default_run.seed_direct_lift_attempt_count, 0,
+        "default path should not attempt runner boundary seed lifting"
+    );
+    assert_eq!(
+        default_run.seed_direct_lift_success_count, 0,
+        "default path should not directly lift runner boundary seeds"
+    );
+    assert_eq!(
+        default_run.seed_full_advance_count, 0,
+        "default path should not seed pending trace segments"
+    );
     assert!(
         pipeline_run.parallel_lower_worker_count >= 2,
         "pipeline opt-in should use configured parallel lower workers"
@@ -2544,6 +2573,18 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert!(
         pipeline_run.segment_replay_count > 0,
         "pipeline replay opt-in should replay trace segments before proof assembly"
+    );
+    assert!(
+        pipeline_run.seed_direct_lift_attempt_count > 0,
+        "pipeline opt-in should attempt direct runner boundary seed lifting"
+    );
+    assert_eq!(
+        pipeline_run.seed_direct_lift_attempt_count, pipeline_run.seed_direct_lift_success_count,
+        "pipeline opt-in should directly lift every non-final runner boundary seed in the fixture"
+    );
+    assert!(
+        pipeline_run.seed_full_advance_count > 0,
+        "pipeline opt-in should keep debug/reference seed validation visible"
     );
     assert_eq!(
         pipeline_run.segment_commit_effective_worker_count, 1,
@@ -2568,6 +2609,18 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert!(
         combined_run.segment_replay_count > 0,
         "combined opt-in should replay trace segments before proof assembly"
+    );
+    assert!(
+        combined_run.seed_direct_lift_attempt_count > 0,
+        "combined opt-in should attempt direct runner boundary seed lifting"
+    );
+    assert_eq!(
+        combined_run.seed_direct_lift_attempt_count, combined_run.seed_direct_lift_success_count,
+        "combined opt-in should directly lift every non-final runner boundary seed in the fixture"
+    );
+    assert!(
+        combined_run.seed_full_advance_count > 0,
+        "combined opt-in should keep debug/reference seed validation visible"
     );
     assert_eq!(
         combined_run.segment_commit_effective_worker_count, 2,
