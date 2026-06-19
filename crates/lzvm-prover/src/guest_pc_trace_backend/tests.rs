@@ -969,6 +969,7 @@ fn parallel_lower_env_stream_matches_serial_segments() {
     let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
     let _parallel_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", "1");
     let _worker_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS", "2");
+    let _replay_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY", "1");
     let dir = repo_temp_dir("guest-pc-parallel-lower-stream");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
@@ -1009,6 +1010,7 @@ fn parallel_lower_env_stream_matches_serial_segments() {
         stream.timing.parallel_lower_dispatched_count(),
         serial.len()
     );
+    assert_eq!(stream.timing.segment_replay_count(), serial.len());
     assert_eq!(stream.timing.parallel_lower_received_count(), serial.len());
     assert_eq!(stream.timing.parallel_lower_emitted_count(), serial.len());
     assert!(stream.timing.parallel_lower_max_reorder_count() <= serial.len());

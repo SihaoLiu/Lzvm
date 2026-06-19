@@ -215,6 +215,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_emit_duration: Duration,
     trace_descriptor_duration: Duration,
     trace_report_detail_sample_count: usize,
+    segment_replay_count: usize,
     seed_direct_lift_duration: Duration,
     seed_full_advance_duration: Duration,
     pending_send_wait_duration: Duration,
@@ -305,6 +306,7 @@ impl GuestPcTraceStreamTiming {
         self.trace_emit_duration += other.trace_emit_duration;
         self.trace_descriptor_duration += other.trace_descriptor_duration;
         self.trace_report_detail_sample_count += other.trace_report_detail_sample_count;
+        self.segment_replay_count += other.segment_replay_count;
         self.seed_direct_lift_duration += other.seed_direct_lift_duration;
         self.seed_full_advance_duration += other.seed_full_advance_duration;
         self.pending_send_wait_duration += other.pending_send_wait_duration;
@@ -503,6 +505,11 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_detail_sample_count(&self) -> usize {
         self.trace_report_detail_sample_count
+    }
+
+    #[cfg(test)]
+    fn segment_replay_count(&self) -> usize {
+        self.segment_replay_count
     }
 
     pub fn seed_direct_lift_duration(&self) -> Duration {
@@ -3505,6 +3512,7 @@ fn produce_guest_pc_trace_pending_slices(
                     message: "guest PC trace segment replay diverged from serial runner".to_owned(),
                 });
             }
+            timing.segment_replay_count += 1;
         }
         executed_instructions = executed_instructions
             .checked_add(slice.executed_instructions)
