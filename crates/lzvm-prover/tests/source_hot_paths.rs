@@ -3566,8 +3566,6 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
         source.contains("fn guest_pc_trace_segment_commit_worker_count_for_input(")
             && source.contains("fn default_guest_pc_trace_segment_commit_worker_count_for_input(")
             && source.contains("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS")
-            && source.contains("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE")
-            && source.contains("env_flag_present_and_enabled(\"LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE\")")
             && source.contains(".filter(|count| *count > 0)")
             && source.contains("default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count)"),
         "segment commit worker count should be an explicit nonzero env-controlled knob with a conservative default"

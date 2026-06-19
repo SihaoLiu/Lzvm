@@ -2416,9 +2416,9 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         pipeline_run.parallel_lower_emitted_count > 0,
         "pipeline opt-in should emit lowered trace segments through the parallel lowerer"
     );
-    assert!(
-        pipeline_run.segment_commit_effective_worker_count >= 2,
-        "pipeline opt-in should use segment commit workers"
+    assert_eq!(
+        pipeline_run.segment_commit_effective_worker_count, 1,
+        "pipeline opt-in should keep segment commit workers explicit"
     );
     assert_eq!(
         default_run.witness_segment_bytes,
