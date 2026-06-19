@@ -358,6 +358,7 @@ pub struct GuestMemoryAccess {
 pub type GuestRegisterWriteList = SmallVec<[GuestRegisterWrite; 1]>;
 type GuestRegisterRollbackList = SmallVec<[(u8, u64); 1]>;
 pub type GuestMemoryAccessList = SmallVec<[GuestMemoryAccess; 1]>;
+pub type GuestPrecompileMemoryAccessList = Box<[GuestMemoryAccess]>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct GuestInstructionEffects {
@@ -432,7 +433,7 @@ pub struct GuestMachineReport {
     pub next_pc: u64,
     pub register_writes: GuestRegisterWriteList,
     pub memory_accesses: GuestMemoryAccessList,
-    pub precompile_memory_accesses: Vec<GuestMemoryAccess>,
+    pub precompile_memory_accesses: GuestPrecompileMemoryAccessList,
     pub precompile_result: Option<u64>,
 }
 
@@ -840,7 +841,7 @@ fn advance_guest_machine_prepared_inner(
         next_pc,
         register_writes: effects.register_writes,
         memory_accesses: effects.memory_accesses,
-        precompile_memory_accesses: effects.precompile_memory_accesses,
+        precompile_memory_accesses: effects.precompile_memory_accesses.into_boxed_slice(),
         precompile_result: effects.precompile_result,
     })
 }

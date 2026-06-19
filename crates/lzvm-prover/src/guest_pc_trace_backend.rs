@@ -16,8 +16,8 @@ use crate::guest_machine::{
     prepare_current_guest_instruction, run_guest_machine_trace_with_fcalls,
     run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestMachineHalt, GuestMachineMemory,
     GuestMachineReport, GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus,
-    GuestMemoryAccess, GuestMemoryAccessKind, GuestMemoryAccessList, GuestRegisterWrite,
-    GuestRegisterWriteList,
+    GuestMemoryAccess, GuestMemoryAccessKind, GuestMemoryAccessList,
+    GuestPrecompileMemoryAccessList, GuestRegisterWrite, GuestRegisterWriteList,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{ResolvedTraceColumn, WitnessTraceBuildError, WitnessTraceLayout};
@@ -645,7 +645,7 @@ impl GuestPcTraceStreamTiming {
     }
 
     pub fn trace_report_precompile_access_list_size_bytes(&self) -> usize {
-        size_of::<Vec<GuestMemoryAccess>>()
+        size_of::<GuestPrecompileMemoryAccessList>()
     }
 
     pub fn trace_report_storage_bytes(&self) -> usize {

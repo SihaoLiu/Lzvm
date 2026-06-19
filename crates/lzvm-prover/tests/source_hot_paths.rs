@@ -6856,6 +6856,11 @@ fn guest_machine_reports_inline_common_effect_storage() {
         "struct GuestInstructionEffects",
         "pub struct GuestMachineRunReport",
     );
+    let report_body = function_body(
+        &source,
+        "pub struct GuestMachineReport",
+        "pub(crate) struct GuestMachinePreparedInstruction",
+    );
 
     assert!(
         source.contains("pub type GuestRegisterWriteList = SmallVec<[GuestRegisterWrite; 1]>;"),
@@ -6866,12 +6871,20 @@ fn guest_machine_reports_inline_common_effect_storage() {
         "guest memory accesses should keep one inline slot for the dominant single-access case"
     );
     assert!(
+        source.contains("pub type GuestPrecompileMemoryAccessList = Box<[GuestMemoryAccess]>;"),
+        "guest reports should store rare precompile memory accesses out of line"
+    );
+    assert!(
         body.contains("register_writes: GuestRegisterWriteList"),
         "guest machine reports should inline common small effect lists"
     );
     assert!(
         body.contains("memory_accesses: GuestMemoryAccessList"),
         "guest machine reports should inline common memory effect lists"
+    );
+    assert!(
+        report_body.contains("precompile_memory_accesses: GuestPrecompileMemoryAccessList"),
+        "guest machine reports should avoid an inline Vec header for rare precompile accesses"
     );
     assert!(
         source.contains("pub struct GuestMachineReport"),
@@ -6884,6 +6897,10 @@ fn guest_machine_reports_inline_common_effect_storage() {
     assert!(
         !body.contains("\n    memory_accesses: Vec<GuestMemoryAccess>"),
         "guest memory accesses should avoid one allocation per memory instruction"
+    );
+    assert!(
+        !report_body.contains("\n    precompile_memory_accesses: Vec<GuestMemoryAccess>"),
+        "guest precompile memory accesses should avoid a Vec header in every report"
     );
 }
 

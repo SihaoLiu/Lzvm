@@ -987,7 +987,7 @@ fn report_with_next_pc(
         next_pc,
         register_writes: Vec::new().into(),
         memory_accesses: Vec::new().into(),
-        precompile_memory_accesses: Vec::new(),
+        precompile_memory_accesses: Vec::new().into(),
         precompile_result: None,
     }
 }
