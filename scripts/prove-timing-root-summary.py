@@ -1111,7 +1111,16 @@ def cpu_trace_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
     return "none"
 
 
-def cpu_trace_report_storage_action_hint(perf_hotspots: dict[str, float]) -> str:
+def cpu_trace_report_storage_action_hint(
+    values: dict[str, int],
+    perf_hotspots: dict[str, float],
+) -> str:
+    if (
+        values.get(TRACE_REPORTS_KEY, 0) > 0
+        and TRACE_REPORT_RECORD_SIZE_BYTES_KEY not in values
+        and TRACE_REPORT_STORAGE_BYTES_KEY not in values
+    ):
+        return "refresh_trace_report_storage_timing"
     lowered_report_row_pct = perf_hotspots.get(
         PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY, 0.0
     )
@@ -2607,7 +2616,7 @@ def summarize_profile_values(
     sha256_pct = perf_hotspots.get(PERF_SHA256_SELF_PCT_KEY, 0.0)
     sha256_hint = sha256_source_hint(perf_hotspots)
     cpu_hint = cpu_trace_hotspot_hint(perf_hotspots)
-    cpu_report_storage_hint = cpu_trace_report_storage_action_hint(perf_hotspots)
+    cpu_report_storage_hint = cpu_trace_report_storage_action_hint(values, perf_hotspots)
     append_descriptor_pct = perf_hotspots.get(
         PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY, 0.0
     )
