@@ -2531,6 +2531,11 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     std::env::remove_var(STREAM_ENV);
     std::env::set_var(PIPELINE_ENV, "1");
     std::env::set_var(PIPELINE_WORKERS_ENV, "2");
+    let seed_pipeline_run = run("seed-pipeline");
+    std::env::remove_var(PIPELINE_ENV);
+    std::env::remove_var(PIPELINE_WORKERS_ENV);
+    std::env::set_var(PIPELINE_ENV, "1");
+    std::env::set_var(PIPELINE_WORKERS_ENV, "2");
     std::env::set_var(REPLAY_ENV, "1");
     std::env::set_var(SNAPSHOT_ENV, "1");
     std::env::set_var(WORKER_REPLAY_ENV, "1");
@@ -2598,6 +2603,43 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert!(
         pipeline_run.parallel_lower_emitted_count > 0,
         "pipeline opt-in should emit lowered trace segments through the parallel lowerer"
+    );
+    assert!(
+        seed_pipeline_run.parallel_lower_worker_count >= 2,
+        "seeded pipeline opt-in should use configured parallel lower workers"
+    );
+    assert!(
+        seed_pipeline_run.parallel_lower_emitted_count > 0,
+        "seeded pipeline opt-in should emit lowered trace segments through the parallel lowerer"
+    );
+    assert_eq!(
+        seed_pipeline_run.parallel_lower_snapshot_replay_count, 0,
+        "seeded pipeline opt-in should lower from carried reports without worker replay"
+    );
+    assert_eq!(
+        seed_pipeline_run.parallel_lower_report_elided_count, 0,
+        "seeded pipeline opt-in should keep reports available to lower workers"
+    );
+    assert_eq!(
+        seed_pipeline_run.segment_replay_count, 0,
+        "seeded pipeline opt-in should not replay trace segments before proof assembly"
+    );
+    assert!(
+        seed_pipeline_run.seed_direct_lift_attempt_count > 0,
+        "seeded pipeline opt-in should attempt direct runner boundary seed lifting"
+    );
+    assert_eq!(
+        seed_pipeline_run.seed_direct_lift_attempt_count,
+        seed_pipeline_run.seed_direct_lift_success_count,
+        "seeded pipeline opt-in should directly lift every non-final runner boundary seed in the fixture"
+    );
+    assert!(
+        seed_pipeline_run.seed_full_advance_count > 0,
+        "seeded pipeline opt-in should keep debug/reference seed validation visible"
+    );
+    assert_eq!(
+        seed_pipeline_run.segment_commit_effective_worker_count, 1,
+        "seeded pipeline opt-in should keep segment commit workers explicit"
     );
     assert_eq!(
         pipeline_run.parallel_lower_snapshot_replay_count,
@@ -2683,6 +2725,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     );
     assert_eq!(
         default_run.witness_segment_bytes,
+        seed_pipeline_run.witness_segment_bytes
+    );
+    assert_eq!(
+        default_run.witness_segment_bytes,
         pipeline_run.witness_segment_bytes
     );
     assert_eq!(
@@ -2694,12 +2740,17 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         combined_run.witness_segment_bytes
     );
     assert_eq!(default_run.stage_roots, stream_run.stage_roots);
+    assert_eq!(default_run.stage_roots, seed_pipeline_run.stage_roots);
     assert_eq!(default_run.stage_roots, pipeline_run.stage_roots);
     assert_eq!(default_run.stage_roots, commit_worker_run.stage_roots);
     assert_eq!(default_run.stage_roots, combined_run.stage_roots);
     assert_eq!(
         default_run.transcript_segment_bytes,
         stream_run.transcript_segment_bytes
+    );
+    assert_eq!(
+        default_run.transcript_segment_bytes,
+        seed_pipeline_run.transcript_segment_bytes
     );
     assert_eq!(
         default_run.transcript_segment_bytes,
@@ -2719,6 +2770,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     );
     assert_eq!(
         default_run.public_values_bytes,
+        seed_pipeline_run.public_values_bytes
+    );
+    assert_eq!(
+        default_run.public_values_bytes,
         pipeline_run.public_values_bytes
     );
     assert_eq!(
@@ -2730,6 +2785,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         combined_run.public_values_bytes
     );
     assert_eq!(default_run.proof_bytes, stream_run.proof_bytes);
+    assert_eq!(default_run.proof_bytes, seed_pipeline_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, pipeline_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, commit_worker_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, combined_run.proof_bytes);
