@@ -14,6 +14,30 @@ use lzvm_field::Felt;
 
 static GUEST_PC_TRACE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+#[test]
+fn internal_memory_tracks_only_supported_scratch_addresses() {
+    let mut memory = ZiskMainInternalMemory::new();
+    let amo_temp = zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER);
+
+    assert_eq!(memory.get(ZISK_EXTRA_PARAMS_ADDRESS), None);
+    assert_eq!(memory.get(amo_temp), None);
+
+    memory
+        .insert(ZISK_EXTRA_PARAMS_ADDRESS, 11)
+        .expect("extra params scratch address should be supported");
+    memory
+        .insert(amo_temp, 22)
+        .expect("AMO scratch address should be supported");
+
+    assert_eq!(memory.get(ZISK_EXTRA_PARAMS_ADDRESS), Some(11));
+    assert_eq!(memory.get(amo_temp), Some(22));
+    assert_eq!(memory.get(0xdead_beef), None);
+    assert!(
+        memory.insert(0xdead_beef, 33).is_err(),
+        "internal memory should not grow into a general map"
+    );
+}
+
 struct TestEnvVarGuard {
     name: &'static str,
     previous: Option<std::ffi::OsString>,
@@ -1216,8 +1240,7 @@ fn runner_boundary_seed_snapshot_carries_dma_prepare_scratch() {
         lifted
             .initial_state
             .internal_memory
-            .get(&ZISK_EXTRA_PARAMS_ADDRESS)
-            .copied(),
+            .get(ZISK_EXTRA_PARAMS_ADDRESS),
         Some(0x20)
     );
 }
@@ -1256,10 +1279,7 @@ fn runner_boundary_snapshot_records_dma_prepare_scratch_incrementally() {
         .expect("boundary snapshot should record DMA scratch");
 
     assert_eq!(
-        snapshot
-            .internal_memory
-            .get(&ZISK_EXTRA_PARAMS_ADDRESS)
-            .copied(),
+        snapshot.internal_memory.get(ZISK_EXTRA_PARAMS_ADDRESS),
         Some(0x20)
     );
 }

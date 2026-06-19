@@ -4730,11 +4730,54 @@ struct ExpectedMemoryAccess {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ZiskMainTraceState {
     registers: [u64; 32],
-    internal_memory: BTreeMap<u64, u64>,
+    internal_memory: ZiskMainInternalMemory,
     register_mem_steps: [u64; 32],
     pending_dma: Option<ZiskMainPendingDma>,
     last_c: u64,
     next_pc: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct ZiskMainInternalMemory {
+    extra_params: Option<u64>,
+    amo_temp: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ZiskMainInternalMemoryAddressError;
+
+impl ZiskMainInternalMemory {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn get(&self, address: u64) -> Option<u64> {
+        match address {
+            ZISK_EXTRA_PARAMS_ADDRESS => self.extra_params,
+            address if address == zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER) => {
+                self.amo_temp
+            }
+            _ => None,
+        }
+    }
+
+    fn insert(
+        &mut self,
+        address: u64,
+        value: u64,
+    ) -> Result<(), ZiskMainInternalMemoryAddressError> {
+        match address {
+            ZISK_EXTRA_PARAMS_ADDRESS => {
+                self.extra_params = Some(value);
+                Ok(())
+            }
+            address if address == zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER) => {
+                self.amo_temp = Some(value);
+                Ok(())
+            }
+            _ => Err(ZiskMainInternalMemoryAddressError),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4747,7 +4790,7 @@ impl ZiskMainTraceState {
     fn new() -> Self {
         Self {
             registers: [0; 32],
-            internal_memory: BTreeMap::new(),
+            internal_memory: ZiskMainInternalMemory::new(),
             register_mem_steps: [0; 32],
             pending_dma: None,
             last_c: 0,
@@ -4773,13 +4816,13 @@ impl ZiskMainSegmentSeed {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ZiskMainRunnerBoundarySnapshot {
-    internal_memory: BTreeMap<u64, u64>,
+    internal_memory: ZiskMainInternalMemory,
 }
 
 impl ZiskMainRunnerBoundarySnapshot {
     fn new(seed: &ZiskMainSegmentSeed) -> Self {
         Self {
-            internal_memory: seed.initial_state.internal_memory.clone(),
+            internal_memory: seed.initial_state.internal_memory,
         }
     }
 
@@ -6775,7 +6818,7 @@ fn lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
     Ok(ZiskMainSegmentSeed {
         initial_state: ZiskMainTraceState {
             registers: *input.runner_state.registers(),
-            internal_memory: input.boundary_snapshot.internal_memory.clone(),
+            internal_memory: input.boundary_snapshot.internal_memory,
             register_mem_steps,
             pending_dma: input.reports.last().and_then(zisk_main_pending_dma),
             last_c: next_previous_c,
@@ -6811,7 +6854,7 @@ fn zisk_main_runner_boundary_snapshot_from_reports(
 }
 
 fn record_zisk_main_runner_scratch_update(
-    internal_memory: &mut BTreeMap<u64, u64>,
+    internal_memory: &mut ZiskMainInternalMemory,
     registers: &[u64; 32],
     report: &GuestMachineReport,
     next_instruction: Option<RiscvInstruction>,
@@ -6840,10 +6883,14 @@ fn record_zisk_main_runner_scratch_update(
                 RiscvAmoWidth::Word => sign_extend_word(read_access.value as u32),
                 RiscvAmoWidth::Doubleword => read_access.value,
             };
-            internal_memory.insert(
-                zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER),
-                value,
-            );
+            internal_memory
+                .insert(
+                    zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER),
+                    value,
+                )
+                .map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "unsupported Zisk Main internal scratch address".to_owned(),
+                })?;
         }
     }
 
@@ -6855,7 +6902,11 @@ fn record_zisk_main_runner_scratch_update(
                 ..
             }) = next_instruction
             {
-                internal_memory.insert(ZISK_EXTRA_PARAMS_ADDRESS, registers[usize::from(rs2)]);
+                internal_memory
+                    .insert(ZISK_EXTRA_PARAMS_ADDRESS, registers[usize::from(rs2)])
+                    .map_err(|_| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "unsupported Zisk Main internal scratch address".to_owned(),
+                    })?;
             }
         }
     }
@@ -7544,7 +7595,7 @@ fn zisk_main_memory_source_value(
         }
     }
     if zisk_internal_memory_address(address) && effects.memory_accesses.is_empty() {
-        let Some(value) = state.internal_memory.get(&address).copied() else {
+        let Some(value) = state.internal_memory.get(address) else {
             return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                 row,
                 message: format!("missing internal memory value at {address}"),
@@ -8377,7 +8428,10 @@ fn apply_zisk_main_store(
                     message: "store memory row reported register writes".to_owned(),
                 });
             }
-            state.internal_memory.insert(address, store_value);
+            state
+                .internal_memory
+                .insert(address, store_value)
+                .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainStore { row })?;
         }
     }
     state.last_c = c;
