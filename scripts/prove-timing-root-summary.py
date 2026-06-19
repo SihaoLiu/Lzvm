@@ -345,6 +345,14 @@ NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY = (
 )
 NSYS_COPY_GPU_RESIDENCY_HINT_KEY = "nsys_copy_gpu_residency_hint"
 NSYS_COPY_SMALL_D2H_BATCHING_HINT_KEY = "nsys_copy_small_d2h_batching_hint"
+NSYS_KERNEL_GRAPH_FUSION_PRIORITY_HINT_KEY = (
+    "nsys_kernel_graph_fusion_priority_hint"
+)
+NSYS_KERNEL_GRAPH_FUSION_UPPER_BOUND_MS_KEY = (
+    "nsys_kernel_graph_fusion_upper_bound_ms"
+)
+NSYS_KERNEL_TOP_STREAM_IDLE_MS_KEY = "nsys_kernel_top_stream_idle_ms"
+NSYS_KERNEL_SEPARATION_HINT_KEY = "nsys_kernel_separation_hint"
 PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
 PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
 PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY = "perf_memmove_guest_machine_pct"
@@ -530,6 +538,8 @@ HEADER = (
     "cuda_host_register_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
     "data_residency_action_hint,"
     "copy_summary_gpu_residency_hint,copy_summary_small_d2h_batching_hint,"
+    "kernel_graph_fusion_priority_hint,kernel_graph_fusion_upper_bound_ms,"
+    "kernel_top_stream_idle_ms,kernel_separation_hint,"
     "segment_commit_cuda_memory_total_bytes,"
     "segment_commit_cuda_memory_initial_free_bytes,"
     "segment_commit_cuda_memory_effective_free_bytes,"
@@ -749,10 +759,16 @@ TIMING_KEYS = {
 def parse_timing_log(text: str) -> dict[str, int | str]:
     values: dict[str, int | str] = {}
     nsys_copy_block = None
+    nsys_kernel_block = None
     for line in text.splitlines():
         stripped = line.strip()
         if stripped == "cuda_transfer_triage":
             nsys_copy_block = stripped
+            nsys_kernel_block = None
+            continue
+        if stripped == "cuda_graph_fusion_separation_triage":
+            nsys_kernel_block = stripped
+            nsys_copy_block = None
             continue
         if nsys_copy_block is not None:
             if not stripped:
@@ -787,6 +803,29 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
                 )
             ):
                 values[NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY] = 1
+            continue
+        if nsys_kernel_block is not None:
+            if not stripped:
+                nsys_kernel_block = None
+                continue
+            if stripped.startswith("metric,"):
+                continue
+            try:
+                row = next(csv.reader([line]))
+            except csv.Error:
+                nsys_kernel_block = None
+                continue
+            if len(row) >= 2:
+                metric = row[0].strip()
+                value = row[1].strip()
+                if metric == "graph_fusion_priority_hint":
+                    values[NSYS_KERNEL_GRAPH_FUSION_PRIORITY_HINT_KEY] = value
+                elif metric == "graph_or_fusion_upper_bound_ms":
+                    values[NSYS_KERNEL_GRAPH_FUSION_UPPER_BOUND_MS_KEY] = value
+                elif metric == "top_stream_idle_ms":
+                    values[NSYS_KERNEL_TOP_STREAM_IDLE_MS_KEY] = value
+                elif metric == "kernel_separation_hint":
+                    values[NSYS_KERNEL_SEPARATION_HINT_KEY] = value
             continue
         if "=" not in line:
             continue
@@ -3034,6 +3073,18 @@ def summarize_profile_values(
     copy_summary_small_d2h_batching_hint = str(
         values.get(NSYS_COPY_SMALL_D2H_BATCHING_HINT_KEY, "none")
     )
+    kernel_graph_fusion_priority_hint = str(
+        values.get(NSYS_KERNEL_GRAPH_FUSION_PRIORITY_HINT_KEY, "none")
+    )
+    kernel_graph_fusion_upper_bound_ms = str(
+        values.get(NSYS_KERNEL_GRAPH_FUSION_UPPER_BOUND_MS_KEY, "0.000")
+    )
+    kernel_top_stream_idle_ms = str(
+        values.get(NSYS_KERNEL_TOP_STREAM_IDLE_MS_KEY, "0.000")
+    )
+    kernel_separation_hint = str(
+        values.get(NSYS_KERNEL_SEPARATION_HINT_KEY, "none")
+    )
     source_retention_total_exceeds_device_memory = (
         source_retention_exceeds_device_memory_hint(
             source_retention_rejected_bytes,
@@ -3263,6 +3314,8 @@ def summarize_profile_values(
         f"{cuda_host_register_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
         f"{data_residency_hint},"
         f"{copy_summary_gpu_residency_hint},{copy_summary_small_d2h_batching_hint},"
+        f"{kernel_graph_fusion_priority_hint},{kernel_graph_fusion_upper_bound_ms},"
+        f"{kernel_top_stream_idle_ms},{kernel_separation_hint},"
         f"{segment_commit_cuda_memory_total_bytes},"
         f"{segment_commit_cuda_memory_initial_free_bytes},"
         f"{segment_commit_cuda_memory_effective_free_bytes},"
