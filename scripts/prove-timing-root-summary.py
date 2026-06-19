@@ -3585,9 +3585,16 @@ def sibling_copy_summary_paths(input_path: Path) -> list[Path]:
     return paths
 
 
-def read_input(path: str | None) -> tuple[str, str]:
+def read_report_texts(paths: list[str]) -> list[str]:
+    return [Path(path).read_text(encoding="utf-8") for path in paths]
+
+
+def read_input(path: str | None, extra_reports: list[str] | None = None) -> tuple[str, str]:
     if path is None or path == "-":
-        return ("stdin", sys.stdin.read())
+        text = sys.stdin.read()
+        if extra_reports:
+            text = "\n".join([text, *read_report_texts(extra_reports)])
+        return ("stdin", text)
     input_path = Path(path)
     text = input_path.read_text(encoding="utf-8")
     sibling_reports = [
@@ -3599,6 +3606,8 @@ def read_input(path: str | None) -> tuple[str, str]:
         )
         if report_path.is_file()
     ]
+    if extra_reports:
+        sibling_reports.extend(read_report_texts(extra_reports))
     if sibling_reports:
         text = "\n".join([text, *sibling_reports])
     return (str(input_path), text)
@@ -3608,6 +3617,24 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize prove timing root materialization shape.")
     parser.add_argument("logs", nargs="*", help="prove --timings log paths, or '-' for stdin")
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument(
+        "--nsys-copy-summary",
+        action="append",
+        default=[],
+        help="additional nsys CUDA copy summary text to merge into each log",
+    )
+    parser.add_argument(
+        "--nsys-cpu-summary",
+        action="append",
+        default=[],
+        help="additional nsys CPU sampling summary text to merge into each log",
+    )
+    parser.add_argument(
+        "--nsys-kernel-summary",
+        action="append",
+        default=[],
+        help="additional nsys CUDA kernel summary text to merge into each log",
+    )
     args = parser.parse_args()
 
     if args.self_test:
@@ -3615,7 +3642,10 @@ def main() -> None:
         return
     if not args.logs:
         raise SystemExit("at least one log path is required unless --self-test is used")
-    print_summary([read_input(path) for path in args.logs])
+    extra_reports = (
+        args.nsys_copy_summary + args.nsys_cpu_summary + args.nsys_kernel_summary
+    )
+    print_summary([read_input(path, extra_reports) for path in args.logs])
 
 
 if __name__ == "__main__":

@@ -602,6 +602,84 @@ fn prove_timing_root_summary_reads_hyphen_sibling_nsys_copy_summary() {
 }
 
 #[test]
+fn prove_timing_root_summary_reads_explicit_nsys_copy_summary() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("crate should live under workspace root");
+    let script_path = workspace_root.join("scripts/prove-timing-root-summary.py");
+    let dir = workspace_root.join("temp").join(format!(
+        "prove-timing-root-summary-explicit-copy-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("sample.log");
+    let copy_summary_path = dir.join("detached-copy-report.txt");
+    std::fs::write(
+        &log_path,
+        [
+            "input_bytes=12447640",
+            "timing_total_ms=55693",
+            "timing_guest_stage_tree_commit_root_count=120",
+            "timing_guest_stage_tree_commit_root_materialization_groups=120",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+            "timing_cuda_allocator_copy_h2d_bytes=88120305500",
+            "timing_cuda_allocator_copy_h2d_wait_ns=2883439000",
+        ]
+        .join("\n"),
+    )
+    .expect("timing fixture should be written");
+    std::fs::write(
+        &copy_summary_path,
+        [
+            "cuda_transfer_triage",
+            "metric,value,detail",
+            "gpu_residency_hint,batch_or_keep_small_d2h_on_device,explicit report should be merged",
+        ]
+        .join("\n"),
+    )
+    .expect("copy summary fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg("--nsys-copy-summary")
+        .arg(&copy_summary_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines
+        .next()
+        .expect("summary should include a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should include a data row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let index = headers
+        .iter()
+        .position(|header| *header == "copy_summary_gpu_residency_hint")
+        .unwrap_or_else(|| panic!("summary should expose copy hint: stdout={stdout}"));
+    assert_eq!(
+        row.get(index),
+        Some(&"batch_or_keep_small_d2h_on_device"),
+        "explicit copy summary should feed root summary: stdout={stdout}"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_seed_direct_lift_miss_reasons() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
