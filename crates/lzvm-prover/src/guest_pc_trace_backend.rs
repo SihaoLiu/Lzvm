@@ -14,9 +14,9 @@ use crate::guest_instruction::{
 use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls, decode_current_guest_instruction,
     prepare_current_guest_instruction, run_guest_machine_trace_with_fcalls,
-    run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestMachineHalt, GuestMachineMemory,
-    GuestMachineReport, GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus,
-    GuestMemoryAccess, GuestMemoryAccessKind, GuestMemoryAccessList,
+    run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestFcallHandler, GuestMachineHalt,
+    GuestMachineMemory, GuestMachineReport, GuestMachineRunError, GuestMachineState,
+    GuestMachineTraceSliceStatus, GuestMemoryAccess, GuestMemoryAccessKind, GuestMemoryAccessList,
     GuestPrecompileMemoryAccessList, GuestRegisterWrite, GuestRegisterWriteList,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
@@ -970,6 +970,29 @@ struct GuestPcTraceSegmentSlice {
     status: GuestMachineTraceSliceStatus,
     report_capacity: usize,
     reports: Vec<GuestMachineReport>,
+}
+
+struct GuestPcTraceSegmentReplaySnapshot<H> {
+    memory: GuestMachineMemory,
+    state: GuestMachineState,
+    fcall_handler: H,
+}
+
+impl<H: Clone> GuestPcTraceSegmentReplaySnapshot<H> {
+    fn capture(memory: &GuestMachineMemory, state: &GuestMachineState, fcall_handler: &H) -> Self {
+        Self {
+            memory: memory.clone(),
+            state: state.clone(),
+            fcall_handler: fcall_handler.clone(),
+        }
+    }
+}
+
+struct GuestPcTraceSegmentReplay<H> {
+    slice: GuestPcTraceSegmentSlice,
+    memory: GuestMachineMemory,
+    state: GuestMachineState,
+    fcall_handler: H,
 }
 
 struct GuestPcTracePendingSegmentSlice {
@@ -2688,7 +2711,7 @@ fn load_guest_pc_trace_machine(
 fn run_guest_pc_trace_segment_slice(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
-    handler: &mut ZiskInputFcallHandler,
+    handler: &mut dyn GuestFcallHandler,
     instruction_limit: u64,
     row_limit: usize,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
@@ -2702,10 +2725,35 @@ fn run_guest_pc_trace_segment_slice(
     )
 }
 
+fn replay_guest_pc_trace_segment_from_snapshot<H: GuestFcallHandler>(
+    snapshot: GuestPcTraceSegmentReplaySnapshot<H>,
+    instruction_limit: u64,
+    row_limit: usize,
+) -> Result<GuestPcTraceSegmentReplay<H>, GuestPcTraceBackendError> {
+    let GuestPcTraceSegmentReplaySnapshot {
+        mut memory,
+        mut state,
+        mut fcall_handler,
+    } = snapshot;
+    let slice = run_guest_pc_trace_segment_slice(
+        &mut memory,
+        &mut state,
+        &mut fcall_handler,
+        instruction_limit,
+        row_limit,
+    )?;
+    Ok(GuestPcTraceSegmentReplay {
+        slice,
+        memory,
+        state,
+        fcall_handler,
+    })
+}
+
 fn run_guest_pc_trace_segment_slice_with_boundary_snapshot(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
-    handler: &mut ZiskInputFcallHandler,
+    handler: &mut dyn GuestFcallHandler,
     instruction_limit: u64,
     row_limit: usize,
     boundary_snapshot: &mut ZiskMainRunnerBoundarySnapshot,
@@ -2959,7 +3007,7 @@ fn finish_guest_pc_trace_streaming_device_segment(
 fn run_guest_pc_trace_segment_slice_inner<const TRACK_BOUNDARY: bool>(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
-    handler: &mut ZiskInputFcallHandler,
+    handler: &mut dyn GuestFcallHandler,
     instruction_limit: u64,
     row_limit: usize,
     mut boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
@@ -3459,8 +3507,8 @@ fn produce_guest_pc_trace_pending_slices(
         .then(ZiskMainSegmentSeed::new);
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
-        let replay_snapshot =
-            segment_replay.then(|| (memory.clone(), state.clone(), fcall_handler.clone()));
+        let replay_snapshot = segment_replay
+            .then(|| GuestPcTraceSegmentReplaySnapshot::capture(&memory, &state, &fcall_handler));
         let mut runner_boundary_snapshot = if runner_seed_snapshot {
             let seed = seed_mirror.as_ref().ok_or_else(|| {
                 GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -3489,23 +3537,19 @@ fn produce_guest_pc_trace_pending_slices(
                 row_count,
             )?
         };
-        if let Some((mut replay_memory, mut replay_state, mut replay_fcall_handler)) =
-            replay_snapshot
-        {
-            let replay = run_guest_pc_trace_segment_slice(
-                &mut replay_memory,
-                &mut replay_state,
-                &mut replay_fcall_handler,
+        if let Some(replay_snapshot) = replay_snapshot {
+            let replay = replay_guest_pc_trace_segment_from_snapshot(
+                replay_snapshot,
                 remaining_limit,
                 row_count,
             )?;
-            if replay.executed_instructions != slice.executed_instructions
-                || replay.trace_rows != slice.trace_rows
-                || replay.status != slice.status
-                || replay.reports != slice.reports
-                || replay_memory != memory
-                || replay_state != state
-                || replay_fcall_handler != fcall_handler
+            if replay.slice.executed_instructions != slice.executed_instructions
+                || replay.slice.trace_rows != slice.trace_rows
+                || replay.slice.status != slice.status
+                || replay.slice.reports != slice.reports
+                || replay.memory != memory
+                || replay.state != state
+                || replay.fcall_handler != fcall_handler
             {
                 return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
                     message: "guest PC trace segment replay diverged from serial runner".to_owned(),

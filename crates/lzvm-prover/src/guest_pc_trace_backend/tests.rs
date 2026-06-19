@@ -935,8 +935,8 @@ fn guest_pc_trace_segment_replay_snapshot_matches_serial_slice() {
     .expect("first segment should run");
     assert_eq!(first.trace_rows, row_count);
 
-    let (mut replay_memory, mut replay_state, mut replay_fcall_handler) =
-        (memory.clone(), state.clone(), fcall_handler.clone());
+    let replay_snapshot =
+        GuestPcTraceSegmentReplaySnapshot::capture(&memory, &state, &fcall_handler);
     let serial = run_guest_pc_trace_segment_slice(
         &mut memory,
         &mut state,
@@ -945,23 +945,24 @@ fn guest_pc_trace_segment_replay_snapshot_matches_serial_slice() {
         row_count,
     )
     .expect("serial segment should run");
-    let replay = run_guest_pc_trace_segment_slice(
-        &mut replay_memory,
-        &mut replay_state,
-        &mut replay_fcall_handler,
+    let replay = replay_guest_pc_trace_segment_from_snapshot(
+        replay_snapshot,
         32_u64.saturating_sub(first.executed_instructions),
         row_count,
     )
     .expect("snapshot replay should run");
     std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    assert_eq!(replay.executed_instructions, serial.executed_instructions);
-    assert_eq!(replay.trace_rows, serial.trace_rows);
-    assert_eq!(replay.status, serial.status);
-    assert_eq!(replay.reports, serial.reports);
-    assert_eq!(replay_memory, memory);
-    assert_eq!(replay_state, state);
-    assert_eq!(replay_fcall_handler, fcall_handler);
+    assert_eq!(
+        replay.slice.executed_instructions,
+        serial.executed_instructions
+    );
+    assert_eq!(replay.slice.trace_rows, serial.trace_rows);
+    assert_eq!(replay.slice.status, serial.status);
+    assert_eq!(replay.slice.reports, serial.reports);
+    assert_eq!(replay.memory, memory);
+    assert_eq!(replay.state, state);
+    assert_eq!(replay.fcall_handler, fcall_handler);
 }
 
 #[test]
