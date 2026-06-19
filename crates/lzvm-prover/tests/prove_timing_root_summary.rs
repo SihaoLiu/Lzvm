@@ -292,6 +292,7 @@ fn prove_timing_root_summary_reports_source_retention_rebuild_shape() {
         "timing_guest_stage_source_retention_max_retained_bytes=0",
         "timing_guest_stage_source_retention_max_rejected_bytes=1308622848",
         "timing_guest_stage_source_retention_limit_bytes=0",
+        "timing_guest_segment_commit_cuda_memory_total_bytes=33711521792",
         "timing_cuda_allocator_copy_h2d_bytes=88120305952",
         "timing_cuda_allocator_copy_h2d_wait_ns=7040040536",
         "timing_cuda_allocator_host_register_wait_ns=1609017316",
@@ -343,7 +344,7 @@ fn prove_timing_root_summary_reports_source_retention_rebuild_shape() {
     );
     assert_eq!(
         value("data_residency_action_hint"),
-        "source_retention_disabled_bulk_h2d_rebuild"
+        "full_source_retention_exceeds_device_memory"
     );
 }
 
