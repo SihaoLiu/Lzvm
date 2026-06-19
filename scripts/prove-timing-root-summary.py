@@ -345,6 +345,9 @@ PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY = (
     "perf_effect_record_memory_write_self_pct"
 )
 PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY = "perf_effect_record_memory_read_self_pct"
+CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY = (
+    "cpu_trace_memcpy_report_storage_hint_pct"
+)
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
 OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
 SINGLE_QUERY_ROW_VALUE_BOUNDARY_HINT = (
@@ -366,6 +369,7 @@ NSYS_CPU_HOTSPOT_BLOCKS = {
     "top_cpu_self_samples",
     "application_cpu_hotspots",
 }
+NSYS_CPU_MEMCPY_ACTION_HINT_BLOCK = "cpu_trace_memcpy_action_hints"
 
 HEADER = (
     "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,"
@@ -749,6 +753,7 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
         PERF_DECODE_INSTRUCTION_SELF_PCT_KEY: 0.0,
         PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY: 0.0,
         PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY: 0.0,
+        CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY: 0.0,
     }
 
     def record_symbol_hotspot(symbol_text: str, pct: float) -> bool:
@@ -788,7 +793,10 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
             key = PERF_BIGUINT_MODPOW_SELF_PCT_KEY
         elif "GuestMachineMemory::read_range_into" in symbol_text:
             key = PERF_GUEST_MEMORY_READ_SELF_PCT_KEY
-        elif "decode_guest_instruction" in symbol_text:
+        elif (
+            "decode_guest_instruction" in symbol_text
+            or "decode_riscv_instruction" in symbol_text
+        ):
             key = PERF_DECODE_INSTRUCTION_SELF_PCT_KEY
         elif "GuestInstructionEffects::record_memory_write" in symbol_text:
             key = PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY
@@ -807,16 +815,36 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
         if stripped in NSYS_CPU_HOTSPOT_BLOCKS:
             nsys_cpu_block = stripped
             continue
+        if stripped == NSYS_CPU_MEMCPY_ACTION_HINT_BLOCK:
+            nsys_cpu_block = stripped
+            continue
         if nsys_cpu_block is not None:
             if not stripped:
                 nsys_cpu_block = None
                 continue
-            if stripped.startswith("symbol,"):
+            if stripped.startswith("symbol,") or stripped.startswith(
+                "nearest_app_symbol,"
+            ):
                 continue
             try:
                 row = next(csv.reader([line]))
             except csv.Error:
                 nsys_cpu_block = None
+                continue
+            if nsys_cpu_block == NSYS_CPU_MEMCPY_ACTION_HINT_BLOCK:
+                if len(row) < 4:
+                    nsys_cpu_block = None
+                    continue
+                try:
+                    pct = float(row[2])
+                except ValueError:
+                    nsys_cpu_block = None
+                    continue
+                if row[3].strip() == "trace_report_storage_structural_candidate":
+                    hotspots[CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY] = max(
+                        hotspots[CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY],
+                        pct,
+                    )
                 continue
             if len(row) < 4:
                 nsys_cpu_block = None
@@ -1267,6 +1295,8 @@ def cpu_trace_report_storage_action_hint(
     pending_drop_pct = perf_hotspots.get(
         PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY, 0.0
     )
+    if perf_hotspots.get(CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY, 0.0) > 0.0:
+        return "trace_report_storage_structural_candidate"
     if (
         lowered_report_row_pct >= 15.0
         and pending_drop_pct >= 5.0
