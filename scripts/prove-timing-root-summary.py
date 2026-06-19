@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import csv
 import re
 import sys
 from pathlib import Path
@@ -361,6 +362,10 @@ PROOF_TARGET_MS = 12_000
 PERF_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
 PERF_SECOND_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
 PERF_CALLCHAIN_PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)%--(.*)$")
+NSYS_CPU_HOTSPOT_BLOCKS = {
+    "top_cpu_self_samples",
+    "application_cpu_hotspots",
+}
 
 HEADER = (
     "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,"
@@ -742,9 +747,85 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
         PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY: 0.0,
         PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY: 0.0,
     }
+
+    def record_symbol_hotspot(symbol_text: str, pct: float) -> bool:
+        key = None
+        if "lowered_report_row" in symbol_text:
+            key = PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY
+        elif "memmove" in symbol_text:
+            key = PERF_MEMMOVE_SELF_PCT_KEY
+            if "lzvm-gp-runner" in symbol_text:
+                hotspots[PERF_MEMMOVE_RUNNER_THREAD_PCT_KEY] = max(
+                    hotspots[PERF_MEMMOVE_RUNNER_THREAD_PCT_KEY], pct
+                )
+            elif "lzvm-gp-lower" in symbol_text:
+                hotspots[PERF_MEMMOVE_LOWER_THREAD_PCT_KEY] = max(
+                    hotspots[PERF_MEMMOVE_LOWER_THREAD_PCT_KEY], pct
+                )
+        elif "sha2::sha256" in symbol_text or "digest_blocks" in symbol_text:
+            key = PERF_SHA256_SELF_PCT_KEY
+        elif (
+            "GuestPcTracePendingSegmentSlice" in symbol_text
+            and "drop_in_place" in symbol_text
+        ):
+            key = PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY
+        elif "prepare_current_guest_instruction" in symbol_text:
+            key = PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY
+        elif ("build_layout_" "z" "isk_main_trace_segment_for_segment_output") in symbol_text:
+            key = PERF_TRACE_SEGMENT_BUILD_SELF_PCT_KEY
+        elif "append_main_device_trace_descriptor" in symbol_text:
+            key = PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY
+        elif ("z" "isk_main_source_value") in symbol_text:
+            key = PERF_SOURCE_VALUE_SELF_PCT_KEY
+        elif "advance_guest_machine_prepared_inner" in symbol_text:
+            key = PERF_ADVANCE_GUEST_MACHINE_SELF_PCT_KEY
+        elif "GuestMachineMemorySegment::write_range" in symbol_text:
+            key = PERF_GUEST_MEMORY_WRITE_SELF_PCT_KEY
+        elif "monty_modpow" in symbol_text:
+            key = PERF_BIGUINT_MODPOW_SELF_PCT_KEY
+        elif "GuestMachineMemory::read_range_into" in symbol_text:
+            key = PERF_GUEST_MEMORY_READ_SELF_PCT_KEY
+        elif "decode_guest_instruction" in symbol_text:
+            key = PERF_DECODE_INSTRUCTION_SELF_PCT_KEY
+        elif "GuestInstructionEffects::record_memory_write" in symbol_text:
+            key = PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY
+        elif "GuestInstructionEffects::record_memory_read" in symbol_text:
+            key = PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY
+        if key is None:
+            return False
+        hotspots[key] = max(hotspots[key], pct)
+        return True
+
     in_memmove_callchain = False
     in_sha256_callchain = False
+    nsys_cpu_block = None
     for line in text.splitlines():
+        stripped = line.strip()
+        if stripped in NSYS_CPU_HOTSPOT_BLOCKS:
+            nsys_cpu_block = stripped
+            continue
+        if nsys_cpu_block is not None:
+            if not stripped:
+                nsys_cpu_block = None
+                continue
+            if stripped.startswith("symbol,"):
+                continue
+            try:
+                row = next(csv.reader([line]))
+            except csv.Error:
+                nsys_cpu_block = None
+                continue
+            if len(row) < 4:
+                nsys_cpu_block = None
+                continue
+            try:
+                pct = float(row[3])
+            except ValueError:
+                nsys_cpu_block = None
+                continue
+            if record_symbol_hotspot(row[0], pct):
+                continue
+
         match = PERF_SELF_PERCENT_RE.match(line)
         if match:
             try:
@@ -763,50 +844,8 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
             in_sha256_callchain = (
                 "sha2::sha256" in symbol_text or "digest_blocks" in symbol_text
             )
-            if "lowered_report_row" in symbol_text:
-                key = PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY
-            elif "memmove" in symbol_text:
-                key = PERF_MEMMOVE_SELF_PCT_KEY
-                if "lzvm-gp-runner" in symbol_text:
-                    hotspots[PERF_MEMMOVE_RUNNER_THREAD_PCT_KEY] = max(
-                        hotspots[PERF_MEMMOVE_RUNNER_THREAD_PCT_KEY], pct
-                    )
-                elif "lzvm-gp-lower" in symbol_text:
-                    hotspots[PERF_MEMMOVE_LOWER_THREAD_PCT_KEY] = max(
-                        hotspots[PERF_MEMMOVE_LOWER_THREAD_PCT_KEY], pct
-                    )
-            elif in_sha256_callchain:
-                key = PERF_SHA256_SELF_PCT_KEY
-            elif (
-                "GuestPcTracePendingSegmentSlice" in symbol_text
-                and "drop_in_place" in symbol_text
-            ):
-                key = PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY
-            elif "prepare_current_guest_instruction" in symbol_text:
-                key = PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY
-            elif "build_layout_zisk_main_trace_segment_for_segment_output" in symbol_text:
-                key = PERF_TRACE_SEGMENT_BUILD_SELF_PCT_KEY
-            elif "append_main_device_trace_descriptor" in symbol_text:
-                key = PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY
-            elif "zisk_main_source_value" in symbol_text:
-                key = PERF_SOURCE_VALUE_SELF_PCT_KEY
-            elif "advance_guest_machine_prepared_inner" in symbol_text:
-                key = PERF_ADVANCE_GUEST_MACHINE_SELF_PCT_KEY
-            elif "GuestMachineMemorySegment::write_range" in symbol_text:
-                key = PERF_GUEST_MEMORY_WRITE_SELF_PCT_KEY
-            elif "monty_modpow" in symbol_text:
-                key = PERF_BIGUINT_MODPOW_SELF_PCT_KEY
-            elif "GuestMachineMemory::read_range_into" in symbol_text:
-                key = PERF_GUEST_MEMORY_READ_SELF_PCT_KEY
-            elif "decode_guest_instruction" in symbol_text:
-                key = PERF_DECODE_INSTRUCTION_SELF_PCT_KEY
-            elif "GuestInstructionEffects::record_memory_write" in symbol_text:
-                key = PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY
-            elif "GuestInstructionEffects::record_memory_read" in symbol_text:
-                key = PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY
-            else:
+            if not record_symbol_hotspot(symbol_text, pct):
                 continue
-            hotspots[key] = max(hotspots[key], pct)
             continue
 
         if not in_memmove_callchain:
@@ -3254,18 +3293,35 @@ def sibling_perf_report_paths(input_path: Path) -> list[Path]:
     return paths
 
 
+def sibling_cpu_summary_paths(input_path: Path) -> list[Path]:
+    candidates = [
+        input_path.with_suffix(".cpu-summary.txt"),
+        input_path.with_name(f"{input_path.name}.cpu-summary.txt"),
+    ]
+    paths = []
+    seen = set()
+    for candidate in candidates:
+        if candidate == input_path or candidate in seen:
+            continue
+        seen.add(candidate)
+        paths.append(candidate)
+    return paths
+
+
 def read_input(path: str | None) -> tuple[str, str]:
     if path is None or path == "-":
         return ("stdin", sys.stdin.read())
     input_path = Path(path)
     text = input_path.read_text(encoding="utf-8")
-    perf_reports = [
-        perf_report.read_text(encoding="utf-8")
-        for perf_report in sibling_perf_report_paths(input_path)
-        if perf_report.is_file()
+    sibling_reports = [
+        report_path.read_text(encoding="utf-8")
+        for report_path in (
+            sibling_perf_report_paths(input_path) + sibling_cpu_summary_paths(input_path)
+        )
+        if report_path.is_file()
     ]
-    if perf_reports:
-        text = "\n".join([text, *perf_reports])
+    if sibling_reports:
+        text = "\n".join([text, *sibling_reports])
     return (str(input_path), text)
 
 
