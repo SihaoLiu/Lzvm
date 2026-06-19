@@ -1629,6 +1629,82 @@ fn streaming_device_segment_builder_matches_host_trace_device_material() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn runner_streaming_device_material_matches_segment_lowering() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let dir = repo_temp_dir("guest-pc-runner-streaming-device-builder");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_device_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let (mut memory, mut state, mut fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("guest trace machine should load");
+    let seed = ZiskMainSegmentSeed::new();
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: seed.previous_c,
+    };
+
+    let streamed = run_guest_pc_trace_segment_slice_with_streaming_device_material(
+        &layout,
+        &seed.initial_state,
+        segment,
+        &mut memory,
+        &mut state,
+        &mut fcall_handler,
+        32,
+        layout.row_count(),
+    )
+    .expect("runner streaming material should build")
+    .expect("layout should support runner streaming material");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(streamed.slice.trace_rows, layout.row_count());
+    let host = build_layout_zisk_main_trace_segment(
+        &layout,
+        &streamed.slice.reports,
+        streamed.terminal_pc,
+        &seed.initial_state,
+        streamed.lookahead_instruction,
+        segment,
+        None,
+    )
+    .expect("host trace should build")
+    .expect("layout should support host trace");
+    assert_device_build_matches_host_trace(&streamed.device_build, &host);
+
+    let expected_seed = advance_zisk_main_segment_seed(
+        &layout,
+        &streamed.slice.reports,
+        streamed.terminal_pc,
+        &seed,
+        streamed.lookahead_instruction,
+        segment,
+    )
+    .expect("reference seed should advance")
+    .expect("layout should support seed advancement");
+    assert_eq!(streamed.next_seed, expected_seed);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn streaming_device_report_feeder_matches_host_trace_for_dma_prepare_lookahead() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()

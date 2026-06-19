@@ -976,6 +976,16 @@ struct GuestPcTracePendingSegmentSlice {
     seed: Option<Box<ZiskMainSegmentSeed>>,
 }
 
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+struct GuestPcTraceRunnerStreamingSegment {
+    slice: GuestPcTraceSegmentSlice,
+    terminal_pc: u64,
+    lookahead_instruction: Option<RiscvInstruction>,
+    device_build: GuestPcTraceDeviceSegmentBuild,
+    next_seed: ZiskMainSegmentSeed,
+}
+
 enum GuestPcTraceSegmentStreamMessage {
     Segment(Box<GuestPcTraceSegmentTrace>),
     Complete(Box<GuestPcTraceStreamResult>),
@@ -2702,6 +2712,242 @@ fn run_guest_pc_trace_segment_slice_with_boundary_snapshot(
         row_limit,
         Some(boundary_snapshot),
     )
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
+    layout: &WitnessTraceLayout,
+    initial_state: &ZiskMainTraceState,
+    segment: ZiskMainTraceSegmentInfo,
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut ZiskInputFcallHandler,
+    instruction_limit: u64,
+    row_limit: usize,
+) -> Result<Option<GuestPcTraceRunnerStreamingSegment>, GuestPcTraceBackendError> {
+    if row_limit != layout.row_count() {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "streaming device material runner requires the full segment row limit"
+                .to_owned(),
+        });
+    }
+    let Some(mut builder) =
+        ZiskMainStreamingDeviceSegmentBuilder::new(layout, initial_state, segment)?
+    else {
+        return Ok(None);
+    };
+
+    let timing_config = ZiskMainTraceLowerTimingConfig::from_env();
+    let mut reports = Vec::new();
+    let mut pending_report = None;
+    let mut next_report_index = 0_usize;
+    let mut executed_instructions = 0_u64;
+    let mut trace_rows = 0_usize;
+
+    loop {
+        let pc = state.pc();
+        let prepared = prepare_current_guest_instruction(memory, pc)
+            .map_err(GuestMachineRunError::from)
+            .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let current = prepared.instruction();
+        if current == RiscvInstruction::Ecall {
+            return finish_guest_pc_trace_streaming_device_segment(
+                builder,
+                reports,
+                &mut pending_report,
+                &mut next_report_index,
+                timing_config,
+                executed_instructions,
+                trace_rows,
+                GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall { address: pc }),
+                pc,
+                None,
+            )
+            .map(Some);
+        }
+        if executed_instructions == instruction_limit {
+            return finish_guest_pc_trace_streaming_device_segment(
+                builder,
+                reports,
+                &mut pending_report,
+                &mut next_report_index,
+                timing_config,
+                executed_instructions,
+                trace_rows,
+                GuestMachineTraceSliceStatus::Paused {
+                    pc,
+                    instruction: current,
+                },
+                pc,
+                Some(current),
+            )
+            .map(Some);
+        }
+        let max_rows = zisk_main_instruction_max_rows(current);
+        if max_rows > row_limit {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "main trace layout cannot fit the next guest instruction".to_owned(),
+            });
+        }
+        let required_rows = trace_rows.checked_add(max_rows).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "main trace row count overflow".to_owned(),
+            }
+        })?;
+        if trace_rows != 0 && required_rows > row_limit {
+            return finish_guest_pc_trace_streaming_device_segment(
+                builder,
+                reports,
+                &mut pending_report,
+                &mut next_report_index,
+                timing_config,
+                executed_instructions,
+                trace_rows,
+                GuestMachineTraceSliceStatus::Paused {
+                    pc,
+                    instruction: current,
+                },
+                pc,
+                Some(current),
+            )
+            .map(Some);
+        }
+        let report = advance_guest_machine_with_prepared_fcalls(memory, state, handler, prepared)
+            .map_err(GuestMachineRunError::from)
+            .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let report_rows = zisk_main_report_row_count(reports.len(), &report)?;
+        let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "main trace row count overflow".to_owned(),
+            }
+        })?;
+        if next_trace_rows > row_limit {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "main trace report rows exceed layout rows".to_owned(),
+            });
+        }
+        trace_rows = next_trace_rows;
+        push_guest_pc_trace_streaming_device_report(
+            &mut builder,
+            &mut reports,
+            &mut pending_report,
+            &mut next_report_index,
+            timing_config,
+            report,
+        )?;
+        executed_instructions += 1;
+        if trace_rows == row_limit {
+            let pc = state.pc();
+            let current = decode_current_guest_instruction(memory, pc)
+                .map_err(GuestMachineRunError::from)
+                .map_err(GuestPcTraceBackendError::GuestRun)?;
+            let lookahead_instruction = (current != RiscvInstruction::Ecall).then_some(current);
+            let status = if current == RiscvInstruction::Ecall {
+                GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall { address: pc })
+            } else {
+                GuestMachineTraceSliceStatus::Paused {
+                    pc,
+                    instruction: current,
+                }
+            };
+            return finish_guest_pc_trace_streaming_device_segment(
+                builder,
+                reports,
+                &mut pending_report,
+                &mut next_report_index,
+                timing_config,
+                executed_instructions,
+                trace_rows,
+                status,
+                pc,
+                lookahead_instruction,
+            )
+            .map(Some);
+        }
+    }
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+fn push_guest_pc_trace_streaming_device_report(
+    builder: &mut ZiskMainStreamingDeviceSegmentBuilder,
+    reports: &mut Vec<GuestMachineReport>,
+    pending_report: &mut Option<GuestMachineReport>,
+    next_report_index: &mut usize,
+    timing_config: ZiskMainTraceLowerTimingConfig,
+    report: GuestMachineReport,
+) -> Result<(), GuestPcTraceBackendError> {
+    if let Some(pending) = pending_report.take() {
+        let next_instruction = report.instruction;
+        builder.push_report_at(
+            *next_report_index,
+            &pending,
+            || Some(next_instruction),
+            timing_config,
+            None,
+        )?;
+        *next_report_index = next_report_index.checked_add(1).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "main trace report index overflow".to_owned(),
+            }
+        })?;
+        reports.push(pending);
+    }
+    *pending_report = Some(report);
+    Ok(())
+}
+
+#[cfg(feature = "cuda")]
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+fn finish_guest_pc_trace_streaming_device_segment(
+    mut builder: ZiskMainStreamingDeviceSegmentBuilder,
+    mut reports: Vec<GuestMachineReport>,
+    pending_report: &mut Option<GuestMachineReport>,
+    next_report_index: &mut usize,
+    timing_config: ZiskMainTraceLowerTimingConfig,
+    executed_instructions: u64,
+    trace_rows: usize,
+    status: GuestMachineTraceSliceStatus,
+    terminal_pc: u64,
+    lookahead_instruction: Option<RiscvInstruction>,
+) -> Result<GuestPcTraceRunnerStreamingSegment, GuestPcTraceBackendError> {
+    if let Some(pending) = pending_report.take() {
+        builder.push_report_at(
+            *next_report_index,
+            &pending,
+            || lookahead_instruction,
+            timing_config,
+            None,
+        )?;
+        *next_report_index = next_report_index.checked_add(1).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "main trace report index overflow".to_owned(),
+            }
+        })?;
+        reports.push(pending);
+    }
+    let report_capacity = reports.capacity();
+    let device_build = builder.finish(terminal_pc, None)?;
+    let next_seed = ZiskMainSegmentSeed {
+        initial_state: device_build.continuation_state.clone(),
+        previous_c: device_build.final_state.last_c,
+    };
+    Ok(GuestPcTraceRunnerStreamingSegment {
+        slice: GuestPcTraceSegmentSlice {
+            executed_instructions,
+            trace_rows,
+            status,
+            report_capacity,
+            reports,
+        },
+        terminal_pc,
+        lookahead_instruction,
+        device_build,
+        next_seed,
+    })
 }
 
 fn run_guest_pc_trace_segment_slice_inner<const TRACK_BOUNDARY: bool>(
