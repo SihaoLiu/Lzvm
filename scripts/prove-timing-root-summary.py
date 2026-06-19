@@ -1624,6 +1624,12 @@ def performance_focus_hint(
         return "trace_pipeline_over_secondary_opening_launches"
     if trace_pipeline_hint in trace_pipeline_hints:
         return trace_pipeline_hint
+    if (
+        trace_pipeline_hint == "within_target"
+        and retained_parent_checkpoint_action_hint
+        == "retained_parent_checkpoint_path_time_secondary"
+    ):
+        return "none"
     if retained_parent_checkpoint_action_hint != "none":
         return retained_parent_checkpoint_action_hint
     if trace_pipeline_hint not in {"none", "unknown", "within_target", "balanced_pipeline"}:

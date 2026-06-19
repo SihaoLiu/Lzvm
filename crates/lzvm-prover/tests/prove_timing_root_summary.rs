@@ -3393,6 +3393,94 @@ fn prove_timing_root_summary_prioritizes_trace_pipeline_over_secondary_opening_l
 }
 
 #[test]
+fn prove_timing_root_summary_suppresses_secondary_opening_focus_when_trace_target_is_met() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=8500",
+        "timing_guest_trace_runner_ms=7158",
+        "timing_guest_trace_lowerer_ms=7419",
+        "timing_guest_trace_lower_ms=5922",
+        "timing_guest_trace_stream_elapsed_ms=7603",
+        "timing_guest_segment_commit_ms=2092",
+        "timing_guest_trace_segment_receive_wait_ms=5510",
+        "timing_guest_trace_parallel_lower_workers=1",
+        "timing_guest_stage_leaf_kernel_work_ms=2600",
+        "timing_finish_witness_opening_ms=441",
+        "timing_finish_witness_opening_query_unit_count=41",
+        "timing_finish_witness_opening_single_query_unit_count=41",
+        "timing_finish_witness_opening_retained_parent_checkpoint_openings=41",
+        "timing_finish_witness_opening_retained_parent_checkpoint_rows=41",
+        "timing_finish_witness_opening_retained_parent_checkpoint_all_single_row_openings=41",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launches=410",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_ms=92",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches=459",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms=93",
+        "timing_guest_stage_tree_commit_root_count=23",
+        "timing_guest_stage_tree_commit_root_materialization_groups=23",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    assert_eq!(
+        header.len(),
+        row.len(),
+        "summary header and row should have matching column counts: stdout={stdout}"
+    );
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("trace_pipeline_action_hint"), "within_target");
+    assert_eq!(
+        value("opening_retained_parent_checkpoint_action_hint"),
+        "retained_parent_checkpoint_path_time_secondary"
+    );
+    assert_eq!(value("performance_focus_hint"), "none");
+}
+
+#[test]
 fn prove_timing_root_summary_reports_runner_perf_hotspots() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
