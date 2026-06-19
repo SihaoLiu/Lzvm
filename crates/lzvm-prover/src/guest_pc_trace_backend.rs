@@ -3448,10 +3448,13 @@ fn produce_guest_pc_trace_pending_slices(
     let mut trace_instance_count = 0_usize;
     let mut timing = GuestPcTraceStreamTiming::default();
     let runner_seed_snapshot = guest_pc_trace_runner_seed_snapshot_enabled();
+    let segment_replay = guest_pc_trace_segment_replay_enabled();
     let mut seed_mirror = (guest_pc_trace_seed_mirror_enabled() || runner_seed_snapshot)
         .then(ZiskMainSegmentSeed::new);
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
+        let replay_snapshot =
+            segment_replay.then(|| (memory.clone(), state.clone(), fcall_handler.clone()));
         let mut runner_boundary_snapshot = if runner_seed_snapshot {
             let seed = seed_mirror.as_ref().ok_or_else(|| {
                 GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -3480,6 +3483,29 @@ fn produce_guest_pc_trace_pending_slices(
                 row_count,
             )?
         };
+        if let Some((mut replay_memory, mut replay_state, mut replay_fcall_handler)) =
+            replay_snapshot
+        {
+            let replay = run_guest_pc_trace_segment_slice(
+                &mut replay_memory,
+                &mut replay_state,
+                &mut replay_fcall_handler,
+                remaining_limit,
+                row_count,
+            )?;
+            if replay.executed_instructions != slice.executed_instructions
+                || replay.trace_rows != slice.trace_rows
+                || replay.status != slice.status
+                || replay.reports != slice.reports
+                || replay_memory != memory
+                || replay_state != state
+                || replay_fcall_handler != fcall_handler
+            {
+                return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace segment replay diverged from serial runner".to_owned(),
+                });
+            }
+        }
         executed_instructions = executed_instructions
             .checked_add(slice.executed_instructions)
             .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -4239,6 +4265,10 @@ fn validate_guest_pc_trace_pending_segment_seed(
 
 fn guest_pc_trace_seed_mirror_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_SEED_MIRROR", false)
+}
+
+fn guest_pc_trace_segment_replay_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY", false)
 }
 
 fn guest_pc_trace_runner_seed_snapshot_enabled() -> bool {

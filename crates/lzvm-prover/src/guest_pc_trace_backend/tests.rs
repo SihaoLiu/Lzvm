@@ -882,6 +882,84 @@ fn seeded_pending_segments_parallel_lower_matches_serial_output() {
 }
 
 #[test]
+fn guest_pc_trace_segment_replay_snapshot_matches_serial_slice() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _replay_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY");
+    assert!(
+        !guest_pc_trace_segment_replay_enabled(),
+        "segment replay should stay disabled by default"
+    );
+    std::env::set_var("LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY", "1");
+    assert!(
+        guest_pc_trace_segment_replay_enabled(),
+        "segment replay should have an explicit opt-in gate"
+    );
+
+    let dir = repo_temp_dir("guest-pc-segment-replay-snapshot");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        riscv_addi(5, 4, 13),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let row_count = 2;
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: None,
+    };
+    let (mut memory, mut state, mut fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("guest trace machine should load");
+
+    let first = run_guest_pc_trace_segment_slice(
+        &mut memory,
+        &mut state,
+        &mut fcall_handler,
+        32,
+        row_count,
+    )
+    .expect("first segment should run");
+    assert_eq!(first.trace_rows, row_count);
+
+    let (mut replay_memory, mut replay_state, mut replay_fcall_handler) =
+        (memory.clone(), state.clone(), fcall_handler.clone());
+    let serial = run_guest_pc_trace_segment_slice(
+        &mut memory,
+        &mut state,
+        &mut fcall_handler,
+        32_u64.saturating_sub(first.executed_instructions),
+        row_count,
+    )
+    .expect("serial segment should run");
+    let replay = run_guest_pc_trace_segment_slice(
+        &mut replay_memory,
+        &mut replay_state,
+        &mut replay_fcall_handler,
+        32_u64.saturating_sub(first.executed_instructions),
+        row_count,
+    )
+    .expect("snapshot replay should run");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(replay.executed_instructions, serial.executed_instructions);
+    assert_eq!(replay.trace_rows, serial.trace_rows);
+    assert_eq!(replay.status, serial.status);
+    assert_eq!(replay.reports, serial.reports);
+    assert_eq!(replay_memory, memory);
+    assert_eq!(replay_state, state);
+    assert_eq!(replay_fcall_handler, fcall_handler);
+}
+
+#[test]
 fn parallel_lower_env_stream_matches_serial_segments() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
