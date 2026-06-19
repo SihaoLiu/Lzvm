@@ -491,13 +491,16 @@ def h2d_bulk_app_frame_summary(
     grouped: dict[tuple[int, str], dict[str, object]] = {}
     for row in rows:
         bytes_ = int(row["bytes"] or 0)
-        app_frame = first_application_frame(conn, int(row["callchain_id"]))
+        callchain_id = int(row["callchain_id"])
+        app_frame = first_application_frame(conn, callchain_id)
+        frames = callchain_frames(conn, callchain_id, max_frames=12)
         key = (bytes_, app_frame)
         entry = grouped.setdefault(
             key,
             {
                 "bytes": bytes_,
                 "app_frame": app_frame,
+                "frames": "",
                 "calls": 0,
                 "host_ns": 0,
                 "gpu_ns": 0,
@@ -511,6 +514,9 @@ def h2d_bulk_app_frame_summary(
             int(entry["max_host_ns"]),
             int(row["max_host_ns"] or 0),
         )
+        if frames:
+            prior = str(entry["frames"])
+            entry["frames"] = frames if not prior else f"{prior} | {frames}"
     return sorted(
         grouped.values(),
         key=lambda entry: (
@@ -1047,6 +1053,12 @@ def is_guest_trace_descriptor_bulk_frame(app_frame: object) -> bool:
     )
 
 
+def is_guest_trace_descriptor_bulk_candidate(row: dict[str, object]) -> bool:
+    return is_guest_trace_descriptor_bulk_frame(
+        row.get("app_frame", "")
+    ) or is_guest_trace_descriptor_bulk_frame(row.get("frames", ""))
+
+
 def print_transfer_triage(
     runtime_rows: list[sqlite3.Row],
     host_registration_rows: list[sqlite3.Row],
@@ -1126,7 +1138,7 @@ def print_transfer_triage(
                 f"host_api_ms={ms(int(candidate['host_ns'])):.3f} "
                 f"app_frame={csv_cell(candidate['app_frame'])}"
             )
-            if is_guest_trace_descriptor_bulk_frame(candidate["app_frame"]):
+            if is_guest_trace_descriptor_bulk_candidate(candidate):
                 print(
                     "h2d_structural_hint,trace_descriptor_residency_pipeline,"
                     f"bytes={int(candidate['bytes'])} "
