@@ -20,6 +20,7 @@ CONSTANT_MATERIAL_VALIDATION_JOIN_WAIT_MS_KEY = (
 RUNNER_MS_KEY = "timing_guest_trace_runner_ms"
 LOWERER_MS_KEY = "timing_guest_trace_lowerer_ms"
 TRACE_LOWER_MS_KEY = "timing_guest_trace_lower_ms"
+TRACE_REPORT_MS_KEY = "timing_guest_trace_report_ms"
 STREAM_ELAPSED_MS_KEY = "timing_guest_trace_stream_elapsed_ms"
 STREAM_WORKER_MS_KEY = "timing_guest_trace_stream_ms"
 SEGMENT_COMMIT_MS_KEY = "timing_guest_segment_commit_ms"
@@ -423,8 +424,9 @@ NSYS_CPU_MEMCPY_ACTION_HINT_BLOCK = "cpu_trace_memcpy_action_hints"
 HEADER = (
     "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,"
     "constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
-    "runner_ms,lowerer_ms,trace_lower_ms,trace_runner_lowerer_overlap_ms,"
-    "trace_lowerer_non_lower_ms,stream_elapsed_ms,stream_worker_ms,"
+    "runner_ms,lowerer_ms,trace_lower_ms,trace_report_ms,trace_non_report_ms,"
+    "trace_runner_lowerer_overlap_ms,trace_lowerer_non_lower_ms,"
+    "stream_elapsed_ms,stream_worker_ms,"
     "segment_commit_ms,segment_commit_initial_workers,"
     "segment_commit_effective_workers,segment_commit_worker_submits,"
     "segment_commit_worker_joins,segment_commit_worker_max_in_flight,"
@@ -613,6 +615,7 @@ TIMING_KEYS = {
     RUNNER_MS_KEY,
     LOWERER_MS_KEY,
     TRACE_LOWER_MS_KEY,
+    TRACE_REPORT_MS_KEY,
     STREAM_ELAPSED_MS_KEY,
     STREAM_WORKER_MS_KEY,
     SEGMENT_COMMIT_MS_KEY,
@@ -2413,6 +2416,12 @@ def summarize_profile_values(
     lowerer_ms = values.get(LOWERER_MS_KEY, 0)
     stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
     trace_lower_ms = values.get(TRACE_LOWER_MS_KEY, 0)
+    trace_report_ms = values.get(TRACE_REPORT_MS_KEY, 0)
+    trace_non_report_ms = (
+        max(trace_lower_ms - trace_report_ms, 0)
+        if TRACE_REPORT_MS_KEY in values and trace_lower_ms > 0
+        else trace_lower_ms
+    )
     trace_runner_lowerer_overlap_ms = (
         max(runner_ms + lowerer_ms - stream_elapsed_ms, 0)
         if runner_ms > 0 and lowerer_ms > 0 and stream_elapsed_ms > 0
@@ -3276,7 +3285,8 @@ def summarize_profile_values(
         f"{label},{input_bytes},{total_ms},"
         f"{constant_material_elapsed_ms},{constant_material_join_wait_ms},"
         f"{constant_material_hint},{runner_ms},{lowerer_ms},"
-        f"{trace_lower_ms},{trace_runner_lowerer_overlap_ms},"
+        f"{trace_lower_ms},{trace_report_ms},{trace_non_report_ms},"
+        f"{trace_runner_lowerer_overlap_ms},"
         f"{trace_lowerer_non_lower_ms},"
         f"{stream_elapsed_ms},{stream_worker_ms},{segment_commit_ms},"
         f"{segment_commit_initial_workers},{segment_commit_effective_workers},"

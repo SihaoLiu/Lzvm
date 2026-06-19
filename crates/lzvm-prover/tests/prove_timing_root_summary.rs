@@ -62,6 +62,9 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_lowerer_ms",
         "timing_guest_trace_lower_ms",
         "trace_lower_ms",
+        "timing_guest_trace_report_ms",
+        "trace_report_ms",
+        "trace_non_report_ms",
         "trace_runner_lowerer_overlap_ms",
         "trace_lowerer_non_lower_ms",
         "timing_guest_trace_stream_elapsed_ms",
@@ -1051,6 +1054,7 @@ fn prove_timing_root_summary_reports_trace_lower_work_and_wall_overlap() {
         "timing_guest_trace_runner_ms=7800",
         "timing_guest_trace_lowerer_ms=7812",
         "timing_guest_trace_lower_ms=6200",
+        "timing_guest_trace_report_ms=6100",
         "timing_guest_trace_stream_elapsed_ms=9912",
         "timing_guest_trace_stream_ms=7812",
         "timing_guest_stage_tree_commit_root_count=23",
@@ -1085,12 +1089,12 @@ fn prove_timing_root_summary_reports_trace_lower_work_and_wall_overlap() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "runner_ms,lowerer_ms,trace_lower_ms,trace_runner_lowerer_overlap_ms,trace_lowerer_non_lower_ms,stream_elapsed_ms"
+            "runner_ms,lowerer_ms,trace_lower_ms,trace_report_ms,trace_non_report_ms,trace_runner_lowerer_overlap_ms,trace_lowerer_non_lower_ms,stream_elapsed_ms"
         ),
         "prove timing root summary should expose actual trace lower work and runner/lowerer wall overlap columns: stdout={stdout}"
     );
     assert!(
-        stdout.contains(",7800,7812,6200,5700,1612,9912,"),
+        stdout.contains(",7800,7812,6200,6100,100,5700,1612,9912,"),
         "prove timing root summary should compute overlap and non-lowerer work from timing_guest_trace_lower_ms: stdout={stdout}"
     );
 }
