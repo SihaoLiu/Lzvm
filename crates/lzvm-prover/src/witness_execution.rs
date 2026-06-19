@@ -479,6 +479,11 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_seed_full_advance_count: usize,
     guest_trace_report_count: usize,
     guest_trace_report_row_count: usize,
+    guest_trace_report_chunk_sent_count: usize,
+    guest_trace_report_chunk_received_count: usize,
+    guest_trace_report_chunk_report_count: usize,
+    guest_trace_report_chunk_row_count: usize,
+    guest_trace_report_chunk_max_queued_count: usize,
     guest_trace_report_buffer_capacity: usize,
     guest_trace_report_buffer_max_capacity: usize,
     guest_trace_report_buffer_excess_capacity: usize,
@@ -760,6 +765,13 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_seed_full_advance_count: stream_timing.seed_full_advance_count(),
             guest_trace_report_count: stream_timing.trace_report_count(),
             guest_trace_report_row_count: stream_timing.trace_report_row_count(),
+            guest_trace_report_chunk_sent_count: stream_timing.trace_report_chunk_sent_count(),
+            guest_trace_report_chunk_received_count: stream_timing
+                .trace_report_chunk_received_count(),
+            guest_trace_report_chunk_report_count: stream_timing.trace_report_chunk_report_count(),
+            guest_trace_report_chunk_row_count: stream_timing.trace_report_chunk_row_count(),
+            guest_trace_report_chunk_max_queued_count: stream_timing
+                .trace_report_chunk_max_queued_count(),
             guest_trace_report_buffer_capacity: stream_timing.trace_report_buffer_capacity(),
             guest_trace_report_buffer_max_capacity: stream_timing
                 .trace_report_buffer_max_capacity(),
@@ -1237,6 +1249,26 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_report_row_count(&self) -> usize {
         self.guest_trace_report_row_count
+    }
+
+    pub fn guest_trace_report_chunk_sent_count(&self) -> usize {
+        self.guest_trace_report_chunk_sent_count
+    }
+
+    pub fn guest_trace_report_chunk_received_count(&self) -> usize {
+        self.guest_trace_report_chunk_received_count
+    }
+
+    pub fn guest_trace_report_chunk_report_count(&self) -> usize {
+        self.guest_trace_report_chunk_report_count
+    }
+
+    pub fn guest_trace_report_chunk_row_count(&self) -> usize {
+        self.guest_trace_report_chunk_row_count
+    }
+
+    pub fn guest_trace_report_chunk_max_queued_count(&self) -> usize {
+        self.guest_trace_report_chunk_max_queued_count
     }
 
     pub fn guest_trace_report_buffer_capacity(&self) -> usize {

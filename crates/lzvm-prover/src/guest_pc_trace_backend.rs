@@ -241,6 +241,11 @@ pub(crate) struct GuestPcTraceStreamTiming {
     seed_full_advance_count: usize,
     trace_report_count: usize,
     trace_report_row_count: usize,
+    trace_report_chunk_sent_count: usize,
+    trace_report_chunk_received_count: usize,
+    trace_report_chunk_report_count: usize,
+    trace_report_chunk_row_count: usize,
+    trace_report_chunk_max_queued_count: usize,
     trace_report_buffer_capacity: usize,
     trace_report_buffer_max_capacity: usize,
     trace_report_buffer_excess_capacity: usize,
@@ -342,6 +347,13 @@ impl GuestPcTraceStreamTiming {
         self.seed_full_advance_count += other.seed_full_advance_count;
         self.trace_report_count += other.trace_report_count;
         self.trace_report_row_count += other.trace_report_row_count;
+        self.trace_report_chunk_sent_count += other.trace_report_chunk_sent_count;
+        self.trace_report_chunk_received_count += other.trace_report_chunk_received_count;
+        self.trace_report_chunk_report_count += other.trace_report_chunk_report_count;
+        self.trace_report_chunk_row_count += other.trace_report_chunk_row_count;
+        self.trace_report_chunk_max_queued_count = self
+            .trace_report_chunk_max_queued_count
+            .max(other.trace_report_chunk_max_queued_count);
         self.trace_report_buffer_capacity += other.trace_report_buffer_capacity;
         self.trace_report_buffer_max_capacity = self
             .trace_report_buffer_max_capacity
@@ -633,6 +645,26 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_row_count(&self) -> usize {
         self.trace_report_row_count
+    }
+
+    pub fn trace_report_chunk_sent_count(&self) -> usize {
+        self.trace_report_chunk_sent_count
+    }
+
+    pub fn trace_report_chunk_received_count(&self) -> usize {
+        self.trace_report_chunk_received_count
+    }
+
+    pub fn trace_report_chunk_report_count(&self) -> usize {
+        self.trace_report_chunk_report_count
+    }
+
+    pub fn trace_report_chunk_row_count(&self) -> usize {
+        self.trace_report_chunk_row_count
+    }
+
+    pub fn trace_report_chunk_max_queued_count(&self) -> usize {
+        self.trace_report_chunk_max_queued_count
     }
 
     pub fn trace_report_buffer_capacity(&self) -> usize {

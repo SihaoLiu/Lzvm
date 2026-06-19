@@ -379,6 +379,26 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_report_row_count(),
     );
     timings.record_count(
+        "guest_trace_report_chunk_sent",
+        timing.guest_trace_report_chunk_sent_count(),
+    );
+    timings.record_count(
+        "guest_trace_report_chunk_received",
+        timing.guest_trace_report_chunk_received_count(),
+    );
+    timings.record_count(
+        "guest_trace_report_chunk_reports",
+        timing.guest_trace_report_chunk_report_count(),
+    );
+    timings.record_count(
+        "guest_trace_report_chunk_rows",
+        timing.guest_trace_report_chunk_row_count(),
+    );
+    timings.record_count(
+        "guest_trace_report_chunk_max_queued",
+        timing.guest_trace_report_chunk_max_queued_count(),
+    );
+    timings.record_count(
         "guest_trace_report_buffer_capacity",
         timing.guest_trace_report_buffer_capacity(),
     );

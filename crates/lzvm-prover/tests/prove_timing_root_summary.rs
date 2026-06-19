@@ -95,6 +95,11 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_segment_replay_count",
         "timing_guest_trace_reports",
         "timing_guest_trace_report_rows",
+        "timing_guest_trace_report_chunk_sent",
+        "timing_guest_trace_report_chunk_received",
+        "timing_guest_trace_report_chunk_reports",
+        "timing_guest_trace_report_chunk_rows",
+        "timing_guest_trace_report_chunk_max_queued",
         "timing_guest_trace_external_op_runs",
         "timing_guest_trace_external_op_max_run",
         "timing_guest_trace_copy_runs",
@@ -3140,6 +3145,25 @@ fn prove_timing_root_summary_reports_trace_report_lifetime_pressure() {
         stdout.contains("trace_report_lifetime_hint,"),
         "prove timing root summary should expose trace report lifetime hint: stdout={stdout}"
     );
+    let mut lines = stdout.lines();
+    let headers = lines.next().expect("summary should include a header");
+    let row = lines.next().expect("summary should include a data row");
+    let headers = headers.split(',').collect::<Vec<_>>();
+    let row = row.split(',').collect::<Vec<_>>();
+    let value = |name: &str| -> &str {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("missing header {name}: {headers:?}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("missing value for {name}: {row:?}"))
+    };
+    assert_eq!(value("trace_report_chunk_sent"), "0");
+    assert_eq!(value("trace_report_chunk_received"), "0");
+    assert_eq!(value("trace_report_chunk_reports"), "0");
+    assert_eq!(value("trace_report_chunk_rows"), "0");
+    assert_eq!(value("trace_report_chunk_max_queued"), "0");
     assert!(
         stdout.contains("tight_report_buffer_and_pending_drop"),
         "prove timing root summary should classify report lifetime pressure: stdout={stdout}"

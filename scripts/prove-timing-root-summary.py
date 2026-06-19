@@ -81,6 +81,11 @@ PARALLEL_LOWER_REPORT_ELIDED_KEY = (
 SEGMENT_REPLAY_COUNT_KEY = "timing_guest_trace_segment_replay_count"
 TRACE_REPORTS_KEY = "timing_guest_trace_reports"
 TRACE_REPORT_ROWS_KEY = "timing_guest_trace_report_rows"
+TRACE_REPORT_CHUNK_SENT_KEY = "timing_guest_trace_report_chunk_sent"
+TRACE_REPORT_CHUNK_RECEIVED_KEY = "timing_guest_trace_report_chunk_received"
+TRACE_REPORT_CHUNK_REPORTS_KEY = "timing_guest_trace_report_chunk_reports"
+TRACE_REPORT_CHUNK_ROWS_KEY = "timing_guest_trace_report_chunk_rows"
+TRACE_REPORT_CHUNK_MAX_QUEUED_KEY = "timing_guest_trace_report_chunk_max_queued"
 TRACE_REPORT_VALIDATION_MS_KEY = "timing_guest_trace_report_validation_ms"
 TRACE_REPORT_LOWERING_MS_KEY = "timing_guest_trace_report_lowering_ms"
 TRACE_REPORT_ROW_VALIDATION_MS_KEY = "timing_guest_trace_report_row_validation_ms"
@@ -490,7 +495,9 @@ HEADER = (
     "trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,"
     "trace_report_buffer_capacity_gib,trace_report_buffer_excess_bytes,"
     "trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
-    "trace_report_lifetime_hint,"
+    "trace_report_lifetime_hint,trace_report_chunk_sent,"
+    "trace_report_chunk_received,trace_report_chunk_reports,"
+    "trace_report_chunk_rows,trace_report_chunk_max_queued,"
     "descriptor_rows,descriptor_compact_rows,"
     "descriptor_wide_rows,descriptor_upload_bytes,descriptor_bytes_per_row,"
     "descriptor_high32_nonzero_values,descriptor_high32_nonzero_rows,"
@@ -700,6 +707,11 @@ TIMING_KEYS = {
     SEGMENT_REPLAY_COUNT_KEY,
     TRACE_REPORTS_KEY,
     TRACE_REPORT_ROWS_KEY,
+    TRACE_REPORT_CHUNK_SENT_KEY,
+    TRACE_REPORT_CHUNK_RECEIVED_KEY,
+    TRACE_REPORT_CHUNK_REPORTS_KEY,
+    TRACE_REPORT_CHUNK_ROWS_KEY,
+    TRACE_REPORT_CHUNK_MAX_QUEUED_KEY,
     TRACE_REPORT_VALIDATION_MS_KEY,
     TRACE_REPORT_LOWERING_MS_KEY,
     TRACE_REPORT_ROW_VALIDATION_MS_KEY,
@@ -2997,6 +3009,11 @@ def summarize_profile_values(
     trace_report_buffer_capacity_gib = trace_report_buffer_capacity_bytes / (
         1024.0**3
     )
+    trace_report_chunk_sent = values.get(TRACE_REPORT_CHUNK_SENT_KEY, 0)
+    trace_report_chunk_received = values.get(TRACE_REPORT_CHUNK_RECEIVED_KEY, 0)
+    trace_report_chunk_reports = values.get(TRACE_REPORT_CHUNK_REPORTS_KEY, 0)
+    trace_report_chunk_rows = values.get(TRACE_REPORT_CHUNK_ROWS_KEY, 0)
+    trace_report_chunk_max_queued = values.get(TRACE_REPORT_CHUNK_MAX_QUEUED_KEY, 0)
     trace_report_buffer_excess_pct = (
         trace_report_buffer_excess_capacity * 100.0 / trace_report_buffer_capacity
         if trace_report_buffer_capacity
@@ -3548,6 +3565,9 @@ def summarize_profile_values(
         f"{trace_report_buffer_excess_bytes},"
         f"{trace_report_buffer_excess_pct:.3f},{trace_report_buffer_hint},"
         f"{trace_lifetime_hint},"
+        f"{trace_report_chunk_sent},{trace_report_chunk_received},"
+        f"{trace_report_chunk_reports},{trace_report_chunk_rows},"
+        f"{trace_report_chunk_max_queued},"
         f"{descriptor_rows},"
         f"{descriptor_compact_rows},{descriptor_wide_rows},"
         f"{descriptor_upload_bytes},{descriptor_bytes_per_row:.3f},"
