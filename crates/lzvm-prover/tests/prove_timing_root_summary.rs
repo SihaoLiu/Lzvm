@@ -420,10 +420,10 @@ fn prove_timing_root_summary_reports_trace_report_layout_breakdown() {
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
     let input = [
         "timing_total_ms=9000",
-        "timing_guest_trace_reports=1000",
+        "timing_guest_trace_reports=67108864",
         "timing_guest_trace_report_record_size_bytes=192",
-        "timing_guest_trace_report_instruction_size_bytes=40",
-        "timing_guest_trace_report_register_write_list_size_bytes=24",
+        "timing_guest_trace_report_instruction_size_bytes=16",
+        "timing_guest_trace_report_register_write_list_size_bytes=32",
         "timing_guest_trace_report_memory_access_list_size_bytes=80",
         "timing_guest_trace_report_precompile_access_list_size_bytes=24",
         "timing_guest_stage_tree_commit_root_count=1",
@@ -477,12 +477,25 @@ fn prove_timing_root_summary_reports_trace_report_layout_breakdown() {
             .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
     };
 
-    assert_eq!(value("trace_report_instruction_size_bytes"), "40");
-    assert_eq!(value("trace_report_register_write_list_size_bytes"), "24");
+    assert_eq!(value("trace_report_instruction_size_bytes"), "16");
+    assert_eq!(value("trace_report_register_write_list_size_bytes"), "32");
     assert_eq!(value("trace_report_memory_access_list_size_bytes"), "80");
     assert_eq!(
         value("trace_report_precompile_access_list_size_bytes"),
         "24"
+    );
+    assert_eq!(value("trace_report_instruction_storage_gib"), "1.000");
+    assert_eq!(
+        value("trace_report_register_write_list_storage_gib"),
+        "2.000"
+    );
+    assert_eq!(
+        value("trace_report_memory_access_list_storage_gib"),
+        "5.000"
+    );
+    assert_eq!(
+        value("trace_report_precompile_access_list_storage_gib"),
+        "1.500"
     );
 }
 
@@ -2143,13 +2156,13 @@ fn prove_timing_root_summary_reports_trace_report_buffer_shape() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "trace_reports,trace_report_rows,trace_rows_per_report,trace_report_record_size_bytes,trace_report_instruction_size_bytes,trace_report_register_write_list_size_bytes,trace_report_memory_access_list_size_bytes,trace_report_precompile_access_list_size_bytes,trace_report_storage_bytes,trace_report_storage_gib,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,trace_report_buffer_capacity_gib,trace_report_buffer_excess_bytes,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
+            "trace_reports,trace_report_rows,trace_rows_per_report,trace_report_record_size_bytes,trace_report_instruction_size_bytes,trace_report_register_write_list_size_bytes,trace_report_memory_access_list_size_bytes,trace_report_precompile_access_list_size_bytes,trace_report_instruction_storage_gib,trace_report_register_write_list_storage_gib,trace_report_memory_access_list_storage_gib,trace_report_precompile_access_list_storage_gib,trace_report_storage_bytes,trace_report_storage_gib,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,trace_report_buffer_capacity_gib,trace_report_buffer_excess_bytes,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
         ),
         "prove timing root summary should expose trace report buffer columns: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            "93843537,93917088,1.001,128,0,0,0,0,12011972736,11.187,94371840,4194304,528303,12079595520,11.250,67622784,0.560,report_buffer_capacity_tight,"
+            "93843537,93917088,1.001,128,0,0,0,0,0.000,0.000,0.000,0.000,12011972736,11.187,94371840,4194304,528303,12079595520,11.250,67622784,0.560,report_buffer_capacity_tight,"
         ),
         "prove timing root summary should classify tight report buffer capacity: stdout={stdout}"
     );

@@ -368,6 +368,10 @@ HEADER = (
     "trace_report_register_write_list_size_bytes,"
     "trace_report_memory_access_list_size_bytes,"
     "trace_report_precompile_access_list_size_bytes,"
+    "trace_report_instruction_storage_gib,"
+    "trace_report_register_write_list_storage_gib,"
+    "trace_report_memory_access_list_storage_gib,"
+    "trace_report_precompile_access_list_storage_gib,"
     "trace_report_storage_bytes,trace_report_storage_gib,"
     "trace_report_buffer_capacity,trace_report_buffer_max_capacity,"
     "trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,"
@@ -2277,6 +2281,18 @@ def summarize_profile_values(
     trace_report_precompile_access_list_size_bytes = values.get(
         TRACE_REPORT_PRECOMPILE_ACCESS_LIST_SIZE_BYTES_KEY, 0
     )
+    trace_report_instruction_storage_gib = (
+        trace_reports * trace_report_instruction_size_bytes / (1024.0**3)
+    )
+    trace_report_register_write_list_storage_gib = (
+        trace_reports * trace_report_register_write_list_size_bytes / (1024.0**3)
+    )
+    trace_report_memory_access_list_storage_gib = (
+        trace_reports * trace_report_memory_access_list_size_bytes / (1024.0**3)
+    )
+    trace_report_precompile_access_list_storage_gib = (
+        trace_reports * trace_report_precompile_access_list_size_bytes / (1024.0**3)
+    )
     trace_report_storage_bytes = values.get(
         TRACE_REPORT_STORAGE_BYTES_KEY,
         trace_reports * trace_report_record_size_bytes,
@@ -2701,6 +2717,10 @@ def summarize_profile_values(
         f"{trace_report_register_write_list_size_bytes},"
         f"{trace_report_memory_access_list_size_bytes},"
         f"{trace_report_precompile_access_list_size_bytes},"
+        f"{trace_report_instruction_storage_gib:.3f},"
+        f"{trace_report_register_write_list_storage_gib:.3f},"
+        f"{trace_report_memory_access_list_storage_gib:.3f},"
+        f"{trace_report_precompile_access_list_storage_gib:.3f},"
         f"{trace_report_storage_bytes},"
         f"{trace_report_storage_gib:.3f},"
         f"{trace_report_buffer_capacity},{trace_report_buffer_max_capacity},"
