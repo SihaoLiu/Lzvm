@@ -1618,6 +1618,13 @@ def segment_commit_worker_pressure_hint(
 
 
 def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
+    if (
+        values.get(TOTAL_MS_KEY, 0) > PROOF_TARGET_MS
+        and values.get(TRACE_REPORT_CHUNK_SENT_KEY, 0) > 0
+        and values.get(TRACE_REPORT_BUFFER_CAPACITY_KEY, 0) == 0
+        and values.get(TRACE_RUNNER_REPORT_BUFFER_CAPACITY_KEY, 0) > 0
+    ):
+        return "report_chunks_post_segment_split_regression"
     base_hint = trace_pipeline_action_hint(
         values.get(TOTAL_MS_KEY, 0),
         values.get(RUNNER_MS_KEY, 0),

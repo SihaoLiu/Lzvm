@@ -3762,6 +3762,26 @@ fn prove_timing_root_summary_reports_runner_report_buffer_capacity() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
     assert!(
         stdout.contains(
             "trace_runner_report_buffer_capacity,trace_runner_report_buffer_max_capacity,trace_runner_report_buffer_excess_capacity,trace_runner_report_buffer_capacity_bytes,trace_runner_report_buffer_capacity_gib,trace_runner_report_buffer_excess_bytes,trace_runner_report_buffer_excess_pct,trace_runner_report_buffer_shape_hint,"
@@ -3777,6 +3797,10 @@ fn prove_timing_root_summary_reports_runner_report_buffer_capacity() {
     assert!(
         stdout.contains("post_segment_report_chunk_split"),
         "prove timing root summary should distinguish post-segment chunk splitting from live runner streaming: stdout={stdout}"
+    );
+    assert_eq!(
+        value("trace_pipeline_action_hint"),
+        "report_chunks_post_segment_split_regression"
     );
 }
 
