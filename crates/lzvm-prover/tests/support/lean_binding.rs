@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 pub fn contains_theorem_declaration(source: &str, name: &str) -> bool {
     find_theorem_declaration(&visible_source(source), name).is_some()
@@ -127,6 +128,38 @@ pub fn assert_no_uncontrolled_lean_placeholders(root: &Path) {
 }
 
 #[allow(dead_code)]
+pub fn assert_all_lean_modules_reachable_from_entrypoint(entrypoint: &Path, root: &Path) {
+    let modules = collect_lean_modules(entrypoint, root);
+    let entrypoint_module =
+        lean_module_name(entrypoint, root).expect("Lean entrypoint should be inside Lean root");
+    let mut reachable = BTreeSet::new();
+    let mut pending = vec![entrypoint_module];
+    while let Some(module) = pending.pop() {
+        if !reachable.insert(module.clone()) {
+            continue;
+        }
+        let Some(path) = modules.get(&module) else {
+            continue;
+        };
+        for imported in lean_imports(path) {
+            if modules.contains_key(&imported) {
+                pending.push(imported);
+            }
+        }
+    }
+    let missing = modules
+        .keys()
+        .filter(|module| !reachable.contains(*module))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        missing.is_empty(),
+        "Lean sources should be reachable from {}: {missing:?}",
+        entrypoint.display()
+    );
+}
+
+#[allow(dead_code)]
 fn collect_uncontrolled_lean_placeholders(path: &Path, violations: &mut Vec<String>) {
     for entry in std::fs::read_dir(path).expect("Lean source directory should read") {
         let entry = entry.expect("Lean source entry should read");
@@ -157,6 +190,76 @@ fn contains_identifier_token(line: &str, token: &str) -> bool {
         let after = line[start + token.len()..].chars().next();
         !is_lean_identifier_char(before) && !is_lean_identifier_char(after)
     })
+}
+
+#[allow(dead_code)]
+fn collect_lean_modules(entrypoint: &Path, root: &Path) -> BTreeMap<String, PathBuf> {
+    let lean_workspace = root
+        .parent()
+        .expect("Lean source root should have a workspace parent");
+    let mut modules = BTreeMap::new();
+    modules.insert(
+        lean_module_name(entrypoint, root).expect("Lean entrypoint should be inside Lean root"),
+        entrypoint.to_path_buf(),
+    );
+    collect_lean_modules_from_dir(root, lean_workspace, &mut modules);
+    modules
+}
+
+#[allow(dead_code)]
+fn collect_lean_modules_from_dir(
+    path: &Path,
+    lean_workspace: &Path,
+    modules: &mut BTreeMap<String, PathBuf>,
+) {
+    for entry in std::fs::read_dir(path).expect("Lean source directory should read") {
+        let entry = entry.expect("Lean source entry should read");
+        let path = entry.path();
+        if path.is_dir() {
+            collect_lean_modules_from_dir(&path, lean_workspace, modules);
+            continue;
+        }
+        if path.extension().and_then(|extension| extension.to_str()) != Some("lean") {
+            continue;
+        }
+        let module = path
+            .strip_prefix(lean_workspace)
+            .expect("Lean source should be under workspace root")
+            .with_extension("")
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(".");
+        modules.insert(module, path);
+    }
+}
+
+#[allow(dead_code)]
+fn lean_module_name(path: &Path, root: &Path) -> Option<String> {
+    let lean_workspace = root.parent()?;
+    let relative = path.strip_prefix(lean_workspace).ok()?.with_extension("");
+    Some(
+        relative
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("."),
+    )
+}
+
+#[allow(dead_code)]
+fn lean_imports(path: &Path) -> Vec<String> {
+    let source = std::fs::read_to_string(path).expect("Lean source should read");
+    visible_source(&source)
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            line.strip_prefix("import ")
+                .map(str::trim)
+                .filter(|module| !module.is_empty())
+                .map(ToOwned::to_owned)
+        })
+        .collect()
 }
 
 #[allow(dead_code)]
