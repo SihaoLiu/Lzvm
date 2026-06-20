@@ -1511,10 +1511,25 @@ fn guest_pc_trace_report_chunks_remain_explicit_opt_in() {
         "fn guest_pc_trace_report_chunks_enabled",
         "fn guest_pc_trace_report_chunk_capacity",
     );
+    let live_report_chunks_body = function_body(
+        &backend_source,
+        "fn guest_pc_trace_live_report_chunks_enabled",
+        "fn guest_pc_trace_report_chunk_capacity",
+    );
+    let pending_slices_body = function_body(
+        &backend_source,
+        "fn produce_guest_pc_trace_pending_slices",
+        "struct GuestPcTraceLoweredSegment",
+    );
 
     assert!(
         report_chunks_body.contains("env_flag_enabled") && report_chunks_body.contains(", false)"),
         "guest PC trace report chunks should stay opt-in by default"
+    );
+    assert!(
+        live_report_chunks_body.contains("env_flag_enabled")
+            && live_report_chunks_body.contains(", false)"),
+        "guest PC trace live report chunks should stay opt-in by default"
     );
     assert!(
         report_chunks_body.contains("env_flag_enabled")
@@ -1522,6 +1537,14 @@ fn guest_pc_trace_report_chunks_remain_explicit_opt_in() {
             && env_flag_body.contains("\"false\"")
             && env_flag_body.contains("\"no\""),
         "guest PC trace report chunks should keep explicit off values"
+    );
+    assert!(
+        pending_slices_body.contains("guest_pc_trace_live_report_chunks_enabled()")
+            && pending_slices_body.contains("&& !runner_seed_snapshot")
+            && pending_slices_body.contains("&& !segment_replay")
+            && pending_slices_body.contains("&& !carry_replay_snapshot")
+            && pending_slices_body.contains("&& !report_elision"),
+        "guest PC trace live report chunks should stay out of seed snapshot, replay, and report-elision paths"
     );
 }
 
