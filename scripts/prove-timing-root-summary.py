@@ -1625,6 +1625,11 @@ def segment_commit_worker_pressure_hint(
 def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
     if (
         values.get(TOTAL_MS_KEY, 0) > PROOF_TARGET_MS
+        and parallel_lower_replay_duplicate_work_from_values(values)
+    ):
+        return "avoid_replay_only_parallel_lower"
+    if (
+        values.get(TOTAL_MS_KEY, 0) > PROOF_TARGET_MS
         and values.get(TRACE_REPORT_CHUNK_SENT_KEY, 0) > 0
         and values.get(TRACE_REPORT_BUFFER_CAPACITY_KEY, 0) == 0
         and values.get(TRACE_RUNNER_REPORT_BUFFER_CAPACITY_KEY, 0) > 0
@@ -3049,6 +3054,8 @@ def trace_structure_hint(
 
 
 def trace_structure_hint_from_values(values: dict[str, int]) -> str:
+    if parallel_lower_replay_duplicate_work_from_values(values):
+        return "parallel_lower_replay_duplicate_work"
     return trace_structure_hint(
         values.get(TOTAL_MS_KEY, 0),
         values.get(RUNNER_MS_KEY, 0),
@@ -3059,6 +3066,15 @@ def trace_structure_hint_from_values(values: dict[str, int]) -> str:
         values.get(PARALLEL_LOWER_RESULT_RECEIVE_WAIT_MS_KEY, 0),
         values.get(PARALLEL_LOWER_WORKERS_KEY, 0),
         values.get(LEAF_KERNEL_MS_KEY, 0),
+    )
+
+
+def parallel_lower_replay_duplicate_work_from_values(values: dict[str, int]) -> bool:
+    return (
+        values.get(PARALLEL_LOWER_WORKERS_KEY, 0) > 1
+        and values.get(PARALLEL_LOWER_SNAPSHOT_REPLAY_KEY, 0) > 0
+        and values.get(PARALLEL_LOWER_SNAPSHOT_REPLAY_MS_KEY, 0) > 0
+        and values.get(PARALLEL_LOWER_REPORT_ELIDED_KEY, 0) > 0
     )
 
 
@@ -4011,6 +4027,8 @@ def summarize_profile_values(
         parallel_lower_workers,
         leaf_kernel_ms,
     )
+    if parallel_lower_replay_duplicate_work_from_values(values):
+        trace_hint = "parallel_lower_replay_duplicate_work"
     proof_12s_gap_ms = max(total_ms - PROOF_TARGET_MS, 0) if total_ms > 0 else 0
     proof_12s_hint = proof_target_gap_hint(
         total_ms,
