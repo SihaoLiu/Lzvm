@@ -154,6 +154,18 @@ TRACE_COPY_SOURCE_INDIRECT_READ_MS_KEY = (
 )
 TRACE_COPY_SOURCE_MEMORY_READS_KEY = "timing_guest_trace_copy_source_memory_reads"
 TRACE_COPY_SOURCE_INDIRECT_READS_KEY = "timing_guest_trace_copy_source_indirect_reads"
+TRACE_COPY_SOURCE_MEMORY_READ_SAMPLED_NS_KEY = (
+    "timing_guest_trace_copy_source_memory_read_sampled_ns"
+)
+TRACE_COPY_SOURCE_INDIRECT_READ_SAMPLED_NS_KEY = (
+    "timing_guest_trace_copy_source_indirect_read_sampled_ns"
+)
+TRACE_COPY_SOURCE_MEMORY_READ_AVG_SAMPLE_NS_KEY = (
+    "timing_guest_trace_copy_source_memory_read_avg_sample_ns"
+)
+TRACE_COPY_SOURCE_INDIRECT_READ_AVG_SAMPLE_NS_KEY = (
+    "timing_guest_trace_copy_source_indirect_read_avg_sample_ns"
+)
 TRACE_EXTERNAL_OP_RUNS_KEY = "timing_guest_trace_external_op_runs"
 TRACE_EXTERNAL_OP_MAX_RUN_KEY = "timing_guest_trace_external_op_max_run"
 TRACE_COPY_RUNS_KEY = "timing_guest_trace_copy_runs"
@@ -700,6 +712,8 @@ HEADER = (
     "copy_source_memory_read_ms,copy_source_indirect_read_ms,"
     "copy_source_memory_read_pct,copy_source_indirect_read_pct,"
     "copy_source_memory_reads,copy_source_indirect_reads,"
+    "copy_source_memory_read_sampled_ns,copy_source_indirect_read_sampled_ns,"
+    "copy_source_memory_read_avg_sample_ns,copy_source_indirect_read_avg_sample_ns,"
     "trace_report_validation_ms,trace_report_emit_ms,trace_descriptor_ms,"
     "trace_report_lowering_ms,trace_report_row_validation_ms,"
     "trace_report_memory_columns_ms,trace_report_source_values_ms,"
@@ -891,6 +905,10 @@ TIMING_KEYS = {
     TRACE_COPY_NO_MEMORY_ROWS_KEY,
     TRACE_COPY_SOURCE_MEMORY_READS_KEY,
     TRACE_COPY_SOURCE_INDIRECT_READS_KEY,
+    TRACE_COPY_SOURCE_MEMORY_READ_SAMPLED_NS_KEY,
+    TRACE_COPY_SOURCE_INDIRECT_READ_SAMPLED_NS_KEY,
+    TRACE_COPY_SOURCE_MEMORY_READ_AVG_SAMPLE_NS_KEY,
+    TRACE_COPY_SOURCE_INDIRECT_READ_AVG_SAMPLE_NS_KEY,
     TRACE_EXTERNAL_OP_RUNS_KEY,
     TRACE_EXTERNAL_OP_MAX_RUN_KEY,
     TRACE_COPY_RUNS_KEY,
@@ -3257,6 +3275,24 @@ def summarize_profile_values(
     copy_source_indirect_read_ms = values.get(TRACE_COPY_SOURCE_INDIRECT_READ_MS_KEY, 0)
     copy_source_memory_reads = values.get(TRACE_COPY_SOURCE_MEMORY_READS_KEY, 0)
     copy_source_indirect_reads = values.get(TRACE_COPY_SOURCE_INDIRECT_READS_KEY, 0)
+    copy_source_memory_read_sampled_ns = values.get(
+        TRACE_COPY_SOURCE_MEMORY_READ_SAMPLED_NS_KEY, 0
+    )
+    copy_source_indirect_read_sampled_ns = values.get(
+        TRACE_COPY_SOURCE_INDIRECT_READ_SAMPLED_NS_KEY, 0
+    )
+    copy_source_memory_read_avg_sample_ns = values.get(
+        TRACE_COPY_SOURCE_MEMORY_READ_AVG_SAMPLE_NS_KEY,
+        copy_source_memory_read_sampled_ns // copy_source_memory_reads
+        if copy_source_memory_reads
+        else 0,
+    )
+    copy_source_indirect_read_avg_sample_ns = values.get(
+        TRACE_COPY_SOURCE_INDIRECT_READ_AVG_SAMPLE_NS_KEY,
+        copy_source_indirect_read_sampled_ns // copy_source_indirect_reads
+        if copy_source_indirect_reads
+        else 0,
+    )
     external_op_runs = values.get(TRACE_EXTERNAL_OP_RUNS_KEY, 0)
     external_op_max_run = values.get(TRACE_EXTERNAL_OP_MAX_RUN_KEY, 0)
     copy_runs = values.get(TRACE_COPY_RUNS_KEY, 0)
@@ -4409,6 +4445,8 @@ def summarize_profile_values(
         f"{copy_source_memory_read_ms},{copy_source_indirect_read_ms},"
         f"{copy_source_memory_read_pct:.3f},{copy_source_indirect_read_pct:.3f},"
         f"{copy_source_memory_reads},{copy_source_indirect_reads},"
+        f"{copy_source_memory_read_sampled_ns},{copy_source_indirect_read_sampled_ns},"
+        f"{copy_source_memory_read_avg_sample_ns},{copy_source_indirect_read_avg_sample_ns},"
         f"{trace_report_validation_ms},{trace_report_emit_ms},{trace_descriptor_ms},"
         f"{trace_report_lowering_ms},{trace_report_row_validation_ms},"
         f"{trace_report_memory_columns_ms},{trace_report_source_values_ms},"

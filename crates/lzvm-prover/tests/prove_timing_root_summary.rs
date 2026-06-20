@@ -2535,6 +2535,10 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
         "timing_guest_trace_copy_source_indirect_read_ms=20",
         "timing_guest_trace_copy_source_memory_reads=260",
         "timing_guest_trace_copy_source_indirect_reads=140",
+        "timing_guest_trace_copy_source_memory_read_sampled_ns=900",
+        "timing_guest_trace_copy_source_indirect_read_sampled_ns=2100",
+        "timing_guest_trace_copy_source_memory_read_avg_sample_ns=3",
+        "timing_guest_trace_copy_source_indirect_read_avg_sample_ns=15",
         "timing_guest_trace_register_source_reads=1400",
         "timing_guest_trace_memory_source_reads=300",
         "timing_guest_trace_register_store_rows=700",
@@ -2599,6 +2603,16 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
     assert!(
         stdout.contains(",40,20,66.667,33.333,260,140,"),
         "prove timing root summary should classify CopyB source-read timing split: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "copy_source_memory_read_sampled_ns,copy_source_indirect_read_sampled_ns,copy_source_memory_read_avg_sample_ns,copy_source_indirect_read_avg_sample_ns"
+        ),
+        "prove timing root summary should expose sampled CopyB source-read timing columns: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(",260,140,900,2100,3,15,"),
+        "prove timing root summary should report sampled CopyB source-read timing: stdout={stdout}"
     );
 }
 
