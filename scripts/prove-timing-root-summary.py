@@ -394,6 +394,7 @@ NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY = (
     "nsys_copy_trace_descriptor_residency_pipeline"
 )
 NSYS_COPY_GPU_RESIDENCY_HINT_KEY = "nsys_copy_gpu_residency_hint"
+NSYS_COPY_H2D_BULK_APP_FRAME_HINT_KEY = "nsys_copy_h2d_bulk_app_frame_hint"
 NSYS_COPY_SMALL_D2H_BATCHING_HINT_KEY = "nsys_copy_small_d2h_batching_hint"
 NSYS_COPY_CUDA_API_BACKTRACE_HINT_KEY = "nsys_copy_cuda_api_backtrace_hint"
 NSYS_KERNEL_GRAPH_FUSION_PRIORITY_HINT_KEY = (
@@ -617,7 +618,8 @@ HEADER = (
     "cuda_allocator_d2h_action_hint,"
     "cuda_host_register_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
     "data_residency_action_hint,"
-    "copy_summary_gpu_residency_hint,copy_summary_small_d2h_batching_hint,"
+    "copy_summary_gpu_residency_hint,copy_summary_h2d_bulk_app_frame_hint,"
+    "copy_summary_small_d2h_batching_hint,"
     "copy_summary_cuda_api_backtrace_hint,"
     "kernel_graph_fusion_priority_hint,kernel_graph_fusion_upper_bound_ms,"
     "kernel_top_stream_idle_ms,kernel_separation_hint,"
@@ -944,6 +946,9 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
                 )
             ):
                 values[NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY] = 1
+                values[NSYS_COPY_H2D_BULK_APP_FRAME_HINT_KEY] = compact_csv_token(
+                    ",".join(row[2:]).strip()
+                )
             continue
         if nsys_copy_backtrace_block is not None:
             if not stripped:
@@ -3449,6 +3454,9 @@ def summarize_profile_values(
     copy_summary_gpu_residency_hint = str(
         values.get(NSYS_COPY_GPU_RESIDENCY_HINT_KEY, "none")
     )
+    copy_summary_h2d_bulk_app_frame_hint = str(
+        values.get(NSYS_COPY_H2D_BULK_APP_FRAME_HINT_KEY, "none")
+    )
     copy_summary_small_d2h_batching_hint = str(
         values.get(NSYS_COPY_SMALL_D2H_BATCHING_HINT_KEY, "none")
     )
@@ -3734,7 +3742,8 @@ def summarize_profile_values(
         f"{cuda_allocator_d2h_hot_wait_pct:.3f},{cuda_allocator_d2h_hint},"
         f"{cuda_host_register_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
         f"{data_residency_hint},"
-        f"{copy_summary_gpu_residency_hint},{copy_summary_small_d2h_batching_hint},"
+        f"{copy_summary_gpu_residency_hint},{copy_summary_h2d_bulk_app_frame_hint},"
+        f"{copy_summary_small_d2h_batching_hint},"
         f"{copy_summary_cuda_api_backtrace_hint},"
         f"{kernel_graph_fusion_priority_hint},{kernel_graph_fusion_upper_bound_ms},"
         f"{kernel_top_stream_idle_ms},{kernel_separation_hint},"

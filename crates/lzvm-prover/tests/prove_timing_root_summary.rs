@@ -474,6 +474,10 @@ fn prove_timing_root_summary_reads_sibling_nsys_copy_residency_hint() {
         value("data_residency_action_hint"),
         "trace_descriptor_residency_pipeline"
     );
+    assert_eq!(
+        value("copy_summary_h2d_bulk_app_frame_hint"),
+        "bytes=369098752_calls=22_app_frame=lzvm_prover::guest_pc_trace_backend::record_device_source_build_duration::hash@/workspace/target/release/lzvm"
+    );
 }
 
 #[test]
