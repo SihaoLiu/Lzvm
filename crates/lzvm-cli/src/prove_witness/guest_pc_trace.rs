@@ -767,6 +767,10 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_parallel_lower_dispatch_wait",
         timing.guest_trace_parallel_lower_dispatch_wait_duration(),
     );
+    timings.record(
+        "guest_trace_parallel_lower_result_receive_wait",
+        timing.guest_trace_parallel_lower_result_receive_wait_duration(),
+    );
     timings.record_count(
         "guest_trace_parallel_lower_dispatch_blocked_count",
         timing.guest_trace_parallel_lower_dispatch_blocked_count(),

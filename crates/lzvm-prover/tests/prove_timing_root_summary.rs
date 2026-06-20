@@ -93,6 +93,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_parallel_lower_snapshot_replay_count",
         "timing_guest_trace_parallel_lower_report_elided_count",
         "timing_guest_trace_parallel_lower_dispatch_wait_ms",
+        "timing_guest_trace_parallel_lower_result_receive_wait_ms",
         "timing_guest_trace_parallel_lower_dispatch_blocked_count",
         "timing_guest_trace_segment_replay_count",
         "timing_guest_trace_reports",
@@ -3852,6 +3853,7 @@ fn prove_timing_root_summary_reports_runner_bound_parallel_lower() {
         "timing_guest_trace_parallel_lower_received=120",
         "timing_guest_trace_parallel_lower_emitted=120",
         "timing_guest_trace_parallel_lower_dispatch_wait_ms=77",
+        "timing_guest_trace_parallel_lower_result_receive_wait_ms=1234",
         "timing_guest_trace_parallel_lower_dispatch_blocked_count=3",
         "timing_guest_stage_leaf_kernel_work_ms=4499",
         "timing_guest_stage_tree_commit_root_count=120",
@@ -3906,6 +3908,7 @@ fn prove_timing_root_summary_reports_runner_bound_parallel_lower() {
     };
     assert_eq!(value("trace_structure_hint"), "parallel_lower_runner_bound");
     assert_eq!(value("parallel_lower_dispatch_wait_ms"), "77");
+    assert_eq!(value("parallel_lower_result_receive_wait_ms"), "1234");
     assert_eq!(value("parallel_lower_dispatch_blocked_count"), "3");
     assert_eq!(
         value("trace_pipeline_action_hint"),

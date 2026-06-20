@@ -81,6 +81,9 @@ PARALLEL_LOWER_REPORT_ELIDED_KEY = (
 PARALLEL_LOWER_DISPATCH_WAIT_MS_KEY = (
     "timing_guest_trace_parallel_lower_dispatch_wait_ms"
 )
+PARALLEL_LOWER_RESULT_RECEIVE_WAIT_MS_KEY = (
+    "timing_guest_trace_parallel_lower_result_receive_wait_ms"
+)
 PARALLEL_LOWER_DISPATCH_BLOCKED_KEY = (
     "timing_guest_trace_parallel_lower_dispatch_blocked_count"
 )
@@ -570,6 +573,7 @@ HEADER = (
     "parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,"
     "parallel_lower_max_reorder,parallel_lower_snapshot_replay_count,"
     "parallel_lower_report_elided_count,parallel_lower_dispatch_wait_ms,"
+    "parallel_lower_result_receive_wait_ms,"
     "parallel_lower_dispatch_blocked_count,segment_replay_count,trace_reports,trace_report_rows,"
     "trace_rows_per_report,trace_report_record_size_bytes,"
     "trace_report_instruction_size_bytes,"
@@ -823,6 +827,7 @@ TIMING_KEYS = {
     PARALLEL_LOWER_SNAPSHOT_REPLAY_KEY,
     PARALLEL_LOWER_REPORT_ELIDED_KEY,
     PARALLEL_LOWER_DISPATCH_WAIT_MS_KEY,
+    PARALLEL_LOWER_RESULT_RECEIVE_WAIT_MS_KEY,
     PARALLEL_LOWER_DISPATCH_BLOCKED_KEY,
     SEGMENT_REPLAY_COUNT_KEY,
     TRACE_REPORTS_KEY,
@@ -3154,6 +3159,9 @@ def summarize_profile_values(
     parallel_lower_snapshot_replay = values.get(PARALLEL_LOWER_SNAPSHOT_REPLAY_KEY, 0)
     parallel_lower_report_elided = values.get(PARALLEL_LOWER_REPORT_ELIDED_KEY, 0)
     parallel_lower_dispatch_wait_ms = values.get(PARALLEL_LOWER_DISPATCH_WAIT_MS_KEY, 0)
+    parallel_lower_result_receive_wait_ms = values.get(
+        PARALLEL_LOWER_RESULT_RECEIVE_WAIT_MS_KEY, 0
+    )
     parallel_lower_dispatch_blocked = values.get(PARALLEL_LOWER_DISPATCH_BLOCKED_KEY, 0)
     segment_replay_count = values.get(SEGMENT_REPLAY_COUNT_KEY, 0)
     trace_reports = values.get(TRACE_REPORTS_KEY, 0)
@@ -4177,6 +4185,7 @@ def summarize_profile_values(
         f"{parallel_lower_received},{parallel_lower_emitted},"
         f"{parallel_lower_max_reorder},{parallel_lower_snapshot_replay},"
         f"{parallel_lower_report_elided},{parallel_lower_dispatch_wait_ms},"
+        f"{parallel_lower_result_receive_wait_ms},"
         f"{parallel_lower_dispatch_blocked},{segment_replay_count},{trace_reports},"
         f"{trace_report_rows},{trace_rows_per_report:.3f},"
         f"{trace_report_record_size_bytes},"

@@ -241,6 +241,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     parallel_lower_snapshot_replay_count: usize,
     parallel_lower_report_elided_count: usize,
     parallel_lower_dispatch_wait_duration: Duration,
+    parallel_lower_result_receive_wait_duration: Duration,
     parallel_lower_dispatch_blocked_count: usize,
     seed_direct_lift_attempt_count: usize,
     seed_direct_lift_success_count: usize,
@@ -372,6 +373,8 @@ impl GuestPcTraceStreamTiming {
         self.parallel_lower_snapshot_replay_count += other.parallel_lower_snapshot_replay_count;
         self.parallel_lower_report_elided_count += other.parallel_lower_report_elided_count;
         self.parallel_lower_dispatch_wait_duration += other.parallel_lower_dispatch_wait_duration;
+        self.parallel_lower_result_receive_wait_duration +=
+            other.parallel_lower_result_receive_wait_duration;
         self.parallel_lower_dispatch_blocked_count += other.parallel_lower_dispatch_blocked_count;
         self.seed_direct_lift_attempt_count += other.seed_direct_lift_attempt_count;
         self.seed_direct_lift_success_count += other.seed_direct_lift_success_count;
@@ -675,6 +678,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn parallel_lower_dispatch_wait_duration(&self) -> Duration {
         self.parallel_lower_dispatch_wait_duration
+    }
+
+    pub fn parallel_lower_result_receive_wait_duration(&self) -> Duration {
+        self.parallel_lower_result_receive_wait_duration
     }
 
     pub fn parallel_lower_dispatch_blocked_count(&self) -> usize {
@@ -5007,9 +5014,18 @@ fn lower_guest_pc_trace_pending_segments_parallel(
             || dispatched_count.is_none_or(|count| received_count < count)
             || (first_error.is_none() && dispatched_count.is_none_or(|count| emitted_count < count))
         {
+            let result_receive_started = Instant::now();
             let message = match result_receiver.recv() {
-                Ok(message) => message,
-                Err(_) => break,
+                Ok(message) => {
+                    timing.parallel_lower_result_receive_wait_duration +=
+                        result_receive_started.elapsed();
+                    message
+                }
+                Err(_) => {
+                    timing.parallel_lower_result_receive_wait_duration +=
+                        result_receive_started.elapsed();
+                    break;
+                }
             };
             match message {
                 GuestPcTraceParallelLowerMessage::Segment {
