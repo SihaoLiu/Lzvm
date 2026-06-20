@@ -670,6 +670,14 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_parallel_lower_report_elided_count(),
     );
     timings.record(
+        "guest_trace_parallel_lower_dispatch_wait",
+        timing.guest_trace_parallel_lower_dispatch_wait_duration(),
+    );
+    timings.record_count(
+        "guest_trace_parallel_lower_dispatch_blocked_count",
+        timing.guest_trace_parallel_lower_dispatch_blocked_count(),
+    );
+    timings.record(
         "guest_device_source_build",
         timing.guest_device_source_build_duration(),
     );

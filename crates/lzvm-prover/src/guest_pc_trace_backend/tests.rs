@@ -1163,12 +1163,48 @@ fn parallel_lower_job_dispatch_skips_full_worker_queue() {
         &[first_sender, second_sender],
         &mut next_worker,
         20_u32,
+        None,
     )
     .expect("dispatcher should skip a full worker queue");
 
     assert_eq!(first_receiver.try_recv(), Ok(10));
     assert_eq!(second_receiver.try_recv(), Ok(20));
     assert_eq!(next_worker, 0);
+}
+
+#[test]
+fn parallel_lower_job_dispatch_records_full_queue_backpressure() {
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    sender
+        .send(10_u32)
+        .expect("worker queue should accept setup job");
+    let mut next_worker = 0_usize;
+    let mut timing = GuestPcTraceStreamTiming::default();
+    let drain = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let previous = receiver
+            .recv()
+            .expect("drain thread should receive setup job");
+        let dispatched = receiver
+            .recv()
+            .expect("drain thread should receive dispatched job");
+        (previous, dispatched)
+    });
+
+    dispatch_guest_pc_trace_parallel_lower_job(
+        &[sender],
+        &mut next_worker,
+        20_u32,
+        Some(&mut timing),
+    )
+    .expect("dispatcher should block until a full worker queue drains");
+
+    assert_eq!(drain.join().expect("drain thread should finish"), (10, 20));
+    assert_eq!(timing.parallel_lower_dispatch_blocked_count(), 1);
+    assert!(
+        timing.parallel_lower_dispatch_wait_duration() > std::time::Duration::ZERO,
+        "full worker queue dispatch should record nonzero wait"
+    );
 }
 
 #[test]

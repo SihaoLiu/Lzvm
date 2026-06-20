@@ -230,6 +230,8 @@ pub(crate) struct GuestPcTraceStreamTiming {
     parallel_lower_max_reorder_count: usize,
     parallel_lower_snapshot_replay_count: usize,
     parallel_lower_report_elided_count: usize,
+    parallel_lower_dispatch_wait_duration: Duration,
+    parallel_lower_dispatch_blocked_count: usize,
     seed_direct_lift_attempt_count: usize,
     seed_direct_lift_success_count: usize,
     seed_direct_lift_empty_segment_count: usize,
@@ -335,6 +337,8 @@ impl GuestPcTraceStreamTiming {
             .max(other.parallel_lower_max_reorder_count);
         self.parallel_lower_snapshot_replay_count += other.parallel_lower_snapshot_replay_count;
         self.parallel_lower_report_elided_count += other.parallel_lower_report_elided_count;
+        self.parallel_lower_dispatch_wait_duration += other.parallel_lower_dispatch_wait_duration;
+        self.parallel_lower_dispatch_blocked_count += other.parallel_lower_dispatch_blocked_count;
         self.seed_direct_lift_attempt_count += other.seed_direct_lift_attempt_count;
         self.seed_direct_lift_success_count += other.seed_direct_lift_success_count;
         self.seed_direct_lift_empty_segment_count += other.seed_direct_lift_empty_segment_count;
@@ -587,6 +591,14 @@ impl GuestPcTraceStreamTiming {
 
     pub fn parallel_lower_report_elided_count(&self) -> usize {
         self.parallel_lower_report_elided_count
+    }
+
+    pub fn parallel_lower_dispatch_wait_duration(&self) -> Duration {
+        self.parallel_lower_dispatch_wait_duration
+    }
+
+    pub fn parallel_lower_dispatch_blocked_count(&self) -> usize {
+        self.parallel_lower_dispatch_blocked_count
     }
 
     pub fn seed_direct_lift_attempt_count(&self) -> usize {
@@ -4576,12 +4588,14 @@ fn dispatch_guest_pc_trace_parallel_lower_job<T>(
     job_senders: &[mpsc::SyncSender<T>],
     next_worker: &mut usize,
     mut job: T,
+    timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<(), T> {
     let worker_count = job_senders.len();
     if worker_count == 0 {
         return Err(job);
     }
     let start = *next_worker % worker_count;
+    let mut saw_full_queue = false;
     for offset in 0..worker_count {
         let worker = (start + offset) % worker_count;
         match job_senders[worker].try_send(job) {
@@ -4589,13 +4603,28 @@ fn dispatch_guest_pc_trace_parallel_lower_job<T>(
                 *next_worker = (worker + 1) % worker_count;
                 return Ok(());
             }
-            Err(mpsc::TrySendError::Full(returned_job))
-            | Err(mpsc::TrySendError::Disconnected(returned_job)) => {
+            Err(mpsc::TrySendError::Full(returned_job)) => {
+                saw_full_queue = true;
+                job = returned_job;
+            }
+            Err(mpsc::TrySendError::Disconnected(returned_job)) => {
                 job = returned_job;
             }
         }
     }
-    job_senders[start].send(job).map_err(|error| error.0)?;
+    if saw_full_queue {
+        let send_started = Instant::now();
+        let result = job_senders[start].send(job).map_err(|error| error.0);
+        if let Some(timing) = timing {
+            timing.parallel_lower_dispatch_wait_duration += send_started.elapsed();
+            timing.parallel_lower_dispatch_blocked_count = timing
+                .parallel_lower_dispatch_blocked_count
+                .saturating_add(1);
+        }
+        result?;
+    } else {
+        job_senders[start].send(job).map_err(|error| error.0)?;
+    }
     *next_worker = (start + 1) % worker_count;
     Ok(())
 }
@@ -4707,6 +4736,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                             &job_senders,
                             &mut next_worker,
                             pending,
+                            Some(&mut dispatcher_timing),
                         )
                         .is_err()
                         {
@@ -4786,6 +4816,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                             &job_senders,
                             &mut next_worker,
                             pending,
+                            Some(&mut dispatcher_timing),
                         )
                         .is_err()
                         {

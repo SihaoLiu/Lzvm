@@ -1540,6 +1540,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_trace_parallel_lower_report_elided_count()",
         ),
         (
+            "\"guest_trace_parallel_lower_dispatch_wait\"",
+            "guest_trace_parallel_lower_dispatch_wait_duration()",
+        ),
+        (
+            "\"guest_trace_parallel_lower_dispatch_blocked_count\"",
+            "guest_trace_parallel_lower_dispatch_blocked_count()",
+        ),
+        (
             "\"guest_segment_commit_initial_workers\"",
             "guest_segment_commit_initial_worker_count()",
         ),
