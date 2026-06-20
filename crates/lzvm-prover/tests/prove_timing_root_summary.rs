@@ -3554,9 +3554,109 @@ fn prove_timing_root_summary_distinguishes_elided_report_buffer_from_missing_dat
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines.next().expect("summary should include a header");
+    let row = lines.next().expect("summary should include a data row");
+    let headers = headers.split(',').collect::<Vec<_>>();
+    let row = row.split(',').collect::<Vec<_>>();
+    let value = |name: &str| -> &str {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("missing header {name}: {headers:?}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("missing value for {name}: {row:?}"))
+    };
+    assert_eq!(
+        value("trace_report_buffer_shape_hint"),
+        "report_buffer_elided"
+    );
+    assert_eq!(
+        value("trace_runner_report_buffer_shape_hint"),
+        "runner_report_buffer_capacity_missing"
+    );
+    assert_eq!(
+        value("trace_report_lifetime_hint"),
+        "report_buffer_elided_but_trace_serialized"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reports_runner_report_buffer_capacity() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=13203",
+        "timing_guest_trace_runner_ms=12433",
+        "timing_guest_trace_lowerer_ms=0",
+        "timing_guest_trace_stream_elapsed_ms=12582",
+        "timing_guest_trace_stream_ms=10816",
+        "timing_guest_segment_commit_ms=1766",
+        "timing_guest_trace_reports=93843537",
+        "timing_guest_trace_report_rows=93917088",
+        "timing_guest_trace_report_chunk_sent=23",
+        "timing_guest_trace_report_chunk_received=23",
+        "timing_guest_trace_report_chunk_reports=93843537",
+        "timing_guest_trace_report_chunk_rows=93917088",
+        "timing_guest_trace_report_chunk_max_queued=1",
+        "timing_guest_trace_runner_report_buffer_capacity=94371840",
+        "timing_guest_trace_runner_report_buffer_max_capacity=4194304",
+        "timing_guest_trace_runner_report_buffer_excess_capacity=528303",
+        "timing_guest_trace_report_buffer_capacity=0",
+        "timing_guest_trace_report_buffer_max_capacity=0",
+        "timing_guest_trace_report_buffer_excess_capacity=0",
+        "timing_guest_trace_report_record_size_bytes=128",
+        "timing_guest_trace_report_storage_bytes=12011972736",
+        "timing_guest_trace_runner_report_buffer_capacity_bytes=12079595520",
+        "timing_guest_trace_runner_report_buffer_excess_bytes=67622784",
+        "timing_guest_trace_report_buffer_capacity_bytes=0",
+        "timing_guest_trace_report_buffer_excess_bytes=0",
+        "timing_guest_stage_tree_commit_root_count=23",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=23",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
     assert!(
-        stdout.contains("report_buffer_elided,report_buffer_elided_but_trace_serialized"),
-        "prove timing root summary should distinguish elided report buffers from missing timing and warn when lowerer overlap is gone: stdout={stdout}"
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains(
+            "trace_runner_report_buffer_capacity,trace_runner_report_buffer_max_capacity,trace_runner_report_buffer_excess_capacity,trace_runner_report_buffer_capacity_bytes,trace_runner_report_buffer_capacity_gib,trace_runner_report_buffer_excess_bytes,trace_runner_report_buffer_excess_pct,trace_runner_report_buffer_shape_hint,"
+        ),
+        "prove timing root summary should expose runner report buffer columns: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "94371840,4194304,528303,12079595520,11.250,67622784,0.560,runner_report_buffer_capacity_tight,"
+        ),
+        "prove timing root summary should classify runner report buffer pressure: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("post_segment_report_chunk_split"),
+        "prove timing root summary should distinguish post-segment chunk splitting from live runner streaming: stdout={stdout}"
     );
 }
 

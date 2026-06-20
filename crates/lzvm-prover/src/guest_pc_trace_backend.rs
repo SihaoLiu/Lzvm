@@ -246,6 +246,9 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_report_chunk_report_count: usize,
     trace_report_chunk_row_count: usize,
     trace_report_chunk_max_queued_count: usize,
+    trace_runner_report_buffer_capacity: usize,
+    trace_runner_report_buffer_max_capacity: usize,
+    trace_runner_report_buffer_excess_capacity: usize,
     trace_report_buffer_capacity: usize,
     trace_report_buffer_max_capacity: usize,
     trace_report_buffer_excess_capacity: usize,
@@ -354,6 +357,12 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_chunk_max_queued_count = self
             .trace_report_chunk_max_queued_count
             .max(other.trace_report_chunk_max_queued_count);
+        self.trace_runner_report_buffer_capacity += other.trace_runner_report_buffer_capacity;
+        self.trace_runner_report_buffer_max_capacity = self
+            .trace_runner_report_buffer_max_capacity
+            .max(other.trace_runner_report_buffer_max_capacity);
+        self.trace_runner_report_buffer_excess_capacity +=
+            other.trace_runner_report_buffer_excess_capacity;
         self.trace_report_buffer_capacity += other.trace_report_buffer_capacity;
         self.trace_report_buffer_max_capacity = self
             .trace_report_buffer_max_capacity
@@ -667,6 +676,18 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_chunk_max_queued_count
     }
 
+    pub fn trace_runner_report_buffer_capacity(&self) -> usize {
+        self.trace_runner_report_buffer_capacity
+    }
+
+    pub fn trace_runner_report_buffer_max_capacity(&self) -> usize {
+        self.trace_runner_report_buffer_max_capacity
+    }
+
+    pub fn trace_runner_report_buffer_excess_capacity(&self) -> usize {
+        self.trace_runner_report_buffer_excess_capacity
+    }
+
     pub fn trace_report_buffer_capacity(&self) -> usize {
         self.trace_report_buffer_capacity
     }
@@ -709,8 +730,18 @@ impl GuestPcTraceStreamTiming {
             .saturating_mul(self.trace_report_record_size_bytes())
     }
 
+    pub fn trace_runner_report_buffer_capacity_bytes(&self) -> usize {
+        self.trace_runner_report_buffer_capacity
+            .saturating_mul(self.trace_report_record_size_bytes())
+    }
+
     pub fn trace_report_buffer_excess_bytes(&self) -> usize {
         self.trace_report_buffer_excess_capacity
+            .saturating_mul(self.trace_report_record_size_bytes())
+    }
+
+    pub fn trace_runner_report_buffer_excess_bytes(&self) -> usize {
+        self.trace_runner_report_buffer_excess_capacity
             .saturating_mul(self.trace_report_record_size_bytes())
     }
 
@@ -3711,6 +3742,12 @@ fn produce_guest_pc_trace_pending_slices(
                 row_count,
             )?
         };
+        timing.trace_runner_report_buffer_capacity += slice.report_capacity;
+        timing.trace_runner_report_buffer_max_capacity = timing
+            .trace_runner_report_buffer_max_capacity
+            .max(slice.report_capacity);
+        timing.trace_runner_report_buffer_excess_capacity +=
+            slice.report_capacity.saturating_sub(slice.reports.len());
         if segment_replay {
             let replay_snapshot = replay_snapshot.clone().ok_or_else(|| {
                 GuestPcTraceBackendError::InvalidPcTraceLayout {

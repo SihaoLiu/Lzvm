@@ -399,6 +399,18 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_report_chunk_max_queued_count(),
     );
     timings.record_count(
+        "guest_trace_runner_report_buffer_capacity",
+        timing.guest_trace_runner_report_buffer_capacity(),
+    );
+    timings.record_count(
+        "guest_trace_runner_report_buffer_max_capacity",
+        timing.guest_trace_runner_report_buffer_max_capacity(),
+    );
+    timings.record_count(
+        "guest_trace_runner_report_buffer_excess_capacity",
+        timing.guest_trace_runner_report_buffer_excess_capacity(),
+    );
+    timings.record_count(
         "guest_trace_report_buffer_capacity",
         timing.guest_trace_report_buffer_capacity(),
     );
@@ -433,6 +445,14 @@ pub(super) fn record_guest_pc_trace_timing(
     timings.record_count(
         "guest_trace_report_storage_bytes",
         timing.guest_trace_report_storage_bytes(),
+    );
+    timings.record_count(
+        "guest_trace_runner_report_buffer_capacity_bytes",
+        timing.guest_trace_runner_report_buffer_capacity_bytes(),
+    );
+    timings.record_count(
+        "guest_trace_runner_report_buffer_excess_bytes",
+        timing.guest_trace_runner_report_buffer_excess_bytes(),
     );
     timings.record_count(
         "guest_trace_report_buffer_capacity_bytes",

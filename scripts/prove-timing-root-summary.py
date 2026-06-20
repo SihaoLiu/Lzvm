@@ -191,6 +191,15 @@ TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY = "timing_guest_trace_report_buffer_max_cap
 TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY = (
     "timing_guest_trace_report_buffer_excess_capacity"
 )
+TRACE_RUNNER_REPORT_BUFFER_CAPACITY_KEY = (
+    "timing_guest_trace_runner_report_buffer_capacity"
+)
+TRACE_RUNNER_REPORT_BUFFER_MAX_CAPACITY_KEY = (
+    "timing_guest_trace_runner_report_buffer_max_capacity"
+)
+TRACE_RUNNER_REPORT_BUFFER_EXCESS_CAPACITY_KEY = (
+    "timing_guest_trace_runner_report_buffer_excess_capacity"
+)
 TRACE_REPORT_RECORD_SIZE_BYTES_KEY = "timing_guest_trace_report_record_size_bytes"
 TRACE_REPORT_INSTRUCTION_SIZE_BYTES_KEY = (
     "timing_guest_trace_report_instruction_size_bytes"
@@ -209,6 +218,12 @@ TRACE_REPORT_BUFFER_CAPACITY_BYTES_KEY = (
     "timing_guest_trace_report_buffer_capacity_bytes"
 )
 TRACE_REPORT_BUFFER_EXCESS_BYTES_KEY = "timing_guest_trace_report_buffer_excess_bytes"
+TRACE_RUNNER_REPORT_BUFFER_CAPACITY_BYTES_KEY = (
+    "timing_guest_trace_runner_report_buffer_capacity_bytes"
+)
+TRACE_RUNNER_REPORT_BUFFER_EXCESS_BYTES_KEY = (
+    "timing_guest_trace_runner_report_buffer_excess_bytes"
+)
 DESCRIPTOR_ROWS_KEY = "timing_guest_trace_descriptor_rows"
 DESCRIPTOR_COMPACT_ROWS_KEY = "timing_guest_trace_descriptor_compact_rows"
 DESCRIPTOR_WIDE_ROWS_KEY = "timing_guest_trace_descriptor_wide_rows"
@@ -505,6 +520,12 @@ HEADER = (
     "trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,"
     "trace_report_buffer_capacity_gib,trace_report_buffer_excess_bytes,"
     "trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
+    "trace_runner_report_buffer_capacity,trace_runner_report_buffer_max_capacity,"
+    "trace_runner_report_buffer_excess_capacity,"
+    "trace_runner_report_buffer_capacity_bytes,"
+    "trace_runner_report_buffer_capacity_gib,"
+    "trace_runner_report_buffer_excess_bytes,"
+    "trace_runner_report_buffer_excess_pct,trace_runner_report_buffer_shape_hint,"
     "trace_report_lifetime_hint,trace_report_chunk_sent,"
     "trace_report_chunk_received,trace_report_chunk_reports,"
     "trace_report_chunk_rows,trace_report_chunk_max_queued,"
@@ -784,12 +805,17 @@ TIMING_KEYS = {
     TRACE_REPORT_BUFFER_CAPACITY_KEY,
     TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY,
     TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY,
+    TRACE_RUNNER_REPORT_BUFFER_CAPACITY_KEY,
+    TRACE_RUNNER_REPORT_BUFFER_MAX_CAPACITY_KEY,
+    TRACE_RUNNER_REPORT_BUFFER_EXCESS_CAPACITY_KEY,
     TRACE_REPORT_RECORD_SIZE_BYTES_KEY,
     TRACE_REPORT_INSTRUCTION_SIZE_BYTES_KEY,
     TRACE_REPORT_REGISTER_WRITE_LIST_SIZE_BYTES_KEY,
     TRACE_REPORT_MEMORY_ACCESS_LIST_SIZE_BYTES_KEY,
     TRACE_REPORT_PRECOMPILE_ACCESS_LIST_SIZE_BYTES_KEY,
     TRACE_REPORT_STORAGE_BYTES_KEY,
+    TRACE_RUNNER_REPORT_BUFFER_CAPACITY_BYTES_KEY,
+    TRACE_RUNNER_REPORT_BUFFER_EXCESS_BYTES_KEY,
     TRACE_REPORT_BUFFER_CAPACITY_BYTES_KEY,
     TRACE_REPORT_BUFFER_EXCESS_BYTES_KEY,
     DESCRIPTOR_ROWS_KEY,
@@ -1718,11 +1744,14 @@ def cpu_trace_report_storage_action_hint(
     )
     trace_reports = values.get(TRACE_REPORTS_KEY, 0)
     buffer_capacity = values.get(TRACE_REPORT_BUFFER_CAPACITY_KEY, 0)
+    runner_buffer_capacity = values.get(TRACE_RUNNER_REPORT_BUFFER_CAPACITY_KEY, 0)
     buffer_excess_capacity = values.get(TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY, 0)
     chunks_sent = values.get(TRACE_REPORT_CHUNK_SENT_KEY, 0)
     buffer_excess_pct = (
         buffer_excess_capacity * 100.0 / buffer_capacity if buffer_capacity else 0.0
     )
+    if chunks_sent > 0 and buffer_capacity == 0 and runner_buffer_capacity > 0:
+        return "post_segment_report_chunk_split"
     if (
         trace_reports > 0
         and buffer_capacity > 0
@@ -3172,9 +3201,32 @@ def summarize_profile_values(
         TRACE_REPORT_BUFFER_EXCESS_BYTES_KEY,
         trace_report_buffer_excess_capacity * trace_report_record_size_bytes,
     )
+    trace_runner_report_buffer_capacity = values.get(
+        TRACE_RUNNER_REPORT_BUFFER_CAPACITY_KEY, 0
+    )
+    trace_runner_report_buffer_capacity_present = (
+        TRACE_RUNNER_REPORT_BUFFER_CAPACITY_KEY in values
+    )
+    trace_runner_report_buffer_max_capacity = values.get(
+        TRACE_RUNNER_REPORT_BUFFER_MAX_CAPACITY_KEY, 0
+    )
+    trace_runner_report_buffer_excess_capacity = values.get(
+        TRACE_RUNNER_REPORT_BUFFER_EXCESS_CAPACITY_KEY, 0
+    )
+    trace_runner_report_buffer_capacity_bytes = values.get(
+        TRACE_RUNNER_REPORT_BUFFER_CAPACITY_BYTES_KEY,
+        trace_runner_report_buffer_capacity * trace_report_record_size_bytes,
+    )
+    trace_runner_report_buffer_excess_bytes = values.get(
+        TRACE_RUNNER_REPORT_BUFFER_EXCESS_BYTES_KEY,
+        trace_runner_report_buffer_excess_capacity * trace_report_record_size_bytes,
+    )
     trace_report_storage_gib = trace_report_storage_bytes / (1024.0**3)
     trace_report_buffer_capacity_gib = trace_report_buffer_capacity_bytes / (
         1024.0**3
+    )
+    trace_runner_report_buffer_capacity_gib = (
+        trace_runner_report_buffer_capacity_bytes / (1024.0**3)
     )
     trace_report_chunk_sent = values.get(TRACE_REPORT_CHUNK_SENT_KEY, 0)
     trace_report_chunk_received = values.get(TRACE_REPORT_CHUNK_RECEIVED_KEY, 0)
@@ -3186,6 +3238,13 @@ def summarize_profile_values(
         if trace_report_buffer_capacity
         else 0.0
     )
+    trace_runner_report_buffer_excess_pct = (
+        trace_runner_report_buffer_excess_capacity
+        * 100.0
+        / trace_runner_report_buffer_capacity
+        if trace_runner_report_buffer_capacity
+        else 0.0
+    )
     trace_report_buffer_hint = trace_report_buffer_shape_hint(
         trace_reports,
         trace_report_rows,
@@ -3193,6 +3252,17 @@ def summarize_profile_values(
         trace_report_buffer_excess_capacity,
         trace_report_buffer_capacity_present,
     )
+    trace_runner_report_buffer_hint = trace_report_buffer_shape_hint(
+        trace_reports,
+        trace_report_rows,
+        trace_runner_report_buffer_capacity,
+        trace_runner_report_buffer_excess_capacity,
+        trace_runner_report_buffer_capacity_present,
+    )
+    if trace_runner_report_buffer_hint.startswith("report_buffer_"):
+        trace_runner_report_buffer_hint = trace_runner_report_buffer_hint.replace(
+            "report_buffer_", "runner_report_buffer_", 1
+        )
     descriptor_rows = values.get(DESCRIPTOR_ROWS_KEY, 0)
     descriptor_compact_rows = values.get(DESCRIPTOR_COMPACT_ROWS_KEY, 0)
     descriptor_wide_rows = values.get(DESCRIPTOR_WIDE_ROWS_KEY, 0)
@@ -3762,6 +3832,14 @@ def summarize_profile_values(
         f"{trace_report_buffer_capacity_gib:.3f},"
         f"{trace_report_buffer_excess_bytes},"
         f"{trace_report_buffer_excess_pct:.3f},{trace_report_buffer_hint},"
+        f"{trace_runner_report_buffer_capacity},"
+        f"{trace_runner_report_buffer_max_capacity},"
+        f"{trace_runner_report_buffer_excess_capacity},"
+        f"{trace_runner_report_buffer_capacity_bytes},"
+        f"{trace_runner_report_buffer_capacity_gib:.3f},"
+        f"{trace_runner_report_buffer_excess_bytes},"
+        f"{trace_runner_report_buffer_excess_pct:.3f},"
+        f"{trace_runner_report_buffer_hint},"
         f"{trace_lifetime_hint},"
         f"{trace_report_chunk_sent},{trace_report_chunk_received},"
         f"{trace_report_chunk_reports},{trace_report_chunk_rows},"
