@@ -1496,6 +1496,36 @@ fn cuda_guest_pc_device_material_pipeline_is_default_enabled() {
 }
 
 #[test]
+fn guest_pc_trace_report_chunks_remain_explicit_opt_in() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC backend source should read");
+    let env_flag_body = function_body(
+        &backend_source,
+        "fn env_flag_enabled",
+        "pub(crate) struct GuestPcTraceStreamResult",
+    );
+    let report_chunks_body = function_body(
+        &backend_source,
+        "fn guest_pc_trace_report_chunks_enabled",
+        "fn guest_pc_trace_report_chunk_capacity",
+    );
+
+    assert!(
+        report_chunks_body.contains("env_flag_enabled") && report_chunks_body.contains(", false)"),
+        "guest PC trace report chunks should stay opt-in by default"
+    );
+    assert!(
+        report_chunks_body.contains("env_flag_enabled")
+            && env_flag_body.contains("\"0\"")
+            && env_flag_body.contains("\"false\"")
+            && env_flag_body.contains("\"no\""),
+        "guest PC trace report chunks should keep explicit off values"
+    );
+}
+
+#[test]
 fn cuda_guest_pc_trace_uses_device_backed_stage_sources() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let execution_path = crate_root.join("src/witness_execution.rs");
