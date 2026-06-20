@@ -1562,7 +1562,7 @@ def trace_pipeline_action_hint(
         and pending_receive_wait_ratio >= 0.5
         and runner_stream_ratio >= 0.75
     ):
-        return "parallel_lower_active_compare_default"
+        return "parallel_segment_reexecution_candidate"
 
     if trace_is_long and commit_is_long and queue_wait_is_long:
         return "trace_generation_and_commit_pipeline_candidate"
