@@ -3000,6 +3000,7 @@ def trace_structure_hint(
     stream_elapsed_ms: int,
     segment_receive_wait_ms: int,
     pending_receive_wait_ms: int,
+    parallel_lower_result_receive_wait_ms: int,
     parallel_lower_workers: int,
     leaf_kernel_ms: int,
 ) -> str:
@@ -3012,12 +3013,19 @@ def trace_structure_hint(
     pending_receive_wait_ratio = (
         pending_receive_wait_ms / stream_elapsed_ms if stream_elapsed_ms else 0.0
     )
+    result_receive_wait_ratio = (
+        parallel_lower_result_receive_wait_ms / stream_elapsed_ms
+        if stream_elapsed_ms
+        else 0.0
+    )
     runner_stream_ratio = runner_ms / stream_elapsed_ms if stream_elapsed_ms else 0.0
     leaf_ratio = leaf_kernel_ms / trace_ms if trace_ms else 0.0
     trace_total_ratio = trace_ms / total_ms if total_ms else 0.0
     if parallel_lower_workers > 0:
         if pending_receive_wait_ratio >= 0.5 and runner_stream_ratio >= 0.75:
             return "parallel_lower_runner_bound"
+        if result_receive_wait_ratio >= 0.5:
+            return "parallel_lower_worker_result_bound"
         if receive_wait_ratio >= 0.5:
             return "parallel_lower_waiting"
         return "parallel_lower_active"
@@ -3036,6 +3044,7 @@ def trace_structure_hint_from_values(values: dict[str, int]) -> str:
         values.get(STREAM_ELAPSED_MS_KEY, 0),
         values.get(SEGMENT_RECEIVE_WAIT_MS_KEY, 0),
         values.get(PENDING_RECEIVE_WAIT_MS_KEY, 0),
+        values.get(PARALLEL_LOWER_RESULT_RECEIVE_WAIT_MS_KEY, 0),
         values.get(PARALLEL_LOWER_WORKERS_KEY, 0),
         values.get(LEAF_KERNEL_MS_KEY, 0),
     )
@@ -3983,6 +3992,7 @@ def summarize_profile_values(
         stream_elapsed_ms,
         segment_receive_wait_ms,
         pending_receive_wait_ms,
+        parallel_lower_result_receive_wait_ms,
         parallel_lower_workers,
         leaf_kernel_ms,
     )

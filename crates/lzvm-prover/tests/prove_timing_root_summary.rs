@@ -3917,6 +3917,83 @@ fn prove_timing_root_summary_reports_runner_bound_parallel_lower() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_worker_result_bound_parallel_lower() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=48121",
+        "timing_guest_trace_runner_ms=12000",
+        "timing_guest_trace_lowerer_ms=39146",
+        "timing_guest_trace_lower_ms=39146",
+        "timing_guest_trace_stream_elapsed_ms=39272",
+        "timing_guest_trace_stream_ms=19164",
+        "timing_guest_segment_commit_ms=8000",
+        "timing_guest_trace_segment_receive_wait_ms=1000",
+        "timing_guest_trace_pending_receive_wait_ms=1000",
+        "timing_guest_trace_parallel_lower_workers=2",
+        "timing_guest_trace_parallel_lower_dispatched=120",
+        "timing_guest_trace_parallel_lower_received=120",
+        "timing_guest_trace_parallel_lower_emitted=120",
+        "timing_guest_trace_parallel_lower_result_receive_wait_ms=30100",
+        "timing_guest_stage_leaf_kernel_work_ms=4499",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+    assert_eq!(
+        value("trace_structure_hint"),
+        "parallel_lower_worker_result_bound"
+    );
+    assert_eq!(value("parallel_lower_result_receive_wait_ms"), "30100");
+}
+
+#[test]
 fn prove_timing_root_summary_reports_twelve_second_gap_hint() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
