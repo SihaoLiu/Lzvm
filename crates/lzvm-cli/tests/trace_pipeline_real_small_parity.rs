@@ -6,6 +6,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
+use lzvm_artifacts::constant_opening_segment::CONSTANT_OPENING_SEGMENT_ID;
+use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
+use lzvm_artifacts::pcs_fri_segment::PCS_FRI_OPENING_SEGMENT_ID;
+use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
+use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
+use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
+use lzvm_artifacts::pcs_query_segment::PCS_QUERY_PLAN_SEGMENT_ID;
+use lzvm_artifacts::proof::{parse_proof_artifact, ProofArtifact, ProofSegment};
+use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
+use lzvm_artifacts::witness_segment::{
+    encode_witness_commitment_segment, parse_witness_commitment_segment, WitnessCommitmentSegment,
+    WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+};
+
 const PARALLEL_LOWER_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER";
 const LOWER_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
 const COMMIT_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS";
@@ -29,6 +44,11 @@ fn real_small_trace_pipeline_preserves_proof_bytes() {
     let default = run_prove_witness(&config, &work_dir, "default", false);
     let pipeline = run_prove_witness(&config, &work_dir, "pipeline", true);
 
+    assert_same_proof_artifact_surfaces(
+        "proof.bin",
+        &default.output_dir.join("proof.bin"),
+        &pipeline.output_dir.join("proof.bin"),
+    );
     assert_same_file(
         "proof.bin",
         &default.output_dir.join("proof.bin"),
@@ -41,6 +61,55 @@ fn real_small_trace_pipeline_preserves_proof_bytes() {
     );
 
     fs::remove_dir_all(&work_dir).expect("work directory should be removed");
+}
+
+#[test]
+fn proof_artifact_surfaces_cover_stage_roots_and_transcript_segments() {
+    let proof = ProofArtifact {
+        setup_hash: [1; 32],
+        public_values_hash: [2; 32],
+        segments: vec![
+            ProofSegment {
+                id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+                data: encode_witness_commitment_segment(&WitnessCommitmentSegment {
+                    unit_index: 0,
+                    input_byte_count: 11,
+                    trace_rows: 16,
+                    trace_columns: 39,
+                    stages: vec![WitnessCommitmentStageSegment {
+                        stage_index: 3,
+                        arity: 16,
+                        root: [4, 5, 6, 7],
+                        tree_byte_count: 128,
+                        tree_digest: [8; 32],
+                    }],
+                })
+                .expect("witness commitment segment should encode"),
+            },
+            ProofSegment {
+                id: PCS_QUERY_PLAN_SEGMENT_ID,
+                data: b"query-plan".to_vec(),
+            },
+            ProofSegment {
+                id: PCS_FRI_OPENING_SEGMENT_ID,
+                data: b"fri-opening".to_vec(),
+            },
+        ],
+    };
+
+    let surfaces = proof_artifact_surfaces(&proof);
+
+    assert_eq!(
+        surfaces.stage_roots,
+        vec![(WITNESS_COMMITMENT_SEGMENT_BASE_ID, 0, 3, [4, 5, 6, 7])]
+    );
+    assert_eq!(
+        surfaces.transcript_segments,
+        vec![
+            (PCS_QUERY_PLAN_SEGMENT_ID, b"query-plan".to_vec()),
+            (PCS_FRI_OPENING_SEGMENT_ID, b"fri-opening".to_vec()),
+        ]
+    );
 }
 
 struct RealSmallParityConfig {
@@ -57,6 +126,12 @@ struct RealSmallParityConfig {
 
 struct ProveRun {
     output_dir: PathBuf,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ProofArtifactSurfaces {
+    stage_roots: Vec<(u32, u32, u32, [u64; 4])>,
+    transcript_segments: Vec<(u32, Vec<u8>)>,
 }
 
 impl RealSmallParityConfig {
@@ -283,4 +358,79 @@ fn assert_same_file(label: &str, left_path: &Path, right_path: &Path) {
         left.len(),
         right.len()
     );
+}
+
+fn assert_same_proof_artifact_surfaces(label: &str, left_path: &Path, right_path: &Path) {
+    let left = read_proof_artifact_surfaces(label, left_path);
+    let right = read_proof_artifact_surfaces(label, right_path);
+    assert_eq!(
+        left.stage_roots, right.stage_roots,
+        "{label} witness stage-root sequence should match"
+    );
+    assert_eq!(
+        left.transcript_segments, right.transcript_segments,
+        "{label} transcript-relevant segments should match"
+    );
+}
+
+fn read_proof_artifact_surfaces(label: &str, path: &Path) -> ProofArtifactSurfaces {
+    let bytes = fs::read(path)
+        .unwrap_or_else(|error| panic!("{label} should read at {}: {error}", path.display()));
+    let proof = parse_proof_artifact(&bytes)
+        .unwrap_or_else(|error| panic!("{label} should parse at {}: {error}", path.display()));
+    proof_artifact_surfaces(&proof)
+}
+
+fn proof_artifact_surfaces(proof: &ProofArtifact) -> ProofArtifactSurfaces {
+    ProofArtifactSurfaces {
+        stage_roots: witness_stage_root_sequence(proof),
+        transcript_segments: transcript_relevant_proof_segments(proof),
+    }
+}
+
+fn witness_stage_root_sequence(proof: &ProofArtifact) -> Vec<(u32, u32, u32, [u64; 4])> {
+    let mut roots = Vec::new();
+    for segment in &proof.segments {
+        if segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID
+            || segment.id >= PCS_MATERIAL_MANIFEST_SEGMENT_ID
+        {
+            continue;
+        }
+        let witness = parse_witness_commitment_segment(&segment.data)
+            .expect("witness commitment segment should parse");
+        for stage in witness.stages {
+            roots.push((
+                segment.id,
+                witness.unit_index,
+                stage.stage_index,
+                stage.root,
+            ));
+        }
+    }
+    roots.sort_unstable_by_key(|(segment_id, unit_index, stage_index, root)| {
+        (*segment_id, *unit_index, *stage_index, *root)
+    });
+    roots
+}
+
+fn transcript_relevant_proof_segments(proof: &ProofArtifact) -> Vec<(u32, Vec<u8>)> {
+    proof
+        .segments
+        .iter()
+        .filter(|segment| {
+            matches!(
+                segment.id,
+                PCS_MATERIAL_MANIFEST_SEGMENT_ID
+                    | PCS_QUERY_PLAN_SEGMENT_ID
+                    | CONSTANT_OPENING_SEGMENT_ID
+                    | WITNESS_OPENING_SEGMENT_ID
+                    | PCS_FRI_OPENING_SEGMENT_ID
+                    | PCS_QUERY_NONCE_SEGMENT_ID
+                    | PCS_EVALUATION_SEGMENT_ID
+                    | PCS_PROOF_VALUES_SEGMENT_ID
+                    | CHALLENGE_VALUES_SEGMENT_ID
+            )
+        })
+        .map(|segment| (segment.id, segment.data.clone()))
+        .collect()
 }
