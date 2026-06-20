@@ -1716,6 +1716,21 @@ def cpu_trace_report_storage_action_hint(
     pending_drop_pct = perf_hotspots.get(
         PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY, 0.0
     )
+    trace_reports = values.get(TRACE_REPORTS_KEY, 0)
+    buffer_capacity = values.get(TRACE_REPORT_BUFFER_CAPACITY_KEY, 0)
+    buffer_excess_capacity = values.get(TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY, 0)
+    chunks_sent = values.get(TRACE_REPORT_CHUNK_SENT_KEY, 0)
+    buffer_excess_pct = (
+        buffer_excess_capacity * 100.0 / buffer_capacity if buffer_capacity else 0.0
+    )
+    if (
+        trace_reports > 0
+        and buffer_capacity > 0
+        and buffer_excess_pct <= 1.0
+        and pending_drop_pct >= 5.0
+        and chunks_sent <= 0
+    ):
+        return "runner_streaming_report_storage_candidate"
     if perf_hotspots.get(CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY, 0.0) > 0.0:
         return "trace_report_storage_structural_candidate"
     if (

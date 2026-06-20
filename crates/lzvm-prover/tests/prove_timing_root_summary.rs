@@ -4195,6 +4195,12 @@ fn prove_timing_root_summary_reports_trace_report_storage_action_hint() {
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
     let input = [
         "timing_total_ms=8076",
+        "timing_guest_trace_reports=93843537",
+        "timing_guest_trace_report_record_size_bytes=144",
+        "timing_guest_trace_report_storage_bytes=13513469328",
+        "timing_guest_trace_report_buffer_capacity=94371840",
+        "timing_guest_trace_report_buffer_max_capacity=4194304",
+        "timing_guest_trace_report_buffer_excess_capacity=528303",
         "timing_guest_stage_tree_commit_root_count=1",
         "timing_guest_stage_tree_commit_root_materialization_groups=1",
         "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
@@ -4256,7 +4262,7 @@ fn prove_timing_root_summary_reports_trace_report_storage_action_hint() {
     );
     assert_eq!(
         value("cpu_trace_report_storage_action_hint"),
-        "report_sidecar_storage_candidate"
+        "runner_streaming_report_storage_candidate"
     );
 }
 
