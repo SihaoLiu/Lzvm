@@ -239,6 +239,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     parallel_lower_emitted_count: usize,
     parallel_lower_max_reorder_count: usize,
     parallel_lower_snapshot_replay_count: usize,
+    parallel_lower_snapshot_replay_duration: Duration,
     parallel_lower_report_elided_count: usize,
     parallel_lower_dispatch_wait_duration: Duration,
     parallel_lower_result_receive_wait_duration: Duration,
@@ -371,6 +372,8 @@ impl GuestPcTraceStreamTiming {
             .parallel_lower_max_reorder_count
             .max(other.parallel_lower_max_reorder_count);
         self.parallel_lower_snapshot_replay_count += other.parallel_lower_snapshot_replay_count;
+        self.parallel_lower_snapshot_replay_duration +=
+            other.parallel_lower_snapshot_replay_duration;
         self.parallel_lower_report_elided_count += other.parallel_lower_report_elided_count;
         self.parallel_lower_dispatch_wait_duration += other.parallel_lower_dispatch_wait_duration;
         self.parallel_lower_result_receive_wait_duration +=
@@ -670,6 +673,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn parallel_lower_snapshot_replay_count(&self) -> usize {
         self.parallel_lower_snapshot_replay_count
+    }
+
+    pub fn parallel_lower_snapshot_replay_duration(&self) -> Duration {
+        self.parallel_lower_snapshot_replay_duration
     }
 
     pub fn parallel_lower_report_elided_count(&self) -> usize {
@@ -4664,11 +4671,13 @@ fn replay_guest_pc_trace_pending_segment_reports(
             ),
         }
     })?;
+    let replay_started = Instant::now();
     let replay = replay_guest_pc_trace_segment_from_snapshot(
         snapshot,
         pending.runner_remaining_instruction_limit,
         layout.row_count(),
     )?;
+    timing.parallel_lower_snapshot_replay_duration += replay_started.elapsed();
     let (is_last_segment, terminal_pc, lookahead_instruction) = match replay.slice.status {
         GuestMachineTraceSliceStatus::Halted(halt) => (true, guest_machine_halt_pc(&halt), None),
         GuestMachineTraceSliceStatus::Paused { pc, instruction } => (false, pc, Some(instruction)),

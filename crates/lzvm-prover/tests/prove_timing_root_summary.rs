@@ -91,6 +91,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_parallel_lower_emitted",
         "timing_guest_trace_parallel_lower_max_reorder",
         "timing_guest_trace_parallel_lower_snapshot_replay_count",
+        "timing_guest_trace_parallel_lower_snapshot_replay_ms",
         "timing_guest_trace_parallel_lower_report_elided_count",
         "timing_guest_trace_parallel_lower_dispatch_wait_ms",
         "timing_guest_trace_parallel_lower_result_receive_wait_ms",
@@ -4840,6 +4841,7 @@ fn prove_timing_root_summary_reports_segment_replay_count() {
         "timing_total_ms=9000",
         "timing_guest_trace_segment_replay_count=23",
         "timing_guest_trace_parallel_lower_snapshot_replay_count=23",
+        "timing_guest_trace_parallel_lower_snapshot_replay_ms=321",
         "timing_guest_trace_parallel_lower_report_elided_count=23",
         "timing_guest_stage_tree_commit_root_count=1",
         "timing_guest_stage_tree_commit_root_materialization_groups=1",
@@ -4898,6 +4900,7 @@ fn prove_timing_root_summary_reports_segment_replay_count() {
     };
     assert_eq!(value("segment_replay_count"), "23");
     assert_eq!(value("parallel_lower_snapshot_replay_count"), "23");
+    assert_eq!(value("parallel_lower_snapshot_replay_ms"), "321");
     assert_eq!(value("parallel_lower_report_elided_count"), "23");
 }
 

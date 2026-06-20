@@ -1536,6 +1536,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_trace_parallel_lower_snapshot_replay_count()",
         ),
         (
+            "\"guest_trace_parallel_lower_snapshot_replay\"",
+            "guest_trace_parallel_lower_snapshot_replay_duration()",
+        ),
+        (
             "\"guest_trace_parallel_lower_report_elided_count\"",
             "guest_trace_parallel_lower_report_elided_count()",
         ),

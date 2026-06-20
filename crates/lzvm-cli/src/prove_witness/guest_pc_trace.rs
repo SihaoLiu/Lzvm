@@ -759,6 +759,10 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_parallel_lower_snapshot_replay_count",
         timing.guest_trace_parallel_lower_snapshot_replay_count(),
     );
+    timings.record(
+        "guest_trace_parallel_lower_snapshot_replay",
+        timing.guest_trace_parallel_lower_snapshot_replay_duration(),
+    );
     timings.record_count(
         "guest_trace_parallel_lower_report_elided_count",
         timing.guest_trace_parallel_lower_report_elided_count(),

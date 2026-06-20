@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(feature = "cuda")]
 use std::sync::Mutex;
+#[cfg(feature = "cuda")]
+use std::time::Duration;
 
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment, CHALLENGE_VALUES_SEGMENT_ID,
@@ -2294,6 +2296,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         parallel_lower_worker_count: usize,
         parallel_lower_emitted_count: usize,
         parallel_lower_snapshot_replay_count: usize,
+        parallel_lower_snapshot_replay_duration: Duration,
         parallel_lower_report_elided_count: usize,
         report_chunk_sent_count: usize,
         report_chunk_received_count: usize,
@@ -2391,6 +2394,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         let mut seed_counts = None;
         let mut parallel_lower_counts = None;
         let mut parallel_lower_snapshot_replay_count = None;
+        let mut parallel_lower_snapshot_replay_duration = None;
         let mut parallel_lower_report_elided_count = None;
         let mut report_chunk_counts = None;
         let mut report_buffer_capacity = None;
@@ -2421,6 +2425,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
                     ));
                     parallel_lower_snapshot_replay_count =
                         Some(timing.guest_trace_parallel_lower_snapshot_replay_count());
+                    parallel_lower_snapshot_replay_duration =
+                        Some(timing.guest_trace_parallel_lower_snapshot_replay_duration());
                     parallel_lower_report_elided_count =
                         Some(timing.guest_trace_parallel_lower_report_elided_count());
                     report_chunk_counts = Some((
@@ -2461,6 +2467,8 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             parallel_lower_counts.expect("timed run should report parallel lower counts");
         let parallel_lower_snapshot_replay_count = parallel_lower_snapshot_replay_count
             .expect("timed run should report parallel lower replay count");
+        let parallel_lower_snapshot_replay_duration = parallel_lower_snapshot_replay_duration
+            .expect("timed run should report parallel lower replay duration");
         let parallel_lower_report_elided_count = parallel_lower_report_elided_count
             .expect("timed run should report parallel lower report elision count");
         let (
@@ -2566,6 +2574,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             parallel_lower_worker_count,
             parallel_lower_emitted_count,
             parallel_lower_snapshot_replay_count,
+            parallel_lower_snapshot_replay_duration,
             parallel_lower_report_elided_count,
             report_chunk_sent_count,
             report_chunk_received_count,
@@ -2791,6 +2800,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         pipeline_run.parallel_lower_emitted_count,
         "pipeline opt-in should lower from replayed worker snapshots"
     );
+    assert!(
+        pipeline_run.parallel_lower_snapshot_replay_duration > Duration::ZERO,
+        "pipeline opt-in should report worker snapshot replay time"
+    );
     assert_eq!(
         pipeline_run.parallel_lower_report_elided_count, pipeline_run.parallel_lower_emitted_count,
         "pipeline opt-in should avoid carrying reports into replayed lower workers"
@@ -2845,6 +2858,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         combined_run.parallel_lower_snapshot_replay_count,
         combined_run.parallel_lower_emitted_count,
         "combined opt-in should lower from replayed worker snapshots"
+    );
+    assert!(
+        combined_run.parallel_lower_snapshot_replay_duration > Duration::ZERO,
+        "combined opt-in should report worker snapshot replay time"
     );
     assert_eq!(
         combined_run.parallel_lower_report_elided_count, combined_run.parallel_lower_emitted_count,

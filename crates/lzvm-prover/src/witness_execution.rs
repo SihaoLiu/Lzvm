@@ -477,6 +477,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_parallel_lower_emitted_count: usize,
     guest_trace_parallel_lower_max_reorder_count: usize,
     guest_trace_parallel_lower_snapshot_replay_count: usize,
+    guest_trace_parallel_lower_snapshot_replay_duration: Duration,
     guest_trace_parallel_lower_report_elided_count: usize,
     guest_trace_parallel_lower_dispatch_wait_duration: Duration,
     guest_trace_parallel_lower_result_receive_wait_duration: Duration,
@@ -788,6 +789,8 @@ impl ProveWitnessGuestPcTraceTiming {
                 .parallel_lower_max_reorder_count(),
             guest_trace_parallel_lower_snapshot_replay_count: stream_timing
                 .parallel_lower_snapshot_replay_count(),
+            guest_trace_parallel_lower_snapshot_replay_duration: stream_timing
+                .parallel_lower_snapshot_replay_duration(),
             guest_trace_parallel_lower_report_elided_count: stream_timing
                 .parallel_lower_report_elided_count(),
             guest_trace_parallel_lower_dispatch_wait_duration: stream_timing
@@ -1307,6 +1310,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_parallel_lower_snapshot_replay_count(&self) -> usize {
         self.guest_trace_parallel_lower_snapshot_replay_count
+    }
+
+    pub fn guest_trace_parallel_lower_snapshot_replay_duration(&self) -> Duration {
+        self.guest_trace_parallel_lower_snapshot_replay_duration
     }
 
     pub fn guest_trace_parallel_lower_report_elided_count(&self) -> usize {
