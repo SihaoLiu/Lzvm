@@ -2429,6 +2429,12 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
         "timing_guest_trace_store_conditional_reports=10",
         "timing_guest_trace_external_op_rows=300",
         "timing_guest_trace_copy_rows=400",
+        "timing_guest_trace_copy_memory_source_rows=260",
+        "timing_guest_trace_copy_indirect_memory_rows=140",
+        "timing_guest_trace_copy_register_store_rows=240",
+        "timing_guest_trace_copy_memory_store_rows=120",
+        "timing_guest_trace_copy_no_store_rows=40",
+        "timing_guest_trace_copy_no_memory_rows=180",
         "timing_guest_trace_flag_rows=20",
         "timing_guest_trace_precompile_rows=8",
         "timing_guest_trace_indirect_memory_rows=500",
@@ -2475,6 +2481,17 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
             ",900,100,50,25,10,300,400,20,8,500,45.455,1400,300,27.273,700,200,18.182,100,9.091,shape_timing_enabled,"
         ),
         "prove timing root summary should classify trace shape ratios: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "copy_memory_source_rows,copy_memory_source_row_pct,copy_indirect_memory_rows,copy_indirect_memory_row_pct,copy_register_store_rows,copy_memory_store_rows,copy_no_store_rows,copy_no_memory_rows,copy_no_memory_row_pct,trace_copy_shape_hint"
+        ),
+        "prove timing root summary should expose copy row shape columns: stdout={stdout}"
+    );
+    assert!(
+        stdout
+            .contains(",260,65.000,140,35.000,240,120,40,180,45.000,copy_memory_source_dominant,"),
+        "prove timing root summary should classify copy row shape ratios: stdout={stdout}"
     );
 }
 

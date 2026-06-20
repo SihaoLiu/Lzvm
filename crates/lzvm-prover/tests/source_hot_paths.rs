@@ -6497,6 +6497,19 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
             "guest PC trace proof timing should expose {field}"
         );
     }
+    for accessor in [
+        "pub fn guest_trace_copy_memory_source_row_count(&self) -> usize",
+        "pub fn guest_trace_copy_indirect_memory_row_count(&self) -> usize",
+        "pub fn guest_trace_copy_register_store_row_count(&self) -> usize",
+        "pub fn guest_trace_copy_memory_store_row_count(&self) -> usize",
+        "pub fn guest_trace_copy_no_store_row_count(&self) -> usize",
+        "pub fn guest_trace_copy_no_memory_row_count(&self) -> usize",
+    ] {
+        assert!(
+            execution_source.contains(accessor),
+            "guest PC trace proof timing should expose {accessor}"
+        );
+    }
 
     for line_name in [
         "\"guest_trace_report\"",
@@ -6527,6 +6540,12 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_store_conditional_reports\"",
         "\"guest_trace_external_op_rows\"",
         "\"guest_trace_copy_rows\"",
+        "\"guest_trace_copy_memory_source_rows\"",
+        "\"guest_trace_copy_indirect_memory_rows\"",
+        "\"guest_trace_copy_register_store_rows\"",
+        "\"guest_trace_copy_memory_store_rows\"",
+        "\"guest_trace_copy_no_store_rows\"",
+        "\"guest_trace_copy_no_memory_rows\"",
         "\"guest_trace_flag_rows\"",
         "\"guest_trace_precompile_rows\"",
         "\"guest_trace_indirect_memory_rows\"",
@@ -6539,6 +6558,19 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         assert!(
             cli_source.contains(line_name),
             "guest PC trace CLI timing should record {line_name}"
+        );
+    }
+    for cli_call in [
+        "timing.guest_trace_copy_memory_source_row_count()",
+        "timing.guest_trace_copy_indirect_memory_row_count()",
+        "timing.guest_trace_copy_register_store_row_count()",
+        "timing.guest_trace_copy_memory_store_row_count()",
+        "timing.guest_trace_copy_no_store_row_count()",
+        "timing.guest_trace_copy_no_memory_row_count()",
+    ] {
+        assert!(
+            cli_source.contains(cli_call),
+            "guest PC trace CLI timing should read {cli_call}"
         );
     }
 }

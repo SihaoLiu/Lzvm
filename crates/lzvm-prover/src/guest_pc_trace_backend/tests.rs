@@ -156,6 +156,47 @@ fn trace_shape_run_counts_track_consecutive_row_classes() {
 }
 
 #[test]
+fn copy_row_shape_counts_track_source_and_store_classes() {
+    let mut timing = GuestPcTraceStreamTiming::default();
+    let register_copy = zisk_main_base_instruction(
+        0x8000_0100,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Register(1),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::Register(2),
+        4,
+    );
+    let memory_copy = zisk_main_base_instruction(
+        0x8000_0104,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Memory(64),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::Memory(128),
+        4,
+    );
+    let indirect_copy = zisk_main_base_instruction(
+        0x8000_0108,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Indirect(8),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::None,
+        4,
+    );
+
+    for instruction in [&register_copy, &memory_copy, &indirect_copy] {
+        record_trace_lowered_row_shape(&mut timing, instruction);
+    }
+
+    assert_eq!(timing.trace_copy_row_count(), 3);
+    assert_eq!(timing.trace_copy_memory_source_row_count(), 2);
+    assert_eq!(timing.trace_copy_indirect_memory_row_count(), 1);
+    assert_eq!(timing.trace_copy_register_store_row_count(), 1);
+    assert_eq!(timing.trace_copy_memory_store_row_count(), 1);
+    assert_eq!(timing.trace_copy_no_store_row_count(), 1);
+    assert_eq!(timing.trace_copy_no_memory_row_count(), 1);
+}
+
+#[test]
 fn rejects_add256_precompile_memory_access_address_mismatch() {
     let mut report = add256_report();
     report.precompile_memory_accesses[4].address += 8;

@@ -119,6 +119,12 @@ TRACE_AMO_REPORTS_KEY = "timing_guest_trace_amo_reports"
 TRACE_STORE_CONDITIONAL_REPORTS_KEY = "timing_guest_trace_store_conditional_reports"
 TRACE_EXTERNAL_OP_ROWS_KEY = "timing_guest_trace_external_op_rows"
 TRACE_COPY_ROWS_KEY = "timing_guest_trace_copy_rows"
+TRACE_COPY_MEMORY_SOURCE_ROWS_KEY = "timing_guest_trace_copy_memory_source_rows"
+TRACE_COPY_INDIRECT_MEMORY_ROWS_KEY = "timing_guest_trace_copy_indirect_memory_rows"
+TRACE_COPY_REGISTER_STORE_ROWS_KEY = "timing_guest_trace_copy_register_store_rows"
+TRACE_COPY_MEMORY_STORE_ROWS_KEY = "timing_guest_trace_copy_memory_store_rows"
+TRACE_COPY_NO_STORE_ROWS_KEY = "timing_guest_trace_copy_no_store_rows"
+TRACE_COPY_NO_MEMORY_ROWS_KEY = "timing_guest_trace_copy_no_memory_rows"
 TRACE_EXTERNAL_OP_RUNS_KEY = "timing_guest_trace_external_op_runs"
 TRACE_EXTERNAL_OP_MAX_RUN_KEY = "timing_guest_trace_external_op_max_run"
 TRACE_COPY_RUNS_KEY = "timing_guest_trace_copy_runs"
@@ -141,6 +147,12 @@ TRACE_SHAPE_KEYS = (
     TRACE_STORE_CONDITIONAL_REPORTS_KEY,
     TRACE_EXTERNAL_OP_ROWS_KEY,
     TRACE_COPY_ROWS_KEY,
+    TRACE_COPY_MEMORY_SOURCE_ROWS_KEY,
+    TRACE_COPY_INDIRECT_MEMORY_ROWS_KEY,
+    TRACE_COPY_REGISTER_STORE_ROWS_KEY,
+    TRACE_COPY_MEMORY_STORE_ROWS_KEY,
+    TRACE_COPY_NO_STORE_ROWS_KEY,
+    TRACE_COPY_NO_MEMORY_ROWS_KEY,
     TRACE_EXTERNAL_OP_RUNS_KEY,
     TRACE_EXTERNAL_OP_MAX_RUN_KEY,
     TRACE_COPY_RUNS_KEY,
@@ -622,6 +634,11 @@ HEADER = (
     "register_source_reads,memory_source_reads,memory_source_read_pct,"
     "register_store_rows,memory_store_rows,memory_store_row_pct,"
     "no_store_rows,no_store_row_pct,trace_shape_sample_hint,"
+    "copy_memory_source_rows,copy_memory_source_row_pct,"
+    "copy_indirect_memory_rows,copy_indirect_memory_row_pct,"
+    "copy_register_store_rows,copy_memory_store_rows,"
+    "copy_no_store_rows,copy_no_memory_rows,copy_no_memory_row_pct,"
+    "trace_copy_shape_hint,"
     "trace_report_validation_ms,trace_report_emit_ms,trace_descriptor_ms,"
     "trace_report_lowering_ms,trace_report_row_validation_ms,"
     "trace_report_memory_columns_ms,trace_report_source_values_ms,"
@@ -789,6 +806,12 @@ TIMING_KEYS = {
     TRACE_STORE_CONDITIONAL_REPORTS_KEY,
     TRACE_EXTERNAL_OP_ROWS_KEY,
     TRACE_COPY_ROWS_KEY,
+    TRACE_COPY_MEMORY_SOURCE_ROWS_KEY,
+    TRACE_COPY_INDIRECT_MEMORY_ROWS_KEY,
+    TRACE_COPY_REGISTER_STORE_ROWS_KEY,
+    TRACE_COPY_MEMORY_STORE_ROWS_KEY,
+    TRACE_COPY_NO_STORE_ROWS_KEY,
+    TRACE_COPY_NO_MEMORY_ROWS_KEY,
     TRACE_EXTERNAL_OP_RUNS_KEY,
     TRACE_EXTERNAL_OP_MAX_RUN_KEY,
     TRACE_COPY_RUNS_KEY,
@@ -2468,6 +2491,23 @@ def trace_shape_row_mix_hint(
     return "mixed_trace_rows"
 
 
+def trace_copy_shape_hint(
+    copy_rows: int,
+    copy_memory_source_row_pct: float,
+    copy_indirect_memory_row_pct: float,
+    copy_no_memory_row_pct: float,
+) -> str:
+    if copy_rows <= 0:
+        return "none"
+    if copy_no_memory_row_pct >= 50.0:
+        return "copy_no_memory_fast_path_candidate"
+    if copy_memory_source_row_pct >= 50.0:
+        return "copy_memory_source_dominant"
+    if copy_indirect_memory_row_pct >= 50.0:
+        return "copy_indirect_memory_dominant"
+    return "copy_shape_mixed"
+
+
 def trace_shape_duration_hint(
     external_op_row_lower_pct: float,
     copy_row_lower_pct: float,
@@ -2959,6 +2999,12 @@ def summarize_profile_values(
     )
     external_op_rows = values.get(TRACE_EXTERNAL_OP_ROWS_KEY, 0)
     copy_rows = values.get(TRACE_COPY_ROWS_KEY, 0)
+    copy_memory_source_rows = values.get(TRACE_COPY_MEMORY_SOURCE_ROWS_KEY, 0)
+    copy_indirect_memory_rows = values.get(TRACE_COPY_INDIRECT_MEMORY_ROWS_KEY, 0)
+    copy_register_store_rows = values.get(TRACE_COPY_REGISTER_STORE_ROWS_KEY, 0)
+    copy_memory_store_rows = values.get(TRACE_COPY_MEMORY_STORE_ROWS_KEY, 0)
+    copy_no_store_rows = values.get(TRACE_COPY_NO_STORE_ROWS_KEY, 0)
+    copy_no_memory_rows = values.get(TRACE_COPY_NO_MEMORY_ROWS_KEY, 0)
     external_op_runs = values.get(TRACE_EXTERNAL_OP_RUNS_KEY, 0)
     external_op_max_run = values.get(TRACE_EXTERNAL_OP_MAX_RUN_KEY, 0)
     copy_runs = values.get(TRACE_COPY_RUNS_KEY, 0)
@@ -2990,6 +3036,21 @@ def summarize_profile_values(
         no_store_rows * 100.0 / trace_report_rows
         if trace_report_rows
         else 0.0
+    )
+    copy_memory_source_row_pct = (
+        copy_memory_source_rows * 100.0 / copy_rows if copy_rows else 0.0
+    )
+    copy_indirect_memory_row_pct = (
+        copy_indirect_memory_rows * 100.0 / copy_rows if copy_rows else 0.0
+    )
+    copy_no_memory_row_pct = (
+        copy_no_memory_rows * 100.0 / copy_rows if copy_rows else 0.0
+    )
+    copy_shape_hint = trace_copy_shape_hint(
+        copy_rows,
+        copy_memory_source_row_pct,
+        copy_indirect_memory_row_pct,
+        copy_no_memory_row_pct,
     )
     trace_shape_hint = trace_shape_sample_hint(values, trace_report_rows)
     external_op_row_pct = (
@@ -4028,6 +4089,11 @@ def summarize_profile_values(
         f"{memory_source_read_pct:.3f},{register_store_rows},"
         f"{memory_store_rows},{memory_store_row_pct:.3f},"
         f"{no_store_rows},{no_store_row_pct:.3f},{trace_shape_hint},"
+        f"{copy_memory_source_rows},{copy_memory_source_row_pct:.3f},"
+        f"{copy_indirect_memory_rows},{copy_indirect_memory_row_pct:.3f},"
+        f"{copy_register_store_rows},{copy_memory_store_rows},"
+        f"{copy_no_store_rows},{copy_no_memory_rows},"
+        f"{copy_no_memory_row_pct:.3f},{copy_shape_hint},"
         f"{trace_report_validation_ms},{trace_report_emit_ms},{trace_descriptor_ms},"
         f"{trace_report_lowering_ms},{trace_report_row_validation_ms},"
         f"{trace_report_memory_columns_ms},{trace_report_source_values_ms},"

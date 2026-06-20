@@ -587,6 +587,30 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_external_op_max_run_count(),
     );
     timings.record_count("guest_trace_copy_rows", timing.guest_trace_copy_row_count());
+    timings.record_count(
+        "guest_trace_copy_memory_source_rows",
+        timing.guest_trace_copy_memory_source_row_count(),
+    );
+    timings.record_count(
+        "guest_trace_copy_indirect_memory_rows",
+        timing.guest_trace_copy_indirect_memory_row_count(),
+    );
+    timings.record_count(
+        "guest_trace_copy_register_store_rows",
+        timing.guest_trace_copy_register_store_row_count(),
+    );
+    timings.record_count(
+        "guest_trace_copy_memory_store_rows",
+        timing.guest_trace_copy_memory_store_row_count(),
+    );
+    timings.record_count(
+        "guest_trace_copy_no_store_rows",
+        timing.guest_trace_copy_no_store_row_count(),
+    );
+    timings.record_count(
+        "guest_trace_copy_no_memory_rows",
+        timing.guest_trace_copy_no_memory_row_count(),
+    );
     timings.record_count("guest_trace_copy_runs", timing.guest_trace_copy_run_count());
     timings.record_count(
         "guest_trace_copy_max_run",

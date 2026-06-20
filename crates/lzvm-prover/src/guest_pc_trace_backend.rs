@@ -276,6 +276,12 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_copy_run_count: usize,
     trace_copy_current_run_count: usize,
     trace_copy_max_run_count: usize,
+    trace_copy_memory_source_row_count: usize,
+    trace_copy_indirect_memory_row_count: usize,
+    trace_copy_register_store_row_count: usize,
+    trace_copy_memory_store_row_count: usize,
+    trace_copy_no_store_row_count: usize,
+    trace_copy_no_memory_row_count: usize,
     trace_flag_row_count: usize,
     trace_precompile_row_count: usize,
     trace_indirect_memory_row_count: usize,
@@ -415,6 +421,12 @@ impl GuestPcTraceStreamTiming {
         self.trace_copy_max_run_count = self
             .trace_copy_max_run_count
             .max(other.trace_copy_max_run_count);
+        self.trace_copy_memory_source_row_count += other.trace_copy_memory_source_row_count;
+        self.trace_copy_indirect_memory_row_count += other.trace_copy_indirect_memory_row_count;
+        self.trace_copy_register_store_row_count += other.trace_copy_register_store_row_count;
+        self.trace_copy_memory_store_row_count += other.trace_copy_memory_store_row_count;
+        self.trace_copy_no_store_row_count += other.trace_copy_no_store_row_count;
+        self.trace_copy_no_memory_row_count += other.trace_copy_no_memory_row_count;
         self.trace_flag_row_count += other.trace_flag_row_count;
         self.trace_precompile_row_count += other.trace_precompile_row_count;
         self.trace_indirect_memory_row_count += other.trace_indirect_memory_row_count;
@@ -837,6 +849,30 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_copy_max_run_count(&self) -> usize {
         self.trace_copy_max_run_count
+    }
+
+    pub fn trace_copy_memory_source_row_count(&self) -> usize {
+        self.trace_copy_memory_source_row_count
+    }
+
+    pub fn trace_copy_indirect_memory_row_count(&self) -> usize {
+        self.trace_copy_indirect_memory_row_count
+    }
+
+    pub fn trace_copy_register_store_row_count(&self) -> usize {
+        self.trace_copy_register_store_row_count
+    }
+
+    pub fn trace_copy_memory_store_row_count(&self) -> usize {
+        self.trace_copy_memory_store_row_count
+    }
+
+    pub fn trace_copy_no_store_row_count(&self) -> usize {
+        self.trace_copy_no_store_row_count
+    }
+
+    pub fn trace_copy_no_memory_row_count(&self) -> usize {
+        self.trace_copy_no_memory_row_count
     }
 
     pub fn trace_flag_row_count(&self) -> usize {
@@ -6382,8 +6418,9 @@ fn record_trace_lowered_row_shape(
 ) {
     let (register_a_sources, memory_a_sources) = source_shape_count(instruction.a);
     let (register_b_sources, memory_b_sources) = source_shape_count(instruction.b);
+    let memory_source_count = memory_a_sources + memory_b_sources;
     timing.trace_register_source_read_count += register_a_sources + register_b_sources;
-    timing.trace_memory_source_read_count += memory_a_sources + memory_b_sources;
+    timing.trace_memory_source_read_count += memory_source_count;
     if instruction.is_external_op {
         timing.trace_external_op_row_count += 1;
     }
@@ -6400,17 +6437,40 @@ fn record_trace_lowered_row_shape(
         &mut timing.trace_copy_current_run_count,
         &mut timing.trace_copy_max_run_count,
     );
+    let uses_indirect_memory_row = matches!(instruction.b, ZiskMainSource::Indirect(_))
+        || matches!(instruction.store, ZiskMainStore::Indirect(_));
     match instruction.op {
-        ZiskMainOp::CopyB => timing.trace_copy_row_count += 1,
+        ZiskMainOp::CopyB => {
+            timing.trace_copy_row_count += 1;
+            if memory_source_count > 0 {
+                timing.trace_copy_memory_source_row_count += 1;
+            }
+            if uses_indirect_memory_row {
+                timing.trace_copy_indirect_memory_row_count += 1;
+            }
+            match instruction.store {
+                ZiskMainStore::Register(_) => timing.trace_copy_register_store_row_count += 1,
+                ZiskMainStore::Memory(_) | ZiskMainStore::Indirect(_) => {
+                    timing.trace_copy_memory_store_row_count += 1;
+                }
+                ZiskMainStore::None => timing.trace_copy_no_store_row_count += 1,
+            }
+            if memory_source_count == 0
+                && !matches!(
+                    instruction.store,
+                    ZiskMainStore::Memory(_) | ZiskMainStore::Indirect(_)
+                )
+            {
+                timing.trace_copy_no_memory_row_count += 1;
+            }
+        }
         ZiskMainOp::Flag => timing.trace_flag_row_count += 1,
         _ => {}
     }
     if instruction.is_precompiled {
         timing.trace_precompile_row_count += 1;
     }
-    if matches!(instruction.b, ZiskMainSource::Indirect(_))
-        || matches!(instruction.store, ZiskMainStore::Indirect(_))
-    {
+    if uses_indirect_memory_row {
         timing.trace_indirect_memory_row_count += 1;
     }
     match instruction.store {

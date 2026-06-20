@@ -523,6 +523,12 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_copy_row_count: usize,
     guest_trace_copy_run_count: usize,
     guest_trace_copy_max_run_count: usize,
+    guest_trace_copy_memory_source_row_count: usize,
+    guest_trace_copy_indirect_memory_row_count: usize,
+    guest_trace_copy_register_store_row_count: usize,
+    guest_trace_copy_memory_store_row_count: usize,
+    guest_trace_copy_no_store_row_count: usize,
+    guest_trace_copy_no_memory_row_count: usize,
     guest_trace_flag_row_count: usize,
     guest_trace_precompile_row_count: usize,
     guest_trace_indirect_memory_row_count: usize,
@@ -840,6 +846,16 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_copy_row_count: stream_timing.trace_copy_row_count(),
             guest_trace_copy_run_count: stream_timing.trace_copy_run_count(),
             guest_trace_copy_max_run_count: stream_timing.trace_copy_max_run_count(),
+            guest_trace_copy_memory_source_row_count: stream_timing
+                .trace_copy_memory_source_row_count(),
+            guest_trace_copy_indirect_memory_row_count: stream_timing
+                .trace_copy_indirect_memory_row_count(),
+            guest_trace_copy_register_store_row_count: stream_timing
+                .trace_copy_register_store_row_count(),
+            guest_trace_copy_memory_store_row_count: stream_timing
+                .trace_copy_memory_store_row_count(),
+            guest_trace_copy_no_store_row_count: stream_timing.trace_copy_no_store_row_count(),
+            guest_trace_copy_no_memory_row_count: stream_timing.trace_copy_no_memory_row_count(),
             guest_trace_flag_row_count: stream_timing.trace_flag_row_count(),
             guest_trace_precompile_row_count: stream_timing.trace_precompile_row_count(),
             guest_trace_indirect_memory_row_count: stream_timing.trace_indirect_memory_row_count(),
@@ -1446,6 +1462,30 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_copy_max_run_count(&self) -> usize {
         self.guest_trace_copy_max_run_count
+    }
+
+    pub fn guest_trace_copy_memory_source_row_count(&self) -> usize {
+        self.guest_trace_copy_memory_source_row_count
+    }
+
+    pub fn guest_trace_copy_indirect_memory_row_count(&self) -> usize {
+        self.guest_trace_copy_indirect_memory_row_count
+    }
+
+    pub fn guest_trace_copy_register_store_row_count(&self) -> usize {
+        self.guest_trace_copy_register_store_row_count
+    }
+
+    pub fn guest_trace_copy_memory_store_row_count(&self) -> usize {
+        self.guest_trace_copy_memory_store_row_count
+    }
+
+    pub fn guest_trace_copy_no_store_row_count(&self) -> usize {
+        self.guest_trace_copy_no_store_row_count
+    }
+
+    pub fn guest_trace_copy_no_memory_row_count(&self) -> usize {
+        self.guest_trace_copy_no_memory_row_count
     }
 
     pub fn guest_trace_flag_row_count(&self) -> usize {
