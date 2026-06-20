@@ -4210,6 +4210,7 @@ fn prove_timing_root_summary_reads_real_nsys_cpu_trace_hints() {
         value("cpu_trace_report_storage_action_hint"),
         "trace_report_storage_structural_candidate"
     );
+    assert_eq!(value("cpu_trace_memcpy_report_storage_hint_pct"), "61.446");
 }
 
 #[test]

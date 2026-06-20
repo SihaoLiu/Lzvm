@@ -593,6 +593,7 @@ HEADER = (
     "perf_pending_segment_drop_self_pct,perf_sha256_self_pct,"
     "perf_sha256_source_hint,cpu_trace_hotspot_hint,"
     "cpu_trace_report_storage_action_hint,"
+    "cpu_trace_memcpy_report_storage_hint_pct,"
     "perf_append_descriptor_self_pct,perf_source_value_self_pct,"
     "cpu_trace_lowerer_action_hint,"
     "perf_prepare_instruction_self_pct,perf_trace_segment_build_self_pct,"
@@ -3761,6 +3762,9 @@ def summarize_profile_values(
     sha256_hint = sha256_source_hint(perf_hotspots)
     cpu_hint = cpu_trace_hotspot_hint(perf_hotspots)
     cpu_report_storage_hint = cpu_trace_report_storage_action_hint(values, perf_hotspots)
+    cpu_report_storage_memcpy_pct = perf_hotspots.get(
+        CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY, 0.0
+    )
     append_descriptor_pct = perf_hotspots.get(
         PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY, 0.0
     )
@@ -3913,6 +3917,7 @@ def summarize_profile_values(
         f"{memmove_trace_slice_pct:.3f},{memmove_hint},"
         f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint},"
         f"{cpu_report_storage_hint},"
+        f"{cpu_report_storage_memcpy_pct:.3f},"
         f"{append_descriptor_pct:.3f},{source_value_pct:.3f},{lowerer_hint},"
         f"{prepare_instruction_pct:.3f},{trace_segment_build_pct:.3f},"
         f"{advance_guest_machine_pct:.3f},{guest_memory_write_pct:.3f},"
