@@ -9,6 +9,10 @@ use std::process::{Command, Output};
 const PARALLEL_LOWER_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER";
 const LOWER_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
 const COMMIT_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS";
+const SEGMENT_REPLAY_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY";
+const SEGMENT_REPLAY_SNAPSHOT_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY_SNAPSHOT";
+const PARALLEL_REPLAY_SNAPSHOT_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT";
+const PARALLEL_REPLAY_ONLY_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY";
 
 #[test]
 #[ignore]
@@ -170,13 +174,56 @@ fn clear_pipeline_env(command: &mut Command) {
         "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE",
         LOWER_WORKERS_ENV,
         COMMIT_WORKERS_ENV,
+        SEGMENT_REPLAY_ENV,
+        SEGMENT_REPLAY_SNAPSHOT_ENV,
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY",
-        "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY",
-        "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT",
+        PARALLEL_REPLAY_ONLY_ENV,
+        PARALLEL_REPLAY_SNAPSHOT_ENV,
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKER_REPLAY",
     ] {
         command.env_remove(OsStr::new(name));
     }
+}
+
+#[test]
+fn clear_pipeline_env_removes_current_replay_controls() {
+    let mut command = Command::new("lzvm");
+    for name in [
+        PARALLEL_LOWER_ENV,
+        LOWER_WORKERS_ENV,
+        COMMIT_WORKERS_ENV,
+        SEGMENT_REPLAY_ENV,
+        SEGMENT_REPLAY_SNAPSHOT_ENV,
+        PARALLEL_REPLAY_SNAPSHOT_ENV,
+        PARALLEL_REPLAY_ONLY_ENV,
+    ] {
+        command.env(name, "1");
+    }
+
+    clear_pipeline_env(&mut command);
+
+    for name in [
+        PARALLEL_LOWER_ENV,
+        LOWER_WORKERS_ENV,
+        COMMIT_WORKERS_ENV,
+        SEGMENT_REPLAY_ENV,
+        SEGMENT_REPLAY_SNAPSHOT_ENV,
+        PARALLEL_REPLAY_SNAPSHOT_ENV,
+        PARALLEL_REPLAY_ONLY_ENV,
+    ] {
+        assert_env_removed(&command, name);
+    }
+}
+
+fn assert_env_removed(command: &Command, name: &str) {
+    let state = command
+        .get_envs()
+        .find(|(key, _)| *key == OsStr::new(name))
+        .map(|(_, value)| value);
+    assert!(
+        matches!(state, Some(None)),
+        "{name} should be explicitly removed, got {state:?}"
+    );
 }
 
 fn assert_successful_proof(label: &str, output: &Output) -> String {
