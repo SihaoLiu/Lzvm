@@ -2265,6 +2265,10 @@ fn prove_timing_root_summary_reports_segment_commit_memory_margin() {
         ("segment_commit_worker_finish_joins", "3"),
         ("segment_commit_worker_finish_join_ms", "231"),
         ("segment_commit_worker_max_in_flight", "3"),
+        (
+            "segment_commit_worker_pressure_hint",
+            "worker_backpressure_dominant",
+        ),
         ("segment_commit_cuda_memory_min_free_pct", "5.000"),
         (
             "segment_commit_memory_pressure_hint",

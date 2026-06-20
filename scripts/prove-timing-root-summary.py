@@ -562,6 +562,7 @@ HEADER = (
     "segment_commit_worker_backpressure_join_ms,"
     "segment_commit_worker_finish_joins,segment_commit_worker_finish_join_ms,"
     "segment_commit_worker_max_in_flight,"
+    "segment_commit_worker_pressure_hint,"
     "segment_commit_oom_retries,"
     "segment_commit_attempt_ms,segment_commit_oom_retry_ms,"
     "stream_commit_residual_ms,segment_receive_wait_ms,"
@@ -1575,6 +1576,40 @@ def trace_pipeline_action_hint(
     if queue_wait_is_long:
         return "trace_queue_backpressure_candidate"
     return "balanced_pipeline"
+
+
+def segment_commit_worker_pressure_hint(
+    worker_submits: int,
+    worker_backpressure_joins: int,
+    worker_backpressure_join_ms: int,
+    worker_finish_joins: int,
+    worker_finish_join_ms: int,
+    worker_max_in_flight: int,
+    effective_workers: int,
+) -> str:
+    if worker_submits <= 0 or effective_workers <= 0:
+        return "none"
+    backpressure_ratio = worker_backpressure_joins / worker_submits
+    worker_queue_filled = (
+        effective_workers > 1 and worker_max_in_flight >= effective_workers
+    )
+    backpressure_is_dominant = (
+        worker_backpressure_join_ms >= 1000
+        and worker_backpressure_join_ms >= worker_finish_join_ms * 2
+    )
+    if worker_queue_filled and worker_backpressure_joins > 0:
+        if backpressure_ratio >= 0.5 or backpressure_is_dominant:
+            return "worker_backpressure_dominant"
+        return "worker_backpressure_present"
+    if (
+        worker_finish_joins > 0
+        and worker_finish_join_ms >= 1000
+        and worker_finish_join_ms > worker_backpressure_join_ms
+    ):
+        return "worker_finish_drain_dominant"
+    if worker_queue_filled:
+        return "worker_queue_filled"
+    return "no_worker_pressure"
 
 
 def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
@@ -3069,6 +3104,15 @@ def summarize_profile_values(
     segment_commit_worker_max_in_flight = values.get(
         SEGMENT_COMMIT_WORKER_MAX_IN_FLIGHT_KEY, 0
     )
+    segment_commit_worker_hint = segment_commit_worker_pressure_hint(
+        segment_commit_worker_submits,
+        segment_commit_worker_backpressure_joins,
+        segment_commit_worker_backpressure_join_ms,
+        segment_commit_worker_finish_joins,
+        segment_commit_worker_finish_join_ms,
+        segment_commit_worker_max_in_flight,
+        segment_commit_effective_workers,
+    )
     segment_commit_oom_retries = values.get(SEGMENT_COMMIT_OOM_RETRIES_KEY, 0)
     segment_commit_cuda_memory_total_bytes = values.get(
         SEGMENT_COMMIT_CUDA_MEMORY_TOTAL_BYTES_KEY, 0
@@ -4124,6 +4168,7 @@ def summarize_profile_values(
         f"{segment_commit_worker_backpressure_join_ms},"
         f"{segment_commit_worker_finish_joins},{segment_commit_worker_finish_join_ms},"
         f"{segment_commit_worker_max_in_flight},"
+        f"{segment_commit_worker_hint},"
         f"{segment_commit_oom_retries},"
         f"{segment_commit_attempt_ms},{segment_commit_oom_retry_ms},"
         f"{stream_commit_residual_ms},{segment_receive_wait_ms},"
