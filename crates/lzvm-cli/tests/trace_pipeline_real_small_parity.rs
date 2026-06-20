@@ -28,6 +28,8 @@ const SEGMENT_REPLAY_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY";
 const SEGMENT_REPLAY_SNAPSHOT_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY_SNAPSHOT";
 const PARALLEL_REPLAY_SNAPSHOT_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT";
 const PARALLEL_REPLAY_ONLY_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY";
+const REPORT_CHUNKS_ENV: &str = "LZVM_GUEST_PC_TRACE_REPORT_CHUNKS";
+const REPORT_CHUNK_CAPACITY_ENV: &str = "LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY";
 
 #[test]
 #[ignore]
@@ -255,6 +257,8 @@ fn clear_pipeline_env(command: &mut Command) {
         PARALLEL_REPLAY_ONLY_ENV,
         PARALLEL_REPLAY_SNAPSHOT_ENV,
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKER_REPLAY",
+        REPORT_CHUNKS_ENV,
+        REPORT_CHUNK_CAPACITY_ENV,
     ] {
         command.env_remove(OsStr::new(name));
     }
@@ -271,6 +275,8 @@ fn clear_pipeline_env_removes_current_replay_controls() {
         SEGMENT_REPLAY_SNAPSHOT_ENV,
         PARALLEL_REPLAY_SNAPSHOT_ENV,
         PARALLEL_REPLAY_ONLY_ENV,
+        REPORT_CHUNKS_ENV,
+        REPORT_CHUNK_CAPACITY_ENV,
     ] {
         command.env(name, "1");
     }
@@ -285,6 +291,8 @@ fn clear_pipeline_env_removes_current_replay_controls() {
         SEGMENT_REPLAY_SNAPSHOT_ENV,
         PARALLEL_REPLAY_SNAPSHOT_ENV,
         PARALLEL_REPLAY_ONLY_ENV,
+        REPORT_CHUNKS_ENV,
+        REPORT_CHUNK_CAPACITY_ENV,
     ] {
         assert_env_removed(&command, name);
     }
