@@ -385,8 +385,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &gpu_runtime_source,
             "abstract_verifier_sound"
         ),
-        1,
-        "Lean GPU runtime wrappers should centralize abstract verifier soundness in checked_acceptance_sound_witness"
+        0,
+        "Lean GPU runtime wrappers should route checked acceptance through the auxiliary SoundWitness chokepoint"
     );
     for (theorem_name, projector, wrapper) in [
         (
@@ -645,6 +645,19 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     assert!(
         gpu_runtime_source.contains("private theorem checked_acceptance_sound_witness"),
         "Lean GPU runtime checks should centralize checked-acceptance SoundWitness projection"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "checked_acceptance_sound_witness",
+        &["auxiliary_checked_acceptance_sound_witness"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "checked_acceptance_sound_witness",
+        &[
+            "abstract_verifier_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,

@@ -21,7 +21,12 @@ private theorem checked_acceptance_sound_witness
         /\ auxiliaryAccepted publicInput proof ->
         SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  exact abstract_verifier_sound assumptions publicInput proof checked.left
+  exact
+    auxiliary_checked_acceptance_sound_witness
+      assumptions
+      publicInput
+      proof
+      checked
 
 private theorem checked_acceptance_verifier_core_contract
     {system : VerifierModel}
