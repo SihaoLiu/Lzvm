@@ -212,6 +212,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "copy_summary_gpu_residency_hint",
         "copy_summary_small_d2h_batching_hint",
         "kernel_graph_fusion_priority_hint",
+        "kernel_next_action_hint",
         "kernel_graph_fusion_upper_bound_ms",
         "kernel_top_stream_idle_ms",
         "kernel_separation_hint",
@@ -764,6 +765,7 @@ fn prove_timing_root_summary_reads_explicit_nsys_kernel_summary() {
             "metric,value,detail",
             "graph_or_fusion_upper_bound_ms,863.000,launch API time before synchronization or transfer costs",
             "top_stream_idle_ms,2500.000,active-window time not covered by kernels on the top stream",
+            "next_action_hint,inspect_stream_idle_or_cpu_producer,top kernel stream is idle for more than a quarter of its active window",
             "graph_fusion_priority_hint,defer_graph_or_fusion_until_stream_idle_is_explained,top stream idle exceeds launch upper bound",
             "kernel_separation_hint,use_ncu_occupancy_before_splitting,profile top kernels with NCU before splitting kernels",
         ]
@@ -810,6 +812,10 @@ fn prove_timing_root_summary_reads_explicit_nsys_kernel_summary() {
     assert_eq!(
         value("kernel_graph_fusion_priority_hint"),
         "defer_graph_or_fusion_until_stream_idle_is_explained"
+    );
+    assert_eq!(
+        value("kernel_next_action_hint"),
+        "inspect_stream_idle_or_cpu_producer"
     );
     assert_eq!(value("kernel_graph_fusion_upper_bound_ms"), "863.000");
     assert_eq!(value("kernel_top_stream_idle_ms"), "2500.000");
@@ -872,6 +878,7 @@ fn prove_timing_root_summary_reads_sibling_nsys_kernel_summary() {
             "metric,value,detail",
             "graph_or_fusion_upper_bound_ms,863.000,launch API time before synchronization or transfer costs",
             "top_stream_idle_ms,2500.000,active-window time not covered by kernels on the top stream",
+            "next_action_hint,inspect_stream_idle_or_cpu_producer,top kernel stream is idle for more than a quarter of its active window",
             "graph_fusion_priority_hint,defer_graph_or_fusion_until_stream_idle_is_explained,top stream idle exceeds launch upper bound",
             "kernel_separation_hint,use_ncu_occupancy_before_splitting,profile top kernels with NCU before splitting kernels",
         ]
@@ -916,6 +923,10 @@ fn prove_timing_root_summary_reads_sibling_nsys_kernel_summary() {
     assert_eq!(
         value("kernel_graph_fusion_priority_hint"),
         "defer_graph_or_fusion_until_stream_idle_is_explained"
+    );
+    assert_eq!(
+        value("kernel_next_action_hint"),
+        "inspect_stream_idle_or_cpu_producer"
     );
     assert_eq!(value("kernel_graph_fusion_upper_bound_ms"), "863.000");
     assert_eq!(value("kernel_top_stream_idle_ms"), "2500.000");

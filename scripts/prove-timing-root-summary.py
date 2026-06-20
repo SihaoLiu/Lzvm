@@ -400,6 +400,7 @@ NSYS_COPY_CUDA_API_BACKTRACE_HINT_KEY = "nsys_copy_cuda_api_backtrace_hint"
 NSYS_KERNEL_GRAPH_FUSION_PRIORITY_HINT_KEY = (
     "nsys_kernel_graph_fusion_priority_hint"
 )
+NSYS_KERNEL_NEXT_ACTION_HINT_KEY = "nsys_kernel_next_action_hint"
 NSYS_KERNEL_GRAPH_FUSION_UPPER_BOUND_MS_KEY = (
     "nsys_kernel_graph_fusion_upper_bound_ms"
 )
@@ -628,7 +629,8 @@ HEADER = (
     "copy_summary_gpu_residency_hint,copy_summary_h2d_bulk_app_frame_hint,"
     "copy_summary_small_d2h_batching_hint,"
     "copy_summary_cuda_api_backtrace_hint,"
-    "kernel_graph_fusion_priority_hint,kernel_graph_fusion_upper_bound_ms,"
+    "kernel_graph_fusion_priority_hint,kernel_next_action_hint,"
+    "kernel_graph_fusion_upper_bound_ms,"
     "kernel_top_stream_idle_ms,kernel_separation_hint,"
     "kernel_top_stream_idle_gap_previous_kernel,"
     "kernel_top_stream_idle_gap_next_kernel,"
@@ -1057,6 +1059,8 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
                 value = row[1].strip()
                 if metric == "graph_fusion_priority_hint":
                     values[NSYS_KERNEL_GRAPH_FUSION_PRIORITY_HINT_KEY] = value
+                elif metric == "next_action_hint":
+                    values[NSYS_KERNEL_NEXT_ACTION_HINT_KEY] = value
                 elif metric == "graph_or_fusion_upper_bound_ms":
                     values[NSYS_KERNEL_GRAPH_FUSION_UPPER_BOUND_MS_KEY] = value
                 elif metric == "top_stream_idle_ms":
@@ -3577,6 +3581,7 @@ def summarize_profile_values(
     kernel_graph_fusion_priority_hint = str(
         values.get(NSYS_KERNEL_GRAPH_FUSION_PRIORITY_HINT_KEY, "none")
     )
+    kernel_next_action_hint = str(values.get(NSYS_KERNEL_NEXT_ACTION_HINT_KEY, "none"))
     kernel_graph_fusion_upper_bound_ms = str(
         values.get(NSYS_KERNEL_GRAPH_FUSION_UPPER_BOUND_MS_KEY, "0.000")
     )
@@ -3875,7 +3880,8 @@ def summarize_profile_values(
         f"{copy_summary_gpu_residency_hint},{copy_summary_h2d_bulk_app_frame_hint},"
         f"{copy_summary_small_d2h_batching_hint},"
         f"{copy_summary_cuda_api_backtrace_hint},"
-        f"{kernel_graph_fusion_priority_hint},{kernel_graph_fusion_upper_bound_ms},"
+        f"{kernel_graph_fusion_priority_hint},{kernel_next_action_hint},"
+        f"{kernel_graph_fusion_upper_bound_ms},"
         f"{kernel_top_stream_idle_ms},{kernel_separation_hint},"
         f"{kernel_top_stream_idle_gap_previous},{kernel_top_stream_idle_gap_next},"
         f"{kernel_top_stream_idle_gap_calls},{kernel_top_stream_idle_gap_ms},"
