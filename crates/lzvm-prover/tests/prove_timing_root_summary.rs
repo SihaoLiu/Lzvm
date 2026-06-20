@@ -4515,6 +4515,97 @@ fn prove_timing_root_summary_reports_lowerer_perf_action_hint() {
 }
 
 #[test]
+fn prove_timing_root_summary_prefers_detail_lowerer_hotspot_over_perf_symbol() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=50870",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_lowerer_ms=32174",
+        "timing_guest_trace_lower_ms=31203",
+        "timing_guest_trace_reports=500000000",
+        "timing_guest_trace_report_rows=500000000",
+        "timing_guest_trace_report_detail_samples=5000",
+        "timing_guest_trace_report_sampled_ns=100000",
+        "timing_guest_trace_report_row_validation_sampled_ns=56000",
+        "timing_guest_trace_report_source_values_sampled_ns=14000",
+        "timing_guest_trace_report_precompile_memory_sampled_ns=3000",
+        "timing_guest_trace_report_instruction_result_sampled_ns=4500",
+        "timing_guest_trace_report_next_pc_sampled_ns=2000",
+        "timing_guest_trace_report_register_access_sampled_ns=4000",
+        "timing_guest_trace_report_memory_access_sampled_ns=5000",
+        "timing_guest_trace_report_store_apply_sampled_ns=4000",
+        "timing_guest_trace_report_visit_sampled_ns=16000",
+        "timing_guest_trace_descriptor_sampled_ns=10000",
+        "    24.74%  lzvm-gp-lower    lzvm                  [.] lzvm_prover::guest_pc_trace_backend::apply_zisk_main_lowered_report_row",
+        "     8.50%  lzvm-gp-lower    lzvm                  [.] lzvm_prover::guest_pc_trace_backend::append_main_device_trace_descriptor",
+        "     3.96%  lzvm-gp-lower    lzvm                  [.] lzvm_prover::guest_pc_trace_backend::zisk_main_source_value",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    assert_eq!(
+        header.len(),
+        row.len(),
+        "summary header and row should have matching column counts: stdout={stdout}"
+    );
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        value("trace_report_detail_action_hint"),
+        "profile_row_validation"
+    );
+    assert_eq!(
+        value("cpu_trace_lowerer_action_hint"),
+        "row_validation_profile_candidate"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_segment_replay_count() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

@@ -1788,7 +1788,19 @@ def cpu_trace_report_storage_action_hint(
     return "none"
 
 
-def cpu_trace_lowerer_action_hint(perf_hotspots: dict[str, float]) -> str:
+def cpu_trace_lowerer_action_hint(
+    perf_hotspots: dict[str, float], trace_report_detail_action: str = "none"
+) -> str:
+    detail_hints = {
+        "profile_row_validation_residual": "row_validation_residual_profile_candidate",
+        "profile_row_validation": "row_validation_profile_candidate",
+        "profile_source_values_residual": "source_values_residual_profile_candidate",
+        "profile_source_values": "source_values_profile_candidate",
+        "profile_descriptor_write": "descriptor_append_candidate",
+        "profile_visit": "visit_profile_candidate",
+    }
+    if trace_report_detail_action in detail_hints:
+        return detail_hints[trace_report_detail_action]
     lowered_report_row_pct = perf_hotspots.get(
         PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY, 0.0
     )
@@ -3786,7 +3798,7 @@ def summarize_profile_values(
         PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY, 0.0
     )
     source_value_pct = perf_hotspots.get(PERF_SOURCE_VALUE_SELF_PCT_KEY, 0.0)
-    lowerer_hint = cpu_trace_lowerer_action_hint(perf_hotspots)
+    lowerer_hint = cpu_trace_lowerer_action_hint(perf_hotspots, trace_report_detail_action)
     prepare_instruction_pct = perf_hotspots.get(
         PERF_PREPARE_INSTRUCTION_SELF_PCT_KEY, 0.0
     )
