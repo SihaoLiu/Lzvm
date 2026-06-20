@@ -63,6 +63,13 @@ pub fn theorem_body(source: &str, name: &str) -> String {
     visible_source[body_start..body_end].to_owned()
 }
 
+#[allow(dead_code)]
+pub fn visible_occurrence_count(source: &str, snippet: &str) -> usize {
+    strip_string_literals(&visible_source(source))
+        .matches(snippet)
+        .count()
+}
+
 fn visible_source(source: &str) -> String {
     uncommented_lines(source).collect::<Vec<_>>().join("\n")
 }

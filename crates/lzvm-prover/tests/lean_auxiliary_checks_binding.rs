@@ -314,6 +314,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "auxiliary_checked_acceptance_sound_witness",
         &["sound_witness_implies_verifier_core_contract"],
     );
+    assert_eq!(
+        lean_binding::visible_occurrence_count(&auxiliary_source, "abstract_verifier_sound"),
+        2,
+        "Lean auxiliary checks should keep direct abstract verifier soundness calls limited to ignored-metadata acceptance and auxiliary checked acceptance"
+    );
     for theorem_name in [
         "source_lookup_auxiliary_acceptance_sound",
         "witness_leaf_digest_acceptance_sound",
@@ -373,7 +378,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ],
     );
     assert_eq!(
-        gpu_runtime_source.matches("abstract_verifier_sound").count(),
+        lean_binding::visible_occurrence_count(&gpu_runtime_source, "abstract_verifier_sound"),
         1,
         "Lean GPU runtime wrappers should centralize abstract verifier soundness in checked_acceptance_sound_witness"
     );
