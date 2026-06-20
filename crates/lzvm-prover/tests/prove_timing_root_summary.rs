@@ -834,6 +834,105 @@ fn prove_timing_root_summary_reads_explicit_nsys_kernel_summary() {
 }
 
 #[test]
+fn prove_timing_root_summary_reads_explicit_ncu_kernel_summary() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("crate should live under workspace root");
+    let script_path = workspace_root.join("scripts/prove-timing-root-summary.py");
+    let dir = workspace_root.join("temp").join(format!(
+        "prove-timing-root-summary-explicit-ncu-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("sample.log");
+    let ncu_summary_path = dir.join("detached-ncu-report.txt");
+    std::fs::write(
+        &log_path,
+        [
+            "input_bytes=12447640",
+            "timing_total_ms=55693",
+            "timing_guest_stage_tree_commit_root_count=120",
+            "timing_guest_stage_tree_commit_root_materialization_groups=120",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        ]
+        .join("\n"),
+    )
+    .expect("timing fixture should be written");
+    std::fs::write(
+        &ncu_summary_path,
+        [
+            "profile=self-test",
+            "",
+            "metric_collection_quality",
+            "metric,value,detail",
+            "collection_hint,duration_and_throughput_metrics,usable throughput rows",
+            "duration_profiles,3,3 of 3 kernel rows carried duration metrics",
+            "",
+            "kernel_metric_summary",
+            "kernel,profiles,duration_ms,avg_duration_us,sm_throughput_pct,dram_throughput_pct,compute_memory_pct,issue_active_pct,active_warps_pct,registers_per_thread,shared_mem_kb_per_block",
+            "ntt_stage_kernel,2,0.100,50.000,63.000,59.000,59.000,55.000,90.000,38.000,1.104",
+            "poseidon2_width16_merkle_parent_kernel,1,0.020,20.000,35.000,15.000,18.000,20.000,42.000,64.000,2.000",
+            "",
+            "occupancy_limits",
+            "kernel,profiles,register_limit_blocks,shared_mem_limit_blocks,warp_limit_blocks,block_limit_blocks,registers_per_thread,shared_mem_kb_per_block,limiting_factors",
+            "ntt_stage_kernel,2,6.000,14.000,6.000,24.000,38.000,1.104,register_limited|warp_limited",
+        ]
+        .join("\n"),
+    )
+    .expect("NCU summary fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg("--ncu-kernel-summary")
+        .arg(&ncu_summary_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines
+        .next()
+        .expect("summary should include a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should include a data row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        value("ncu_metric_collection_hint"),
+        "duration_and_throughput_metrics"
+    );
+    assert_eq!(value("ncu_top_kernel"), "ntt_stage_kernel");
+    assert_eq!(value("ncu_top_kernel_duration_ms"), "0.100");
+    assert_eq!(
+        value("ncu_top_kernel_limiting_factors"),
+        "register_limited|warp_limited"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_seed_direct_lift_miss_reasons() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

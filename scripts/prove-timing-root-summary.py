@@ -411,6 +411,13 @@ NSYS_KERNEL_TOP_STREAM_IDLE_GAP_PREVIOUS_KEY = (
 NSYS_KERNEL_TOP_STREAM_IDLE_GAP_NEXT_KEY = "nsys_kernel_top_stream_idle_gap_next_kernel"
 NSYS_KERNEL_TOP_STREAM_IDLE_GAP_CALLS_KEY = "nsys_kernel_top_stream_idle_gap_calls"
 NSYS_KERNEL_TOP_STREAM_IDLE_GAP_MS_KEY = "nsys_kernel_top_stream_idle_gap_ms"
+NCU_METRIC_COLLECTION_HINT_KEY = "ncu_metric_collection_hint"
+NCU_TOP_KERNEL_KEY = "ncu_top_kernel"
+NCU_TOP_KERNEL_DURATION_MS_KEY = "ncu_top_kernel_duration_ms"
+NCU_TOP_KERNEL_SM_THROUGHPUT_PCT_KEY = "ncu_top_kernel_sm_throughput_pct"
+NCU_TOP_KERNEL_DRAM_THROUGHPUT_PCT_KEY = "ncu_top_kernel_dram_throughput_pct"
+NCU_TOP_KERNEL_REGISTERS_PER_THREAD_KEY = "ncu_top_kernel_registers_per_thread"
+NCU_TOP_KERNEL_LIMITING_FACTORS_KEY = "ncu_top_kernel_limiting_factors"
 PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
 PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
 PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY = "perf_memmove_guest_machine_pct"
@@ -627,6 +634,9 @@ HEADER = (
     "kernel_top_stream_idle_gap_next_kernel,"
     "kernel_top_stream_idle_gap_calls,kernel_top_stream_idle_gap_ms,"
     "kernel_stream_idle_boundary_hint,"
+    "ncu_metric_collection_hint,ncu_top_kernel,ncu_top_kernel_duration_ms,"
+    "ncu_top_kernel_sm_throughput_pct,ncu_top_kernel_dram_throughput_pct,"
+    "ncu_top_kernel_registers_per_thread,ncu_top_kernel_limiting_factors,"
     "segment_commit_cuda_memory_total_bytes,"
     "segment_commit_cuda_memory_initial_free_bytes,"
     "segment_commit_cuda_memory_effective_free_bytes,"
@@ -887,6 +897,12 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
     nsys_copy_backtrace_block = None
     nsys_kernel_block = None
     nsys_kernel_idle_gap_block = None
+    ncu_metric_quality_block = None
+    ncu_kernel_metric_block = None
+    ncu_occupancy_block = None
+    ncu_top_kernel: str | None = None
+    ncu_top_duration_ms = -1.0
+    ncu_top_kernel_limits: dict[str, str] = {}
     for line in text.splitlines():
         stripped = line.strip()
         if stripped == "cuda_transfer_triage":
@@ -894,24 +910,63 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             nsys_copy_backtrace_block = None
             nsys_kernel_block = None
             nsys_kernel_idle_gap_block = None
+            ncu_metric_quality_block = None
+            ncu_kernel_metric_block = None
+            ncu_occupancy_block = None
             continue
         if stripped == "cuda_api_backtrace_hint":
             nsys_copy_backtrace_block = stripped
             nsys_copy_block = None
             nsys_kernel_block = None
             nsys_kernel_idle_gap_block = None
+            ncu_metric_quality_block = None
+            ncu_kernel_metric_block = None
+            ncu_occupancy_block = None
             continue
         if stripped == "stream_idle_gap_hotspots":
             nsys_kernel_idle_gap_block = stripped
             nsys_copy_block = None
             nsys_copy_backtrace_block = None
             nsys_kernel_block = None
+            ncu_metric_quality_block = None
+            ncu_kernel_metric_block = None
+            ncu_occupancy_block = None
             continue
         if stripped == "cuda_graph_fusion_separation_triage":
             nsys_kernel_block = stripped
             nsys_copy_block = None
             nsys_copy_backtrace_block = None
             nsys_kernel_idle_gap_block = None
+            ncu_metric_quality_block = None
+            ncu_kernel_metric_block = None
+            ncu_occupancy_block = None
+            continue
+        if stripped == "metric_collection_quality":
+            ncu_metric_quality_block = stripped
+            nsys_copy_block = None
+            nsys_copy_backtrace_block = None
+            nsys_kernel_block = None
+            nsys_kernel_idle_gap_block = None
+            ncu_kernel_metric_block = None
+            ncu_occupancy_block = None
+            continue
+        if stripped == "kernel_metric_summary":
+            ncu_kernel_metric_block = stripped
+            nsys_copy_block = None
+            nsys_copy_backtrace_block = None
+            nsys_kernel_block = None
+            nsys_kernel_idle_gap_block = None
+            ncu_metric_quality_block = None
+            ncu_occupancy_block = None
+            continue
+        if stripped == "occupancy_limits":
+            ncu_occupancy_block = stripped
+            nsys_copy_block = None
+            nsys_copy_backtrace_block = None
+            nsys_kernel_block = None
+            nsys_kernel_idle_gap_block = None
+            ncu_metric_quality_block = None
+            ncu_kernel_metric_block = None
             continue
         if nsys_copy_block is not None:
             if not stripped:
@@ -1009,6 +1064,60 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
                 elif metric == "kernel_separation_hint":
                     values[NSYS_KERNEL_SEPARATION_HINT_KEY] = value
             continue
+        if ncu_metric_quality_block is not None:
+            if not stripped:
+                ncu_metric_quality_block = None
+                continue
+            if stripped.startswith("metric,"):
+                continue
+            try:
+                row = next(csv.reader([line]))
+            except csv.Error:
+                ncu_metric_quality_block = None
+                continue
+            if len(row) >= 2 and row[0].strip() == "collection_hint":
+                values[NCU_METRIC_COLLECTION_HINT_KEY] = row[1].strip()
+            continue
+        if ncu_kernel_metric_block is not None:
+            if not stripped:
+                ncu_kernel_metric_block = None
+                continue
+            if stripped.startswith("kernel,"):
+                continue
+            try:
+                row = next(csv.reader([line]))
+            except csv.Error:
+                ncu_kernel_metric_block = None
+                continue
+            if len(row) >= 11:
+                kernel = row[0].strip()
+                try:
+                    duration_ms = float(row[2].strip())
+                except ValueError:
+                    continue
+                if duration_ms > ncu_top_duration_ms:
+                    ncu_top_duration_ms = duration_ms
+                    ncu_top_kernel = kernel
+                    values[NCU_TOP_KERNEL_KEY] = kernel
+                    values[NCU_TOP_KERNEL_DURATION_MS_KEY] = row[2].strip()
+                    values[NCU_TOP_KERNEL_SM_THROUGHPUT_PCT_KEY] = row[4].strip()
+                    values[NCU_TOP_KERNEL_DRAM_THROUGHPUT_PCT_KEY] = row[5].strip()
+                    values[NCU_TOP_KERNEL_REGISTERS_PER_THREAD_KEY] = row[9].strip()
+            continue
+        if ncu_occupancy_block is not None:
+            if not stripped:
+                ncu_occupancy_block = None
+                continue
+            if stripped.startswith("kernel,"):
+                continue
+            try:
+                row = next(csv.reader([line]))
+            except csv.Error:
+                ncu_occupancy_block = None
+                continue
+            if len(row) >= 9:
+                ncu_top_kernel_limits[row[0].strip()] = compact_csv_token(row[8].strip())
+            continue
         if "=" not in line:
             continue
         key, value = line.split("=", 1)
@@ -1021,6 +1130,8 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             values[key] = int(value.strip())
         except ValueError:
             continue
+    if ncu_top_kernel is not None and ncu_top_kernel in ncu_top_kernel_limits:
+        values[NCU_TOP_KERNEL_LIMITING_FACTORS_KEY] = ncu_top_kernel_limits[ncu_top_kernel]
     return values
 
 
@@ -3493,6 +3604,25 @@ def summarize_profile_values(
         kernel_top_stream_idle_gap_calls,
         root_count,
     )
+    ncu_metric_collection_hint = str(
+        values.get(NCU_METRIC_COLLECTION_HINT_KEY, "none")
+    )
+    ncu_top_kernel = str(values.get(NCU_TOP_KERNEL_KEY, "none"))
+    ncu_top_kernel_duration_ms = str(
+        values.get(NCU_TOP_KERNEL_DURATION_MS_KEY, "0.000")
+    )
+    ncu_top_kernel_sm_throughput_pct = str(
+        values.get(NCU_TOP_KERNEL_SM_THROUGHPUT_PCT_KEY, "0.000")
+    )
+    ncu_top_kernel_dram_throughput_pct = str(
+        values.get(NCU_TOP_KERNEL_DRAM_THROUGHPUT_PCT_KEY, "0.000")
+    )
+    ncu_top_kernel_registers_per_thread = str(
+        values.get(NCU_TOP_KERNEL_REGISTERS_PER_THREAD_KEY, "0.000")
+    )
+    ncu_top_kernel_limiting_factors = str(
+        values.get(NCU_TOP_KERNEL_LIMITING_FACTORS_KEY, "unknown")
+    )
     source_retention_total_exceeds_device_memory = (
         source_retention_exceeds_device_memory_hint(
             source_retention_rejected_bytes,
@@ -3750,6 +3880,10 @@ def summarize_profile_values(
         f"{kernel_top_stream_idle_gap_previous},{kernel_top_stream_idle_gap_next},"
         f"{kernel_top_stream_idle_gap_calls},{kernel_top_stream_idle_gap_ms},"
         f"{kernel_stream_idle_boundary},"
+        f"{ncu_metric_collection_hint},{ncu_top_kernel},"
+        f"{ncu_top_kernel_duration_ms},{ncu_top_kernel_sm_throughput_pct},"
+        f"{ncu_top_kernel_dram_throughput_pct},"
+        f"{ncu_top_kernel_registers_per_thread},{ncu_top_kernel_limiting_factors},"
         f"{segment_commit_cuda_memory_total_bytes},"
         f"{segment_commit_cuda_memory_initial_free_bytes},"
         f"{segment_commit_cuda_memory_effective_free_bytes},"
@@ -4133,6 +4267,12 @@ def main() -> None:
         default=[],
         help="additional nsys CUDA kernel summary text to merge into each log",
     )
+    parser.add_argument(
+        "--ncu-kernel-summary",
+        action="append",
+        default=[],
+        help="additional ncu CUDA kernel summary text to merge into each log",
+    )
     args = parser.parse_args()
 
     if args.self_test:
@@ -4141,7 +4281,10 @@ def main() -> None:
     if not args.logs:
         raise SystemExit("at least one log path is required unless --self-test is used")
     extra_reports = (
-        args.nsys_copy_summary + args.nsys_cpu_summary + args.nsys_kernel_summary
+        args.nsys_copy_summary
+        + args.nsys_cpu_summary
+        + args.nsys_kernel_summary
+        + args.ncu_kernel_summary
     )
     print_summary([read_input(path, extra_reports) for path in args.logs])
 
