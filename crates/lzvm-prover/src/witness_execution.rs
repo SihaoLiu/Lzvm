@@ -4095,7 +4095,7 @@ impl GuestPcTraceSegmentCommitOutput {
         match self {
             Self::Ready(output) => output.commitments().trace_instance_index(),
             #[cfg(feature = "cuda")]
-            Self::Pending(output) => output.identity().trace_instance_index(),
+            Self::Pending(output) => output.identity.trace_instance_index(),
         }
     }
 
