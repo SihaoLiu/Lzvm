@@ -5980,7 +5980,7 @@ struct ZiskMainSourceValueRequest<'a> {
 #[derive(Debug, Clone, Copy)]
 struct ZiskMainSourceValueResult {
     value: u64,
-    access: Option<ExpectedMemoryAccess>,
+    memory_access_count: usize,
     register_index: Option<usize>,
 }
 
@@ -6324,7 +6324,7 @@ fn apply_zisk_main_lowered_report_row(
         |timing| &mut timing.trace_report_source_a_value_duration,
     );
     let source_b_value_started = detail_duration_started(&timing, detail_timing);
-    let b_memory_access_index = usize::from(a_value.access.is_some());
+    let b_memory_access_index = a_value.memory_access_count;
     let b_value = zisk_main_source_value(ZiskMainSourceValueRequest {
         row: output_row,
         source: instruction.b,
@@ -6389,8 +6389,7 @@ fn apply_zisk_main_lowered_report_row(
     });
 
     let memory_access_started = detail_duration_started(&timing, detail_timing);
-    let validated_source_access_count =
-        b_memory_access_index + usize::from(b_value.access.is_some());
+    let validated_source_access_count = b_memory_access_index + b_value.memory_access_count;
     validate_zisk_main_memory_accesses_after_source_values(
         output_row,
         &instruction,
@@ -8512,12 +8511,12 @@ fn zisk_main_source_value(
     match source {
         ZiskMainSource::LastC => Ok(ZiskMainSourceValueResult {
             value: state.last_c,
-            access: None,
+            memory_access_count: 0,
             register_index: None,
         }),
         ZiskMainSource::Immediate(value) => Ok(ZiskMainSourceValueResult {
             value,
-            access: None,
+            memory_access_count: 0,
             register_index: None,
         }),
         ZiskMainSource::Register(index) => {
@@ -8525,7 +8524,7 @@ fn zisk_main_source_value(
                 .map_err(|()| GuestPcTraceBackendError::UnsupportedZiskMainSource { row })?;
             Ok(ZiskMainSourceValueResult {
                 value: state.registers[index],
-                access: None,
+                memory_access_count: 0,
                 register_index: Some(index),
             })
         }
@@ -8546,7 +8545,7 @@ fn zisk_main_source_value(
             )?;
             Ok(ZiskMainSourceValueResult {
                 value: access.value,
-                access: Some(access),
+                memory_access_count: 1,
                 register_index: None,
             })
         }
@@ -8569,7 +8568,7 @@ fn zisk_main_memory_source_value(
             let value = zisk_main_fcall_result_value(row, rd, effects)?;
             return Ok(ZiskMainSourceValueResult {
                 value,
-                access: None,
+                memory_access_count: 0,
                 register_index: None,
             });
         }
@@ -8583,7 +8582,7 @@ fn zisk_main_memory_source_value(
         };
         return Ok(ZiskMainSourceValueResult {
             value,
-            access: None,
+            memory_access_count: 0,
             register_index: None,
         });
     }
@@ -8597,7 +8596,7 @@ fn zisk_main_memory_source_value(
     )?;
     Ok(ZiskMainSourceValueResult {
         value: access.value,
-        access: Some(access),
+        memory_access_count: 1,
         register_index: None,
     })
 }

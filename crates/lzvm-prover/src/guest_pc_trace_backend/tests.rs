@@ -2226,6 +2226,61 @@ fn zisk_main_source_value_requires_ordered_memory_access() {
 }
 
 #[test]
+fn zisk_main_source_value_reports_memory_access_count() {
+    let accesses = [memory_read(64, 96), memory_read(104, 13)];
+    let effects = ZiskMainReportEffects {
+        register_writes: &[],
+        memory_accesses: &accesses,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let mut state = ZiskMainTraceState::new();
+    state.registers[1] = 7;
+    let report = addi_report();
+
+    let memory = zisk_main_source_value(ZiskMainSourceValueRequest {
+        row: 9,
+        source: ZiskMainSource::Memory(64),
+        state: &state,
+        report: &report,
+        effects,
+        base: None,
+        ind_width: 0,
+        memory_access_index: 0,
+    })
+    .expect("direct memory source should validate the ordered access");
+    let indirect = zisk_main_source_value(ZiskMainSourceValueRequest {
+        row: 9,
+        source: ZiskMainSource::Indirect(8),
+        state: &state,
+        report: &report,
+        effects,
+        base: Some(96),
+        ind_width: 8,
+        memory_access_index: 1,
+    })
+    .expect("indirect memory source should validate the ordered access");
+    let register = zisk_main_source_value(ZiskMainSourceValueRequest {
+        row: 9,
+        source: ZiskMainSource::Register(1),
+        state: &state,
+        report: &report,
+        effects,
+        base: None,
+        ind_width: 0,
+        memory_access_index: 0,
+    })
+    .expect("register source should not consume a memory access");
+
+    assert_eq!(memory.value, 96);
+    assert_eq!(memory.memory_access_count, 1);
+    assert_eq!(indirect.value, 13);
+    assert_eq!(indirect.memory_access_count, 1);
+    assert_eq!(register.value, 7);
+    assert_eq!(register.memory_access_count, 0);
+}
+
+#[test]
 fn source_value_rejects_invalid_register_index() {
     let state = ZiskMainTraceState::new();
     let report = addi_report();
