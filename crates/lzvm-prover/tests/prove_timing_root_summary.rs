@@ -2577,13 +2577,13 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
     );
     assert!(
         stdout.contains(
-            "copy_memory_source_rows,copy_memory_source_row_pct,copy_indirect_memory_rows,copy_indirect_memory_row_pct,copy_register_store_rows,copy_memory_store_rows,copy_no_store_rows,copy_no_memory_rows,copy_no_memory_row_pct,trace_copy_shape_hint"
+            "copy_memory_source_rows,copy_memory_source_row_pct,copy_indirect_memory_rows,copy_indirect_memory_row_pct,copy_register_store_rows,copy_memory_store_rows,copy_no_store_rows,copy_no_memory_rows,copy_no_memory_row_pct,trace_copy_shape_hint,trace_copy_action_hint"
         ),
         "prove timing root summary should expose copy row shape columns: stdout={stdout}"
     );
     assert!(
         stdout
-            .contains(",260,65.000,140,35.000,240,120,40,180,45.000,copy_memory_source_dominant,"),
+            .contains(",260,65.000,140,35.000,240,120,40,180,45.000,copy_memory_source_dominant,target_copy_memory_source_and_indirect_validation,"),
         "prove timing root summary should classify copy row shape ratios: stdout={stdout}"
     );
 }

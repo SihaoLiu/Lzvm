@@ -688,7 +688,7 @@ HEADER = (
     "copy_indirect_memory_rows,copy_indirect_memory_row_pct,"
     "copy_register_store_rows,copy_memory_store_rows,"
     "copy_no_store_rows,copy_no_memory_rows,copy_no_memory_row_pct,"
-    "trace_copy_shape_hint,"
+    "trace_copy_shape_hint,trace_copy_action_hint,"
     "trace_report_validation_ms,trace_report_emit_ms,trace_descriptor_ms,"
     "trace_report_lowering_ms,trace_report_row_validation_ms,"
     "trace_report_memory_columns_ms,trace_report_source_values_ms,"
@@ -2628,6 +2628,23 @@ def trace_copy_shape_hint(
     return "copy_shape_mixed"
 
 
+def trace_copy_action_hint(
+    copy_shape_hint: str,
+    copy_memory_source_row_pct: float,
+    copy_indirect_memory_row_pct: float,
+    copy_no_memory_row_pct: float,
+) -> str:
+    if copy_shape_hint == "none":
+        return "none"
+    if copy_shape_hint == "copy_no_memory_fast_path_candidate":
+        return "target_copy_no_memory_fast_path"
+    if copy_memory_source_row_pct >= 50.0 or copy_indirect_memory_row_pct >= 30.0:
+        return "target_copy_memory_source_and_indirect_validation"
+    if copy_no_memory_row_pct >= 30.0:
+        return "measure_copy_no_memory_before_optimizing"
+    return "measure_copy_shape_before_optimizing"
+
+
 def trace_shape_duration_hint(
     external_op_row_lower_pct: float,
     copy_row_lower_pct: float,
@@ -3264,6 +3281,12 @@ def summarize_profile_values(
     )
     copy_shape_hint = trace_copy_shape_hint(
         copy_rows,
+        copy_memory_source_row_pct,
+        copy_indirect_memory_row_pct,
+        copy_no_memory_row_pct,
+    )
+    copy_action_hint = trace_copy_action_hint(
+        copy_shape_hint,
         copy_memory_source_row_pct,
         copy_indirect_memory_row_pct,
         copy_no_memory_row_pct,
@@ -4352,7 +4375,7 @@ def summarize_profile_values(
         f"{copy_indirect_memory_rows},{copy_indirect_memory_row_pct:.3f},"
         f"{copy_register_store_rows},{copy_memory_store_rows},"
         f"{copy_no_store_rows},{copy_no_memory_rows},"
-        f"{copy_no_memory_row_pct:.3f},{copy_shape_hint},"
+        f"{copy_no_memory_row_pct:.3f},{copy_shape_hint},{copy_action_hint},"
         f"{trace_report_validation_ms},{trace_report_emit_ms},{trace_descriptor_ms},"
         f"{trace_report_lowering_ms},{trace_report_row_validation_ms},"
         f"{trace_report_memory_columns_ms},{trace_report_source_values_ms},"
