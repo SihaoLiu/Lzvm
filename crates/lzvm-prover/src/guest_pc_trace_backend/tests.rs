@@ -66,27 +66,6 @@ impl Drop for TestEnvVarGuard {
     }
 }
 
-fn push_pending_test_segment(
-    pending: &mut Vec<GuestPcTracePendingSegmentSlice>,
-    message: GuestPcTracePendingSegmentMessage,
-) -> Result<(), GuestPcTraceBackendError> {
-    match message {
-        GuestPcTracePendingSegmentMessage::Segment(segment) => {
-            pending.push(*segment);
-            Ok(())
-        }
-        GuestPcTracePendingSegmentMessage::Error(error) => Err(error),
-        GuestPcTracePendingSegmentMessage::SegmentStarted(_)
-        | GuestPcTracePendingSegmentMessage::ReportChunk(_)
-        | GuestPcTracePendingSegmentMessage::SegmentFinished(_)
-        | GuestPcTracePendingSegmentMessage::Complete(_) => {
-            Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "test expected unchunked guest PC pending segment".to_owned(),
-            })
-        }
-    }
-}
-
 #[test]
 fn guest_trace_detail_timing_sample_stride_uses_positive_env_values() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
@@ -625,7 +604,10 @@ fn guest_pc_trace_seed_mirror_attaches_pending_segment_seeds_when_enabled() {
         },
         &[],
         layout.row_count(),
-        |message| push_pending_test_segment(&mut pending, message),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
     )
     .expect("pending slices should produce");
     std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -705,7 +687,10 @@ fn guest_pc_trace_runner_seed_snapshot_matches_mirror_when_enabled() {
         },
         &[],
         layout.row_count(),
-        |message| push_pending_test_segment(&mut pending, message),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
     )
     .expect("runner seed snapshot should match mirrored seeds");
     std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -783,7 +768,10 @@ fn guest_pc_trace_trusted_runner_seed_snapshot_produces_pending_seeds() {
         },
         &[],
         layout.row_count(),
-        |message| push_pending_test_segment(&mut pending, message),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
     )
     .expect("trusted runner seed snapshot should produce pending slices");
     std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -827,7 +815,10 @@ fn seeded_pending_segment_lowers_without_prior_segment_state() {
         },
         &[],
         layout.row_count(),
-        |message| push_pending_test_segment(&mut pending, message),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
     )
     .expect("pending slices should produce");
     std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -889,7 +880,10 @@ fn seeded_pending_segments_parallel_lower_matches_serial_output() {
         },
         &[],
         layout.row_count(),
-        |message| push_pending_test_segment(&mut pending, message),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
     )
     .expect("pending slices should produce");
     std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -1119,7 +1113,10 @@ fn guest_pc_trace_default_runner_seed_snapshot_stays_disabled() {
         },
         &[],
         layout.row_count(),
-        |message| push_pending_test_segment(&mut pending, message),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
     )
     .expect("default runner seed snapshot should stay optional");
     std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -1694,7 +1691,10 @@ fn streaming_device_segment_builder_matches_host_trace_device_material() {
         },
         &[],
         layout.row_count(),
-        |message| push_pending_test_segment(&mut pending, message),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
     )
     .expect("pending slices should produce");
     std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
