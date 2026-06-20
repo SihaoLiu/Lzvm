@@ -714,6 +714,7 @@ HEADER = (
     "copy_source_memory_reads,copy_source_indirect_reads,"
     "copy_source_memory_read_sampled_ns,copy_source_indirect_read_sampled_ns,"
     "copy_source_memory_read_avg_sample_ns,copy_source_indirect_read_avg_sample_ns,"
+    "trace_copy_source_action_hint,"
     "trace_report_validation_ms,trace_report_emit_ms,trace_descriptor_ms,"
     "trace_report_lowering_ms,trace_report_row_validation_ms,"
     "trace_report_memory_columns_ms,trace_report_source_values_ms,"
@@ -2678,6 +2679,33 @@ def trace_copy_action_hint(
     return "measure_copy_shape_before_optimizing"
 
 
+def trace_copy_source_action_hint(
+    copy_source_memory_read_sampled_ns: int,
+    copy_source_indirect_read_sampled_ns: int,
+    copy_source_memory_read_ms: int,
+    copy_source_indirect_read_ms: int,
+    copy_source_memory_reads: int,
+    copy_source_indirect_reads: int,
+) -> str:
+    sampled_ns = copy_source_memory_read_sampled_ns + copy_source_indirect_read_sampled_ns
+    if sampled_ns > 0:
+        if copy_source_indirect_read_sampled_ns * 100 >= sampled_ns * 60:
+            return "target_copy_indirect_source_lookup"
+        if copy_source_memory_read_sampled_ns * 100 >= sampled_ns * 60:
+            return "target_copy_memory_source_lookup"
+        return "measure_copy_source_lookup_split"
+    exact_ms = copy_source_memory_read_ms + copy_source_indirect_read_ms
+    if exact_ms > 0:
+        if copy_source_indirect_read_ms * 100 >= exact_ms * 60:
+            return "target_copy_indirect_source_lookup"
+        if copy_source_memory_read_ms * 100 >= exact_ms * 60:
+            return "target_copy_memory_source_lookup"
+        return "measure_copy_source_lookup_split"
+    if copy_source_memory_reads + copy_source_indirect_reads > 0:
+        return "enable_detail_timing_for_copy_source_reads"
+    return "none"
+
+
 def trace_shape_duration_hint(
     external_op_row_lower_pct: float,
     copy_row_lower_pct: float,
@@ -3356,6 +3384,14 @@ def summarize_profile_values(
         copy_source_indirect_read_ms * 100.0 / copy_source_read_ms
         if copy_source_read_ms
         else 0.0
+    )
+    copy_source_action_hint = trace_copy_source_action_hint(
+        copy_source_memory_read_sampled_ns,
+        copy_source_indirect_read_sampled_ns,
+        copy_source_memory_read_ms,
+        copy_source_indirect_read_ms,
+        copy_source_memory_reads,
+        copy_source_indirect_reads,
     )
     trace_shape_hint = trace_shape_sample_hint(values, trace_report_rows)
     external_op_row_pct = (
@@ -4447,6 +4483,7 @@ def summarize_profile_values(
         f"{copy_source_memory_reads},{copy_source_indirect_reads},"
         f"{copy_source_memory_read_sampled_ns},{copy_source_indirect_read_sampled_ns},"
         f"{copy_source_memory_read_avg_sample_ns},{copy_source_indirect_read_avg_sample_ns},"
+        f"{copy_source_action_hint},"
         f"{trace_report_validation_ms},{trace_report_emit_ms},{trace_descriptor_ms},"
         f"{trace_report_lowering_ms},{trace_report_row_validation_ms},"
         f"{trace_report_memory_columns_ms},{trace_report_source_values_ms},"

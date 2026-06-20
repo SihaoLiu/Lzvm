@@ -2614,6 +2614,14 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
         stdout.contains(",260,140,900,2100,3,15,"),
         "prove timing root summary should report sampled CopyB source-read timing: stdout={stdout}"
     );
+    assert!(
+        stdout.contains("trace_copy_source_action_hint"),
+        "prove timing root summary should expose a CopyB source-read action hint: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(",900,2100,3,15,target_copy_indirect_source_lookup,"),
+        "prove timing root summary should target indirect CopyB source lookup when sampled reads dominate: stdout={stdout}"
+    );
 }
 
 #[test]
