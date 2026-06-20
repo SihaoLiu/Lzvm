@@ -3909,7 +3909,7 @@ fn prove_timing_root_summary_reports_runner_bound_parallel_lower() {
     assert_eq!(value("parallel_lower_dispatch_blocked_count"), "3");
     assert_eq!(
         value("trace_pipeline_action_hint"),
-        "parallel_segment_reexecution_candidate"
+        "parallel_lower_active_compare_default"
     );
 }
 
