@@ -513,6 +513,9 @@ fn prove_timing_root_summary_reads_sibling_nsys_copy_small_d2h_hints() {
             "metric,value,detail",
             "gpu_residency_hint,batch_or_keep_small_d2h_on_device,prioritize data residency before relying on Graph or fusion speedups",
             "small_d2h_batching_hint,batch_small_d2h_by_size,bytes=1152 calls=41 host_api_ms=3387.322 previous_kernel=poseidon2_merkle_digest_parent_kernel",
+            "cuda_api_backtrace_hint",
+            "missing_callchain_calls,missing_host_api_ms,recommended_nsys_options",
+            "1182,626.112,--trace=cuda,nvtx,osrt --sample=process-tree --cudabacktrace=memory:80000",
         ]
         .join("\n"),
     )
@@ -559,6 +562,10 @@ fn prove_timing_root_summary_reads_sibling_nsys_copy_small_d2h_hints() {
     assert_eq!(
         value("copy_summary_small_d2h_batching_hint"),
         "batch_small_d2h_by_size"
+    );
+    assert_eq!(
+        value("copy_summary_cuda_api_backtrace_hint"),
+        "--trace=cuda|nvtx|osrt_--sample=process-tree_--cudabacktrace=memory:80000"
     );
 }
 

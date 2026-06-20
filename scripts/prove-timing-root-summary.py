@@ -395,6 +395,7 @@ NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY = (
 )
 NSYS_COPY_GPU_RESIDENCY_HINT_KEY = "nsys_copy_gpu_residency_hint"
 NSYS_COPY_SMALL_D2H_BATCHING_HINT_KEY = "nsys_copy_small_d2h_batching_hint"
+NSYS_COPY_CUDA_API_BACKTRACE_HINT_KEY = "nsys_copy_cuda_api_backtrace_hint"
 NSYS_KERNEL_GRAPH_FUSION_PRIORITY_HINT_KEY = (
     "nsys_kernel_graph_fusion_priority_hint"
 )
@@ -617,6 +618,7 @@ HEADER = (
     "cuda_host_register_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
     "data_residency_action_hint,"
     "copy_summary_gpu_residency_hint,copy_summary_small_d2h_batching_hint,"
+    "copy_summary_cuda_api_backtrace_hint,"
     "kernel_graph_fusion_priority_hint,kernel_graph_fusion_upper_bound_ms,"
     "kernel_top_stream_idle_ms,kernel_separation_hint,"
     "kernel_top_stream_idle_gap_previous_kernel,"
@@ -873,26 +875,40 @@ TIMING_KEYS = {
 }
 
 
+def compact_csv_token(value: str) -> str:
+    return value.replace(",", "|").replace(" ", "_")
+
+
 def parse_timing_log(text: str) -> dict[str, int | str]:
     values: dict[str, int | str] = {}
     nsys_copy_block = None
+    nsys_copy_backtrace_block = None
     nsys_kernel_block = None
     nsys_kernel_idle_gap_block = None
     for line in text.splitlines():
         stripped = line.strip()
         if stripped == "cuda_transfer_triage":
             nsys_copy_block = stripped
+            nsys_copy_backtrace_block = None
+            nsys_kernel_block = None
+            nsys_kernel_idle_gap_block = None
+            continue
+        if stripped == "cuda_api_backtrace_hint":
+            nsys_copy_backtrace_block = stripped
+            nsys_copy_block = None
             nsys_kernel_block = None
             nsys_kernel_idle_gap_block = None
             continue
         if stripped == "stream_idle_gap_hotspots":
             nsys_kernel_idle_gap_block = stripped
             nsys_copy_block = None
+            nsys_copy_backtrace_block = None
             nsys_kernel_block = None
             continue
         if stripped == "cuda_graph_fusion_separation_triage":
             nsys_kernel_block = stripped
             nsys_copy_block = None
+            nsys_copy_backtrace_block = None
             nsys_kernel_idle_gap_block = None
             continue
         if nsys_copy_block is not None:
@@ -928,6 +944,22 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
                 )
             ):
                 values[NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY] = 1
+            continue
+        if nsys_copy_backtrace_block is not None:
+            if not stripped:
+                nsys_copy_backtrace_block = None
+                continue
+            if stripped.startswith("missing_callchain_calls,"):
+                continue
+            try:
+                row = next(csv.reader([line]))
+            except csv.Error:
+                nsys_copy_backtrace_block = None
+                continue
+            if len(row) >= 3 and ",".join(row[2:]).strip() != "none":
+                values[NSYS_COPY_CUDA_API_BACKTRACE_HINT_KEY] = compact_csv_token(
+                    ",".join(row[2:]).strip()
+                )
             continue
         if nsys_kernel_idle_gap_block is not None:
             if not stripped:
@@ -3420,6 +3452,9 @@ def summarize_profile_values(
     copy_summary_small_d2h_batching_hint = str(
         values.get(NSYS_COPY_SMALL_D2H_BATCHING_HINT_KEY, "none")
     )
+    copy_summary_cuda_api_backtrace_hint = str(
+        values.get(NSYS_COPY_CUDA_API_BACKTRACE_HINT_KEY, "none")
+    )
     kernel_graph_fusion_priority_hint = str(
         values.get(NSYS_KERNEL_GRAPH_FUSION_PRIORITY_HINT_KEY, "none")
     )
@@ -3700,6 +3735,7 @@ def summarize_profile_values(
         f"{cuda_host_register_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
         f"{data_residency_hint},"
         f"{copy_summary_gpu_residency_hint},{copy_summary_small_d2h_batching_hint},"
+        f"{copy_summary_cuda_api_backtrace_hint},"
         f"{kernel_graph_fusion_priority_hint},{kernel_graph_fusion_upper_bound_ms},"
         f"{kernel_top_stream_idle_ms},{kernel_separation_hint},"
         f"{kernel_top_stream_idle_gap_previous},{kernel_top_stream_idle_gap_next},"
