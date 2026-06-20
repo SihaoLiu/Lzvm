@@ -4217,6 +4217,29 @@ def sibling_copy_summary_paths(input_path: Path) -> list[Path]:
     return paths
 
 
+def sibling_kernel_summary_paths(input_path: Path) -> list[Path]:
+    stem = input_path.stem
+    name = input_path.name
+    candidates = [
+        input_path.with_suffix(".kernel-summary.txt"),
+        input_path.with_suffix(".kernel.txt"),
+        input_path.with_name(f"{input_path.name}.kernel-summary.txt"),
+        input_path.with_name(f"{input_path.name}.kernel.txt"),
+        input_path.with_name(f"{stem}-kernel-summary.txt"),
+        input_path.with_name(f"{stem}-kernel.txt"),
+        input_path.with_name(f"{name}-kernel-summary.txt"),
+        input_path.with_name(f"{name}-kernel.txt"),
+    ]
+    paths = []
+    seen = set()
+    for candidate in candidates:
+        if candidate == input_path or candidate in seen:
+            continue
+        seen.add(candidate)
+        paths.append(candidate)
+    return paths
+
+
 def sibling_ncu_summary_paths(input_path: Path) -> list[Path]:
     stem = input_path.stem
     name = input_path.name
@@ -4265,6 +4288,7 @@ def read_input(path: str | None, extra_reports: list[str] | None = None) -> tupl
             sibling_perf_report_paths(input_path)
             + sibling_cpu_summary_paths(input_path)
             + sibling_copy_summary_paths(input_path)
+            + sibling_kernel_summary_paths(input_path)
             + sibling_ncu_summary_paths(input_path)
         )
         if report_path.is_file()

@@ -834,6 +834,112 @@ fn prove_timing_root_summary_reads_explicit_nsys_kernel_summary() {
 }
 
 #[test]
+fn prove_timing_root_summary_reads_sibling_nsys_kernel_summary() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("crate should live under workspace root");
+    let script_path = workspace_root.join("scripts/prove-timing-root-summary.py");
+    let dir = workspace_root.join("temp").join(format!(
+        "prove-timing-root-summary-sibling-kernel-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("sample.log");
+    let kernel_summary_path = dir.join("sample-kernel-summary.txt");
+    std::fs::write(
+        &log_path,
+        [
+            "input_bytes=12447640",
+            "timing_total_ms=55693",
+            "timing_guest_stage_tree_commit_root_count=120",
+            "timing_guest_stage_tree_commit_root_materialization_groups=120",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        ]
+        .join("\n"),
+    )
+    .expect("timing fixture should be written");
+    std::fs::write(
+        &kernel_summary_path,
+        [
+            "stream_idle_gap_hotspots",
+            "previous_kernel,next_kernel,calls,idle_gap_ms,max_idle_gap_ms",
+            "poseidon2_merkle_digest_parent_kernel,trace_descriptor_expand_kernel,120,22171.505,1776.126",
+            "",
+            "cuda_graph_fusion_separation_triage",
+            "metric,value,detail",
+            "graph_or_fusion_upper_bound_ms,863.000,launch API time before synchronization or transfer costs",
+            "top_stream_idle_ms,2500.000,active-window time not covered by kernels on the top stream",
+            "graph_fusion_priority_hint,defer_graph_or_fusion_until_stream_idle_is_explained,top stream idle exceeds launch upper bound",
+            "kernel_separation_hint,use_ncu_occupancy_before_splitting,profile top kernels with NCU before splitting kernels",
+        ]
+        .join("\n"),
+    )
+    .expect("kernel summary fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines
+        .next()
+        .expect("summary should include a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should include a data row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        value("kernel_graph_fusion_priority_hint"),
+        "defer_graph_or_fusion_until_stream_idle_is_explained"
+    );
+    assert_eq!(value("kernel_graph_fusion_upper_bound_ms"), "863.000");
+    assert_eq!(value("kernel_top_stream_idle_ms"), "2500.000");
+    assert_eq!(
+        value("kernel_separation_hint"),
+        "use_ncu_occupancy_before_splitting"
+    );
+    assert_eq!(
+        value("kernel_top_stream_idle_gap_previous_kernel"),
+        "poseidon2_merkle_digest_parent_kernel"
+    );
+    assert_eq!(
+        value("kernel_top_stream_idle_gap_next_kernel"),
+        "trace_descriptor_expand_kernel"
+    );
+    assert_eq!(value("kernel_top_stream_idle_gap_calls"), "120");
+    assert_eq!(value("kernel_top_stream_idle_gap_ms"), "22171.505");
+    assert_eq!(
+        value("kernel_stream_idle_boundary_hint"),
+        "commit_root_to_trace_descriptor_idle"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reads_explicit_ncu_kernel_summary() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root
