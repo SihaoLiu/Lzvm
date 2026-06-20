@@ -2226,6 +2226,27 @@ fn zisk_main_source_value_requires_ordered_memory_access() {
 }
 
 #[test]
+fn ordered_memory_access_value_returns_value_after_order_validation() {
+    let accesses = [memory_read(64, 96), memory_read(104, 13)];
+    let effects = ZiskMainReportEffects {
+        register_writes: &[],
+        memory_accesses: &accesses,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+
+    assert_eq!(
+        ordered_memory_access_value(9, effects, 1, GuestMemoryAccessKind::Read, 104, 8)
+            .expect("ordered access value should be returned"),
+        13
+    );
+
+    let error = ordered_memory_access_value(9, effects, 0, GuestMemoryAccessKind::Read, 104, 8)
+        .expect_err("value helper should keep ordered access validation");
+    assert!(error.to_string().contains("expected Read at 104"));
+}
+
+#[test]
 fn zisk_main_source_value_reports_memory_access_count() {
     let accesses = [memory_read(64, 96), memory_read(104, 13)];
     let effects = ZiskMainReportEffects {

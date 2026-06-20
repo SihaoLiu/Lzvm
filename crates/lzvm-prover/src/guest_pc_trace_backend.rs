@@ -8535,7 +8535,7 @@ fn zisk_main_source_value(
             let byte_len = usize::try_from(ind_width)
                 .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainSource { row })?;
             let address = base.wrapping_add_signed(offset);
-            let access = ordered_memory_access(
+            let value = ordered_memory_access_value(
                 row,
                 effects,
                 memory_access_index,
@@ -8544,7 +8544,7 @@ fn zisk_main_source_value(
                 byte_len,
             )?;
             Ok(ZiskMainSourceValueResult {
-                value: access.value,
+                value,
                 memory_access_count: 1,
                 register_index: None,
             })
@@ -8586,7 +8586,7 @@ fn zisk_main_memory_source_value(
             register_index: None,
         });
     }
-    let access = ordered_memory_access(
+    let value = ordered_memory_access_value(
         row,
         effects,
         memory_access_index,
@@ -8595,7 +8595,7 @@ fn zisk_main_memory_source_value(
         8,
     )?;
     Ok(ZiskMainSourceValueResult {
-        value: access.value,
+        value,
         memory_access_count: 1,
         register_index: None,
     })
@@ -8624,28 +8624,22 @@ fn zisk_main_fcall_result_value(
     Ok(write.value)
 }
 
-fn ordered_memory_access(
+fn ordered_memory_access_value(
     row: usize,
     effects: ZiskMainReportEffects<'_>,
     access_index: usize,
     kind: GuestMemoryAccessKind,
     address: u64,
     byte_len: usize,
-) -> Result<ExpectedMemoryAccess, GuestPcTraceBackendError> {
-    let Some(access) = effects.memory_accesses.get(access_index).copied() else {
+) -> Result<u64, GuestPcTraceBackendError> {
+    let Some(access) = effects.memory_accesses.get(access_index) else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
             message: format!("missing {kind:?} access at {address} with byte length {byte_len}"),
         });
     };
-    let expected = ExpectedMemoryAccess {
-        kind,
-        address,
-        byte_len,
-        value: access.value,
-    };
-    validate_expected_memory_access(row, access, expected)?;
-    Ok(expected)
+    validate_memory_access_fields(row, access, kind, address, byte_len, access.value)?;
+    Ok(access.value)
 }
 
 #[cfg(test)]
@@ -8798,19 +8792,37 @@ fn validate_expected_memory_access(
     found: GuestMemoryAccess,
     expected: ExpectedMemoryAccess,
 ) -> Result<(), GuestPcTraceBackendError> {
-    if found.kind != expected.kind
-        || found.address != expected.address
-        || usize::from(found.byte_len) != expected.byte_len
-        || found.value != expected.value
+    validate_memory_access_fields(
+        row,
+        &found,
+        expected.kind,
+        expected.address,
+        expected.byte_len,
+        expected.value,
+    )
+}
+
+fn validate_memory_access_fields(
+    row: usize,
+    found: &GuestMemoryAccess,
+    expected_kind: GuestMemoryAccessKind,
+    expected_address: u64,
+    expected_byte_len: usize,
+    expected_value: u64,
+) -> Result<(), GuestPcTraceBackendError> {
+    if found.kind != expected_kind
+        || found.address != expected_address
+        || usize::from(found.byte_len) != expected_byte_len
+        || found.value != expected_value
     {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
             message: format!(
                 "expected {:?} at {} byte length {} value {}, found {:?} at {} byte length {} value {}",
-                expected.kind,
-                expected.address,
-                expected.byte_len,
-                expected.value,
+                expected_kind,
+                expected_address,
+                expected_byte_len,
+                expected_value,
                 found.kind,
                 found.address,
                 found.byte_len,
