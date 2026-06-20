@@ -4716,7 +4716,6 @@ fn guest_pc_descriptor_buffer_retention_enabled(input_byte_count: usize) -> bool
 #[cfg(feature = "cuda")]
 fn guest_pc_parallel_lower_enabled_for_descriptor_retention() -> bool {
     env_flag_present_and_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
-        || env_flag_present_and_enabled("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE")
 }
 
 #[cfg(feature = "cuda")]
@@ -6980,6 +6979,10 @@ mod tests {
         fn set(&self, value: &str) {
             std::env::set_var(self.name, value);
         }
+
+        fn unset(&self) {
+            std::env::remove_var(self.name);
+        }
     }
 
     #[cfg(feature = "cuda")]
@@ -8025,6 +8028,19 @@ mod tests {
         assert!(!guest_pc_descriptor_buffer_retention_enabled(0));
 
         descriptor_env.set("1048576");
+        assert!(guest_pc_descriptor_buffer_retention_enabled(0));
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn descriptor_buffer_retention_stays_on_for_commit_pipeline_opt_in() {
+        let descriptor_env = TestEnvVarGuard::new("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES");
+        descriptor_env.unset();
+        let parallel_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+        parallel_env.unset();
+        let pipeline_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE");
+        pipeline_env.set("1");
+
         assert!(guest_pc_descriptor_buffer_retention_enabled(0));
     }
 

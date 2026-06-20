@@ -5014,11 +5014,6 @@ fn guest_pc_trace_parallel_lower_result_queue_capacity(worker_count: usize) -> u
 
 fn guest_pc_trace_parallel_lower_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", false)
-        || guest_pc_trace_commit_pipeline_enabled()
-}
-
-fn guest_pc_trace_commit_pipeline_enabled() -> bool {
-    env_flag_enabled("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE", false)
 }
 
 fn guest_pc_trace_needs_full_seed_advance(

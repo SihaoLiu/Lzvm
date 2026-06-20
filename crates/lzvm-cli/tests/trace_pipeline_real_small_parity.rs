@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-const PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE";
+const PARALLEL_LOWER_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER";
 const LOWER_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
 const COMMIT_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS";
 
@@ -157,7 +157,7 @@ fn prove_command(
     clear_pipeline_env(&mut command);
     if pipeline_enabled {
         command
-            .env(PIPELINE_ENV, "1")
+            .env(PARALLEL_LOWER_ENV, "1")
             .env(LOWER_WORKERS_ENV, "2")
             .env(COMMIT_WORKERS_ENV, "1");
     }
@@ -166,10 +166,10 @@ fn prove_command(
 
 fn clear_pipeline_env(command: &mut Command) {
     for name in [
-        PIPELINE_ENV,
+        PARALLEL_LOWER_ENV,
+        "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE",
         LOWER_WORKERS_ENV,
         COMMIT_WORKERS_ENV,
-        "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER",
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY",
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY",
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT",

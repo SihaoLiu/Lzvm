@@ -2269,6 +2269,7 @@ fn default_guest_pc_pending_roots_match_immediate_path_byte_for_byte() {
 fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     const STREAM_ENV: &str = "LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS";
     const CHUNKS_ENV: &str = "LZVM_GUEST_PC_TRACE_REPORT_CHUNKS";
+    const PARALLEL_LOWER_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER";
     const PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE";
     const PIPELINE_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
     const REPLAY_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY";
@@ -2330,6 +2331,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         .expect("prove witness env lock should not be poisoned");
     let _stream_guard = TestEnvVarGuard::unset(STREAM_ENV);
     let _chunks_guard = TestEnvVarGuard::unset(CHUNKS_ENV);
+    let _parallel_lower_guard = TestEnvVarGuard::unset(PARALLEL_LOWER_ENV);
     let _pipeline_guard = TestEnvVarGuard::unset(PIPELINE_ENV);
     let _pipeline_workers_guard = TestEnvVarGuard::unset(PIPELINE_WORKERS_ENV);
     let _replay_guard = TestEnvVarGuard::unset(REPLAY_ENV);
@@ -2588,10 +2590,14 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     let chunk_run = run("chunks");
     std::env::remove_var(CHUNKS_ENV);
     std::env::set_var(PIPELINE_ENV, "1");
+    let commit_pipeline_run = run("commit-pipeline");
+    std::env::remove_var(PIPELINE_ENV);
+    std::env::set_var(PARALLEL_LOWER_ENV, "1");
     std::env::set_var(PIPELINE_WORKERS_ENV, "2");
     let seed_pipeline_run = run("seed-pipeline");
-    std::env::remove_var(PIPELINE_ENV);
+    std::env::remove_var(PARALLEL_LOWER_ENV);
     std::env::remove_var(PIPELINE_WORKERS_ENV);
+    std::env::set_var(PARALLEL_LOWER_ENV, "1");
     std::env::set_var(PIPELINE_ENV, "1");
     std::env::set_var(PIPELINE_WORKERS_ENV, "2");
     std::env::set_var(REPLAY_ENV, "1");
@@ -2599,6 +2605,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     std::env::set_var(WORKER_REPLAY_ENV, "1");
     std::env::set_var(REPLAY_ONLY_ENV, "1");
     let pipeline_run = run("pipeline");
+    std::env::remove_var(PARALLEL_LOWER_ENV);
     std::env::remove_var(PIPELINE_ENV);
     std::env::remove_var(PIPELINE_WORKERS_ENV);
     std::env::remove_var(REPLAY_ENV);
@@ -2608,6 +2615,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     std::env::set_var(COMMIT_WORKERS_ENV, "2");
     let commit_worker_run = run("commit-worker");
     std::env::remove_var(COMMIT_WORKERS_ENV);
+    std::env::set_var(PARALLEL_LOWER_ENV, "1");
     std::env::set_var(PIPELINE_ENV, "1");
     std::env::set_var(PIPELINE_WORKERS_ENV, "2");
     std::env::set_var(REPLAY_ENV, "1");
@@ -2616,6 +2624,14 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     std::env::set_var(REPLAY_ONLY_ENV, "1");
     std::env::set_var(COMMIT_WORKERS_ENV, "2");
     let combined_run = run("combined");
+    std::env::remove_var(PARALLEL_LOWER_ENV);
+    std::env::remove_var(PIPELINE_ENV);
+    std::env::remove_var(PIPELINE_WORKERS_ENV);
+    std::env::remove_var(REPLAY_ENV);
+    std::env::remove_var(SNAPSHOT_ENV);
+    std::env::remove_var(WORKER_REPLAY_ENV);
+    std::env::remove_var(REPLAY_ONLY_ENV);
+    std::env::remove_var(COMMIT_WORKERS_ENV);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(
@@ -2689,6 +2705,14 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert_eq!(
         chunk_run.parallel_lower_worker_count, 0,
         "chunk opt-in should not enable parallel lower workers by itself"
+    );
+    assert_eq!(
+        commit_pipeline_run.parallel_lower_worker_count, 0,
+        "commit pipeline opt-in should not enable parallel lower workers by itself"
+    );
+    assert_eq!(
+        commit_pipeline_run.parallel_lower_emitted_count, 0,
+        "commit pipeline opt-in should not emit lowered segments through the parallel lowerer"
     );
     assert_eq!(
         default_run.segment_commit_effective_worker_count, 1,
@@ -2867,6 +2891,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     );
     assert_eq!(default_run.stage_roots, stream_run.stage_roots);
     assert_eq!(default_run.stage_roots, chunk_run.stage_roots);
+    assert_eq!(default_run.stage_roots, commit_pipeline_run.stage_roots);
     assert_eq!(default_run.stage_roots, seed_pipeline_run.stage_roots);
     assert_eq!(default_run.stage_roots, pipeline_run.stage_roots);
     assert_eq!(default_run.stage_roots, commit_worker_run.stage_roots);
@@ -2878,6 +2903,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert_eq!(
         default_run.transcript_segment_bytes,
         chunk_run.transcript_segment_bytes
+    );
+    assert_eq!(
+        default_run.transcript_segment_bytes,
+        commit_pipeline_run.transcript_segment_bytes
     );
     assert_eq!(
         default_run.transcript_segment_bytes,
@@ -2905,6 +2934,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     );
     assert_eq!(
         default_run.public_values_bytes,
+        commit_pipeline_run.public_values_bytes
+    );
+    assert_eq!(
+        default_run.public_values_bytes,
         seed_pipeline_run.public_values_bytes
     );
     assert_eq!(
@@ -2921,6 +2954,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     );
     assert_eq!(default_run.proof_bytes, stream_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, chunk_run.proof_bytes);
+    assert_eq!(default_run.proof_bytes, commit_pipeline_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, seed_pipeline_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, pipeline_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, commit_worker_run.proof_bytes);

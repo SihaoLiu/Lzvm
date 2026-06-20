@@ -5633,12 +5633,8 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
         "parallel guest PC trace lowering should remain disabled by default"
     );
     assert!(
-        backend_source.contains("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE"),
-        "trace commit pipeline should have an explicit runtime gate"
-    );
-    assert!(
-        backend_source.contains("env_flag_enabled(\"LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE\", false)"),
-        "trace commit pipeline should remain disabled by default"
+        !backend_source.contains("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE"),
+        "parallel guest PC trace lowering should not keep a trace commit pipeline alias"
     );
     assert!(
         backend_source.contains("fn lower_guest_pc_trace_seeded_pending_segments_with_timing"),
@@ -5664,8 +5660,8 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
         "fn guest_pc_trace_needs_full_seed_advance",
     );
     assert!(
-        pipeline_gate_body.contains("guest_pc_trace_commit_pipeline_enabled()"),
-        "trace commit pipeline should route through the seeded parallel lowerer"
+        !pipeline_gate_body.contains("GUEST_PC_TRACE_COMMIT_PIPELINE"),
+        "trace commit pipeline should stay decoupled from the parallel lowerer gate"
     );
 
     let helper_body = function_body(

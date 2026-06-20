@@ -1137,6 +1137,20 @@ fn parallel_lower_implies_trusted_runner_seed_snapshot() {
 }
 
 #[test]
+fn commit_pipeline_does_not_enable_parallel_lower() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+    let _pipeline_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE", "1");
+
+    assert!(!guest_pc_trace_parallel_lower_enabled());
+    assert_eq!(guest_pc_trace_parallel_lower_worker_count(), None);
+    assert!(!guest_pc_trace_runner_seed_snapshot_enabled());
+    assert!(!guest_pc_trace_runner_seed_snapshot_trusted_enabled());
+}
+
+#[test]
 fn parallel_lower_job_dispatch_skips_full_worker_queue() {
     let (first_sender, first_receiver) = std::sync::mpsc::sync_channel(1);
     let (second_sender, second_receiver) = std::sync::mpsc::sync_channel(1);
