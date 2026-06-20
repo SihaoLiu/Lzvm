@@ -70,6 +70,41 @@ pub fn visible_occurrence_count(source: &str, snippet: &str) -> usize {
         .count()
 }
 
+#[allow(dead_code)]
+pub fn visible_identifier_occurrence_count(source: &str, identifier: &str) -> usize {
+    assert!(
+        !identifier.is_empty(),
+        "Lean identifier should not be empty"
+    );
+    let visible = strip_string_literals(&visible_source(source));
+    visible
+        .match_indices(identifier)
+        .filter(|(start, _)| {
+            let before = visible[..*start].chars().next_back();
+            let after = visible[*start + identifier.len()..].chars().next();
+            !is_lean_identifier_char(before) && !is_lean_identifier_char(after)
+        })
+        .count()
+}
+
+#[allow(dead_code)]
+pub fn assert_theorem_body_contains_identifier(source: &str, name: &str, identifier: &str) {
+    let body = theorem_body(source, name);
+    assert!(
+        visible_identifier_occurrence_count(&body, identifier) > 0,
+        "Lean theorem {name} body should contain identifier {identifier}"
+    );
+}
+
+#[allow(dead_code)]
+pub fn assert_theorem_body_omits_identifier(source: &str, name: &str, identifier: &str) {
+    let body = theorem_body(source, name);
+    assert!(
+        visible_identifier_occurrence_count(&body, identifier) == 0,
+        "Lean theorem {name} body should not contain identifier {identifier}"
+    );
+}
+
 fn visible_source(source: &str) -> String {
     uncommented_lines(source).collect::<Vec<_>>().join("\n")
 }
