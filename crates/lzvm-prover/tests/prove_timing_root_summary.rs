@@ -4154,6 +4154,9 @@ fn prove_timing_root_summary_reads_real_nsys_cpu_trace_hints() {
     std::fs::write(
         &cpu_summary_path,
         [
+            "top_cpu_self_samples",
+            "symbol,module,samples,cpu_sample_pct",
+            "__memcpy_avx512_unaligned_erms,/usr/lib64/libc.so.6,237,2.849",
             "application_cpu_hotspots",
             "symbol,module,samples,application_sample_pct",
             concat!(
@@ -4205,12 +4208,14 @@ fn prove_timing_root_summary_reads_real_nsys_cpu_trace_hints() {
     };
 
     assert_eq!(value("perf_lowered_report_row_self_pct"), "34.197");
+    assert_eq!(value("perf_memmove_self_pct"), "2.849");
     assert_eq!(value("perf_decode_instruction_self_pct"), "0.420");
     assert_eq!(
         value("cpu_trace_report_storage_action_hint"),
         "trace_report_storage_structural_candidate"
     );
     assert_eq!(value("cpu_trace_memcpy_report_storage_hint_pct"), "61.446");
+    assert_eq!(value("cpu_trace_memcpy_report_storage_total_pct"), "1.751");
 }
 
 #[test]

@@ -460,6 +460,9 @@ PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY = "perf_effect_record_memory_read_se
 CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY = (
     "cpu_trace_memcpy_report_storage_hint_pct"
 )
+CPU_TRACE_MEMCPY_REPORT_STORAGE_TOTAL_PCT_KEY = (
+    "cpu_trace_memcpy_report_storage_total_pct"
+)
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
 OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
 SINGLE_QUERY_ROW_VALUE_BOUNDARY_HINT = (
@@ -594,6 +597,7 @@ HEADER = (
     "perf_sha256_source_hint,cpu_trace_hotspot_hint,"
     "cpu_trace_report_storage_action_hint,"
     "cpu_trace_memcpy_report_storage_hint_pct,"
+    "cpu_trace_memcpy_report_storage_total_pct,"
     "perf_append_descriptor_self_pct,perf_source_value_self_pct,"
     "cpu_trace_lowerer_action_hint,"
     "perf_prepare_instruction_self_pct,perf_trace_segment_build_self_pct,"
@@ -1196,7 +1200,7 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
         key = None
         if "lowered_report_row" in symbol_text:
             key = PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY
-        elif "memmove" in symbol_text:
+        elif "memmove" in symbol_text or "memcpy" in symbol_text:
             key = PERF_MEMMOVE_SELF_PCT_KEY
             if "lzvm-gp-runner" in symbol_text:
                 hotspots[PERF_MEMMOVE_RUNNER_THREAD_PCT_KEY] = max(
@@ -3765,6 +3769,9 @@ def summarize_profile_values(
     cpu_report_storage_memcpy_pct = perf_hotspots.get(
         CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY, 0.0
     )
+    cpu_report_storage_memcpy_total_pct = (
+        memmove_pct * cpu_report_storage_memcpy_pct / 100.0
+    )
     append_descriptor_pct = perf_hotspots.get(
         PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY, 0.0
     )
@@ -3918,6 +3925,7 @@ def summarize_profile_values(
         f"{pending_drop_pct:.3f},{sha256_pct:.3f},{sha256_hint},{cpu_hint},"
         f"{cpu_report_storage_hint},"
         f"{cpu_report_storage_memcpy_pct:.3f},"
+        f"{cpu_report_storage_memcpy_total_pct:.3f},"
         f"{append_descriptor_pct:.3f},{source_value_pct:.3f},{lowerer_hint},"
         f"{prepare_instruction_pct:.3f},{trace_segment_build_pct:.3f},"
         f"{advance_guest_machine_pct:.3f},{guest_memory_write_pct:.3f},"
