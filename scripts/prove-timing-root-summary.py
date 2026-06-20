@@ -3445,6 +3445,11 @@ def summarize_profile_values(
         groups,
         max_group_size,
     )
+    opening_row_value_d2h_wait_ms = direct_d2h_wait_ms
+    if cuda_allocator_d2h_hint == "opening_row_value_d2h_wait_secondary":
+        opening_row_value_d2h_wait_ms = max(
+            opening_row_value_d2h_wait_ms, cuda_allocator_d2h_wait_ms
+        )
     cuda_host_register_wait_ms = (
         values.get(CUDA_HOST_REGISTER_WAIT_NS_KEY, 0) / 1_000_000.0
     )
@@ -3494,7 +3499,7 @@ def summarize_profile_values(
         retained_parent_checkpoint_prefix_launches,
         retained_parent_checkpoint_suffix_launches,
         retained_parent_checkpoint_path_ms,
-        direct_d2h_wait_ms,
+        opening_row_value_d2h_wait_ms,
     )
     opening_external_source_boundary = opening_external_source_boundary_hint(
         opening_external_source_count,
@@ -3503,7 +3508,7 @@ def summarize_profile_values(
         opening_row_value_device_rows,
         opening_row_value_device_download_batches,
         opening_row_value_device_single_downloads,
-        direct_d2h_wait_ms,
+        opening_row_value_d2h_wait_ms,
     )
     leaf_launch_pressure = "yes" if leaf_ntt_launches >= 10_000 else "no"
     trace_to_leaf_ratio = (

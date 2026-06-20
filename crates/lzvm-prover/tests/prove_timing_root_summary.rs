@@ -1944,8 +1944,10 @@ fn prove_timing_root_summary_reports_allocator_d2h_wait_shape() {
         "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
         "timing_finish_witness_opening_query_unit_count=120",
         "timing_finish_witness_opening_single_query_unit_count=120",
+        "timing_finish_witness_opening_external_source_count=120",
         "timing_finish_witness_opening_row_values_device_rows=43",
         "timing_finish_witness_opening_row_values_device_download_batches=0",
+        "timing_finish_witness_opening_row_values_device_single_downloads=43",
         "timing_cuda_allocator_copy_d2h_bytes=291360",
         "timing_cuda_allocator_copy_d2h_wait_ns=3429156569",
         "timing_cuda_allocator_copy_d2h_hot_bytes=304",
@@ -2001,6 +2003,14 @@ fn prove_timing_root_summary_reports_allocator_d2h_wait_shape() {
     assert_eq!(
         value("cuda_allocator_d2h_action_hint"),
         "opening_row_value_d2h_wait_secondary"
+    );
+    assert_eq!(
+        value("opening_batching_hint"),
+        "single_query_unit_boundary_blocks_row_value_batch"
+    );
+    assert_eq!(
+        value("opening_external_source_boundary_hint"),
+        "external_source_unit_boundary_blocks_row_value_batch"
     );
 }
 
