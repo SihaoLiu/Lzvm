@@ -6521,7 +6521,7 @@ fn guest_pc_trace_register_mem_steps_use_single_lookup_updates() {
     let helper_body = function_body(
         &backend_source,
         "fn read_then_update_register_mem_step",
-        &format!("fn {}_main_source_register_index", concat!("zi", "sk")),
+        &format!("fn {}_main_store_register_index", concat!("zi", "sk")),
     );
     assert!(
         helper_body.contains("let previous = register_mem_steps[index]")
@@ -6535,7 +6535,7 @@ fn guest_pc_trace_register_mem_steps_use_single_lookup_updates() {
             "fn apply_{}_main_register_access_values",
             concat!("zi", "sk")
         ),
-        &format!("fn {}_main_source_register_index", concat!("zi", "sk")),
+        "fn read_then_update_register_mem_step",
     );
     assert!(
         register_access_body.contains("read_then_update_register_mem_step")
@@ -6548,11 +6548,10 @@ fn guest_pc_trace_register_mem_steps_use_single_lookup_updates() {
         "register access lowering should return before row mem-step arithmetic when no registers are touched"
     );
     assert!(
-        register_access_body.contains("let row_mem_step_base")
-            && register_access_body.contains("zisk_main_row_mem_step_base_from_segment_base")
+        register_access_body.contains("row_mem_step_base: u64")
             && !register_access_body.contains("let mut row_mem_step_base = None")
             && !register_access_body.contains("let mut row_mem_step = |offset|"),
-        "register access lowering should compute the row mem-step base once instead of through a per-row closure"
+        "register access lowering should receive one row mem-step base instead of using a per-row closure"
     );
 }
 
@@ -7039,7 +7038,7 @@ fn register_access_hot_path_updates_mem_steps_in_place() {
     let body = function_body(
         &source,
         &format!("fn apply_{prefix}register_access_values"),
-        &format!("fn {prefix}source_register_index"),
+        "fn read_then_update_register_mem_step",
     );
     assert!(
         body.contains("&mut state.register_mem_steps")
