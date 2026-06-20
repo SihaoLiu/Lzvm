@@ -146,6 +146,14 @@ TRACE_COPY_REGISTER_STORE_ROWS_KEY = "timing_guest_trace_copy_register_store_row
 TRACE_COPY_MEMORY_STORE_ROWS_KEY = "timing_guest_trace_copy_memory_store_rows"
 TRACE_COPY_NO_STORE_ROWS_KEY = "timing_guest_trace_copy_no_store_rows"
 TRACE_COPY_NO_MEMORY_ROWS_KEY = "timing_guest_trace_copy_no_memory_rows"
+TRACE_COPY_SOURCE_MEMORY_READ_MS_KEY = (
+    "timing_guest_trace_copy_source_memory_read_ms"
+)
+TRACE_COPY_SOURCE_INDIRECT_READ_MS_KEY = (
+    "timing_guest_trace_copy_source_indirect_read_ms"
+)
+TRACE_COPY_SOURCE_MEMORY_READS_KEY = "timing_guest_trace_copy_source_memory_reads"
+TRACE_COPY_SOURCE_INDIRECT_READS_KEY = "timing_guest_trace_copy_source_indirect_reads"
 TRACE_EXTERNAL_OP_RUNS_KEY = "timing_guest_trace_external_op_runs"
 TRACE_EXTERNAL_OP_MAX_RUN_KEY = "timing_guest_trace_external_op_max_run"
 TRACE_COPY_RUNS_KEY = "timing_guest_trace_copy_runs"
@@ -689,6 +697,9 @@ HEADER = (
     "copy_register_store_rows,copy_memory_store_rows,"
     "copy_no_store_rows,copy_no_memory_rows,copy_no_memory_row_pct,"
     "trace_copy_shape_hint,trace_copy_action_hint,"
+    "copy_source_memory_read_ms,copy_source_indirect_read_ms,"
+    "copy_source_memory_read_pct,copy_source_indirect_read_pct,"
+    "copy_source_memory_reads,copy_source_indirect_reads,"
     "trace_report_validation_ms,trace_report_emit_ms,trace_descriptor_ms,"
     "trace_report_lowering_ms,trace_report_row_validation_ms,"
     "trace_report_memory_columns_ms,trace_report_source_values_ms,"
@@ -854,6 +865,8 @@ TIMING_KEYS = {
     TRACE_REPORT_SOURCE_MEMORY_READ_MS_KEY,
     TRACE_REPORT_SOURCE_INDIRECT_READ_MS_KEY,
     TRACE_REPORT_SOURCE_LAST_C_READ_MS_KEY,
+    TRACE_COPY_SOURCE_MEMORY_READ_MS_KEY,
+    TRACE_COPY_SOURCE_INDIRECT_READ_MS_KEY,
     TRACE_REPORT_PRECOMPILE_MEMORY_MS_KEY,
     TRACE_REPORT_INSTRUCTION_RESULT_MS_KEY,
     TRACE_REPORT_NEXT_PC_MS_KEY,
@@ -876,6 +889,8 @@ TIMING_KEYS = {
     TRACE_COPY_MEMORY_STORE_ROWS_KEY,
     TRACE_COPY_NO_STORE_ROWS_KEY,
     TRACE_COPY_NO_MEMORY_ROWS_KEY,
+    TRACE_COPY_SOURCE_MEMORY_READS_KEY,
+    TRACE_COPY_SOURCE_INDIRECT_READS_KEY,
     TRACE_EXTERNAL_OP_RUNS_KEY,
     TRACE_EXTERNAL_OP_MAX_RUN_KEY,
     TRACE_COPY_RUNS_KEY,
@@ -3238,6 +3253,10 @@ def summarize_profile_values(
     copy_memory_store_rows = values.get(TRACE_COPY_MEMORY_STORE_ROWS_KEY, 0)
     copy_no_store_rows = values.get(TRACE_COPY_NO_STORE_ROWS_KEY, 0)
     copy_no_memory_rows = values.get(TRACE_COPY_NO_MEMORY_ROWS_KEY, 0)
+    copy_source_memory_read_ms = values.get(TRACE_COPY_SOURCE_MEMORY_READ_MS_KEY, 0)
+    copy_source_indirect_read_ms = values.get(TRACE_COPY_SOURCE_INDIRECT_READ_MS_KEY, 0)
+    copy_source_memory_reads = values.get(TRACE_COPY_SOURCE_MEMORY_READS_KEY, 0)
+    copy_source_indirect_reads = values.get(TRACE_COPY_SOURCE_INDIRECT_READS_KEY, 0)
     external_op_runs = values.get(TRACE_EXTERNAL_OP_RUNS_KEY, 0)
     external_op_max_run = values.get(TRACE_EXTERNAL_OP_MAX_RUN_KEY, 0)
     copy_runs = values.get(TRACE_COPY_RUNS_KEY, 0)
@@ -3290,6 +3309,17 @@ def summarize_profile_values(
         copy_memory_source_row_pct,
         copy_indirect_memory_row_pct,
         copy_no_memory_row_pct,
+    )
+    copy_source_read_ms = copy_source_memory_read_ms + copy_source_indirect_read_ms
+    copy_source_memory_read_pct = (
+        copy_source_memory_read_ms * 100.0 / copy_source_read_ms
+        if copy_source_read_ms
+        else 0.0
+    )
+    copy_source_indirect_read_pct = (
+        copy_source_indirect_read_ms * 100.0 / copy_source_read_ms
+        if copy_source_read_ms
+        else 0.0
     )
     trace_shape_hint = trace_shape_sample_hint(values, trace_report_rows)
     external_op_row_pct = (
@@ -4376,6 +4406,9 @@ def summarize_profile_values(
         f"{copy_register_store_rows},{copy_memory_store_rows},"
         f"{copy_no_store_rows},{copy_no_memory_rows},"
         f"{copy_no_memory_row_pct:.3f},{copy_shape_hint},{copy_action_hint},"
+        f"{copy_source_memory_read_ms},{copy_source_indirect_read_ms},"
+        f"{copy_source_memory_read_pct:.3f},{copy_source_indirect_read_pct:.3f},"
+        f"{copy_source_memory_reads},{copy_source_indirect_reads},"
         f"{trace_report_validation_ms},{trace_report_emit_ms},{trace_descriptor_ms},"
         f"{trace_report_lowering_ms},{trace_report_row_validation_ms},"
         f"{trace_report_memory_columns_ms},{trace_report_source_values_ms},"

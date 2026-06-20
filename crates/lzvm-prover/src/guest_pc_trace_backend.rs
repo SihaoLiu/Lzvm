@@ -211,6 +211,8 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_report_source_memory_read_duration: Duration,
     trace_report_source_indirect_read_duration: Duration,
     trace_report_source_last_c_read_duration: Duration,
+    trace_copy_source_memory_read_duration: Duration,
+    trace_copy_source_indirect_read_duration: Duration,
     trace_report_precompile_memory_duration: Duration,
     trace_report_instruction_result_duration: Duration,
     trace_report_next_pc_duration: Duration,
@@ -226,6 +228,8 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_report_source_memory_read_count: usize,
     trace_report_source_indirect_read_count: usize,
     trace_report_source_last_c_read_count: usize,
+    trace_copy_source_memory_read_count: usize,
+    trace_copy_source_indirect_read_count: usize,
     segment_replay_count: usize,
     seed_direct_lift_duration: Duration,
     seed_full_advance_duration: Duration,
@@ -335,6 +339,9 @@ impl GuestPcTraceStreamTiming {
             other.trace_report_source_indirect_read_duration;
         self.trace_report_source_last_c_read_duration +=
             other.trace_report_source_last_c_read_duration;
+        self.trace_copy_source_memory_read_duration += other.trace_copy_source_memory_read_duration;
+        self.trace_copy_source_indirect_read_duration +=
+            other.trace_copy_source_indirect_read_duration;
         self.trace_report_precompile_memory_duration +=
             other.trace_report_precompile_memory_duration;
         self.trace_report_instruction_result_duration +=
@@ -355,6 +362,8 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_source_indirect_read_count +=
             other.trace_report_source_indirect_read_count;
         self.trace_report_source_last_c_read_count += other.trace_report_source_last_c_read_count;
+        self.trace_copy_source_memory_read_count += other.trace_copy_source_memory_read_count;
+        self.trace_copy_source_indirect_read_count += other.trace_copy_source_indirect_read_count;
         self.segment_replay_count += other.segment_replay_count;
         self.seed_direct_lift_duration += other.seed_direct_lift_duration;
         self.seed_full_advance_duration += other.seed_full_advance_duration;
@@ -563,6 +572,14 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_source_last_c_read_duration
     }
 
+    pub fn trace_copy_source_memory_read_duration(&self) -> Duration {
+        self.trace_copy_source_memory_read_duration
+    }
+
+    pub fn trace_copy_source_indirect_read_duration(&self) -> Duration {
+        self.trace_copy_source_indirect_read_duration
+    }
+
     pub fn trace_report_precompile_memory_duration(&self) -> Duration {
         self.trace_report_precompile_memory_duration
     }
@@ -621,6 +638,14 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_source_last_c_read_count(&self) -> usize {
         self.trace_report_source_last_c_read_count
+    }
+
+    pub fn trace_copy_source_memory_read_count(&self) -> usize {
+        self.trace_copy_source_memory_read_count
+    }
+
+    pub fn trace_copy_source_indirect_read_count(&self) -> usize {
+        self.trace_copy_source_indirect_read_count
     }
 
     pub fn segment_replay_count(&self) -> usize {
@@ -6295,6 +6320,7 @@ fn apply_zisk_main_lowered_report_row(
         source_a_value_started,
         &mut timing,
         instruction.a,
+        is_copy,
         |timing| &mut timing.trace_report_source_a_value_duration,
     );
     let source_b_value_started = detail_duration_started(&timing, detail_timing);
@@ -6314,6 +6340,7 @@ fn apply_zisk_main_lowered_report_row(
         source_b_value_started,
         &mut timing,
         instruction.b,
+        is_copy,
         |timing| &mut timing.trace_report_source_b_value_duration,
     );
     record_detail_duration(source_values_started, &mut timing, |timing| {
@@ -6635,6 +6662,7 @@ fn record_trace_report_source_read_timing(
     timing: &mut GuestPcTraceStreamTiming,
     source: ZiskMainSource,
     duration: Duration,
+    is_copy: bool,
 ) {
     match trace_source_kind(source) {
         TraceSourceKind::Immediate => {
@@ -6648,10 +6676,18 @@ fn record_trace_report_source_read_timing(
         TraceSourceKind::Memory => {
             timing.trace_report_source_memory_read_count += 1;
             timing.trace_report_source_memory_read_duration += duration;
+            if is_copy {
+                timing.trace_copy_source_memory_read_count += 1;
+                timing.trace_copy_source_memory_read_duration += duration;
+            }
         }
         TraceSourceKind::Indirect => {
             timing.trace_report_source_indirect_read_count += 1;
             timing.trace_report_source_indirect_read_duration += duration;
+            if is_copy {
+                timing.trace_copy_source_indirect_read_count += 1;
+                timing.trace_copy_source_indirect_read_duration += duration;
+            }
         }
         TraceSourceKind::LastC => {
             timing.trace_report_source_last_c_read_count += 1;
@@ -6664,13 +6700,14 @@ fn record_trace_report_source_value_duration(
     started: Option<Instant>,
     timing: &mut Option<&mut GuestPcTraceStreamTiming>,
     source: ZiskMainSource,
+    is_copy: bool,
     target: fn(&mut GuestPcTraceStreamTiming) -> &mut Duration,
 ) {
     if let (Some(timing), Some(started)) = (timing.as_mut(), started) {
         let timing = &mut **timing;
         let duration = started.elapsed();
         *target(timing) += duration;
-        record_trace_report_source_read_timing(timing, source, duration);
+        record_trace_report_source_read_timing(timing, source, duration, is_copy);
     }
 }
 

@@ -225,6 +225,14 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_report_source_last_c_read_duration(),
     );
     timings.record(
+        "guest_trace_copy_source_memory_read",
+        timing.guest_trace_copy_source_memory_read_duration(),
+    );
+    timings.record(
+        "guest_trace_copy_source_indirect_read",
+        timing.guest_trace_copy_source_indirect_read_duration(),
+    );
+    timings.record(
         "guest_trace_report_precompile_memory",
         timing.guest_trace_report_precompile_memory_duration(),
     );
@@ -349,6 +357,18 @@ pub(super) fn record_guest_pc_trace_timing(
         timings,
         "guest_trace_report_source_last_c_read",
         timing.guest_trace_report_source_last_c_read_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_copy_source_memory_read",
+        timing.guest_trace_copy_source_memory_read_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_copy_source_indirect_read",
+        timing.guest_trace_copy_source_indirect_read_duration(),
         detail_sample_count,
     );
     record_guest_trace_sampled_duration_counts(
@@ -702,6 +722,14 @@ pub(super) fn record_guest_pc_trace_timing(
     timings.record_count(
         "guest_trace_memory_source_reads",
         timing.guest_trace_memory_source_read_count(),
+    );
+    timings.record_count(
+        "guest_trace_copy_source_memory_reads",
+        timing.guest_trace_copy_source_memory_read_count(),
+    );
+    timings.record_count(
+        "guest_trace_copy_source_indirect_reads",
+        timing.guest_trace_copy_source_indirect_read_count(),
     );
     timings.record_count(
         "guest_trace_register_store_rows",

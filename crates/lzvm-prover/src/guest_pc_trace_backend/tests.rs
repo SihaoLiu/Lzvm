@@ -203,26 +203,31 @@ fn source_value_kind_timing_counts_reads_and_durations() {
         &mut timing,
         ZiskMainSource::Immediate(7),
         std::time::Duration::from_nanos(10),
+        false,
     );
     record_trace_report_source_read_timing(
         &mut timing,
         ZiskMainSource::Register(1),
         std::time::Duration::from_nanos(20),
+        false,
     );
     record_trace_report_source_read_timing(
         &mut timing,
         ZiskMainSource::Memory(64),
         std::time::Duration::from_nanos(30),
+        false,
     );
     record_trace_report_source_read_timing(
         &mut timing,
         ZiskMainSource::Indirect(8),
         std::time::Duration::from_nanos(40),
+        false,
     );
     record_trace_report_source_read_timing(
         &mut timing,
         ZiskMainSource::LastC,
         std::time::Duration::from_nanos(50),
+        false,
     );
 
     assert_eq!(timing.trace_report_source_immediate_read_count(), 1);
@@ -249,6 +254,42 @@ fn source_value_kind_timing_counts_reads_and_durations() {
     assert_eq!(
         timing.trace_report_source_last_c_read_duration(),
         std::time::Duration::from_nanos(50)
+    );
+}
+
+#[test]
+fn copy_source_value_kind_timing_is_tracked_separately() {
+    let mut timing = GuestPcTraceStreamTiming::default();
+    record_trace_report_source_read_timing(
+        &mut timing,
+        ZiskMainSource::Memory(64),
+        std::time::Duration::from_nanos(30),
+        true,
+    );
+    record_trace_report_source_read_timing(
+        &mut timing,
+        ZiskMainSource::Indirect(8),
+        std::time::Duration::from_nanos(40),
+        true,
+    );
+    record_trace_report_source_read_timing(
+        &mut timing,
+        ZiskMainSource::Register(1),
+        std::time::Duration::from_nanos(20),
+        true,
+    );
+
+    assert_eq!(timing.trace_report_source_memory_read_count(), 1);
+    assert_eq!(timing.trace_report_source_indirect_read_count(), 1);
+    assert_eq!(timing.trace_copy_source_memory_read_count(), 1);
+    assert_eq!(timing.trace_copy_source_indirect_read_count(), 1);
+    assert_eq!(
+        timing.trace_copy_source_memory_read_duration(),
+        std::time::Duration::from_nanos(30)
+    );
+    assert_eq!(
+        timing.trace_copy_source_indirect_read_duration(),
+        std::time::Duration::from_nanos(40)
     );
 }
 
