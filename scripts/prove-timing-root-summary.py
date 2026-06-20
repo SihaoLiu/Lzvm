@@ -463,6 +463,7 @@ CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY = (
 CPU_TRACE_MEMCPY_REPORT_STORAGE_TOTAL_PCT_KEY = (
     "cpu_trace_memcpy_report_storage_total_pct"
 )
+CPU_TRACE_REPORT_STORAGE_STRUCTURAL_TOTAL_PCT_THRESHOLD = 5.0
 ROOT_PIPELINE_INPUT_BYTE_LIMIT = 8 * 1024 * 1024
 OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD = 100.0
 SINGLE_QUERY_ROW_VALUE_BOUNDARY_HINT = (
@@ -1765,8 +1766,17 @@ def cpu_trace_report_storage_action_hint(
         and chunks_sent <= 0
     ):
         return "runner_streaming_report_storage_candidate"
-    if perf_hotspots.get(CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY, 0.0) > 0.0:
-        return "trace_report_storage_structural_candidate"
+    report_storage_memcpy_pct = perf_hotspots.get(
+        CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY, 0.0
+    )
+    report_storage_memcpy_total_pct = memmove_pct * report_storage_memcpy_pct / 100.0
+    if report_storage_memcpy_pct > 0.0:
+        if (
+            report_storage_memcpy_total_pct
+            >= CPU_TRACE_REPORT_STORAGE_STRUCTURAL_TOTAL_PCT_THRESHOLD
+        ):
+            return "trace_report_storage_structural_candidate"
+        return "trace_report_storage_memcpy_secondary"
     if (
         lowered_report_row_pct >= 15.0
         and pending_drop_pct >= 5.0

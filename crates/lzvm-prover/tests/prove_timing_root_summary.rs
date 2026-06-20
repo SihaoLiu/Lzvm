@@ -4212,7 +4212,7 @@ fn prove_timing_root_summary_reads_real_nsys_cpu_trace_hints() {
     assert_eq!(value("perf_decode_instruction_self_pct"), "0.420");
     assert_eq!(
         value("cpu_trace_report_storage_action_hint"),
-        "trace_report_storage_structural_candidate"
+        "trace_report_storage_memcpy_secondary"
     );
     assert_eq!(value("cpu_trace_memcpy_report_storage_hint_pct"), "61.446");
     assert_eq!(value("cpu_trace_memcpy_report_storage_total_pct"), "1.751");
