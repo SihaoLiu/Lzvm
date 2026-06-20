@@ -205,6 +205,26 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_report_source_b_value_duration(),
     );
     timings.record(
+        "guest_trace_report_source_immediate_read",
+        timing.guest_trace_report_source_immediate_read_duration(),
+    );
+    timings.record(
+        "guest_trace_report_source_register_read",
+        timing.guest_trace_report_source_register_read_duration(),
+    );
+    timings.record(
+        "guest_trace_report_source_memory_read",
+        timing.guest_trace_report_source_memory_read_duration(),
+    );
+    timings.record(
+        "guest_trace_report_source_indirect_read",
+        timing.guest_trace_report_source_indirect_read_duration(),
+    );
+    timings.record(
+        "guest_trace_report_source_last_c_read",
+        timing.guest_trace_report_source_last_c_read_duration(),
+    );
+    timings.record(
         "guest_trace_report_precompile_memory",
         timing.guest_trace_report_precompile_memory_duration(),
     );
@@ -239,6 +259,26 @@ pub(super) fn record_guest_pc_trace_timing(
     );
     let detail_sample_count = timing.guest_trace_report_detail_sample_count();
     timings.record_count("guest_trace_report_detail_samples", detail_sample_count);
+    timings.record_count(
+        "guest_trace_report_source_immediate_reads",
+        timing.guest_trace_report_source_immediate_read_count(),
+    );
+    timings.record_count(
+        "guest_trace_report_source_register_reads",
+        timing.guest_trace_report_source_register_read_count(),
+    );
+    timings.record_count(
+        "guest_trace_report_source_memory_reads",
+        timing.guest_trace_report_source_memory_read_count(),
+    );
+    timings.record_count(
+        "guest_trace_report_source_indirect_reads",
+        timing.guest_trace_report_source_indirect_read_count(),
+    );
+    timings.record_count(
+        "guest_trace_report_source_last_c_reads",
+        timing.guest_trace_report_source_last_c_read_count(),
+    );
     record_guest_trace_sampled_duration_counts(
         timings,
         "guest_trace_report",
@@ -279,6 +319,36 @@ pub(super) fn record_guest_pc_trace_timing(
         timings,
         "guest_trace_report_source_b_value",
         timing.guest_trace_report_source_b_value_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_source_immediate_read",
+        timing.guest_trace_report_source_immediate_read_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_source_register_read",
+        timing.guest_trace_report_source_register_read_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_source_memory_read",
+        timing.guest_trace_report_source_memory_read_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_source_indirect_read",
+        timing.guest_trace_report_source_indirect_read_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_source_last_c_read",
+        timing.guest_trace_report_source_last_c_read_duration(),
         detail_sample_count,
     );
     record_guest_trace_sampled_duration_counts(

@@ -444,6 +444,11 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_report_source_values_duration: Duration,
     guest_trace_report_source_a_value_duration: Duration,
     guest_trace_report_source_b_value_duration: Duration,
+    guest_trace_report_source_immediate_read_duration: Duration,
+    guest_trace_report_source_register_read_duration: Duration,
+    guest_trace_report_source_memory_read_duration: Duration,
+    guest_trace_report_source_indirect_read_duration: Duration,
+    guest_trace_report_source_last_c_read_duration: Duration,
     guest_trace_report_precompile_memory_duration: Duration,
     guest_trace_report_instruction_result_duration: Duration,
     guest_trace_report_next_pc_duration: Duration,
@@ -454,6 +459,11 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_emit_duration: Duration,
     guest_trace_descriptor_duration: Duration,
     guest_trace_report_detail_sample_count: usize,
+    guest_trace_report_source_immediate_read_count: usize,
+    guest_trace_report_source_register_read_count: usize,
+    guest_trace_report_source_memory_read_count: usize,
+    guest_trace_report_source_indirect_read_count: usize,
+    guest_trace_report_source_last_c_read_count: usize,
     guest_trace_segment_replay_count: usize,
     guest_trace_seed_direct_lift_duration: Duration,
     guest_trace_seed_full_advance_duration: Duration,
@@ -722,6 +732,16 @@ impl ProveWitnessGuestPcTraceTiming {
                 .trace_report_source_a_value_duration(),
             guest_trace_report_source_b_value_duration: stream_timing
                 .trace_report_source_b_value_duration(),
+            guest_trace_report_source_immediate_read_duration: stream_timing
+                .trace_report_source_immediate_read_duration(),
+            guest_trace_report_source_register_read_duration: stream_timing
+                .trace_report_source_register_read_duration(),
+            guest_trace_report_source_memory_read_duration: stream_timing
+                .trace_report_source_memory_read_duration(),
+            guest_trace_report_source_indirect_read_duration: stream_timing
+                .trace_report_source_indirect_read_duration(),
+            guest_trace_report_source_last_c_read_duration: stream_timing
+                .trace_report_source_last_c_read_duration(),
             guest_trace_report_precompile_memory_duration: stream_timing
                 .trace_report_precompile_memory_duration(),
             guest_trace_report_instruction_result_duration: stream_timing
@@ -738,6 +758,16 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_descriptor_duration: stream_timing.trace_descriptor_duration(),
             guest_trace_report_detail_sample_count: stream_timing
                 .trace_report_detail_sample_count(),
+            guest_trace_report_source_immediate_read_count: stream_timing
+                .trace_report_source_immediate_read_count(),
+            guest_trace_report_source_register_read_count: stream_timing
+                .trace_report_source_register_read_count(),
+            guest_trace_report_source_memory_read_count: stream_timing
+                .trace_report_source_memory_read_count(),
+            guest_trace_report_source_indirect_read_count: stream_timing
+                .trace_report_source_indirect_read_count(),
+            guest_trace_report_source_last_c_read_count: stream_timing
+                .trace_report_source_last_c_read_count(),
             guest_trace_segment_replay_count: stream_timing.segment_replay_count(),
             guest_trace_seed_direct_lift_duration: stream_timing.seed_direct_lift_duration(),
             guest_trace_seed_full_advance_duration: stream_timing.seed_full_advance_duration(),
@@ -1148,6 +1178,26 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_trace_report_source_b_value_duration
     }
 
+    pub fn guest_trace_report_source_immediate_read_duration(&self) -> Duration {
+        self.guest_trace_report_source_immediate_read_duration
+    }
+
+    pub fn guest_trace_report_source_register_read_duration(&self) -> Duration {
+        self.guest_trace_report_source_register_read_duration
+    }
+
+    pub fn guest_trace_report_source_memory_read_duration(&self) -> Duration {
+        self.guest_trace_report_source_memory_read_duration
+    }
+
+    pub fn guest_trace_report_source_indirect_read_duration(&self) -> Duration {
+        self.guest_trace_report_source_indirect_read_duration
+    }
+
+    pub fn guest_trace_report_source_last_c_read_duration(&self) -> Duration {
+        self.guest_trace_report_source_last_c_read_duration
+    }
+
     pub fn guest_trace_report_precompile_memory_duration(&self) -> Duration {
         self.guest_trace_report_precompile_memory_duration
     }
@@ -1186,6 +1236,26 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_report_detail_sample_count(&self) -> usize {
         self.guest_trace_report_detail_sample_count
+    }
+
+    pub fn guest_trace_report_source_immediate_read_count(&self) -> usize {
+        self.guest_trace_report_source_immediate_read_count
+    }
+
+    pub fn guest_trace_report_source_register_read_count(&self) -> usize {
+        self.guest_trace_report_source_register_read_count
+    }
+
+    pub fn guest_trace_report_source_memory_read_count(&self) -> usize {
+        self.guest_trace_report_source_memory_read_count
+    }
+
+    pub fn guest_trace_report_source_indirect_read_count(&self) -> usize {
+        self.guest_trace_report_source_indirect_read_count
+    }
+
+    pub fn guest_trace_report_source_last_c_read_count(&self) -> usize {
+        self.guest_trace_report_source_last_c_read_count
     }
 
     pub fn guest_trace_seed_direct_lift_duration(&self) -> Duration {

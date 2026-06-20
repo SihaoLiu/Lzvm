@@ -197,6 +197,62 @@ fn copy_row_shape_counts_track_source_and_store_classes() {
 }
 
 #[test]
+fn source_value_kind_timing_counts_reads_and_durations() {
+    let mut timing = GuestPcTraceStreamTiming::default();
+    record_trace_report_source_read_timing(
+        &mut timing,
+        ZiskMainSource::Immediate(7),
+        std::time::Duration::from_nanos(10),
+    );
+    record_trace_report_source_read_timing(
+        &mut timing,
+        ZiskMainSource::Register(1),
+        std::time::Duration::from_nanos(20),
+    );
+    record_trace_report_source_read_timing(
+        &mut timing,
+        ZiskMainSource::Memory(64),
+        std::time::Duration::from_nanos(30),
+    );
+    record_trace_report_source_read_timing(
+        &mut timing,
+        ZiskMainSource::Indirect(8),
+        std::time::Duration::from_nanos(40),
+    );
+    record_trace_report_source_read_timing(
+        &mut timing,
+        ZiskMainSource::LastC,
+        std::time::Duration::from_nanos(50),
+    );
+
+    assert_eq!(timing.trace_report_source_immediate_read_count(), 1);
+    assert_eq!(timing.trace_report_source_register_read_count(), 1);
+    assert_eq!(timing.trace_report_source_memory_read_count(), 1);
+    assert_eq!(timing.trace_report_source_indirect_read_count(), 1);
+    assert_eq!(timing.trace_report_source_last_c_read_count(), 1);
+    assert_eq!(
+        timing.trace_report_source_immediate_read_duration(),
+        std::time::Duration::from_nanos(10)
+    );
+    assert_eq!(
+        timing.trace_report_source_register_read_duration(),
+        std::time::Duration::from_nanos(20)
+    );
+    assert_eq!(
+        timing.trace_report_source_memory_read_duration(),
+        std::time::Duration::from_nanos(30)
+    );
+    assert_eq!(
+        timing.trace_report_source_indirect_read_duration(),
+        std::time::Duration::from_nanos(40)
+    );
+    assert_eq!(
+        timing.trace_report_source_last_c_read_duration(),
+        std::time::Duration::from_nanos(50)
+    );
+}
+
+#[test]
 fn rejects_add256_precompile_memory_access_address_mismatch() {
     let mut report = add256_report();
     report.precompile_memory_accesses[4].address += 8;

@@ -6709,6 +6709,64 @@ fn guest_pc_trace_lower_records_aggregate_report_timing_alongside_detail_timers(
 }
 
 #[test]
+fn guest_pc_trace_detail_timing_breaks_down_source_value_kinds() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source =
+        std::fs::read_to_string(&cli_path).expect("guest PC trace CLI timing source should read");
+
+    for field in [
+        "trace_report_source_immediate_read_duration",
+        "trace_report_source_register_read_duration",
+        "trace_report_source_memory_read_duration",
+        "trace_report_source_indirect_read_duration",
+        "trace_report_source_last_c_read_duration",
+        "trace_report_source_immediate_read_count",
+        "trace_report_source_register_read_count",
+        "trace_report_source_memory_read_count",
+        "trace_report_source_indirect_read_count",
+        "trace_report_source_last_c_read_count",
+    ] {
+        assert!(
+            backend_source.contains(field),
+            "guest PC trace backend timing should expose {field}"
+        );
+    }
+    assert!(
+        backend_source.contains("fn trace_source_kind")
+            && backend_source.contains("record_trace_report_source_read_timing("),
+        "guest PC trace lowerer should classify and time each source-value read by source kind"
+    );
+    for name in [
+        "guest_trace_report_source_immediate_read",
+        "guest_trace_report_source_register_read",
+        "guest_trace_report_source_memory_read",
+        "guest_trace_report_source_indirect_read",
+        "guest_trace_report_source_last_c_read",
+    ] {
+        assert!(
+            cli_source.contains(name),
+            "guest PC trace CLI timing should emit {name}"
+        );
+    }
+    for name in [
+        "guest_trace_report_source_immediate_reads",
+        "guest_trace_report_source_register_reads",
+        "guest_trace_report_source_memory_reads",
+        "guest_trace_report_source_indirect_reads",
+        "guest_trace_report_source_last_c_reads",
+    ] {
+        assert!(
+            cli_source.contains(name),
+            "guest PC trace CLI timing should emit {name}"
+        );
+    }
+}
+
+#[test]
 fn guest_pc_trace_segments_reuse_fixed_columns_across_segments() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");

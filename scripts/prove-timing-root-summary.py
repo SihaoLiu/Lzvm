@@ -99,6 +99,21 @@ TRACE_REPORT_MEMORY_COLUMNS_MS_KEY = "timing_guest_trace_report_memory_columns_m
 TRACE_REPORT_SOURCE_VALUES_MS_KEY = "timing_guest_trace_report_source_values_ms"
 TRACE_REPORT_SOURCE_A_VALUE_MS_KEY = "timing_guest_trace_report_source_a_value_ms"
 TRACE_REPORT_SOURCE_B_VALUE_MS_KEY = "timing_guest_trace_report_source_b_value_ms"
+TRACE_REPORT_SOURCE_IMMEDIATE_READ_MS_KEY = (
+    "timing_guest_trace_report_source_immediate_read_ms"
+)
+TRACE_REPORT_SOURCE_REGISTER_READ_MS_KEY = (
+    "timing_guest_trace_report_source_register_read_ms"
+)
+TRACE_REPORT_SOURCE_MEMORY_READ_MS_KEY = (
+    "timing_guest_trace_report_source_memory_read_ms"
+)
+TRACE_REPORT_SOURCE_INDIRECT_READ_MS_KEY = (
+    "timing_guest_trace_report_source_indirect_read_ms"
+)
+TRACE_REPORT_SOURCE_LAST_C_READ_MS_KEY = (
+    "timing_guest_trace_report_source_last_c_read_ms"
+)
 TRACE_REPORT_PRECOMPILE_MEMORY_MS_KEY = (
     "timing_guest_trace_report_precompile_memory_ms"
 )
@@ -185,6 +200,32 @@ TRACE_REPORT_SOURCE_A_VALUE_SAMPLED_NS_KEY = (
 )
 TRACE_REPORT_SOURCE_B_VALUE_SAMPLED_NS_KEY = (
     "timing_guest_trace_report_source_b_value_sampled_ns"
+)
+TRACE_REPORT_SOURCE_IMMEDIATE_READS_KEY = (
+    "timing_guest_trace_report_source_immediate_reads"
+)
+TRACE_REPORT_SOURCE_REGISTER_READS_KEY = (
+    "timing_guest_trace_report_source_register_reads"
+)
+TRACE_REPORT_SOURCE_MEMORY_READS_KEY = "timing_guest_trace_report_source_memory_reads"
+TRACE_REPORT_SOURCE_INDIRECT_READS_KEY = (
+    "timing_guest_trace_report_source_indirect_reads"
+)
+TRACE_REPORT_SOURCE_LAST_C_READS_KEY = "timing_guest_trace_report_source_last_c_reads"
+TRACE_REPORT_SOURCE_IMMEDIATE_READ_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_source_immediate_read_sampled_ns"
+)
+TRACE_REPORT_SOURCE_REGISTER_READ_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_source_register_read_sampled_ns"
+)
+TRACE_REPORT_SOURCE_MEMORY_READ_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_source_memory_read_sampled_ns"
+)
+TRACE_REPORT_SOURCE_INDIRECT_READ_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_source_indirect_read_sampled_ns"
+)
+TRACE_REPORT_SOURCE_LAST_C_READ_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_source_last_c_read_sampled_ns"
 )
 TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY = (
     "timing_guest_trace_report_precompile_memory_sampled_ns"
@@ -669,6 +710,13 @@ HEADER = (
     "trace_report_row_validation_hotspot,trace_report_row_validation_hotspot_pct,"
     "trace_report_row_validation_explained_pct,trace_report_row_validation_residual_pct,"
     "trace_report_source_values_lookup_pct,trace_report_source_values_residual_pct,"
+    "source_immediate_reads,source_immediate_read_pct,"
+    "source_register_reads,source_register_read_pct,"
+    "source_memory_reads,source_memory_read_pct,"
+    "source_indirect_reads,source_indirect_read_pct,"
+    "source_last_c_reads,source_last_c_read_pct,"
+    "trace_report_source_kind_hotspot,trace_report_source_kind_hotspot_pct,"
+    "trace_report_source_kind_coverage_pct,trace_report_source_kind_residual_pct,"
     "trace_report_detail_visit_pct,trace_report_visit_descriptor_pct,"
     "trace_report_visit_residual_pct,"
     "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms,"
@@ -790,6 +838,11 @@ TIMING_KEYS = {
     TRACE_REPORT_SOURCE_VALUES_MS_KEY,
     TRACE_REPORT_SOURCE_A_VALUE_MS_KEY,
     TRACE_REPORT_SOURCE_B_VALUE_MS_KEY,
+    TRACE_REPORT_SOURCE_IMMEDIATE_READ_MS_KEY,
+    TRACE_REPORT_SOURCE_REGISTER_READ_MS_KEY,
+    TRACE_REPORT_SOURCE_MEMORY_READ_MS_KEY,
+    TRACE_REPORT_SOURCE_INDIRECT_READ_MS_KEY,
+    TRACE_REPORT_SOURCE_LAST_C_READ_MS_KEY,
     TRACE_REPORT_PRECOMPILE_MEMORY_MS_KEY,
     TRACE_REPORT_INSTRUCTION_RESULT_MS_KEY,
     TRACE_REPORT_NEXT_PC_MS_KEY,
@@ -834,6 +887,16 @@ TIMING_KEYS = {
     TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY,
     TRACE_REPORT_SOURCE_A_VALUE_SAMPLED_NS_KEY,
     TRACE_REPORT_SOURCE_B_VALUE_SAMPLED_NS_KEY,
+    TRACE_REPORT_SOURCE_IMMEDIATE_READS_KEY,
+    TRACE_REPORT_SOURCE_REGISTER_READS_KEY,
+    TRACE_REPORT_SOURCE_MEMORY_READS_KEY,
+    TRACE_REPORT_SOURCE_INDIRECT_READS_KEY,
+    TRACE_REPORT_SOURCE_LAST_C_READS_KEY,
+    TRACE_REPORT_SOURCE_IMMEDIATE_READ_SAMPLED_NS_KEY,
+    TRACE_REPORT_SOURCE_REGISTER_READ_SAMPLED_NS_KEY,
+    TRACE_REPORT_SOURCE_MEMORY_READ_SAMPLED_NS_KEY,
+    TRACE_REPORT_SOURCE_INDIRECT_READ_SAMPLED_NS_KEY,
+    TRACE_REPORT_SOURCE_LAST_C_READ_SAMPLED_NS_KEY,
     TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY,
     TRACE_REPORT_INSTRUCTION_RESULT_SAMPLED_NS_KEY,
     TRACE_REPORT_NEXT_PC_SAMPLED_NS_KEY,
@@ -2628,6 +2691,34 @@ SOURCE_VALUE_DETAIL_HOTSPOT_KEYS = [
     ("source_b_value", TRACE_REPORT_SOURCE_B_VALUE_SAMPLED_NS_KEY),
 ]
 
+SOURCE_VALUE_KIND_DETAIL_KEYS = [
+    (
+        "immediate_read",
+        TRACE_REPORT_SOURCE_IMMEDIATE_READS_KEY,
+        TRACE_REPORT_SOURCE_IMMEDIATE_READ_SAMPLED_NS_KEY,
+    ),
+    (
+        "register_read",
+        TRACE_REPORT_SOURCE_REGISTER_READS_KEY,
+        TRACE_REPORT_SOURCE_REGISTER_READ_SAMPLED_NS_KEY,
+    ),
+    (
+        "memory_read",
+        TRACE_REPORT_SOURCE_MEMORY_READS_KEY,
+        TRACE_REPORT_SOURCE_MEMORY_READ_SAMPLED_NS_KEY,
+    ),
+    (
+        "indirect_read",
+        TRACE_REPORT_SOURCE_INDIRECT_READS_KEY,
+        TRACE_REPORT_SOURCE_INDIRECT_READ_SAMPLED_NS_KEY,
+    ),
+    (
+        "last_c_read",
+        TRACE_REPORT_SOURCE_LAST_C_READS_KEY,
+        TRACE_REPORT_SOURCE_LAST_C_READ_SAMPLED_NS_KEY,
+    ),
+]
+
 ROW_VALIDATION_PREFIX_HOTSPOT_KEYS = [
     ("memory_columns", TRACE_REPORT_MEMORY_COLUMNS_SAMPLED_NS_KEY),
 ]
@@ -2750,6 +2841,39 @@ def trace_report_source_values_lookup_coverage(
     residual_ns = max(source_values_ns - lookup_ns, 0)
     return (
         lookup_ns * 100.0 / source_values_ns,
+        residual_ns * 100.0 / source_values_ns,
+    )
+
+
+def source_value_kind_counts(values: dict[str, int]) -> tuple[int, dict[str, int]]:
+    counts = {
+        name: values.get(count_key, 0)
+        for name, count_key, _sample_key in SOURCE_VALUE_KIND_DETAIL_KEYS
+    }
+    return (sum(counts.values()), counts)
+
+
+def source_value_kind_duration_hotspot(
+    values: dict[str, int],
+) -> tuple[str, float, float, float]:
+    source_values_ns = values.get(TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY, 0)
+    if source_values_ns <= 0:
+        return ("none", 0.0, 0.0, 0.0)
+    hotspot_name = "none"
+    hotspot_ns = 0
+    kind_ns = 0
+    for name, _count_key, sample_key in SOURCE_VALUE_KIND_DETAIL_KEYS:
+        value = values.get(sample_key, 0)
+        kind_ns += value
+        if value > hotspot_ns:
+            hotspot_name = name
+            hotspot_ns = value
+    explained_ns = min(kind_ns, source_values_ns)
+    residual_ns = max(source_values_ns - kind_ns, 0)
+    return (
+        hotspot_name,
+        hotspot_ns * 100.0 / source_values_ns if hotspot_ns else 0.0,
+        explained_ns * 100.0 / source_values_ns,
         residual_ns * 100.0 / source_values_ns,
     )
 
@@ -3246,6 +3370,43 @@ def summarize_profile_values(
         trace_report_source_values_lookup_pct,
         trace_report_source_values_residual_pct,
     ) = trace_report_source_values_lookup_coverage(values)
+    source_kind_read_total, source_kind_counts = source_value_kind_counts(values)
+    source_immediate_reads = source_kind_counts["immediate_read"]
+    source_register_reads = source_kind_counts["register_read"]
+    source_memory_reads = source_kind_counts["memory_read"]
+    source_indirect_reads = source_kind_counts["indirect_read"]
+    source_last_c_reads = source_kind_counts["last_c_read"]
+    source_immediate_read_pct = (
+        source_immediate_reads * 100.0 / source_kind_read_total
+        if source_kind_read_total
+        else 0.0
+    )
+    source_register_read_pct = (
+        source_register_reads * 100.0 / source_kind_read_total
+        if source_kind_read_total
+        else 0.0
+    )
+    source_memory_read_pct = (
+        source_memory_reads * 100.0 / source_kind_read_total
+        if source_kind_read_total
+        else 0.0
+    )
+    source_indirect_read_pct = (
+        source_indirect_reads * 100.0 / source_kind_read_total
+        if source_kind_read_total
+        else 0.0
+    )
+    source_last_c_read_pct = (
+        source_last_c_reads * 100.0 / source_kind_read_total
+        if source_kind_read_total
+        else 0.0
+    )
+    (
+        trace_report_source_kind_hotspot,
+        trace_report_source_kind_hotspot_pct,
+        trace_report_source_kind_coverage_pct,
+        trace_report_source_kind_residual_pct,
+    ) = source_value_kind_duration_hotspot(values)
     trace_report_detail_visit_pct = (
         values.get(TRACE_REPORT_VISIT_SAMPLED_NS_KEY, 0) * 100.0
         / values.get(TRACE_REPORT_SAMPLED_NS_KEY, 0)
@@ -4130,6 +4291,15 @@ def summarize_profile_values(
         f"{trace_report_row_validation_residual_pct:.3f},"
         f"{trace_report_source_values_lookup_pct:.3f},"
         f"{trace_report_source_values_residual_pct:.3f},"
+        f"{source_immediate_reads},{source_immediate_read_pct:.3f},"
+        f"{source_register_reads},{source_register_read_pct:.3f},"
+        f"{source_memory_reads},{source_memory_read_pct:.3f},"
+        f"{source_indirect_reads},{source_indirect_read_pct:.3f},"
+        f"{source_last_c_reads},{source_last_c_read_pct:.3f},"
+        f"{trace_report_source_kind_hotspot},"
+        f"{trace_report_source_kind_hotspot_pct:.3f},"
+        f"{trace_report_source_kind_coverage_pct:.3f},"
+        f"{trace_report_source_kind_residual_pct:.3f},"
         f"{trace_report_detail_visit_pct:.3f},"
         f"{trace_report_visit_descriptor_pct:.3f},"
         f"{trace_report_visit_residual_pct:.3f},"
