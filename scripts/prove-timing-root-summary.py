@@ -549,7 +549,9 @@ HEADER = (
     "descriptor_sparse_high32_estimated_upload_savings_pct,"
     "descriptor_sparse_high32_high_words,descriptor_sparse_high32_shape_hint,"
     "descriptor_shape_hint,seed_direct_lift_attempts,"
-    "seed_direct_lift_successes,seed_direct_lift_empty_segments,"
+    "seed_direct_lift_successes,seed_direct_lift_success_pct,"
+    "seed_direct_lift_dominant_miss_reason,seed_direct_lift_action_hint,"
+    "seed_direct_lift_empty_segments,"
     "seed_direct_lift_pending_dma_single_reports,seed_direct_lift_amo_boundaries,"
     "seed_direct_lift_store_conditional_boundaries,"
     "seed_direct_lift_dma_prepare_missing_lookaheads,"
@@ -2746,6 +2748,38 @@ def trace_report_row_validation_residual_sampled_ns(values: dict[str, int]) -> i
     return max(row_validation_ns - child_ns, 0)
 
 
+def seed_direct_lift_dominant_miss_reason(
+    empty_segments: int,
+    pending_dma_single_reports: int,
+    amo_boundaries: int,
+    store_conditional_boundaries: int,
+    dma_prepare_missing_lookaheads: int,
+    boundary_c_unavailable: int,
+) -> str:
+    reasons = [
+        ("empty_segments", empty_segments),
+        ("pending_dma_single_reports", pending_dma_single_reports),
+        ("amo_boundaries", amo_boundaries),
+        ("store_conditional_boundaries", store_conditional_boundaries),
+        ("dma_prepare_missing_lookaheads", dma_prepare_missing_lookaheads),
+        ("boundary_c_unavailable", boundary_c_unavailable),
+    ]
+    reason, count = max(reasons, key=lambda item: item[1])
+    if count <= 0:
+        return "none"
+    return reason
+
+
+def seed_direct_lift_action_hint(attempts: int, successes: int, dominant_reason: str) -> str:
+    if attempts <= 0:
+        return "none"
+    if successes >= attempts:
+        return "seed_direct_lift_ready"
+    if dominant_reason == "none":
+        return "profile_seed_direct_lift_missing_breakdown"
+    return f"profile_{dominant_reason}"
+
+
 def trace_structure_hint(
     total_ms: int,
     runner_ms: int,
@@ -3368,6 +3402,24 @@ def summarize_profile_values(
     seed_direct_lift_boundary_c_unavailable = values.get(
         SEED_DIRECT_LIFT_BOUNDARY_C_UNAVAILABLE_KEY, 0
     )
+    seed_direct_lift_success_pct = (
+        seed_direct_lift_successes * 100.0 / seed_direct_lift_attempts
+        if seed_direct_lift_attempts
+        else 0.0
+    )
+    seed_direct_lift_dominant_miss = seed_direct_lift_dominant_miss_reason(
+        seed_direct_lift_empty_segments,
+        seed_direct_lift_pending_dma_single_reports,
+        seed_direct_lift_amo_boundaries,
+        seed_direct_lift_store_conditional_boundaries,
+        seed_direct_lift_dma_prepare_missing_lookaheads,
+        seed_direct_lift_boundary_c_unavailable,
+    )
+    seed_direct_lift_action = seed_direct_lift_action_hint(
+        seed_direct_lift_attempts,
+        seed_direct_lift_successes,
+        seed_direct_lift_dominant_miss,
+    )
     seed_full_advances = values.get(SEED_FULL_ADVANCES_KEY, 0)
     finish_opening_ms = values.get(FINISH_OPENING_MS_KEY, 0)
     opening_queries = values.get(OPENING_QUERY_COUNT_KEY, 0)
@@ -3892,7 +3944,9 @@ def summarize_profile_values(
         f"{sparse_high32_high_words},{sparse_high32_shape_hint},"
         f"{descriptor_hint},"
         f"{seed_direct_lift_attempts},"
-        f"{seed_direct_lift_successes},{seed_direct_lift_empty_segments},"
+        f"{seed_direct_lift_successes},{seed_direct_lift_success_pct:.3f},"
+        f"{seed_direct_lift_dominant_miss},{seed_direct_lift_action},"
+        f"{seed_direct_lift_empty_segments},"
         f"{seed_direct_lift_pending_dma_single_reports},"
         f"{seed_direct_lift_amo_boundaries},"
         f"{seed_direct_lift_store_conditional_boundaries},"

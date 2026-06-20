@@ -1218,6 +1218,15 @@ fn prove_timing_root_summary_reports_seed_direct_lift_miss_reasons() {
     };
 
     assert_eq!(value("seed_direct_lift_empty_segments"), "1");
+    assert_eq!(value("seed_direct_lift_success_pct"), "25.000");
+    assert_eq!(
+        value("seed_direct_lift_dominant_miss_reason"),
+        "boundary_c_unavailable"
+    );
+    assert_eq!(
+        value("seed_direct_lift_action_hint"),
+        "profile_boundary_c_unavailable"
+    );
     assert_eq!(value("seed_direct_lift_pending_dma_single_reports"), "2");
     assert_eq!(value("seed_direct_lift_amo_boundaries"), "3");
     assert_eq!(value("seed_direct_lift_store_conditional_boundaries"), "4");
