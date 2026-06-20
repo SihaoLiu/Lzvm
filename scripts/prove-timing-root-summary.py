@@ -4217,6 +4217,36 @@ def sibling_copy_summary_paths(input_path: Path) -> list[Path]:
     return paths
 
 
+def sibling_ncu_summary_paths(input_path: Path) -> list[Path]:
+    stem = input_path.stem
+    name = input_path.name
+    candidates = [
+        input_path.with_suffix(".ncu-summary.txt"),
+        input_path.with_suffix(".ncu.txt"),
+        input_path.with_name(f"{input_path.name}.ncu-summary.txt"),
+        input_path.with_name(f"{input_path.name}.ncu.txt"),
+        input_path.with_name(f"{stem}-ncu-summary.txt"),
+        input_path.with_name(f"{stem}-ncu.txt"),
+        input_path.with_name(f"{name}-ncu-summary.txt"),
+        input_path.with_name(f"{name}-ncu.txt"),
+    ]
+    for pattern in [
+        f"{stem}.ncu-*-summary.txt",
+        f"{stem}-ncu-*-summary.txt",
+        f"{name}.ncu-*-summary.txt",
+        f"{name}-ncu-*-summary.txt",
+    ]:
+        candidates.extend(sorted(input_path.parent.glob(pattern)))
+    paths = []
+    seen = set()
+    for candidate in candidates:
+        if candidate == input_path or candidate in seen:
+            continue
+        seen.add(candidate)
+        paths.append(candidate)
+    return paths
+
+
 def read_report_texts(paths: list[str]) -> list[str]:
     return [Path(path).read_text(encoding="utf-8") for path in paths]
 
@@ -4235,6 +4265,7 @@ def read_input(path: str | None, extra_reports: list[str] | None = None) -> tupl
             sibling_perf_report_paths(input_path)
             + sibling_cpu_summary_paths(input_path)
             + sibling_copy_summary_paths(input_path)
+            + sibling_ncu_summary_paths(input_path)
         )
         if report_path.is_file()
     ]
