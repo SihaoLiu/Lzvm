@@ -1188,6 +1188,7 @@ fn live_pending_segment_messages_reassemble_to_serial_lower_output() {
         layout.row_count(),
         expected.seed.clone(),
         None,
+        None,
         1,
         |message| {
             messages.push(message);
@@ -1296,6 +1297,110 @@ fn live_pending_segment_messages_reassemble_to_serial_lower_output() {
         live_lowered.segment.unit_values,
         serial_lowered.segment.unit_values
     );
+}
+
+#[test]
+fn live_pending_segment_boundary_snapshot_lifts_next_seed_without_retained_reports() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-live-boundary-seed");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let mut serial_pending = Vec::new();
+    produce_guest_pc_trace_pending_slices(32, context, &[], layout.row_count(), |segment| {
+        serial_pending.push(segment);
+        Ok(())
+    })
+    .expect("serial pending slices should produce");
+    let expected = serial_pending
+        .into_iter()
+        .next()
+        .expect("fixture should produce a first segment");
+    assert!(!expected.is_last_segment);
+    let current_seed = expected
+        .seed
+        .as_deref()
+        .expect("seed mirror should attach a segment seed")
+        .clone();
+    let serial_lowered =
+        lower_guest_pc_trace_seeded_pending_segment(&layout, &expected, &current_seed, None, None)
+            .expect("serial pending segment should lower");
+
+    let (mut live_memory, mut live_state, mut live_fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("live guest trace machine should load");
+    let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let mut messages = Vec::new();
+    let emitted = emit_guest_pc_trace_live_pending_segment_messages(
+        &mut live_memory,
+        &mut live_state,
+        &mut live_fcall_handler,
+        expected.trace_instance_index,
+        expected.runner_remaining_instruction_limit,
+        layout.row_count(),
+        expected.seed.clone(),
+        None,
+        Some(&mut boundary_snapshot),
+        1,
+        |message| {
+            messages.push(message);
+            Ok(())
+        },
+    )
+    .expect("live pending segment messages should emit with a boundary snapshot");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        messages.first(),
+        Some(GuestPcTracePendingSegmentMessage::ReportChunk(_))
+    ));
+    assert_eq!(emitted.report_count, expected.report_count);
+    assert_eq!(emitted.last_report.as_ref(), expected.reports.last());
+    assert_eq!(
+        emitted.lookahead_instruction,
+        expected.lookahead_instruction
+    );
+
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: expected.trace_instance_index,
+        is_last_segment: expected.is_last_segment,
+        previous_c: current_seed.previous_c,
+    };
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        layout.row_count(),
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: emitted.report_count,
+            last_report: emitted.last_report.as_ref(),
+            lookahead_instruction: emitted.lookahead_instruction,
+            runner_state: &live_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("live boundary seed lift should evaluate")
+    .expect("live boundary seed lift should succeed");
+
+    assert_eq!(lifted, serial_lowered.next_seed);
 }
 
 #[test]
@@ -1646,6 +1751,7 @@ fn live_chunks_before_segment_start_lower_with_traceless_output() {
         32,
         layout.row_count(),
         Some(Box::new(seed.clone())),
+        None,
         None,
         1,
         |message| {

@@ -4155,6 +4155,10 @@ struct GuestPcTraceLivePendingSegmentEmission {
     trace_row_count: usize,
     report_count: usize,
     report_chunk_count: usize,
+    #[allow(dead_code)]
+    last_report: Option<GuestMachineReport>,
+    #[allow(dead_code)]
+    lookahead_instruction: Option<RiscvInstruction>,
     terminal_pc: u64,
     is_last_segment: bool,
     needs_terminal_segment: bool,
@@ -4170,6 +4174,7 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
     row_count: usize,
     seed: Option<Box<ZiskMainSegmentSeed>>,
     replay_snapshot: Option<GuestPcTraceSegmentReplaySnapshot>,
+    boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
     report_chunk_capacity: usize,
     mut emit_message: impl FnMut(
         GuestPcTracePendingSegmentMessage,
@@ -4184,7 +4189,7 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
         handler,
         runner_remaining_instruction_limit,
         row_count,
-        None,
+        boundary_snapshot,
         |report| {
             chunk_reports.push(report);
             if chunk_reports.len() == report_chunk_capacity {
@@ -4262,6 +4267,8 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
         trace_row_count: slice.trace_rows,
         report_count: slice.report_count,
         report_chunk_count,
+        last_report: slice.last_report,
+        lookahead_instruction,
         terminal_pc,
         is_last_segment,
         needs_terminal_segment,
@@ -4320,6 +4327,7 @@ fn produce_guest_pc_trace_live_pending_messages(
             trace_instance_index,
             remaining_limit,
             row_count,
+            None,
             None,
             None,
             report_chunk_capacity,
