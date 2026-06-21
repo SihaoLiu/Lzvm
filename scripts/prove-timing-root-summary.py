@@ -613,6 +613,7 @@ NCU_TOP_KERNEL_SM_THROUGHPUT_PCT_KEY = "ncu_top_kernel_sm_throughput_pct"
 NCU_TOP_KERNEL_DRAM_THROUGHPUT_PCT_KEY = "ncu_top_kernel_dram_throughput_pct"
 NCU_TOP_KERNEL_REGISTERS_PER_THREAD_KEY = "ncu_top_kernel_registers_per_thread"
 NCU_TOP_KERNEL_LIMITING_FACTORS_KEY = "ncu_top_kernel_limiting_factors"
+NCU_DESCRIPTOR_EXPANSION_HINT_KEY = "ncu_descriptor_expansion_hint"
 PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
 PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
 PERF_MEMMOVE_GUEST_MACHINE_PCT_KEY = "perf_memmove_guest_machine_pct"
@@ -882,6 +883,7 @@ HEADER = (
     "ncu_metric_collection_hint,ncu_top_kernel,ncu_top_kernel_duration_ms,"
     "ncu_top_kernel_sm_throughput_pct,ncu_top_kernel_dram_throughput_pct,"
     "ncu_top_kernel_registers_per_thread,ncu_top_kernel_limiting_factors,"
+    "ncu_descriptor_expansion_hint,"
     "segment_commit_cuda_memory_total_bytes,"
     "segment_commit_cuda_memory_initial_free_bytes,"
     "segment_commit_cuda_memory_effective_free_bytes,"
@@ -1200,6 +1202,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
     ncu_metric_quality_block = None
     ncu_kernel_metric_block = None
     ncu_occupancy_block = None
+    ncu_descriptor_expansion_block = None
     ncu_top_kernel: str | None = None
     ncu_top_duration_ms = -1.0
     ncu_top_kernel_limits: dict[str, str] = {}
@@ -1213,6 +1216,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             ncu_metric_quality_block = None
             ncu_kernel_metric_block = None
             ncu_occupancy_block = None
+            ncu_descriptor_expansion_block = None
             continue
         if stripped == "cuda_api_backtrace_hint":
             nsys_copy_backtrace_block = stripped
@@ -1222,6 +1226,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             ncu_metric_quality_block = None
             ncu_kernel_metric_block = None
             ncu_occupancy_block = None
+            ncu_descriptor_expansion_block = None
             continue
         if stripped == "stream_idle_gap_hotspots":
             nsys_kernel_idle_gap_block = stripped
@@ -1231,6 +1236,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             ncu_metric_quality_block = None
             ncu_kernel_metric_block = None
             ncu_occupancy_block = None
+            ncu_descriptor_expansion_block = None
             continue
         if stripped == "cuda_graph_fusion_separation_triage":
             nsys_kernel_block = stripped
@@ -1240,6 +1246,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             ncu_metric_quality_block = None
             ncu_kernel_metric_block = None
             ncu_occupancy_block = None
+            ncu_descriptor_expansion_block = None
             continue
         if stripped == "metric_collection_quality":
             ncu_metric_quality_block = stripped
@@ -1249,6 +1256,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             nsys_kernel_idle_gap_block = None
             ncu_kernel_metric_block = None
             ncu_occupancy_block = None
+            ncu_descriptor_expansion_block = None
             continue
         if stripped == "kernel_metric_summary":
             ncu_kernel_metric_block = stripped
@@ -1258,6 +1266,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             nsys_kernel_idle_gap_block = None
             ncu_metric_quality_block = None
             ncu_occupancy_block = None
+            ncu_descriptor_expansion_block = None
             continue
         if stripped == "occupancy_limits":
             ncu_occupancy_block = stripped
@@ -1267,6 +1276,17 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             nsys_kernel_idle_gap_block = None
             ncu_metric_quality_block = None
             ncu_kernel_metric_block = None
+            ncu_descriptor_expansion_block = None
+            continue
+        if stripped == "descriptor_expansion_shape_candidates":
+            ncu_descriptor_expansion_block = stripped
+            nsys_copy_block = None
+            nsys_copy_backtrace_block = None
+            nsys_kernel_block = None
+            nsys_kernel_idle_gap_block = None
+            ncu_metric_quality_block = None
+            ncu_kernel_metric_block = None
+            ncu_occupancy_block = None
             continue
         if nsys_copy_block is not None:
             if not stripped:
@@ -1419,6 +1439,20 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
                 continue
             if len(row) >= 9:
                 ncu_top_kernel_limits[row[0].strip()] = compact_csv_token(row[8].strip())
+            continue
+        if ncu_descriptor_expansion_block is not None:
+            if not stripped:
+                ncu_descriptor_expansion_block = None
+                continue
+            if stripped.startswith("kernel,"):
+                continue
+            try:
+                row = next(csv.reader([line]))
+            except csv.Error:
+                ncu_descriptor_expansion_block = None
+                continue
+            if len(row) >= 8 and row[0].strip() != "none":
+                values[NCU_DESCRIPTOR_EXPANSION_HINT_KEY] = compact_csv_token(row[7].strip())
             continue
         if "=" not in line:
             continue
@@ -4620,6 +4654,9 @@ def summarize_profile_values(
     ncu_top_kernel_limiting_factors = str(
         values.get(NCU_TOP_KERNEL_LIMITING_FACTORS_KEY, "unknown")
     )
+    ncu_descriptor_expansion_hint = str(
+        values.get(NCU_DESCRIPTOR_EXPANSION_HINT_KEY, "none")
+    )
     source_retention_total_exceeds_device_memory = (
         source_retention_exceeds_device_memory_hint(
             source_retention_rejected_bytes,
@@ -4934,6 +4971,7 @@ def summarize_profile_values(
         f"{ncu_top_kernel_duration_ms},{ncu_top_kernel_sm_throughput_pct},"
         f"{ncu_top_kernel_dram_throughput_pct},"
         f"{ncu_top_kernel_registers_per_thread},{ncu_top_kernel_limiting_factors},"
+        f"{ncu_descriptor_expansion_hint},"
         f"{segment_commit_cuda_memory_total_bytes},"
         f"{segment_commit_cuda_memory_initial_free_bytes},"
         f"{segment_commit_cuda_memory_effective_free_bytes},"
