@@ -2361,6 +2361,18 @@ def performance_focus_hint(
     ):
         return "seed_ready_parallel_segment_reexecution_candidate"
     if (
+        trace_pipeline_hint
+        in {
+            "trace_generation_and_commit_pipeline_candidate",
+            "parallel_segment_reexecution_candidate",
+            "parallel_segment_reexecution_authorization_required",
+            "parallel_trace_lowering_candidate",
+            "trace_generation_parallelism_candidate",
+        }
+        and seed_direct_lift_action_hint == "profile_runner_seed_snapshot"
+    ):
+        return "profile_runner_seed_snapshot_before_parallel_reexecution"
+    if (
         trace_pipeline_hint in trace_pipeline_hints
         and retained_parent_checkpoint_action_hint
         == "retained_parent_checkpoint_path_time_secondary"
@@ -3149,8 +3161,21 @@ def seed_direct_lift_dominant_miss_reason(
     return reason
 
 
-def seed_direct_lift_action_hint(attempts: int, successes: int, dominant_reason: str) -> str:
+def seed_direct_lift_action_hint(
+    attempts: int,
+    successes: int,
+    dominant_reason: str,
+    trace_pipeline_hint: str = "none",
+) -> str:
     if attempts <= 0:
+        if trace_pipeline_hint in {
+            "trace_generation_and_commit_pipeline_candidate",
+            "parallel_segment_reexecution_candidate",
+            "parallel_segment_reexecution_authorization_required",
+            "parallel_trace_lowering_candidate",
+            "trace_generation_parallelism_candidate",
+        }:
+            return "profile_runner_seed_snapshot"
         return "none"
     if successes >= attempts:
         return "seed_direct_lift_ready"
@@ -3944,10 +3969,12 @@ def summarize_profile_values(
         seed_direct_lift_dma_prepare_missing_lookaheads,
         seed_direct_lift_boundary_c_unavailable,
     )
+    trace_pipeline_hint = trace_pipeline_action_hint_from_values(values)
     seed_direct_lift_action = seed_direct_lift_action_hint(
         seed_direct_lift_attempts,
         seed_direct_lift_successes,
         seed_direct_lift_dominant_miss,
+        trace_pipeline_hint,
     )
     seed_full_advances = values.get(SEED_FULL_ADVANCES_KEY, 0)
     finish_opening_ms = values.get(FINISH_OPENING_MS_KEY, 0)
@@ -4245,7 +4272,6 @@ def summarize_profile_values(
         leaf_kernel_ms,
         direct_d2h_wait_ms,
     )
-    trace_pipeline_hint = trace_pipeline_action_hint_from_values(values)
     performance_focus = performance_focus_hint(
         trace_pipeline_hint,
         retained_parent_checkpoint_action_hint,
