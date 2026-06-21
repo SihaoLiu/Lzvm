@@ -1278,7 +1278,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
                 if duration_ms > ncu_top_duration_ms:
                     ncu_top_duration_ms = duration_ms
                     ncu_top_kernel = kernel
-                    values[NCU_TOP_KERNEL_KEY] = kernel
+                    values[NCU_TOP_KERNEL_KEY] = compact_csv_token(kernel)
                     values[NCU_TOP_KERNEL_DURATION_MS_KEY] = row[2].strip()
                     values[NCU_TOP_KERNEL_SM_THROUGHPUT_PCT_KEY] = row[4].strip()
                     values[NCU_TOP_KERNEL_DRAM_THROUGHPUT_PCT_KEY] = row[5].strip()

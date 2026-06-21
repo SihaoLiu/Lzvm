@@ -1088,12 +1088,12 @@ fn prove_timing_root_summary_reads_explicit_ncu_kernel_summary() {
             "",
             "kernel_metric_summary",
             "kernel,profiles,duration_ms,avg_duration_us,sm_throughput_pct,dram_throughput_pct,compute_memory_pct,issue_active_pct,active_warps_pct,registers_per_thread,shared_mem_kb_per_block",
-            "ntt_stage_kernel,2,0.100,50.000,63.000,59.000,59.000,55.000,90.000,38.000,1.104",
+            "\"poseidon2_merkle_digest_parent_kernel<16, 4>\",2,0.100,50.000,63.000,59.000,59.000,55.000,90.000,38.000,1.104",
             "poseidon2_width16_merkle_parent_kernel,1,0.020,20.000,35.000,15.000,18.000,20.000,42.000,64.000,2.000",
             "",
             "occupancy_limits",
             "kernel,profiles,register_limit_blocks,shared_mem_limit_blocks,warp_limit_blocks,block_limit_blocks,registers_per_thread,shared_mem_kb_per_block,limiting_factors",
-            "ntt_stage_kernel,2,6.000,14.000,6.000,24.000,38.000,1.104,register_limited|warp_limited",
+            "\"poseidon2_merkle_digest_parent_kernel<16, 4>\",2,6.000,14.000,6.000,24.000,38.000,1.104,register_limited|warp_limited",
         ]
         .join("\n"),
     )
@@ -1139,7 +1139,10 @@ fn prove_timing_root_summary_reads_explicit_ncu_kernel_summary() {
         value("ncu_metric_collection_hint"),
         "duration_and_throughput_metrics"
     );
-    assert_eq!(value("ncu_top_kernel"), "ntt_stage_kernel");
+    assert_eq!(
+        value("ncu_top_kernel"),
+        "poseidon2_merkle_digest_parent_kernel<16|_4>"
+    );
     assert_eq!(value("ncu_top_kernel_duration_ms"), "0.100");
     assert_eq!(
         value("ncu_top_kernel_limiting_factors"),
