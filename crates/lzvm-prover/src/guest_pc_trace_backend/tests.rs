@@ -2481,6 +2481,55 @@ fn parallel_lower_job_dispatch_records_full_queue_backpressure() {
     );
 }
 
+#[cfg(feature = "cuda")]
+#[test]
+fn fixed_worker_stream_chunk_dispatch_records_full_queue_backpressure() {
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    sender
+        .send(GuestPcTraceParallelLowerJob::StreamChunk(Box::new(
+            GuestPcTracePendingReportChunk {
+                trace_instance_index: 0,
+                reports: Vec::new(),
+            },
+        )))
+        .expect("worker queue should accept setup job");
+    let mut timing = GuestPcTraceStreamTiming::default();
+    let drain = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let _previous = receiver
+            .recv()
+            .expect("drain thread should receive setup job");
+        let dispatched = receiver
+            .recv()
+            .expect("drain thread should receive dispatched job");
+        match dispatched {
+            GuestPcTraceParallelLowerJob::StreamChunk(chunk) => chunk.trace_instance_index,
+            _ => panic!("drain thread should receive a stream chunk job"),
+        }
+    });
+
+    let result = send_guest_pc_trace_parallel_lower_job_to_worker(
+        &[sender],
+        0,
+        GuestPcTraceParallelLowerJob::StreamChunk(Box::new(GuestPcTracePendingReportChunk {
+            trace_instance_index: 1,
+            reports: Vec::new(),
+        })),
+        Some(&mut timing),
+    );
+    assert!(
+        result.is_ok(),
+        "fixed worker dispatcher should block until a full worker queue drains"
+    );
+
+    assert_eq!(drain.join().expect("drain thread should finish"), 1);
+    assert_eq!(timing.parallel_lower_dispatch_blocked_count(), 1);
+    assert!(
+        timing.parallel_lower_stream_chunk_dispatch_wait_duration() > std::time::Duration::ZERO,
+        "full fixed worker stream chunk dispatch should record nonzero wait"
+    );
+}
+
 #[test]
 fn trusted_runner_seed_snapshot_forces_reference_seed_when_validation_enabled() {
     assert!(guest_pc_trace_needs_full_seed_advance(

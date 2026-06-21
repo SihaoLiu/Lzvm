@@ -6058,16 +6058,25 @@ fn send_guest_pc_trace_parallel_lower_job_to_worker(
         return Err(job);
     };
     let stream_kind = job.stream_dispatch_kind();
-    let send_started = Instant::now();
-    let result = sender.send(job).map_err(|error| error.0);
-    if let Some(timing) = timing {
-        record_guest_pc_trace_parallel_lower_dispatch_wait(
-            timing,
-            stream_kind,
-            send_started.elapsed(),
-        );
+    match sender.try_send(job) {
+        Ok(()) => Ok(()),
+        Err(mpsc::TrySendError::Full(job)) => {
+            let send_started = Instant::now();
+            let result = sender.send(job).map_err(|error| error.0);
+            if let Some(timing) = timing {
+                record_guest_pc_trace_parallel_lower_dispatch_wait(
+                    timing,
+                    stream_kind,
+                    send_started.elapsed(),
+                );
+                timing.parallel_lower_dispatch_blocked_count = timing
+                    .parallel_lower_dispatch_blocked_count
+                    .saturating_add(1);
+            }
+            result
+        }
+        Err(mpsc::TrySendError::Disconnected(job)) => Err(job),
     }
-    result
 }
 
 fn lower_guest_pc_trace_pending_segments_parallel(
