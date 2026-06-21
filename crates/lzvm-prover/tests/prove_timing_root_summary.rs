@@ -486,6 +486,100 @@ fn prove_timing_root_summary_reads_sibling_nsys_copy_residency_hint() {
 }
 
 #[test]
+fn prove_timing_root_summary_promotes_copy_residency_hint_when_descriptor_retention_is_active() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("crate should live under workspace root");
+    let script_path = workspace_root.join("scripts/prove-timing-root-summary.py");
+    let dir = workspace_root.join("temp").join(format!(
+        "prove-timing-root-summary-copy-residency-promote-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("sample.log");
+    let copy_summary_path = dir.join("sample.copy-summary.txt");
+    std::fs::write(
+        &log_path,
+        [
+            "input_bytes=2758032",
+            "timing_total_ms=8050",
+            "timing_guest_stage_tree_commit_root_count=23",
+            "timing_guest_stage_tree_commit_root_materialization_groups=23",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+            "timing_guest_device_source_descriptor_upload_bytes=8264703744",
+            "timing_guest_descriptor_buffer_retention_attempts=23",
+            "timing_guest_descriptor_buffer_retention_retained=23",
+            "timing_guest_descriptor_buffer_retention_rejected=0",
+            "timing_cuda_allocator_copy_h2d_bytes=8399047121",
+            "timing_cuda_allocator_copy_h2d_wait_ns=765604919",
+        ]
+        .join("\n"),
+    )
+    .expect("timing fixture should be written");
+    std::fs::write(
+        &copy_summary_path,
+        [
+            "cuda_transfer_triage",
+            "metric,value,detail",
+            "gpu_residency_hint,prefer_reused_device_residency_for_h2d_inputs,prioritize changes that remove host round trips without changing verifier outputs",
+            "h2d_bulk_app_frame_hint,none,no CUDA memcpy callchain frame was available",
+        ]
+        .join("\n"),
+    )
+    .expect("copy summary fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines
+        .next()
+        .expect("summary should include a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should include a data row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        value("cuda_transfer_action_hint"),
+        "initial_descriptor_upload_retention_active"
+    );
+    assert_eq!(
+        value("copy_summary_gpu_residency_hint"),
+        "prefer_reused_device_residency_for_h2d_inputs"
+    );
+    assert_eq!(
+        value("data_residency_action_hint"),
+        "prefer_reused_device_residency_for_h2d_inputs"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reads_sibling_nsys_copy_small_d2h_hints() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root

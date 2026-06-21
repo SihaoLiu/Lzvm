@@ -2423,6 +2423,7 @@ def data_residency_action_hint(
     source_retention_rejected_bytes: int,
     segment_commit_cuda_memory_total_bytes: int,
     trace_descriptor_residency_pipeline: bool,
+    copy_summary_gpu_residency_hint: str,
 ) -> str:
     if (
         source_rebuild_hint
@@ -2452,6 +2453,8 @@ def data_residency_action_hint(
         return "increase_source_residency_coverage"
     if trace_descriptor_residency_pipeline:
         return "trace_descriptor_residency_pipeline"
+    if copy_summary_gpu_residency_hint not in {"", "none"}:
+        return copy_summary_gpu_residency_hint
     return "none"
 
 
@@ -4187,15 +4190,16 @@ def summarize_profile_values(
         trace_pipeline_hint,
     )
     cuda_transfer_hint = cuda_transfer_action_hint_from_values(values)
+    copy_summary_gpu_residency_hint = str(
+        values.get(NSYS_COPY_GPU_RESIDENCY_HINT_KEY, "none")
+    )
     data_residency_hint = data_residency_action_hint(
         source_rebuild_hint,
         cuda_transfer_hint,
         source_retention_rejected_bytes,
         segment_commit_cuda_memory_total_bytes,
         values.get(NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY, 0) > 0,
-    )
-    copy_summary_gpu_residency_hint = str(
-        values.get(NSYS_COPY_GPU_RESIDENCY_HINT_KEY, "none")
+        copy_summary_gpu_residency_hint,
     )
     copy_summary_h2d_bulk_app_frame_hint = str(
         values.get(NSYS_COPY_H2D_BULK_APP_FRAME_HINT_KEY, "none")
