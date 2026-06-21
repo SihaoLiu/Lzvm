@@ -2266,6 +2266,7 @@ def cpu_trace_lowerer_action_hint(
         ),
         "profile_row_validation_residual": "row_validation_residual_profile_candidate",
         "profile_row_validation": "row_validation_profile_candidate",
+        "detail_timing_bookkeeping_overhead": "detail_timing_bookkeeping_overhead",
         "profile_source_values_residual": "source_values_residual_profile_candidate",
         "profile_source_values": "source_values_profile_candidate",
         "profile_descriptor_write": "descriptor_append_candidate",
@@ -2959,6 +2960,8 @@ def trace_report_detail_action_hint(
             if trace_shape_hint == "shape_timing_missing_for_detail_profile":
                 return "enable_shape_timing_for_row_validation_residual"
             return "split_row_validation_residual_timers"
+        if row_validation_hotspot_name == "timer_bookkeeping":
+            return "detail_timing_bookkeeping_overhead"
         if (
             row_validation_hotspot_name == "source_value_record"
             and row_validation_residual_pct >= 25.0

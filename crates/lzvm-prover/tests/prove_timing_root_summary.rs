@@ -6046,6 +6046,98 @@ fn prove_timing_root_summary_ignores_source_value_record_bookkeeping_as_runtime_
 }
 
 #[test]
+fn prove_timing_root_summary_classifies_row_validation_timer_bookkeeping_as_diagnostic_overhead() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=9000",
+        "timing_guest_trace_lowerer_ms=8000",
+        "timing_guest_trace_lower_ms=7000",
+        "timing_guest_trace_report_rows=1000",
+        "timing_guest_trace_report_detail_samples=10",
+        "timing_guest_trace_report_sampled_ns=140000",
+        "timing_guest_trace_report_row_validation_sampled_ns=100000",
+        "timing_guest_trace_report_row_validation_timer_bookkeeping_sampled_ns=45000",
+        "timing_guest_trace_report_source_values_sampled_ns=18000",
+        "timing_guest_trace_report_source_a_value_sampled_ns=9000",
+        "timing_guest_trace_report_source_b_value_sampled_ns=8000",
+        "timing_guest_trace_report_source_value_record_sampled_ns=1000",
+        "timing_guest_trace_report_instruction_result_sampled_ns=8000",
+        "timing_guest_trace_report_next_pc_sampled_ns=6000",
+        "timing_guest_trace_report_register_access_sampled_ns=7000",
+        "timing_guest_trace_report_memory_access_sampled_ns=6000",
+        "timing_guest_trace_report_store_apply_sampled_ns=5000",
+        "timing_guest_trace_report_precompile_memory_sampled_ns=4000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        value("trace_report_row_validation_hotspot"),
+        "timer_bookkeeping"
+    );
+    assert_eq!(
+        value("trace_report_detail_action_hint"),
+        "detail_timing_bookkeeping_overhead"
+    );
+    assert_eq!(
+        value("cpu_trace_lowerer_action_hint"),
+        "detail_timing_bookkeeping_overhead"
+    );
+    assert_ne!(
+        value("performance_focus_hint"),
+        "row_validation_profile_candidate"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_requires_shape_before_row_validation_residual_probe() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
