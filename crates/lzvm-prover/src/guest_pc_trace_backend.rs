@@ -8655,6 +8655,7 @@ fn validate_zisk_main_memory_columns(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline(always)]
 fn zisk_main_source_value(
     row: usize,
     source: ZiskMainSource,
@@ -8712,6 +8713,7 @@ fn zisk_main_source_value(
     }
 }
 
+#[inline(always)]
 fn zisk_main_memory_source_value(
     row: usize,
     address: u64,
@@ -8781,6 +8783,7 @@ fn zisk_main_fcall_result_value(
     Ok(write.value)
 }
 
+#[inline(always)]
 fn ordered_memory_access_value(
     row: usize,
     effects: ZiskMainReportEffects<'_>,
@@ -8959,6 +8962,7 @@ fn validate_expected_memory_access(
     )
 }
 
+#[inline(always)]
 fn validate_memory_access_fields(
     row: usize,
     found: &GuestMemoryAccess,

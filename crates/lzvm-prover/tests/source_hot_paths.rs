@@ -7932,6 +7932,30 @@ fn guest_pc_source_value_lookup_avoids_request_wrapper() {
 }
 
 #[test]
+fn guest_pc_source_value_lookup_marks_hot_helpers_inline() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    for helper in [
+        concat!("#[inline(always)]\nfn ", "zi", "sk", "_main_source_value"),
+        concat!(
+            "#[inline(always)]\nfn ",
+            "zi",
+            "sk",
+            "_main_memory_source_value"
+        ),
+        "#[inline(always)]\nfn ordered_memory_access_value",
+        "#[inline(always)]\nfn validate_memory_access_fields",
+    ] {
+        assert!(
+            source.contains(helper),
+            "source-value lookup should mark hot helper {helper:?} for release inlining"
+        );
+    }
+}
+
+#[test]
 fn zisk_main_precompile_memory_access_validation_avoids_temporary_vectors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
@@ -8312,7 +8336,9 @@ fn guest_pc_trace_paused_slice_carries_boundary_lookahead() {
     );
     assert!(
         compute_body.contains("GuestMachineTraceSliceStatus::Paused { pc, instruction }")
-            && compute_body.contains("(false, pc, Some(instruction))"),
+            && compute_body.contains("(false, *pc, Some(*instruction))")
+            && compute_body.contains("lookahead_instruction")
+            && compute_body.contains("build_layout_zisk_main_trace_segment_for_segment_output"),
         "direct trace construction should reuse the paused boundary instruction as lookahead"
     );
     let produce_body = function_body(
@@ -8322,7 +8348,10 @@ fn guest_pc_trace_paused_slice_carries_boundary_lookahead() {
     );
     assert!(
         produce_body.contains("GuestMachineTraceSliceStatus::Paused { pc, instruction }")
-            && produce_body.contains("(false, pc, Some(instruction))"),
+            && produce_body.contains("(false, *pc, Some(*instruction))")
+            && produce_body.contains("lookahead_instruction")
+            && produce_body.contains("advance_zisk_main_segment_seed")
+            && produce_body.contains("lookahead_instruction,"),
         "streamed trace construction should reuse the paused boundary instruction as lookahead"
     );
     assert!(
@@ -8338,9 +8367,27 @@ fn guest_pc_trace_segments_report_buffer_capacity_shape() {
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
     let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
 
+    let finish_body = function_body(
+        &source,
+        "fn finish_guest_pc_trace_segment_slice",
+        "fn run_guest_pc_trace_segment_slice_inner",
+    );
     assert!(
-        source.contains("report_capacity: reports.capacity()"),
-        "guest PC trace slices should capture final report buffer capacity"
+        finish_body.contains("report_capacity: if retain_reports")
+            && finish_body.contains("reports.capacity()")
+            && finish_body.contains("} else {\n            0\n        }"),
+        "guest PC trace slices should capture retained final report buffer capacity"
+    );
+    let produce_body = function_body(
+        &source,
+        "fn produce_guest_pc_trace_pending_slices",
+        "fn lower_guest_pc_trace_pending_segments",
+    );
+    assert!(
+        produce_body.contains("let report_capacity = slice.report_capacity;")
+            && produce_body.contains("report_capacity,")
+            && produce_body.contains("reports_elided"),
+        "guest PC trace pending slices should carry the runner report buffer capacity shape"
     );
     assert!(
         source.contains("trace_report_buffer_capacity")
