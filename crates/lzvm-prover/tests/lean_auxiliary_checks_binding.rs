@@ -265,6 +265,22 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
+        "ignored_metadata_acceptance_sound",
+        &[
+            "abstract_verifier_sound",
+            "ignored_metadata_observed_acceptance_projects_verifier_acceptance",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &auxiliary_source,
+        "ignored_metadata_acceptance_sound",
+        &[
+            "sound_witness_implies_verifier_core_contract",
+            "ignored_metadata_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &auxiliary_source,
         "ignored_metadata_acceptance_verifier_core_contract",
         &[
             "ignored_metadata_observed_acceptance_projects_verifier_acceptance",
