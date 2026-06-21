@@ -3979,6 +3979,102 @@ fn prove_timing_root_summary_reports_trace_report_lifetime_pressure() {
 }
 
 #[test]
+fn prove_timing_root_summary_prioritizes_report_storage_when_seed_is_ready() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=48121",
+        "timing_guest_trace_runner_ms=39146",
+        "timing_guest_trace_lowerer_ms=39146",
+        "timing_guest_trace_lower_ms=30784",
+        "timing_guest_trace_stream_elapsed_ms=39272",
+        "timing_guest_trace_stream_ms=19164",
+        "timing_guest_segment_commit_ms=20107",
+        "timing_guest_trace_segment_receive_wait_ms=19162",
+        "timing_guest_trace_pending_receive_wait_ms=39145",
+        "timing_guest_trace_parallel_lower_workers=2",
+        "timing_guest_trace_parallel_lower_dispatched=120",
+        "timing_guest_trace_parallel_lower_received=120",
+        "timing_guest_trace_parallel_lower_emitted=120",
+        "timing_guest_trace_parallel_lower_result_receive_wait_ms=39144",
+        "timing_guest_trace_seed_direct_lift_attempts=119",
+        "timing_guest_trace_seed_direct_lift_successes=119",
+        "timing_guest_trace_seed_full_advances=1",
+        "timing_guest_trace_reports=93843537",
+        "timing_guest_trace_report_rows=93917088",
+        "timing_guest_trace_report_buffer_capacity=94371840",
+        "timing_guest_trace_report_buffer_max_capacity=4194304",
+        "timing_guest_trace_report_buffer_excess_capacity=528303",
+        "timing_guest_trace_report_record_size_bytes=128",
+        "timing_guest_trace_report_storage_bytes=12011972736",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "    16.21%  lzvm-gp-lower    lzvm                  [.] lzvm_prover::guest_pc_trace_backend::apply_zisk_main_lowered_report_row",
+        "     7.41%  [.] core::ptr::drop_in_place<lzvm_prover::guest_pc_trace_backend::GuestPcTracePendingSegmentSlice>",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        value("seed_direct_lift_action_hint"),
+        "seed_direct_lift_ready"
+    );
+    assert_eq!(
+        value("cpu_trace_report_storage_action_hint"),
+        "fused_runner_lowerer_report_storage_candidate"
+    );
+    assert_eq!(
+        value("performance_focus_hint"),
+        "fused_runner_lowerer_report_storage_candidate"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_distinguishes_elided_report_buffer_from_missing_data() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

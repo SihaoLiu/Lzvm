@@ -2336,6 +2336,7 @@ def performance_focus_hint(
     retained_parent_checkpoint_action_hint: str,
     seed_direct_lift_action_hint: str,
     seed_full_advances: int,
+    cpu_report_storage_hint: str,
 ) -> str:
     trace_pipeline_hints = {
         "trace_generation_and_commit_pipeline_candidate",
@@ -2353,6 +2354,14 @@ def performance_focus_hint(
         "avoid_replay_only_parallel_lower",
     }:
         return trace_pipeline_hint
+    if trace_pipeline_hint in trace_pipeline_hints and cpu_report_storage_hint in {
+        "fused_runner_lowerer_report_storage_candidate",
+        "runner_streaming_report_storage_candidate",
+        "trace_report_storage_structural_candidate",
+        "report_sidecar_storage_candidate",
+        "post_segment_report_chunk_split",
+    }:
+        return cpu_report_storage_hint
     if (
         trace_pipeline_hint
         in {
@@ -4285,11 +4294,15 @@ def summarize_profile_values(
         leaf_kernel_ms,
         direct_d2h_wait_ms,
     )
+    if perf_hotspots is None:
+        perf_hotspots = parse_perf_self_hotspots("")
+    cpu_report_storage_hint = cpu_trace_report_storage_action_hint(values, perf_hotspots)
     performance_focus = performance_focus_hint(
         trace_pipeline_hint,
         retained_parent_checkpoint_action_hint,
         seed_direct_lift_action,
         seed_full_advances,
+        cpu_report_storage_hint,
     )
     opening_source_row_value_hint = opening_source_row_value_action_hint(
         total_ms,
@@ -4385,8 +4398,6 @@ def summarize_profile_values(
             source_retention_rejected > 0,
         )
     )
-    if perf_hotspots is None:
-        perf_hotspots = parse_perf_self_hotspots("")
     pending_drop_pct = perf_hotspots.get(
         PERF_PENDING_SEGMENT_DROP_SELF_PCT_KEY, 0.0
     )
@@ -4413,7 +4424,6 @@ def summarize_profile_values(
     sha256_pct = perf_hotspots.get(PERF_SHA256_SELF_PCT_KEY, 0.0)
     sha256_hint = sha256_source_hint(perf_hotspots)
     cpu_hint = cpu_trace_hotspot_hint(perf_hotspots)
-    cpu_report_storage_hint = cpu_trace_report_storage_action_hint(values, perf_hotspots)
     cpu_report_storage_memcpy_pct = perf_hotspots.get(
         CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY, 0.0
     )
