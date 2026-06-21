@@ -1660,6 +1660,12 @@ def segment_commit_worker_pressure_hint(
 def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
     if (
         values.get(TOTAL_MS_KEY, 0) > PROOF_TARGET_MS
+        and segment_commit_memory_pressure_hint_from_values(values)
+        == "segment_commit_oom_fallback"
+    ):
+        return "avoid_segment_commit_worker_oom_fallback"
+    if (
+        values.get(TOTAL_MS_KEY, 0) > PROOF_TARGET_MS
         and parallel_lower_replay_duplicate_work_from_values(values)
     ):
         return "avoid_replay_only_parallel_lower"
@@ -2336,6 +2342,8 @@ def performance_focus_hint(
         "segment_commit_candidate",
         "trace_queue_backpressure_candidate",
     }
+    if trace_pipeline_hint == "avoid_segment_commit_worker_oom_fallback":
+        return trace_pipeline_hint
     if (
         trace_pipeline_hint
         in {

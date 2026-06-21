@@ -2384,6 +2384,110 @@ fn prove_timing_root_summary_reports_segment_commit_memory_margin() {
 }
 
 #[test]
+fn prove_timing_root_summary_prioritizes_commit_worker_oom_fallback() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "input_bytes=12447640",
+        "timing_total_ms=91023",
+        "timing_guest_trace_runner_ms=40000",
+        "timing_guest_trace_lowerer_ms=40000",
+        "timing_guest_trace_lower_ms=29141",
+        "timing_guest_trace_stream_elapsed_ms=40128",
+        "timing_guest_trace_stream_ms=20000",
+        "timing_guest_segment_commit_ms=20463",
+        "timing_guest_trace_segment_receive_wait_ms=0",
+        "timing_guest_trace_pending_receive_wait_ms=39999",
+        "timing_guest_trace_parallel_lower_workers=2",
+        "timing_guest_trace_parallel_lower_emitted=120",
+        "timing_guest_trace_parallel_lower_result_receive_wait_ms=39997",
+        "timing_guest_segment_commit_initial_workers=2",
+        "timing_guest_segment_commit_effective_workers=1",
+        "timing_guest_segment_commit_oom_retries=1",
+        "timing_guest_segment_commit_oom_retry_ms=41722",
+        "timing_guest_segment_commit_worker_max_in_flight=1",
+        "timing_guest_segment_commit_cuda_memory_total_bytes=33711521792",
+        "timing_guest_segment_commit_cuda_memory_min_free_bytes=33160429568",
+        "timing_guest_trace_seed_direct_lift_attempts=119",
+        "timing_guest_trace_seed_direct_lift_successes=119",
+        "timing_guest_trace_seed_full_advances=1",
+        "timing_finish_witness_opening_query_unit_count=120",
+        "timing_finish_witness_opening_single_query_unit_count=120",
+        "timing_finish_witness_opening_retained_parent_checkpoint_openings=79",
+        "timing_finish_witness_opening_retained_parent_checkpoint_rows=79",
+        "timing_finish_witness_opening_retained_parent_checkpoint_all_single_row_openings=1",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launches=79",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_ms=3",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches=790",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms=11",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("timing input should write");
+    let output = child.wait_with_output().expect("summary should finish");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        value("segment_commit_memory_pressure_hint"),
+        "segment_commit_oom_fallback"
+    );
+    assert_eq!(
+        value("trace_pipeline_action_hint"),
+        "avoid_segment_commit_worker_oom_fallback"
+    );
+    assert_eq!(
+        value("opening_retained_parent_checkpoint_action_hint"),
+        "retained_parent_checkpoint_path_time_secondary"
+    );
+    assert_eq!(
+        value("performance_focus_hint"),
+        "avoid_segment_commit_worker_oom_fallback"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_descriptor_retention_shape() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
