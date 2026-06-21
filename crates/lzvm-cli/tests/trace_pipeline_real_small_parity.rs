@@ -46,8 +46,19 @@ fn real_small_trace_pipeline_preserves_proof_bytes() {
     fs::create_dir_all(&work_dir).expect("work directory should be created");
     fs::create_dir_all(&config.tmp_dir).expect("tmp directory should be created");
 
-    let default = run_prove_witness(&config, &work_dir, "default", false);
-    let pipeline = run_prove_witness(&config, &work_dir, "pipeline", true);
+    let default = run_prove_witness(&config, &work_dir, "default", RealSmallParityMode::Default);
+    let pipeline = run_prove_witness(
+        &config,
+        &work_dir,
+        "pipeline",
+        RealSmallParityMode::SeedPipeline,
+    );
+    let combined = run_prove_witness(
+        &config,
+        &work_dir,
+        "combined",
+        RealSmallParityMode::SeedPipelineCommitWorkers,
+    );
 
     assert_same_proof_artifact_surfaces(
         "proof.bin",
@@ -63,6 +74,21 @@ fn real_small_trace_pipeline_preserves_proof_bytes() {
         "eth-block-public-values.bin",
         &default.output_dir.join("eth-block-public-values.bin"),
         &pipeline.output_dir.join("eth-block-public-values.bin"),
+    );
+    assert_same_proof_artifact_surfaces(
+        "combined proof.bin",
+        &default.output_dir.join("proof.bin"),
+        &combined.output_dir.join("proof.bin"),
+    );
+    assert_same_file(
+        "combined proof.bin",
+        &default.output_dir.join("proof.bin"),
+        &combined.output_dir.join("proof.bin"),
+    );
+    assert_same_file(
+        "combined eth-block-public-values.bin",
+        &default.output_dir.join("eth-block-public-values.bin"),
+        &combined.output_dir.join("eth-block-public-values.bin"),
     );
 
     fs::remove_dir_all(&work_dir).expect("work directory should be removed");
@@ -133,6 +159,13 @@ struct ProveRun {
     output_dir: PathBuf,
 }
 
+#[derive(Clone, Copy)]
+enum RealSmallParityMode {
+    Default,
+    SeedPipeline,
+    SeedPipelineCommitWorkers,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct ProofArtifactSurfaces {
     stage_roots: Vec<(u32, u32, u32, [u64; 4])>,
@@ -187,7 +220,7 @@ fn run_prove_witness(
     config: &RealSmallParityConfig,
     work_dir: &Path,
     label: &str,
-    pipeline_enabled: bool,
+    mode: RealSmallParityMode,
 ) -> ProveRun {
     assert!(
         config.bin.exists(),
@@ -195,7 +228,7 @@ fn run_prove_witness(
         config.bin.display()
     );
     let output_dir = work_dir.join(format!("{label}.proof"));
-    let output = prove_command(config, &output_dir, pipeline_enabled)
+    let output = prove_command(config, &output_dir, mode)
         .output()
         .unwrap_or_else(|error| panic!("{label} prove command should run: {error}"));
     fs::write(work_dir.join(format!("{label}.stdout")), &output.stdout)
@@ -203,10 +236,27 @@ fn run_prove_witness(
     fs::write(work_dir.join(format!("{label}.stderr")), &output.stderr)
         .expect("stderr should be written");
     let output_text = assert_successful_proof(label, &output);
-    if pipeline_enabled {
-        assert_pipeline_timing_shape(&output_text);
-    } else {
-        assert_timing_equals(&output_text, "timing_guest_trace_parallel_lower_workers", 0);
+    match mode {
+        RealSmallParityMode::Default => {
+            assert_timing_equals(&output_text, "timing_guest_trace_parallel_lower_workers", 0);
+            assert_timing_equals(
+                &output_text,
+                "timing_guest_segment_commit_effective_workers",
+                1,
+            );
+        }
+        RealSmallParityMode::SeedPipeline => {
+            assert_pipeline_timing_shape(&output_text);
+            assert_timing_equals(
+                &output_text,
+                "timing_guest_segment_commit_effective_workers",
+                1,
+            );
+        }
+        RealSmallParityMode::SeedPipelineCommitWorkers => {
+            assert_pipeline_timing_shape(&output_text);
+            assert_combined_pipeline_timing_shape(&output_text);
+        }
     }
     ProveRun { output_dir }
 }
@@ -214,7 +264,7 @@ fn run_prove_witness(
 fn prove_command(
     config: &RealSmallParityConfig,
     output_dir: &Path,
-    pipeline_enabled: bool,
+    mode: RealSmallParityMode,
 ) -> Command {
     let mut command = Command::new(&config.bin);
     command
@@ -235,11 +285,20 @@ fn prove_command(
         .env("TMPDIR", &config.tmp_dir);
 
     clear_pipeline_env(&mut command);
-    if pipeline_enabled {
-        command
-            .env(PARALLEL_LOWER_ENV, "1")
-            .env(LOWER_WORKERS_ENV, "2")
-            .env(COMMIT_WORKERS_ENV, "1");
+    match mode {
+        RealSmallParityMode::Default => {}
+        RealSmallParityMode::SeedPipeline => {
+            command
+                .env(PARALLEL_LOWER_ENV, "1")
+                .env(LOWER_WORKERS_ENV, "2")
+                .env(COMMIT_WORKERS_ENV, "1");
+        }
+        RealSmallParityMode::SeedPipelineCommitWorkers => {
+            command
+                .env(PARALLEL_LOWER_ENV, "1")
+                .env(LOWER_WORKERS_ENV, "2")
+                .env(COMMIT_WORKERS_ENV, "2");
+        }
     }
     command
 }
@@ -320,6 +379,23 @@ fn pipeline_timing_shape_requires_seed_ready_non_replay_lowering() {
     assert_pipeline_timing_shape(&output);
 }
 
+#[test]
+fn combined_pipeline_timing_shape_requires_cross_segment_commit_workers() {
+    let output = [
+        "timing_guest_trace_parallel_lower_workers=2",
+        "timing_guest_trace_seed_direct_lift_successes=22",
+        "timing_guest_trace_seed_full_advances=1",
+        "timing_guest_trace_parallel_lower_snapshot_replay_count=0",
+        "timing_guest_trace_parallel_lower_report_elided_count=0",
+        "timing_guest_segment_commit_effective_workers=2",
+        "timing_guest_segment_commit_worker_max_in_flight=2",
+    ]
+    .join("\n");
+
+    assert_pipeline_timing_shape(&output);
+    assert_combined_pipeline_timing_shape(&output);
+}
+
 fn assert_env_removed(command: &Command, name: &str) {
     let state = command
         .get_envs()
@@ -360,6 +436,14 @@ fn assert_timing_positive(output: &str, key: &str) {
     assert!(actual > 0, "{key} should be positive, got {actual}");
 }
 
+fn assert_timing_at_least(output: &str, key: &str, minimum: u64) {
+    let actual = timing_value(output, key);
+    assert!(
+        actual >= minimum,
+        "{key} should be at least {minimum}, got {actual}"
+    );
+}
+
 fn assert_pipeline_timing_shape(output: &str) {
     assert_timing_equals(output, "timing_guest_trace_parallel_lower_workers", 2);
     assert_timing_positive(output, "timing_guest_trace_seed_direct_lift_successes");
@@ -373,6 +457,15 @@ fn assert_pipeline_timing_shape(output: &str) {
         output,
         "timing_guest_trace_parallel_lower_report_elided_count",
         0,
+    );
+}
+
+fn assert_combined_pipeline_timing_shape(output: &str) {
+    assert_timing_equals(output, "timing_guest_segment_commit_effective_workers", 2);
+    assert_timing_at_least(
+        output,
+        "timing_guest_segment_commit_worker_max_in_flight",
+        2,
     );
 }
 
