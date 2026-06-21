@@ -22,6 +22,7 @@ METRIC_WARP_LIMIT = "launch__occupancy_limit_warps"
 METRIC_BLOCK_LIMIT = "launch__occupancy_limit_blocks"
 METRIC_REGISTERS_PER_THREAD = "launch__registers_per_thread"
 METRIC_SHARED_MEM_PER_BLOCK = "launch__shared_mem_per_block"
+KERNEL_SEPARATION_MIN_DURATION_US = 500.0
 
 OPTIONAL_METRIC_COLUMNS = [
     METRIC_SM_THROUGHPUT,
@@ -637,6 +638,8 @@ def minimum_occupancy_limit(metrics: KernelMetrics) -> float | None:
 
 
 def separation_hint(metrics: KernelMetrics) -> str:
+    if metrics.duration_profiles > 0 and metrics.duration_us < KERNEL_SEPARATION_MIN_DURATION_US:
+        return "kernel_time_secondary"
     limiting = metrics.limiting_factors()
     if "register_limited" in limiting:
         return "split_or_reduce_register_pressure"
@@ -822,7 +825,7 @@ def build_self_test_rows() -> list[dict[str, str]]:
     writer.writerow(
         [
             "ntt_stage_kernel",
-            "40.0",
+            "4000.0",
             "62.0",
             "58.0",
             "58.0",
@@ -839,7 +842,7 @@ def build_self_test_rows() -> list[dict[str, str]]:
     writer.writerow(
         [
             "ntt_stage_kernel",
-            "60.0",
+            "6000.0",
             "64.0",
             "60.0",
             "60.0",

@@ -171,7 +171,7 @@ fn ncu_cuda_kernel_summary_allows_missing_auxiliary_occupancy_metrics() {
             "\"launch__registers_per_thread\",",
             "\"launch__shared_mem_per_block\"\n",
             "\"\",\"us\",\"%\",\"%\",\"%\",\"%\",\"block\",\"block\",\"block\",\"register/thread\",\"Kbyte/block\"\n",
-            "\"ntt_stage_block_twiddle_kernel\",\"45.0\",\"60.0\",\"58.0\",\"58.0\",\"53.0\",\"6\",\"14\",\"24\",\"38\",\"1.104\"\n",
+            "\"ntt_stage_block_twiddle_kernel\",\"4500.0\",\"60.0\",\"58.0\",\"58.0\",\"53.0\",\"6\",\"14\",\"24\",\"38\",\"1.104\"\n",
         ),
     )
     .expect("partial NCU sample should write");
@@ -189,7 +189,7 @@ fn ncu_cuda_kernel_summary_allows_missing_auxiliary_occupancy_metrics() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("ntt_stage_block_twiddle_kernel,1,0.045,45.000"),
+        stdout.contains("ntt_stage_block_twiddle_kernel,1,4.500,4500.000"),
         "partial NCU CSV should still summarize duration: {stdout}"
     );
     assert!(
@@ -405,6 +405,54 @@ fn ncu_cuda_kernel_summary_flags_descriptor_expansion_shape_candidates() {
     assert!(
         stdout.contains("expand_main_trace_descriptors_kernel,1,4.735,34.450,3.900,0.386,40.000,redesign_descriptor_fields_before_kernel_split"),
         "low-issue descriptor expansion should be flagged with a representation-level hint: {stdout}"
+    );
+}
+
+#[test]
+fn ncu_cuda_kernel_summary_downgrades_tiny_register_limited_kernels() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/ncu-cuda-kernel-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("workspace temp directory should exist");
+
+    let tiny_csv = temp_file(&temp_dir, "ncu-tiny-register-limited.csv");
+    std::fs::write(
+        &tiny_csv,
+        concat!(
+            "\"Kernel Name\",\"gpu__time_duration.sum\",",
+            "\"sm__throughput.avg.pct_of_peak_sustained_elapsed\",",
+            "\"gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed\",",
+            "\"gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed\",",
+            "\"sm__issue_active.avg.pct_of_peak_sustained_elapsed\",",
+            "\"sm__warps_active.avg.pct_of_peak_sustained_active\",",
+            "\"launch__occupancy_limit_registers\",",
+            "\"launch__occupancy_limit_shared_mem\",",
+            "\"launch__occupancy_limit_warps\",",
+            "\"launch__occupancy_limit_blocks\",",
+            "\"launch__registers_per_thread\",",
+            "\"launch__shared_mem_per_block\"\n",
+            "\"\",\"us\",\"%\",\"%\",\"%\",\"%\",\"%\",\"block\",\"block\",\"block\",\"block\",\"register/thread\",\"Kbyte/block\"\n",
+            "\"ntt_stage_block_twiddle_kernel\",\"34.432\",\"60.967\",\"55.769\",\"55.769\",\"53.829\",\"89.209\",\"6\",\"14\",\"6\",\"24\",\"38\",\"1.104\"\n",
+        ),
+    )
+    .expect("tiny NCU sample should write");
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&tiny_csv)
+        .output()
+        .expect("ncu CUDA kernel summary should run on tiny kernel sample");
+    let _ = std::fs::remove_file(&tiny_csv);
+
+    assert!(
+        output.status.success(),
+        "tiny NCU CSV should parse: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("ntt_stage_block_twiddle_kernel,1,0.034,38.000,6.000,6.000,14.000,60.967,53.829,kernel_time_secondary"),
+        "tiny register-limited kernels should not drive kernel splitting: {stdout}"
     );
 }
 
