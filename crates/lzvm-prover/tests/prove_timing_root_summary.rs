@@ -6569,15 +6569,15 @@ fn prove_timing_root_summary_prefers_lowerer_detail_focus_over_seed_snapshot_pro
 
     assert_eq!(
         value("trace_report_detail_action_hint"),
-        "profile_row_validation_residual"
+        "split_row_validation_residual_timers"
     );
     assert_eq!(
         value("cpu_trace_lowerer_action_hint"),
-        "row_validation_residual_profile_candidate"
+        "row_validation_residual_timer_split_candidate"
     );
     assert_eq!(
         value("performance_focus_hint"),
-        "row_validation_residual_profile_candidate"
+        "row_validation_residual_timer_split_candidate"
     );
 }
 

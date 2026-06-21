@@ -2238,6 +2238,9 @@ def cpu_trace_lowerer_action_hint(
         "enable_shape_timing_for_row_validation_residual": (
             "shape_timing_required_for_row_validation_residual"
         ),
+        "split_row_validation_residual_timers": (
+            "row_validation_residual_timer_split_candidate"
+        ),
         "profile_row_validation_residual": "row_validation_residual_profile_candidate",
         "profile_row_validation": "row_validation_profile_candidate",
         "profile_source_values_residual": "source_values_residual_profile_candidate",
@@ -2604,6 +2607,7 @@ def performance_focus_hint(
         return cpu_report_storage_hint
     if trace_pipeline_hint in trace_pipeline_hints and cpu_lowerer_hint in {
         "row_validation_residual_profile_candidate",
+        "row_validation_residual_timer_split_candidate",
         "row_validation_profile_candidate",
         "source_values_residual_profile_candidate",
         "source_values_profile_candidate",
@@ -2930,7 +2934,7 @@ def trace_report_detail_action_hint(
         if row_validation_residual_pct >= 50.0:
             if trace_shape_hint == "shape_timing_missing_for_detail_profile":
                 return "enable_shape_timing_for_row_validation_residual"
-            return "profile_row_validation_residual"
+            return "split_row_validation_residual_timers"
         return "profile_row_validation"
     if hotspot_name == "source_values":
         if source_values_residual_pct >= 50.0:
