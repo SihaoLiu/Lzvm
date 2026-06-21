@@ -447,6 +447,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_report_source_values_duration: Duration,
     guest_trace_report_source_a_value_duration: Duration,
     guest_trace_report_source_b_value_duration: Duration,
+    guest_trace_report_source_value_record_duration: Duration,
     guest_trace_report_source_immediate_read_duration: Duration,
     guest_trace_report_source_register_read_duration: Duration,
     guest_trace_report_source_memory_read_duration: Duration,
@@ -756,6 +757,8 @@ impl ProveWitnessGuestPcTraceTiming {
                 .trace_report_source_a_value_duration(),
             guest_trace_report_source_b_value_duration: stream_timing
                 .trace_report_source_b_value_duration(),
+            guest_trace_report_source_value_record_duration: stream_timing
+                .trace_report_source_value_record_duration(),
             guest_trace_report_source_immediate_read_duration: stream_timing
                 .trace_report_source_immediate_read_duration(),
             guest_trace_report_source_register_read_duration: stream_timing
@@ -1236,6 +1239,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_report_source_b_value_duration(&self) -> Duration {
         self.guest_trace_report_source_b_value_duration
+    }
+
+    pub fn guest_trace_report_source_value_record_duration(&self) -> Duration {
+        self.guest_trace_report_source_value_record_duration
     }
 
     pub fn guest_trace_report_source_immediate_read_duration(&self) -> Duration {

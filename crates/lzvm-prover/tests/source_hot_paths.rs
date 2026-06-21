@@ -3170,8 +3170,9 @@ fn guest_trace_detail_timing_keeps_aggregate_report_and_sampled_fields_separate(
     }
     assert!(
         backend_source.contains("trace_report_source_a_value_duration")
-            && backend_source.contains("trace_report_source_b_value_duration"),
-        "guest trace detail timing should split A/B source-value lookup work inside row validation"
+            && backend_source.contains("trace_report_source_b_value_duration")
+            && backend_source.contains("trace_report_source_value_record_duration"),
+        "guest trace detail timing should split A/B source-value lookup and record work inside row validation"
     );
 
     let cli_body = function_body(
@@ -3185,8 +3186,9 @@ fn guest_trace_detail_timing_keeps_aggregate_report_and_sampled_fields_separate(
     );
     assert!(
         cli_body.contains("guest_trace_report_source_a_value")
-            && cli_body.contains("guest_trace_report_source_b_value"),
-        "CLI sampled detail timing should emit A/B source-value lookup counters"
+            && cli_body.contains("guest_trace_report_source_b_value")
+            && cli_body.contains("guest_trace_report_source_value_record"),
+        "CLI sampled detail timing should emit source-value lookup and record counters"
     );
     assert!(
         !cli_body.contains(
@@ -6370,6 +6372,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "trace_report_row_validation_duration",
         "trace_report_memory_columns_duration",
         "trace_report_source_values_duration",
+        "trace_report_source_value_record_duration",
         "trace_report_precompile_memory_duration",
         "trace_report_instruction_result_duration",
         "trace_report_next_pc_duration",
@@ -6524,6 +6527,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         apply_body.contains("trace_report_row_validation_duration")
             && apply_body.contains("trace_report_memory_columns_duration")
             && apply_body.contains("trace_report_source_values_duration")
+            && apply_body.contains("trace_report_source_value_record_duration")
             && apply_body.contains("trace_report_precompile_memory_duration")
             && apply_body.contains("trace_report_instruction_result_duration")
             && apply_body.contains("trace_report_next_pc_duration")
@@ -6570,6 +6574,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest_trace_report_lowering_duration",
         "guest_trace_report_row_validation_duration",
         "guest_trace_report_visit_duration",
+        "guest_trace_report_source_value_record_duration",
         "guest_trace_emit_duration",
         "guest_trace_descriptor_duration",
         "guest_trace_report_detail_sample_count",
@@ -6626,6 +6631,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_report_lowering\"",
         "\"guest_trace_report_row_validation\"",
         "\"guest_trace_report_memory_columns\"",
+        "\"guest_trace_report_source_value_record\"",
         "\"guest_trace_report_visit\"",
         "\"guest_trace_emit\"",
         "\"guest_trace_descriptor\"",

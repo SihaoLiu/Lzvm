@@ -209,6 +209,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_report_source_values_duration: Duration,
     trace_report_source_a_value_duration: Duration,
     trace_report_source_b_value_duration: Duration,
+    trace_report_source_value_record_duration: Duration,
     trace_report_source_immediate_read_duration: Duration,
     trace_report_source_register_read_duration: Duration,
     trace_report_source_memory_read_duration: Duration,
@@ -347,6 +348,8 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_source_values_duration += other.trace_report_source_values_duration;
         self.trace_report_source_a_value_duration += other.trace_report_source_a_value_duration;
         self.trace_report_source_b_value_duration += other.trace_report_source_b_value_duration;
+        self.trace_report_source_value_record_duration +=
+            other.trace_report_source_value_record_duration;
         self.trace_report_source_immediate_read_duration +=
             other.trace_report_source_immediate_read_duration;
         self.trace_report_source_register_read_duration +=
@@ -599,6 +602,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_source_b_value_duration(&self) -> Duration {
         self.trace_report_source_b_value_duration
+    }
+
+    pub fn trace_report_source_value_record_duration(&self) -> Duration {
+        self.trace_report_source_value_record_duration
     }
 
     pub fn trace_report_source_immediate_read_duration(&self) -> Duration {
@@ -7983,6 +7990,7 @@ fn apply_zisk_main_lowered_report_row(
         0,
     )?;
     let a = a_value.value;
+    let source_a_record_started = detail_duration_started(&timing, detail_timing);
     record_trace_report_source_value_duration(
         source_a_value_started,
         &mut timing,
@@ -7990,6 +7998,9 @@ fn apply_zisk_main_lowered_report_row(
         is_copy,
         |timing| &mut timing.trace_report_source_a_value_duration,
     );
+    record_detail_duration(source_a_record_started, &mut timing, |timing| {
+        &mut timing.trace_report_source_value_record_duration
+    });
     let source_b_value_started = detail_duration_started(&timing, detail_timing);
     let b_memory_access_index = usize::from(a_value.memory_access_count);
     let b_value = zisk_main_source_value(
@@ -8003,6 +8014,7 @@ fn apply_zisk_main_lowered_report_row(
         b_memory_access_index,
     )?;
     let b = b_value.value;
+    let source_b_record_started = detail_duration_started(&timing, detail_timing);
     record_trace_report_source_value_duration(
         source_b_value_started,
         &mut timing,
@@ -8010,6 +8022,9 @@ fn apply_zisk_main_lowered_report_row(
         is_copy,
         |timing| &mut timing.trace_report_source_b_value_duration,
     );
+    record_detail_duration(source_b_record_started, &mut timing, |timing| {
+        &mut timing.trace_report_source_value_record_duration
+    });
     record_detail_duration(source_values_started, &mut timing, |timing| {
         &mut timing.trace_report_source_values_duration
     });
