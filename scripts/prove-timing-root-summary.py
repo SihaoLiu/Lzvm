@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 INPUT_BYTES_KEY = "input_bytes"
+LOWERER_SOURCE_VALUE_CLOSE_TO_DESCRIPTOR_RATIO = 0.75
 ROOT_COUNT_KEY = "timing_guest_stage_tree_commit_root_count"
 ROOT_GROUPS_KEY = "timing_guest_stage_tree_commit_root_materialization_groups"
 ROOT_MAX_GROUP_KEY = "timing_guest_stage_tree_commit_root_materialization_max_group_size"
@@ -2005,6 +2006,13 @@ def cpu_trace_lowerer_action_hint(
     source_value_pct = perf_hotspots.get(PERF_SOURCE_VALUE_SELF_PCT_KEY, 0.0)
     if lowered_report_row_pct < 10.0:
         return "none"
+    if (
+        source_value_pct >= 2.5
+        and append_descriptor_pct > 0.0
+        and source_value_pct
+        >= append_descriptor_pct * LOWERER_SOURCE_VALUE_CLOSE_TO_DESCRIPTOR_RATIO
+    ):
+        return "source_value_candidate"
     if append_descriptor_pct >= 5.0:
         return "descriptor_append_candidate"
     if source_value_pct >= 2.5:
