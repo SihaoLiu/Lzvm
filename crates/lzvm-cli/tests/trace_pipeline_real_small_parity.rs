@@ -69,6 +69,7 @@ fn real_small_trace_pipeline_preserves_proof_bytes() {
             RealParityMode::OwnedStreamingLower,
             RealParityMode::AsyncSingleCommit,
             RealParityMode::SeedPipeline,
+            RealParityMode::ReplayOnlySeedPipeline,
             RealParityMode::SeedPipelineCommitWorkers,
         ],
     );
@@ -84,6 +85,7 @@ fn real_large_trace_pipeline_preserves_proof_bytes() {
         &[
             RealParityMode::AsyncSingleCommit,
             RealParityMode::SeedPipeline,
+            RealParityMode::ReplayOnlySeedPipeline,
             RealParityMode::SeedPipelineCommitWorkers,
         ],
     );
@@ -209,6 +211,7 @@ enum RealParityMode {
     OwnedStreamingLower,
     AsyncSingleCommit,
     SeedPipeline,
+    ReplayOnlySeedPipeline,
     SeedPipelineCommitWorkers,
 }
 
@@ -225,6 +228,7 @@ impl RealParityMode {
             Self::OwnedStreamingLower => "owned-streaming-lower",
             Self::AsyncSingleCommit => "async-single-commit",
             Self::SeedPipeline => "pipeline",
+            Self::ReplayOnlySeedPipeline => "replay-only-pipeline",
             Self::SeedPipelineCommitWorkers => "combined",
         }
     }
@@ -330,6 +334,14 @@ fn run_prove_witness(
                 1,
             );
         }
+        RealParityMode::ReplayOnlySeedPipeline => {
+            assert_replay_only_pipeline_timing_shape(&output_text);
+            assert_timing_equals(
+                &output_text,
+                "timing_guest_segment_commit_effective_workers",
+                1,
+            );
+        }
         RealParityMode::SeedPipelineCommitWorkers => {
             assert_pipeline_timing_shape(&output_text);
             assert_combined_pipeline_timing_shape(&output_text);
@@ -373,6 +385,13 @@ fn prove_command(config: &RealParityConfig, output_dir: &Path, mode: RealParityM
                 .env(PARALLEL_LOWER_ENV, "1")
                 .env(LOWER_WORKERS_ENV, "2")
                 .env(COMMIT_WORKERS_ENV, "1");
+        }
+        RealParityMode::ReplayOnlySeedPipeline => {
+            command
+                .env(PARALLEL_LOWER_ENV, "1")
+                .env(LOWER_WORKERS_ENV, "2")
+                .env(COMMIT_WORKERS_ENV, "1")
+                .env(PARALLEL_REPLAY_ONLY_ENV, "1");
         }
         RealParityMode::SeedPipelineCommitWorkers => {
             command
@@ -486,6 +505,20 @@ fn combined_pipeline_timing_shape_requires_cross_segment_commit_workers() {
 }
 
 #[test]
+fn replay_only_pipeline_timing_shape_requires_report_elision() {
+    let output = [
+        "timing_guest_trace_parallel_lower_workers=2",
+        "timing_guest_trace_seed_direct_lift_successes=22",
+        "timing_guest_trace_seed_full_advances=1",
+        "timing_guest_trace_parallel_lower_snapshot_replay_count=23",
+        "timing_guest_trace_parallel_lower_report_elided_count=23",
+    ]
+    .join("\n");
+
+    assert_replay_only_pipeline_timing_shape(&output);
+}
+
+#[test]
 fn combined_pipeline_timing_shape_allows_oom_retry_fallback() {
     let output = [
         "timing_guest_trace_parallel_lower_workers=2",
@@ -504,6 +537,33 @@ fn combined_pipeline_timing_shape_allows_oom_retry_fallback() {
     assert_combined_pipeline_timing_shape(&output);
 }
 
+#[test]
+fn replay_only_pipeline_mode_sets_report_elision_env() {
+    let workspace = workspace_root();
+    let config = RealParityConfig {
+        bin: workspace.join("target").join("release").join("lzvm"),
+        setup_dir: workspace.join("temp").join("setup"),
+        block_input: workspace.join("temp").join("eth-block.input"),
+        program_image_cache: workspace.join("temp").join("program-image.cache"),
+        input_data: workspace.join("temp").join("input-data.bin"),
+        guest_image: workspace.join("temp").join("guest.elf"),
+        trace_limit: "1".to_owned(),
+        work_dir: workspace.join("temp"),
+        tmp_dir: workspace.join("temp").join("tmp"),
+    };
+
+    let command = prove_command(
+        &config,
+        &workspace.join("temp").join("replay-only.proof"),
+        RealParityMode::ReplayOnlySeedPipeline,
+    );
+
+    assert_command_env_equals(&command, PARALLEL_LOWER_ENV, "1");
+    assert_command_env_equals(&command, LOWER_WORKERS_ENV, "2");
+    assert_command_env_equals(&command, COMMIT_WORKERS_ENV, "1");
+    assert_command_env_equals(&command, PARALLEL_REPLAY_ONLY_ENV, "1");
+}
+
 fn assert_env_removed(command: &Command, name: &str) {
     let state = command
         .get_envs()
@@ -512,6 +572,18 @@ fn assert_env_removed(command: &Command, name: &str) {
     assert!(
         matches!(state, Some(None)),
         "{name} should be explicitly removed, got {state:?}"
+    );
+}
+
+fn assert_command_env_equals(command: &Command, name: &str, expected: &str) {
+    let state = command
+        .get_envs()
+        .find(|(key, _)| *key == OsStr::new(name))
+        .map(|(_, value)| value);
+    assert_eq!(
+        state,
+        Some(Some(OsStr::new(expected))),
+        "{name} should be set to {expected}, got {state:?}"
     );
 }
 
@@ -565,6 +637,20 @@ fn assert_pipeline_timing_shape(output: &str) {
         output,
         "timing_guest_trace_parallel_lower_report_elided_count",
         0,
+    );
+}
+
+fn assert_replay_only_pipeline_timing_shape(output: &str) {
+    assert_timing_equals(output, "timing_guest_trace_parallel_lower_workers", 2);
+    assert_timing_positive(output, "timing_guest_trace_seed_direct_lift_successes");
+    assert_timing_equals(output, "timing_guest_trace_seed_full_advances", 1);
+    assert_timing_positive(
+        output,
+        "timing_guest_trace_parallel_lower_snapshot_replay_count",
+    );
+    assert_timing_positive(
+        output,
+        "timing_guest_trace_parallel_lower_report_elided_count",
     );
 }
 
