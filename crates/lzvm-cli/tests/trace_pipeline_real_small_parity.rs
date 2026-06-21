@@ -84,6 +84,7 @@ fn real_large_trace_pipeline_preserves_proof_bytes() {
         &[
             RealParityMode::AsyncSingleCommit,
             RealParityMode::SeedPipeline,
+            RealParityMode::SeedPipelineCommitWorkers,
         ],
     );
 }
@@ -473,8 +474,29 @@ fn combined_pipeline_timing_shape_requires_cross_segment_commit_workers() {
         "timing_guest_trace_seed_full_advances=1",
         "timing_guest_trace_parallel_lower_snapshot_replay_count=0",
         "timing_guest_trace_parallel_lower_report_elided_count=0",
+        "timing_guest_segment_commit_initial_workers=2",
         "timing_guest_segment_commit_effective_workers=2",
+        "timing_guest_segment_commit_oom_retries=0",
         "timing_guest_segment_commit_worker_max_in_flight=2",
+    ]
+    .join("\n");
+
+    assert_pipeline_timing_shape(&output);
+    assert_combined_pipeline_timing_shape(&output);
+}
+
+#[test]
+fn combined_pipeline_timing_shape_allows_oom_retry_fallback() {
+    let output = [
+        "timing_guest_trace_parallel_lower_workers=2",
+        "timing_guest_trace_seed_direct_lift_successes=119",
+        "timing_guest_trace_seed_full_advances=1",
+        "timing_guest_trace_parallel_lower_snapshot_replay_count=0",
+        "timing_guest_trace_parallel_lower_report_elided_count=0",
+        "timing_guest_segment_commit_initial_workers=2",
+        "timing_guest_segment_commit_effective_workers=1",
+        "timing_guest_segment_commit_oom_retries=1",
+        "timing_guest_segment_commit_worker_max_in_flight=1",
     ]
     .join("\n");
 
@@ -547,12 +569,23 @@ fn assert_pipeline_timing_shape(output: &str) {
 }
 
 fn assert_combined_pipeline_timing_shape(output: &str) {
-    assert_timing_equals(output, "timing_guest_segment_commit_effective_workers", 2);
-    assert_timing_at_least(
-        output,
-        "timing_guest_segment_commit_worker_max_in_flight",
-        2,
-    );
+    assert_timing_equals(output, "timing_guest_segment_commit_initial_workers", 2);
+    let oom_retries = timing_value(output, "timing_guest_segment_commit_oom_retries");
+    if oom_retries > 0 {
+        assert_timing_equals(output, "timing_guest_segment_commit_effective_workers", 1);
+        assert_timing_at_least(
+            output,
+            "timing_guest_segment_commit_worker_max_in_flight",
+            1,
+        );
+    } else {
+        assert_timing_equals(output, "timing_guest_segment_commit_effective_workers", 2);
+        assert_timing_at_least(
+            output,
+            "timing_guest_segment_commit_worker_max_in_flight",
+            2,
+        );
+    }
 }
 
 fn timing_value(output: &str, key: &str) -> u64 {
