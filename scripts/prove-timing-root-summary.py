@@ -2935,6 +2935,7 @@ def trace_report_detail_sample_hint(reports: int, detail_samples: int) -> str:
 def trace_report_detail_action_hint(
     hotspot_name: str,
     hotspot_pct: float,
+    row_validation_hotspot_name: str,
     row_validation_residual_pct: float,
     source_values_residual_pct: float,
     visit_descriptor_pct: float,
@@ -2947,6 +2948,11 @@ def trace_report_detail_action_hint(
             if trace_shape_hint == "shape_timing_missing_for_detail_profile":
                 return "enable_shape_timing_for_row_validation_residual"
             return "split_row_validation_residual_timers"
+        if (
+            row_validation_hotspot_name == "source_value_record"
+            and row_validation_residual_pct >= 25.0
+        ):
+            return "profile_row_validation_residual"
         return "profile_row_validation"
     if hotspot_name == "source_values":
         if source_values_residual_pct >= 50.0:
@@ -4125,6 +4131,7 @@ def summarize_profile_values(
     trace_report_detail_action = trace_report_detail_action_hint(
         trace_report_detail_hotspot_name,
         trace_report_detail_hotspot_pct,
+        trace_report_row_validation_hotspot_name,
         trace_report_row_validation_residual_pct,
         trace_report_source_values_residual_pct,
         trace_report_visit_descriptor_pct,
