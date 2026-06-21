@@ -2539,6 +2539,11 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
         "timing_guest_trace_copy_source_indirect_read_sampled_ns=2100",
         "timing_guest_trace_copy_source_memory_read_avg_sample_ns=3",
         "timing_guest_trace_copy_source_indirect_read_avg_sample_ns=15",
+        "timing_guest_trace_report_detail_samples=1000",
+        "timing_guest_trace_report_sampled_ns=100000",
+        "timing_guest_trace_report_source_values_sampled_ns=30000",
+        "timing_guest_trace_report_source_a_value_sampled_ns=2000",
+        "timing_guest_trace_report_source_b_value_sampled_ns=3000",
         "timing_guest_trace_register_source_reads=1400",
         "timing_guest_trace_memory_source_reads=300",
         "timing_guest_trace_register_store_rows=700",
@@ -2619,8 +2624,8 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
         "prove timing root summary should expose a CopyB source-read action hint: stdout={stdout}"
     );
     assert!(
-        stdout.contains(",900,2100,3,15,target_copy_indirect_source_lookup,"),
-        "prove timing root summary should target indirect CopyB source lookup when sampled reads dominate: stdout={stdout}"
+        stdout.contains(",900,2100,3,15,target_copy_source_values_residual,"),
+        "prove timing root summary should not target thin CopyB source lookup when source-values residual dominates: stdout={stdout}"
     );
 }
 

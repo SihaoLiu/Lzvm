@@ -2686,7 +2686,11 @@ def trace_copy_source_action_hint(
     copy_source_indirect_read_ms: int,
     copy_source_memory_reads: int,
     copy_source_indirect_reads: int,
+    source_values_lookup_pct: float,
+    source_values_residual_pct: float,
 ) -> str:
+    if source_values_residual_pct >= 50.0 and 0.0 < source_values_lookup_pct < 25.0:
+        return "target_copy_source_values_residual"
     sampled_ns = copy_source_memory_read_sampled_ns + copy_source_indirect_read_sampled_ns
     if sampled_ns > 0:
         if copy_source_indirect_read_sampled_ns * 100 >= sampled_ns * 60:
@@ -3385,14 +3389,6 @@ def summarize_profile_values(
         if copy_source_read_ms
         else 0.0
     )
-    copy_source_action_hint = trace_copy_source_action_hint(
-        copy_source_memory_read_sampled_ns,
-        copy_source_indirect_read_sampled_ns,
-        copy_source_memory_read_ms,
-        copy_source_indirect_read_ms,
-        copy_source_memory_reads,
-        copy_source_indirect_reads,
-    )
     trace_shape_hint = trace_shape_sample_hint(values, trace_report_rows)
     external_op_row_pct = (
         external_op_rows * 100.0 / trace_report_rows if trace_report_rows else 0.0
@@ -3587,6 +3583,16 @@ def summarize_profile_values(
         trace_report_source_values_lookup_pct,
         trace_report_source_values_residual_pct,
     ) = trace_report_source_values_lookup_coverage(values)
+    copy_source_action_hint = trace_copy_source_action_hint(
+        copy_source_memory_read_sampled_ns,
+        copy_source_indirect_read_sampled_ns,
+        copy_source_memory_read_ms,
+        copy_source_indirect_read_ms,
+        copy_source_memory_reads,
+        copy_source_indirect_reads,
+        trace_report_source_values_lookup_pct,
+        trace_report_source_values_residual_pct,
+    )
     source_kind_read_total, source_kind_counts = source_value_kind_counts(values)
     source_immediate_reads = source_kind_counts["immediate_read"]
     source_register_reads = source_kind_counts["register_read"]
