@@ -4286,11 +4286,10 @@ fn guest_pc_trace_live_report_chunks_enabled() -> bool {
 fn validate_guest_pc_trace_live_report_chunk_mode() -> Result<(), GuestPcTraceBackendError> {
     if guest_pc_trace_segment_replay_enabled()
         || guest_pc_trace_segment_replay_snapshot_enabled()
-        || guest_pc_trace_parallel_lower_enabled()
         || guest_pc_trace_parallel_lower_report_elision_enabled()
     {
         return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-            message: "live guest PC report chunks do not support replay or parallel lower"
+            message: "live guest PC report chunks do not support replay or report elision"
                 .to_owned(),
         });
     }
