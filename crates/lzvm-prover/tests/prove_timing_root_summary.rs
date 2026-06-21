@@ -4252,6 +4252,10 @@ fn prove_timing_root_summary_reports_runner_report_buffer_capacity() {
         value("trace_pipeline_action_hint"),
         "report_chunks_post_segment_split_regression"
     );
+    assert_eq!(
+        value("performance_focus_hint"),
+        "report_chunks_post_segment_split_regression"
+    );
 }
 
 #[test]
