@@ -304,6 +304,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &auxiliary_source,
         &["auxiliary_checked_acceptance_sound_witness"],
     );
+    lean_binding::assert_theorem_body_contains(
+        &auxiliary_source,
+        "auxiliary_checked_acceptance_sound_witness",
+        &["abstract_verifier_sound"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &auxiliary_source,
+        "auxiliary_checked_acceptance_sound_witness",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
     lean_binding::assert_theorem_body_contains_identifier(
         &auxiliary_source,
         "auxiliary_checked_acceptance_sound_witness",
