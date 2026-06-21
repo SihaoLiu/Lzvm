@@ -1994,6 +1994,9 @@ def cpu_trace_lowerer_action_hint(
     perf_hotspots: dict[str, float], trace_report_detail_action: str = "none"
 ) -> str:
     detail_hints = {
+        "enable_shape_timing_for_row_validation_residual": (
+            "shape_timing_required_for_row_validation_residual"
+        ),
         "profile_row_validation_residual": "row_validation_residual_profile_candidate",
         "profile_row_validation": "row_validation_profile_candidate",
         "profile_source_values_residual": "source_values_residual_profile_candidate",
@@ -2632,11 +2635,14 @@ def trace_report_detail_action_hint(
     row_validation_residual_pct: float,
     source_values_residual_pct: float,
     visit_descriptor_pct: float,
+    trace_shape_hint: str,
 ) -> str:
     if hotspot_name == "none" or hotspot_pct <= 0.0:
         return "none"
     if hotspot_name == "row_validation":
         if row_validation_residual_pct >= 50.0:
+            if trace_shape_hint == "shape_timing_missing_for_detail_profile":
+                return "enable_shape_timing_for_row_validation_residual"
             return "profile_row_validation_residual"
         return "profile_row_validation"
     if hotspot_name == "source_values":
@@ -3688,6 +3694,7 @@ def summarize_profile_values(
         trace_report_row_validation_residual_pct,
         trace_report_source_values_residual_pct,
         trace_report_visit_descriptor_pct,
+        trace_shape_hint,
     )
     trace_report_visit_residual_pct = (
         max(trace_report_visit_sampled_ns - trace_descriptor_sampled_ns, 0)
