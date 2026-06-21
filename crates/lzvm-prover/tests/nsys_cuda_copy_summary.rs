@@ -2117,6 +2117,8 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
         "batch_small_d2h_by_size",
         "gpu_residency_hint",
         "h2d_residency_hint",
+        "--sample=cpu",
+        "--cpuctxsw=process-tree",
         "--cudabacktrace=memory:80000",
         "app_frame",
     ] {
@@ -2125,6 +2127,10 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
             "nsys CUDA copy summary should expose {required}"
         );
     }
+    assert!(
+        !script_source.contains("--sample=process-tree"),
+        "nsys CPU sampling mode should be separate from the process-tree context-switch scope"
+    );
 
     let output = Command::new("python3")
         .arg(&script_path)
