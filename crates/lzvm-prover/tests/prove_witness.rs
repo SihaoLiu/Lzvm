@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(feature = "cuda")]
 use std::sync::Mutex;
-#[cfg(feature = "cuda")]
 use std::time::Duration;
 
 use lzvm_artifacts::challenge_values_segment::{
@@ -96,6 +95,7 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_field::{coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, Ext3, Felt};
 use lzvm_prover::contribution::build_witness_contribution_input;
 use lzvm_prover::pcs_challenge::{derive_fri_queries, verify_query_nonce};
+use lzvm_prover::pcs_fri::PcsFriOpeningBuildTiming;
 use lzvm_prover::pcs_fri::{verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{
     derive_pcs_final_query_challenge_from_segments, derive_pcs_transcript_challenges,
@@ -115,10 +115,12 @@ use lzvm_prover::witness_runner::{run_witness_trace, WitnessTraceRunError};
 use lzvm_prover::{
     build_constant_opening_segment, build_constant_opening_segment_with_schedule_material,
     build_pcs_evaluation_segment, build_pcs_fri_opening_segment,
-    build_pcs_fri_opening_segment_from_trace, build_pcs_fri_polynomial_values,
-    build_pcs_fri_transcript_values_from_trace, build_pcs_material_manifest_segment,
-    build_pcs_query_nonce_segment, build_pcs_query_nonce_segment_from_transcript_segments,
-    build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_challenge,
+    build_pcs_fri_opening_segment_from_trace,
+    build_pcs_fri_opening_segment_from_transcript_values_with_timing,
+    build_pcs_fri_polynomial_values, build_pcs_fri_transcript_values_from_trace,
+    build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
+    build_pcs_query_nonce_segment_from_transcript_segments, build_pcs_query_plan_segment,
+    build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_from_transcript_segments, build_witness_commitment_segment,
     build_witness_commitment_segment_for_schedule, build_witness_opening_segment,
     build_witness_opening_segment_batch, derive_prove_execution_plan, derive_prove_schedule,
@@ -7053,6 +7055,34 @@ fn builds_pcs_fri_transcript_values_from_execution_material() {
         }],
     )
     .expect("FRI opening segment should build");
+    let mut cached_timing = PcsFriOpeningBuildTiming::default();
+    let cached_opening_segment = build_pcs_fri_opening_segment_from_transcript_values_with_timing(
+        &plan.run_plan.schedule,
+        &query_segment,
+        &values,
+        Some(&mut cached_timing),
+    )
+    .expect("cached FRI opening segment should build");
+    assert_eq!(
+        cached_opening_segment.data, opening_segment.data,
+        "cached FRI openings should stay byte-identical to direct polynomial openings"
+    );
+    assert_eq!(
+        cached_timing.layer_tree,
+        Duration::ZERO,
+        "cached FRI openings should reuse transcript layer trees"
+    );
+    assert_eq!(
+        cached_timing.fold_work,
+        Duration::ZERO,
+        "cached FRI openings should reuse transcript fold outputs"
+    );
+    assert_eq!(cached_timing.unit_count, 1);
+    assert_eq!(cached_timing.layer_count, 0);
+    assert_eq!(
+        cached_timing.query_count,
+        query_plan.units[0].queries.len() * unit.fri_layers.len()
+    );
     let opening =
         parse_pcs_fri_opening_segment(&opening_segment.data).expect("FRI opening should parse");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
