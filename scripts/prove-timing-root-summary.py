@@ -637,6 +637,7 @@ PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY = (
     "perf_effect_record_memory_write_self_pct"
 )
 PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY = "perf_effect_record_memory_read_self_pct"
+PERF_LIVE_STREAM_MESSAGE_SELF_PCT_KEY = "perf_live_stream_message_self_pct"
 CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY = (
     "cpu_trace_memcpy_report_storage_hint_pct"
 )
@@ -793,6 +794,7 @@ HEADER = (
     "cpu_trace_report_storage_action_hint,"
     "cpu_trace_memcpy_report_storage_hint_pct,"
     "cpu_trace_memcpy_report_storage_total_pct,"
+    "perf_live_stream_message_self_pct,cpu_trace_live_stream_action_hint,"
     "perf_append_descriptor_self_pct,perf_source_value_self_pct,"
     "cpu_trace_lowerer_action_hint,"
     "perf_prepare_instruction_self_pct,perf_trace_segment_build_self_pct,"
@@ -1494,8 +1496,16 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
         PERF_DECODE_INSTRUCTION_SELF_PCT_KEY: 0.0,
         PERF_EFFECT_RECORD_MEMORY_WRITE_SELF_PCT_KEY: 0.0,
         PERF_EFFECT_RECORD_MEMORY_READ_SELF_PCT_KEY: 0.0,
+        PERF_LIVE_STREAM_MESSAGE_SELF_PCT_KEY: 0.0,
         CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY: 0.0,
     }
+
+    def is_live_stream_message_symbol(symbol_text: str) -> bool:
+        return (
+            "produce_guest_pc_trace_live_pending_messages" in symbol_text
+            or "ZiskMainOwnedStreamingDeviceReportFeeder::push_report" in symbol_text
+            or "emit_guest_pc_trace_live_pending_segment_messages" in symbol_text
+        )
 
     def record_symbol_hotspot(symbol_text: str, pct: float) -> bool:
         key = None
@@ -1595,6 +1605,11 @@ def parse_perf_self_hotspots(text: str) -> dict[str, float]:
             except ValueError:
                 nsys_cpu_block = None
                 continue
+            if (
+                nsys_cpu_block == "application_cpu_hotspots"
+                and is_live_stream_message_symbol(row[0])
+            ):
+                hotspots[PERF_LIVE_STREAM_MESSAGE_SELF_PCT_KEY] += pct
             if record_symbol_hotspot(row[0], pct):
                 continue
 
@@ -2188,6 +2203,31 @@ def cpu_trace_report_storage_action_hint(
         return "report_sidecar_storage_candidate"
     if pending_drop_pct >= 5.0 and memmove_trace_slice_pct >= 5.0:
         return "trace_slice_drop_storage_candidate"
+    return "none"
+
+
+def cpu_trace_live_stream_action_hint(
+    values: dict[str, int],
+    perf_hotspots: dict[str, float],
+) -> str:
+    live_stream_message_pct = perf_hotspots.get(
+        PERF_LIVE_STREAM_MESSAGE_SELF_PCT_KEY, 0.0
+    )
+    if live_stream_message_pct < 5.0:
+        return "none"
+    chunks_sent = values.get(TRACE_REPORT_CHUNK_SENT_KEY, 0)
+    parallel_lower_workers = values.get(PARALLEL_LOWER_WORKERS_KEY, 0)
+    parallel_lower_job_receive_wait_ms = values.get(
+        PARALLEL_LOWER_JOB_RECEIVE_WAIT_MS_KEY, 0
+    )
+    if (
+        chunks_sent > 0
+        and parallel_lower_workers > 0
+        and live_stream_message_pct >= 10.0
+    ):
+        return "reduce_live_report_message_overhead"
+    if chunks_sent > 0 and parallel_lower_job_receive_wait_ms > 0:
+        return "live_report_message_overhead_secondary"
     return "none"
 
 
@@ -4703,6 +4743,10 @@ def summarize_profile_values(
     cpu_report_storage_memcpy_total_pct = (
         memmove_pct * cpu_report_storage_memcpy_pct / 100.0
     )
+    live_stream_message_pct = perf_hotspots.get(
+        PERF_LIVE_STREAM_MESSAGE_SELF_PCT_KEY, 0.0
+    )
+    live_stream_hint = cpu_trace_live_stream_action_hint(values, perf_hotspots)
     append_descriptor_pct = perf_hotspots.get(
         PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY, 0.0
     )
@@ -4871,6 +4915,7 @@ def summarize_profile_values(
         f"{cpu_report_storage_hint},"
         f"{cpu_report_storage_memcpy_pct:.3f},"
         f"{cpu_report_storage_memcpy_total_pct:.3f},"
+        f"{live_stream_message_pct:.3f},{live_stream_hint},"
         f"{append_descriptor_pct:.3f},{source_value_pct:.3f},{lowerer_hint},"
         f"{prepare_instruction_pct:.3f},{trace_segment_build_pct:.3f},"
         f"{advance_guest_machine_pct:.3f},{guest_memory_write_pct:.3f},"

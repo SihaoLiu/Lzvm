@@ -330,6 +330,8 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "perf_sha256_self_pct",
         "perf_sha256_source_hint",
         "cpu_trace_hotspot_hint",
+        "perf_live_stream_message_self_pct",
+        "cpu_trace_live_stream_action_hint",
         "perf_prepare_instruction_self_pct",
         "perf_append_descriptor_self_pct",
         "perf_source_value_self_pct",
@@ -5321,6 +5323,9 @@ fn prove_timing_root_summary_reads_sibling_nsys_cpu_summary() {
         &log_path,
         [
             "timing_total_ms=8314",
+            "timing_guest_trace_parallel_lower_workers=8",
+            "timing_guest_trace_parallel_lower_job_receive_wait_ms=51589",
+            "timing_guest_trace_report_chunk_sent=22916",
             "timing_guest_stage_tree_commit_root_count=1",
             "timing_guest_stage_tree_commit_root_materialization_groups=1",
             "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
@@ -5334,6 +5339,9 @@ fn prove_timing_root_summary_reads_sibling_nsys_cpu_summary() {
             "application_cpu_hotspots",
             "symbol,module,samples,application_sample_pct",
             "lzvm_prover::guest_pc_trace_backend::apply_main_lowered_report_row,/path/lzvm,2884,34.975",
+            "lzvm_prover::guest_pc_trace_backend::produce_guest_pc_trace_live_pending_messages,/path/lzvm,1484,16.322",
+            "lzvm_prover::guest_pc_trace_backend::ZiskMainOwnedStreamingDeviceReportFeeder::push_report,/path/lzvm,1047,11.516",
+            "lzvm_prover::guest_pc_trace_backend::emit_guest_pc_trace_live_pending_segment_messages,/path/lzvm,508,5.587",
             "lzvm_prover::guest_machine::advance_guest_machine_prepared_inner,/path/lzvm,1066,12.927",
             "core::ptr::drop_in_place$LT$lzvm_prover..guest_pc_trace_backend..GuestPcTracePendingSegmentSlice$GT$::hash,/path/lzvm,376,4.560",
         ]
@@ -5378,6 +5386,11 @@ fn prove_timing_root_summary_reads_sibling_nsys_cpu_summary() {
     assert_eq!(value("perf_lowered_report_row_self_pct"), "34.975");
     assert_eq!(value("perf_advance_guest_machine_self_pct"), "12.927");
     assert_eq!(value("perf_pending_segment_drop_self_pct"), "4.560");
+    assert_eq!(value("perf_live_stream_message_self_pct"), "33.425");
+    assert_eq!(
+        value("cpu_trace_live_stream_action_hint"),
+        "reduce_live_report_message_overhead"
+    );
     assert_eq!(value("cpu_runner_hotspot_hint"), "guest_machine_advance");
 }
 
