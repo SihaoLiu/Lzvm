@@ -1856,6 +1856,13 @@ fn live_report_chunk_parallel_lower_streams_chunks_to_workers() {
         produced.timing.trace_report_chunk_sent_count(),
         "worker streaming should consume all live chunks without dispatcher reassembly"
     );
+    assert!(
+        produced
+            .timing
+            .parallel_lower_stream_chunk_process_duration()
+            > std::time::Duration::ZERO,
+        "worker streaming should record chunk processing time separately from dispatch wait"
+    );
     assert_eq!(
         produced.timing.parallel_lower_stream_retained_report_count(),
         0,

@@ -91,6 +91,9 @@ PARALLEL_LOWER_STREAM_START_DISPATCH_WAIT_MS_KEY = (
 PARALLEL_LOWER_STREAM_CHUNK_DISPATCH_WAIT_MS_KEY = (
     "timing_guest_trace_parallel_lower_stream_chunk_dispatch_wait_ms"
 )
+PARALLEL_LOWER_STREAM_CHUNK_PROCESS_MS_KEY = (
+    "timing_guest_trace_parallel_lower_stream_chunk_process_ms"
+)
 PARALLEL_LOWER_STREAM_SEGMENT_DISPATCH_WAIT_MS_KEY = (
     "timing_guest_trace_parallel_lower_stream_segment_dispatch_wait_ms"
 )
@@ -682,6 +685,7 @@ HEADER = (
     "parallel_lower_report_elided_count,parallel_lower_dispatch_wait_ms,"
     "parallel_lower_stream_start_dispatch_wait_ms,"
     "parallel_lower_stream_chunk_dispatch_wait_ms,"
+    "parallel_lower_stream_chunk_process_ms,"
     "parallel_lower_stream_segment_dispatch_wait_ms,"
     "parallel_lower_stream_finish_dispatch_wait_ms,"
     "parallel_lower_result_receive_wait_ms,"
@@ -952,6 +956,7 @@ TIMING_KEYS = {
     PARALLEL_LOWER_DISPATCH_WAIT_MS_KEY,
     PARALLEL_LOWER_STREAM_START_DISPATCH_WAIT_MS_KEY,
     PARALLEL_LOWER_STREAM_CHUNK_DISPATCH_WAIT_MS_KEY,
+    PARALLEL_LOWER_STREAM_CHUNK_PROCESS_MS_KEY,
     PARALLEL_LOWER_STREAM_SEGMENT_DISPATCH_WAIT_MS_KEY,
     PARALLEL_LOWER_STREAM_FINISH_DISPATCH_WAIT_MS_KEY,
     PARALLEL_LOWER_RESULT_RECEIVE_WAIT_MS_KEY,
@@ -3539,6 +3544,9 @@ def summarize_profile_values(
     parallel_lower_stream_chunk_dispatch_wait_ms = values.get(
         PARALLEL_LOWER_STREAM_CHUNK_DISPATCH_WAIT_MS_KEY, 0
     )
+    parallel_lower_stream_chunk_process_ms = values.get(
+        PARALLEL_LOWER_STREAM_CHUNK_PROCESS_MS_KEY, 0
+    )
     parallel_lower_stream_segment_dispatch_wait_ms = values.get(
         PARALLEL_LOWER_STREAM_SEGMENT_DISPATCH_WAIT_MS_KEY, 0
     )
@@ -4649,6 +4657,7 @@ def summarize_profile_values(
         f"{parallel_lower_report_elided},{parallel_lower_dispatch_wait_ms},"
         f"{parallel_lower_stream_start_dispatch_wait_ms},"
         f"{parallel_lower_stream_chunk_dispatch_wait_ms},"
+        f"{parallel_lower_stream_chunk_process_ms},"
         f"{parallel_lower_stream_segment_dispatch_wait_ms},"
         f"{parallel_lower_stream_finish_dispatch_wait_ms},"
         f"{parallel_lower_result_receive_wait_ms},"

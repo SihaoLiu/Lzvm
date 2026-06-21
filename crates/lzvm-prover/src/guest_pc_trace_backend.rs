@@ -250,6 +250,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     parallel_lower_stream_chunk_count: usize,
     parallel_lower_stream_fallback_count: usize,
     parallel_lower_stream_retained_report_count: usize,
+    parallel_lower_stream_chunk_process_duration: Duration,
     parallel_lower_dispatch_wait_duration: Duration,
     parallel_lower_stream_start_dispatch_wait_duration: Duration,
     parallel_lower_stream_chunk_dispatch_wait_duration: Duration,
@@ -400,6 +401,8 @@ impl GuestPcTraceStreamTiming {
         self.parallel_lower_stream_fallback_count += other.parallel_lower_stream_fallback_count;
         self.parallel_lower_stream_retained_report_count +=
             other.parallel_lower_stream_retained_report_count;
+        self.parallel_lower_stream_chunk_process_duration +=
+            other.parallel_lower_stream_chunk_process_duration;
         self.parallel_lower_dispatch_wait_duration += other.parallel_lower_dispatch_wait_duration;
         self.parallel_lower_stream_start_dispatch_wait_duration +=
             other.parallel_lower_stream_start_dispatch_wait_duration;
@@ -750,6 +753,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn parallel_lower_stream_retained_report_count(&self) -> usize {
         self.parallel_lower_stream_retained_report_count
+    }
+
+    pub fn parallel_lower_stream_chunk_process_duration(&self) -> Duration {
+        self.parallel_lower_stream_chunk_process_duration
     }
 
     pub fn parallel_lower_dispatch_wait_duration(&self) -> Duration {
@@ -6155,6 +6162,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                             #[cfg(feature = "cuda")]
                             GuestPcTraceParallelLowerJob::StreamChunk(chunk) => {
                                 let trace_instance_index = chunk.trace_instance_index;
+                                let chunk_process_started = Instant::now();
                                 let result = active_stream
                                     .as_mut()
                                     .ok_or_else(|| {
@@ -6168,6 +6176,8 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                                     .and_then(|stream| {
                                         stream.push_chunk(*chunk, &mut active_stream_timing)
                                     });
+                                active_stream_timing.parallel_lower_stream_chunk_process_duration +=
+                                    chunk_process_started.elapsed();
                                 match result {
                                     Ok(()) => (trace_instance_index, None),
                                     Err(error) => {

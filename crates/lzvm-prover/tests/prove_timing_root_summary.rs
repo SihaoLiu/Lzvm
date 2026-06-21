@@ -30,6 +30,59 @@ fn prove_timing_root_summary_script_is_directly_executable() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_stream_chunk_process_time() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join("../../temp/prove-timing-stream-chunk-process");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("stream chunk fixture dir should be created");
+    let log_path = dir.join("stream-chunk-process.log");
+    let input = [
+        "timing_total_ms=9717",
+        "input_bytes=643026",
+        "timing_guest_trace_stream_elapsed_ms=9000",
+        "timing_guest_trace_stream_ms=8800",
+        "timing_guest_trace_parallel_lower_workers=8",
+        "timing_guest_trace_parallel_lower_stream_chunks=491",
+        "timing_guest_trace_parallel_lower_stream_chunk_process_ms=123",
+        "timing_guest_trace_parallel_lower_stream_chunk_dispatch_wait_ms=299",
+        "timing_guest_trace_parallel_lower_result_receive_wait_ms=8701",
+        "timing_guest_stage_tree_commit_root_count=23",
+        "timing_guest_stage_tree_commit_root_materialization_groups=23",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+    std::fs::write(&log_path, input).expect("stream chunk fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should finish");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should parse stream chunk input: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines.next().expect("summary should include a header");
+    let row = lines.next().expect("summary should include a data row");
+    let headers = headers.split(',').collect::<Vec<_>>();
+    let row = row.split(',').collect::<Vec<_>>();
+    let index = headers
+        .iter()
+        .position(|header| *header == "parallel_lower_stream_chunk_process_ms")
+        .unwrap_or_else(|| panic!("missing stream chunk process header: {headers:?}"));
+    assert_eq!(
+        row.get(index).copied(),
+        Some("123"),
+        "stream chunk process timing should be surfaced in root summary"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_root_grouping_shape() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
@@ -94,6 +147,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_parallel_lower_snapshot_replay_ms",
         "timing_guest_trace_parallel_lower_report_elided_count",
         "timing_guest_trace_parallel_lower_dispatch_wait_ms",
+        "timing_guest_trace_parallel_lower_stream_chunk_process_ms",
         "timing_guest_trace_parallel_lower_result_receive_wait_ms",
         "timing_guest_trace_parallel_lower_dispatch_blocked_count",
         "timing_guest_trace_segment_replay_count",
