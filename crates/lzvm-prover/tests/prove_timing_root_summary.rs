@@ -3914,6 +3914,9 @@ fn prove_timing_root_summary_reports_trace_report_lifetime_pressure() {
         "timing_guest_trace_report_buffer_capacity=94371840",
         "timing_guest_trace_report_buffer_max_capacity=4194304",
         "timing_guest_trace_report_buffer_excess_capacity=528303",
+        "timing_guest_trace_report_record_size_bytes=128",
+        "timing_guest_trace_report_storage_bytes=12011972736",
+        "    16.21%  lzvm-gp-lower    lzvm                  [.] lzvm_prover::guest_pc_trace_backend::apply_zisk_main_lowered_report_row",
         "     7.41%  [.] core::ptr::drop_in_place<lzvm_prover::guest_pc_trace_backend::GuestPcTracePendingSegmentSlice>",
     ]
     .join("\n");
@@ -3968,6 +3971,10 @@ fn prove_timing_root_summary_reports_trace_report_lifetime_pressure() {
     assert!(
         stdout.contains("tight_report_buffer_and_pending_drop"),
         "prove timing root summary should classify report lifetime pressure: stdout={stdout}"
+    );
+    assert_eq!(
+        value("cpu_trace_report_storage_action_hint"),
+        "fused_runner_lowerer_report_storage_candidate"
     );
 }
 
@@ -5114,7 +5121,7 @@ fn prove_timing_root_summary_reports_trace_report_storage_action_hint() {
     );
     assert_eq!(
         value("cpu_trace_report_storage_action_hint"),
-        "runner_streaming_report_storage_candidate"
+        "fused_runner_lowerer_report_storage_candidate"
     );
 }
 

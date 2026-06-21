@@ -1968,6 +1968,8 @@ def cpu_trace_report_storage_action_hint(
         and pending_drop_pct >= 5.0
         and chunks_sent <= 0
     ):
+        if lowered_report_row_pct >= 15.0:
+            return "fused_runner_lowerer_report_storage_candidate"
         return "runner_streaming_report_storage_candidate"
     report_storage_memcpy_pct = perf_hotspots.get(
         CPU_TRACE_MEMCPY_REPORT_STORAGE_HINT_PCT_KEY, 0.0
