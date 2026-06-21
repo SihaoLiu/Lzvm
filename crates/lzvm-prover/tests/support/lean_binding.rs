@@ -106,7 +106,7 @@ pub fn assert_theorem_body_omits_identifier(source: &str, name: &str, identifier
 }
 
 fn visible_source(source: &str) -> String {
-    uncommented_lines(source).collect::<Vec<_>>().join("\n")
+    strip_lean_comments(source)
 }
 
 fn find_theorem_declaration(source: &str, name: &str) -> Option<usize> {
@@ -342,32 +342,67 @@ fn strip_string_literals(source: &str) -> String {
     out
 }
 
-fn uncommented_lines(source: &str) -> impl Iterator<Item = String> + '_ {
+fn strip_lean_comments(source: &str) -> String {
+    let mut visible = String::with_capacity(source.len());
     let mut block_depth = 0usize;
-    source.lines().map(move |line| {
-        let mut visible = String::new();
-        let mut chars = line.chars().peekable();
-        while let Some(ch) = chars.next() {
-            if block_depth > 0 {
-                if ch == '-' && chars.peek() == Some(&'/') {
-                    chars.next();
-                    block_depth -= 1;
-                } else if ch == '/' && chars.peek() == Some(&'-') {
-                    chars.next();
-                    block_depth += 1;
-                }
+    let mut in_string = false;
+    let mut chars = source.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if block_depth > 0 {
+            if ch == '\n' {
+                visible.push('\n');
                 continue;
             }
-            if ch == '-' && chars.peek() == Some(&'-') {
-                break;
+            if ch == '-' && chars.peek() == Some(&'/') {
+                chars.next();
+                block_depth -= 1;
+                continue;
             }
             if ch == '/' && chars.peek() == Some(&'-') {
                 chars.next();
                 block_depth += 1;
                 continue;
             }
-            visible.push(ch);
+            continue;
         }
-        visible
-    })
+
+        if in_string {
+            visible.push(ch);
+            if ch == '\\' {
+                if let Some(escaped) = chars.next() {
+                    visible.push(escaped);
+                }
+                continue;
+            }
+            if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if ch == '"' {
+            in_string = true;
+            visible.push(ch);
+            continue;
+        }
+        if ch == '-' && chars.peek() == Some(&'-') {
+            chars.next();
+            for comment_ch in chars.by_ref() {
+                if comment_ch == '\n' {
+                    visible.push('\n');
+                    break;
+                }
+            }
+            continue;
+        }
+        if ch == '/' && chars.peek() == Some(&'-') {
+            chars.next();
+            block_depth += 1;
+            continue;
+        }
+        visible.push(ch);
+    }
+
+    visible
 }
