@@ -705,6 +705,7 @@ HEADER = (
     "register_source_reads,memory_source_reads,memory_source_read_pct,"
     "register_store_rows,memory_store_rows,memory_store_row_pct,"
     "no_store_rows,no_store_row_pct,trace_shape_sample_hint,"
+    "trace_precompile_action_hint,"
     "copy_memory_source_rows,copy_memory_source_row_pct,"
     "copy_indirect_memory_rows,copy_indirect_memory_row_pct,"
     "copy_register_store_rows,copy_memory_store_rows,"
@@ -2671,6 +2672,21 @@ def trace_shape_sample_hint(values: dict[str, int], rows: int) -> str:
     return "shape_timing_disabled_or_zero"
 
 
+def trace_precompile_action_hint(
+    trace_shape_hint: str,
+    precompile_rows: int,
+    trace_report_rows: int,
+) -> str:
+    if trace_shape_hint != "shape_timing_enabled" or trace_report_rows <= 0:
+        return "none"
+    if precompile_rows <= 0:
+        return "skip_precompile_microprobes"
+    precompile_row_pct = precompile_rows * 100.0 / trace_report_rows
+    if precompile_row_pct < 1.0:
+        return "precompile_rows_secondary"
+    return "precompile_rows_present"
+
+
 def trace_shape_row_mix_hint(
     trace_shape_hint: str,
     external_op_row_pct: float,
@@ -3435,6 +3451,11 @@ def summarize_profile_values(
         else 0.0
     )
     trace_shape_hint = trace_shape_sample_hint(values, trace_report_rows)
+    trace_precompile_action = trace_precompile_action_hint(
+        trace_shape_hint,
+        precompile_rows,
+        trace_report_rows,
+    )
     external_op_row_pct = (
         external_op_rows * 100.0 / trace_report_rows if trace_report_rows else 0.0
     )
@@ -4528,6 +4549,7 @@ def summarize_profile_values(
         f"{memory_source_read_pct:.3f},{register_store_rows},"
         f"{memory_store_rows},{memory_store_row_pct:.3f},"
         f"{no_store_rows},{no_store_row_pct:.3f},{trace_shape_hint},"
+        f"{trace_precompile_action},"
         f"{copy_memory_source_rows},{copy_memory_source_row_pct:.3f},"
         f"{copy_indirect_memory_rows},{copy_indirect_memory_row_pct:.3f},"
         f"{copy_register_store_rows},{copy_memory_store_rows},"

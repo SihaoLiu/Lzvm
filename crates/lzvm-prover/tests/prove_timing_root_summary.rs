@@ -2828,6 +2828,84 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
 }
 
 #[test]
+fn prove_timing_root_summary_skips_precompile_probe_when_shape_has_no_precompile_rows() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=47000",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_reports=500000000",
+        "timing_guest_trace_report_rows=500000000",
+        "timing_guest_trace_single_row_reports=499000000",
+        "timing_guest_trace_external_op_rows=237000000",
+        "timing_guest_trace_copy_rows=253000000",
+        "timing_guest_trace_precompile_rows=0",
+        "timing_guest_trace_indirect_memory_rows=224000000",
+        "timing_guest_trace_register_source_reads=661000000",
+        "timing_guest_trace_memory_source_reads=145000000",
+        "timing_guest_trace_register_store_rows=372000000",
+        "timing_guest_trace_memory_store_rows=81000000",
+        "timing_guest_trace_no_store_rows=47000000",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let fields = lines
+        .next()
+        .expect("summary should print a row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|candidate| *candidate == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        fields
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("trace_shape_sample_hint"), "shape_timing_enabled");
+    assert_eq!(value("precompile_rows"), "0");
+    assert_eq!(
+        value("trace_precompile_action_hint"),
+        "skip_precompile_microprobes"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_trace_shape_row_mix_hint() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
