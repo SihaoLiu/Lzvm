@@ -1126,6 +1126,81 @@ fn seeded_pending_segments_parallel_lower_matches_serial_output() {
     }
 }
 
+#[cfg(feature = "cuda")]
+#[test]
+fn seeded_pending_segment_owned_streaming_lower_matches_borrowed_output() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-owned-streaming-seeded-lower");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_device_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let mut pending = Vec::new();
+
+    produce_guest_pc_trace_pending_slices(
+        32,
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        &[],
+        layout.row_count(),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
+    )
+    .expect("pending slices should produce");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let segment = pending
+        .into_iter()
+        .find(|segment| !segment.is_last_segment)
+        .expect("fixture should have a non-terminal segment");
+    let seed = segment
+        .seed
+        .as_deref()
+        .expect("seeded pending segment should carry its own seed")
+        .clone();
+    let borrowed =
+        lower_guest_pc_trace_seeded_pending_segment(&layout, &segment, &seed, None, None)
+            .expect("borrowed seeded segment should lower");
+    let owned =
+        lower_guest_pc_trace_owned_streaming_pending_segment(&layout, segment, &seed, None, None)
+            .expect("owned streaming seeded segment should lower");
+
+    assert_eq!(owned.next_seed, borrowed.next_seed);
+    assert_eq!(
+        owned.segment.trace_instance_index,
+        borrowed.segment.trace_instance_index
+    );
+    assert_eq!(
+        owned.segment.trace_source_prefix_rows,
+        borrowed.segment.trace_source_prefix_rows
+    );
+    assert_eq!(
+        owned.segment.device_segment_material,
+        borrowed.segment.device_segment_material
+    );
+    assert_eq!(owned.segment.trace, None);
+    assert_eq!(owned.segment.unit_values, borrowed.segment.unit_values);
+    assert_eq!(owned.segment.proof_values, borrowed.segment.proof_values);
+}
+
 #[test]
 fn guest_pc_trace_segment_replay_snapshot_matches_serial_slice() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK

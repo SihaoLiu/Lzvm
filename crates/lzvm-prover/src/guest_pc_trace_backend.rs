@@ -4335,6 +4335,77 @@ fn lower_guest_pc_trace_seeded_pending_segment(
     })
 }
 
+#[cfg(feature = "cuda")]
+fn lower_guest_pc_trace_owned_streaming_pending_segment(
+    layout: &WitnessTraceLayout,
+    mut pending: GuestPcTracePendingSegmentSlice,
+    seed: &ZiskMainSegmentSeed,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    mut timing: Option<&mut GuestPcTraceStreamTiming>,
+) -> Result<GuestPcTraceLoweredSegment, GuestPcTraceBackendError> {
+    if pending.reports.len() > layout.row_count() {
+        return Err(GuestPcTraceBackendError::OutputOverflow {
+            produced_len: layout_trace_byte_len(pending.reports.len(), layout.column_count()),
+            output_len: layout_trace_byte_len(layout.row_count(), layout.column_count()),
+        });
+    }
+
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: pending.trace_instance_index,
+        is_last_segment: pending.is_last_segment,
+        previous_c: seed.previous_c,
+    };
+    let Some(mut builder) =
+        ZiskMainStreamingDeviceSegmentBuilder::new(layout, &seed.initial_state, segment)?
+    else {
+        return lower_guest_pc_trace_seeded_pending_segment(
+            layout,
+            &pending,
+            seed,
+            expected_proof_values,
+            timing,
+        );
+    };
+
+    let lower_started = Instant::now();
+    let timing_config = ZiskMainTraceLowerTimingConfig::from_env();
+    let mut feeder = ZiskMainOwnedStreamingDeviceReportFeeder::new(timing_config);
+    let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
+    for report in std::mem::take(&mut pending.reports) {
+        feeder.push_report(&mut builder, report, timing.as_deref_mut())?;
+    }
+    feeder.finish(
+        &mut builder,
+        pending.lookahead_instruction,
+        timing.as_deref_mut(),
+    )?;
+    record_aggregate_trace_report_duration(&mut timing, aggregate_report_started);
+    let GuestPcTraceDeviceSegmentBuild {
+        device_segment_material,
+        unit_values,
+        final_state,
+        continuation_state,
+    } = builder.finish(pending.terminal_pc, timing.as_deref_mut())?;
+    if let Some(timing) = timing {
+        timing.trace_lower_duration += lower_started.elapsed();
+    }
+    let next_seed = ZiskMainSegmentSeed {
+        initial_state: continuation_state,
+        previous_c: final_state.last_c,
+    };
+    Ok(GuestPcTraceLoweredSegment {
+        segment: GuestPcTraceSegmentTrace {
+            trace_instance_index: pending.trace_instance_index,
+            trace_source_prefix_rows: device_segment_material.trace_source_prefix_rows,
+            device_segment_material: Some(device_segment_material),
+            trace: None,
+            unit_values,
+            proof_values: expected_proof_values.unwrap_or_default().to_vec(),
+        },
+        next_seed,
+    })
+}
+
 #[cfg(test)]
 fn lower_guest_pc_trace_seeded_pending_segments_with_workers(
     layout: &WitnessTraceLayout,
@@ -4786,6 +4857,26 @@ fn lower_guest_pc_trace_pending_segments(
             current_seed.previous_c,
         )?;
         let segment_seed = pending.seed.as_deref().unwrap_or(&current_seed);
+        #[cfg(feature = "cuda")]
+        let lowered = if guest_pc_trace_owned_streaming_lower_enabled() {
+            let segment_seed = segment_seed.clone();
+            lower_guest_pc_trace_owned_streaming_pending_segment(
+                layout,
+                pending,
+                &segment_seed,
+                expected_proof_values,
+                Some(timing),
+            )?
+        } else {
+            lower_guest_pc_trace_seeded_pending_segment(
+                layout,
+                &pending,
+                segment_seed,
+                expected_proof_values,
+                Some(timing),
+            )?
+        };
+        #[cfg(not(feature = "cuda"))]
         let lowered = lower_guest_pc_trace_seeded_pending_segment(
             layout,
             &pending,
@@ -4956,6 +5047,20 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                                     ),
                                 }
                             })?;
+                            #[cfg(feature = "cuda")]
+                            if guest_pc_trace_owned_streaming_lower_enabled() {
+                                let seed = seed.clone();
+                                return Ok(GuestPcTraceSeededLoweredSegment {
+                                    seed: seed.clone(),
+                                    lowered: lower_guest_pc_trace_owned_streaming_pending_segment(
+                                        layout,
+                                        pending,
+                                        &seed,
+                                        expected_proof_values,
+                                        Some(&mut worker_timing),
+                                    )?,
+                                });
+                            }
                             Ok(GuestPcTraceSeededLoweredSegment {
                                 seed: seed.clone(),
                                 lowered: lower_guest_pc_trace_seeded_pending_segment(
@@ -5374,6 +5479,11 @@ fn guest_pc_trace_parallel_lower_result_queue_capacity(worker_count: usize) -> u
 
 fn guest_pc_trace_parallel_lower_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", false)
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_trace_owned_streaming_lower_enabled() -> bool {
+    env_flag_enabled("LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER", false)
 }
 
 fn guest_pc_trace_needs_full_seed_advance(

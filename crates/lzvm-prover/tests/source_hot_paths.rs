@@ -5733,6 +5733,28 @@ fn guest_pc_trace_parallel_lowerer_bounds_result_queue() {
 }
 
 #[test]
+fn guest_pc_trace_owned_streaming_lower_remains_cuda_opt_in() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+
+    assert!(
+        backend_source.contains("LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER"),
+        "owned streaming guest PC trace lowering should keep an explicit CUDA runtime gate"
+    );
+    assert!(
+        backend_source
+            .contains("env_flag_enabled(\"LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER\", false)"),
+        "owned streaming guest PC trace lowering should remain disabled by default"
+    );
+    assert!(
+        backend_source.contains("fn lower_guest_pc_trace_owned_streaming_pending_segment"),
+        "owned streaming guest PC trace lowering should have a dedicated seeded pending helper"
+    );
+}
+
+#[test]
 fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

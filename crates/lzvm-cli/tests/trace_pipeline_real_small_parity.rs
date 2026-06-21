@@ -33,6 +33,7 @@ const PARALLEL_REPLAY_SNAPSHOT_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_R
 const PARALLEL_REPLAY_ONLY_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY";
 const REPORT_CHUNKS_ENV: &str = "LZVM_GUEST_PC_TRACE_REPORT_CHUNKS";
 const REPORT_CHUNK_CAPACITY_ENV: &str = "LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY";
+const OWNED_STREAMING_LOWER_ENV: &str = "LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER";
 
 #[test]
 #[ignore]
@@ -47,6 +48,12 @@ fn real_small_trace_pipeline_preserves_proof_bytes() {
     fs::create_dir_all(&config.tmp_dir).expect("tmp directory should be created");
 
     let default = run_prove_witness(&config, &work_dir, "default", RealSmallParityMode::Default);
+    let owned = run_prove_witness(
+        &config,
+        &work_dir,
+        "owned-streaming-lower",
+        RealSmallParityMode::OwnedStreamingLower,
+    );
     let pipeline = run_prove_witness(
         &config,
         &work_dir,
@@ -64,6 +71,21 @@ fn real_small_trace_pipeline_preserves_proof_bytes() {
         "proof.bin",
         &default.output_dir.join("proof.bin"),
         &pipeline.output_dir.join("proof.bin"),
+    );
+    assert_same_file(
+        "owned streaming proof.bin",
+        &default.output_dir.join("proof.bin"),
+        &owned.output_dir.join("proof.bin"),
+    );
+    assert_same_proof_artifact_surfaces(
+        "owned streaming proof.bin",
+        &default.output_dir.join("proof.bin"),
+        &owned.output_dir.join("proof.bin"),
+    );
+    assert_same_file(
+        "owned streaming eth-block-public-values.bin",
+        &default.output_dir.join("eth-block-public-values.bin"),
+        &owned.output_dir.join("eth-block-public-values.bin"),
     );
     assert_same_file(
         "proof.bin",
@@ -162,6 +184,7 @@ struct ProveRun {
 #[derive(Clone, Copy)]
 enum RealSmallParityMode {
     Default,
+    OwnedStreamingLower,
     SeedPipeline,
     SeedPipelineCommitWorkers,
 }
@@ -245,6 +268,14 @@ fn run_prove_witness(
                 1,
             );
         }
+        RealSmallParityMode::OwnedStreamingLower => {
+            assert_timing_equals(&output_text, "timing_guest_trace_parallel_lower_workers", 0);
+            assert_timing_equals(
+                &output_text,
+                "timing_guest_segment_commit_effective_workers",
+                1,
+            );
+        }
         RealSmallParityMode::SeedPipeline => {
             assert_pipeline_timing_shape(&output_text);
             assert_timing_equals(
@@ -287,6 +318,9 @@ fn prove_command(
     clear_pipeline_env(&mut command);
     match mode {
         RealSmallParityMode::Default => {}
+        RealSmallParityMode::OwnedStreamingLower => {
+            command.env(OWNED_STREAMING_LOWER_ENV, "1");
+        }
         RealSmallParityMode::SeedPipeline => {
             command
                 .env(PARALLEL_LOWER_ENV, "1")
@@ -320,6 +354,7 @@ fn clear_pipeline_env(command: &mut Command) {
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKER_REPLAY",
         REPORT_CHUNKS_ENV,
         REPORT_CHUNK_CAPACITY_ENV,
+        OWNED_STREAMING_LOWER_ENV,
     ] {
         command.env_remove(OsStr::new(name));
     }
@@ -341,6 +376,7 @@ fn clear_pipeline_env_removes_current_replay_controls() {
         PARALLEL_REPLAY_ONLY_ENV,
         REPORT_CHUNKS_ENV,
         REPORT_CHUNK_CAPACITY_ENV,
+        OWNED_STREAMING_LOWER_ENV,
     ] {
         command.env(name, "1");
     }
@@ -360,6 +396,7 @@ fn clear_pipeline_env_removes_current_replay_controls() {
         PARALLEL_REPLAY_ONLY_ENV,
         REPORT_CHUNKS_ENV,
         REPORT_CHUNK_CAPACITY_ENV,
+        OWNED_STREAMING_LOWER_ENV,
     ] {
         assert_env_removed(&command, name);
     }
