@@ -34,84 +34,83 @@ const PARALLEL_REPLAY_ONLY_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLA
 const REPORT_CHUNKS_ENV: &str = "LZVM_GUEST_PC_TRACE_REPORT_CHUNKS";
 const REPORT_CHUNK_CAPACITY_ENV: &str = "LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY";
 const OWNED_STREAMING_LOWER_ENV: &str = "LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER";
+const REAL_SMALL_PARITY_ENV: RealParityEnv = RealParityEnv {
+    bin: "LZVM_REAL_SMALL_PARITY_BIN",
+    setup: "LZVM_REAL_SMALL_PARITY_SETUP",
+    block_input: "LZVM_REAL_SMALL_PARITY_BLOCK_INPUT",
+    program_image_cache: "LZVM_REAL_SMALL_PARITY_PROGRAM_IMAGE_CACHE",
+    input_data: "LZVM_REAL_SMALL_PARITY_INPUT_DATA",
+    guest_image: "LZVM_REAL_SMALL_PARITY_GUEST_IMAGE",
+    trace_limit: "LZVM_REAL_SMALL_PARITY_TRACE_LIMIT",
+    work_dir: "LZVM_REAL_SMALL_PARITY_WORK_DIR",
+    tmp_dir: "LZVM_REAL_SMALL_PARITY_TMP_DIR",
+};
+const REAL_LARGE_PARITY_ENV: RealParityEnv = RealParityEnv {
+    bin: "LZVM_REAL_LARGE_PARITY_BIN",
+    setup: "LZVM_REAL_LARGE_PARITY_SETUP",
+    block_input: "LZVM_REAL_LARGE_PARITY_BLOCK_INPUT",
+    program_image_cache: "LZVM_REAL_LARGE_PARITY_PROGRAM_IMAGE_CACHE",
+    input_data: "LZVM_REAL_LARGE_PARITY_INPUT_DATA",
+    guest_image: "LZVM_REAL_LARGE_PARITY_GUEST_IMAGE",
+    trace_limit: "LZVM_REAL_LARGE_PARITY_TRACE_LIMIT",
+    work_dir: "LZVM_REAL_LARGE_PARITY_WORK_DIR",
+    tmp_dir: "LZVM_REAL_LARGE_PARITY_TMP_DIR",
+};
 
 #[test]
 #[ignore]
 fn real_small_trace_pipeline_preserves_proof_bytes() {
-    let config = RealSmallParityConfig::from_env();
+    let config = RealParityConfig::from_env(REAL_SMALL_PARITY_ENV, "120000000");
+    run_real_trace_pipeline_parity(
+        &config,
+        "small",
+        &[
+            RealParityMode::OwnedStreamingLower,
+            RealParityMode::SeedPipeline,
+            RealParityMode::SeedPipelineCommitWorkers,
+        ],
+    );
+}
+
+#[test]
+#[ignore]
+fn real_large_trace_pipeline_preserves_proof_bytes() {
+    let config = RealParityConfig::from_env(REAL_LARGE_PARITY_ENV, "600000000");
+    run_real_trace_pipeline_parity(&config, "large", &[RealParityMode::SeedPipeline]);
+}
+
+fn run_real_trace_pipeline_parity(
+    config: &RealParityConfig,
+    label: &str,
+    parity_modes: &[RealParityMode],
+) {
     let work_dir = config.work_dir.join(format!(
-        "lzvm-real-small-trace-pipeline-parity-{}",
-        std::process::id()
+        "lzvm-real-{label}-trace-pipeline-parity-{}",
+        std::process::id(),
     ));
     let _ = fs::remove_dir_all(&work_dir);
     fs::create_dir_all(&work_dir).expect("work directory should be created");
     fs::create_dir_all(&config.tmp_dir).expect("tmp directory should be created");
 
-    let default = run_prove_witness(&config, &work_dir, "default", RealSmallParityMode::Default);
-    let owned = run_prove_witness(
-        &config,
-        &work_dir,
-        "owned-streaming-lower",
-        RealSmallParityMode::OwnedStreamingLower,
-    );
-    let pipeline = run_prove_witness(
-        &config,
-        &work_dir,
-        "pipeline",
-        RealSmallParityMode::SeedPipeline,
-    );
-    let combined = run_prove_witness(
-        &config,
-        &work_dir,
-        "combined",
-        RealSmallParityMode::SeedPipelineCommitWorkers,
-    );
-
-    assert_same_proof_artifact_surfaces(
-        "proof.bin",
-        &default.output_dir.join("proof.bin"),
-        &pipeline.output_dir.join("proof.bin"),
-    );
-    assert_same_file(
-        "owned streaming proof.bin",
-        &default.output_dir.join("proof.bin"),
-        &owned.output_dir.join("proof.bin"),
-    );
-    assert_same_proof_artifact_surfaces(
-        "owned streaming proof.bin",
-        &default.output_dir.join("proof.bin"),
-        &owned.output_dir.join("proof.bin"),
-    );
-    assert_same_file(
-        "owned streaming eth-block-public-values.bin",
-        &default.output_dir.join("eth-block-public-values.bin"),
-        &owned.output_dir.join("eth-block-public-values.bin"),
-    );
-    assert_same_file(
-        "proof.bin",
-        &default.output_dir.join("proof.bin"),
-        &pipeline.output_dir.join("proof.bin"),
-    );
-    assert_same_file(
-        "eth-block-public-values.bin",
-        &default.output_dir.join("eth-block-public-values.bin"),
-        &pipeline.output_dir.join("eth-block-public-values.bin"),
-    );
-    assert_same_proof_artifact_surfaces(
-        "combined proof.bin",
-        &default.output_dir.join("proof.bin"),
-        &combined.output_dir.join("proof.bin"),
-    );
-    assert_same_file(
-        "combined proof.bin",
-        &default.output_dir.join("proof.bin"),
-        &combined.output_dir.join("proof.bin"),
-    );
-    assert_same_file(
-        "combined eth-block-public-values.bin",
-        &default.output_dir.join("eth-block-public-values.bin"),
-        &combined.output_dir.join("eth-block-public-values.bin"),
-    );
+    let default = run_prove_witness(config, &work_dir, "default", RealParityMode::Default);
+    for mode in parity_modes {
+        let candidate = run_prove_witness(config, &work_dir, mode.label(), *mode);
+        assert_same_proof_artifact_surfaces(
+            &format!("{} proof.bin", mode.label()),
+            &default.output_dir.join("proof.bin"),
+            &candidate.output_dir.join("proof.bin"),
+        );
+        assert_same_file(
+            &format!("{} proof.bin", mode.label()),
+            &default.output_dir.join("proof.bin"),
+            &candidate.output_dir.join("proof.bin"),
+        );
+        assert_same_file(
+            &format!("{} eth-block-public-values.bin", mode.label()),
+            &default.output_dir.join("eth-block-public-values.bin"),
+            &candidate.output_dir.join("eth-block-public-values.bin"),
+        );
+    }
 
     fs::remove_dir_all(&work_dir).expect("work directory should be removed");
 }
@@ -165,7 +164,7 @@ fn proof_artifact_surfaces_cover_stage_roots_and_transcript_segments() {
     );
 }
 
-struct RealSmallParityConfig {
+struct RealParityConfig {
     bin: PathBuf,
     setup_dir: PathBuf,
     block_input: PathBuf,
@@ -177,12 +176,25 @@ struct RealSmallParityConfig {
     tmp_dir: PathBuf,
 }
 
+#[derive(Clone, Copy)]
+struct RealParityEnv {
+    bin: &'static str,
+    setup: &'static str,
+    block_input: &'static str,
+    program_image_cache: &'static str,
+    input_data: &'static str,
+    guest_image: &'static str,
+    trace_limit: &'static str,
+    work_dir: &'static str,
+    tmp_dir: &'static str,
+}
+
 struct ProveRun {
     output_dir: PathBuf,
 }
 
 #[derive(Clone, Copy)]
-enum RealSmallParityMode {
+enum RealParityMode {
     Default,
     OwnedStreamingLower,
     SeedPipeline,
@@ -195,24 +207,33 @@ struct ProofArtifactSurfaces {
     transcript_segments: Vec<(u32, Vec<u8>)>,
 }
 
-impl RealSmallParityConfig {
-    fn from_env() -> Self {
+impl RealParityMode {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::OwnedStreamingLower => "owned-streaming-lower",
+            Self::SeedPipeline => "pipeline",
+            Self::SeedPipelineCommitWorkers => "combined",
+        }
+    }
+}
+
+impl RealParityConfig {
+    fn from_env(env_names: RealParityEnv, default_trace_limit: &str) -> Self {
         let workspace = workspace_root();
         let temp_dir = workspace.join("temp");
         Self {
-            bin: optional_env_path("LZVM_REAL_SMALL_PARITY_BIN")
+            bin: optional_env_path(env_names.bin)
                 .unwrap_or_else(|| workspace.join("target").join("release").join("lzvm")),
-            setup_dir: required_env_path("LZVM_REAL_SMALL_PARITY_SETUP"),
-            block_input: required_env_path("LZVM_REAL_SMALL_PARITY_BLOCK_INPUT"),
-            program_image_cache: required_env_path("LZVM_REAL_SMALL_PARITY_PROGRAM_IMAGE_CACHE"),
-            input_data: required_env_path("LZVM_REAL_SMALL_PARITY_INPUT_DATA"),
-            guest_image: required_env_path("LZVM_REAL_SMALL_PARITY_GUEST_IMAGE"),
-            trace_limit: env::var("LZVM_REAL_SMALL_PARITY_TRACE_LIMIT")
-                .unwrap_or_else(|_| "120000000".to_owned()),
-            work_dir: optional_env_path("LZVM_REAL_SMALL_PARITY_WORK_DIR")
-                .unwrap_or_else(|| temp_dir.clone()),
-            tmp_dir: optional_env_path("LZVM_REAL_SMALL_PARITY_TMP_DIR")
-                .unwrap_or_else(|| temp_dir.join("tmp")),
+            setup_dir: required_env_path(env_names.setup),
+            block_input: required_env_path(env_names.block_input),
+            program_image_cache: required_env_path(env_names.program_image_cache),
+            input_data: required_env_path(env_names.input_data),
+            guest_image: required_env_path(env_names.guest_image),
+            trace_limit: env::var(env_names.trace_limit)
+                .unwrap_or_else(|_| default_trace_limit.to_owned()),
+            work_dir: optional_env_path(env_names.work_dir).unwrap_or_else(|| temp_dir.clone()),
+            tmp_dir: optional_env_path(env_names.tmp_dir).unwrap_or_else(|| temp_dir.join("tmp")),
         }
     }
 }
@@ -240,10 +261,10 @@ fn required_env_path(name: &str) -> PathBuf {
 }
 
 fn run_prove_witness(
-    config: &RealSmallParityConfig,
+    config: &RealParityConfig,
     work_dir: &Path,
     label: &str,
-    mode: RealSmallParityMode,
+    mode: RealParityMode,
 ) -> ProveRun {
     assert!(
         config.bin.exists(),
@@ -260,7 +281,7 @@ fn run_prove_witness(
         .expect("stderr should be written");
     let output_text = assert_successful_proof(label, &output);
     match mode {
-        RealSmallParityMode::Default => {
+        RealParityMode::Default => {
             assert_timing_equals(&output_text, "timing_guest_trace_parallel_lower_workers", 0);
             assert_timing_equals(
                 &output_text,
@@ -268,7 +289,7 @@ fn run_prove_witness(
                 1,
             );
         }
-        RealSmallParityMode::OwnedStreamingLower => {
+        RealParityMode::OwnedStreamingLower => {
             assert_timing_equals(&output_text, "timing_guest_trace_parallel_lower_workers", 0);
             assert_timing_equals(
                 &output_text,
@@ -276,7 +297,7 @@ fn run_prove_witness(
                 1,
             );
         }
-        RealSmallParityMode::SeedPipeline => {
+        RealParityMode::SeedPipeline => {
             assert_pipeline_timing_shape(&output_text);
             assert_timing_equals(
                 &output_text,
@@ -284,7 +305,7 @@ fn run_prove_witness(
                 1,
             );
         }
-        RealSmallParityMode::SeedPipelineCommitWorkers => {
+        RealParityMode::SeedPipelineCommitWorkers => {
             assert_pipeline_timing_shape(&output_text);
             assert_combined_pipeline_timing_shape(&output_text);
         }
@@ -292,11 +313,7 @@ fn run_prove_witness(
     ProveRun { output_dir }
 }
 
-fn prove_command(
-    config: &RealSmallParityConfig,
-    output_dir: &Path,
-    mode: RealSmallParityMode,
-) -> Command {
+fn prove_command(config: &RealParityConfig, output_dir: &Path, mode: RealParityMode) -> Command {
     let mut command = Command::new(&config.bin);
     command
         .arg("prove")
@@ -317,17 +334,17 @@ fn prove_command(
 
     clear_pipeline_env(&mut command);
     match mode {
-        RealSmallParityMode::Default => {}
-        RealSmallParityMode::OwnedStreamingLower => {
+        RealParityMode::Default => {}
+        RealParityMode::OwnedStreamingLower => {
             command.env(OWNED_STREAMING_LOWER_ENV, "1");
         }
-        RealSmallParityMode::SeedPipeline => {
+        RealParityMode::SeedPipeline => {
             command
                 .env(PARALLEL_LOWER_ENV, "1")
                 .env(LOWER_WORKERS_ENV, "2")
                 .env(COMMIT_WORKERS_ENV, "1");
         }
-        RealSmallParityMode::SeedPipelineCommitWorkers => {
+        RealParityMode::SeedPipelineCommitWorkers => {
             command
                 .env(PARALLEL_LOWER_ENV, "1")
                 .env(LOWER_WORKERS_ENV, "2")

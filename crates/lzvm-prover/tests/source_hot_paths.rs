@@ -5755,6 +5755,31 @@ fn guest_pc_trace_owned_streaming_lower_remains_cuda_opt_in() {
 }
 
 #[test]
+fn trace_pipeline_real_parity_covers_large_input() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let parity_path = crate_root.join("../lzvm-cli/tests/trace_pipeline_real_small_parity.rs");
+    let parity_source =
+        std::fs::read_to_string(&parity_path).expect("trace pipeline parity source should read");
+
+    assert!(
+        parity_source.contains("fn real_large_trace_pipeline_preserves_proof_bytes"),
+        "trace pipeline byte parity should have an ignored large-input harness"
+    );
+    for env_name in [
+        "LZVM_REAL_LARGE_PARITY_SETUP",
+        "LZVM_REAL_LARGE_PARITY_BLOCK_INPUT",
+        "LZVM_REAL_LARGE_PARITY_PROGRAM_IMAGE_CACHE",
+        "LZVM_REAL_LARGE_PARITY_INPUT_DATA",
+        "LZVM_REAL_LARGE_PARITY_GUEST_IMAGE",
+    ] {
+        assert!(
+            parity_source.contains(env_name),
+            "large trace pipeline parity should expose {env_name}"
+        );
+    }
+}
+
+#[test]
 fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
