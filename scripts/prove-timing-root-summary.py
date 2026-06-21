@@ -1680,6 +1680,13 @@ def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
         values.get(PENDING_RECEIVE_WAIT_MS_KEY, 0),
         values.get(PARALLEL_LOWER_WORKERS_KEY, 0),
     )
+    if (
+        base_hint == "parallel_segment_reexecution_candidate"
+        and values.get(SEED_DIRECT_LIFT_ATTEMPTS_KEY, 0) > 0
+        and values.get(SEED_DIRECT_LIFT_SUCCESSES_KEY, 0)
+        < values.get(SEED_DIRECT_LIFT_ATTEMPTS_KEY, 0)
+    ):
+        return "seed_direct_lift_before_parallel_reexecution"
     if base_hint in {
         "trace_generation_and_commit_pipeline_candidate",
         "parallel_trace_lowering_candidate",
@@ -2311,6 +2318,7 @@ def performance_focus_hint(
     trace_pipeline_hints = {
         "trace_generation_and_commit_pipeline_candidate",
         "parallel_segment_reexecution_candidate",
+        "seed_direct_lift_before_parallel_reexecution",
         "parallel_segment_reexecution_authorization_required",
         "parallel_trace_lowering_candidate",
         "trace_generation_parallelism_candidate",
