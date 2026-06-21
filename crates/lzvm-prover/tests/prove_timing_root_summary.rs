@@ -5800,6 +5800,100 @@ fn prove_timing_root_summary_prioritizes_seed_ready_trace_pipeline() {
 }
 
 #[test]
+fn prove_timing_root_summary_flags_untrusted_seed_snapshot_validation_overhead() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=63238",
+        "timing_guest_trace_runner_ms=53597",
+        "timing_guest_trace_lowerer_ms=53597",
+        "timing_guest_trace_lower_ms=29802",
+        "timing_guest_trace_stream_elapsed_ms=53597",
+        "timing_guest_trace_stream_ms=21041",
+        "timing_guest_segment_commit_ms=21041",
+        "timing_guest_trace_segment_receive_wait_ms=32553",
+        "timing_guest_trace_pending_receive_wait_ms=0",
+        "timing_guest_trace_parallel_lower_workers=0",
+        "timing_guest_trace_seed_direct_lift_attempts=119",
+        "timing_guest_trace_seed_direct_lift_successes=119",
+        "timing_guest_trace_seed_full_advances=120",
+        "timing_finish_witness_opening_query_unit_count=120",
+        "timing_finish_witness_opening_single_query_unit_count=120",
+        "timing_finish_witness_opening_query_count=120",
+        "timing_finish_witness_opening_max_queries_per_unit=1",
+        "timing_finish_witness_opening_retained_parent_checkpoint_openings=79",
+        "timing_finish_witness_opening_retained_parent_checkpoint_rows=79",
+        "timing_finish_witness_opening_retained_parent_checkpoint_all_single_row_openings=79",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launches=79",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_ms=4",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches=790",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms=16",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        value("seed_direct_lift_action_hint"),
+        "seed_direct_lift_ready"
+    );
+    assert_eq!(
+        value("trace_pipeline_action_hint"),
+        "trace_generation_and_commit_pipeline_candidate"
+    );
+    assert_eq!(
+        value("performance_focus_hint"),
+        "avoid_untrusted_seed_snapshot_validation"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_requests_seed_snapshot_profile_before_reexecution() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

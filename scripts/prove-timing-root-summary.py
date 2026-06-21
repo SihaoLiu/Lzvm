@@ -2360,6 +2360,16 @@ def performance_focus_hint(
             "parallel_segment_reexecution_candidate",
         }
         and seed_direct_lift_action_hint == "seed_direct_lift_ready"
+        and seed_full_advances > 1
+    ):
+        return "avoid_untrusted_seed_snapshot_validation"
+    if (
+        trace_pipeline_hint
+        in {
+            "trace_generation_and_commit_pipeline_candidate",
+            "parallel_segment_reexecution_candidate",
+        }
+        and seed_direct_lift_action_hint == "seed_direct_lift_ready"
         and seed_full_advances <= 1
     ):
         return "seed_ready_parallel_segment_reexecution_candidate"
