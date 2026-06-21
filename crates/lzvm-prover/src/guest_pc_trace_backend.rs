@@ -253,6 +253,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     parallel_lower_stream_fallback_count: usize,
     parallel_lower_stream_retained_report_count: usize,
     parallel_lower_stream_chunk_process_duration: Duration,
+    parallel_lower_job_receive_wait_duration: Duration,
     parallel_lower_dispatch_wait_duration: Duration,
     parallel_lower_stream_start_dispatch_wait_duration: Duration,
     parallel_lower_stream_chunk_dispatch_wait_duration: Duration,
@@ -407,6 +408,8 @@ impl GuestPcTraceStreamTiming {
             other.parallel_lower_stream_retained_report_count;
         self.parallel_lower_stream_chunk_process_duration +=
             other.parallel_lower_stream_chunk_process_duration;
+        self.parallel_lower_job_receive_wait_duration +=
+            other.parallel_lower_job_receive_wait_duration;
         self.parallel_lower_dispatch_wait_duration += other.parallel_lower_dispatch_wait_duration;
         self.parallel_lower_stream_start_dispatch_wait_duration +=
             other.parallel_lower_stream_start_dispatch_wait_duration;
@@ -769,6 +772,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn parallel_lower_stream_chunk_process_duration(&self) -> Duration {
         self.parallel_lower_stream_chunk_process_duration
+    }
+
+    pub fn parallel_lower_job_receive_wait_duration(&self) -> Duration {
+        self.parallel_lower_job_receive_wait_duration
     }
 
     pub fn parallel_lower_dispatch_wait_duration(&self) -> Duration {
@@ -6127,10 +6134,18 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                     let mut active_stream: Option<GuestPcTraceParallelStreamedSegment> = None;
                     #[cfg(feature = "cuda")]
                     let mut active_stream_timing = GuestPcTraceStreamTiming::default();
-                    while let Ok(job) = job_receiver.recv() {
+                    loop {
+                        let job_receive_started = Instant::now();
+                        let job = match job_receiver.recv() {
+                            Ok(job) => job,
+                            Err(_) => break,
+                        };
+                        let job_receive_elapsed = job_receive_started.elapsed();
                         let mut worker_timing = GuestPcTraceStreamTiming::default();
                         let (trace_instance_index, result) = match job {
                             GuestPcTraceParallelLowerJob::Segment(pending) => {
+                                worker_timing.parallel_lower_job_receive_wait_duration +=
+                                    job_receive_elapsed;
                                 let pending = *pending;
                                 let trace_instance_index = pending.trace_instance_index;
                                 let result = lower_guest_pc_trace_parallel_pending_job(
@@ -6163,17 +6178,24 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                                 match result {
                                     Ok(()) => {
                                         active_stream_timing = GuestPcTraceStreamTiming::default();
+                                        active_stream_timing
+                                            .parallel_lower_job_receive_wait_duration +=
+                                            job_receive_elapsed;
                                         (trace_instance_index, None)
                                     }
-                                    Err(error) => (
-                                        trace_instance_index,
-                                        Some(Err(error)),
-                                    ),
+                                    Err(error) => {
+                                        worker_timing.parallel_lower_job_receive_wait_duration +=
+                                            job_receive_elapsed;
+                                        (trace_instance_index, Some(Err(error)))
+                                    }
                                 }
                             }
                             #[cfg(feature = "cuda")]
                             GuestPcTraceParallelLowerJob::StreamChunk(chunk) => {
                                 let trace_instance_index = chunk.trace_instance_index;
+                                active_stream_timing
+                                    .parallel_lower_job_receive_wait_duration +=
+                                    job_receive_elapsed;
                                 let chunk_process_started = Instant::now();
                                 let result = active_stream
                                     .as_mut()
@@ -6203,6 +6225,9 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                             #[cfg(feature = "cuda")]
                             GuestPcTraceParallelLowerJob::StreamSegment(pending) => {
                                 let trace_instance_index = pending.trace_instance_index;
+                                active_stream_timing
+                                    .parallel_lower_job_receive_wait_duration +=
+                                    job_receive_elapsed;
                                 let result = active_stream
                                     .as_mut()
                                     .ok_or_else(|| {
@@ -6216,15 +6241,20 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                                     .and_then(|stream| stream.set_pending(*pending));
                                 match result {
                                     Ok(()) => (trace_instance_index, None),
-                                    Err(error) => (
-                                        trace_instance_index,
-                                        Some(Err(error)),
-                                    ),
+                                    Err(error) => {
+                                        worker_timing.add(std::mem::take(
+                                            &mut active_stream_timing,
+                                        ));
+                                        (trace_instance_index, Some(Err(error)))
+                                    }
                                 }
                             }
                             #[cfg(feature = "cuda")]
                             GuestPcTraceParallelLowerJob::StreamFinish(finish) => {
                                 let trace_instance_index = finish.trace_instance_index;
+                                active_stream_timing
+                                    .parallel_lower_job_receive_wait_duration +=
+                                    job_receive_elapsed;
                                 let result = active_stream
                                     .take()
                                     .ok_or_else(|| {
