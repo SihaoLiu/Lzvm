@@ -6636,6 +6636,14 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_register_store_rows\"",
         "\"guest_trace_memory_store_rows\"",
         "\"guest_trace_no_store_rows\"",
+        "\"guest_trace_row_shape_top_1_pattern\"",
+        "\"guest_trace_row_shape_top_1_count\"",
+        "\"guest_trace_row_shape_top_2_pattern\"",
+        "\"guest_trace_row_shape_top_2_count\"",
+        "\"guest_trace_row_shape_top_3_pattern\"",
+        "\"guest_trace_row_shape_top_3_count\"",
+        "\"guest_trace_row_shape_top_4_pattern\"",
+        "\"guest_trace_row_shape_top_4_count\"",
     ] {
         assert!(
             cli_source.contains(line_name),
@@ -6649,6 +6657,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "timing.guest_trace_copy_memory_store_row_count()",
         "timing.guest_trace_copy_no_store_row_count()",
         "timing.guest_trace_copy_no_memory_row_count()",
+        "timing.guest_trace_row_shape_top_patterns()",
     ] {
         assert!(
             cli_source.contains(cli_call),

@@ -51,6 +51,7 @@ const ZISK_MAIN_B_MEM_STEP_OFFSET: u64 = 1;
 const ZISK_MAIN_STORE_MEM_STEP_OFFSET: u64 = 2;
 const ZISK_MAIN_SPECIAL_MEM_STEP_OFFSET: u64 = 3;
 const ZISK_AMO_TEMP_REGISTER: u8 = 32;
+pub(crate) const ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT: usize = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestPcTraceBackend {
@@ -186,7 +187,7 @@ pub(crate) enum GuestPcTraceSegmentStreamError<E> {
     Emit(E),
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct GuestPcTraceStreamTiming {
     runner_duration: Duration,
     lowerer_duration: Duration,
@@ -306,6 +307,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_register_store_row_count: usize,
     trace_memory_store_row_count: usize,
     trace_no_store_row_count: usize,
+    trace_row_shape_pattern_counts: BTreeMap<u64, usize>,
 }
 
 impl GuestPcTraceStreamTiming {
@@ -478,6 +480,9 @@ impl GuestPcTraceStreamTiming {
         self.trace_register_store_row_count += other.trace_register_store_row_count;
         self.trace_memory_store_row_count += other.trace_memory_store_row_count;
         self.trace_no_store_row_count += other.trace_no_store_row_count;
+        for (id, count) in other.trace_row_shape_pattern_counts {
+            self.record_trace_row_shape_pattern_count(id, count);
+        }
     }
 
     pub fn runner_duration(&self) -> Duration {
@@ -1012,6 +1017,35 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_no_store_row_count(&self) -> usize {
         self.trace_no_store_row_count
+    }
+
+    fn record_trace_row_shape_pattern(&mut self, id: u64) {
+        self.record_trace_row_shape_pattern_count(id, 1);
+    }
+
+    fn record_trace_row_shape_pattern_count(&mut self, id: u64, count: usize) {
+        if id == 0 || count == 0 {
+            return;
+        }
+        let entry = self.trace_row_shape_pattern_counts.entry(id).or_default();
+        *entry = entry.saturating_add(count);
+    }
+
+    pub fn trace_row_shape_top_patterns(
+        &self,
+    ) -> [(u64, usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT] {
+        let mut pairs = self
+            .trace_row_shape_pattern_counts
+            .iter()
+            .map(|(&id, &count)| (id, count))
+            .collect::<Vec<_>>();
+        pairs.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+
+        let mut out = [(0_u64, 0_usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT];
+        for (slot, pair) in out.iter_mut().zip(pairs.into_iter()) {
+            *slot = pair;
+        }
+        out
     }
 }
 
@@ -6809,6 +6843,7 @@ fn record_trace_lowered_row_shape(
     timing: &mut GuestPcTraceStreamTiming,
     instruction: &ZiskMainInstruction,
 ) {
+    timing.record_trace_row_shape_pattern(zisk_main_row_shape_pattern_id(instruction));
     let (register_a_sources, memory_a_sources) = source_shape_count(instruction.a);
     let (register_b_sources, memory_b_sources) = source_shape_count(instruction.b);
     let memory_source_count = memory_a_sources + memory_b_sources;
@@ -6915,6 +6950,14 @@ enum TraceSourceKind {
     LastC,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TraceStoreKind {
+    None,
+    Register,
+    Memory,
+    Indirect,
+}
+
 fn trace_source_kind(source: ZiskMainSource) -> TraceSourceKind {
     match source {
         ZiskMainSource::Immediate(_) => TraceSourceKind::Immediate,
@@ -6923,6 +6966,47 @@ fn trace_source_kind(source: ZiskMainSource) -> TraceSourceKind {
         ZiskMainSource::Indirect(_) => TraceSourceKind::Indirect,
         ZiskMainSource::LastC => TraceSourceKind::LastC,
     }
+}
+
+fn trace_source_kind_code(source: ZiskMainSource) -> u64 {
+    match trace_source_kind(source) {
+        TraceSourceKind::Immediate => 0,
+        TraceSourceKind::Register => 1,
+        TraceSourceKind::Memory => 2,
+        TraceSourceKind::Indirect => 3,
+        TraceSourceKind::LastC => 4,
+    }
+}
+
+fn trace_store_kind(store: &ZiskMainStore) -> TraceStoreKind {
+    match store {
+        ZiskMainStore::None => TraceStoreKind::None,
+        ZiskMainStore::Register(_) => TraceStoreKind::Register,
+        ZiskMainStore::Memory(_) => TraceStoreKind::Memory,
+        ZiskMainStore::Indirect(_) => TraceStoreKind::Indirect,
+    }
+}
+
+fn trace_store_kind_code(store: &ZiskMainStore) -> u64 {
+    match trace_store_kind(store) {
+        TraceStoreKind::None => 0,
+        TraceStoreKind::Register => 1,
+        TraceStoreKind::Memory => 2,
+        TraceStoreKind::Indirect => 3,
+    }
+}
+
+fn zisk_main_row_shape_pattern_id(instruction: &ZiskMainInstruction) -> u64 {
+    1 | (u64::from(instruction.op.code()) << 1)
+        | (trace_source_kind_code(instruction.a) << 9)
+        | (trace_source_kind_code(instruction.b) << 12)
+        | (trace_store_kind_code(&instruction.store) << 15)
+        | ((instruction.ind_width & 0xff) << 17)
+        | (u64::from(instruction.store_pc) << 25)
+        | (u64::from(instruction.set_pc) << 26)
+        | (u64::from(instruction.m32) << 27)
+        | (u64::from(instruction.is_external_op) << 28)
+        | (u64::from(instruction.is_precompiled) << 29)
 }
 
 fn record_trace_report_source_read_timing(

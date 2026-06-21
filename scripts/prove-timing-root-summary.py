@@ -181,6 +181,14 @@ TRACE_MEMORY_SOURCE_READS_KEY = "timing_guest_trace_memory_source_reads"
 TRACE_REGISTER_STORE_ROWS_KEY = "timing_guest_trace_register_store_rows"
 TRACE_MEMORY_STORE_ROWS_KEY = "timing_guest_trace_memory_store_rows"
 TRACE_NO_STORE_ROWS_KEY = "timing_guest_trace_no_store_rows"
+TRACE_ROW_SHAPE_TOP_1_PATTERN_KEY = "timing_guest_trace_row_shape_top_1_pattern"
+TRACE_ROW_SHAPE_TOP_1_COUNT_KEY = "timing_guest_trace_row_shape_top_1_count"
+TRACE_ROW_SHAPE_TOP_2_PATTERN_KEY = "timing_guest_trace_row_shape_top_2_pattern"
+TRACE_ROW_SHAPE_TOP_2_COUNT_KEY = "timing_guest_trace_row_shape_top_2_count"
+TRACE_ROW_SHAPE_TOP_3_PATTERN_KEY = "timing_guest_trace_row_shape_top_3_pattern"
+TRACE_ROW_SHAPE_TOP_3_COUNT_KEY = "timing_guest_trace_row_shape_top_3_count"
+TRACE_ROW_SHAPE_TOP_4_PATTERN_KEY = "timing_guest_trace_row_shape_top_4_pattern"
+TRACE_ROW_SHAPE_TOP_4_COUNT_KEY = "timing_guest_trace_row_shape_top_4_count"
 TRACE_SHAPE_KEYS = (
     TRACE_SINGLE_ROW_REPORTS_KEY,
     TRACE_MULTI_ROW_REPORTS_KEY,
@@ -209,6 +217,14 @@ TRACE_SHAPE_KEYS = (
     TRACE_REGISTER_STORE_ROWS_KEY,
     TRACE_MEMORY_STORE_ROWS_KEY,
     TRACE_NO_STORE_ROWS_KEY,
+    TRACE_ROW_SHAPE_TOP_1_PATTERN_KEY,
+    TRACE_ROW_SHAPE_TOP_1_COUNT_KEY,
+    TRACE_ROW_SHAPE_TOP_2_PATTERN_KEY,
+    TRACE_ROW_SHAPE_TOP_2_COUNT_KEY,
+    TRACE_ROW_SHAPE_TOP_3_PATTERN_KEY,
+    TRACE_ROW_SHAPE_TOP_3_COUNT_KEY,
+    TRACE_ROW_SHAPE_TOP_4_PATTERN_KEY,
+    TRACE_ROW_SHAPE_TOP_4_COUNT_KEY,
 )
 TRACE_REPORT_DETAIL_SAMPLES_KEY = "timing_guest_trace_report_detail_samples"
 TRACE_REPORT_SAMPLED_NS_KEY = "timing_guest_trace_report_sampled_ns"
@@ -705,6 +721,10 @@ HEADER = (
     "register_source_reads,memory_source_reads,memory_source_read_pct,"
     "register_store_rows,memory_store_rows,memory_store_row_pct,"
     "no_store_rows,no_store_row_pct,trace_shape_sample_hint,"
+    "row_shape_top_1_pattern,row_shape_top_1_count,"
+    "row_shape_top_2_pattern,row_shape_top_2_count,"
+    "row_shape_top_3_pattern,row_shape_top_3_count,"
+    "row_shape_top_4_pattern,row_shape_top_4_count,"
     "trace_precompile_action_hint,"
     "copy_memory_source_rows,copy_memory_source_row_pct,"
     "copy_indirect_memory_rows,copy_indirect_memory_row_pct,"
@@ -926,6 +946,14 @@ TIMING_KEYS = {
     TRACE_REGISTER_STORE_ROWS_KEY,
     TRACE_MEMORY_STORE_ROWS_KEY,
     TRACE_NO_STORE_ROWS_KEY,
+    TRACE_ROW_SHAPE_TOP_1_PATTERN_KEY,
+    TRACE_ROW_SHAPE_TOP_1_COUNT_KEY,
+    TRACE_ROW_SHAPE_TOP_2_PATTERN_KEY,
+    TRACE_ROW_SHAPE_TOP_2_COUNT_KEY,
+    TRACE_ROW_SHAPE_TOP_3_PATTERN_KEY,
+    TRACE_ROW_SHAPE_TOP_3_COUNT_KEY,
+    TRACE_ROW_SHAPE_TOP_4_PATTERN_KEY,
+    TRACE_ROW_SHAPE_TOP_4_COUNT_KEY,
     TRACE_REPORT_DETAIL_SAMPLES_KEY,
     TRACE_REPORT_SAMPLED_NS_KEY,
     TRACE_REPORT_LOWERING_SAMPLED_NS_KEY,
@@ -3459,6 +3487,14 @@ def summarize_profile_values(
     register_store_rows = values.get(TRACE_REGISTER_STORE_ROWS_KEY, 0)
     memory_store_rows = values.get(TRACE_MEMORY_STORE_ROWS_KEY, 0)
     no_store_rows = values.get(TRACE_NO_STORE_ROWS_KEY, 0)
+    row_shape_top_1_pattern = values.get(TRACE_ROW_SHAPE_TOP_1_PATTERN_KEY, 0)
+    row_shape_top_1_count = values.get(TRACE_ROW_SHAPE_TOP_1_COUNT_KEY, 0)
+    row_shape_top_2_pattern = values.get(TRACE_ROW_SHAPE_TOP_2_PATTERN_KEY, 0)
+    row_shape_top_2_count = values.get(TRACE_ROW_SHAPE_TOP_2_COUNT_KEY, 0)
+    row_shape_top_3_pattern = values.get(TRACE_ROW_SHAPE_TOP_3_PATTERN_KEY, 0)
+    row_shape_top_3_count = values.get(TRACE_ROW_SHAPE_TOP_3_COUNT_KEY, 0)
+    row_shape_top_4_pattern = values.get(TRACE_ROW_SHAPE_TOP_4_PATTERN_KEY, 0)
+    row_shape_top_4_count = values.get(TRACE_ROW_SHAPE_TOP_4_COUNT_KEY, 0)
     indirect_memory_row_pct = (
         indirect_memory_rows * 100.0 / trace_report_rows
         if trace_report_rows
@@ -4612,6 +4648,10 @@ def summarize_profile_values(
         f"{memory_source_read_pct:.3f},{register_store_rows},"
         f"{memory_store_rows},{memory_store_row_pct:.3f},"
         f"{no_store_rows},{no_store_row_pct:.3f},{trace_shape_hint},"
+        f"{row_shape_top_1_pattern},{row_shape_top_1_count},"
+        f"{row_shape_top_2_pattern},{row_shape_top_2_count},"
+        f"{row_shape_top_3_pattern},{row_shape_top_3_count},"
+        f"{row_shape_top_4_pattern},{row_shape_top_4_count},"
         f"{trace_precompile_action},"
         f"{copy_memory_source_rows},{copy_memory_source_row_pct:.3f},"
         f"{copy_indirect_memory_rows},{copy_indirect_memory_row_pct:.3f},"

@@ -39,7 +39,8 @@ use crate::guest_pc_trace_backend::{
     for_each_guest_pc_trace_segment_with_context,
     run_guest_pc_trace_runtime_proof_values_with_context, run_guest_pc_trace_segments_with_context,
     GuestPcTraceBackend, GuestPcTraceSegmentRunOutput, GuestPcTraceSegmentStreamError,
-    GuestPcTraceStreamTiming, ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT,
+    GuestPcTraceStreamTiming, ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT,
+    ZISK_MAIN_UNPAIRED_DESCRIPTOR_FIELD_COUNT,
     ZISK_MAIN_UNPAIRED_DESCRIPTOR_HIGH32_HISTOGRAM_BUCKETS,
 };
 use crate::hint_eval::{
@@ -553,6 +554,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_register_store_row_count: usize,
     guest_trace_memory_store_row_count: usize,
     guest_trace_no_store_row_count: usize,
+    guest_trace_row_shape_top_patterns: [(u64, usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT],
     guest_device_source_build_duration: Duration,
     guest_device_source_descriptor_upload_duration: Duration,
     guest_device_source_descriptor_upload_byte_count: usize,
@@ -913,6 +915,7 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_register_store_row_count: stream_timing.trace_register_store_row_count(),
             guest_trace_memory_store_row_count: stream_timing.trace_memory_store_row_count(),
             guest_trace_no_store_row_count: stream_timing.trace_no_store_row_count(),
+            guest_trace_row_shape_top_patterns: stream_timing.trace_row_shape_top_patterns(),
             guest_device_source_build_duration: trace_timing.device_source_build_duration,
             guest_device_source_descriptor_upload_duration: trace_timing
                 .device_source_descriptor_upload_duration,
@@ -1630,6 +1633,12 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_no_store_row_count(&self) -> usize {
         self.guest_trace_no_store_row_count
+    }
+
+    pub fn guest_trace_row_shape_top_patterns(
+        &self,
+    ) -> [(u64, usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT] {
+        self.guest_trace_row_shape_top_patterns
     }
 
     pub fn guest_device_source_build_duration(&self) -> Duration {

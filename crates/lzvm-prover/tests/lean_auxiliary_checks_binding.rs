@@ -1517,6 +1517,38 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "\"guest_trace_no_store_rows\"",
             "guest_trace_no_store_row_count()",
         ),
+        (
+            "\"guest_trace_row_shape_top_1_pattern\"",
+            "guest_trace_row_shape_top_patterns()",
+        ),
+        (
+            "\"guest_trace_row_shape_top_1_count\"",
+            "guest_trace_row_shape_top_patterns()",
+        ),
+        (
+            "\"guest_trace_row_shape_top_2_pattern\"",
+            "guest_trace_row_shape_top_patterns()",
+        ),
+        (
+            "\"guest_trace_row_shape_top_2_count\"",
+            "guest_trace_row_shape_top_patterns()",
+        ),
+        (
+            "\"guest_trace_row_shape_top_3_pattern\"",
+            "guest_trace_row_shape_top_patterns()",
+        ),
+        (
+            "\"guest_trace_row_shape_top_3_count\"",
+            "guest_trace_row_shape_top_patterns()",
+        ),
+        (
+            "\"guest_trace_row_shape_top_4_pattern\"",
+            "guest_trace_row_shape_top_patterns()",
+        ),
+        (
+            "\"guest_trace_row_shape_top_4_count\"",
+            "guest_trace_row_shape_top_patterns()",
+        ),
         ("\"guest_trace_emit\"", "guest_trace_emit_duration()"),
         (
             "\"guest_trace_descriptor\"",

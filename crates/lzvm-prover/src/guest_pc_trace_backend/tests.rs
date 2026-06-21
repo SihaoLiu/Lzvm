@@ -205,6 +205,84 @@ fn copy_row_shape_counts_track_source_and_store_classes() {
 }
 
 #[test]
+fn row_shape_top_patterns_track_exact_source_store_mix() {
+    let mut timing = GuestPcTraceStreamTiming::default();
+    let hot_copy = zisk_main_base_instruction(
+        0x8000_0200,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Register(1),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::Register(2),
+        4,
+    );
+    let second_copy = zisk_main_base_instruction(
+        0x8000_0204,
+        ZiskMainSource::Register(3),
+        ZiskMainSource::Indirect(8),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::Memory(128),
+        4,
+    );
+    let cold_external = zisk_main_base_instruction(
+        0x8000_0208,
+        ZiskMainSource::Immediate(1),
+        ZiskMainSource::Immediate(2),
+        ZiskMainOp::Add,
+        ZiskMainStore::None,
+        4,
+    );
+    let fourth_shape = zisk_main_base_instruction(
+        0x8000_020c,
+        ZiskMainSource::Register(4),
+        ZiskMainSource::Register(5),
+        ZiskMainOp::Sub,
+        ZiskMainStore::Register(6),
+        4,
+    );
+    let late_hot = zisk_main_base_instruction(
+        0x8000_0210,
+        ZiskMainSource::Memory(256),
+        ZiskMainSource::Immediate(7),
+        ZiskMainOp::Add,
+        ZiskMainStore::Memory(264),
+        4,
+    );
+
+    for instruction in [
+        &hot_copy,
+        &second_copy,
+        &hot_copy,
+        &cold_external,
+        &fourth_shape,
+        &late_hot,
+        &second_copy,
+        &hot_copy,
+        &late_hot,
+        &late_hot,
+        &late_hot,
+    ] {
+        record_trace_lowered_row_shape(&mut timing, instruction);
+    }
+
+    let top = timing.trace_row_shape_top_patterns();
+    assert_eq!(
+        top[0],
+        (zisk_main_row_shape_pattern_id(&late_hot), 4),
+        "late-arriving high-frequency row pattern should be counted exactly"
+    );
+    assert_eq!(
+        top[1],
+        (zisk_main_row_shape_pattern_id(&hot_copy), 3),
+        "second most common exact row pattern should be retained"
+    );
+    assert_eq!(
+        top[2],
+        (zisk_main_row_shape_pattern_id(&second_copy), 2),
+        "third most common exact row pattern should be retained"
+    );
+}
+
+#[test]
 fn source_value_kind_timing_counts_reads_and_durations() {
     let mut timing = GuestPcTraceStreamTiming::default();
     record_trace_report_source_read_timing(
