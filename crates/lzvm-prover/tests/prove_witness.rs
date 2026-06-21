@@ -2737,6 +2737,14 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         "commit pipeline opt-in should not emit lowered segments through the parallel lowerer"
     );
     assert_eq!(
+        commit_pipeline_run.segment_commit_effective_worker_count, 2,
+        "commit pipeline opt-in should enable bounded segment commit workers"
+    );
+    assert!(
+        commit_pipeline_run.segment_commit_worker_max_in_flight_count >= 2,
+        "commit pipeline opt-in should report cross-segment commit in-flight work"
+    );
+    assert_eq!(
         default_run.segment_commit_effective_worker_count, 1,
         "default path should keep segment commit serial"
     );
@@ -2827,8 +2835,12 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         "pipeline opt-in should keep debug/reference seed validation visible"
     );
     assert_eq!(
-        pipeline_run.segment_commit_effective_worker_count, 1,
-        "pipeline opt-in should keep segment commit workers explicit"
+        pipeline_run.segment_commit_effective_worker_count, 2,
+        "pipeline opt-in should enable bounded segment commit workers"
+    );
+    assert!(
+        pipeline_run.segment_commit_worker_max_in_flight_count >= 2,
+        "pipeline opt-in should report cross-segment commit in-flight work"
     );
     assert_eq!(
         commit_worker_run.segment_commit_effective_worker_count, 2,

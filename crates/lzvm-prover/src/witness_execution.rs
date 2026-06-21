@@ -4486,8 +4486,15 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
     }
 }
 
+const GUEST_PC_TRACE_COMMIT_PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE";
+const DEFAULT_GUEST_PC_TRACE_COMMIT_PIPELINE_WORKERS: usize = 2;
+
 fn default_guest_pc_trace_segment_commit_worker_count_for_input(_input_byte_count: usize) -> usize {
-    1
+    if guest_pc_trace_segment_commit_pipeline_enabled() {
+        DEFAULT_GUEST_PC_TRACE_COMMIT_PIPELINE_WORKERS
+    } else {
+        1
+    }
 }
 
 fn guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
@@ -4511,10 +4518,11 @@ fn guest_pc_trace_segment_commit_worker_count_for_input_with_override(
 
 fn guest_pc_trace_segment_commit_async_single_worker_enabled() -> bool {
     const ENV_NAME: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_ASYNC_SINGLE";
-    !matches!(
-        std::env::var(ENV_NAME).as_deref(),
-        Ok("0" | "false" | "no" | "off" | "")
-    ) && std::env::var_os(ENV_NAME).is_some()
+    env_flag_present_and_enabled(ENV_NAME)
+}
+
+fn guest_pc_trace_segment_commit_pipeline_enabled() -> bool {
+    env_flag_present_and_enabled(GUEST_PC_TRACE_COMMIT_PIPELINE_ENV)
 }
 
 fn next_guest_pc_segment_commit_worker_count_after_oom(
@@ -4931,7 +4939,6 @@ fn guest_pc_parallel_lower_enabled_for_descriptor_retention() -> bool {
     env_flag_present_and_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
 }
 
-#[cfg(feature = "cuda")]
 fn env_flag_present_and_enabled(name: &str) -> bool {
     !matches!(
         std::env::var(name).as_deref(),
@@ -6902,21 +6909,17 @@ mod tests {
     use lzvm_field::Felt;
     use sha2::{Digest, Sha256};
     use std::cell::Cell;
-    #[cfg(feature = "cuda")]
     use std::ffi::OsString;
     use std::fs;
-    #[cfg(feature = "cuda")]
     use std::sync::MutexGuard;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    #[cfg(feature = "cuda")]
     struct TestEnvVarGuard {
         _lock: MutexGuard<'static, ()>,
         name: &'static str,
         previous: Option<OsString>,
     }
 
-    #[cfg(feature = "cuda")]
     struct TestEnvVarUnlockedGuard {
         name: &'static str,
         previous: Option<OsString>,
@@ -7025,7 +7028,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "cuda")]
     impl TestEnvVarGuard {
         fn new(name: &'static str) -> Self {
             let lock = crate::CUDA_TEST_ENV_LOCK
@@ -7172,7 +7174,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "cuda")]
     impl Drop for TestEnvVarGuard {
         fn drop(&mut self) {
             match &self.previous {
@@ -7182,7 +7183,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "cuda")]
     impl TestEnvVarUnlockedGuard {
         fn new(name: &'static str) -> Self {
             let previous = std::env::var_os(name);
@@ -7198,7 +7198,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "cuda")]
     impl Drop for TestEnvVarUnlockedGuard {
         fn drop(&mut self) {
             match &self.previous {
@@ -7347,6 +7346,7 @@ mod tests {
             let mut pool = GuestPcTraceSegmentCommitWorkerPool {
                 scope,
                 worker_count: 2,
+                async_single_worker: false,
                 worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
                 pending_workers: VecDeque::from([first, second]),
                 timing: GuestPcTraceSegmentCommitPoolTiming::default(),
@@ -7384,6 +7384,7 @@ mod tests {
             let mut pool = GuestPcTraceSegmentCommitWorkerPool {
                 scope,
                 worker_count: 2,
+                async_single_worker: false,
                 worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
                 pending_workers: VecDeque::from([backpressure, finish]),
                 timing: GuestPcTraceSegmentCommitPoolTiming::default(),
@@ -7410,6 +7411,12 @@ mod tests {
 
     #[test]
     fn guest_pc_segment_commit_worker_count_uses_single_worker_default() {
+        let commit_workers_env = TestEnvVarGuard::new("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS");
+        commit_workers_env.unset();
+        let commit_pipeline_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE");
+        commit_pipeline_env.unset();
+
         assert_eq!(
             default_guest_pc_trace_segment_commit_worker_count_for_input(0),
             1
@@ -7421,6 +7428,33 @@ mod tests {
         assert_eq!(
             default_guest_pc_trace_segment_commit_worker_count_for_input(usize::MAX),
             1
+        );
+    }
+
+    #[test]
+    fn guest_pc_segment_commit_pipeline_opt_in_uses_bounded_workers() {
+        let commit_workers_env = TestEnvVarGuard::new("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS");
+        commit_workers_env.unset();
+        let commit_pipeline_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE");
+
+        commit_pipeline_env.set("1");
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input(8 * 1024 * 1024),
+            2
+        );
+
+        commit_pipeline_env.set("0");
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input(8 * 1024 * 1024),
+            1
+        );
+
+        commit_pipeline_env.set("1");
+        commit_workers_env.set("3");
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input(8 * 1024 * 1024),
+            3
         );
     }
 

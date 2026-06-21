@@ -12,7 +12,15 @@ use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::setup_info::CommitmentColumn;
 use lzvm_field::Felt;
 
-static GUEST_PC_TRACE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+struct GuestPcTraceEnvLock;
+
+static GUEST_PC_TRACE_ENV_LOCK: GuestPcTraceEnvLock = GuestPcTraceEnvLock;
+
+impl GuestPcTraceEnvLock {
+    fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'static, ()>> {
+        crate::CUDA_TEST_ENV_LOCK.lock()
+    }
+}
 
 #[test]
 fn internal_memory_tracks_only_supported_scratch_addresses() {

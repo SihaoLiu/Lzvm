@@ -38,7 +38,7 @@ pub use lzvm_accel::{
     CudaAllocatorStats, CudaCopyDirection, CudaCopySiteStat,
 };
 
-#[cfg(all(test, feature = "cuda"))]
+#[cfg(test)]
 pub(crate) static CUDA_TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub mod constant_opening;
