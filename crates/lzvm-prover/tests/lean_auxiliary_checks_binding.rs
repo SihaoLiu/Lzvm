@@ -712,6 +712,21 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_body_contains_identifier(
+        &gpu_runtime_source,
+        "checked_acceptance_sound_witness",
+        "auxiliary_checked_acceptance_sound_witness",
+    );
+    for shortcut in [
+        "abstract_verifier_sound",
+        "sound_witness_implies_verifier_core_contract",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &gpu_runtime_source,
+            "checked_acceptance_sound_witness",
+            shortcut,
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "checked_acceptance_verifier_core_contract",
@@ -729,6 +744,25 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_body_contains_identifier(
+        &gpu_runtime_source,
+        "checked_acceptance_verifier_core_contract",
+        "auxiliary_checked_acceptance_verifier_core_contract",
+    );
+    for shortcut in [
+        "checked_acceptance_sound_witness",
+        "assumptions.crypto.transcript_binding",
+        "assumptions.semantic.public_input_binding",
+        "assumptions.crypto.pcs_opening_sound",
+        "assumptions.crypto.fri_query_sound",
+        "sound_witness_implies_verifier_core_contract",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &gpu_runtime_source,
+            "checked_acceptance_verifier_core_contract",
+            shortcut,
+        );
+    }
     for theorem_name in [
         "guest_pc_trace_large_gpu_gate_checked_acceptance_sound",
         "guest_pc_trace_traceless_commitment_input_checked_acceptance_sound",

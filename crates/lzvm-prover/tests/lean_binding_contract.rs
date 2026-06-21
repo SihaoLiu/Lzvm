@@ -174,6 +174,51 @@ fn auxiliary_checked_acceptance_chokepoints_use_identifier_body_pins() {
     }
 }
 
+#[test]
+fn gpu_runtime_checked_acceptance_helpers_use_identifier_body_pins() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let gpu_runtime_source =
+        std::fs::read_to_string(crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean"))
+            .expect("Lean GPU runtime auxiliary checks source should read");
+    let binding_source =
+        std::fs::read_to_string(crate_root.join("tests/lean_auxiliary_checks_binding.rs"))
+            .expect("Lean auxiliary checks binding test source should read");
+
+    let chokepoints = gpu_runtime_source
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let rest = trimmed.strip_prefix("private theorem checked_acceptance_")?;
+            rest.split_whitespace()
+                .next()
+                .map(|name| format!("checked_acceptance_{name}"))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !chokepoints.is_empty(),
+        "Lean GPU runtime checks should declare private checked acceptance chokepoints"
+    );
+
+    for chokepoint in chokepoints {
+        assert!(
+            binding_test_calls_identifier_body_pin(
+                &binding_source,
+                "assert_theorem_body_contains_identifier(",
+                &chokepoint,
+            ),
+            "Lean GPU runtime checked acceptance helper {chokepoint} should have an identifier-level body contains pin"
+        );
+        assert!(
+            binding_test_calls_identifier_body_pin(
+                &binding_source,
+                "assert_theorem_body_omits_identifier(",
+                &chokepoint,
+            ),
+            "Lean GPU runtime checked acceptance helper {chokepoint} should have an identifier-level body omits pin"
+        );
+    }
+}
+
 fn binding_test_calls_identifier_body_pin(source: &str, call: &str, theorem: &str) -> bool {
     source.match_indices(call).any(|(start, _)| {
         source[start..]
