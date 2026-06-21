@@ -1746,6 +1746,33 @@ def trace_pipeline_action_hint(
     return "balanced_pipeline"
 
 
+def parallel_lower_live_stream_job_supply_bound_from_values(
+    values: dict[str, int],
+) -> bool:
+    stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
+    if (
+        values.get(TOTAL_MS_KEY, 0) <= PROOF_TARGET_MS
+        or values.get(PARALLEL_LOWER_WORKERS_KEY, 0) <= 1
+        or stream_elapsed_ms <= 0
+        or values.get(TRACE_REPORT_CHUNK_SENT_KEY, 0) <= 0
+        or values.get(PARALLEL_LOWER_STREAM_CHUNK_PROCESS_MS_KEY, 0) <= 0
+    ):
+        return False
+    if (
+        PARALLEL_LOWER_JOB_RECEIVE_WAIT_MS_KEY not in values
+        or PARALLEL_LOWER_RESULT_SEND_WAIT_MS_KEY not in values
+    ):
+        return False
+    result_receive_wait_ms = values.get(PARALLEL_LOWER_RESULT_RECEIVE_WAIT_MS_KEY, 0)
+    result_send_wait_ms = values.get(PARALLEL_LOWER_RESULT_SEND_WAIT_MS_KEY, 0)
+    job_receive_wait_ms = values.get(PARALLEL_LOWER_JOB_RECEIVE_WAIT_MS_KEY, 0)
+    return (
+        result_receive_wait_ms >= stream_elapsed_ms * 0.5
+        and result_send_wait_ms <= max(1, stream_elapsed_ms * 0.05)
+        and job_receive_wait_ms >= stream_elapsed_ms * 0.5
+    )
+
+
 def segment_commit_worker_pressure_hint(
     worker_submits: int,
     worker_backpressure_joins: int,
@@ -1792,6 +1819,8 @@ def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
         and parallel_lower_replay_duplicate_work_from_values(values)
     ):
         return "avoid_replay_only_parallel_lower"
+    if parallel_lower_live_stream_job_supply_bound_from_values(values):
+        return "parallel_lower_live_stream_job_supply_bound"
     stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
     seed_attempts = values.get(SEED_DIRECT_LIFT_ATTEMPTS_KEY, 0)
     if (
@@ -2487,6 +2516,7 @@ def performance_focus_hint(
     if trace_pipeline_hint in {
         "avoid_segment_commit_worker_oom_fallback",
         "avoid_replay_only_parallel_lower",
+        "parallel_lower_live_stream_job_supply_bound",
     }:
         return trace_pipeline_hint
     if trace_pipeline_hint in trace_pipeline_hints and cpu_report_storage_hint in {
