@@ -858,6 +858,10 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_parallel_lower_job_receive_wait_duration(),
     );
     timings.record(
+        "guest_trace_parallel_lower_result_send_wait",
+        timing.guest_trace_parallel_lower_result_send_wait_duration(),
+    );
+    timings.record(
         "guest_trace_parallel_lower_dispatch_wait",
         timing.guest_trace_parallel_lower_dispatch_wait_duration(),
     );

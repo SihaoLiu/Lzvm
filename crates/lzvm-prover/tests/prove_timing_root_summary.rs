@@ -46,6 +46,7 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
         "timing_guest_trace_parallel_lower_stream_chunks=491",
         "timing_guest_trace_parallel_lower_stream_chunk_process_ms=123",
         "timing_guest_trace_parallel_lower_job_receive_wait_ms=456",
+        "timing_guest_trace_parallel_lower_result_send_wait_ms=789",
         "timing_guest_trace_report_apply_ms=111",
         "timing_guest_trace_unit_summary_ms=12",
         "timing_guest_trace_parallel_lower_stream_chunk_dispatch_wait_ms=299",
@@ -91,6 +92,15 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
         row.get(receive_wait_index).copied(),
         Some("456"),
         "worker job receive wait timing should be surfaced in root summary"
+    );
+    let send_wait_index = headers
+        .iter()
+        .position(|header| *header == "parallel_lower_result_send_wait_ms")
+        .unwrap_or_else(|| panic!("missing worker result send wait header: {headers:?}"));
+    assert_eq!(
+        row.get(send_wait_index).copied(),
+        Some("789"),
+        "worker result send wait timing should be surfaced in root summary"
     );
     let apply_index = headers
         .iter()

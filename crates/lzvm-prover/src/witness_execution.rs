@@ -492,6 +492,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_parallel_lower_stream_retained_report_count: usize,
     guest_trace_parallel_lower_stream_chunk_process_duration: Duration,
     guest_trace_parallel_lower_job_receive_wait_duration: Duration,
+    guest_trace_parallel_lower_result_send_wait_duration: Duration,
     guest_trace_parallel_lower_dispatch_wait_duration: Duration,
     guest_trace_parallel_lower_stream_start_dispatch_wait_duration: Duration,
     guest_trace_parallel_lower_stream_chunk_dispatch_wait_duration: Duration,
@@ -834,6 +835,8 @@ impl ProveWitnessGuestPcTraceTiming {
                 .parallel_lower_stream_chunk_process_duration(),
             guest_trace_parallel_lower_job_receive_wait_duration: stream_timing
                 .parallel_lower_job_receive_wait_duration(),
+            guest_trace_parallel_lower_result_send_wait_duration: stream_timing
+                .parallel_lower_result_send_wait_duration(),
             guest_trace_parallel_lower_dispatch_wait_duration: stream_timing
                 .parallel_lower_dispatch_wait_duration(),
             guest_trace_parallel_lower_stream_start_dispatch_wait_duration: stream_timing
@@ -1417,6 +1420,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_parallel_lower_job_receive_wait_duration(&self) -> Duration {
         self.guest_trace_parallel_lower_job_receive_wait_duration
+    }
+
+    pub fn guest_trace_parallel_lower_result_send_wait_duration(&self) -> Duration {
+        self.guest_trace_parallel_lower_result_send_wait_duration
     }
 
     pub fn guest_trace_parallel_lower_dispatch_wait_duration(&self) -> Duration {

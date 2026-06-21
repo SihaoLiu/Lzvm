@@ -254,6 +254,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     parallel_lower_stream_retained_report_count: usize,
     parallel_lower_stream_chunk_process_duration: Duration,
     parallel_lower_job_receive_wait_duration: Duration,
+    parallel_lower_result_send_wait_duration: Duration,
     parallel_lower_dispatch_wait_duration: Duration,
     parallel_lower_stream_start_dispatch_wait_duration: Duration,
     parallel_lower_stream_chunk_dispatch_wait_duration: Duration,
@@ -410,6 +411,8 @@ impl GuestPcTraceStreamTiming {
             other.parallel_lower_stream_chunk_process_duration;
         self.parallel_lower_job_receive_wait_duration +=
             other.parallel_lower_job_receive_wait_duration;
+        self.parallel_lower_result_send_wait_duration +=
+            other.parallel_lower_result_send_wait_duration;
         self.parallel_lower_dispatch_wait_duration += other.parallel_lower_dispatch_wait_duration;
         self.parallel_lower_stream_start_dispatch_wait_duration +=
             other.parallel_lower_stream_start_dispatch_wait_duration;
@@ -776,6 +779,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn parallel_lower_job_receive_wait_duration(&self) -> Duration {
         self.parallel_lower_job_receive_wait_duration
+    }
+
+    pub fn parallel_lower_result_send_wait_duration(&self) -> Duration {
+        self.parallel_lower_result_send_wait_duration
     }
 
     pub fn parallel_lower_dispatch_wait_duration(&self) -> Duration {
@@ -5664,6 +5671,33 @@ enum GuestPcTraceParallelLowerMessage {
     },
 }
 
+fn send_guest_pc_trace_parallel_lower_segment_result(
+    result_sender: &mpsc::SyncSender<GuestPcTraceParallelLowerMessage>,
+    trace_instance_index: u32,
+    result: Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError>,
+    timing: GuestPcTraceStreamTiming,
+) -> bool {
+    let send_started = Instant::now();
+    let mut message = GuestPcTraceParallelLowerMessage::Segment {
+        trace_instance_index,
+        result: Box::new(result),
+        timing,
+    };
+    loop {
+        if let GuestPcTraceParallelLowerMessage::Segment { timing, .. } = &mut message {
+            timing.parallel_lower_result_send_wait_duration = send_started.elapsed();
+        }
+        match result_sender.try_send(message) {
+            Ok(()) => return true,
+            Err(mpsc::TrySendError::Full(returned_message)) => {
+                message = returned_message;
+                std::thread::yield_now();
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => return false,
+        }
+    }
+}
+
 enum GuestPcTraceParallelLowerJob {
     Segment(Box<GuestPcTracePendingSegmentSlice>),
     #[cfg(feature = "cuda")]
@@ -6278,14 +6312,12 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                             }
                         };
                         if let Some(result) = result {
-                            if result_sender
-                                .send(GuestPcTraceParallelLowerMessage::Segment {
-                                    trace_instance_index,
-                                    result: Box::new(result),
-                                    timing: worker_timing,
-                                })
-                                .is_err()
-                            {
+                            if !send_guest_pc_trace_parallel_lower_segment_result(
+                                &result_sender,
+                                trace_instance_index,
+                                result,
+                                worker_timing,
+                            ) {
                                 break;
                             }
                         }
