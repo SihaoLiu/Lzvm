@@ -8270,6 +8270,24 @@ fn guest_machine_fetch_reuses_located_segment_for_standard_word() {
 }
 
 #[test]
+fn guest_machine_overlay_writes_use_single_tree_lookup() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/memory.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("guest machine memory source should read");
+    let body = function_body(&source, "    fn written_block_mut", "    fn end_address");
+
+    assert!(
+        body.contains("written_blocks.entry(block_index)"),
+        "guest memory overlay writes should use the BTreeMap entry API"
+    );
+    assert!(
+        !body.contains("contains_key"),
+        "guest memory overlay writes should not probe the BTreeMap before mutating it"
+    );
+}
+
+#[test]
 fn guest_machine_run_loop_reuses_prepared_instruction_for_advance() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_machine/mod.rs");

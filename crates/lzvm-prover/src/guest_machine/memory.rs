@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{btree_map::Entry, BTreeMap};
 
 use crate::guest_instruction::{
     FetchedGuestInstruction, GuestInstructionError, RiscvEncodedInstruction,
@@ -346,30 +346,27 @@ impl GuestMachineMemorySegment {
         }
     }
 
-    fn read_unwritten_range_into(&self, offset: u64, bytes: &mut [u8]) {
-        bytes.fill(0);
-        let initialized_len = self.initialized_bytes.len() as u64;
-        if offset >= initialized_len {
-            return;
-        }
-        let start = usize::try_from(offset).expect("initialized offset fits usize");
-        let copy_len = bytes.len().min(self.initialized_bytes.len() - start);
-        bytes[..copy_len].copy_from_slice(&self.initialized_bytes[start..start + copy_len]);
-    }
-
     fn written_block_mut(
         &mut self,
         block_index: u64,
     ) -> &mut Box<[u8; GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE]> {
-        if !self.written_blocks.contains_key(&block_index) {
-            let mut block = Box::new([0_u8; GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE]);
-            let block_start = block_index * GUEST_MEMORY_OVERLAY_BLOCK_SIZE;
-            self.read_unwritten_range_into(block_start, block.as_mut_slice());
-            self.written_blocks.insert(block_index, block);
+        match self.written_blocks.entry(block_index) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let mut block = Box::new([0_u8; GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE]);
+                let block_start = block_index * GUEST_MEMORY_OVERLAY_BLOCK_SIZE;
+                read_unwritten_segment_range_into(
+                    &self.initialized_bytes,
+                    block_start,
+                    block.as_mut_slice(),
+                );
+                entry.insert(block)
+            }
         }
-        self.written_blocks
-            .get_mut(&block_index)
-            .expect("written block was just inserted")
+    }
+
+    fn read_unwritten_range_into(&self, offset: u64, bytes: &mut [u8]) {
+        read_unwritten_segment_range_into(&self.initialized_bytes, offset, bytes);
     }
 
     fn end_address(&self) -> Result<u64, GuestMemoryError> {
@@ -386,6 +383,17 @@ impl GuestMachineMemorySegment {
         let segment_end = self.end_address()?;
         Ok(address >= self.virtual_address && end_address <= segment_end)
     }
+}
+
+fn read_unwritten_segment_range_into(initialized_bytes: &[u8], offset: u64, bytes: &mut [u8]) {
+    bytes.fill(0);
+    let initialized_len = initialized_bytes.len() as u64;
+    if offset >= initialized_len {
+        return;
+    }
+    let start = usize::try_from(offset).expect("initialized offset fits usize");
+    let copy_len = bytes.len().min(initialized_bytes.len() - start);
+    bytes[..copy_len].copy_from_slice(&initialized_bytes[start..start + copy_len]);
 }
 
 fn checked_address_end(address: u64, byte_len: usize) -> Result<u64, GuestMemoryError> {
