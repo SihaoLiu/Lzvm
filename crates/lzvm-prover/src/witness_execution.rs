@@ -4356,6 +4356,7 @@ type GuestPcTraceSegmentCommitWorkerHandle<'scope> = thread::ScopedJoinHandle<
 struct GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
     scope: &'scope thread::Scope<'scope, 'env>,
     worker_count: usize,
+    async_single_worker: bool,
     worker_state: GuestPcTraceSegmentCommitWorkerState,
     pending_workers: VecDeque<GuestPcTraceSegmentCommitWorkerHandle<'scope>>,
     timing: GuestPcTraceSegmentCommitPoolTiming,
@@ -4367,12 +4368,15 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
         input_byte_count: usize,
         worker_count_override: Option<usize>,
     ) -> Self {
+        let worker_count = guest_pc_trace_segment_commit_worker_count_for_input_with_override(
+            input_byte_count,
+            worker_count_override,
+        );
         Self {
             scope,
-            worker_count: guest_pc_trace_segment_commit_worker_count_for_input_with_override(
-                input_byte_count,
-                worker_count_override,
-            ),
+            worker_count,
+            async_single_worker: worker_count == 1
+                && guest_pc_trace_segment_commit_async_single_worker_enabled(),
             worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
             pending_workers: VecDeque::new(),
             timing: GuestPcTraceSegmentCommitPoolTiming::default(),
@@ -4388,7 +4392,7 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
         collect_timing: bool,
     ) -> Result<Vec<GuestPcTraceSegmentCommitResult>, ProveWitnessCommitmentError> {
         self.timing.submit_count = self.timing.submit_count.saturating_add(1);
-        if self.worker_count <= 1 {
+        if self.worker_count <= 1 && !self.async_single_worker {
             self.timing.join_count = self.timing.join_count.saturating_add(1);
             self.timing.max_in_flight_count = self.timing.max_in_flight_count.max(1);
             let result = self.worker_state.commit_segment(
@@ -4503,6 +4507,14 @@ fn guest_pc_trace_segment_commit_worker_count_for_input_with_override(
     worker_count_override
         .filter(|count| *count > 0)
         .unwrap_or_else(|| guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count))
+}
+
+fn guest_pc_trace_segment_commit_async_single_worker_enabled() -> bool {
+    const ENV_NAME: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_ASYNC_SINGLE";
+    !matches!(
+        std::env::var(ENV_NAME).as_deref(),
+        Ok("0" | "false" | "no" | "off" | "")
+    ) && std::env::var_os(ENV_NAME).is_some()
 }
 
 fn next_guest_pc_segment_commit_worker_count_after_oom(

@@ -24,6 +24,7 @@ use lzvm_artifacts::witness_segment::{
 const PARALLEL_LOWER_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER";
 const LOWER_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
 const COMMIT_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS";
+const COMMIT_ASYNC_SINGLE_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_ASYNC_SINGLE";
 const SEGMENT_REPLAY_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY";
 const SEGMENT_REPLAY_SNAPSHOT_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY_SNAPSHOT";
 const RUNNER_SEED_SNAPSHOT_ENV: &str = "LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT";
@@ -66,6 +67,7 @@ fn real_small_trace_pipeline_preserves_proof_bytes() {
         "small",
         &[
             RealParityMode::OwnedStreamingLower,
+            RealParityMode::AsyncSingleCommit,
             RealParityMode::SeedPipeline,
             RealParityMode::SeedPipelineCommitWorkers,
         ],
@@ -76,7 +78,14 @@ fn real_small_trace_pipeline_preserves_proof_bytes() {
 #[ignore]
 fn real_large_trace_pipeline_preserves_proof_bytes() {
     let config = RealParityConfig::from_env(REAL_LARGE_PARITY_ENV, "600000000");
-    run_real_trace_pipeline_parity(&config, "large", &[RealParityMode::SeedPipeline]);
+    run_real_trace_pipeline_parity(
+        &config,
+        "large",
+        &[
+            RealParityMode::AsyncSingleCommit,
+            RealParityMode::SeedPipeline,
+        ],
+    );
 }
 
 fn run_real_trace_pipeline_parity(
@@ -197,6 +206,7 @@ struct ProveRun {
 enum RealParityMode {
     Default,
     OwnedStreamingLower,
+    AsyncSingleCommit,
     SeedPipeline,
     SeedPipelineCommitWorkers,
 }
@@ -212,6 +222,7 @@ impl RealParityMode {
         match self {
             Self::Default => "default",
             Self::OwnedStreamingLower => "owned-streaming-lower",
+            Self::AsyncSingleCommit => "async-single-commit",
             Self::SeedPipeline => "pipeline",
             Self::SeedPipelineCommitWorkers => "combined",
         }
@@ -297,6 +308,19 @@ fn run_prove_witness(
                 1,
             );
         }
+        RealParityMode::AsyncSingleCommit => {
+            assert_timing_equals(&output_text, "timing_guest_trace_parallel_lower_workers", 0);
+            assert_timing_equals(
+                &output_text,
+                "timing_guest_segment_commit_effective_workers",
+                1,
+            );
+            assert_timing_at_least(
+                &output_text,
+                "timing_guest_segment_commit_worker_max_in_flight",
+                1,
+            );
+        }
         RealParityMode::SeedPipeline => {
             assert_pipeline_timing_shape(&output_text);
             assert_timing_equals(
@@ -338,6 +362,11 @@ fn prove_command(config: &RealParityConfig, output_dir: &Path, mode: RealParityM
         RealParityMode::OwnedStreamingLower => {
             command.env(OWNED_STREAMING_LOWER_ENV, "1");
         }
+        RealParityMode::AsyncSingleCommit => {
+            command
+                .env(COMMIT_WORKERS_ENV, "1")
+                .env(COMMIT_ASYNC_SINGLE_ENV, "1");
+        }
         RealParityMode::SeedPipeline => {
             command
                 .env(PARALLEL_LOWER_ENV, "1")
@@ -360,6 +389,7 @@ fn clear_pipeline_env(command: &mut Command) {
         "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE",
         LOWER_WORKERS_ENV,
         COMMIT_WORKERS_ENV,
+        COMMIT_ASYNC_SINGLE_ENV,
         SEGMENT_REPLAY_ENV,
         SEGMENT_REPLAY_SNAPSHOT_ENV,
         RUNNER_SEED_SNAPSHOT_ENV,
@@ -384,6 +414,7 @@ fn clear_pipeline_env_removes_current_replay_controls() {
         PARALLEL_LOWER_ENV,
         LOWER_WORKERS_ENV,
         COMMIT_WORKERS_ENV,
+        COMMIT_ASYNC_SINGLE_ENV,
         SEGMENT_REPLAY_ENV,
         SEGMENT_REPLAY_SNAPSHOT_ENV,
         RUNNER_SEED_SNAPSHOT_ENV,
@@ -404,6 +435,7 @@ fn clear_pipeline_env_removes_current_replay_controls() {
         PARALLEL_LOWER_ENV,
         LOWER_WORKERS_ENV,
         COMMIT_WORKERS_ENV,
+        COMMIT_ASYNC_SINGLE_ENV,
         SEGMENT_REPLAY_ENV,
         SEGMENT_REPLAY_SNAPSHOT_ENV,
         RUNNER_SEED_SNAPSHOT_ENV,

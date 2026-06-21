@@ -3657,6 +3657,35 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
 }
 
 #[test]
+fn guest_pc_trace_segment_commit_async_single_worker_is_opt_in() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_execution.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("witness execution source should read");
+
+    assert!(
+        source.contains("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_ASYNC_SINGLE"),
+        "single-worker segment commit overlap should stay behind an explicit env gate"
+    );
+    assert!(
+        source.contains("fn guest_pc_trace_segment_commit_async_single_worker_enabled"),
+        "single-worker segment commit overlap should have a dedicated runtime helper"
+    );
+
+    let pool_body = function_body(
+        &source,
+        "struct GuestPcTraceSegmentCommitWorkerPool",
+        "struct GuestPcTraceSegmentCommitDriver",
+    );
+    assert!(
+        pool_body.contains("async_single_worker: bool")
+            && pool_body.contains("if self.worker_count <= 1 && !self.async_single_worker")
+            && pool_body.contains("while self.pending_workers.len() >= self.worker_count"),
+        "single-worker async commit should preserve the bounded worker pool path without changing the default inline path"
+    );
+}
+
+#[test]
 fn guest_pc_segment_commit_oom_retry_clears_cuda_allocator_cache() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let witness_execution_path = crate_root.join("src/witness_execution.rs");
