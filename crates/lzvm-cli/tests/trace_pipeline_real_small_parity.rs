@@ -23,6 +23,7 @@ use lzvm_artifacts::witness_segment::{
 
 const PARALLEL_LOWER_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER";
 const LOWER_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
+const COMMIT_PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE";
 const COMMIT_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS";
 const COMMIT_ASYNC_SINGLE_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_ASYNC_SINGLE";
 const SEGMENT_REPLAY_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY";
@@ -397,6 +398,7 @@ fn prove_command(config: &RealParityConfig, output_dir: &Path, mode: RealParityM
             command
                 .env(PARALLEL_LOWER_ENV, "1")
                 .env(LOWER_WORKERS_ENV, "2")
+                .env(COMMIT_PIPELINE_ENV, "1")
                 .env(COMMIT_WORKERS_ENV, "2");
         }
     }
@@ -406,7 +408,7 @@ fn prove_command(config: &RealParityConfig, output_dir: &Path, mode: RealParityM
 fn clear_pipeline_env(command: &mut Command) {
     for name in [
         PARALLEL_LOWER_ENV,
-        "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE",
+        COMMIT_PIPELINE_ENV,
         LOWER_WORKERS_ENV,
         COMMIT_WORKERS_ENV,
         COMMIT_ASYNC_SINGLE_ENV,
@@ -434,6 +436,7 @@ fn clear_pipeline_env_removes_current_replay_controls() {
         PARALLEL_LOWER_ENV,
         LOWER_WORKERS_ENV,
         COMMIT_WORKERS_ENV,
+        COMMIT_PIPELINE_ENV,
         COMMIT_ASYNC_SINGLE_ENV,
         SEGMENT_REPLAY_ENV,
         SEGMENT_REPLAY_SNAPSHOT_ENV,
@@ -535,6 +538,33 @@ fn combined_pipeline_timing_shape_allows_oom_retry_fallback() {
 
     assert_pipeline_timing_shape(&output);
     assert_combined_pipeline_timing_shape(&output);
+}
+
+#[test]
+fn combined_pipeline_mode_sets_commit_pipeline_env() {
+    let workspace = workspace_root();
+    let config = RealParityConfig {
+        bin: workspace.join("target").join("release").join("lzvm"),
+        setup_dir: workspace.join("temp").join("setup"),
+        block_input: workspace.join("temp").join("eth-block.input"),
+        program_image_cache: workspace.join("temp").join("program-image.cache"),
+        input_data: workspace.join("temp").join("input-data.bin"),
+        guest_image: workspace.join("temp").join("guest.elf"),
+        trace_limit: "1".to_owned(),
+        work_dir: workspace.join("temp"),
+        tmp_dir: workspace.join("temp").join("tmp"),
+    };
+
+    let command = prove_command(
+        &config,
+        &workspace.join("temp").join("combined.proof"),
+        RealParityMode::SeedPipelineCommitWorkers,
+    );
+
+    assert_command_env_equals(&command, PARALLEL_LOWER_ENV, "1");
+    assert_command_env_equals(&command, LOWER_WORKERS_ENV, "2");
+    assert_command_env_equals(&command, COMMIT_PIPELINE_ENV, "1");
+    assert_command_env_equals(&command, COMMIT_WORKERS_ENV, "2");
 }
 
 #[test]
