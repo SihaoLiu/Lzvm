@@ -6272,8 +6272,8 @@ impl<'a> ZiskMainReportEffects<'a> {
         Self {
             register_writes: &report.register_writes,
             memory_accesses: &report.memory_accesses,
-            precompile_memory_accesses: &report.precompile_memory_accesses,
-            precompile_result: report.precompile_result,
+            precompile_memory_accesses: report.precompile_memory_accesses(),
+            precompile_result: report.precompile_result(),
         }
     }
 }
@@ -7546,7 +7546,7 @@ fn zisk_main_report_instruction_size(
             row,
             source: ZiskMainLowerError::InvalidInstructionByteLen {
                 pc: report.address,
-                byte_len,
+                byte_len: usize::from(byte_len),
             },
         }),
     }
@@ -9921,7 +9921,7 @@ fn direct_zisk_main_report_result_c(
     match instruction.op {
         ZiskMainOp::Flag => Some(0),
         ZiskMainOp::CopyB => direct_zisk_main_source_value_without_state(instruction.b),
-        ZiskMainOp::Add256 if instruction.is_precompiled => report.precompile_result,
+        ZiskMainOp::Add256 if instruction.is_precompiled => report.precompile_result(),
         ZiskMainOp::Keccak
         | ZiskMainOp::Arith256
         | ZiskMainOp::Arith256Mod

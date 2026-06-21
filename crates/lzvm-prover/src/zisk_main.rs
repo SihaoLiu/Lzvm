@@ -193,7 +193,8 @@ impl std::error::Error for ZiskMainLowerError {}
 pub fn lower_guest_report(
     report: &GuestMachineReport,
 ) -> Result<ZiskMainInstruction, ZiskMainLowerError> {
-    let instruction_size = instruction_size_offset(report.address, report.instruction_byte_len)?;
+    let instruction_size =
+        instruction_size_offset(report.address, usize::from(report.instruction_byte_len))?;
     match report.instruction {
         RiscvInstruction::Branch {
             kind,
@@ -381,7 +382,7 @@ fn validate_sequential_next_pc(report: &GuestMachineReport) -> Result<(), ZiskMa
         None => Err(ZiskMainLowerError::InconsistentSequentialNextPc {
             pc: report.address,
             next_pc: report.next_pc,
-            instruction_byte_len: report.instruction_byte_len,
+            instruction_byte_len: usize::from(report.instruction_byte_len),
         }),
     }
 }

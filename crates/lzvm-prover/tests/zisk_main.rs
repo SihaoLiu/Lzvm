@@ -982,13 +982,14 @@ fn report_with_next_pc(
 ) -> GuestMachineReport {
     GuestMachineReport {
         address: PC,
-        instruction_byte_len,
+        instruction_byte_len: instruction_byte_len
+            .try_into()
+            .expect("test instruction byte length should fit in u8"),
         instruction,
         next_pc,
         register_writes: Vec::new().into(),
         memory_accesses: Vec::new().into(),
-        precompile_memory_accesses: Vec::new().into(),
-        precompile_result: None,
+        precompile_effects: None,
     }
 }
 

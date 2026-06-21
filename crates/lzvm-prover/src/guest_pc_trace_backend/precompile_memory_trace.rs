@@ -19,7 +19,7 @@ pub(super) fn write_layout_precompile_memory_trace(
         return Ok(None);
     };
     let access_count = reports.iter().try_fold(0_usize, |count, report| {
-        count.checked_add(report.precompile_memory_accesses.len())
+        count.checked_add(report.precompile_memory_accesses().len())
     });
     let Some(access_count) = access_count else {
         return Err(GuestPcTraceBackendError::OutputOverflow {
@@ -59,7 +59,7 @@ pub(super) fn write_layout_precompile_memory_trace(
             false,
             |_, _, _| Ok(()),
         )?;
-        for access in &report.precompile_memory_accesses {
+        for access in report.precompile_memory_accesses() {
             write_precompile_memory_access(
                 &mut builder,
                 output_row,

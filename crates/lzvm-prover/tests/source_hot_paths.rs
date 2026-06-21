@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use lzvm_prover::guest_machine::GuestMachineReport;
+
 #[test]
 fn cuda_row_major_hashing_copies_validated_bytes_without_host_word_repacking() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -7183,8 +7185,13 @@ fn guest_machine_reports_inline_common_effect_storage() {
         "guest machine reports should inline common memory effect lists"
     );
     assert!(
-        report_body.contains("precompile_memory_accesses: GuestPrecompileMemoryAccessList"),
-        "guest machine reports should avoid an inline Vec header for rare precompile accesses"
+        source.contains("pub struct GuestPrecompileReportEffects")
+            && source.contains("memory_accesses: GuestPrecompileMemoryAccessList"),
+        "guest machine reports should keep rare precompile data in an out-of-line effects record"
+    );
+    assert!(
+        report_body.contains("precompile_effects: Option<Box<GuestPrecompileReportEffects>>"),
+        "guest machine reports should store only a thin optional precompile-effects pointer"
     );
     assert!(
         source.contains("pub struct GuestMachineReport"),
@@ -7201,6 +7208,19 @@ fn guest_machine_reports_inline_common_effect_storage() {
     assert!(
         !report_body.contains("\n    precompile_memory_accesses: Vec<GuestMemoryAccess>"),
         "guest precompile memory accesses should avoid a Vec header in every report"
+    );
+    assert!(
+        !report_body.contains("\n    precompile_memory_accesses: GuestPrecompileMemoryAccessList"),
+        "guest precompile memory accesses should avoid a slice fat pointer in every report"
+    );
+}
+
+#[test]
+fn guest_machine_report_record_stays_cache_line_pair_sized() {
+    assert!(
+        std::mem::size_of::<GuestMachineReport>() <= 128,
+        "guest trace reports should stay within two 64-byte cache lines; got {} bytes",
+        std::mem::size_of::<GuestMachineReport>()
     );
 }
 

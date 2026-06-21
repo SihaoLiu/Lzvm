@@ -360,6 +360,28 @@ type GuestRegisterRollbackList = SmallVec<[(u8, u64); 1]>;
 pub type GuestMemoryAccessList = SmallVec<[GuestMemoryAccess; 1]>;
 pub type GuestPrecompileMemoryAccessList = Box<[GuestMemoryAccess]>;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuestPrecompileReportEffects {
+    pub memory_accesses: GuestPrecompileMemoryAccessList,
+    pub result: Option<u64>,
+}
+
+impl GuestPrecompileReportEffects {
+    pub fn from_parts(
+        memory_accesses: GuestPrecompileMemoryAccessList,
+        result: Option<u64>,
+    ) -> Option<Box<Self>> {
+        if memory_accesses.is_empty() && result.is_none() {
+            None
+        } else {
+            Some(Box::new(Self {
+                memory_accesses,
+                result,
+            }))
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct GuestInstructionEffects {
     register_writes: GuestRegisterWriteList,
@@ -429,16 +451,33 @@ fn guest_memory_access_byte_len(byte_len: usize) -> u8 {
     u8::try_from(byte_len).expect("guest memory access byte length should fit in u8")
 }
 
+fn guest_instruction_byte_len(byte_len: usize) -> u8 {
+    u8::try_from(byte_len).expect("guest instruction byte length should fit in u8")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestMachineReport {
     pub address: u64,
-    pub instruction_byte_len: usize,
+    pub instruction_byte_len: u8,
     pub instruction: RiscvInstruction,
     pub next_pc: u64,
     pub register_writes: GuestRegisterWriteList,
     pub memory_accesses: GuestMemoryAccessList,
-    pub precompile_memory_accesses: GuestPrecompileMemoryAccessList,
-    pub precompile_result: Option<u64>,
+    pub precompile_effects: Option<Box<GuestPrecompileReportEffects>>,
+}
+
+impl GuestMachineReport {
+    pub fn precompile_memory_accesses(&self) -> &[GuestMemoryAccess] {
+        self.precompile_effects
+            .as_deref()
+            .map_or(&[], |effects| effects.memory_accesses.as_ref())
+    }
+
+    pub fn precompile_result(&self) -> Option<u64> {
+        self.precompile_effects
+            .as_deref()
+            .and_then(|effects| effects.result)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -840,13 +879,15 @@ fn advance_guest_machine_prepared_inner(
 
     Ok(GuestMachineReport {
         address,
-        instruction_byte_len: byte_len,
+        instruction_byte_len: guest_instruction_byte_len(byte_len),
         instruction,
         next_pc,
         register_writes: effects.register_writes,
         memory_accesses: effects.memory_accesses,
-        precompile_memory_accesses: effects.precompile_memory_accesses.into_boxed_slice(),
-        precompile_result: effects.precompile_result,
+        precompile_effects: GuestPrecompileReportEffects::from_parts(
+            effects.precompile_memory_accesses.into_boxed_slice(),
+            effects.precompile_result,
+        ),
     })
 }
 
