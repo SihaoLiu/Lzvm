@@ -398,8 +398,7 @@ fn prove_command(config: &RealParityConfig, output_dir: &Path, mode: RealParityM
             command
                 .env(PARALLEL_LOWER_ENV, "1")
                 .env(LOWER_WORKERS_ENV, "2")
-                .env(COMMIT_PIPELINE_ENV, "1")
-                .env(COMMIT_WORKERS_ENV, "2");
+                .env(COMMIT_PIPELINE_ENV, "1");
         }
     }
     command
@@ -564,7 +563,7 @@ fn combined_pipeline_mode_sets_commit_pipeline_env() {
     assert_command_env_equals(&command, PARALLEL_LOWER_ENV, "1");
     assert_command_env_equals(&command, LOWER_WORKERS_ENV, "2");
     assert_command_env_equals(&command, COMMIT_PIPELINE_ENV, "1");
-    assert_command_env_equals(&command, COMMIT_WORKERS_ENV, "2");
+    assert_env_removed(&command, COMMIT_WORKERS_ENV);
 }
 
 #[test]
