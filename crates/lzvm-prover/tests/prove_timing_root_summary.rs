@@ -2833,13 +2833,13 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
         "timing_guest_trace_register_store_rows=700",
         "timing_guest_trace_memory_store_rows=200",
         "timing_guest_trace_no_store_rows=100",
-        "timing_guest_trace_row_shape_top_1_pattern=594435",
+        "timing_guest_trace_row_shape_top_1_pattern=176643",
         "timing_guest_trace_row_shape_top_1_count=333",
-        "timing_guest_trace_row_shape_top_2_pattern=610819",
+        "timing_guest_trace_row_shape_top_2_pattern=1094147",
         "timing_guest_trace_row_shape_top_2_count=222",
-        "timing_guest_trace_row_shape_top_3_pattern=660995",
+        "timing_guest_trace_row_shape_top_3_pattern=1151491",
         "timing_guest_trace_row_shape_top_3_count=111",
-        "timing_guest_trace_row_shape_top_4_pattern=725507",
+        "timing_guest_trace_row_shape_top_4_pattern=268468803",
         "timing_guest_trace_row_shape_top_4_count=55",
     ]
     .join("\n");
@@ -2870,13 +2870,13 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "single_row_reports,multi_row_reports,pending_dma_reports,amo_reports,store_conditional_reports,external_op_rows,copy_rows,flag_rows,precompile_rows,indirect_memory_rows,indirect_memory_row_pct,register_source_reads,memory_source_reads,memory_source_read_pct,register_store_rows,memory_store_rows,memory_store_row_pct,no_store_rows,no_store_row_pct,trace_shape_sample_hint,row_shape_top_1_pattern,row_shape_top_1_count,row_shape_top_2_pattern,row_shape_top_2_count,row_shape_top_3_pattern,row_shape_top_3_count,row_shape_top_4_pattern,row_shape_top_4_count"
+            "single_row_reports,multi_row_reports,pending_dma_reports,amo_reports,store_conditional_reports,external_op_rows,copy_rows,flag_rows,precompile_rows,indirect_memory_rows,indirect_memory_row_pct,register_source_reads,memory_source_reads,memory_source_read_pct,register_store_rows,memory_store_rows,memory_store_row_pct,no_store_rows,no_store_row_pct,trace_shape_sample_hint,row_shape_top_1_pattern,row_shape_top_1_count,row_shape_top_1_shape,row_shape_top_2_pattern,row_shape_top_2_count,row_shape_top_2_shape,row_shape_top_3_pattern,row_shape_top_3_count,row_shape_top_3_shape,row_shape_top_4_pattern,row_shape_top_4_count,row_shape_top_4_shape"
         ),
         "prove timing root summary should expose trace shape columns: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            ",900,100,50,25,10,300,400,20,8,500,45.455,1400,300,27.273,700,200,18.182,100,9.091,shape_timing_enabled,594435,333,610819,222,660995,111,725507,55,"
+            ",900,100,50,25,10,300,400,20,8,500,45.455,1400,300,27.273,700,200,18.182,100,9.091,shape_timing_enabled,176643,333,op=CopyB;a=reg;b=indirect;store=reg;ind_width=1;store_pc=0;set_pc=0;m32=0;external=0;precompiled=0,1094147,222,op=CopyB;a=reg;b=indirect;store=reg;ind_width=8;store_pc=0;set_pc=0;m32=0;external=0;precompiled=0,1151491,111,op=CopyB;a=reg;b=reg;store=indirect;ind_width=8;store_pc=0;set_pc=0;m32=0;external=0;precompiled=0,268468803,55,op=SignExtendW;a=reg;b=imm;store=reg;ind_width=0;store_pc=0;set_pc=0;m32=0;external=1;precompiled=0,"
         ),
         "prove timing root summary should classify trace shape ratios: stdout={stdout}"
     );

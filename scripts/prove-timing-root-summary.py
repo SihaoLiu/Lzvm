@@ -189,6 +189,60 @@ TRACE_ROW_SHAPE_TOP_3_PATTERN_KEY = "timing_guest_trace_row_shape_top_3_pattern"
 TRACE_ROW_SHAPE_TOP_3_COUNT_KEY = "timing_guest_trace_row_shape_top_3_count"
 TRACE_ROW_SHAPE_TOP_4_PATTERN_KEY = "timing_guest_trace_row_shape_top_4_pattern"
 TRACE_ROW_SHAPE_TOP_4_COUNT_KEY = "timing_guest_trace_row_shape_top_4_count"
+TRACE_ROW_SHAPE_SOURCE_NAMES = {
+    0: "imm",
+    1: "reg",
+    2: "mem",
+    3: "indirect",
+    4: "last_c",
+}
+TRACE_ROW_SHAPE_STORE_NAMES = {
+    0: "none",
+    1: "reg",
+    2: "mem",
+    3: "indirect",
+}
+TRACE_ROW_SHAPE_OP_NAMES = (
+    "Flag",
+    "CopyB",
+    "Ltu",
+    "Lt",
+    "Eq",
+    "Add",
+    "Sub",
+    "AddW",
+    "SubW",
+    "And",
+    "Or",
+    "Xor",
+    "Sll",
+    "Srl",
+    "Sra",
+    "Mulhu",
+    "Mulhsu",
+    "Mul",
+    "Mulh",
+    "Divu",
+    "Remu",
+    "Div",
+    "Rem",
+    "SllW",
+    "SrlW",
+    "SraW",
+    "MulW",
+    "DivuW",
+    "RemuW",
+    "DivW",
+    "RemW",
+    "SignExtendB",
+    "SignExtendH",
+    "SignExtendW",
+    "DmaMemCpy",
+    "DmaMemCmp",
+    "DmaInputCpy",
+    "DmaXMemCpy",
+    "DmaXMemCmp",
+)
 TRACE_SHAPE_KEYS = (
     TRACE_SINGLE_ROW_REPORTS_KEY,
     TRACE_MULTI_ROW_REPORTS_KEY,
@@ -721,10 +775,10 @@ HEADER = (
     "register_source_reads,memory_source_reads,memory_source_read_pct,"
     "register_store_rows,memory_store_rows,memory_store_row_pct,"
     "no_store_rows,no_store_row_pct,trace_shape_sample_hint,"
-    "row_shape_top_1_pattern,row_shape_top_1_count,"
-    "row_shape_top_2_pattern,row_shape_top_2_count,"
-    "row_shape_top_3_pattern,row_shape_top_3_count,"
-    "row_shape_top_4_pattern,row_shape_top_4_count,"
+    "row_shape_top_1_pattern,row_shape_top_1_count,row_shape_top_1_shape,"
+    "row_shape_top_2_pattern,row_shape_top_2_count,row_shape_top_2_shape,"
+    "row_shape_top_3_pattern,row_shape_top_3_count,row_shape_top_3_shape,"
+    "row_shape_top_4_pattern,row_shape_top_4_count,row_shape_top_4_shape,"
     "trace_precompile_action_hint,"
     "copy_memory_source_rows,copy_memory_source_row_pct,"
     "copy_indirect_memory_rows,copy_indirect_memory_row_pct,"
@@ -3310,6 +3364,34 @@ def parallel_lower_replay_duplicate_work_from_values(values: dict[str, int]) -> 
     )
 
 
+def trace_row_shape_pattern_description(pattern: int) -> str:
+    if pattern == 0:
+        return "none"
+    op_code = (pattern >> 1) & 0xFF
+    source_a_code = (pattern >> 9) & 0x7
+    source_b_code = (pattern >> 12) & 0x7
+    store_code = (pattern >> 15) & 0x3
+    ind_width = (pattern >> 17) & 0xFF
+    store_pc = (pattern >> 25) & 0x1
+    set_pc = (pattern >> 26) & 0x1
+    m32 = (pattern >> 27) & 0x1
+    external = (pattern >> 28) & 0x1
+    precompiled = (pattern >> 29) & 0x1
+    op = (
+        TRACE_ROW_SHAPE_OP_NAMES[op_code]
+        if op_code < len(TRACE_ROW_SHAPE_OP_NAMES)
+        else f"op{op_code}"
+    )
+    source_a = TRACE_ROW_SHAPE_SOURCE_NAMES.get(source_a_code, f"source{source_a_code}")
+    source_b = TRACE_ROW_SHAPE_SOURCE_NAMES.get(source_b_code, f"source{source_b_code}")
+    store = TRACE_ROW_SHAPE_STORE_NAMES.get(store_code, f"store{store_code}")
+    return (
+        f"op={op};a={source_a};b={source_b};store={store};"
+        f"ind_width={ind_width};store_pc={store_pc};set_pc={set_pc};"
+        f"m32={m32};external={external};precompiled={precompiled}"
+    )
+
+
 def summarize_profile_values(
     label: str,
     values: dict[str, int],
@@ -3495,6 +3577,10 @@ def summarize_profile_values(
     row_shape_top_3_count = values.get(TRACE_ROW_SHAPE_TOP_3_COUNT_KEY, 0)
     row_shape_top_4_pattern = values.get(TRACE_ROW_SHAPE_TOP_4_PATTERN_KEY, 0)
     row_shape_top_4_count = values.get(TRACE_ROW_SHAPE_TOP_4_COUNT_KEY, 0)
+    row_shape_top_1_shape = trace_row_shape_pattern_description(row_shape_top_1_pattern)
+    row_shape_top_2_shape = trace_row_shape_pattern_description(row_shape_top_2_pattern)
+    row_shape_top_3_shape = trace_row_shape_pattern_description(row_shape_top_3_pattern)
+    row_shape_top_4_shape = trace_row_shape_pattern_description(row_shape_top_4_pattern)
     indirect_memory_row_pct = (
         indirect_memory_rows * 100.0 / trace_report_rows
         if trace_report_rows
@@ -4648,10 +4734,10 @@ def summarize_profile_values(
         f"{memory_source_read_pct:.3f},{register_store_rows},"
         f"{memory_store_rows},{memory_store_row_pct:.3f},"
         f"{no_store_rows},{no_store_row_pct:.3f},{trace_shape_hint},"
-        f"{row_shape_top_1_pattern},{row_shape_top_1_count},"
-        f"{row_shape_top_2_pattern},{row_shape_top_2_count},"
-        f"{row_shape_top_3_pattern},{row_shape_top_3_count},"
-        f"{row_shape_top_4_pattern},{row_shape_top_4_count},"
+        f"{row_shape_top_1_pattern},{row_shape_top_1_count},{row_shape_top_1_shape},"
+        f"{row_shape_top_2_pattern},{row_shape_top_2_count},{row_shape_top_2_shape},"
+        f"{row_shape_top_3_pattern},{row_shape_top_3_count},{row_shape_top_3_shape},"
+        f"{row_shape_top_4_pattern},{row_shape_top_4_count},{row_shape_top_4_shape},"
         f"{trace_precompile_action},"
         f"{copy_memory_source_rows},{copy_memory_source_row_pct:.3f},"
         f"{copy_indirect_memory_rows},{copy_indirect_memory_row_pct:.3f},"
