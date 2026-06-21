@@ -825,6 +825,18 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_parallel_lower_report_elided_count",
         timing.guest_trace_parallel_lower_report_elided_count(),
     );
+    timings.record_count(
+        "guest_trace_parallel_lower_stream_segments",
+        timing.guest_trace_parallel_lower_stream_segment_count(),
+    );
+    timings.record_count(
+        "guest_trace_parallel_lower_stream_chunks",
+        timing.guest_trace_parallel_lower_stream_chunk_count(),
+    );
+    timings.record_count(
+        "guest_trace_parallel_lower_stream_fallbacks",
+        timing.guest_trace_parallel_lower_stream_fallback_count(),
+    );
     timings.record(
         "guest_trace_parallel_lower_dispatch_wait",
         timing.guest_trace_parallel_lower_dispatch_wait_duration(),

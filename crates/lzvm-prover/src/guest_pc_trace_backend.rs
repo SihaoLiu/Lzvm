@@ -246,6 +246,9 @@ pub(crate) struct GuestPcTraceStreamTiming {
     parallel_lower_snapshot_replay_count: usize,
     parallel_lower_snapshot_replay_duration: Duration,
     parallel_lower_report_elided_count: usize,
+    parallel_lower_stream_segment_count: usize,
+    parallel_lower_stream_chunk_count: usize,
+    parallel_lower_stream_fallback_count: usize,
     parallel_lower_dispatch_wait_duration: Duration,
     parallel_lower_result_receive_wait_duration: Duration,
     parallel_lower_dispatch_blocked_count: usize,
@@ -387,6 +390,9 @@ impl GuestPcTraceStreamTiming {
         self.parallel_lower_snapshot_replay_duration +=
             other.parallel_lower_snapshot_replay_duration;
         self.parallel_lower_report_elided_count += other.parallel_lower_report_elided_count;
+        self.parallel_lower_stream_segment_count += other.parallel_lower_stream_segment_count;
+        self.parallel_lower_stream_chunk_count += other.parallel_lower_stream_chunk_count;
+        self.parallel_lower_stream_fallback_count += other.parallel_lower_stream_fallback_count;
         self.parallel_lower_dispatch_wait_duration += other.parallel_lower_dispatch_wait_duration;
         self.parallel_lower_result_receive_wait_duration +=
             other.parallel_lower_result_receive_wait_duration;
@@ -713,6 +719,18 @@ impl GuestPcTraceStreamTiming {
 
     pub fn parallel_lower_report_elided_count(&self) -> usize {
         self.parallel_lower_report_elided_count
+    }
+
+    pub fn parallel_lower_stream_segment_count(&self) -> usize {
+        self.parallel_lower_stream_segment_count
+    }
+
+    pub fn parallel_lower_stream_chunk_count(&self) -> usize {
+        self.parallel_lower_stream_chunk_count
+    }
+
+    pub fn parallel_lower_stream_fallback_count(&self) -> usize {
+        self.parallel_lower_stream_fallback_count
     }
 
     pub fn parallel_lower_dispatch_wait_duration(&self) -> Duration {
@@ -5585,6 +5603,18 @@ enum GuestPcTraceParallelLowerMessage {
     },
 }
 
+enum GuestPcTraceParallelLowerJob {
+    Segment(Box<GuestPcTracePendingSegmentSlice>),
+    #[cfg(feature = "cuda")]
+    StreamStart(Box<GuestPcTracePendingSegmentStreamStart>),
+    #[cfg(feature = "cuda")]
+    StreamChunk(Box<GuestPcTracePendingReportChunk>),
+    #[cfg(feature = "cuda")]
+    StreamSegment(Box<GuestPcTracePendingSegmentSlice>),
+    #[cfg(feature = "cuda")]
+    StreamFinish(Box<GuestPcTracePendingSegmentFinish>),
+}
+
 fn replay_guest_pc_trace_pending_segment_reports(
     layout: &WitnessTraceLayout,
     pending: &mut GuestPcTracePendingSegmentSlice,
@@ -5631,12 +5661,246 @@ fn replay_guest_pc_trace_pending_segment_reports(
     Ok(())
 }
 
+fn lower_guest_pc_trace_parallel_pending_job(
+    layout: &WitnessTraceLayout,
+    mut pending: GuestPcTracePendingSegmentSlice,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    timing: &mut GuestPcTraceStreamTiming,
+) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
+    if guest_pc_trace_parallel_lower_replay_snapshot_enabled() {
+        replay_guest_pc_trace_pending_segment_reports(layout, &mut pending, timing)?;
+    }
+    let trace_instance_index = pending.trace_instance_index;
+    let seed =
+        pending
+            .seed
+            .as_deref()
+            .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                "parallel guest PC trace lower requires seed for segment {trace_instance_index}"
+            ),
+            })?;
+    #[cfg(feature = "cuda")]
+    if guest_pc_trace_owned_streaming_lower_enabled() {
+        let seed = seed.clone();
+        return Ok(GuestPcTraceSeededLoweredSegment {
+            seed: seed.clone(),
+            lowered: lower_guest_pc_trace_owned_streaming_pending_segment(
+                layout,
+                pending,
+                &seed,
+                expected_proof_values,
+                Some(timing),
+            )?,
+        });
+    }
+    Ok(GuestPcTraceSeededLoweredSegment {
+        seed: seed.clone(),
+        lowered: lower_guest_pc_trace_seeded_pending_segment(
+            layout,
+            &pending,
+            seed,
+            expected_proof_values,
+            Some(timing),
+        )?,
+    })
+}
+
+#[cfg(feature = "cuda")]
+struct GuestPcTraceParallelStreamedSegment {
+    trace_instance_index: u32,
+    seed: ZiskMainSegmentSeed,
+    builder: Option<ZiskMainStreamingDeviceSegmentBuilder>,
+    feeder: ZiskMainOwnedStreamingDeviceReportFeeder,
+    pending: Option<GuestPcTracePendingSegmentSlice>,
+    reports: Vec<GuestMachineReport>,
+    aggregate_report_started: Option<Instant>,
+}
+
+#[cfg(feature = "cuda")]
+impl GuestPcTraceParallelStreamedSegment {
+    fn new(
+        layout: &WitnessTraceLayout,
+        start: GuestPcTracePendingSegmentStreamStart,
+        timing_enabled: bool,
+    ) -> Result<Self, GuestPcTraceBackendError> {
+        let seed = start.seed.map(|seed| *seed).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "parallel guest PC trace stream start missing seed for segment {}",
+                    start.trace_instance_index
+                ),
+            }
+        })?;
+        let segment = ZiskMainTraceSegmentInfo {
+            trace_instance_index: start.trace_instance_index,
+            is_last_segment: false,
+            previous_c: seed.previous_c,
+        };
+        let builder =
+            ZiskMainStreamingDeviceSegmentBuilder::new(layout, &seed.initial_state, segment)?;
+        let aggregate_report_started = (timing_enabled && builder.is_some()).then(Instant::now);
+        Ok(Self {
+            trace_instance_index: start.trace_instance_index,
+            seed,
+            builder,
+            feeder: ZiskMainOwnedStreamingDeviceReportFeeder::new(
+                ZiskMainTraceLowerTimingConfig::from_env(),
+            ),
+            pending: None,
+            reports: Vec::new(),
+            aggregate_report_started,
+        })
+    }
+
+    fn push_chunk(
+        &mut self,
+        chunk: GuestPcTracePendingReportChunk,
+        timing: &mut GuestPcTraceStreamTiming,
+    ) -> Result<(), GuestPcTraceBackendError> {
+        if chunk.trace_instance_index != self.trace_instance_index {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "parallel guest PC trace stream chunk for segment {} reached segment {}",
+                    chunk.trace_instance_index, self.trace_instance_index
+                ),
+            });
+        }
+        timing.trace_report_chunk_received_count =
+            timing.trace_report_chunk_received_count.saturating_add(1);
+        timing.trace_report_chunk_max_queued_count =
+            timing.trace_report_chunk_max_queued_count.max(1);
+        timing.parallel_lower_stream_chunk_count =
+            timing.parallel_lower_stream_chunk_count.saturating_add(1);
+        for report in chunk.reports {
+            if let Some(builder) = self.builder.as_mut() {
+                self.feeder
+                    .push_report(builder, report.clone(), Some(timing))?;
+            }
+            self.reports.push(report);
+        }
+        Ok(())
+    }
+
+    fn set_pending(
+        &mut self,
+        pending: GuestPcTracePendingSegmentSlice,
+    ) -> Result<(), GuestPcTraceBackendError> {
+        if pending.trace_instance_index != self.trace_instance_index {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "parallel guest PC trace stream segment {} reached segment {}",
+                    pending.trace_instance_index, self.trace_instance_index
+                ),
+            });
+        }
+        if self.pending.is_some() {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "parallel guest PC trace stream segment {} duplicated metadata",
+                    self.trace_instance_index
+                ),
+            });
+        }
+        self.pending = Some(pending);
+        Ok(())
+    }
+
+    fn finish(
+        mut self,
+        layout: &WitnessTraceLayout,
+        finish: GuestPcTracePendingSegmentFinish,
+        expected_proof_values: Option<&[WitnessTraceProofValue]>,
+        timing: &mut GuestPcTraceStreamTiming,
+    ) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
+        if finish.trace_instance_index != self.trace_instance_index {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "parallel guest PC trace stream finish {} reached segment {}",
+                    finish.trace_instance_index, self.trace_instance_index
+                ),
+            });
+        }
+        let mut pending =
+            self.pending
+                .take()
+                .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: format!(
+                        "parallel guest PC trace stream segment {} finished before metadata",
+                        self.trace_instance_index
+                    ),
+                })?;
+        if !pending.reports.is_empty() {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "parallel guest PC trace stream segment {} overlapped carried reports",
+                    self.trace_instance_index
+                ),
+            });
+        }
+        if pending.report_count != self.reports.len() {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "parallel guest PC trace stream segment {} lost reports",
+                    self.trace_instance_index
+                ),
+            });
+        }
+        pending.reports = self.reports;
+        if pending.is_last_segment || self.builder.is_none() {
+            timing.parallel_lower_stream_fallback_count = timing
+                .parallel_lower_stream_fallback_count
+                .saturating_add(1);
+            return lower_guest_pc_trace_parallel_pending_job(
+                layout,
+                pending,
+                expected_proof_values,
+                timing,
+            );
+        }
+        let mut builder = self.builder.take().expect("builder presence checked");
+        self.feeder
+            .finish(&mut builder, pending.lookahead_instruction, Some(timing))?;
+        let mut aggregate_timing = Some(&mut *timing);
+        record_aggregate_trace_report_duration(
+            &mut aggregate_timing,
+            self.aggregate_report_started,
+        );
+        let GuestPcTraceDeviceSegmentBuild {
+            device_segment_material,
+            unit_values,
+            final_state,
+            continuation_state,
+        } = builder.finish(pending.terminal_pc, Some(timing))?;
+        let next_seed = ZiskMainSegmentSeed {
+            initial_state: continuation_state,
+            previous_c: final_state.last_c,
+        };
+        timing.parallel_lower_stream_segment_count =
+            timing.parallel_lower_stream_segment_count.saturating_add(1);
+        Ok(GuestPcTraceSeededLoweredSegment {
+            seed: self.seed,
+            lowered: GuestPcTraceLoweredSegment {
+                segment: GuestPcTraceSegmentTrace {
+                    trace_instance_index: pending.trace_instance_index,
+                    trace_source_prefix_rows: device_segment_material.trace_source_prefix_rows,
+                    device_segment_material: Some(device_segment_material),
+                    trace: None,
+                    unit_values,
+                    proof_values: expected_proof_values.unwrap_or_default().to_vec(),
+                },
+                next_seed,
+            },
+        })
+    }
+}
+
 fn dispatch_guest_pc_trace_parallel_lower_job<T>(
     job_senders: &[mpsc::SyncSender<T>],
     next_worker: &mut usize,
     mut job: T,
     timing: Option<&mut GuestPcTraceStreamTiming>,
-) -> Result<(), T> {
+) -> Result<usize, T> {
     let worker_count = job_senders.len();
     if worker_count == 0 {
         return Err(job);
@@ -5648,7 +5912,7 @@ fn dispatch_guest_pc_trace_parallel_lower_job<T>(
         match job_senders[worker].try_send(job) {
             Ok(()) => {
                 *next_worker = (worker + 1) % worker_count;
-                return Ok(());
+                return Ok(worker);
             }
             Err(mpsc::TrySendError::Full(returned_job)) => {
                 saw_full_queue = true;
@@ -5673,7 +5937,25 @@ fn dispatch_guest_pc_trace_parallel_lower_job<T>(
         job_senders[start].send(job).map_err(|error| error.0)?;
     }
     *next_worker = (start + 1) % worker_count;
-    Ok(())
+    Ok(start)
+}
+
+#[cfg(feature = "cuda")]
+fn send_guest_pc_trace_parallel_lower_job_to_worker<T>(
+    job_senders: &[mpsc::SyncSender<T>],
+    worker: usize,
+    job: T,
+    timing: Option<&mut GuestPcTraceStreamTiming>,
+) -> Result<(), T> {
+    let Some(sender) = job_senders.get(worker) else {
+        return Err(job);
+    };
+    let send_started = Instant::now();
+    let result = sender.send(job).map_err(|error| error.0);
+    if let Some(timing) = timing {
+        timing.parallel_lower_dispatch_wait_duration += send_started.elapsed();
+    }
+    result
 }
 
 fn lower_guest_pc_trace_pending_segments_parallel(
@@ -5694,66 +5976,145 @@ fn lower_guest_pc_trace_pending_segments_parallel(
         let mut job_senders = Vec::with_capacity(worker_count);
 
         for _ in 0..worker_count {
-            let (job_sender, job_receiver) =
-                mpsc::sync_channel::<GuestPcTracePendingSegmentSlice>(1);
+            let (job_sender, job_receiver) = mpsc::sync_channel::<GuestPcTraceParallelLowerJob>(1);
             job_senders.push(job_sender);
             let result_sender = result_sender.clone();
             worker_handles.push(spawn_guest_pc_trace_thread(
                 scope,
                 "lzvm-gp-plow",
                 move || {
-                    while let Ok(mut pending) = job_receiver.recv() {
-                        let trace_instance_index = pending.trace_instance_index;
+                    #[cfg(feature = "cuda")]
+                    let mut active_stream: Option<GuestPcTraceParallelStreamedSegment> = None;
+                    #[cfg(feature = "cuda")]
+                    let mut active_stream_timing = GuestPcTraceStreamTiming::default();
+                    while let Ok(job) = job_receiver.recv() {
                         let mut worker_timing = GuestPcTraceStreamTiming::default();
-                        let result = (|| {
-                            if guest_pc_trace_parallel_lower_replay_snapshot_enabled() {
-                                replay_guest_pc_trace_pending_segment_reports(
+                        let (trace_instance_index, result) = match job {
+                            GuestPcTraceParallelLowerJob::Segment(pending) => {
+                                let pending = *pending;
+                                let trace_instance_index = pending.trace_instance_index;
+                                let result = lower_guest_pc_trace_parallel_pending_job(
                                     layout,
-                                    &mut pending,
+                                    pending,
+                                    expected_proof_values,
                                     &mut worker_timing,
-                                )?;
+                                );
+                                (trace_instance_index, Some(result))
                             }
-                            let seed = pending.seed.as_deref().ok_or_else(|| {
-                                GuestPcTraceBackendError::InvalidPcTraceLayout {
-                                    message: format!(
-                                        "parallel guest PC trace lower requires seed for segment {trace_instance_index}"
+                            #[cfg(feature = "cuda")]
+                            GuestPcTraceParallelLowerJob::StreamStart(start) => {
+                                let trace_instance_index = start.trace_instance_index;
+                                let result = if active_stream.is_some() {
+                                    Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                        message:
+                                            "parallel guest PC trace stream overlapped active segment"
+                                                .to_owned(),
+                                    })
+                                } else {
+                                    GuestPcTraceParallelStreamedSegment::new(
+                                        layout,
+                                        *start,
+                                        true,
+                                    )
+                                    .map(|stream| {
+                                        active_stream = Some(stream);
+                                    })
+                                };
+                                match result {
+                                    Ok(()) => {
+                                        active_stream_timing = GuestPcTraceStreamTiming::default();
+                                        (trace_instance_index, None)
+                                    }
+                                    Err(error) => (
+                                        trace_instance_index,
+                                        Some(Err(error)),
                                     ),
                                 }
-                            })?;
-                            #[cfg(feature = "cuda")]
-                            if guest_pc_trace_owned_streaming_lower_enabled() {
-                                let seed = seed.clone();
-                                return Ok(GuestPcTraceSeededLoweredSegment {
-                                    seed: seed.clone(),
-                                    lowered: lower_guest_pc_trace_owned_streaming_pending_segment(
-                                        layout,
-                                        pending,
-                                        &seed,
-                                        expected_proof_values,
-                                        Some(&mut worker_timing),
-                                    )?,
-                                });
                             }
-                            Ok(GuestPcTraceSeededLoweredSegment {
-                                seed: seed.clone(),
-                                lowered: lower_guest_pc_trace_seeded_pending_segment(
-                                    layout,
-                                    &pending,
-                                    seed,
-                                    expected_proof_values,
-                                    Some(&mut worker_timing),
-                                )?,
-                            })
-                        })();
-                        if result_sender
-                            .send(GuestPcTraceParallelLowerMessage::Segment {
-                                trace_instance_index,
-                                result: Box::new(result),
-                                timing: worker_timing,
-                            })
-                            .is_err()
-                        {
-                            break;
+                            #[cfg(feature = "cuda")]
+                            GuestPcTraceParallelLowerJob::StreamChunk(chunk) => {
+                                let trace_instance_index = chunk.trace_instance_index;
+                                let result = active_stream
+                                    .as_mut()
+                                    .ok_or_else(|| {
+                                        GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                            message: format!(
+                                                "parallel guest PC trace stream chunk {} arrived before start",
+                                                trace_instance_index
+                                            ),
+                                        }
+                                    })
+                                    .and_then(|stream| {
+                                        stream.push_chunk(*chunk, &mut active_stream_timing)
+                                    });
+                                match result {
+                                    Ok(()) => (trace_instance_index, None),
+                                    Err(error) => {
+                                        worker_timing.add(std::mem::take(
+                                            &mut active_stream_timing,
+                                        ));
+                                        (trace_instance_index, Some(Err(error)))
+                                    }
+                                }
+                            }
+                            #[cfg(feature = "cuda")]
+                            GuestPcTraceParallelLowerJob::StreamSegment(pending) => {
+                                let trace_instance_index = pending.trace_instance_index;
+                                let result = active_stream
+                                    .as_mut()
+                                    .ok_or_else(|| {
+                                        GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                            message: format!(
+                                                "parallel guest PC trace stream segment {} arrived before start",
+                                                trace_instance_index
+                                            ),
+                                        }
+                                    })
+                                    .and_then(|stream| stream.set_pending(*pending));
+                                match result {
+                                    Ok(()) => (trace_instance_index, None),
+                                    Err(error) => (
+                                        trace_instance_index,
+                                        Some(Err(error)),
+                                    ),
+                                }
+                            }
+                            #[cfg(feature = "cuda")]
+                            GuestPcTraceParallelLowerJob::StreamFinish(finish) => {
+                                let trace_instance_index = finish.trace_instance_index;
+                                let result = active_stream
+                                    .take()
+                                    .ok_or_else(|| {
+                                        GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                            message: format!(
+                                                "parallel guest PC trace stream finish {} arrived before start",
+                                                trace_instance_index
+                                            ),
+                                        }
+                                    })
+                                    .and_then(|stream| {
+                                        stream.finish(
+                                            layout,
+                                            *finish,
+                                            expected_proof_values,
+                                            &mut active_stream_timing,
+                                        )
+                                    });
+                                worker_timing.add(std::mem::take(&mut active_stream_timing));
+                                (trace_instance_index, Some(result))
+                            }
+                        };
+                        if let Some(result) = result {
+                            if result_sender
+                                .send(GuestPcTraceParallelLowerMessage::Segment {
+                                    trace_instance_index,
+                                    result: Box::new(result),
+                                    timing: worker_timing,
+                                })
+                                .is_err()
+                            {
+                                break;
+                            }
                         }
                     }
                 },
@@ -5767,6 +6128,8 @@ fn lower_guest_pc_trace_pending_segments_parallel(
             let mut next_worker = 0_usize;
             let mut pending_chunks = BTreeMap::new();
             let mut pending_chunked_segments = BTreeMap::new();
+            #[cfg(feature = "cuda")]
+            let mut pending_stream_segments = BTreeMap::<u32, usize>::new();
             loop {
                 let receive_started = Instant::now();
                 let message = match pending_receiver.recv() {
@@ -5796,7 +6159,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         if dispatch_guest_pc_trace_parallel_lower_job(
                             &job_senders,
                             &mut next_worker,
-                            pending,
+                            GuestPcTraceParallelLowerJob::Segment(Box::new(pending)),
                             Some(&mut dispatcher_timing),
                         )
                         .is_err()
@@ -5814,9 +6177,83 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         }
                         dispatched_count = dispatched_count.saturating_add(1);
                     }
-                    GuestPcTracePendingSegmentMessage::SegmentStreamStarted(_) => {}
+                    GuestPcTracePendingSegmentMessage::SegmentStreamStarted(start) => {
+                        #[cfg(feature = "cuda")]
+                        if guest_pc_trace_parallel_stream_chunks_enabled() {
+                            let trace_instance_index = start.trace_instance_index;
+                            if pending_stream_segments.contains_key(&trace_instance_index) {
+                                let _ = dispatcher_sender.send(
+                                    GuestPcTraceParallelLowerMessage::Error {
+                                        error: GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                            message:
+                                                "guest PC trace duplicate stream segment start"
+                                                    .to_owned(),
+                                        },
+                                        dispatched_count,
+                                        timing: dispatcher_timing,
+                                    },
+                                );
+                                break;
+                            }
+                            match dispatch_guest_pc_trace_parallel_lower_job(
+                                &job_senders,
+                                &mut next_worker,
+                                GuestPcTraceParallelLowerJob::StreamStart(start),
+                                Some(&mut dispatcher_timing),
+                            ) {
+                                Ok(worker) => {
+                                    pending_stream_segments.insert(trace_instance_index, worker);
+                                    dispatched_count = dispatched_count.saturating_add(1);
+                                }
+                                Err(_) => {
+                                    let _ =
+                                        dispatcher_sender
+                                            .send(GuestPcTraceParallelLowerMessage::Error {
+                                            error: GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                                message:
+                                                    "parallel guest PC trace lower worker stopped"
+                                                        .to_owned(),
+                                            },
+                                            dispatched_count,
+                                            timing: dispatcher_timing,
+                                        });
+                                    break;
+                                }
+                            }
+                        }
+                        #[cfg(not(feature = "cuda"))]
+                        {
+                            let _ = start;
+                        }
+                    }
                     GuestPcTracePendingSegmentMessage::SegmentStarted(pending) => {
                         let pending = *pending;
+                        #[cfg(feature = "cuda")]
+                        if let Some(&worker) =
+                            pending_stream_segments.get(&pending.trace_instance_index)
+                        {
+                            if send_guest_pc_trace_parallel_lower_job_to_worker(
+                                &job_senders,
+                                worker,
+                                GuestPcTraceParallelLowerJob::StreamSegment(Box::new(pending)),
+                                Some(&mut dispatcher_timing),
+                            )
+                            .is_err()
+                            {
+                                let _ = dispatcher_sender.send(
+                                    GuestPcTraceParallelLowerMessage::Error {
+                                        error: GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                            message: "parallel guest PC trace lower worker stopped"
+                                                .to_owned(),
+                                        },
+                                        dispatched_count,
+                                        timing: dispatcher_timing,
+                                    },
+                                );
+                                break;
+                            }
+                            continue;
+                        }
                         if pending_chunked_segments
                             .insert(pending.trace_instance_index, pending)
                             .is_some()
@@ -5834,6 +6271,32 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         }
                     }
                     GuestPcTracePendingSegmentMessage::ReportChunk(chunk) => {
+                        #[cfg(feature = "cuda")]
+                        if let Some(&worker) =
+                            pending_stream_segments.get(&chunk.trace_instance_index)
+                        {
+                            if send_guest_pc_trace_parallel_lower_job_to_worker(
+                                &job_senders,
+                                worker,
+                                GuestPcTraceParallelLowerJob::StreamChunk(chunk),
+                                Some(&mut dispatcher_timing),
+                            )
+                            .is_err()
+                            {
+                                let _ = dispatcher_sender.send(
+                                    GuestPcTraceParallelLowerMessage::Error {
+                                        error: GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                            message: "parallel guest PC trace lower worker stopped"
+                                                .to_owned(),
+                                        },
+                                        dispatched_count,
+                                        timing: dispatcher_timing,
+                                    },
+                                );
+                                break;
+                            }
+                            continue;
+                        }
                         receive_guest_pc_trace_pending_report_chunk(
                             *chunk,
                             &mut pending_chunks,
@@ -5841,6 +6304,32 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         );
                     }
                     GuestPcTracePendingSegmentMessage::SegmentFinished(finish) => {
+                        #[cfg(feature = "cuda")]
+                        if let Some(worker) =
+                            pending_stream_segments.remove(&finish.trace_instance_index)
+                        {
+                            if send_guest_pc_trace_parallel_lower_job_to_worker(
+                                &job_senders,
+                                worker,
+                                GuestPcTraceParallelLowerJob::StreamFinish(finish),
+                                Some(&mut dispatcher_timing),
+                            )
+                            .is_err()
+                            {
+                                let _ = dispatcher_sender.send(
+                                    GuestPcTraceParallelLowerMessage::Error {
+                                        error: GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                            message: "parallel guest PC trace lower worker stopped"
+                                                .to_owned(),
+                                        },
+                                        dispatched_count,
+                                        timing: dispatcher_timing,
+                                    },
+                                );
+                                break;
+                            }
+                            continue;
+                        }
                         let pending = match pending_chunked_segments
                             .remove(&finish.trace_instance_index)
                             .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -5877,7 +6366,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         if dispatch_guest_pc_trace_parallel_lower_job(
                             &job_senders,
                             &mut next_worker,
-                            pending,
+                            GuestPcTraceParallelLowerJob::Segment(Box::new(pending)),
                             Some(&mut dispatcher_timing),
                         )
                         .is_err()
@@ -5912,6 +6401,19 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                                 dispatcher_sender.send(GuestPcTraceParallelLowerMessage::Error {
                                     error: GuestPcTraceBackendError::InvalidPcTraceLayout {
                                         message: "guest PC trace chunked segment missing finish"
+                                            .to_owned(),
+                                    },
+                                    dispatched_count,
+                                    timing: dispatcher_timing,
+                                });
+                            break;
+                        }
+                        #[cfg(feature = "cuda")]
+                        if !pending_stream_segments.is_empty() {
+                            let _ =
+                                dispatcher_sender.send(GuestPcTraceParallelLowerMessage::Error {
+                                    error: GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                        message: "guest PC trace stream segment missing finish"
                                             .to_owned(),
                                     },
                                     dispatched_count,
@@ -6153,6 +6655,11 @@ fn guest_pc_trace_parallel_lower_result_queue_capacity(worker_count: usize) -> u
 
 fn guest_pc_trace_parallel_lower_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", false)
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_trace_parallel_stream_chunks_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_STREAM_CHUNKS", false)
 }
 
 #[cfg(feature = "cuda")]
