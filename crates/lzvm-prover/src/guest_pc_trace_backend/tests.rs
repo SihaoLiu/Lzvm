@@ -923,6 +923,65 @@ fn guest_pc_trace_trusted_runner_seed_snapshot_produces_pending_seeds() {
 }
 
 #[test]
+fn replay_only_runner_seed_snapshot_elides_runner_report_buffer() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _parallel_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", "1");
+    let _worker_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS", "2");
+    let _replay_only_env =
+        TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY", "1");
+    let dir = repo_temp_dir("guest-pc-replay-only-runner-report-elision");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        riscv_addi(5, 4, 13),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let mut pending = Vec::new();
+
+    let produced = produce_guest_pc_trace_pending_slices(
+        32,
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        &[],
+        layout.row_count(),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
+    )
+    .expect("replay-only pending slices should produce");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(pending.len() >= 3);
+    assert!(pending.iter().all(|segment| segment.reports_elided));
+    assert!(pending.iter().all(|segment| segment.reports.is_empty()));
+    assert!(pending.iter().all(|segment| segment.report_count > 0));
+    assert!(pending
+        .iter()
+        .all(|segment| segment.replay_snapshot.is_some()));
+    assert_eq!(produced.timing.trace_runner_report_buffer_capacity(), 0);
+    assert!(produced.timing.seed_direct_lift_attempt_count() > 0);
+    assert_eq!(
+        produced.timing.seed_direct_lift_attempt_count(),
+        produced.timing.seed_direct_lift_success_count()
+    );
+}
+
+#[test]
 fn seeded_pending_segment_lowers_without_prior_segment_state() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
@@ -1655,13 +1714,13 @@ fn runner_boundary_seed_snapshot_uses_runner_registers_for_narrow_store() {
     let lifted = lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
         1,
         segment,
-        ZiskMainRunnerBoundarySeedInput {
-            reports: std::slice::from_ref(&report),
-            lookahead_instruction: None,
-            runner_state: &runner_state,
-            current_seed: &current_seed,
-            boundary_snapshot: &boundary_snapshot,
-        },
+        ZiskMainRunnerBoundarySeedInput::from_reports(
+            std::slice::from_ref(&report),
+            None,
+            &runner_state,
+            &current_seed,
+            &boundary_snapshot,
+        ),
         0x1234_5678_9abc_def0,
     )
     .expect("narrow store boundary c should come from runner state registers");
