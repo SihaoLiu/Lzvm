@@ -15,6 +15,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let gpu_runtime_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean");
     let gpu_runtime_source =
         std::fs::read_to_string(&gpu_runtime_path).expect("Lean GPU runtime checks should read");
+    let timing_core_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/TimingCore.lean");
+    let timing_core_source =
+        std::fs::read_to_string(&timing_core_path).expect("Lean timing core checks should read");
     let timing_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/Timing.lean");
     let timing_source =
         std::fs::read_to_string(&timing_path).expect("Lean timing checks should read");
@@ -45,6 +48,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         auxiliary_source.as_str(),
         auxiliary_all_source.as_str(),
         gpu_runtime_source.as_str(),
+        timing_core_source.as_str(),
         timing_source.as_str(),
         timing_projected_source.as_str(),
         auxiliary_projected_source.as_str(),
@@ -113,6 +117,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     for obsolete_import in [
         "import Lzvm.AuxiliaryChecks",
         "import Lzvm.AuxiliaryChecks.GpuRuntime",
+        "import Lzvm.AuxiliaryChecks.TimingCore",
         "import Lzvm.AuxiliaryChecks.Timing",
         "import Lzvm.AuxiliaryChecks.TimingProjected",
         "import Lzvm.AuxiliaryChecks.Projected",
@@ -316,6 +321,28 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "abstract_verifier_sound",
         ],
     );
+    for obligation in [
+        "assumptions.crypto.transcript_binding",
+        "assumptions.semantic.public_input_binding",
+        "assumptions.crypto.pcs_opening_sound",
+        "assumptions.crypto.fri_query_sound",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &auxiliary_source,
+            "auxiliary_checked_acceptance_verifier_core_contract",
+            obligation,
+        );
+    }
+    for shortcut in [
+        "sound_witness_implies_verifier_core_contract",
+        "abstract_verifier_sound",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &auxiliary_source,
+            "auxiliary_checked_acceptance_verifier_core_contract",
+            shortcut,
+        );
+    }
     lean_binding::assert_theorem_declarations(
         &auxiliary_source,
         &["auxiliary_checked_acceptance_sound_witness"],
@@ -372,7 +399,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         );
     }
     assert!(
-        timing_source.contains("IgnoredMetadataObservedAcceptance system observations")
+        timing_core_source.contains("IgnoredMetadataObservedAcceptance system observations")
             && lean_source
                 .matches("IgnoredMetadataObservedAcceptance system summary")
                 .count()
@@ -382,7 +409,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean timing modules should instantiate the generic ignored-metadata wrapper"
     );
     for (module_name, module_source) in [
-        ("Timing", timing_source.as_str()),
+        ("TimingCore", timing_core_source.as_str()),
         ("ProofTiming", lean_proof_timing_source.as_str()),
         ("RuntimePerformance", runtime_performance_source.as_str()),
     ] {
@@ -757,7 +784,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean guest PC timing summary should prove descriptor upload byte and row counts are verifier-core-neutral"
     );
     lean_binding::assert_theorem_declarations(
-        &timing_source,
+        &timing_core_source,
         &["guest_pc_trace_timing_some_summary_acceptance_verifier_core_contract"],
     );
     for theorem_name in [

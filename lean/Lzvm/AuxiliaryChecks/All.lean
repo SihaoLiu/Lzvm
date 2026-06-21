@@ -7,6 +7,7 @@ Authors: Sihao Liu
 import Lzvm.AuxiliaryChecks
 import Lzvm.AuxiliaryChecks.ProofTiming
 import Lzvm.AuxiliaryChecks.ProofTimingVerifier
+import Lzvm.AuxiliaryChecks.TimingCore
 import Lzvm.AuxiliaryChecks.Timing
 import Lzvm.AuxiliaryChecks.TimingProjected
 import Lzvm.AuxiliaryChecks.ProofTimingProjected

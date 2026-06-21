@@ -130,6 +130,60 @@ fn retained_opening_bindings_use_theorem_declaration_export_checks() {
 }
 
 #[test]
+fn auxiliary_checked_acceptance_chokepoints_use_identifier_body_pins() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let auxiliary_source =
+        std::fs::read_to_string(crate_root.join("../../lean/Lzvm/AuxiliaryChecks.lean"))
+            .expect("Lean auxiliary checks source should read");
+    let binding_source =
+        std::fs::read_to_string(crate_root.join("tests/lean_auxiliary_checks_binding.rs"))
+            .expect("Lean auxiliary checks binding test source should read");
+
+    let chokepoints = auxiliary_source
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let rest = trimmed.strip_prefix("theorem auxiliary_checked_acceptance_")?;
+            rest.split_whitespace()
+                .next()
+                .map(|name| format!("auxiliary_checked_acceptance_{name}"))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !chokepoints.is_empty(),
+        "Lean auxiliary checks should declare checked acceptance chokepoints"
+    );
+
+    for chokepoint in chokepoints {
+        assert!(
+            binding_test_calls_identifier_body_pin(
+                &binding_source,
+                "assert_theorem_body_contains_identifier(",
+                &chokepoint,
+            ),
+            "Lean auxiliary checked acceptance chokepoint {chokepoint} should have an identifier-level body contains pin"
+        );
+        assert!(
+            binding_test_calls_identifier_body_pin(
+                &binding_source,
+                "assert_theorem_body_omits_identifier(",
+                &chokepoint,
+            ),
+            "Lean auxiliary checked acceptance chokepoint {chokepoint} should have an identifier-level body omits pin"
+        );
+    }
+}
+
+fn binding_test_calls_identifier_body_pin(source: &str, call: &str, theorem: &str) -> bool {
+    source.match_indices(call).any(|(start, _)| {
+        source[start..]
+            .lines()
+            .take(6)
+            .any(|line| line.contains(&format!("\"{theorem}\"")))
+    })
+}
+
+#[test]
 fn lean_soundness_sources_stay_modular() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_root = crate_root.join("../../lean/Lzvm");
