@@ -3130,6 +3130,161 @@ fn run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
     )
 }
 
+#[allow(dead_code)]
+fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    instruction_limit: u64,
+    row_limit: usize,
+    mut boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
+    mut emit_report: impl FnMut(GuestMachineReport) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
+    let mut pending_report = None;
+    let mut report_count = 0_usize;
+    let mut executed_instructions = 0_u64;
+    let mut trace_rows = 0_usize;
+    loop {
+        let pc = state.pc();
+        let prepared = prepare_current_guest_instruction(memory, pc)
+            .map_err(GuestMachineRunError::from)
+            .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let current = prepared.instruction();
+        if let (Some(snapshot), Some(report)) =
+            (boundary_snapshot.as_deref_mut(), pending_report.as_ref())
+        {
+            snapshot.record_report(report, Some(current), state.registers())?;
+        }
+        if current == RiscvInstruction::Ecall {
+            return finish_guest_pc_trace_live_report_chunk_segment_slice(
+                pending_report,
+                report_count,
+                &mut emit_report,
+                executed_instructions,
+                trace_rows,
+                GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall { address: pc }),
+            );
+        }
+        if executed_instructions == instruction_limit {
+            return finish_guest_pc_trace_live_report_chunk_segment_slice(
+                pending_report,
+                report_count,
+                &mut emit_report,
+                executed_instructions,
+                trace_rows,
+                GuestMachineTraceSliceStatus::Paused {
+                    pc,
+                    instruction: current,
+                },
+            );
+        }
+        let max_rows = zisk_main_instruction_max_rows(current);
+        if max_rows > row_limit {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main layout cannot fit the next guest instruction".to_owned(),
+            });
+        }
+        let required_rows = trace_rows.checked_add(max_rows).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main row count overflow".to_owned(),
+            }
+        })?;
+        if trace_rows != 0 && required_rows > row_limit {
+            return finish_guest_pc_trace_live_report_chunk_segment_slice(
+                pending_report,
+                report_count,
+                &mut emit_report,
+                executed_instructions,
+                trace_rows,
+                GuestMachineTraceSliceStatus::Paused {
+                    pc,
+                    instruction: current,
+                },
+            );
+        }
+        let report = advance_guest_machine_with_prepared_fcalls(memory, state, handler, prepared)
+            .map_err(GuestMachineRunError::from)
+            .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let report_rows = zisk_main_report_row_count(report_count, &report)?;
+        let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main row count overflow".to_owned(),
+            }
+        })?;
+        if next_trace_rows > row_limit {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main report rows exceed layout rows".to_owned(),
+            });
+        }
+        trace_rows = next_trace_rows;
+        if let Some(previous) = pending_report.replace(report) {
+            emit_report(previous)?;
+        }
+        report_count = report_count.checked_add(1).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace report count overflow".to_owned(),
+            }
+        })?;
+        executed_instructions += 1;
+        if trace_rows == row_limit {
+            let pc = state.pc();
+            let current = decode_current_guest_instruction(memory, pc)
+                .map_err(GuestMachineRunError::from)
+                .map_err(GuestPcTraceBackendError::GuestRun)?;
+            let lookahead_instruction = (current != RiscvInstruction::Ecall).then_some(current);
+            if let (Some(snapshot), Some(report)) =
+                (boundary_snapshot.as_deref_mut(), pending_report.as_ref())
+            {
+                snapshot.record_report(report, lookahead_instruction, state.registers())?;
+            }
+            let status = if current == RiscvInstruction::Ecall {
+                GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall { address: pc })
+            } else {
+                GuestMachineTraceSliceStatus::Paused {
+                    pc,
+                    instruction: current,
+                }
+            };
+            return finish_guest_pc_trace_live_report_chunk_segment_slice(
+                pending_report,
+                report_count,
+                &mut emit_report,
+                executed_instructions,
+                trace_rows,
+                status,
+            );
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn finish_guest_pc_trace_live_report_chunk_segment_slice(
+    pending_report: Option<GuestMachineReport>,
+    report_count: usize,
+    emit_report: &mut impl FnMut(GuestMachineReport) -> Result<(), GuestPcTraceBackendError>,
+    executed_instructions: u64,
+    trace_rows: usize,
+    status: GuestMachineTraceSliceStatus,
+) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
+    let last_report = match pending_report {
+        Some(report) => {
+            let last_report = report.clone();
+            emit_report(report)?;
+            Some(last_report)
+        }
+        None => None,
+    };
+    Ok(GuestPcTraceSegmentSlice {
+        executed_instructions,
+        trace_rows,
+        status,
+        report_count,
+        report_capacity: 0,
+        last_report,
+        reports: Vec::new(),
+    })
+}
+
 #[cfg(feature = "cuda")]
 #[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]

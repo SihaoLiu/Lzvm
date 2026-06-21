@@ -1074,6 +1074,72 @@ fn replay_only_runner_seed_snapshot_elides_runner_report_buffer() {
 }
 
 #[test]
+fn live_report_chunk_runner_matches_serial_slice_without_returning_reports() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let dir = repo_temp_dir("guest-pc-live-report-chunk-runner");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let (mut serial_memory, mut serial_state, mut serial_fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("serial guest trace machine should load");
+    let (mut live_memory, mut live_state, mut live_fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("live guest trace machine should load");
+
+    let serial = run_guest_pc_trace_segment_slice(
+        &mut serial_memory,
+        &mut serial_state,
+        &mut serial_fcall_handler,
+        32,
+        layout.row_count(),
+    )
+    .expect("serial segment should run");
+    let mut live_reports = Vec::new();
+    let live = run_guest_pc_trace_segment_slice_with_live_report_chunks(
+        &mut live_memory,
+        &mut live_state,
+        &mut live_fcall_handler,
+        32,
+        layout.row_count(),
+        None,
+        |report| {
+            live_reports.push(report);
+            Ok(())
+        },
+    )
+    .expect("live report chunk segment should run");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(live.executed_instructions, serial.executed_instructions);
+    assert_eq!(live.trace_rows, serial.trace_rows);
+    assert_eq!(live.status, serial.status);
+    assert_eq!(live.report_count, serial.report_count);
+    assert_eq!(live.last_report, serial.last_report);
+    assert_eq!(live.reports, Vec::new());
+    assert_eq!(live.report_capacity, 0);
+    assert_eq!(live_reports, serial.reports);
+    assert_eq!(live_memory, serial_memory);
+    assert_eq!(live_state, serial_state);
+}
+
+#[test]
 fn seeded_pending_segment_lowers_without_prior_segment_state() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
