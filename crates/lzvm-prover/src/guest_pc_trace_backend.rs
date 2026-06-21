@@ -249,6 +249,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     parallel_lower_stream_segment_count: usize,
     parallel_lower_stream_chunk_count: usize,
     parallel_lower_stream_fallback_count: usize,
+    parallel_lower_stream_retained_report_count: usize,
     parallel_lower_dispatch_wait_duration: Duration,
     parallel_lower_result_receive_wait_duration: Duration,
     parallel_lower_dispatch_blocked_count: usize,
@@ -393,6 +394,8 @@ impl GuestPcTraceStreamTiming {
         self.parallel_lower_stream_segment_count += other.parallel_lower_stream_segment_count;
         self.parallel_lower_stream_chunk_count += other.parallel_lower_stream_chunk_count;
         self.parallel_lower_stream_fallback_count += other.parallel_lower_stream_fallback_count;
+        self.parallel_lower_stream_retained_report_count +=
+            other.parallel_lower_stream_retained_report_count;
         self.parallel_lower_dispatch_wait_duration += other.parallel_lower_dispatch_wait_duration;
         self.parallel_lower_result_receive_wait_duration +=
             other.parallel_lower_result_receive_wait_duration;
@@ -731,6 +734,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn parallel_lower_stream_fallback_count(&self) -> usize {
         self.parallel_lower_stream_fallback_count
+    }
+
+    pub fn parallel_lower_stream_retained_report_count(&self) -> usize {
+        self.parallel_lower_stream_retained_report_count
     }
 
     pub fn parallel_lower_dispatch_wait_duration(&self) -> Duration {
@@ -4211,7 +4218,7 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
     runner_remaining_instruction_limit: u64,
     row_count: usize,
     seed: Option<Box<ZiskMainSegmentSeed>>,
-    replay_snapshot: Option<GuestPcTraceSegmentReplaySnapshot>,
+    replay_snapshot: Option<&GuestPcTraceSegmentReplaySnapshot>,
     boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
     emit_stream_start_before_chunks: bool,
     report_chunk_capacity: usize,
@@ -4229,7 +4236,7 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
                 trace_instance_index,
                 runner_remaining_instruction_limit,
                 seed: seed.clone(),
-                replay_snapshot: replay_snapshot.clone(),
+                replay_snapshot: None,
             }),
         ))?;
         stream_start_count = 1;
@@ -4297,7 +4304,7 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
         lookahead_instruction,
         is_last_segment,
         seed,
-        replay_snapshot,
+        replay_snapshot: is_last_segment.then(|| replay_snapshot.cloned()).flatten(),
     };
     if pending.report_count == 0 {
         emit_message(GuestPcTracePendingSegmentMessage::Segment(Box::new(
@@ -4417,7 +4424,7 @@ fn produce_guest_pc_trace_live_pending_messages(
             remaining_limit,
             row_count,
             seed.clone().map(Box::new),
-            None,
+            replay_snapshot.as_ref(),
             runner_boundary_snapshot.as_mut(),
             emit_stream_start_before_chunks,
             report_chunk_capacity,
@@ -5713,7 +5720,8 @@ struct GuestPcTraceParallelStreamedSegment {
     builder: Option<ZiskMainStreamingDeviceSegmentBuilder>,
     feeder: ZiskMainOwnedStreamingDeviceReportFeeder,
     pending: Option<GuestPcTracePendingSegmentSlice>,
-    reports: Vec<GuestMachineReport>,
+    reports: Option<Vec<GuestMachineReport>>,
+    report_count: usize,
     aggregate_report_started: Option<Instant>,
 }
 
@@ -5739,6 +5747,7 @@ impl GuestPcTraceParallelStreamedSegment {
         };
         let builder =
             ZiskMainStreamingDeviceSegmentBuilder::new(layout, &seed.initial_state, segment)?;
+        let retain_reports = builder.is_none();
         let aggregate_report_started = (timing_enabled && builder.is_some()).then(Instant::now);
         Ok(Self {
             trace_instance_index: start.trace_instance_index,
@@ -5748,7 +5757,8 @@ impl GuestPcTraceParallelStreamedSegment {
                 ZiskMainTraceLowerTimingConfig::from_env(),
             ),
             pending: None,
-            reports: Vec::new(),
+            reports: retain_reports.then(Vec::new),
+            report_count: 0,
             aggregate_report_started,
         })
     }
@@ -5772,12 +5782,16 @@ impl GuestPcTraceParallelStreamedSegment {
             timing.trace_report_chunk_max_queued_count.max(1);
         timing.parallel_lower_stream_chunk_count =
             timing.parallel_lower_stream_chunk_count.saturating_add(1);
+        self.report_count = self.report_count.saturating_add(chunk.reports.len());
         for report in chunk.reports {
             if let Some(builder) = self.builder.as_mut() {
-                self.feeder
-                    .push_report(builder, report.clone(), Some(timing))?;
+                self.feeder.push_report(builder, report, Some(timing))?;
+            } else if let Some(reports) = self.reports.as_mut() {
+                reports.push(report);
+                timing.parallel_lower_stream_retained_report_count = timing
+                    .parallel_lower_stream_retained_report_count
+                    .saturating_add(1);
             }
-            self.reports.push(report);
         }
         Ok(())
     }
@@ -5838,7 +5852,7 @@ impl GuestPcTraceParallelStreamedSegment {
                 ),
             });
         }
-        if pending.report_count != self.reports.len() {
+        if pending.report_count != self.report_count {
             return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: format!(
                     "parallel guest PC trace stream segment {} lost reports",
@@ -5846,11 +5860,17 @@ impl GuestPcTraceParallelStreamedSegment {
                 ),
             });
         }
-        pending.reports = self.reports;
+        if let Some(reports) = self.reports {
+            pending.reports = reports;
+        }
         if pending.is_last_segment || self.builder.is_none() {
             timing.parallel_lower_stream_fallback_count = timing
                 .parallel_lower_stream_fallback_count
                 .saturating_add(1);
+            if pending.reports.is_empty() && pending.report_count != 0 {
+                pending.reports_elided = true;
+                replay_guest_pc_trace_pending_segment_reports(layout, &mut pending, timing)?;
+            }
             return lower_guest_pc_trace_parallel_pending_job(
                 layout,
                 pending,

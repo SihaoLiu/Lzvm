@@ -413,7 +413,7 @@ fn live_stream_pipeline_timing_shape_requires_worker_stream_counts() {
         "timing_guest_trace_parallel_lower_workers=2",
         "timing_guest_trace_seed_direct_lift_successes=22",
         "timing_guest_trace_seed_full_advances=1",
-        "timing_guest_trace_parallel_lower_snapshot_replay_count=0",
+        "timing_guest_trace_parallel_lower_snapshot_replay_count=1",
         "timing_guest_trace_parallel_lower_report_elided_count=0",
         "timing_guest_trace_stream_start_sent=4",
         "timing_guest_trace_report_chunk_sent=4",
@@ -421,6 +421,7 @@ fn live_stream_pipeline_timing_shape_requires_worker_stream_counts() {
         "timing_guest_trace_report_chunk_reports=16",
         "timing_guest_trace_parallel_lower_stream_segments=3",
         "timing_guest_trace_parallel_lower_stream_chunks=4",
+        "timing_guest_trace_parallel_lower_stream_retained_reports=0",
     ]
     .join("\n");
 
@@ -1031,10 +1032,30 @@ fn assert_live_seed_pipeline_timing_shape(output: &str) {
 }
 
 fn assert_live_stream_pipeline_timing_shape(output: &str) {
-    assert_live_seed_pipeline_timing_shape(output);
+    assert_timing_equals(output, "timing_guest_trace_parallel_lower_workers", 2);
+    assert_timing_positive(output, "timing_guest_trace_seed_direct_lift_successes");
+    assert_timing_equals(output, "timing_guest_trace_seed_full_advances", 1);
+    assert_timing_equals(
+        output,
+        "timing_guest_trace_parallel_lower_snapshot_replay_count",
+        1,
+    );
+    assert_timing_equals(
+        output,
+        "timing_guest_trace_parallel_lower_report_elided_count",
+        0,
+    );
+    assert_timing_positive(output, "timing_guest_trace_report_chunk_sent");
+    assert_timing_positive(output, "timing_guest_trace_report_chunk_received");
+    assert_timing_positive(output, "timing_guest_trace_report_chunk_reports");
     assert_timing_positive(output, "timing_guest_trace_stream_start_sent");
     assert_timing_positive(output, "timing_guest_trace_parallel_lower_stream_segments");
     assert_timing_positive(output, "timing_guest_trace_parallel_lower_stream_chunks");
+    assert_timing_equals(
+        output,
+        "timing_guest_trace_parallel_lower_stream_retained_reports",
+        0,
+    );
     assert_eq!(
         timing_value(output, "timing_guest_trace_parallel_lower_stream_chunks"),
         timing_value(output, "timing_guest_trace_report_chunk_received"),

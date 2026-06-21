@@ -837,6 +837,10 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_parallel_lower_stream_fallbacks",
         timing.guest_trace_parallel_lower_stream_fallback_count(),
     );
+    timings.record_count(
+        "guest_trace_parallel_lower_stream_retained_reports",
+        timing.guest_trace_parallel_lower_stream_retained_report_count(),
+    );
     timings.record(
         "guest_trace_parallel_lower_dispatch_wait",
         timing.guest_trace_parallel_lower_dispatch_wait_duration(),

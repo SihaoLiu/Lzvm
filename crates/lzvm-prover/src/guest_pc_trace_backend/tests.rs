@@ -1856,6 +1856,11 @@ fn live_report_chunk_parallel_lower_streams_chunks_to_workers() {
         produced.timing.trace_report_chunk_sent_count(),
         "worker streaming should consume all live chunks without dispatcher reassembly"
     );
+    assert_eq!(
+        produced.timing.parallel_lower_stream_retained_report_count(),
+        0,
+        "worker streaming should use replay snapshots for terminal fallback without retaining every streamed report"
+    );
     assert!(produced.timing.parallel_lower_stream_segment_count() > 0);
     for (emitted, expected) in emitted.iter().zip(expected.iter()) {
         assert_eq!(emitted.trace_instance_index, expected.trace_instance_index);
