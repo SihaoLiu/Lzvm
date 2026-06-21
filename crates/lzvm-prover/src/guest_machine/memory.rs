@@ -62,12 +62,37 @@ impl GuestMachineMemory {
             return Err(GuestInstructionError::MisalignedFetch { address });
         }
 
-        let low = self.read_halfword(address)?;
+        let low_end_address = checked_address_end(address, 2)?;
+        for segment in &self.segments {
+            if segment.contains_range(address, low_end_address)? {
+                return self.fetch_instruction_from_segment(segment, address);
+            }
+        }
+
+        Err(GuestMemoryError::AddressNotMapped {
+            address,
+            byte_len: 2,
+        }
+        .into())
+    }
+
+    fn fetch_instruction_from_segment(
+        &self,
+        segment: &GuestMachineMemorySegment,
+        address: u64,
+    ) -> Result<FetchedGuestInstruction, GuestInstructionError> {
+        let low = segment.read_halfword(address);
         let encoded = if low & 0b11 == 0b11 {
             if low & 0b11100 == 0b11100 {
                 RiscvEncodedInstruction::UnsupportedLong(low)
             } else {
-                let high = self.read_halfword(address + 2)?;
+                let instruction_end_address = checked_address_end(address, 4)?;
+                let high_address = address + 2;
+                let high = if segment.contains_range(high_address, instruction_end_address)? {
+                    segment.read_halfword(high_address)
+                } else {
+                    self.read_halfword(high_address)?
+                };
                 RiscvEncodedInstruction::Standard(u32::from(low) | (u32::from(high) << 16))
             }
         } else {
@@ -407,28 +432,55 @@ mod tests {
         bytes
     }
 
-    fn sample_guest_image_with_program_header(code: &[u8], memory_size: u64) -> GuestMemoryImage {
-        assert!(code.len() as u64 <= memory_size);
-        let mut header = [0_u8; 56];
-        header[0..4].copy_from_slice(&1_u32.to_le_bytes());
-        header[4..8].copy_from_slice(&5_u32.to_le_bytes());
-        header[8..16].copy_from_slice(&120_u64.to_le_bytes());
-        header[16..24].copy_from_slice(&TEST_ENTRY.to_le_bytes());
-        header[24..32].copy_from_slice(&TEST_ENTRY.to_le_bytes());
-        header[32..40].copy_from_slice(&(code.len() as u64).to_le_bytes());
-        header[40..48].copy_from_slice(&memory_size.to_le_bytes());
-        header[48..56].copy_from_slice(&0x1000_u64.to_le_bytes());
-
+    fn sample_guest_image_with_program_headers(segments: &[(u64, &[u8], u64)]) -> GuestMemoryImage {
         let mut image = sample_guest_image();
         image[32..40].copy_from_slice(&64_u64.to_le_bytes());
         image[54..56].copy_from_slice(&56_u16.to_le_bytes());
-        image[56..58].copy_from_slice(&1_u16.to_le_bytes());
-        image.extend_from_slice(&header);
-        image.extend_from_slice(code);
+        image[56..58].copy_from_slice(&(segments.len() as u16).to_le_bytes());
+
+        let mut file_offset = 64_u64 + 56 * segments.len() as u64;
+        for (virtual_address, code, memory_size) in segments {
+            assert!(code.len() as u64 <= *memory_size);
+            let mut header = [0_u8; 56];
+            header[0..4].copy_from_slice(&1_u32.to_le_bytes());
+            header[4..8].copy_from_slice(&5_u32.to_le_bytes());
+            header[8..16].copy_from_slice(&file_offset.to_le_bytes());
+            header[16..24].copy_from_slice(&virtual_address.to_le_bytes());
+            header[24..32].copy_from_slice(&virtual_address.to_le_bytes());
+            header[32..40].copy_from_slice(&(code.len() as u64).to_le_bytes());
+            header[40..48].copy_from_slice(&memory_size.to_le_bytes());
+            header[48..56].copy_from_slice(&0x1000_u64.to_le_bytes());
+            image.extend_from_slice(&header);
+            file_offset += code.len() as u64;
+        }
+        for (_, code, _) in segments {
+            image.extend_from_slice(code);
+        }
 
         let info = parse_guest_image(&image).expect("guest image should parse");
         crate::guest_memory::load_guest_memory_image(&image, &info)
             .expect("guest memory should load")
+    }
+
+    fn sample_guest_image_with_program_header(code: &[u8], memory_size: u64) -> GuestMemoryImage {
+        sample_guest_image_with_program_headers(&[(TEST_ENTRY, code, memory_size)])
+    }
+
+    #[test]
+    fn standard_fetch_can_fall_back_across_adjacent_segments() {
+        let word = 0x0070_0193_u32;
+        let bytes = word.to_le_bytes();
+        let image = sample_guest_image_with_program_headers(&[
+            (TEST_ENTRY, &bytes[..2], 2),
+            (TEST_ENTRY + 2, &bytes[2..], 2),
+        ]);
+        let memory = GuestMachineMemory::from_image(&image);
+
+        let fetched = memory
+            .fetch_instruction(TEST_ENTRY)
+            .expect("split standard instruction should fetch");
+
+        assert_eq!(fetched.encoded, RiscvEncodedInstruction::Standard(word));
     }
 
     #[test]

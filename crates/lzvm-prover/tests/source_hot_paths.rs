@@ -8248,6 +8248,28 @@ fn guest_machine_fetch_uses_specialized_memory_path() {
 }
 
 #[test]
+fn guest_machine_fetch_reuses_located_segment_for_standard_word() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/memory.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("guest machine memory source should read");
+    let body = function_body(
+        &source,
+        "    pub(crate) fn fetch_instruction",
+        "    pub fn write_range",
+    );
+
+    assert!(
+        body.contains("fetch_instruction_from_segment"),
+        "guest machine fetch should finish common instruction fetches from the already located segment"
+    );
+    assert!(
+        !body.contains("let high = self.read_halfword(address + 2)?;"),
+        "guest machine standard-word fetch should not rescan all segments for the high halfword when the word stays in one segment"
+    );
+}
+
+#[test]
 fn guest_machine_run_loop_reuses_prepared_instruction_for_advance() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_machine/mod.rs");
