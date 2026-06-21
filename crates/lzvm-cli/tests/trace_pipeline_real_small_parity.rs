@@ -33,6 +33,7 @@ const RUNNER_SEED_SNAPSHOT_TRUSTED_ENV: &str = "LZVM_GUEST_PC_TRACE_RUNNER_SEED_
 const RUNNER_SEED_SNAPSHOT_VALIDATE_ENV: &str = "LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_VALIDATE";
 const PARALLEL_REPLAY_SNAPSHOT_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT";
 const PARALLEL_REPLAY_ONLY_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY";
+const LIVE_REPORT_CHUNKS_ENV: &str = "LZVM_GUEST_PC_TRACE_LIVE_REPORT_CHUNKS";
 const REPORT_CHUNKS_ENV: &str = "LZVM_GUEST_PC_TRACE_REPORT_CHUNKS";
 const REPORT_CHUNK_CAPACITY_ENV: &str = "LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY";
 const OWNED_STREAMING_LOWER_ENV: &str = "LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER";
@@ -68,6 +69,7 @@ fn real_small_trace_pipeline_preserves_proof_bytes() {
         "small",
         &[
             RealParityMode::OwnedStreamingLower,
+            RealParityMode::LiveReportChunks,
             RealParityMode::AsyncSingleCommit,
             RealParityMode::TrustedSeedSnapshot,
             RealParityMode::SeedPipeline,
@@ -211,6 +213,7 @@ struct ProveRun {
 enum RealParityMode {
     Default,
     OwnedStreamingLower,
+    LiveReportChunks,
     AsyncSingleCommit,
     TrustedSeedSnapshot,
     SeedPipeline,
@@ -229,6 +232,7 @@ impl RealParityMode {
         match self {
             Self::Default => "default",
             Self::OwnedStreamingLower => "owned-streaming-lower",
+            Self::LiveReportChunks => "live-report-chunks",
             Self::AsyncSingleCommit => "async-single-commit",
             Self::TrustedSeedSnapshot => "trusted-seed-snapshot",
             Self::SeedPipeline => "pipeline",
@@ -319,6 +323,48 @@ fn trusted_seed_snapshot_timing_shape_requires_seed_lift_without_parallel_lower(
     assert_trusted_seed_snapshot_timing_shape(&output);
 }
 
+#[test]
+fn live_report_chunks_mode_sets_live_chunk_env_without_seed_or_parallel_lower() {
+    let workspace = workspace_root();
+    let config = RealParityConfig {
+        bin: workspace.join("target").join("release").join("lzvm"),
+        setup_dir: workspace.join("temp").join("setup"),
+        block_input: workspace.join("temp").join("eth-block.input"),
+        program_image_cache: workspace.join("temp").join("program-image.cache"),
+        input_data: workspace.join("temp").join("input-data.bin"),
+        guest_image: workspace.join("temp").join("guest.elf"),
+        trace_limit: "1".to_owned(),
+        work_dir: workspace.join("temp"),
+        tmp_dir: workspace.join("temp").join("tmp"),
+    };
+    let command = prove_command(
+        &config,
+        &workspace.join("temp").join("live-report-chunks.proof"),
+        RealParityMode::LiveReportChunks,
+    );
+
+    assert_command_env_equals(&command, LIVE_REPORT_CHUNKS_ENV, "1");
+    assert_command_env_equals(&command, REPORT_CHUNK_CAPACITY_ENV, "4096");
+    assert_env_removed(&command, PARALLEL_LOWER_ENV);
+    assert_env_removed(&command, LOWER_WORKERS_ENV);
+    assert_env_removed(&command, RUNNER_SEED_SNAPSHOT_ENV);
+    assert_env_removed(&command, RUNNER_SEED_SNAPSHOT_TRUSTED_ENV);
+}
+
+#[test]
+fn live_report_chunks_timing_shape_requires_chunk_counts_without_parallel_lower() {
+    let output = [
+        "timing_guest_trace_parallel_lower_workers=0",
+        "timing_guest_trace_seed_direct_lift_successes=0",
+        "timing_guest_trace_report_chunk_sent=4",
+        "timing_guest_trace_report_chunk_received=4",
+        "timing_guest_trace_report_chunk_reports=16",
+    ]
+    .join("\n");
+
+    assert_live_report_chunks_timing_shape(&output);
+}
+
 fn run_prove_witness(
     config: &RealParityConfig,
     work_dir: &Path,
@@ -350,6 +396,14 @@ fn run_prove_witness(
         }
         RealParityMode::OwnedStreamingLower => {
             assert_timing_equals(&output_text, "timing_guest_trace_parallel_lower_workers", 0);
+            assert_timing_equals(
+                &output_text,
+                "timing_guest_segment_commit_effective_workers",
+                1,
+            );
+        }
+        RealParityMode::LiveReportChunks => {
+            assert_live_report_chunks_timing_shape(&output_text);
             assert_timing_equals(
                 &output_text,
                 "timing_guest_segment_commit_effective_workers",
@@ -426,6 +480,11 @@ fn prove_command(config: &RealParityConfig, output_dir: &Path, mode: RealParityM
         RealParityMode::OwnedStreamingLower => {
             command.env(OWNED_STREAMING_LOWER_ENV, "1");
         }
+        RealParityMode::LiveReportChunks => {
+            command
+                .env(LIVE_REPORT_CHUNKS_ENV, "1")
+                .env(REPORT_CHUNK_CAPACITY_ENV, "4096");
+        }
         RealParityMode::AsyncSingleCommit => {
             command
                 .env(COMMIT_WORKERS_ENV, "1")
@@ -475,6 +534,7 @@ fn clear_pipeline_env(command: &mut Command) {
         PARALLEL_REPLAY_ONLY_ENV,
         PARALLEL_REPLAY_SNAPSHOT_ENV,
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKER_REPLAY",
+        LIVE_REPORT_CHUNKS_ENV,
         REPORT_CHUNKS_ENV,
         REPORT_CHUNK_CAPACITY_ENV,
         OWNED_STREAMING_LOWER_ENV,
@@ -499,6 +559,7 @@ fn clear_pipeline_env_removes_current_replay_controls() {
         RUNNER_SEED_SNAPSHOT_VALIDATE_ENV,
         PARALLEL_REPLAY_SNAPSHOT_ENV,
         PARALLEL_REPLAY_ONLY_ENV,
+        LIVE_REPORT_CHUNKS_ENV,
         REPORT_CHUNKS_ENV,
         REPORT_CHUNK_CAPACITY_ENV,
         OWNED_STREAMING_LOWER_ENV,
@@ -520,6 +581,7 @@ fn clear_pipeline_env_removes_current_replay_controls() {
         RUNNER_SEED_SNAPSHOT_VALIDATE_ENV,
         PARALLEL_REPLAY_SNAPSHOT_ENV,
         PARALLEL_REPLAY_ONLY_ENV,
+        LIVE_REPORT_CHUNKS_ENV,
         REPORT_CHUNKS_ENV,
         REPORT_CHUNK_CAPACITY_ENV,
         OWNED_STREAMING_LOWER_ENV,
@@ -728,6 +790,19 @@ fn assert_trusted_seed_snapshot_timing_shape(output: &str) {
     assert_timing_equals(output, "timing_guest_trace_parallel_lower_workers", 0);
     assert_timing_positive(output, "timing_guest_trace_seed_direct_lift_successes");
     assert_timing_equals(output, "timing_guest_trace_seed_full_advances", 1);
+}
+
+fn assert_live_report_chunks_timing_shape(output: &str) {
+    assert_timing_equals(output, "timing_guest_trace_parallel_lower_workers", 0);
+    assert_timing_equals(output, "timing_guest_trace_seed_direct_lift_successes", 0);
+    assert_timing_positive(output, "timing_guest_trace_report_chunk_sent");
+    assert_timing_positive(output, "timing_guest_trace_report_chunk_received");
+    assert_timing_positive(output, "timing_guest_trace_report_chunk_reports");
+    assert_eq!(
+        timing_value(output, "timing_guest_trace_report_chunk_sent"),
+        timing_value(output, "timing_guest_trace_report_chunk_received"),
+        "live report chunk sent and received counts should match"
+    );
 }
 
 fn assert_replay_only_pipeline_timing_shape(output: &str) {

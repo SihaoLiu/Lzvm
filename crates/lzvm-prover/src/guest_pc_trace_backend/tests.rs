@@ -1140,6 +1140,235 @@ fn live_report_chunk_runner_matches_serial_slice_without_returning_reports() {
 }
 
 #[test]
+fn live_pending_segment_messages_reassemble_to_serial_lower_output() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-live-pending-messages");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let mut serial_pending = Vec::new();
+    produce_guest_pc_trace_pending_slices(32, context, &[], layout.row_count(), |segment| {
+        serial_pending.push(segment);
+        Ok(())
+    })
+    .expect("serial pending slices should produce");
+    let expected = serial_pending
+        .into_iter()
+        .next()
+        .expect("fixture should produce a first segment");
+
+    let (mut live_memory, mut live_state, mut live_fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("live guest trace machine should load");
+    let mut messages = Vec::new();
+    let emitted = emit_guest_pc_trace_live_pending_segment_messages(
+        &mut live_memory,
+        &mut live_state,
+        &mut live_fcall_handler,
+        expected.trace_instance_index,
+        expected.runner_remaining_instruction_limit,
+        layout.row_count(),
+        expected.seed.clone(),
+        None,
+        1,
+        |message| {
+            messages.push(message);
+            Ok(())
+        },
+    )
+    .expect("live pending segment messages should emit");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        emitted.executed_instruction_count,
+        expected.executed_instruction_count
+    );
+    assert_eq!(emitted.trace_row_count, expected.trace_row_count);
+    assert_eq!(emitted.terminal_pc, expected.terminal_pc);
+    assert_eq!(emitted.is_last_segment, expected.is_last_segment);
+    assert!(!emitted.needs_terminal_segment);
+    assert!(
+        matches!(
+            messages.first(),
+            Some(GuestPcTracePendingSegmentMessage::ReportChunk(_))
+        ),
+        "live pending messages should emit report chunks before the segment metadata is known"
+    );
+
+    let mut pending_chunks = BTreeMap::new();
+    let mut chunk_timing = GuestPcTraceStreamTiming::default();
+    let mut started = None;
+    let mut rebuilt = None;
+    for message in messages {
+        match message {
+            GuestPcTracePendingSegmentMessage::ReportChunk(chunk) => {
+                receive_guest_pc_trace_pending_report_chunk(
+                    *chunk,
+                    &mut pending_chunks,
+                    &mut chunk_timing,
+                );
+            }
+            GuestPcTracePendingSegmentMessage::SegmentStarted(pending) => {
+                assert!(started.replace(*pending).is_none());
+            }
+            GuestPcTracePendingSegmentMessage::SegmentFinished(finish) => {
+                let pending = started
+                    .take()
+                    .expect("segment finish should follow segment metadata");
+                assert_eq!(finish.trace_instance_index, pending.trace_instance_index);
+                rebuilt = Some(
+                    finish_guest_pc_trace_chunked_pending_segment(pending, &mut pending_chunks)
+                        .expect("live chunks should reassemble"),
+                );
+            }
+            _ => panic!("live segment helper should only emit chunked segment messages"),
+        }
+    }
+    validate_guest_pc_trace_no_pending_report_chunks(&pending_chunks)
+        .expect("all live chunks should be consumed");
+    let rebuilt = rebuilt.expect("live messages should include a segment finish");
+
+    assert_eq!(rebuilt.trace_instance_index, expected.trace_instance_index);
+    assert_eq!(
+        rebuilt.executed_instruction_count,
+        expected.executed_instruction_count
+    );
+    assert_eq!(rebuilt.trace_row_count, expected.trace_row_count);
+    assert_eq!(
+        rebuilt.runner_remaining_instruction_limit,
+        expected.runner_remaining_instruction_limit
+    );
+    assert_eq!(rebuilt.report_count, expected.report_count);
+    assert_eq!(rebuilt.reports, expected.reports);
+    assert_eq!(rebuilt.reports_elided, expected.reports_elided);
+    assert_eq!(rebuilt.terminal_pc, expected.terminal_pc);
+    assert_eq!(
+        rebuilt.lookahead_instruction,
+        expected.lookahead_instruction
+    );
+    assert_eq!(rebuilt.is_last_segment, expected.is_last_segment);
+    assert_eq!(rebuilt.seed, expected.seed);
+
+    let seed = expected
+        .seed
+        .as_deref()
+        .expect("seed mirror should attach a segment seed");
+    let serial_lowered =
+        lower_guest_pc_trace_seeded_pending_segment(&layout, &expected, seed, None, None)
+            .expect("serial pending segment should lower");
+    let live_lowered =
+        lower_guest_pc_trace_seeded_pending_segment(&layout, &rebuilt, seed, None, None)
+            .expect("rebuilt live pending segment should lower");
+    assert_eq!(live_lowered.next_seed, serial_lowered.next_seed);
+    assert_eq!(
+        live_lowered.segment.trace_instance_index,
+        serial_lowered.segment.trace_instance_index
+    );
+    assert_eq!(
+        live_lowered.segment.trace_source_prefix_rows,
+        serial_lowered.segment.trace_source_prefix_rows
+    );
+    #[cfg(feature = "cuda")]
+    assert_eq!(
+        live_lowered.segment.device_segment_material,
+        serial_lowered.segment.device_segment_material
+    );
+    assert_eq!(live_lowered.segment.trace, serial_lowered.segment.trace);
+    assert_eq!(
+        live_lowered.segment.unit_values,
+        serial_lowered.segment.unit_values
+    );
+}
+
+#[test]
+fn live_report_chunk_producer_preserves_segment_output_when_enabled() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _live_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_LIVE_REPORT_CHUNKS", "1");
+    let _chunk_capacity_env =
+        TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY", "1");
+    let dir = repo_temp_dir("guest-pc-live-report-producer");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let expected =
+        compute_guest_pc_trace_segments(32, context, &[]).expect("serial segments should compute");
+    let mut emitted = Vec::new();
+    let produced = produce_guest_pc_trace_segments(32, context, &[], None, |segment| {
+        emitted.push(segment);
+        Ok(())
+    })
+    .expect("live report chunk producer should produce segments");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(emitted.len(), expected.len());
+    assert!(
+        produced.timing.trace_report_chunk_sent_count() > 0,
+        "live report chunk producer should emit report chunks"
+    );
+    assert_eq!(
+        produced.timing.trace_report_chunk_sent_count(),
+        produced.timing.trace_report_chunk_received_count()
+    );
+    assert_eq!(
+        produced.timing.trace_report_chunk_report_count(),
+        expected
+            .iter()
+            .map(|segment| segment.trace_source_prefix_rows)
+            .sum::<usize>()
+    );
+    for (emitted, expected) in emitted.iter().zip(expected.iter()) {
+        assert_eq!(emitted.trace_instance_index, expected.trace_instance_index);
+        assert_eq!(
+            emitted.trace_source_prefix_rows,
+            expected.trace_source_prefix_rows
+        );
+        #[cfg(feature = "cuda")]
+        assert_eq!(
+            emitted.device_segment_material,
+            expected.device_segment_material
+        );
+        assert_eq!(emitted.trace, expected.trace);
+        assert_eq!(emitted.unit_values, expected.unit_values);
+    }
+}
+
+#[test]
 fn seeded_pending_segment_lowers_without_prior_segment_state() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
@@ -1357,6 +1586,110 @@ fn seeded_pending_segment_owned_streaming_lower_matches_borrowed_output() {
     assert_eq!(owned.segment.trace, None);
     assert_eq!(owned.segment.unit_values, borrowed.segment.unit_values);
     assert_eq!(owned.segment.proof_values, borrowed.segment.proof_values);
+}
+
+#[cfg(feature = "cuda")]
+#[test]
+fn live_chunks_before_segment_start_lower_with_traceless_output() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let _traceless_env = TestEnvVarGuard::set("LZVM_CUDA_GUEST_PC_TRACELESS_SEGMENT_OUTPUT", "1");
+    let dir = repo_temp_dir("guest-pc-live-chunks-before-start");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_device_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let mut serial_pending = Vec::new();
+    produce_guest_pc_trace_pending_slices(32, context, &[], layout.row_count(), |segment| {
+        serial_pending.push(segment);
+        Ok(())
+    })
+    .expect("serial pending slices should produce");
+    let expected = serial_pending
+        .into_iter()
+        .next()
+        .expect("fixture should produce a first segment");
+    let seed = expected
+        .seed
+        .as_deref()
+        .expect("seed mirror should attach a segment seed")
+        .clone();
+    let expected_lowered =
+        lower_guest_pc_trace_owned_streaming_pending_segment(&layout, expected, &seed, None, None)
+            .expect("expected segment should lower");
+
+    let (mut live_memory, mut live_state, mut live_fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("live guest trace machine should load");
+    let (sender, receiver) = mpsc::sync_channel(8);
+    emit_guest_pc_trace_live_pending_segment_messages(
+        &mut live_memory,
+        &mut live_state,
+        &mut live_fcall_handler,
+        expected_lowered.segment.trace_instance_index,
+        32,
+        layout.row_count(),
+        Some(Box::new(seed.clone())),
+        None,
+        1,
+        |message| {
+            sender.send(message).expect("live message should send");
+            Ok(())
+        },
+    )
+    .expect("live pending segment messages should emit");
+    sender
+        .send(GuestPcTracePendingSegmentMessage::Complete(Box::new(
+            GuestPcTraceStreamResult {
+                proof_values: Vec::new(),
+                timing: GuestPcTraceStreamTiming::default(),
+            },
+        )))
+        .expect("completion message should send");
+    drop(sender);
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let mut timing = GuestPcTraceStreamTiming::default();
+    let mut emitted = Vec::new();
+    lower_guest_pc_trace_pending_segments(&layout, receiver, None, &mut timing, &mut |segment| {
+        emitted.push(segment);
+        Ok(())
+    })
+    .expect("lowerer should accept live chunks sent before segment metadata");
+
+    assert_eq!(emitted.len(), 1);
+    let emitted = emitted.pop().expect("one segment should be emitted");
+    assert_eq!(
+        emitted.trace_instance_index,
+        expected_lowered.segment.trace_instance_index
+    );
+    assert_eq!(
+        emitted.trace_source_prefix_rows,
+        expected_lowered.segment.trace_source_prefix_rows
+    );
+    assert_eq!(
+        emitted.device_segment_material,
+        expected_lowered.segment.device_segment_material
+    );
+    assert_eq!(emitted.trace, None);
+    assert_eq!(emitted.unit_values, expected_lowered.segment.unit_values);
+    assert_eq!(emitted.proof_values, expected_lowered.segment.proof_values);
 }
 
 #[test]
