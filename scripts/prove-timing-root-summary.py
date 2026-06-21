@@ -2677,7 +2677,11 @@ def trace_precompile_action_hint(
     precompile_rows: int,
     trace_report_rows: int,
 ) -> str:
-    if trace_shape_hint != "shape_timing_enabled" or trace_report_rows <= 0:
+    if trace_shape_hint != "shape_timing_enabled":
+        if trace_report_rows > 0:
+            return "enable_shape_timing_for_precompile_rows"
+        return "none"
+    if trace_report_rows <= 0:
         return "none"
     if precompile_rows <= 0:
         return "skip_precompile_microprobes"
