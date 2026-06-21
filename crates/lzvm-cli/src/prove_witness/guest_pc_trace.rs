@@ -216,6 +216,10 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_report_row_validation_duration(),
     );
     timings.record(
+        "guest_trace_report_row_validation_timer_bookkeeping",
+        timing.guest_trace_report_row_validation_timer_bookkeeping_duration(),
+    );
+    timings.record(
         "guest_trace_report_memory_columns",
         timing.guest_trace_report_memory_columns_duration(),
     );
@@ -334,6 +338,12 @@ pub(super) fn record_guest_pc_trace_timing(
         timings,
         "guest_trace_report_row_validation",
         timing.guest_trace_report_row_validation_duration(),
+        detail_sample_count,
+    );
+    record_guest_trace_sampled_duration_counts(
+        timings,
+        "guest_trace_report_row_validation_timer_bookkeeping",
+        timing.guest_trace_report_row_validation_timer_bookkeeping_duration(),
         detail_sample_count,
     );
     record_guest_trace_sampled_duration_counts(

@@ -125,6 +125,9 @@ TRACE_REPORT_APPLY_MS_KEY = "timing_guest_trace_report_apply_ms"
 TRACE_UNIT_SUMMARY_MS_KEY = "timing_guest_trace_unit_summary_ms"
 TRACE_REPORT_LOWERING_MS_KEY = "timing_guest_trace_report_lowering_ms"
 TRACE_REPORT_ROW_VALIDATION_MS_KEY = "timing_guest_trace_report_row_validation_ms"
+TRACE_REPORT_ROW_VALIDATION_TIMER_BOOKKEEPING_MS_KEY = (
+    "timing_guest_trace_report_row_validation_timer_bookkeeping_ms"
+)
 TRACE_REPORT_MEMORY_COLUMNS_MS_KEY = "timing_guest_trace_report_memory_columns_ms"
 TRACE_REPORT_SOURCE_VALUES_MS_KEY = "timing_guest_trace_report_source_values_ms"
 TRACE_REPORT_SOURCE_A_VALUE_MS_KEY = "timing_guest_trace_report_source_a_value_ms"
@@ -311,6 +314,9 @@ TRACE_REPORT_SAMPLED_NS_KEY = "timing_guest_trace_report_sampled_ns"
 TRACE_REPORT_LOWERING_SAMPLED_NS_KEY = "timing_guest_trace_report_lowering_sampled_ns"
 TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY = (
     "timing_guest_trace_report_row_validation_sampled_ns"
+)
+TRACE_REPORT_ROW_VALIDATION_TIMER_BOOKKEEPING_SAMPLED_NS_KEY = (
+    "timing_guest_trace_report_row_validation_timer_bookkeeping_sampled_ns"
 )
 TRACE_REPORT_MEMORY_COLUMNS_SAMPLED_NS_KEY = (
     "timing_guest_trace_report_memory_columns_sampled_ns"
@@ -833,6 +839,7 @@ HEADER = (
     "trace_copy_source_action_hint,"
     "trace_report_validation_ms,trace_report_emit_ms,trace_descriptor_ms,"
     "trace_report_lowering_ms,trace_report_row_validation_ms,"
+    "trace_report_row_validation_timer_bookkeeping_ms,"
     "trace_report_memory_columns_ms,trace_report_source_values_ms,"
     "trace_report_source_a_value_ms,trace_report_source_b_value_ms,"
     "trace_report_source_value_record_ms,"
@@ -856,6 +863,7 @@ HEADER = (
     "trace_report_register_access_lowerer_share_ms,"
     "trace_report_memory_access_lowerer_share_ms,"
     "trace_report_store_apply_lowerer_share_ms,"
+    "trace_report_row_validation_timer_bookkeeping_lowerer_share_ms,"
     "trace_report_row_validation_residual_lowerer_share_ms,"
     "trace_report_visit_lowerer_share_ms,trace_report_descriptor_lowerer_share_ms,"
     "trace_report_detail_hotspot,trace_report_detail_hotspot_pct,"
@@ -913,6 +921,7 @@ HEADER = (
     "trace_shape_unit_cost_hint,"
     "trace_report_source_value_record_ns_per_row,"
     "trace_report_source_values_residual_ns_per_row,"
+    "trace_report_row_validation_timer_bookkeeping_ns_per_row,"
     "trace_report_row_validation_residual_ns_per_row,"
     "trace_report_visit_residual_ns_per_row,"
     "trace_report_descriptor_ns_per_row,"
@@ -1001,6 +1010,7 @@ TIMING_KEYS = {
     TRACE_UNIT_SUMMARY_MS_KEY,
     TRACE_REPORT_LOWERING_MS_KEY,
     TRACE_REPORT_ROW_VALIDATION_MS_KEY,
+    TRACE_REPORT_ROW_VALIDATION_TIMER_BOOKKEEPING_MS_KEY,
     TRACE_REPORT_MEMORY_COLUMNS_MS_KEY,
     TRACE_REPORT_SOURCE_VALUES_MS_KEY,
     TRACE_REPORT_SOURCE_A_VALUE_MS_KEY,
@@ -1067,6 +1077,7 @@ TIMING_KEYS = {
     TRACE_REPORT_SAMPLED_NS_KEY,
     TRACE_REPORT_LOWERING_SAMPLED_NS_KEY,
     TRACE_REPORT_ROW_VALIDATION_SAMPLED_NS_KEY,
+    TRACE_REPORT_ROW_VALIDATION_TIMER_BOOKKEEPING_SAMPLED_NS_KEY,
     TRACE_REPORT_MEMORY_COLUMNS_SAMPLED_NS_KEY,
     TRACE_REPORT_SOURCE_VALUES_SAMPLED_NS_KEY,
     TRACE_REPORT_SOURCE_A_VALUE_SAMPLED_NS_KEY,
@@ -3179,6 +3190,10 @@ DETAIL_SAMPLE_HOTSPOT_KEYS = [
     ("register_access", TRACE_REPORT_REGISTER_ACCESS_SAMPLED_NS_KEY),
     ("memory_access", TRACE_REPORT_MEMORY_ACCESS_SAMPLED_NS_KEY),
     ("store_apply", TRACE_REPORT_STORE_APPLY_SAMPLED_NS_KEY),
+    (
+        "row_validation_timer_bookkeeping",
+        TRACE_REPORT_ROW_VALIDATION_TIMER_BOOKKEEPING_SAMPLED_NS_KEY,
+    ),
     ("precompile_memory", TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY),
 ]
 
@@ -3196,6 +3211,10 @@ EXACT_REPORT_HOTSPOT_KEYS = [
     ("register_access", TRACE_REPORT_REGISTER_ACCESS_MS_KEY),
     ("memory_access", TRACE_REPORT_MEMORY_ACCESS_MS_KEY),
     ("store_apply", TRACE_REPORT_STORE_APPLY_MS_KEY),
+    (
+        "row_validation_timer_bookkeeping",
+        TRACE_REPORT_ROW_VALIDATION_TIMER_BOOKKEEPING_MS_KEY,
+    ),
     ("precompile_memory", TRACE_REPORT_PRECOMPILE_MEMORY_MS_KEY),
     ("memory_columns", TRACE_REPORT_MEMORY_COLUMNS_MS_KEY),
 ]
@@ -3244,6 +3263,10 @@ ROW_VALIDATION_SUFFIX_HOTSPOT_KEYS = [
     ("register_access", TRACE_REPORT_REGISTER_ACCESS_SAMPLED_NS_KEY),
     ("memory_access", TRACE_REPORT_MEMORY_ACCESS_SAMPLED_NS_KEY),
     ("store_apply", TRACE_REPORT_STORE_APPLY_SAMPLED_NS_KEY),
+    (
+        "timer_bookkeeping",
+        TRACE_REPORT_ROW_VALIDATION_TIMER_BOOKKEEPING_SAMPLED_NS_KEY,
+    ),
     ("precompile_memory", TRACE_REPORT_PRECOMPILE_MEMORY_SAMPLED_NS_KEY),
 ]
 
@@ -3909,6 +3932,9 @@ def summarize_profile_values(
     trace_descriptor_ms = values.get(TRACE_DESCRIPTOR_MS_KEY, 0)
     trace_report_lowering_ms = values.get(TRACE_REPORT_LOWERING_MS_KEY, 0)
     trace_report_row_validation_ms = values.get(TRACE_REPORT_ROW_VALIDATION_MS_KEY, 0)
+    trace_report_row_validation_timer_bookkeeping_ms = values.get(
+        TRACE_REPORT_ROW_VALIDATION_TIMER_BOOKKEEPING_MS_KEY, 0
+    )
     trace_report_memory_columns_ms = values.get(TRACE_REPORT_MEMORY_COLUMNS_MS_KEY, 0)
     trace_report_source_values_ms = values.get(TRACE_REPORT_SOURCE_VALUES_MS_KEY, 0)
     trace_report_source_a_value_ms = values.get(TRACE_REPORT_SOURCE_A_VALUE_MS_KEY, 0)
@@ -4026,6 +4052,13 @@ def summarize_profile_values(
         TRACE_REPORT_STORE_APPLY_SAMPLED_NS_KEY,
         trace_lowerer_share_scale_ms,
     )
+    trace_report_row_validation_timer_bookkeeping_share_ms = (
+        trace_report_detail_lowerer_share_ms(
+            values,
+            TRACE_REPORT_ROW_VALIDATION_TIMER_BOOKKEEPING_SAMPLED_NS_KEY,
+            trace_lowerer_share_scale_ms,
+        )
+    )
     trace_report_row_validation_residual_share_ms = (
         trace_report_sampled_ns_lowerer_share_ms(
             values,
@@ -4049,6 +4082,10 @@ def summarize_profile_values(
     )
     trace_report_source_values_residual_ns_per_row = ns_per_row_from_ms(
         trace_report_source_values_residual_share_ms,
+        trace_report_rows,
+    )
+    trace_report_row_validation_timer_bookkeeping_ns_per_row = ns_per_row_from_ms(
+        trace_report_row_validation_timer_bookkeeping_share_ms,
         trace_report_rows,
     )
     trace_report_row_validation_residual_ns_per_row = ns_per_row_from_ms(
@@ -5006,6 +5043,7 @@ def summarize_profile_values(
         f"{copy_source_action_hint},"
         f"{trace_report_validation_ms},{trace_report_emit_ms},{trace_descriptor_ms},"
         f"{trace_report_lowering_ms},{trace_report_row_validation_ms},"
+        f"{trace_report_row_validation_timer_bookkeeping_ms},"
         f"{trace_report_memory_columns_ms},{trace_report_source_values_ms},"
         f"{trace_report_source_a_value_ms},{trace_report_source_b_value_ms},"
         f"{trace_report_source_value_record_ms},"
@@ -5031,6 +5069,7 @@ def summarize_profile_values(
         f"{trace_report_register_access_share_ms:.3f},"
         f"{trace_report_memory_access_share_ms:.3f},"
         f"{trace_report_store_apply_share_ms:.3f},"
+        f"{trace_report_row_validation_timer_bookkeeping_share_ms:.3f},"
         f"{trace_report_row_validation_residual_share_ms:.3f},"
         f"{trace_report_visit_share_ms:.3f},"
         f"{trace_report_descriptor_share_ms:.3f},"
@@ -5097,6 +5136,7 @@ def summarize_profile_values(
         f"{trace_shape_duration},{trace_shape_unit_cost},"
         f"{trace_report_source_value_record_ns_per_row:.3f},"
         f"{trace_report_source_values_residual_ns_per_row:.3f},"
+        f"{trace_report_row_validation_timer_bookkeeping_ns_per_row:.3f},"
         f"{trace_report_row_validation_residual_ns_per_row:.3f},"
         f"{trace_report_visit_residual_ns_per_row:.3f},"
         f"{trace_report_descriptor_ns_per_row:.3f},"

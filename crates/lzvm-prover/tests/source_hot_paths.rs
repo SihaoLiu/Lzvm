@@ -6370,6 +6370,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "trace_copy_row_duration",
         "trace_report_lowering_duration",
         "trace_report_row_validation_duration",
+        "trace_report_row_validation_timer_bookkeeping_duration",
         "trace_report_memory_columns_duration",
         "trace_report_source_values_duration",
         "trace_report_source_value_record_duration",
@@ -6525,6 +6526,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
     let apply_body = function_body(&backend_source, apply_start, "fn record_trace_report_shape");
     assert!(
         apply_body.contains("trace_report_row_validation_duration")
+            && apply_body.contains("record_row_validation_detail_duration")
             && apply_body.contains("trace_report_memory_columns_duration")
             && apply_body.contains("trace_report_source_values_duration")
             && apply_body.contains("trace_report_source_value_record_duration")
@@ -6573,6 +6575,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest_trace_copy_row_duration",
         "guest_trace_report_lowering_duration",
         "guest_trace_report_row_validation_duration",
+        "guest_trace_report_row_validation_timer_bookkeeping_duration",
         "guest_trace_report_visit_duration",
         "guest_trace_report_source_value_record_duration",
         "guest_trace_emit_duration",
@@ -6630,6 +6633,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_copy_row_lower\"",
         "\"guest_trace_report_lowering\"",
         "\"guest_trace_report_row_validation\"",
+        "\"guest_trace_report_row_validation_timer_bookkeeping\"",
         "\"guest_trace_report_memory_columns\"",
         "\"guest_trace_report_source_value_record\"",
         "\"guest_trace_report_visit\"",
