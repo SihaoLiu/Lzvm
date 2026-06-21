@@ -1474,6 +1474,74 @@ fn live_report_chunk_producer_preserves_segment_output_when_enabled() {
 }
 
 #[test]
+fn live_report_chunk_producer_supports_trusted_runner_seed_snapshot() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _live_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_LIVE_REPORT_CHUNKS", "1");
+    let _chunk_capacity_env =
+        TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY", "1");
+    let _snapshot_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT", "1");
+    let _trusted_env =
+        TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED", "1");
+    let dir = repo_temp_dir("guest-pc-live-report-trusted-seed");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let expected =
+        compute_guest_pc_trace_segments(32, context, &[]).expect("serial segments should compute");
+    let mut emitted = Vec::new();
+    let produced = produce_guest_pc_trace_segments(32, context, &[], None, |segment| {
+        emitted.push(segment);
+        Ok(())
+    })
+    .expect("live report chunk producer should support trusted runner seeds");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(emitted.len(), expected.len());
+    assert!(produced.timing.trace_report_chunk_sent_count() > 0);
+    assert_eq!(
+        produced.timing.trace_report_chunk_sent_count(),
+        produced.timing.trace_report_chunk_received_count()
+    );
+    assert_eq!(
+        produced.timing.seed_direct_lift_attempt_count(),
+        produced.timing.seed_direct_lift_success_count()
+    );
+    assert!(produced.timing.seed_direct_lift_success_count() > 0);
+    for (emitted, expected) in emitted.iter().zip(expected.iter()) {
+        assert_eq!(emitted.trace_instance_index, expected.trace_instance_index);
+        assert_eq!(
+            emitted.trace_source_prefix_rows,
+            expected.trace_source_prefix_rows
+        );
+        #[cfg(feature = "cuda")]
+        assert_eq!(
+            emitted.device_segment_material,
+            expected.device_segment_material
+        );
+        assert_eq!(emitted.trace, expected.trace);
+        assert_eq!(emitted.unit_values, expected.unit_values);
+    }
+}
+
+#[test]
 fn seeded_pending_segment_lowers_without_prior_segment_state() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()

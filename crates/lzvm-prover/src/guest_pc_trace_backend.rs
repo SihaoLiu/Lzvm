@@ -4156,6 +4156,8 @@ struct GuestPcTraceLivePendingSegmentEmission {
     report_count: usize,
     report_chunk_count: usize,
     #[allow(dead_code)]
+    status: GuestMachineTraceSliceStatus,
+    #[allow(dead_code)]
     last_report: Option<GuestMachineReport>,
     #[allow(dead_code)]
     lookahead_instruction: Option<RiscvInstruction>,
@@ -4216,7 +4218,8 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
         report_chunk_count = report_chunk_count.saturating_add(1);
     }
 
-    let (halted, terminal_pc, lookahead_instruction) = match &slice.status {
+    let status = slice.status.clone();
+    let (halted, terminal_pc, lookahead_instruction) = match &status {
         GuestMachineTraceSliceStatus::Halted(halt) => (true, guest_machine_halt_pc(halt), None),
         GuestMachineTraceSliceStatus::Paused { pc, instruction } => {
             (false, *pc, Some(*instruction))
@@ -4267,6 +4270,7 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
         trace_row_count: slice.trace_rows,
         report_count: slice.report_count,
         report_chunk_count,
+        status,
         last_report: slice.last_report,
         lookahead_instruction,
         terminal_pc,
@@ -4280,16 +4284,27 @@ fn guest_pc_trace_live_report_chunks_enabled() -> bool {
 }
 
 fn validate_guest_pc_trace_live_report_chunk_mode() -> Result<(), GuestPcTraceBackendError> {
-    if guest_pc_trace_seed_mirror_enabled()
-        || guest_pc_trace_segment_replay_enabled()
+    if guest_pc_trace_segment_replay_enabled()
         || guest_pc_trace_segment_replay_snapshot_enabled()
-        || guest_pc_trace_runner_seed_snapshot_enabled()
         || guest_pc_trace_parallel_lower_enabled()
         || guest_pc_trace_parallel_lower_report_elision_enabled()
     {
         return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-            message: "live guest PC report chunks require the unseeded serial lower path"
+            message: "live guest PC report chunks do not support replay or parallel lower"
                 .to_owned(),
+        });
+    }
+    if guest_pc_trace_seed_mirror_enabled() {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "live guest PC report chunks require runner seed snapshots for seeds"
+                .to_owned(),
+        });
+    }
+    if guest_pc_trace_runner_seed_snapshot_enabled()
+        && !guest_pc_trace_runner_seed_snapshot_trusted_enabled()
+    {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "live guest PC report chunks require trusted runner seed snapshots".to_owned(),
         });
     }
     Ok(())
@@ -4306,13 +4321,19 @@ fn produce_guest_pc_trace_live_pending_messages(
     ) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<GuestPcTracePendingSliceProduction, GuestPcTraceBackendError> {
     validate_guest_pc_trace_live_report_chunk_mode()?;
-    let _layout = context
+    let layout = context
         .trace_layout
         .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
     let (mut memory, mut state, mut fcall_handler) = load_guest_pc_trace_machine(context, input)?;
     let mut executed_instructions = 0_u64;
     let mut trace_instance_count = 0_usize;
     let mut timing = GuestPcTraceStreamTiming::default();
+    let runner_seed_snapshot = guest_pc_trace_runner_seed_snapshot_enabled();
+    let runner_seed_snapshot_trusted =
+        runner_seed_snapshot && guest_pc_trace_runner_seed_snapshot_trusted_enabled();
+    let validate_runner_seed_snapshot =
+        runner_seed_snapshot && guest_pc_trace_runner_seed_snapshot_validation_enabled();
+    let mut seed_mirror = runner_seed_snapshot.then(ZiskMainSegmentSeed::new);
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
         let trace_instance_index = u32::try_from(trace_instance_count).map_err(|_| {
@@ -4320,6 +4341,20 @@ fn produce_guest_pc_trace_live_pending_messages(
                 message: "Zisk Main trace instance index is too large".to_owned(),
             }
         })?;
+        let seed = seed_mirror.clone();
+        let replay_snapshot = (runner_seed_snapshot && seed.is_some())
+            .then(|| GuestPcTraceSegmentReplaySnapshot::capture(&memory, &state, &fcall_handler));
+        let mut runner_boundary_snapshot = if runner_seed_snapshot {
+            let seed =
+                seed.as_ref()
+                    .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace live runner seed snapshot missing current seed"
+                            .to_owned(),
+                    })?;
+            Some(ZiskMainRunnerBoundarySnapshot::new(seed))
+        } else {
+            None
+        };
         let emitted = emit_guest_pc_trace_live_pending_segment_messages(
             &mut memory,
             &mut state,
@@ -4327,9 +4362,9 @@ fn produce_guest_pc_trace_live_pending_messages(
             trace_instance_index,
             remaining_limit,
             row_count,
+            seed.clone().map(Box::new),
             None,
-            None,
-            None,
+            runner_boundary_snapshot.as_mut(),
             report_chunk_capacity,
             &mut emit_message,
         )?;
@@ -4347,6 +4382,170 @@ fn produce_guest_pc_trace_live_pending_messages(
         timing.trace_report_chunk_row_count = timing
             .trace_report_chunk_row_count
             .saturating_add(emitted.trace_row_count);
+        let segment = ZiskMainTraceSegmentInfo {
+            trace_instance_index,
+            is_last_segment: emitted.is_last_segment,
+            previous_c: seed
+                .as_ref()
+                .map(|seed| seed.previous_c)
+                .unwrap_or_default(),
+        };
+        let runner_direct_next_seed = match (runner_seed_snapshot, segment.is_last_segment) {
+            (true, false) => {
+                let current_seed = seed.as_ref().ok_or_else(|| {
+                    GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace live runner seed snapshot missing current seed"
+                            .to_owned(),
+                    }
+                })?;
+                let boundary_snapshot = runner_boundary_snapshot.as_ref().ok_or_else(|| {
+                    GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace live runner boundary snapshot missing".to_owned(),
+                    }
+                })?;
+                let direct_lift_started = Instant::now();
+                timing.seed_direct_lift_attempt_count += 1;
+                let next_seed = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+                    row_count,
+                    segment,
+                    ZiskMainRunnerBoundarySeedInput {
+                        reports: &[],
+                        report_count: emitted.report_count,
+                        last_report: emitted.last_report.as_ref(),
+                        lookahead_instruction: emitted.lookahead_instruction,
+                        runner_state: &state,
+                        current_seed,
+                        boundary_snapshot,
+                    },
+                )?;
+                timing.seed_direct_lift_duration += direct_lift_started.elapsed();
+                match next_seed {
+                    Ok(next_seed) => {
+                        timing.seed_direct_lift_success_count += 1;
+                        Some(next_seed)
+                    }
+                    Err(reason) => {
+                        timing.record_seed_direct_lift_miss(reason);
+                        None
+                    }
+                }
+            }
+            _ => None,
+        };
+        let needs_full_seed_advance = guest_pc_trace_needs_full_seed_advance(
+            seed.is_some(),
+            runner_seed_snapshot_trusted,
+            validate_runner_seed_snapshot,
+            segment.is_last_segment,
+            runner_direct_next_seed.is_some(),
+        );
+        let full_next_seed = if needs_full_seed_advance {
+            let seed =
+                seed.as_ref()
+                    .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace live seed advancement missing current seed"
+                            .to_owned(),
+                    })?;
+            let replay_snapshot = replay_snapshot.clone().ok_or_else(|| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace live seed advancement replay snapshot missing"
+                        .to_owned(),
+                }
+            })?;
+            let full_advance_started = Instant::now();
+            timing.seed_full_advance_count += 1;
+            let replay = replay_guest_pc_trace_segment_from_snapshot(
+                replay_snapshot,
+                remaining_limit,
+                row_count,
+            )?;
+            if replay.slice.executed_instructions != emitted.executed_instruction_count
+                || replay.slice.trace_rows != emitted.trace_row_count
+                || replay.slice.status != emitted.status
+                || replay.slice.report_count != emitted.report_count
+                || replay.memory != memory
+                || replay.state != state
+                || !replay.fcall_handler.equals_any(&fcall_handler)
+            {
+                return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace live seed validation replay diverged".to_owned(),
+                });
+            }
+            let next_seed = advance_zisk_main_segment_seed(
+                layout,
+                &replay.slice.reports,
+                emitted.terminal_pc,
+                seed,
+                emitted.lookahead_instruction,
+                segment,
+            )?
+            .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
+            timing.seed_full_advance_duration += full_advance_started.elapsed();
+            Some(next_seed)
+        } else {
+            None
+        };
+        let next_seed = if runner_seed_snapshot_trusted && !segment.is_last_segment {
+            runner_direct_next_seed.clone().or(full_next_seed.clone())
+        } else {
+            full_next_seed.clone()
+        };
+        if runner_seed_snapshot && !segment.is_last_segment && full_next_seed.is_some() {
+            let current_seed =
+                seed.as_ref()
+                    .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace live runner seed snapshot missing current seed"
+                            .to_owned(),
+                    })?;
+            let expected_next_seed = full_next_seed.as_ref().ok_or_else(|| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace live runner seed snapshot missing mirror seed"
+                        .to_owned(),
+                }
+            })?;
+            let runner_next_seed = match runner_direct_next_seed {
+                Some(seed) => seed,
+                None => {
+                    let boundary_snapshot = runner_boundary_snapshot.as_ref().ok_or_else(|| {
+                        GuestPcTraceBackendError::InvalidPcTraceLayout {
+                            message: "guest PC trace live runner boundary snapshot missing"
+                                .to_owned(),
+                        }
+                    })?;
+                    lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+                        row_count,
+                        segment,
+                        ZiskMainRunnerBoundarySeedInput {
+                            reports: &[],
+                            report_count: emitted.report_count,
+                            last_report: emitted.last_report.as_ref(),
+                            lookahead_instruction: emitted.lookahead_instruction,
+                            runner_state: &state,
+                            current_seed,
+                            boundary_snapshot,
+                        },
+                        expected_next_seed.previous_c,
+                    )?
+                }
+            };
+            if runner_next_seed != *expected_next_seed {
+                return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: format!(
+                        "guest PC trace live runner seed snapshot mismatch after segment {trace_instance_index}"
+                    ),
+                });
+            }
+        }
+        if runner_seed_snapshot && !segment.is_last_segment && next_seed.is_none() {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "guest PC trace live runner seed snapshot missed segment {trace_instance_index}"
+                ),
+            });
+        }
+        if let Some(next_seed) = next_seed {
+            seed_mirror = Some(next_seed);
+        }
         trace_instance_count = trace_instance_count.checked_add(1).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "Zisk Main trace instance count overflow".to_owned(),
