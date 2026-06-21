@@ -2322,6 +2322,8 @@ def opening_retained_parent_checkpoint_action_hint(
 def performance_focus_hint(
     trace_pipeline_hint: str,
     retained_parent_checkpoint_action_hint: str,
+    seed_direct_lift_action_hint: str,
+    seed_full_advances: int,
 ) -> str:
     trace_pipeline_hints = {
         "trace_generation_and_commit_pipeline_candidate",
@@ -2334,6 +2336,16 @@ def performance_focus_hint(
         "segment_commit_candidate",
         "trace_queue_backpressure_candidate",
     }
+    if (
+        trace_pipeline_hint
+        in {
+            "trace_generation_and_commit_pipeline_candidate",
+            "parallel_segment_reexecution_candidate",
+        }
+        and seed_direct_lift_action_hint == "seed_direct_lift_ready"
+        and seed_full_advances <= 1
+    ):
+        return "seed_ready_parallel_segment_reexecution_candidate"
     if (
         trace_pipeline_hint in trace_pipeline_hints
         and retained_parent_checkpoint_action_hint
@@ -4195,6 +4207,8 @@ def summarize_profile_values(
     performance_focus = performance_focus_hint(
         trace_pipeline_hint,
         retained_parent_checkpoint_action_hint,
+        seed_direct_lift_action,
+        seed_full_advances,
     )
     opening_source_row_value_hint = opening_source_row_value_action_hint(
         total_ms,
