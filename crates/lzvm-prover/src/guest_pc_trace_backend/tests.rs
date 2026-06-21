@@ -1189,6 +1189,7 @@ fn live_pending_segment_messages_reassemble_to_serial_lower_output() {
         expected.seed.clone(),
         None,
         None,
+        false,
         1,
         |message| {
             messages.push(message);
@@ -1359,6 +1360,7 @@ fn live_pending_segment_boundary_snapshot_lifts_next_seed_without_retained_repor
         expected.seed.clone(),
         None,
         Some(&mut boundary_snapshot),
+        false,
         1,
         |message| {
             messages.push(message);
@@ -1404,6 +1406,91 @@ fn live_pending_segment_boundary_snapshot_lifts_next_seed_without_retained_repor
 }
 
 #[test]
+fn live_pending_segment_can_emit_stream_start_before_chunks() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-live-early-stream-start");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let mut serial_pending = Vec::new();
+    produce_guest_pc_trace_pending_slices(32, context, &[], layout.row_count(), |segment| {
+        serial_pending.push(segment);
+        Ok(())
+    })
+    .expect("serial pending slices should produce");
+    let expected = serial_pending
+        .into_iter()
+        .next()
+        .expect("fixture should produce a first segment");
+    let expected_seed = expected
+        .seed
+        .as_deref()
+        .expect("seed mirror should attach a segment seed")
+        .clone();
+
+    let (mut live_memory, mut live_state, mut live_fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("live guest trace machine should load");
+    let mut messages = Vec::new();
+    emit_guest_pc_trace_live_pending_segment_messages(
+        &mut live_memory,
+        &mut live_state,
+        &mut live_fcall_handler,
+        expected.trace_instance_index,
+        expected.runner_remaining_instruction_limit,
+        layout.row_count(),
+        expected.seed.clone(),
+        None,
+        None,
+        true,
+        1,
+        |message| {
+            messages.push(message);
+            Ok(())
+        },
+    )
+    .expect("live pending segment messages should emit early stream start");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let Some(GuestPcTracePendingSegmentMessage::SegmentStreamStarted(start)) = messages.first()
+    else {
+        panic!("live pending messages should emit stream start before report chunks");
+    };
+    assert_eq!(start.trace_instance_index, expected.trace_instance_index);
+    assert_eq!(
+        start.runner_remaining_instruction_limit,
+        expected.runner_remaining_instruction_limit
+    );
+    assert_eq!(
+        start.seed.as_deref(),
+        Some(&expected_seed),
+        "early stream start should carry the segment seed"
+    );
+    assert!(matches!(
+        messages.get(1),
+        Some(GuestPcTracePendingSegmentMessage::ReportChunk(_))
+    ));
+}
+
+#[test]
 fn live_report_chunk_producer_preserves_segment_output_when_enabled() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
@@ -1446,6 +1533,7 @@ fn live_report_chunk_producer_preserves_segment_output_when_enabled() {
         produced.timing.trace_report_chunk_sent_count() > 0,
         "live report chunk producer should emit report chunks"
     );
+    assert_eq!(produced.timing.trace_stream_start_sent_count(), 0);
     assert_eq!(
         produced.timing.trace_report_chunk_sent_count(),
         produced.timing.trace_report_chunk_received_count()
@@ -1525,6 +1613,75 @@ fn live_report_chunk_producer_supports_trusted_runner_seed_snapshot() {
         produced.timing.seed_direct_lift_success_count()
     );
     assert!(produced.timing.seed_direct_lift_success_count() > 0);
+    for (emitted, expected) in emitted.iter().zip(expected.iter()) {
+        assert_eq!(emitted.trace_instance_index, expected.trace_instance_index);
+        assert_eq!(
+            emitted.trace_source_prefix_rows,
+            expected.trace_source_prefix_rows
+        );
+        #[cfg(feature = "cuda")]
+        assert_eq!(
+            emitted.device_segment_material,
+            expected.device_segment_material
+        );
+        assert_eq!(emitted.trace, expected.trace);
+        assert_eq!(emitted.unit_values, expected.unit_values);
+    }
+}
+
+#[test]
+fn live_report_chunk_producer_records_stream_start_when_enabled() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _live_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_LIVE_REPORT_CHUNKS", "1");
+    let _stream_start_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_LIVE_STREAM_START", "1");
+    let _chunk_capacity_env =
+        TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY", "1");
+    let _snapshot_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT", "1");
+    let _trusted_env =
+        TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED", "1");
+    let dir = repo_temp_dir("guest-pc-live-stream-start-producer");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let expected =
+        compute_guest_pc_trace_segments(32, context, &[]).expect("serial segments should compute");
+    let mut emitted = Vec::new();
+    let produced = produce_guest_pc_trace_segments(32, context, &[], None, |segment| {
+        emitted.push(segment);
+        Ok(())
+    })
+    .expect("live report chunk producer should support early stream starts");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(emitted.len(), expected.len());
+    assert_eq!(
+        produced.timing.trace_stream_start_sent_count(),
+        expected.len(),
+        "stream-start messages should be sent once per trace segment"
+    );
+    assert!(produced.timing.trace_report_chunk_sent_count() > 0);
+    assert_eq!(
+        produced.timing.trace_report_chunk_sent_count(),
+        produced.timing.trace_report_chunk_received_count()
+    );
     for (emitted, expected) in emitted.iter().zip(expected.iter()) {
         assert_eq!(emitted.trace_instance_index, expected.trace_instance_index);
         assert_eq!(
@@ -1905,6 +2062,7 @@ fn live_chunks_before_segment_start_lower_with_traceless_output() {
         Some(Box::new(seed.clone())),
         None,
         None,
+        false,
         1,
         |message| {
             sender.send(message).expect("live message should send");

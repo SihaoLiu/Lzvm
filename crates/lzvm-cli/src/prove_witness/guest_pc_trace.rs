@@ -488,6 +488,10 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_report_row_count(),
     );
     timings.record_count(
+        "guest_trace_stream_start_sent",
+        timing.guest_trace_stream_start_sent_count(),
+    );
+    timings.record_count(
         "guest_trace_report_chunk_sent",
         timing.guest_trace_report_chunk_sent_count(),
     );

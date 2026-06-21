@@ -498,6 +498,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_seed_full_advance_count: usize,
     guest_trace_report_count: usize,
     guest_trace_report_row_count: usize,
+    guest_trace_stream_start_sent_count: usize,
     guest_trace_report_chunk_sent_count: usize,
     guest_trace_report_chunk_received_count: usize,
     guest_trace_report_chunk_report_count: usize,
@@ -832,6 +833,7 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_seed_full_advance_count: stream_timing.seed_full_advance_count(),
             guest_trace_report_count: stream_timing.trace_report_count(),
             guest_trace_report_row_count: stream_timing.trace_report_row_count(),
+            guest_trace_stream_start_sent_count: stream_timing.trace_stream_start_sent_count(),
             guest_trace_report_chunk_sent_count: stream_timing.trace_report_chunk_sent_count(),
             guest_trace_report_chunk_received_count: stream_timing
                 .trace_report_chunk_received_count(),
@@ -1409,6 +1411,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_report_row_count(&self) -> usize {
         self.guest_trace_report_row_count
+    }
+
+    pub fn guest_trace_stream_start_sent_count(&self) -> usize {
+        self.guest_trace_stream_start_sent_count
     }
 
     pub fn guest_trace_report_chunk_sent_count(&self) -> usize {

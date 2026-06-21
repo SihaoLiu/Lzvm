@@ -260,6 +260,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     seed_full_advance_count: usize,
     trace_report_count: usize,
     trace_report_row_count: usize,
+    trace_stream_start_sent_count: usize,
     trace_report_chunk_sent_count: usize,
     trace_report_chunk_received_count: usize,
     trace_report_chunk_report_count: usize,
@@ -405,6 +406,7 @@ impl GuestPcTraceStreamTiming {
         self.seed_full_advance_count += other.seed_full_advance_count;
         self.trace_report_count += other.trace_report_count;
         self.trace_report_row_count += other.trace_report_row_count;
+        self.trace_stream_start_sent_count += other.trace_stream_start_sent_count;
         self.trace_report_chunk_sent_count += other.trace_report_chunk_sent_count;
         self.trace_report_chunk_received_count += other.trace_report_chunk_received_count;
         self.trace_report_chunk_report_count += other.trace_report_chunk_report_count;
@@ -790,6 +792,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_row_count(&self) -> usize {
         self.trace_report_row_count
+    }
+
+    pub fn trace_stream_start_sent_count(&self) -> usize {
+        self.trace_stream_start_sent_count
     }
 
     pub fn trace_report_chunk_sent_count(&self) -> usize {
@@ -1312,6 +1318,15 @@ struct GuestPcTracePendingReportChunk {
     reports: Vec<GuestMachineReport>,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+struct GuestPcTracePendingSegmentStreamStart {
+    trace_instance_index: u32,
+    runner_remaining_instruction_limit: u64,
+    seed: Option<Box<ZiskMainSegmentSeed>>,
+    #[allow(dead_code)]
+    replay_snapshot: Option<GuestPcTraceSegmentReplaySnapshot>,
+}
+
 struct GuestPcTracePendingSegmentFinish {
     trace_instance_index: u32,
 }
@@ -1340,6 +1355,8 @@ enum GuestPcTraceSegmentStreamMessage {
 
 enum GuestPcTracePendingSegmentMessage {
     Segment(Box<GuestPcTracePendingSegmentSlice>),
+    #[cfg_attr(not(test), allow(dead_code))]
+    SegmentStreamStarted(Box<GuestPcTracePendingSegmentStreamStart>),
     SegmentStarted(Box<GuestPcTracePendingSegmentSlice>),
     ReportChunk(Box<GuestPcTracePendingReportChunk>),
     SegmentFinished(Box<GuestPcTracePendingSegmentFinish>),
@@ -4154,6 +4171,7 @@ struct GuestPcTraceLivePendingSegmentEmission {
     executed_instruction_count: u64,
     trace_row_count: usize,
     report_count: usize,
+    stream_start_count: usize,
     report_chunk_count: usize,
     #[allow(dead_code)]
     status: GuestMachineTraceSliceStatus,
@@ -4177,6 +4195,7 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
     seed: Option<Box<ZiskMainSegmentSeed>>,
     replay_snapshot: Option<GuestPcTraceSegmentReplaySnapshot>,
     boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
+    emit_stream_start_before_chunks: bool,
     report_chunk_capacity: usize,
     mut emit_message: impl FnMut(
         GuestPcTracePendingSegmentMessage,
@@ -4184,7 +4203,19 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
 ) -> Result<GuestPcTraceLivePendingSegmentEmission, GuestPcTraceBackendError> {
     let report_chunk_capacity = report_chunk_capacity.max(1);
     let mut chunk_reports = Vec::with_capacity(report_chunk_capacity);
+    let mut stream_start_count = 0_usize;
     let mut report_chunk_count = 0_usize;
+    if emit_stream_start_before_chunks {
+        emit_message(GuestPcTracePendingSegmentMessage::SegmentStreamStarted(
+            Box::new(GuestPcTracePendingSegmentStreamStart {
+                trace_instance_index,
+                runner_remaining_instruction_limit,
+                seed: seed.clone(),
+                replay_snapshot: replay_snapshot.clone(),
+            }),
+        ))?;
+        stream_start_count = 1;
+    }
     let slice = run_guest_pc_trace_segment_slice_with_live_report_chunks(
         memory,
         state,
@@ -4269,6 +4300,7 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
         executed_instruction_count: slice.executed_instructions,
         trace_row_count: slice.trace_rows,
         report_count: slice.report_count,
+        stream_start_count,
         report_chunk_count,
         status,
         last_report: slice.last_report,
@@ -4281,6 +4313,10 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
 
 fn guest_pc_trace_live_report_chunks_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_LIVE_REPORT_CHUNKS", false)
+}
+
+fn guest_pc_trace_live_stream_start_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_LIVE_STREAM_START", false)
 }
 
 fn validate_guest_pc_trace_live_report_chunk_mode() -> Result<(), GuestPcTraceBackendError> {
@@ -4330,6 +4366,7 @@ fn produce_guest_pc_trace_live_pending_messages(
     let runner_seed_snapshot = guest_pc_trace_runner_seed_snapshot_enabled();
     let runner_seed_snapshot_trusted =
         runner_seed_snapshot && guest_pc_trace_runner_seed_snapshot_trusted_enabled();
+    let emit_stream_start_before_chunks = guest_pc_trace_live_stream_start_enabled();
     let validate_runner_seed_snapshot =
         runner_seed_snapshot && guest_pc_trace_runner_seed_snapshot_validation_enabled();
     let mut seed_mirror = runner_seed_snapshot.then(ZiskMainSegmentSeed::new);
@@ -4364,6 +4401,7 @@ fn produce_guest_pc_trace_live_pending_messages(
             seed.clone().map(Box::new),
             None,
             runner_boundary_snapshot.as_mut(),
+            emit_stream_start_before_chunks,
             report_chunk_capacity,
             &mut emit_message,
         )?;
@@ -4375,6 +4413,9 @@ fn produce_guest_pc_trace_live_pending_messages(
         timing.trace_report_chunk_sent_count = timing
             .trace_report_chunk_sent_count
             .saturating_add(emitted.report_chunk_count);
+        timing.trace_stream_start_sent_count = timing
+            .trace_stream_start_sent_count
+            .saturating_add(emitted.stream_start_count);
         timing.trace_report_chunk_report_count = timing
             .trace_report_chunk_report_count
             .saturating_add(emitted.report_count);
@@ -5362,6 +5403,9 @@ fn lower_guest_pc_trace_pending_segments(
         timing.pending_receive_wait_duration += receive_started.elapsed();
         let pending = match message {
             GuestPcTracePendingSegmentMessage::Segment(pending) => *pending,
+            GuestPcTracePendingSegmentMessage::SegmentStreamStarted(_) => {
+                continue;
+            }
             GuestPcTracePendingSegmentMessage::SegmentStarted(pending) => {
                 let pending = *pending;
                 #[cfg(feature = "cuda")]
@@ -5770,6 +5814,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         }
                         dispatched_count = dispatched_count.saturating_add(1);
                     }
+                    GuestPcTracePendingSegmentMessage::SegmentStreamStarted(_) => {}
                     GuestPcTracePendingSegmentMessage::SegmentStarted(pending) => {
                         let pending = *pending;
                         if pending_chunked_segments
