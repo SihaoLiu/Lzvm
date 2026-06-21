@@ -445,7 +445,11 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound
     (emitMilliseconds descriptorMilliseconds descriptorRows pendingSendWaitMilliseconds
       pendingReceiveWaitMilliseconds segmentSendWaitMilliseconds
       segmentReceiveWaitMilliseconds parallelWorkerCount parallelDispatchedCount
-      parallelReceivedCount parallelEmittedCount parallelMaxReorderCount : Nat) :
+      parallelReceivedCount parallelEmittedCount parallelMaxReorderCount
+      parallelStreamStartDispatchWaitMilliseconds
+      parallelStreamChunkDispatchWaitMilliseconds
+      parallelStreamSegmentDispatchWaitMilliseconds
+      parallelStreamFinishDispatchWaitMilliseconds : Nat) :
     forall publicInput proof,
       GuestPcTraceTimingObservedAcceptance
         system
@@ -462,7 +466,15 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound
             guestTraceParallelLowerDispatchedCount := parallelDispatchedCount
             guestTraceParallelLowerReceivedCount := parallelReceivedCount
             guestTraceParallelLowerEmittedCount := parallelEmittedCount
-            guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount })
+            guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount
+            guestTraceParallelLowerStreamStartDispatchWaitMilliseconds :=
+              parallelStreamStartDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds :=
+              parallelStreamChunkDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds :=
+              parallelStreamSegmentDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamFinishDispatchWaitMilliseconds :=
+              parallelStreamFinishDispatchWaitMilliseconds })
         publicInput
         proof ->
         SoundWitness system publicInput proof := by
@@ -483,7 +495,15 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound
           guestTraceParallelLowerDispatchedCount := parallelDispatchedCount
           guestTraceParallelLowerReceivedCount := parallelReceivedCount
           guestTraceParallelLowerEmittedCount := parallelEmittedCount
-          guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount })
+          guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount
+          guestTraceParallelLowerStreamStartDispatchWaitMilliseconds :=
+            parallelStreamStartDispatchWaitMilliseconds
+          guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds :=
+            parallelStreamChunkDispatchWaitMilliseconds
+          guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds :=
+            parallelStreamSegmentDispatchWaitMilliseconds
+          guestTraceParallelLowerStreamFinishDispatchWaitMilliseconds :=
+            parallelStreamFinishDispatchWaitMilliseconds })
       publicInput
       proof
       observed
@@ -495,7 +515,11 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_cont
     (emitMilliseconds descriptorMilliseconds descriptorRows pendingSendWaitMilliseconds
       pendingReceiveWaitMilliseconds segmentSendWaitMilliseconds
       segmentReceiveWaitMilliseconds parallelWorkerCount parallelDispatchedCount
-      parallelReceivedCount parallelEmittedCount parallelMaxReorderCount : Nat) :
+      parallelReceivedCount parallelEmittedCount parallelMaxReorderCount
+      parallelStreamStartDispatchWaitMilliseconds
+      parallelStreamChunkDispatchWaitMilliseconds
+      parallelStreamSegmentDispatchWaitMilliseconds
+      parallelStreamFinishDispatchWaitMilliseconds : Nat) :
     forall publicInput proof,
       GuestPcTraceTimingObservedAcceptance
         system
@@ -512,7 +536,15 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_cont
             guestTraceParallelLowerDispatchedCount := parallelDispatchedCount
             guestTraceParallelLowerReceivedCount := parallelReceivedCount
             guestTraceParallelLowerEmittedCount := parallelEmittedCount
-            guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount })
+            guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount
+            guestTraceParallelLowerStreamStartDispatchWaitMilliseconds :=
+              parallelStreamStartDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds :=
+              parallelStreamChunkDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds :=
+              parallelStreamSegmentDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamFinishDispatchWaitMilliseconds :=
+              parallelStreamFinishDispatchWaitMilliseconds })
         publicInput
         proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
@@ -532,7 +564,15 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_cont
             guestTraceParallelLowerDispatchedCount := parallelDispatchedCount
             guestTraceParallelLowerReceivedCount := parallelReceivedCount
             guestTraceParallelLowerEmittedCount := parallelEmittedCount
-            guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount }
+            guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount
+            guestTraceParallelLowerStreamStartDispatchWaitMilliseconds :=
+              parallelStreamStartDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds :=
+              parallelStreamChunkDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds :=
+              parallelStreamSegmentDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamFinishDispatchWaitMilliseconds :=
+              parallelStreamFinishDispatchWaitMilliseconds }
       publicInput
       proof
       observed

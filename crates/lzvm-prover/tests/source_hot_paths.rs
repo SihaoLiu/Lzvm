@@ -5844,6 +5844,10 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
         "parallel_lower_snapshot_replay_duration",
         "parallel_lower_report_elided_count",
         "parallel_lower_dispatch_wait_duration",
+        "parallel_lower_stream_start_dispatch_wait_duration",
+        "parallel_lower_stream_chunk_dispatch_wait_duration",
+        "parallel_lower_stream_segment_dispatch_wait_duration",
+        "parallel_lower_stream_finish_dispatch_wait_duration",
         "parallel_lower_result_receive_wait_duration",
         "parallel_lower_dispatch_blocked_count",
     ] {
@@ -5892,6 +5896,10 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
         "guest_trace_parallel_lower_snapshot_replay_duration",
         "guest_trace_parallel_lower_report_elided_count",
         "guest_trace_parallel_lower_dispatch_wait_duration",
+        "guest_trace_parallel_lower_stream_start_dispatch_wait_duration",
+        "guest_trace_parallel_lower_stream_chunk_dispatch_wait_duration",
+        "guest_trace_parallel_lower_stream_segment_dispatch_wait_duration",
+        "guest_trace_parallel_lower_stream_finish_dispatch_wait_duration",
         "guest_trace_parallel_lower_result_receive_wait_duration",
         "guest_trace_parallel_lower_dispatch_blocked_count",
     ] {
@@ -5920,6 +5928,10 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
         "\"guest_trace_parallel_lower_snapshot_replay\"",
         "\"guest_trace_parallel_lower_report_elided_count\"",
         "\"guest_trace_parallel_lower_dispatch_wait\"",
+        "\"guest_trace_parallel_lower_stream_start_dispatch_wait\"",
+        "\"guest_trace_parallel_lower_stream_chunk_dispatch_wait\"",
+        "\"guest_trace_parallel_lower_stream_segment_dispatch_wait\"",
+        "\"guest_trace_parallel_lower_stream_finish_dispatch_wait\"",
         "\"guest_trace_parallel_lower_result_receive_wait\"",
         "\"guest_trace_parallel_lower_dispatch_blocked_count\"",
     ] {

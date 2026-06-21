@@ -846,6 +846,22 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_parallel_lower_dispatch_wait_duration(),
     );
     timings.record(
+        "guest_trace_parallel_lower_stream_start_dispatch_wait",
+        timing.guest_trace_parallel_lower_stream_start_dispatch_wait_duration(),
+    );
+    timings.record(
+        "guest_trace_parallel_lower_stream_chunk_dispatch_wait",
+        timing.guest_trace_parallel_lower_stream_chunk_dispatch_wait_duration(),
+    );
+    timings.record(
+        "guest_trace_parallel_lower_stream_segment_dispatch_wait",
+        timing.guest_trace_parallel_lower_stream_segment_dispatch_wait_duration(),
+    );
+    timings.record(
+        "guest_trace_parallel_lower_stream_finish_dispatch_wait",
+        timing.guest_trace_parallel_lower_stream_finish_dispatch_wait_duration(),
+    );
+    timings.record(
         "guest_trace_parallel_lower_result_receive_wait",
         timing.guest_trace_parallel_lower_result_receive_wait_duration(),
     );

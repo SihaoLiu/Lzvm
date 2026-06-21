@@ -251,6 +251,10 @@ pub(crate) struct GuestPcTraceStreamTiming {
     parallel_lower_stream_fallback_count: usize,
     parallel_lower_stream_retained_report_count: usize,
     parallel_lower_dispatch_wait_duration: Duration,
+    parallel_lower_stream_start_dispatch_wait_duration: Duration,
+    parallel_lower_stream_chunk_dispatch_wait_duration: Duration,
+    parallel_lower_stream_segment_dispatch_wait_duration: Duration,
+    parallel_lower_stream_finish_dispatch_wait_duration: Duration,
     parallel_lower_result_receive_wait_duration: Duration,
     parallel_lower_dispatch_blocked_count: usize,
     seed_direct_lift_attempt_count: usize,
@@ -397,6 +401,14 @@ impl GuestPcTraceStreamTiming {
         self.parallel_lower_stream_retained_report_count +=
             other.parallel_lower_stream_retained_report_count;
         self.parallel_lower_dispatch_wait_duration += other.parallel_lower_dispatch_wait_duration;
+        self.parallel_lower_stream_start_dispatch_wait_duration +=
+            other.parallel_lower_stream_start_dispatch_wait_duration;
+        self.parallel_lower_stream_chunk_dispatch_wait_duration +=
+            other.parallel_lower_stream_chunk_dispatch_wait_duration;
+        self.parallel_lower_stream_segment_dispatch_wait_duration +=
+            other.parallel_lower_stream_segment_dispatch_wait_duration;
+        self.parallel_lower_stream_finish_dispatch_wait_duration +=
+            other.parallel_lower_stream_finish_dispatch_wait_duration;
         self.parallel_lower_result_receive_wait_duration +=
             other.parallel_lower_result_receive_wait_duration;
         self.parallel_lower_dispatch_blocked_count += other.parallel_lower_dispatch_blocked_count;
@@ -742,6 +754,22 @@ impl GuestPcTraceStreamTiming {
 
     pub fn parallel_lower_dispatch_wait_duration(&self) -> Duration {
         self.parallel_lower_dispatch_wait_duration
+    }
+
+    pub fn parallel_lower_stream_start_dispatch_wait_duration(&self) -> Duration {
+        self.parallel_lower_stream_start_dispatch_wait_duration
+    }
+
+    pub fn parallel_lower_stream_chunk_dispatch_wait_duration(&self) -> Duration {
+        self.parallel_lower_stream_chunk_dispatch_wait_duration
+    }
+
+    pub fn parallel_lower_stream_segment_dispatch_wait_duration(&self) -> Duration {
+        self.parallel_lower_stream_segment_dispatch_wait_duration
+    }
+
+    pub fn parallel_lower_stream_finish_dispatch_wait_duration(&self) -> Duration {
+        self.parallel_lower_stream_finish_dispatch_wait_duration
     }
 
     pub fn parallel_lower_result_receive_wait_duration(&self) -> Duration {
@@ -5622,6 +5650,60 @@ enum GuestPcTraceParallelLowerJob {
     StreamFinish(Box<GuestPcTracePendingSegmentFinish>),
 }
 
+trait GuestPcTraceParallelLowerDispatchClass {
+    fn stream_dispatch_kind(&self) -> Option<u8>;
+}
+
+impl GuestPcTraceParallelLowerDispatchClass for GuestPcTraceParallelLowerJob {
+    fn stream_dispatch_kind(&self) -> Option<u8> {
+        match self {
+            #[cfg(feature = "cuda")]
+            GuestPcTraceParallelLowerJob::StreamStart(_) => Some(1),
+            #[cfg(feature = "cuda")]
+            GuestPcTraceParallelLowerJob::StreamChunk(_) => Some(2),
+            #[cfg(feature = "cuda")]
+            GuestPcTraceParallelLowerJob::StreamSegment(_) => Some(3),
+            #[cfg(feature = "cuda")]
+            GuestPcTraceParallelLowerJob::StreamFinish(_) => Some(4),
+            GuestPcTraceParallelLowerJob::Segment(_) => None,
+        }
+    }
+}
+
+#[cfg(test)]
+impl GuestPcTraceParallelLowerDispatchClass for u32 {
+    fn stream_dispatch_kind(&self) -> Option<u8> {
+        None
+    }
+}
+
+fn record_guest_pc_trace_parallel_lower_dispatch_wait(
+    timing: &mut GuestPcTraceStreamTiming,
+    stream_kind: Option<u8>,
+    elapsed: Duration,
+) {
+    timing.parallel_lower_dispatch_wait_duration += elapsed;
+    match stream_kind {
+        #[cfg(feature = "cuda")]
+        Some(1) => {
+            timing.parallel_lower_stream_start_dispatch_wait_duration += elapsed;
+        }
+        #[cfg(feature = "cuda")]
+        Some(2) => {
+            timing.parallel_lower_stream_chunk_dispatch_wait_duration += elapsed;
+        }
+        #[cfg(feature = "cuda")]
+        Some(3) => {
+            timing.parallel_lower_stream_segment_dispatch_wait_duration += elapsed;
+        }
+        #[cfg(feature = "cuda")]
+        Some(4) => {
+            timing.parallel_lower_stream_finish_dispatch_wait_duration += elapsed;
+        }
+        _ => {}
+    }
+}
+
 fn replay_guest_pc_trace_pending_segment_reports(
     layout: &WitnessTraceLayout,
     pending: &mut GuestPcTracePendingSegmentSlice,
@@ -5915,7 +5997,7 @@ impl GuestPcTraceParallelStreamedSegment {
     }
 }
 
-fn dispatch_guest_pc_trace_parallel_lower_job<T>(
+fn dispatch_guest_pc_trace_parallel_lower_job<T: GuestPcTraceParallelLowerDispatchClass>(
     job_senders: &[mpsc::SyncSender<T>],
     next_worker: &mut usize,
     mut job: T,
@@ -5944,10 +6026,15 @@ fn dispatch_guest_pc_trace_parallel_lower_job<T>(
         }
     }
     if saw_full_queue {
+        let stream_kind = job.stream_dispatch_kind();
         let send_started = Instant::now();
         let result = job_senders[start].send(job).map_err(|error| error.0);
         if let Some(timing) = timing {
-            timing.parallel_lower_dispatch_wait_duration += send_started.elapsed();
+            record_guest_pc_trace_parallel_lower_dispatch_wait(
+                timing,
+                stream_kind,
+                send_started.elapsed(),
+            );
             timing.parallel_lower_dispatch_blocked_count = timing
                 .parallel_lower_dispatch_blocked_count
                 .saturating_add(1);
@@ -5961,19 +6048,24 @@ fn dispatch_guest_pc_trace_parallel_lower_job<T>(
 }
 
 #[cfg(feature = "cuda")]
-fn send_guest_pc_trace_parallel_lower_job_to_worker<T>(
-    job_senders: &[mpsc::SyncSender<T>],
+fn send_guest_pc_trace_parallel_lower_job_to_worker(
+    job_senders: &[mpsc::SyncSender<GuestPcTraceParallelLowerJob>],
     worker: usize,
-    job: T,
+    job: GuestPcTraceParallelLowerJob,
     timing: Option<&mut GuestPcTraceStreamTiming>,
-) -> Result<(), T> {
+) -> Result<(), GuestPcTraceParallelLowerJob> {
     let Some(sender) = job_senders.get(worker) else {
         return Err(job);
     };
+    let stream_kind = job.stream_dispatch_kind();
     let send_started = Instant::now();
     let result = sender.send(job).map_err(|error| error.0);
     if let Some(timing) = timing {
-        timing.parallel_lower_dispatch_wait_duration += send_started.elapsed();
+        record_guest_pc_trace_parallel_lower_dispatch_wait(
+            timing,
+            stream_kind,
+            send_started.elapsed(),
+        );
     }
     result
 }

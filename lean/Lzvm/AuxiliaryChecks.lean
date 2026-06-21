@@ -273,6 +273,10 @@ structure GuestPcTraceTimingSummary where
   guestTraceParallelLowerReceivedCount : Nat
   guestTraceParallelLowerEmittedCount : Nat
   guestTraceParallelLowerMaxReorderCount : Nat
+  guestTraceParallelLowerStreamStartDispatchWaitMilliseconds : Nat
+  guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds : Nat
+  guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds : Nat
+  guestTraceParallelLowerStreamFinishDispatchWaitMilliseconds : Nat
   guestDeviceSourceBuildMilliseconds : Nat
   guestDeviceSourceDescriptorUploadMilliseconds : Nat
   guestDeviceSourceDescriptorUploadByteCount : Nat
