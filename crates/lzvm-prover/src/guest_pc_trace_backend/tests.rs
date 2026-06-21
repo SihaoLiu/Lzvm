@@ -2361,6 +2361,14 @@ fn zisk_main_source_value_reports_memory_access_count() {
 }
 
 #[test]
+fn zisk_main_source_value_result_stays_narrow() {
+    assert!(
+        std::mem::size_of::<ZiskMainSourceValueResult>() <= 16,
+        "source-value results are returned twice per lowered row and should not carry pointer-sized counters"
+    );
+}
+
+#[test]
 fn source_value_rejects_invalid_register_index() {
     let state = ZiskMainTraceState::new();
     let report = addi_report();

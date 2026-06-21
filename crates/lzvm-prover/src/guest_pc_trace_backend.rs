@@ -6137,8 +6137,8 @@ impl<'a> ZiskMainReportEffects<'a> {
 #[derive(Debug, Clone, Copy)]
 struct ZiskMainSourceValueResult {
     value: u64,
-    memory_access_count: usize,
-    register_index: Option<usize>,
+    memory_access_count: u8,
+    register_index: Option<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -6481,7 +6481,7 @@ fn apply_zisk_main_lowered_report_row(
         |timing| &mut timing.trace_report_source_a_value_duration,
     );
     let source_b_value_started = detail_duration_started(&timing, detail_timing);
-    let b_memory_access_index = a_value.memory_access_count;
+    let b_memory_access_index = usize::from(a_value.memory_access_count);
     let b_value = zisk_main_source_value(
         output_row,
         instruction.b,
@@ -6546,7 +6546,8 @@ fn apply_zisk_main_lowered_report_row(
     });
 
     let memory_access_started = detail_duration_started(&timing, detail_timing);
-    let validated_source_access_count = b_memory_access_index + b_value.memory_access_count;
+    let validated_source_access_count =
+        b_memory_access_index + usize::from(b_value.memory_access_count);
     validate_zisk_main_memory_accesses_after_source_values(
         output_row,
         &instruction,
@@ -7403,8 +7404,8 @@ fn apply_zisk_main_register_access_values(
     instruction: &ZiskMainInstruction,
     state: &mut ZiskMainTraceState,
     row_mem_step_base: u64,
-    a_index: Option<usize>,
-    b_index: Option<usize>,
+    a_index: Option<u8>,
+    b_index: Option<u8>,
 ) -> Result<ZiskMainRegisterAccessValues, GuestPcTraceBackendError> {
     let store_index = zisk_main_store_register_index(row, instruction.store)?;
     let mut values = ZiskMainRegisterAccessValues {
@@ -7435,7 +7436,7 @@ fn apply_zisk_main_register_access_values(
         ));
     }
     if let Some(index) = store_index {
-        values.store_prev_value = Some(state.registers[index]);
+        values.store_prev_value = Some(state.registers[usize::from(index)]);
         let next_step =
             zisk_main_mem_step_from_base(row_mem_step_base, ZISK_MAIN_STORE_MEM_STEP_OFFSET)?;
         values.store_prev_mem_step = Some(read_then_update_register_mem_step(
@@ -7450,9 +7451,10 @@ fn apply_zisk_main_register_access_values(
 
 fn read_then_update_register_mem_step(
     register_mem_steps: &mut [u64; 32],
-    index: usize,
+    index: u8,
     value: u64,
 ) -> u64 {
+    let index = usize::from(index);
     let previous = register_mem_steps[index];
     register_mem_steps[index] = value;
     previous
@@ -7461,7 +7463,7 @@ fn read_then_update_register_mem_step(
 fn zisk_main_store_register_index(
     row: usize,
     store: ZiskMainStore,
-) -> Result<Option<usize>, GuestPcTraceBackendError> {
+) -> Result<Option<u8>, GuestPcTraceBackendError> {
     match store {
         ZiskMainStore::Register(index) => zisk_main_register_index(index)
             .map(Some)
@@ -7470,10 +7472,9 @@ fn zisk_main_store_register_index(
     }
 }
 
-fn zisk_main_register_index(index: u8) -> Result<usize, ()> {
-    let index = usize::from(index);
+fn zisk_main_register_index(index: u8) -> Result<u8, ()> {
     if (ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-        .contains(&index)
+        .contains(&usize::from(index))
     {
         Ok(index)
     } else {
@@ -8681,7 +8682,7 @@ fn zisk_main_source_value(
             let index = zisk_main_register_index(index)
                 .map_err(|()| GuestPcTraceBackendError::UnsupportedZiskMainSource { row })?;
             Ok(ZiskMainSourceValueResult {
-                value: state.registers[index],
+                value: state.registers[usize::from(index)],
                 memory_access_count: 0,
                 register_index: Some(index),
             })
