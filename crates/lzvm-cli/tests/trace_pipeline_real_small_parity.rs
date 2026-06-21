@@ -93,6 +93,7 @@ fn real_large_trace_pipeline_preserves_proof_bytes() {
         "large",
         &[
             RealParityMode::AsyncSingleCommit,
+            RealParityMode::TrustedSeedSnapshot,
             RealParityMode::SeedPipeline,
             RealParityMode::ReplayOnlySeedPipeline,
             RealParityMode::SeedPipelineCommitWorkers,

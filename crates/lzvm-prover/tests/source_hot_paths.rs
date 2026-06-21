@@ -5810,6 +5810,15 @@ fn trace_pipeline_real_parity_covers_large_input() {
             "large trace pipeline parity should expose {env_name}"
         );
     }
+    let large_parity_body = function_body(
+        &parity_source,
+        "fn real_large_trace_pipeline_preserves_proof_bytes",
+        "fn run_real_trace_pipeline_parity",
+    );
+    assert!(
+        large_parity_body.contains("RealParityMode::TrustedSeedSnapshot"),
+        "large trace pipeline parity should cover trusted runner seed snapshots"
+    );
 }
 
 #[test]
