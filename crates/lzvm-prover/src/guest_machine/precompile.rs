@@ -1,5 +1,5 @@
 use num_bigint::BigUint;
-use num_traits::{One, Zero};
+use num_traits::Zero;
 use tiny_keccak::keccakf;
 
 use crate::guest_instruction::RiscvPrecompileKind;
@@ -168,10 +168,20 @@ fn execute_add256_precompile(
     let params = read_u64_words::<4>(memory, effects, params_address)?;
     let a = read_u64_words::<4>(memory, effects, params[0])?;
     let b = read_u64_words::<4>(memory, effects, params[1])?;
-    let result = words_to_biguint(&a) + words_to_biguint(&b) + BigUint::from(params[2]);
-    let low = biguint_to_words::<4>(&result);
+    let (low, carry) = add256_words(a, b, params[2]);
     write_u64_words(memory, state, effects, params[3], &low)?;
-    Ok(u64::from(result >= (BigUint::one() << 256)))
+    Ok(carry)
+}
+
+fn add256_words(a: [u64; 4], b: [u64; 4], carry_in: u64) -> ([u64; 4], u64) {
+    let mut low = [0_u64; 4];
+    let mut carry = u128::from(carry_in);
+    for ((out, a), b) in low.iter_mut().zip(a).zip(b) {
+        let sum = u128::from(a) + u128::from(b) + carry;
+        *out = sum as u64;
+        carry = sum >> 64;
+    }
+    (low, u64::from(carry != 0))
 }
 
 fn read_u64_words<const N: usize>(
@@ -224,4 +234,37 @@ fn biguint_to_words<const N: usize>(value: &BigUint) -> [u64; N] {
         *word = u64::from_le_bytes(chunk.try_into().expect("word chunk is exactly 8 bytes"));
     }
     words
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn add256_words_returns_low_limbs_and_carry() {
+        let (low, carry) = add256_words([u64::MAX, u64::MAX, u64::MAX, u64::MAX], [1, 0, 0, 0], 1);
+
+        assert_eq!(low, [1, 0, 0, 0]);
+        assert_eq!(carry, 1);
+    }
+
+    #[test]
+    fn add256_words_matches_biguint_reference() {
+        for (a, b, carry_in) in [
+            ([0, 0, 0, 0], [0, 0, 0, 0], 0),
+            ([5, 6, 7, 8], [9, 10, 11, 12], 13),
+            ([u64::MAX, 0, 0, 0], [1, 0, 0, 0], 0),
+            (
+                [u64::MAX, u64::MAX, u64::MAX, u64::MAX],
+                [u64::MAX, u64::MAX, u64::MAX, u64::MAX],
+                u64::MAX,
+            ),
+        ] {
+            let result = words_to_biguint(&a) + words_to_biguint(&b) + BigUint::from(carry_in);
+            let (low, carry) = add256_words(a, b, carry_in);
+
+            assert_eq!(low, biguint_to_words::<4>(&result));
+            assert_eq!(carry, u64::from(result >= (BigUint::from(1_u8) << 256)));
+        }
+    }
 }
