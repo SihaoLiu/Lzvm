@@ -7911,6 +7911,27 @@ fn guest_pc_store_apply_computes_store_value_only_for_value_stores() {
 }
 
 #[test]
+fn guest_pc_source_value_lookup_avoids_request_wrapper() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let apply_body = function_body(
+        &source,
+        concat!("fn apply_", "zi", "sk", "_main_lowered_report_row"),
+        "fn record_trace_report_shape",
+    );
+    assert!(
+        !source.contains("struct ZiskMainSourceValueRequest"),
+        "source-value lookup should not carry a per-call request wrapper in the lowered-row hot path"
+    );
+    assert!(
+        !apply_body.contains("ZiskMainSourceValueRequest"),
+        "source-value lookup calls should pass hot fields directly"
+    );
+}
+
+#[test]
 fn zisk_main_precompile_memory_access_validation_avoids_temporary_vectors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");

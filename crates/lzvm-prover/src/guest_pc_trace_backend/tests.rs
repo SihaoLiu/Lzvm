@@ -2210,16 +2210,16 @@ fn zisk_main_source_value_requires_ordered_memory_access() {
     let state = ZiskMainTraceState::new();
     let report = addi_report();
 
-    let error = zisk_main_source_value(ZiskMainSourceValueRequest {
-        row: 9,
-        source: ZiskMainSource::Memory(64),
-        state: &state,
-        report: &report,
+    let error = zisk_main_source_value(
+        9,
+        ZiskMainSource::Memory(64),
+        &state,
+        &report,
         effects,
-        base: None,
-        ind_width: 0,
-        memory_access_index: 0,
-    })
+        None,
+        0,
+        0,
+    )
     .expect_err("source values should consume the expected memory access position");
 
     assert!(error.to_string().contains("expected Read at 64"));
@@ -2259,38 +2259,38 @@ fn zisk_main_source_value_reports_memory_access_count() {
     state.registers[1] = 7;
     let report = addi_report();
 
-    let memory = zisk_main_source_value(ZiskMainSourceValueRequest {
-        row: 9,
-        source: ZiskMainSource::Memory(64),
-        state: &state,
-        report: &report,
+    let memory = zisk_main_source_value(
+        9,
+        ZiskMainSource::Memory(64),
+        &state,
+        &report,
         effects,
-        base: None,
-        ind_width: 0,
-        memory_access_index: 0,
-    })
+        None,
+        0,
+        0,
+    )
     .expect("direct memory source should validate the ordered access");
-    let indirect = zisk_main_source_value(ZiskMainSourceValueRequest {
-        row: 9,
-        source: ZiskMainSource::Indirect(8),
-        state: &state,
-        report: &report,
+    let indirect = zisk_main_source_value(
+        9,
+        ZiskMainSource::Indirect(8),
+        &state,
+        &report,
         effects,
-        base: Some(96),
-        ind_width: 8,
-        memory_access_index: 1,
-    })
+        Some(96),
+        8,
+        1,
+    )
     .expect("indirect memory source should validate the ordered access");
-    let register = zisk_main_source_value(ZiskMainSourceValueRequest {
-        row: 9,
-        source: ZiskMainSource::Register(1),
-        state: &state,
-        report: &report,
+    let register = zisk_main_source_value(
+        9,
+        ZiskMainSource::Register(1),
+        &state,
+        &report,
         effects,
-        base: None,
-        ind_width: 0,
-        memory_access_index: 0,
-    })
+        None,
+        0,
+        0,
+    )
     .expect("register source should not consume a memory access");
 
     assert_eq!(memory.value, 96);
@@ -2306,16 +2306,16 @@ fn source_value_rejects_invalid_register_index() {
     let state = ZiskMainTraceState::new();
     let report = addi_report();
     let result = std::panic::catch_unwind(|| {
-        zisk_main_source_value(ZiskMainSourceValueRequest {
-            row: 9,
-            source: ZiskMainSource::Register(32),
-            state: &state,
-            report: &report,
-            effects: ZiskMainReportEffects::empty(),
-            base: None,
-            ind_width: 0,
-            memory_access_index: 0,
-        })
+        zisk_main_source_value(
+            9,
+            ZiskMainSource::Register(32),
+            &state,
+            &report,
+            ZiskMainReportEffects::empty(),
+            None,
+            0,
+            0,
+        )
     });
 
     assert!(

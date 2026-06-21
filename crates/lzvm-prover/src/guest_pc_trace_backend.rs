@@ -5965,18 +5965,6 @@ impl<'a> ZiskMainReportEffects<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
-struct ZiskMainSourceValueRequest<'a> {
-    row: usize,
-    source: ZiskMainSource,
-    state: &'a ZiskMainTraceState,
-    report: &'a GuestMachineReport,
-    effects: ZiskMainReportEffects<'a>,
-    base: Option<u64>,
-    ind_width: u64,
-    memory_access_index: usize,
-}
-
 #[derive(Debug, Clone, Copy)]
 struct ZiskMainSourceValueResult {
     value: u64,
@@ -6305,16 +6293,16 @@ fn apply_zisk_main_lowered_report_row(
     }
     let source_values_started = detail_duration_started(&timing, detail_timing);
     let source_a_value_started = detail_duration_started(&timing, detail_timing);
-    let a_value = zisk_main_source_value(ZiskMainSourceValueRequest {
-        row: output_row,
-        source: instruction.a,
+    let a_value = zisk_main_source_value(
+        output_row,
+        instruction.a,
         state,
         report,
-        effects: lowered_row.effects,
-        base: None,
-        ind_width: 0,
-        memory_access_index: 0,
-    })?;
+        lowered_row.effects,
+        None,
+        0,
+        0,
+    )?;
     let a = a_value.value;
     record_trace_report_source_value_duration(
         source_a_value_started,
@@ -6325,16 +6313,16 @@ fn apply_zisk_main_lowered_report_row(
     );
     let source_b_value_started = detail_duration_started(&timing, detail_timing);
     let b_memory_access_index = a_value.memory_access_count;
-    let b_value = zisk_main_source_value(ZiskMainSourceValueRequest {
-        row: output_row,
-        source: instruction.b,
+    let b_value = zisk_main_source_value(
+        output_row,
+        instruction.b,
         state,
         report,
-        effects: lowered_row.effects,
-        base: Some(a),
-        ind_width: instruction.ind_width,
-        memory_access_index: b_memory_access_index,
-    })?;
+        lowered_row.effects,
+        Some(a),
+        instruction.ind_width,
+        b_memory_access_index,
+    )?;
     let b = b_value.value;
     record_trace_report_source_value_duration(
         source_b_value_started,
@@ -8495,19 +8483,17 @@ fn validate_zisk_main_memory_columns(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn zisk_main_source_value(
-    request: ZiskMainSourceValueRequest<'_>,
+    row: usize,
+    source: ZiskMainSource,
+    state: &ZiskMainTraceState,
+    report: &GuestMachineReport,
+    effects: ZiskMainReportEffects<'_>,
+    base: Option<u64>,
+    ind_width: u64,
+    memory_access_index: usize,
 ) -> Result<ZiskMainSourceValueResult, GuestPcTraceBackendError> {
-    let ZiskMainSourceValueRequest {
-        row,
-        source,
-        state,
-        report,
-        effects,
-        base,
-        ind_width,
-        memory_access_index,
-    } = request;
     match source {
         ZiskMainSource::LastC => Ok(ZiskMainSourceValueResult {
             value: state.last_c,
