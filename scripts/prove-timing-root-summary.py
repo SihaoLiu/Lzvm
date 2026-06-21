@@ -115,6 +115,8 @@ TRACE_REPORT_CHUNK_REPORTS_KEY = "timing_guest_trace_report_chunk_reports"
 TRACE_REPORT_CHUNK_ROWS_KEY = "timing_guest_trace_report_chunk_rows"
 TRACE_REPORT_CHUNK_MAX_QUEUED_KEY = "timing_guest_trace_report_chunk_max_queued"
 TRACE_REPORT_VALIDATION_MS_KEY = "timing_guest_trace_report_validation_ms"
+TRACE_REPORT_APPLY_MS_KEY = "timing_guest_trace_report_apply_ms"
+TRACE_UNIT_SUMMARY_MS_KEY = "timing_guest_trace_unit_summary_ms"
 TRACE_REPORT_LOWERING_MS_KEY = "timing_guest_trace_report_lowering_ms"
 TRACE_REPORT_ROW_VALIDATION_MS_KEY = "timing_guest_trace_report_row_validation_ms"
 TRACE_REPORT_MEMORY_COLUMNS_MS_KEY = "timing_guest_trace_report_memory_columns_ms"
@@ -664,7 +666,8 @@ NSYS_CPU_MEMCPY_ACTION_HINT_BLOCK = "cpu_trace_memcpy_action_hints"
 HEADER = (
     "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,"
     "constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
-    "runner_ms,lowerer_ms,trace_lower_ms,trace_report_ms,trace_non_report_ms,"
+    "runner_ms,lowerer_ms,trace_lower_ms,trace_report_ms,"
+    "trace_report_apply_ms,trace_unit_summary_ms,trace_non_report_ms,"
     "trace_runner_lowerer_overlap_ms,trace_lowerer_non_lower_ms,"
     "stream_elapsed_ms,stream_worker_ms,"
     "segment_commit_ms,segment_commit_initial_workers,"
@@ -970,6 +973,8 @@ TIMING_KEYS = {
     TRACE_REPORT_CHUNK_ROWS_KEY,
     TRACE_REPORT_CHUNK_MAX_QUEUED_KEY,
     TRACE_REPORT_VALIDATION_MS_KEY,
+    TRACE_REPORT_APPLY_MS_KEY,
+    TRACE_UNIT_SUMMARY_MS_KEY,
     TRACE_REPORT_LOWERING_MS_KEY,
     TRACE_REPORT_ROW_VALIDATION_MS_KEY,
     TRACE_REPORT_MEMORY_COLUMNS_MS_KEY,
@@ -3724,6 +3729,8 @@ def summarize_profile_values(
     )
     trace_shape_profile = trace_shape_profile_hint(trace_shape_hint)
     trace_report_validation_ms = values.get(TRACE_REPORT_VALIDATION_MS_KEY, 0)
+    trace_report_apply_ms = values.get(TRACE_REPORT_APPLY_MS_KEY, 0)
+    trace_unit_summary_ms = values.get(TRACE_UNIT_SUMMARY_MS_KEY, 0)
     trace_report_emit_ms = values.get(TRACE_REPORT_EMIT_MS_KEY, 0)
     trace_descriptor_ms = values.get(TRACE_DESCRIPTOR_MS_KEY, 0)
     trace_report_lowering_ms = values.get(TRACE_REPORT_LOWERING_MS_KEY, 0)
@@ -4635,7 +4642,8 @@ def summarize_profile_values(
         f"{label},{input_bytes},{total_ms},"
         f"{constant_material_elapsed_ms},{constant_material_join_wait_ms},"
         f"{constant_material_hint},{runner_ms},{lowerer_ms},"
-        f"{trace_lower_ms},{trace_report_ms},{trace_non_report_ms},"
+        f"{trace_lower_ms},{trace_report_ms},"
+        f"{trace_report_apply_ms},{trace_unit_summary_ms},{trace_non_report_ms},"
         f"{trace_runner_lowerer_overlap_ms},"
         f"{trace_lowerer_non_lower_ms},"
         f"{stream_elapsed_ms},{stream_worker_ms},{segment_commit_ms},"

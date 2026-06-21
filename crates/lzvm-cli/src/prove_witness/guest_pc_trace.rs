@@ -172,6 +172,14 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_report_validation_duration(),
     );
     timings.record(
+        "guest_trace_report_apply",
+        timing.guest_trace_report_apply_duration(),
+    );
+    timings.record(
+        "guest_trace_unit_summary",
+        timing.guest_trace_unit_summary_duration(),
+    );
+    timings.record(
         "guest_trace_single_row_report_lower",
         timing.guest_trace_single_row_report_duration(),
     );

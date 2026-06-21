@@ -45,6 +45,8 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
         "timing_guest_trace_parallel_lower_workers=8",
         "timing_guest_trace_parallel_lower_stream_chunks=491",
         "timing_guest_trace_parallel_lower_stream_chunk_process_ms=123",
+        "timing_guest_trace_report_apply_ms=111",
+        "timing_guest_trace_unit_summary_ms=12",
         "timing_guest_trace_parallel_lower_stream_chunk_dispatch_wait_ms=299",
         "timing_guest_trace_parallel_lower_result_receive_wait_ms=8701",
         "timing_guest_stage_tree_commit_root_count=23",
@@ -79,6 +81,24 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
         row.get(index).copied(),
         Some("123"),
         "stream chunk process timing should be surfaced in root summary"
+    );
+    let apply_index = headers
+        .iter()
+        .position(|header| *header == "trace_report_apply_ms")
+        .unwrap_or_else(|| panic!("missing report apply header: {headers:?}"));
+    assert_eq!(
+        row.get(apply_index).copied(),
+        Some("111"),
+        "report apply timing should be surfaced in root summary"
+    );
+    let summary_index = headers
+        .iter()
+        .position(|header| *header == "trace_unit_summary_ms")
+        .unwrap_or_else(|| panic!("missing unit summary header: {headers:?}"));
+    assert_eq!(
+        row.get(summary_index).copied(),
+        Some("12"),
+        "unit summary timing should be surfaced in root summary"
     );
 }
 
@@ -146,6 +166,8 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_parallel_lower_snapshot_replay_count",
         "timing_guest_trace_parallel_lower_snapshot_replay_ms",
         "timing_guest_trace_parallel_lower_report_elided_count",
+        "timing_guest_trace_report_apply_ms",
+        "timing_guest_trace_unit_summary_ms",
         "timing_guest_trace_parallel_lower_dispatch_wait_ms",
         "timing_guest_trace_parallel_lower_stream_chunk_process_ms",
         "timing_guest_trace_parallel_lower_result_receive_wait_ms",
@@ -1691,12 +1713,12 @@ fn prove_timing_root_summary_reports_trace_lower_work_and_wall_overlap() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "runner_ms,lowerer_ms,trace_lower_ms,trace_report_ms,trace_non_report_ms,trace_runner_lowerer_overlap_ms,trace_lowerer_non_lower_ms,stream_elapsed_ms"
+            "runner_ms,lowerer_ms,trace_lower_ms,trace_report_ms,trace_report_apply_ms,trace_unit_summary_ms,trace_non_report_ms,trace_runner_lowerer_overlap_ms,trace_lowerer_non_lower_ms,stream_elapsed_ms"
         ),
         "prove timing root summary should expose actual trace lower work and runner/lowerer wall overlap columns: stdout={stdout}"
     );
     assert!(
-        stdout.contains(",7800,7812,6200,6100,100,5700,1612,9912,"),
+        stdout.contains(",7800,7812,6200,6100,0,0,100,5700,1612,9912,"),
         "prove timing root summary should compute overlap and non-lowerer work from timing_guest_trace_lower_ms: stdout={stdout}"
     );
 }

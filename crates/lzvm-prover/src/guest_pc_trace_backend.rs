@@ -193,6 +193,8 @@ pub(crate) struct GuestPcTraceStreamTiming {
     lowerer_duration: Duration,
     trace_lower_duration: Duration,
     trace_report_duration: Duration,
+    trace_report_apply_duration: Duration,
+    trace_unit_summary_duration: Duration,
     trace_report_sample_duration: Duration,
     trace_single_row_report_duration: Duration,
     trace_multi_row_report_duration: Duration,
@@ -326,6 +328,8 @@ impl GuestPcTraceStreamTiming {
         self.lowerer_duration += other.lowerer_duration;
         self.trace_lower_duration += other.trace_lower_duration;
         self.trace_report_duration += other.trace_report_duration;
+        self.trace_report_apply_duration += other.trace_report_apply_duration;
+        self.trace_unit_summary_duration += other.trace_unit_summary_duration;
         self.trace_report_sample_duration += other.trace_report_sample_duration;
         self.trace_single_row_report_duration += other.trace_single_row_report_duration;
         self.trace_multi_row_report_duration += other.trace_multi_row_report_duration;
@@ -525,6 +529,14 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_duration(&self) -> Duration {
         self.trace_report_duration
+    }
+
+    pub fn trace_report_apply_duration(&self) -> Duration {
+        self.trace_report_apply_duration
+    }
+
+    pub fn trace_unit_summary_duration(&self) -> Duration {
+        self.trace_unit_summary_duration
     }
 
     pub fn trace_report_sample_duration(&self) -> Duration {
@@ -7418,6 +7430,10 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
             .map(|_| Instant::now());
         let descriptor_rows_before = self.device_trace_descriptors.descriptor_rows();
         let pending_report = self.state.pending_dma.is_some();
+        let report_apply_started = timing
+            .as_ref()
+            .filter(|_| timing_config.detail_timing)
+            .map(|_| Instant::now());
         let written_rows = validate_and_apply_zisk_main_report(
             self.output_row,
             report,
@@ -7451,7 +7467,17 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
                 }
             },
         )?;
+        if let (Some(timing), Some(started)) = (timing.as_deref_mut(), report_apply_started) {
+            timing.trace_report_apply_duration += started.elapsed();
+        }
+        let unit_summary_started = timing
+            .as_ref()
+            .filter(|_| timing_config.detail_timing)
+            .map(|_| Instant::now());
         self.unit_value_summary.push_report(report);
+        if let (Some(timing), Some(started)) = (timing.as_deref_mut(), unit_summary_started) {
+            timing.trace_unit_summary_duration += started.elapsed();
+        }
         if let Some(timing) = timing {
             timing.trace_report_count += 1;
             timing.trace_report_row_count += written_rows;
