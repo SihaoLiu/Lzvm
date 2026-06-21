@@ -3025,6 +3025,14 @@ def trace_report_exact_hotspot(values: dict[str, int]) -> tuple[str, float, str]
     report_ms = values.get(TRACE_REPORT_MS_KEY, 0)
     if report_ms <= 0:
         return ("none", 0.0, "none")
+    detail_samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
+    trace_reports = values.get(TRACE_REPORTS_KEY, 0)
+    if 0 < detail_samples < trace_reports:
+        return (
+            "none",
+            0.0,
+            trace_report_exact_action_hint("none", 0.0, True),
+        )
     hotspot_name = "none"
     hotspot_ms = 0
     for name, key in EXACT_REPORT_HOTSPOT_KEYS:

@@ -1747,6 +1747,89 @@ fn prove_timing_root_summary_reports_trace_report_exact_breakdown() {
 }
 
 #[test]
+fn prove_timing_root_summary_ignores_partial_sampled_exact_breakdown() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "input_bytes=12447640",
+        "timing_total_ms=62000",
+        "timing_guest_trace_lower_ms=45000",
+        "timing_guest_trace_report_ms=44850",
+        "timing_guest_trace_reports=500000000",
+        "timing_guest_trace_report_rows=500000000",
+        "timing_guest_trace_report_detail_samples=5000",
+        "timing_guest_trace_report_sampled_ns=7100000",
+        "timing_guest_trace_report_row_validation_sampled_ns=4300000",
+        "timing_guest_trace_report_source_values_sampled_ns=1600000",
+        "timing_guest_trace_report_source_a_value_sampled_ns=1",
+        "timing_guest_trace_report_source_b_value_sampled_ns=0",
+        "timing_guest_trace_report_row_validation_ms=4",
+        "timing_guest_trace_report_source_values_ms=1",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("trace_report_exact_hotspot"), "none");
+    assert_eq!(value("trace_report_exact_hotspot_pct"), "0.000");
+    assert_eq!(
+        value("trace_report_exact_action_hint"),
+        "use_sampled_detail_breakdown"
+    );
+    assert_eq!(value("trace_report_detail_hotspot"), "row_validation");
+    assert_eq!(
+        value("trace_report_detail_action_hint"),
+        "enable_shape_timing_for_row_validation_residual"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_classifies_trace_pipeline_action() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
