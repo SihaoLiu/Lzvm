@@ -204,11 +204,7 @@ fn run_prove_witness(
         .expect("stderr should be written");
     let output_text = assert_successful_proof(label, &output);
     if pipeline_enabled {
-        assert_timing_equals(&output_text, "timing_guest_trace_parallel_lower_workers", 2);
-        assert_timing_positive(
-            &output_text,
-            "timing_guest_trace_seed_direct_lift_successes",
-        );
+        assert_pipeline_timing_shape(&output_text);
     } else {
         assert_timing_equals(&output_text, "timing_guest_trace_parallel_lower_workers", 0);
     }
@@ -310,6 +306,20 @@ fn clear_pipeline_env_removes_current_replay_controls() {
     }
 }
 
+#[test]
+fn pipeline_timing_shape_requires_seed_ready_non_replay_lowering() {
+    let output = [
+        "timing_guest_trace_parallel_lower_workers=2",
+        "timing_guest_trace_seed_direct_lift_successes=22",
+        "timing_guest_trace_seed_full_advances=1",
+        "timing_guest_trace_parallel_lower_snapshot_replay_count=0",
+        "timing_guest_trace_parallel_lower_report_elided_count=0",
+    ]
+    .join("\n");
+
+    assert_pipeline_timing_shape(&output);
+}
+
 fn assert_env_removed(command: &Command, name: &str) {
     let state = command
         .get_envs()
@@ -348,6 +358,22 @@ fn assert_timing_equals(output: &str, key: &str, expected: u64) {
 fn assert_timing_positive(output: &str, key: &str) {
     let actual = timing_value(output, key);
     assert!(actual > 0, "{key} should be positive, got {actual}");
+}
+
+fn assert_pipeline_timing_shape(output: &str) {
+    assert_timing_equals(output, "timing_guest_trace_parallel_lower_workers", 2);
+    assert_timing_positive(output, "timing_guest_trace_seed_direct_lift_successes");
+    assert_timing_equals(output, "timing_guest_trace_seed_full_advances", 1);
+    assert_timing_equals(
+        output,
+        "timing_guest_trace_parallel_lower_snapshot_replay_count",
+        0,
+    );
+    assert_timing_equals(
+        output,
+        "timing_guest_trace_parallel_lower_report_elided_count",
+        0,
+    );
 }
 
 fn timing_value(output: &str, key: &str) -> u64 {
