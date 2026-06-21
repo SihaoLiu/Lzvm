@@ -1782,6 +1782,19 @@ def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
         and parallel_lower_replay_duplicate_work_from_values(values)
     ):
         return "avoid_replay_only_parallel_lower"
+    stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
+    seed_attempts = values.get(SEED_DIRECT_LIFT_ATTEMPTS_KEY, 0)
+    if (
+        values.get(TOTAL_MS_KEY, 0) > PROOF_TARGET_MS
+        and values.get(PARALLEL_LOWER_WORKERS_KEY, 0) > 1
+        and values.get(TRACE_REPORT_STORAGE_BYTES_KEY, 0) == 0
+        and stream_elapsed_ms > 0
+        and values.get(PARALLEL_LOWER_RESULT_RECEIVE_WAIT_MS_KEY, 0)
+        >= stream_elapsed_ms * 0.5
+        and seed_attempts > 0
+        and values.get(SEED_DIRECT_LIFT_SUCCESSES_KEY, 0) >= seed_attempts
+    ):
+        return "parallel_lower_result_bound_after_seed_ready"
     if (
         values.get(TOTAL_MS_KEY, 0) > PROOF_TARGET_MS
         and values.get(TRACE_REPORT_CHUNK_SENT_KEY, 0) > 0
