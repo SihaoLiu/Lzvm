@@ -2348,7 +2348,10 @@ def performance_focus_hint(
         "segment_commit_candidate",
         "trace_queue_backpressure_candidate",
     }
-    if trace_pipeline_hint == "avoid_segment_commit_worker_oom_fallback":
+    if trace_pipeline_hint in {
+        "avoid_segment_commit_worker_oom_fallback",
+        "avoid_replay_only_parallel_lower",
+    }:
         return trace_pipeline_hint
     if (
         trace_pipeline_hint

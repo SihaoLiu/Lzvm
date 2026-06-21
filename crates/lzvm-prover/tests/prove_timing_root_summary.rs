@@ -4409,6 +4409,15 @@ fn prove_timing_root_summary_reports_replay_duplicate_work() {
         "timing_guest_stage_tree_commit_root_count=120",
         "timing_guest_stage_tree_commit_root_materialization_groups=120",
         "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_finish_witness_opening_query_unit_count=120",
+        "timing_finish_witness_opening_single_query_unit_count=120",
+        "timing_finish_witness_opening_retained_parent_checkpoint_openings=79",
+        "timing_finish_witness_opening_retained_parent_checkpoint_rows=79",
+        "timing_finish_witness_opening_retained_parent_checkpoint_all_single_row_openings=1",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_launches=79",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches=790",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_ms=3",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms=11",
     ]
     .join("\n");
 
@@ -4462,6 +4471,14 @@ fn prove_timing_root_summary_reports_replay_duplicate_work() {
     );
     assert_eq!(
         value("trace_pipeline_action_hint"),
+        "avoid_replay_only_parallel_lower"
+    );
+    assert_eq!(
+        value("opening_retained_parent_checkpoint_action_hint"),
+        "retained_parent_checkpoint_path_time_secondary"
+    );
+    assert_eq!(
+        value("performance_focus_hint"),
         "avoid_replay_only_parallel_lower"
     );
 }
