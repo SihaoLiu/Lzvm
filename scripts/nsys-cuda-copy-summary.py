@@ -1226,7 +1226,7 @@ def print_callchain_hint(conn: sqlite3.Connection) -> None:
     if missing_calls:
         print(
             f"{missing_calls},{ms(missing_host_ns):.3f},"
-            "--trace=cuda,nvtx,osrt --sample=cpu --cpuctxsw=process-tree "
+            "--trace=cuda,nvtx,osrt --sample=process-tree "
             "--cudabacktrace=memory:80000"
         )
     else:
