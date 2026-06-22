@@ -3332,6 +3332,41 @@ fn live_report_chunk_finish_emits_amo_boundary_without_returning_last_report() {
 }
 
 #[test]
+fn runner_boundary_snapshot_does_not_route_amo_report_after_scratch_snapshot() {
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Add,
+            width: RiscvAmoWidth::Doubleword,
+            rd: 1,
+            rs1: 1,
+            rs2: 2,
+            acquire: false,
+            release: false,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: vec![GuestRegisterWrite {
+            index: 1,
+            value: 0x1234_5678_9abc_def0,
+        }]
+        .into(),
+        memory_accesses: vec![
+            memory_read(0x1000, 0x1234_5678_9abc_def0),
+            memory_write(0x1000, 0x1234_5678_9abc_f000),
+        ]
+        .into(),
+        precompile_effects: None,
+    };
+    let shape = guest_machine_report_shape_from_report(&report);
+
+    assert!(
+        zisk_main_runner_boundary_report_for_shape(Some(&report), Some(shape)).is_none(),
+        "AMO scratch should be captured before the boundary update instead of routing the full report through the boundary"
+    );
+}
+
+#[test]
 fn direct_seed_lift_classifies_empty_segment_miss() {
     let miss = direct_zisk_main_segment_boundary_c(&[], None, &ZiskMainSegmentSeed::new(), None)
         .expect("direct boundary classification should evaluate")

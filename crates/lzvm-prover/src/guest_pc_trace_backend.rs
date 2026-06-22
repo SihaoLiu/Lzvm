@@ -3367,6 +3367,9 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
         }
         trace_rows = next_trace_rows;
         last_report_shape = Some(advanced.shape);
+        if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
+            record_zisk_main_runner_amo_scratch_snapshot(snapshot, &advanced.report)?;
+        }
         if let Some(previous) = pending_report.replace(advanced.report) {
             emit_report(previous)?;
         }
@@ -3863,12 +3866,13 @@ fn run_guest_pc_trace_segment_slice_inner<
         }
         trace_rows = next_trace_rows;
         last_report_shape = Some(advanced.shape);
+        if TRACK_BOUNDARY {
+            if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
+                record_zisk_main_runner_amo_scratch_snapshot(snapshot, &advanced.report)?;
+            }
+        }
         if RETAIN_REPORTS {
             reports.push(advanced.report);
-        } else if TRACK_BOUNDARY
-            && zisk_main_runner_boundary_snapshot_requires_report(advanced.shape)
-        {
-            last_report = Some(advanced.report);
         } else {
             last_report = None;
         }
@@ -7387,16 +7391,12 @@ fn record_zisk_main_runner_boundary_snapshot(
     }
 }
 
-fn zisk_main_runner_boundary_snapshot_requires_report(shape: GuestMachineReportShape) -> bool {
-    matches!(shape.instruction, RiscvInstruction::Amo { .. })
-}
-
 fn zisk_main_runner_boundary_report_for_shape(
     report: Option<&GuestMachineReport>,
     shape: Option<GuestMachineReportShape>,
 ) -> Option<&GuestMachineReport> {
     match shape {
-        Some(shape) if !zisk_main_runner_boundary_snapshot_requires_report(shape) => None,
+        Some(_) => None,
         _ => report,
     }
 }
@@ -9744,6 +9744,26 @@ fn record_zisk_main_runner_scratch_update(
     report: &GuestMachineReport,
     next_instruction: Option<RiscvInstruction>,
 ) -> Result<(), GuestPcTraceBackendError> {
+    record_zisk_main_amo_scratch_update(internal_memory, report)?;
+    record_zisk_main_runner_scratch_update_from_shape(
+        internal_memory,
+        registers,
+        report.instruction,
+        next_instruction,
+    )
+}
+
+fn record_zisk_main_runner_amo_scratch_snapshot(
+    snapshot: &mut ZiskMainRunnerBoundarySnapshot,
+    report: &GuestMachineReport,
+) -> Result<(), GuestPcTraceBackendError> {
+    record_zisk_main_amo_scratch_update(&mut snapshot.internal_memory, report)
+}
+
+fn record_zisk_main_amo_scratch_update(
+    internal_memory: &mut ZiskMainInternalMemory,
+    report: &GuestMachineReport,
+) -> Result<(), GuestPcTraceBackendError> {
     if let RiscvInstruction::Amo {
         kind: RiscvAmoKind::Add,
         width,
@@ -9779,12 +9799,7 @@ fn record_zisk_main_runner_scratch_update(
         }
     }
 
-    record_zisk_main_runner_scratch_update_from_shape(
-        internal_memory,
-        registers,
-        report.instruction,
-        next_instruction,
-    )
+    Ok(())
 }
 
 fn record_zisk_main_runner_scratch_update_from_shape(
