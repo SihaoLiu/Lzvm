@@ -1264,7 +1264,7 @@ fn live_report_chunk_runner_matches_serial_slice_without_returning_reports() {
     assert_eq!(live.trace_rows, serial.trace_rows);
     assert_eq!(live.status, serial.status);
     assert_eq!(live.report_count, serial.report_count);
-    assert_eq!(live.last_report, serial.last_report);
+    assert_eq!(live.last_report, None);
     assert_eq!(live.reports, Vec::new());
     assert_eq!(live.report_capacity, 0);
     assert_eq!(live_reports, serial.reports);
@@ -1508,7 +1508,10 @@ fn live_pending_segment_boundary_snapshot_lifts_next_seed_without_retained_repor
         Some(GuestPcTracePendingSegmentMessage::ReportChunk(_))
     ));
     assert_eq!(emitted.report_count, expected.report_count);
-    assert_eq!(emitted.last_report.as_ref(), expected.reports.last());
+    assert!(
+        emitted.last_report.is_none(),
+        "live boundary seed lift should use the last report shape instead of retaining the full report for ALU segments"
+    );
     assert_eq!(
         emitted.lookahead_instruction,
         expected.lookahead_instruction

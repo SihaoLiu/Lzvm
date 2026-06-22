@@ -3285,10 +3285,18 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
             .map_err(GuestMachineRunError::from)
             .map_err(GuestPcTraceBackendError::GuestRun)?;
         let current = prepared.instruction();
-        if let (Some(snapshot), Some(report)) =
-            (boundary_snapshot.as_deref_mut(), pending_report.as_ref())
-        {
-            snapshot.record_report(report, Some(current), state.registers())?;
+        if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
+            let boundary_report = zisk_main_runner_boundary_report_for_shape(
+                pending_report.as_ref(),
+                last_report_shape,
+            );
+            record_zisk_main_runner_boundary_snapshot(
+                snapshot,
+                boundary_report,
+                last_report_shape,
+                Some(current),
+                state.registers(),
+            )?;
         }
         if current == RiscvInstruction::Ecall {
             return finish_guest_pc_trace_live_report_chunk_segment_slice(
@@ -3374,10 +3382,18 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 .map_err(GuestMachineRunError::from)
                 .map_err(GuestPcTraceBackendError::GuestRun)?;
             let lookahead_instruction = (current != RiscvInstruction::Ecall).then_some(current);
-            if let (Some(snapshot), Some(report)) =
-                (boundary_snapshot.as_deref_mut(), pending_report.as_ref())
-            {
-                snapshot.record_report(report, lookahead_instruction, state.registers())?;
+            if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
+                let boundary_report = zisk_main_runner_boundary_report_for_shape(
+                    pending_report.as_ref(),
+                    last_report_shape,
+                );
+                record_zisk_main_runner_boundary_snapshot(
+                    snapshot,
+                    boundary_report,
+                    last_report_shape,
+                    lookahead_instruction,
+                    state.registers(),
+                )?;
             }
             let status = if current == RiscvInstruction::Ecall {
                 GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall { address: pc })
@@ -3412,9 +3428,11 @@ fn finish_guest_pc_trace_live_report_chunk_segment_slice(
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     let last_report = match pending_report {
         Some(report) => {
-            let last_report = report.clone();
+            let last_report = last_report_shape.and_then(|shape| {
+                zisk_main_runner_boundary_snapshot_requires_report(shape).then(|| report.clone())
+            });
             emit_report(report)?;
-            Some(last_report)
+            last_report
         }
         None => None,
     };
@@ -7368,6 +7386,16 @@ fn record_zisk_main_runner_boundary_snapshot(
 
 fn zisk_main_runner_boundary_snapshot_requires_report(shape: GuestMachineReportShape) -> bool {
     matches!(shape.instruction, RiscvInstruction::Amo { .. })
+}
+
+fn zisk_main_runner_boundary_report_for_shape(
+    report: Option<&GuestMachineReport>,
+    shape: Option<GuestMachineReportShape>,
+) -> Option<&GuestMachineReport> {
+    match shape {
+        Some(shape) if !zisk_main_runner_boundary_snapshot_requires_report(shape) => None,
+        _ => report,
+    }
 }
 
 #[derive(Clone, Copy)]

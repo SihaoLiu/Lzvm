@@ -5675,7 +5675,8 @@ fn guest_pc_trace_runner_seed_snapshot_tracks_boundary_inside_runner_slice() {
         "fn zisk_main_instruction_max_rows",
     );
     assert!(
-        runner_body.contains("record_report"),
+        runner_body.contains("record_zisk_main_runner_boundary_snapshot")
+            && runner_body.contains("last_report_shape"),
         "runner boundary snapshots should be updated while guest reports are produced"
     );
 }
