@@ -721,6 +721,8 @@ HEADER = (
     "parallel_lower_report_elided_count,"
     "parallel_lower_stream_segments,parallel_lower_stream_chunks,"
     "parallel_lower_stream_fallbacks,parallel_lower_stream_retained_reports,"
+    "parallel_lower_stream_chunks_per_segment,"
+    "parallel_lower_stream_reports_per_chunk,parallel_lower_stream_shape_hint,"
     "parallel_lower_dispatch_wait_ms,"
     "parallel_lower_stream_start_dispatch_wait_ms,"
     "parallel_lower_stream_chunk_dispatch_wait_ms,"
@@ -1904,6 +1906,26 @@ def parallel_lower_live_stream_segment_serial_bound_from_values(
         and result_send_wait_ms <= max(1, stream_elapsed_ms * 0.05)
         and job_receive_wait_ms >= stream_elapsed_ms * 0.5
     )
+
+
+def parallel_lower_stream_shape_hint(
+    stream_segments: int,
+    stream_chunks: int,
+    stream_fallbacks: int,
+    stream_retained_reports: int,
+) -> str:
+    if stream_segments <= 0 and stream_chunks <= 0:
+        return "none"
+    if stream_chunks > 0 and stream_segments <= 0:
+        return "missing_stream_segment_counts"
+    chunks_per_segment = stream_chunks / stream_segments if stream_segments else 0.0
+    if chunks_per_segment >= 128.0:
+        return "many_chunks_per_segment"
+    if stream_fallbacks > 0:
+        return "stream_fallbacks_present"
+    if stream_retained_reports > 0:
+        return "stream_retained_reports_present"
+    return "balanced_stream_chunks"
 
 
 def segment_commit_worker_pressure_hint(
@@ -4354,6 +4376,22 @@ def summarize_profile_values(
     trace_report_chunk_reports = values.get(TRACE_REPORT_CHUNK_REPORTS_KEY, 0)
     trace_report_chunk_rows = values.get(TRACE_REPORT_CHUNK_ROWS_KEY, 0)
     trace_report_chunk_max_queued = values.get(TRACE_REPORT_CHUNK_MAX_QUEUED_KEY, 0)
+    parallel_lower_stream_chunks_per_segment = (
+        parallel_lower_stream_chunks / parallel_lower_stream_segments
+        if parallel_lower_stream_segments
+        else 0.0
+    )
+    parallel_lower_stream_reports_per_chunk = (
+        trace_report_chunk_reports / parallel_lower_stream_chunks
+        if parallel_lower_stream_chunks
+        else 0.0
+    )
+    parallel_lower_stream_shape = parallel_lower_stream_shape_hint(
+        parallel_lower_stream_segments,
+        parallel_lower_stream_chunks,
+        parallel_lower_stream_fallbacks,
+        parallel_lower_stream_retained_reports,
+    )
     trace_report_buffer_excess_pct = (
         trace_report_buffer_excess_capacity * 100.0 / trace_report_buffer_capacity
         if trace_report_buffer_capacity
@@ -4984,6 +5022,9 @@ def summarize_profile_values(
         f"{parallel_lower_report_elided},"
         f"{parallel_lower_stream_segments},{parallel_lower_stream_chunks},"
         f"{parallel_lower_stream_fallbacks},{parallel_lower_stream_retained_reports},"
+        f"{parallel_lower_stream_chunks_per_segment:.3f},"
+        f"{parallel_lower_stream_reports_per_chunk:.3f},"
+        f"{parallel_lower_stream_shape},"
         f"{parallel_lower_dispatch_wait_ms},"
         f"{parallel_lower_stream_start_dispatch_wait_ms},"
         f"{parallel_lower_stream_chunk_dispatch_wait_ms},"

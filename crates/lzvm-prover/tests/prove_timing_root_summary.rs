@@ -43,13 +43,14 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
         "timing_guest_trace_stream_elapsed_ms=9000",
         "timing_guest_trace_stream_ms=8800",
         "timing_guest_trace_parallel_lower_workers=8",
-        "timing_guest_trace_parallel_lower_stream_segments=22",
-        "timing_guest_trace_parallel_lower_stream_chunks=491",
+        "timing_guest_trace_parallel_lower_stream_segments=4",
+        "timing_guest_trace_parallel_lower_stream_chunks=512",
         "timing_guest_trace_parallel_lower_stream_fallbacks=1",
         "timing_guest_trace_parallel_lower_stream_retained_reports=7",
         "timing_guest_trace_parallel_lower_stream_chunk_process_ms=123",
         "timing_guest_trace_parallel_lower_job_receive_wait_ms=456",
         "timing_guest_trace_parallel_lower_result_send_wait_ms=789",
+        "timing_guest_trace_report_chunk_reports=2097152",
         "timing_guest_trace_report_apply_ms=111",
         "timing_guest_trace_unit_summary_ms=12",
         "timing_guest_trace_parallel_lower_stream_chunk_dispatch_wait_ms=299",
@@ -93,7 +94,7 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
         .unwrap_or_else(|| panic!("missing stream segment count header: {headers:?}"));
     assert_eq!(
         row.get(stream_segment_index).copied(),
-        Some("22"),
+        Some("4"),
         "stream segment count should be surfaced in root summary"
     );
     let stream_chunk_index = headers
@@ -102,8 +103,35 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
         .unwrap_or_else(|| panic!("missing stream chunk count header: {headers:?}"));
     assert_eq!(
         row.get(stream_chunk_index).copied(),
-        Some("491"),
+        Some("512"),
         "stream chunk count should be surfaced in root summary"
+    );
+    let chunks_per_segment_index = headers
+        .iter()
+        .position(|header| *header == "parallel_lower_stream_chunks_per_segment")
+        .unwrap_or_else(|| panic!("missing stream chunks-per-segment header: {headers:?}"));
+    assert_eq!(
+        row.get(chunks_per_segment_index).copied(),
+        Some("128.000"),
+        "stream chunks per segment should be surfaced in root summary"
+    );
+    let reports_per_chunk_index = headers
+        .iter()
+        .position(|header| *header == "parallel_lower_stream_reports_per_chunk")
+        .unwrap_or_else(|| panic!("missing stream reports-per-chunk header: {headers:?}"));
+    assert_eq!(
+        row.get(reports_per_chunk_index).copied(),
+        Some("4096.000"),
+        "stream reports per chunk should be surfaced in root summary"
+    );
+    let stream_shape_index = headers
+        .iter()
+        .position(|header| *header == "parallel_lower_stream_shape_hint")
+        .unwrap_or_else(|| panic!("missing stream shape hint header: {headers:?}"));
+    assert_eq!(
+        row.get(stream_shape_index).copied(),
+        Some("many_chunks_per_segment"),
+        "stream shape hint should identify segment-internal chunk serialization pressure"
     );
     let stream_fallback_index = headers
         .iter()
@@ -229,6 +257,9 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_parallel_lower_stream_chunks",
         "timing_guest_trace_parallel_lower_stream_fallbacks",
         "timing_guest_trace_parallel_lower_stream_retained_reports",
+        "parallel_lower_stream_chunks_per_segment",
+        "parallel_lower_stream_reports_per_chunk",
+        "parallel_lower_stream_shape_hint",
         "timing_guest_trace_report_apply_ms",
         "timing_guest_trace_unit_summary_ms",
         "timing_guest_trace_parallel_lower_dispatch_wait_ms",
