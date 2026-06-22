@@ -2645,6 +2645,7 @@ def performance_focus_hint(
     seed_full_advances: int,
     cpu_report_storage_hint: str,
     cpu_lowerer_hint: str,
+    cpu_lowerer_detail_driven: bool = False,
 ) -> str:
     trace_pipeline_hints = {
         "trace_generation_and_commit_pipeline_candidate",
@@ -2680,7 +2681,10 @@ def performance_focus_hint(
         "source_value_candidate",
         "descriptor_append_candidate",
         "visit_profile_candidate",
-    }:
+    } and (
+        cpu_lowerer_detail_driven
+        or seed_direct_lift_action_hint != "profile_runner_seed_snapshot"
+    ):
         return cpu_lowerer_hint
     if (
         trace_pipeline_hint
@@ -4754,6 +4758,7 @@ def summarize_profile_values(
         seed_full_advances,
         cpu_report_storage_hint,
         lowerer_hint,
+        trace_report_detail_action != "none",
     )
     opening_source_row_value_hint = opening_source_row_value_action_hint(
         total_ms,
