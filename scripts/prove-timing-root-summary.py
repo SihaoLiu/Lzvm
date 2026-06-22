@@ -82,6 +82,18 @@ PARALLEL_LOWER_SNAPSHOT_REPLAY_MS_KEY = (
 PARALLEL_LOWER_REPORT_ELIDED_KEY = (
     "timing_guest_trace_parallel_lower_report_elided_count"
 )
+PARALLEL_LOWER_STREAM_SEGMENTS_KEY = (
+    "timing_guest_trace_parallel_lower_stream_segments"
+)
+PARALLEL_LOWER_STREAM_CHUNKS_KEY = (
+    "timing_guest_trace_parallel_lower_stream_chunks"
+)
+PARALLEL_LOWER_STREAM_FALLBACKS_KEY = (
+    "timing_guest_trace_parallel_lower_stream_fallbacks"
+)
+PARALLEL_LOWER_STREAM_RETAINED_REPORTS_KEY = (
+    "timing_guest_trace_parallel_lower_stream_retained_reports"
+)
 PARALLEL_LOWER_DISPATCH_WAIT_MS_KEY = (
     "timing_guest_trace_parallel_lower_dispatch_wait_ms"
 )
@@ -706,7 +718,10 @@ HEADER = (
     "parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,"
     "parallel_lower_max_reorder,parallel_lower_snapshot_replay_count,"
     "parallel_lower_snapshot_replay_ms,"
-    "parallel_lower_report_elided_count,parallel_lower_dispatch_wait_ms,"
+    "parallel_lower_report_elided_count,"
+    "parallel_lower_stream_segments,parallel_lower_stream_chunks,"
+    "parallel_lower_stream_fallbacks,parallel_lower_stream_retained_reports,"
+    "parallel_lower_dispatch_wait_ms,"
     "parallel_lower_stream_start_dispatch_wait_ms,"
     "parallel_lower_stream_chunk_dispatch_wait_ms,"
     "parallel_lower_stream_chunk_process_ms,"
@@ -988,6 +1003,10 @@ TIMING_KEYS = {
     PARALLEL_LOWER_SNAPSHOT_REPLAY_KEY,
     PARALLEL_LOWER_SNAPSHOT_REPLAY_MS_KEY,
     PARALLEL_LOWER_REPORT_ELIDED_KEY,
+    PARALLEL_LOWER_STREAM_SEGMENTS_KEY,
+    PARALLEL_LOWER_STREAM_CHUNKS_KEY,
+    PARALLEL_LOWER_STREAM_FALLBACKS_KEY,
+    PARALLEL_LOWER_STREAM_RETAINED_REPORTS_KEY,
     PARALLEL_LOWER_DISPATCH_WAIT_MS_KEY,
     PARALLEL_LOWER_STREAM_START_DISPATCH_WAIT_MS_KEY,
     PARALLEL_LOWER_STREAM_CHUNK_DISPATCH_WAIT_MS_KEY,
@@ -3784,6 +3803,16 @@ def summarize_profile_values(
         PARALLEL_LOWER_SNAPSHOT_REPLAY_MS_KEY, 0
     )
     parallel_lower_report_elided = values.get(PARALLEL_LOWER_REPORT_ELIDED_KEY, 0)
+    parallel_lower_stream_segments = values.get(
+        PARALLEL_LOWER_STREAM_SEGMENTS_KEY, 0
+    )
+    parallel_lower_stream_chunks = values.get(PARALLEL_LOWER_STREAM_CHUNKS_KEY, 0)
+    parallel_lower_stream_fallbacks = values.get(
+        PARALLEL_LOWER_STREAM_FALLBACKS_KEY, 0
+    )
+    parallel_lower_stream_retained_reports = values.get(
+        PARALLEL_LOWER_STREAM_RETAINED_REPORTS_KEY, 0
+    )
     parallel_lower_dispatch_wait_ms = values.get(PARALLEL_LOWER_DISPATCH_WAIT_MS_KEY, 0)
     parallel_lower_stream_start_dispatch_wait_ms = values.get(
         PARALLEL_LOWER_STREAM_START_DISPATCH_WAIT_MS_KEY, 0
@@ -4952,7 +4981,10 @@ def summarize_profile_values(
         f"{parallel_lower_received},{parallel_lower_emitted},"
         f"{parallel_lower_max_reorder},{parallel_lower_snapshot_replay},"
         f"{parallel_lower_snapshot_replay_ms},"
-        f"{parallel_lower_report_elided},{parallel_lower_dispatch_wait_ms},"
+        f"{parallel_lower_report_elided},"
+        f"{parallel_lower_stream_segments},{parallel_lower_stream_chunks},"
+        f"{parallel_lower_stream_fallbacks},{parallel_lower_stream_retained_reports},"
+        f"{parallel_lower_dispatch_wait_ms},"
         f"{parallel_lower_stream_start_dispatch_wait_ms},"
         f"{parallel_lower_stream_chunk_dispatch_wait_ms},"
         f"{parallel_lower_stream_chunk_process_ms},"

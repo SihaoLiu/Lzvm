@@ -43,7 +43,10 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
         "timing_guest_trace_stream_elapsed_ms=9000",
         "timing_guest_trace_stream_ms=8800",
         "timing_guest_trace_parallel_lower_workers=8",
+        "timing_guest_trace_parallel_lower_stream_segments=22",
         "timing_guest_trace_parallel_lower_stream_chunks=491",
+        "timing_guest_trace_parallel_lower_stream_fallbacks=1",
+        "timing_guest_trace_parallel_lower_stream_retained_reports=7",
         "timing_guest_trace_parallel_lower_stream_chunk_process_ms=123",
         "timing_guest_trace_parallel_lower_job_receive_wait_ms=456",
         "timing_guest_trace_parallel_lower_result_send_wait_ms=789",
@@ -83,6 +86,42 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
         row.get(index).copied(),
         Some("123"),
         "stream chunk process timing should be surfaced in root summary"
+    );
+    let stream_segment_index = headers
+        .iter()
+        .position(|header| *header == "parallel_lower_stream_segments")
+        .unwrap_or_else(|| panic!("missing stream segment count header: {headers:?}"));
+    assert_eq!(
+        row.get(stream_segment_index).copied(),
+        Some("22"),
+        "stream segment count should be surfaced in root summary"
+    );
+    let stream_chunk_index = headers
+        .iter()
+        .position(|header| *header == "parallel_lower_stream_chunks")
+        .unwrap_or_else(|| panic!("missing stream chunk count header: {headers:?}"));
+    assert_eq!(
+        row.get(stream_chunk_index).copied(),
+        Some("491"),
+        "stream chunk count should be surfaced in root summary"
+    );
+    let stream_fallback_index = headers
+        .iter()
+        .position(|header| *header == "parallel_lower_stream_fallbacks")
+        .unwrap_or_else(|| panic!("missing stream fallback count header: {headers:?}"));
+    assert_eq!(
+        row.get(stream_fallback_index).copied(),
+        Some("1"),
+        "stream fallback count should be surfaced in root summary"
+    );
+    let stream_retained_index = headers
+        .iter()
+        .position(|header| *header == "parallel_lower_stream_retained_reports")
+        .unwrap_or_else(|| panic!("missing stream retained report count header: {headers:?}"));
+    assert_eq!(
+        row.get(stream_retained_index).copied(),
+        Some("7"),
+        "stream retained report count should be surfaced in root summary"
     );
     let receive_wait_index = headers
         .iter()
@@ -186,6 +225,10 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_parallel_lower_snapshot_replay_count",
         "timing_guest_trace_parallel_lower_snapshot_replay_ms",
         "timing_guest_trace_parallel_lower_report_elided_count",
+        "timing_guest_trace_parallel_lower_stream_segments",
+        "timing_guest_trace_parallel_lower_stream_chunks",
+        "timing_guest_trace_parallel_lower_stream_fallbacks",
+        "timing_guest_trace_parallel_lower_stream_retained_reports",
         "timing_guest_trace_report_apply_ms",
         "timing_guest_trace_unit_summary_ms",
         "timing_guest_trace_parallel_lower_dispatch_wait_ms",
