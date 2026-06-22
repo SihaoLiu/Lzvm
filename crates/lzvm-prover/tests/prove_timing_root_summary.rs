@@ -314,6 +314,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "descriptor_shape_hint",
         "timing_guest_trace_seed_direct_lift_attempts",
         "timing_guest_trace_seed_direct_lift_successes",
+        "seed_snapshot_runtime_hint",
         "timing_guest_trace_seed_full_advances",
         "timing_finish_witness_opening_ms",
         "timing_finish_witness_opening_query_unit_count",
@@ -6581,6 +6582,10 @@ fn prove_timing_root_summary_prioritizes_seed_ready_trace_pipeline() {
     assert_eq!(
         value("performance_focus_hint"),
         "seed_ready_parallel_segment_reexecution_candidate"
+    );
+    assert_eq!(
+        value("seed_snapshot_runtime_hint"),
+        "trusted_seed_snapshot_seed_only_probe"
     );
 }
 

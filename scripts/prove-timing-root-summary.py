@@ -779,6 +779,7 @@ HEADER = (
     "seed_direct_lift_store_conditional_boundaries,"
     "seed_direct_lift_dma_prepare_missing_lookaheads,"
     "seed_direct_lift_boundary_c_unavailable,seed_full_advances,"
+    "seed_snapshot_runtime_hint,"
     "finish_opening_ms,opening_query_units,opening_single_query_units,"
     "opening_queries,opening_max_queries_per_unit,opening_stage_count,"
     "opening_source_shape_hint,"
@@ -2782,6 +2783,20 @@ def performance_focus_hint(
     return "none"
 
 
+def seed_snapshot_runtime_hint(
+    seed_direct_lift_action_hint: str,
+    seed_full_advances: int,
+    parallel_lower_workers: int,
+) -> str:
+    if (
+        seed_direct_lift_action_hint == "seed_direct_lift_ready"
+        and seed_full_advances <= 1
+        and parallel_lower_workers <= 0
+    ):
+        return "trusted_seed_snapshot_seed_only_probe"
+    return "none"
+
+
 def opening_source_shape_hint(
     query_units: int,
     single_query_units: int,
@@ -4521,6 +4536,11 @@ def summarize_profile_values(
         trace_pipeline_hint,
     )
     seed_full_advances = values.get(SEED_FULL_ADVANCES_KEY, 0)
+    seed_snapshot_runtime = seed_snapshot_runtime_hint(
+        seed_direct_lift_action,
+        seed_full_advances,
+        parallel_lower_workers,
+    )
     finish_opening_ms = values.get(FINISH_OPENING_MS_KEY, 0)
     opening_queries = values.get(OPENING_QUERY_COUNT_KEY, 0)
     opening_query_units = values.get(OPENING_QUERY_UNITS_KEY, 0)
@@ -5088,6 +5108,7 @@ def summarize_profile_values(
         f"{seed_direct_lift_store_conditional_boundaries},"
         f"{seed_direct_lift_dma_prepare_missing_lookaheads},"
         f"{seed_direct_lift_boundary_c_unavailable},{seed_full_advances},"
+        f"{seed_snapshot_runtime},"
         f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
         f"{opening_queries},{opening_max_queries_per_unit},{opening_stage_count},"
         f"{opening_source_hint},"
