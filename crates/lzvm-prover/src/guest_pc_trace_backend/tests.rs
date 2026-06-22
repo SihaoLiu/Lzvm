@@ -1188,7 +1188,6 @@ fn elided_runner_seed_snapshot_does_not_retain_alu_last_report() {
         ZiskMainRunnerBoundarySeedInput {
             reports: &[],
             report_count: slice.report_count,
-            last_report: None,
             last_report_shape: slice.last_report_shape,
             lookahead_instruction: expected.lookahead_instruction,
             runner_state: &state,
@@ -1579,7 +1578,6 @@ fn live_pending_segment_boundary_snapshot_lifts_next_seed_without_retained_repor
         ZiskMainRunnerBoundarySeedInput {
             reports: &[],
             report_count: emitted.report_count,
-            last_report: None,
             last_report_shape: emitted.last_report_shape,
             lookahead_instruction: emitted.lookahead_instruction,
             runner_state: &live_state,
@@ -3069,7 +3067,6 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_store_boundary_without_re
         ZiskMainRunnerBoundarySeedInput {
             reports: &[],
             report_count: 1,
-            last_report: None,
             last_report_shape: Some(GuestMachineReportShape {
                 instruction: RiscvInstruction::Store {
                     kind: RiscvStoreKind::Sb,
@@ -3118,7 +3115,6 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_register_boundary_without
         ZiskMainRunnerBoundarySeedInput {
             reports: &[],
             report_count: 1,
-            last_report: None,
             last_report_shape: Some(GuestMachineReportShape {
                 instruction: RiscvInstruction::OpImm {
                     kind: RiscvOpImmKind::Addi,
@@ -3164,7 +3160,6 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_pending_dma_without_retai
         ZiskMainRunnerBoundarySeedInput {
             reports: &[],
             report_count: 1,
-            last_report: None,
             last_report_shape: Some(GuestMachineReportShape {
                 instruction: RiscvInstruction::ZiskDmaPrepare {
                     kind: RiscvDmaKind::Memcpy,
@@ -3221,7 +3216,6 @@ fn runner_boundary_seed_snapshot_uses_snapshot_for_amo_boundary_without_retained
         ZiskMainRunnerBoundarySeedInput {
             reports: &[],
             report_count: 1,
-            last_report: None,
             last_report_shape: Some(GuestMachineReportShape {
                 instruction: RiscvInstruction::Amo {
                     kind: RiscvAmoKind::Add,

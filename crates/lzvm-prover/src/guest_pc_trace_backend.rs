@@ -4630,7 +4630,6 @@ fn produce_guest_pc_trace_live_pending_messages(
                     ZiskMainRunnerBoundarySeedInput {
                         reports: &[],
                         report_count: emitted.report_count,
-                        last_report: None,
                         last_report_shape: emitted.last_report_shape,
                         lookahead_instruction: emitted.lookahead_instruction,
                         runner_state: &state,
@@ -4738,7 +4737,6 @@ fn produce_guest_pc_trace_live_pending_messages(
                         ZiskMainRunnerBoundarySeedInput {
                             reports: &[],
                             report_count: emitted.report_count,
-                            last_report: None,
                             last_report_shape: emitted.last_report_shape,
                             lookahead_instruction: emitted.lookahead_instruction,
                             runner_state: &state,
@@ -4954,7 +4952,6 @@ fn produce_guest_pc_trace_pending_slices(
                     ZiskMainRunnerBoundarySeedInput {
                         reports: &slice.reports,
                         report_count: slice.report_count,
-                        last_report: None,
                         last_report_shape: slice.last_report_shape,
                         lookahead_instruction,
                         runner_state: &state,
@@ -5055,7 +5052,6 @@ fn produce_guest_pc_trace_pending_slices(
                         ZiskMainRunnerBoundarySeedInput {
                             reports: &slice.reports,
                             report_count: slice.report_count,
-                            last_report: None,
                             last_report_shape: slice.last_report_shape,
                             lookahead_instruction,
                             runner_state: &state,
@@ -7363,7 +7359,6 @@ fn zisk_main_runner_boundary_report_for_shape(
 struct ZiskMainRunnerBoundarySeedInput<'a> {
     reports: &'a [GuestMachineReport],
     report_count: usize,
-    last_report: Option<&'a GuestMachineReport>,
     last_report_shape: Option<GuestMachineReportShape>,
     lookahead_instruction: Option<RiscvInstruction>,
     runner_state: &'a GuestMachineState,
@@ -7383,7 +7378,6 @@ impl<'a> ZiskMainRunnerBoundarySeedInput<'a> {
         Self {
             reports,
             report_count: reports.len(),
-            last_report: reports.last(),
             last_report_shape: reports.last().map(guest_machine_report_shape_from_report),
             lookahead_instruction,
             runner_state,
@@ -7397,14 +7391,13 @@ impl<'a> ZiskMainRunnerBoundarySeedInput<'a> {
     }
 
     fn last_report(self) -> Option<&'a GuestMachineReport> {
-        self.reports.last().or(self.last_report)
+        self.reports.last()
     }
 
     fn last_report_shape(self) -> Option<GuestMachineReportShape> {
         self.reports
             .last()
             .map(guest_machine_report_shape_from_report)
-            .or_else(|| self.last_report.map(guest_machine_report_shape_from_report))
             .or(self.last_report_shape)
     }
 }

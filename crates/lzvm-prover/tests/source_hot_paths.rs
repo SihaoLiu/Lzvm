@@ -8599,6 +8599,23 @@ fn guest_pc_trace_segments_report_buffer_capacity_shape() {
             && !run_slice_body.contains("last_report.as_ref()"),
         "runner slices should not keep a separate full-report tail after boundary snapshots capture scratch state"
     );
+    let seed_input_fields = function_body(
+        &source,
+        "struct ZiskMainRunnerBoundarySeedInput",
+        "impl<'a> ZiskMainRunnerBoundarySeedInput<'a>",
+    );
+    let seed_input_impl = function_body(
+        &source,
+        "impl<'a> ZiskMainRunnerBoundarySeedInput<'a>",
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq)]",
+    );
+    assert!(
+        !seed_input_fields.contains("last_report: Option<&'a GuestMachineReport>")
+            && !seed_input_impl.contains("self.last_report)")
+            && !seed_input_impl.contains("self.last_report.map")
+            && !seed_input_impl.contains("self.last_report.or"),
+        "runner boundary seed input should derive full-report access from retained reports only"
+    );
     let produce_body = function_body(
         &source,
         "fn produce_guest_pc_trace_pending_slices",
