@@ -1427,6 +1427,7 @@ fn live_pending_segment_boundary_snapshot_lifts_next_seed_without_retained_repor
             reports: &[],
             report_count: emitted.report_count,
             last_report: emitted.last_report.as_ref(),
+            last_report_shape: emitted.last_report_shape,
             lookahead_instruction: emitted.lookahead_instruction,
             runner_state: &live_state,
             current_seed: &current_seed,
@@ -2890,6 +2891,54 @@ fn runner_boundary_seed_snapshot_uses_runner_registers_for_narrow_store() {
     assert_eq!(lifted.previous_c, 0x1234_5678_9abc_def0);
     assert_eq!(lifted.initial_state.last_c, 0x1234_5678_9abc_def0);
     assert_eq!(lifted.initial_state.registers[12], 0x1234_5678_9abc_def0);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_report_shape_for_pending_dma_without_retained_report() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let runner_state = GuestMachineState::new(0x8000_0004);
+    let boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+
+    let lifted = lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        1,
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 1,
+            last_report: None,
+            last_report_shape: Some(GuestMachineReportShape {
+                instruction: RiscvInstruction::ZiskDmaPrepare {
+                    kind: RiscvDmaKind::Memcpy,
+                    rs1: 5,
+                },
+                has_memory_write: false,
+            }),
+            lookahead_instruction: Some(RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 0,
+                rs1: 0,
+                immediate: 0,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+        0x1234,
+    )
+    .expect("shape-only pending DMA seed lift should succeed");
+
+    assert_eq!(
+        lifted.initial_state.pending_dma,
+        Some(ZiskMainPendingDma {
+            kind: RiscvDmaKind::Memcpy,
+            first_arg_reg: 5,
+        })
+    );
 }
 
 #[test]

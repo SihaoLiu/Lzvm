@@ -1358,6 +1358,7 @@ struct GuestPcTraceSegmentSlice {
     report_count: usize,
     report_capacity: usize,
     last_report: Option<GuestMachineReport>,
+    last_report_shape: Option<GuestMachineReportShape>,
     reports: Vec<GuestMachineReport>,
 }
 
@@ -3274,6 +3275,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
     mut emit_report: impl FnMut(GuestMachineReport) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     let mut pending_report = None;
+    let mut last_report_shape = None;
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
@@ -3296,6 +3298,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 executed_instructions,
                 trace_rows,
                 GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall { address: pc }),
+                last_report_shape,
             );
         }
         if executed_instructions == instruction_limit {
@@ -3309,6 +3312,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                     pc,
                     instruction: current,
                 },
+                last_report_shape,
             );
         }
         let max_rows = zisk_main_instruction_max_rows(current);
@@ -3333,6 +3337,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                     pc,
                     instruction: current,
                 },
+                last_report_shape,
             );
         }
         let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
@@ -3353,6 +3358,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
             });
         }
         trace_rows = next_trace_rows;
+        last_report_shape = Some(advanced.shape);
         if let Some(previous) = pending_report.replace(advanced.report) {
             emit_report(previous)?;
         }
@@ -3388,6 +3394,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 executed_instructions,
                 trace_rows,
                 status,
+                last_report_shape,
             );
         }
     }
@@ -3401,6 +3408,7 @@ fn finish_guest_pc_trace_live_report_chunk_segment_slice(
     executed_instructions: u64,
     trace_rows: usize,
     status: GuestMachineTraceSliceStatus,
+    last_report_shape: Option<GuestMachineReportShape>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     let last_report = match pending_report {
         Some(report) => {
@@ -3417,6 +3425,7 @@ fn finish_guest_pc_trace_live_report_chunk_segment_slice(
         report_count,
         report_capacity: 0,
         last_report,
+        last_report_shape,
         reports: Vec::new(),
     })
 }
@@ -3449,6 +3458,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
     let timing_config = ZiskMainTraceLowerTimingConfig::from_env();
     let mut reports = Vec::new();
     let mut pending_report = None;
+    let mut last_report_shape = None;
     let mut next_report_index = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
@@ -3471,6 +3481,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
                 GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall { address: pc }),
                 pc,
                 None,
+                last_report_shape,
             )
             .map(Some);
         }
@@ -3489,6 +3500,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
                 },
                 pc,
                 Some(current),
+                last_report_shape,
             )
             .map(Some);
         }
@@ -3518,6 +3530,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
                 },
                 pc,
                 Some(current),
+                last_report_shape,
             )
             .map(Some);
         }
@@ -3539,6 +3552,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
             });
         }
         trace_rows = next_trace_rows;
+        last_report_shape = Some(advanced.shape);
         push_guest_pc_trace_streaming_device_report(
             &mut builder,
             &mut reports,
@@ -3573,6 +3587,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
                 status,
                 pc,
                 lookahead_instruction,
+                last_report_shape,
             )
             .map(Some);
         }
@@ -3623,6 +3638,7 @@ fn finish_guest_pc_trace_streaming_device_segment(
     status: GuestMachineTraceSliceStatus,
     terminal_pc: u64,
     lookahead_instruction: Option<RiscvInstruction>,
+    last_report_shape: Option<GuestMachineReportShape>,
 ) -> Result<GuestPcTraceRunnerStreamingSegment, GuestPcTraceBackendError> {
     if let Some(pending) = pending_report.take() {
         builder.push_report_at(
@@ -3655,6 +3671,7 @@ fn finish_guest_pc_trace_streaming_device_segment(
             report_count,
             report_capacity,
             last_report,
+            last_report_shape,
             reports,
         },
         terminal_pc,
@@ -3664,15 +3681,30 @@ fn finish_guest_pc_trace_streaming_device_segment(
     })
 }
 
-fn finish_guest_pc_trace_segment_slice(
+struct GuestPcTraceSegmentSliceFinish {
     reports: Vec<GuestMachineReport>,
     last_report: Option<GuestMachineReport>,
+    last_report_shape: Option<GuestMachineReportShape>,
     report_count: usize,
     retain_reports: bool,
     executed_instructions: u64,
     trace_rows: usize,
     status: GuestMachineTraceSliceStatus,
+}
+
+fn finish_guest_pc_trace_segment_slice(
+    finish: GuestPcTraceSegmentSliceFinish,
 ) -> GuestPcTraceSegmentSlice {
+    let GuestPcTraceSegmentSliceFinish {
+        reports,
+        last_report,
+        last_report_shape,
+        report_count,
+        retain_reports,
+        executed_instructions,
+        trace_rows,
+        status,
+    } = finish;
     let last_report = if retain_reports {
         reports.last().cloned()
     } else {
@@ -3689,6 +3721,7 @@ fn finish_guest_pc_trace_segment_slice(
             0
         },
         last_report,
+        last_report_shape,
         reports,
     }
 }
@@ -3706,6 +3739,7 @@ fn run_guest_pc_trace_segment_slice_inner<
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     let mut reports = Vec::new();
     let mut last_report = None;
+    let mut last_report_shape = None;
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
@@ -3729,26 +3763,34 @@ fn run_guest_pc_trace_segment_slice_inner<
         }
         if current == RiscvInstruction::Ecall {
             return Ok(finish_guest_pc_trace_segment_slice(
-                reports,
-                last_report,
-                report_count,
-                RETAIN_REPORTS,
-                executed_instructions,
-                trace_rows,
-                GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall { address: pc }),
+                GuestPcTraceSegmentSliceFinish {
+                    reports,
+                    last_report,
+                    last_report_shape,
+                    report_count,
+                    retain_reports: RETAIN_REPORTS,
+                    executed_instructions,
+                    trace_rows,
+                    status: GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall {
+                        address: pc,
+                    }),
+                },
             ));
         }
         if executed_instructions == instruction_limit {
             return Ok(finish_guest_pc_trace_segment_slice(
-                reports,
-                last_report,
-                report_count,
-                RETAIN_REPORTS,
-                executed_instructions,
-                trace_rows,
-                GuestMachineTraceSliceStatus::Paused {
-                    pc,
-                    instruction: current,
+                GuestPcTraceSegmentSliceFinish {
+                    reports,
+                    last_report,
+                    last_report_shape,
+                    report_count,
+                    retain_reports: RETAIN_REPORTS,
+                    executed_instructions,
+                    trace_rows,
+                    status: GuestMachineTraceSliceStatus::Paused {
+                        pc,
+                        instruction: current,
+                    },
                 },
             ));
         }
@@ -3765,15 +3807,18 @@ fn run_guest_pc_trace_segment_slice_inner<
         })?;
         if trace_rows != 0 && required_rows > row_limit {
             return Ok(finish_guest_pc_trace_segment_slice(
-                reports,
-                last_report,
-                report_count,
-                RETAIN_REPORTS,
-                executed_instructions,
-                trace_rows,
-                GuestMachineTraceSliceStatus::Paused {
-                    pc,
-                    instruction: current,
+                GuestPcTraceSegmentSliceFinish {
+                    reports,
+                    last_report,
+                    last_report_shape,
+                    report_count,
+                    retain_reports: RETAIN_REPORTS,
+                    executed_instructions,
+                    trace_rows,
+                    status: GuestMachineTraceSliceStatus::Paused {
+                        pc,
+                        instruction: current,
+                    },
                 },
             ));
         }
@@ -3795,6 +3840,7 @@ fn run_guest_pc_trace_segment_slice_inner<
             });
         }
         trace_rows = next_trace_rows;
+        last_report_shape = Some(advanced.shape);
         if RETAIN_REPORTS {
             reports.push(advanced.report);
         } else {
@@ -3833,13 +3879,16 @@ fn run_guest_pc_trace_segment_slice_inner<
                 }
             };
             return Ok(finish_guest_pc_trace_segment_slice(
-                reports,
-                last_report,
-                report_count,
-                RETAIN_REPORTS,
-                executed_instructions,
-                trace_rows,
-                status,
+                GuestPcTraceSegmentSliceFinish {
+                    reports,
+                    last_report,
+                    last_report_shape,
+                    report_count,
+                    retain_reports: RETAIN_REPORTS,
+                    executed_instructions,
+                    trace_rows,
+                    status,
+                },
             ));
         }
     }
@@ -3883,6 +3932,16 @@ fn zisk_main_report_row_count_from_report_shape(
             Ok(if rd == 0 { 1 } else { 2 })
         }
         _ => Ok(1),
+    }
+}
+
+fn guest_machine_report_shape_from_report(report: &GuestMachineReport) -> GuestMachineReportShape {
+    GuestMachineReportShape {
+        instruction: report.instruction,
+        has_memory_write: report
+            .memory_accesses
+            .iter()
+            .any(|access| access.kind == GuestMemoryAccessKind::Write),
     }
 }
 
@@ -4300,6 +4359,7 @@ struct GuestPcTraceLivePendingSegmentEmission {
     status: GuestMachineTraceSliceStatus,
     #[allow(dead_code)]
     last_report: Option<GuestMachineReport>,
+    last_report_shape: Option<GuestMachineReportShape>,
     #[allow(dead_code)]
     lookahead_instruction: Option<RiscvInstruction>,
     terminal_pc: u64,
@@ -4427,6 +4487,7 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
         report_chunk_count,
         status,
         last_report: slice.last_report,
+        last_report_shape: slice.last_report_shape,
         lookahead_instruction,
         terminal_pc,
         is_last_segment,
@@ -4575,6 +4636,7 @@ fn produce_guest_pc_trace_live_pending_messages(
                         reports: &[],
                         report_count: emitted.report_count,
                         last_report: emitted.last_report.as_ref(),
+                        last_report_shape: emitted.last_report_shape,
                         lookahead_instruction: emitted.lookahead_instruction,
                         runner_state: &state,
                         current_seed,
@@ -4682,6 +4744,7 @@ fn produce_guest_pc_trace_live_pending_messages(
                             reports: &[],
                             report_count: emitted.report_count,
                             last_report: emitted.last_report.as_ref(),
+                            last_report_shape: emitted.last_report_shape,
                             lookahead_instruction: emitted.lookahead_instruction,
                             runner_state: &state,
                             current_seed,
@@ -4897,6 +4960,7 @@ fn produce_guest_pc_trace_pending_slices(
                         reports: &slice.reports,
                         report_count: slice.report_count,
                         last_report: slice.last_report.as_ref(),
+                        last_report_shape: slice.last_report_shape,
                         lookahead_instruction,
                         runner_state: &state,
                         current_seed,
@@ -4997,6 +5061,7 @@ fn produce_guest_pc_trace_pending_slices(
                             reports: &slice.reports,
                             report_count: slice.report_count,
                             last_report: slice.last_report.as_ref(),
+                            last_report_shape: slice.last_report_shape,
                             lookahead_instruction,
                             runner_state: &state,
                             current_seed,
@@ -7264,6 +7329,7 @@ struct ZiskMainRunnerBoundarySeedInput<'a> {
     reports: &'a [GuestMachineReport],
     report_count: usize,
     last_report: Option<&'a GuestMachineReport>,
+    last_report_shape: Option<GuestMachineReportShape>,
     lookahead_instruction: Option<RiscvInstruction>,
     runner_state: &'a GuestMachineState,
     current_seed: &'a ZiskMainSegmentSeed,
@@ -7283,6 +7349,7 @@ impl<'a> ZiskMainRunnerBoundarySeedInput<'a> {
             reports,
             report_count: reports.len(),
             last_report: reports.last(),
+            last_report_shape: reports.last().map(guest_machine_report_shape_from_report),
             lookahead_instruction,
             runner_state,
             current_seed,
@@ -7296,6 +7363,14 @@ impl<'a> ZiskMainRunnerBoundarySeedInput<'a> {
 
     fn last_report(self) -> Option<&'a GuestMachineReport> {
         self.reports.last().or(self.last_report)
+    }
+
+    fn last_report_shape(self) -> Option<GuestMachineReportShape> {
+        self.reports
+            .last()
+            .map(guest_machine_report_shape_from_report)
+            .or_else(|| self.last_report.map(guest_machine_report_shape_from_report))
+            .or(self.last_report_shape)
     }
 }
 
@@ -8950,7 +9025,19 @@ fn guest_report_next_instruction(
 }
 
 fn zisk_main_pending_dma(report: &GuestMachineReport) -> Option<ZiskMainPendingDma> {
-    match report.instruction {
+    zisk_main_pending_dma_from_instruction(report.instruction)
+}
+
+fn zisk_main_pending_dma_from_report_shape(
+    shape: GuestMachineReportShape,
+) -> Option<ZiskMainPendingDma> {
+    zisk_main_pending_dma_from_instruction(shape.instruction)
+}
+
+fn zisk_main_pending_dma_from_instruction(
+    instruction: RiscvInstruction,
+) -> Option<ZiskMainPendingDma> {
+    match instruction {
         RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Some(ZiskMainPendingDma {
             kind,
             first_arg_reg: rs1,
@@ -9551,7 +9638,9 @@ fn lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
             registers: *input.runner_state.registers(),
             internal_memory: input.boundary_snapshot.internal_memory,
             register_mem_steps,
-            pending_dma: input.last_report().and_then(zisk_main_pending_dma),
+            pending_dma: input
+                .last_report_shape()
+                .and_then(zisk_main_pending_dma_from_report_shape),
             last_c: next_previous_c,
             next_pc: input.runner_state.pc(),
         },
