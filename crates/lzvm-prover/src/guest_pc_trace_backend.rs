@@ -7859,7 +7859,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
         let pending_report = self.state.pending_dma.is_some();
         let report_apply_started = timing
             .as_ref()
-            .filter(|_| timing_config.detail_timing)
+            .filter(|_| report_detail_timing)
             .map(|_| Instant::now());
         let written_rows = validate_and_apply_zisk_main_report(
             self.output_row,
@@ -7899,7 +7899,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
         }
         let unit_summary_started = timing
             .as_ref()
-            .filter(|_| timing_config.detail_timing)
+            .filter(|_| report_detail_timing)
             .map(|_| Instant::now());
         self.unit_value_summary.push_report(report);
         if let (Some(timing), Some(started)) = (timing.as_deref_mut(), unit_summary_started) {

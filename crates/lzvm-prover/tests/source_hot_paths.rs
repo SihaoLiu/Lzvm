@@ -6857,6 +6857,11 @@ fn guest_pc_trace_lower_records_aggregate_report_timing_alongside_detail_timers(
     let push_report_body = function_body(&backend_source, "fn push_report_at", "fn finish");
     let device_material_combined =
         format!("{device_material_body}\n{timing_config_body}\n{push_report_body}");
+    assert!(
+        push_report_body.matches(".filter(|_| report_detail_timing)").count() >= 3
+            && !push_report_body.contains(".filter(|_| timing_config.detail_timing)"),
+        "guest PC streaming device-material detail timing should not start per-report timers for unsampled reports"
+    );
 
     for (label, body) in [
         ("device material", device_material_combined.as_str()),
