@@ -1193,49 +1193,31 @@ fn read_guest_load(
 ) -> Result<GuestLoadResult, GuestMachineError> {
     let (byte_len, memory_value, register_value) = match kind {
         RiscvLoadKind::Lb => {
-            let mut bytes = [0_u8; 1];
-            memory.read_range_into(address, &mut bytes)?;
-            (1, u64::from(bytes[0]), i64::from(bytes[0] as i8) as u64)
+            let value = memory.read_u64_le(address, 1)?;
+            (1, value, i64::from(value as u8 as i8) as u64)
         }
         RiscvLoadKind::Lh => {
-            let mut bytes = [0_u8; 2];
-            memory.read_range_into(address, &mut bytes)?;
-            (
-                2,
-                u64::from(u16::from_le_bytes(bytes)),
-                i64::from(i16::from_le_bytes(bytes)) as u64,
-            )
+            let value = memory.read_u64_le(address, 2)?;
+            (2, value, i64::from(value as u16 as i16) as u64)
         }
         RiscvLoadKind::Lw => {
-            let mut bytes = [0_u8; 4];
-            memory.read_range_into(address, &mut bytes)?;
-            (
-                4,
-                u64::from(u32::from_le_bytes(bytes)),
-                i64::from(i32::from_le_bytes(bytes)) as u64,
-            )
+            let value = memory.read_u64_le(address, 4)?;
+            (4, value, i64::from(value as u32 as i32) as u64)
         }
         RiscvLoadKind::Ld => {
-            let mut bytes = [0_u8; 8];
-            memory.read_range_into(address, &mut bytes)?;
-            let value = u64::from_le_bytes(bytes);
+            let value = memory.read_u64_le(address, 8)?;
             (8, value, value)
         }
         RiscvLoadKind::Lbu => {
-            let mut bytes = [0_u8; 1];
-            memory.read_range_into(address, &mut bytes)?;
-            (1, u64::from(bytes[0]), u64::from(bytes[0]))
+            let value = memory.read_u64_le(address, 1)?;
+            (1, value, value)
         }
         RiscvLoadKind::Lhu => {
-            let mut bytes = [0_u8; 2];
-            memory.read_range_into(address, &mut bytes)?;
-            let value = u64::from(u16::from_le_bytes(bytes));
+            let value = memory.read_u64_le(address, 2)?;
             (2, value, value)
         }
         RiscvLoadKind::Lwu => {
-            let mut bytes = [0_u8; 4];
-            memory.read_range_into(address, &mut bytes)?;
-            let value = u64::from(u32::from_le_bytes(bytes));
+            let value = memory.read_u64_le(address, 4)?;
             (4, value, value)
         }
     };
@@ -1303,12 +1285,10 @@ fn validate_guest_amo_address(
     ensure_atomic_aligned(width, address)?;
     match width {
         RiscvAmoWidth::Word => {
-            let mut bytes = [0_u8; 4];
-            memory.read_range_into(address, &mut bytes)?;
+            memory.read_u64_le(address, 4)?;
         }
         RiscvAmoWidth::Doubleword => {
-            let mut bytes = [0_u8; 8];
-            memory.read_range_into(address, &mut bytes)?;
+            memory.read_u64_le(address, 8)?;
         }
     }
     Ok(())
@@ -1321,16 +1301,8 @@ fn read_guest_amo(
 ) -> Result<u64, GuestMachineError> {
     ensure_atomic_aligned(width, address)?;
     let value = match width {
-        RiscvAmoWidth::Word => {
-            let mut bytes = [0_u8; 4];
-            memory.read_range_into(address, &mut bytes)?;
-            u64::from(u32::from_le_bytes(bytes))
-        }
-        RiscvAmoWidth::Doubleword => {
-            let mut bytes = [0_u8; 8];
-            memory.read_range_into(address, &mut bytes)?;
-            u64::from_le_bytes(bytes)
-        }
+        RiscvAmoWidth::Word => memory.read_u64_le(address, 4)?,
+        RiscvAmoWidth::Doubleword => memory.read_u64_le(address, 8)?,
     };
     Ok(value)
 }

@@ -54,6 +54,24 @@ impl GuestMachineMemory {
         Err(GuestMemoryError::AddressNotMapped { address, byte_len })
     }
 
+    #[inline(always)]
+    pub(crate) fn read_u64_le(
+        &self,
+        address: u64,
+        byte_len: usize,
+    ) -> Result<u64, GuestMemoryError> {
+        if byte_len > 8 {
+            return Err(GuestMemoryError::AddressRangeOverflow { address, byte_len });
+        }
+        let end_address = checked_address_end(address, byte_len)?;
+        for segment in &self.segments {
+            if segment.contains_range(address, end_address)? {
+                return Ok(segment.read_u64_le(address, byte_len));
+            }
+        }
+        Err(GuestMemoryError::AddressNotMapped { address, byte_len })
+    }
+
     pub(crate) fn fetch_instruction(
         &self,
         address: u64,
@@ -313,6 +331,38 @@ impl GuestMachineMemorySegment {
         }
     }
 
+    #[inline(always)]
+    fn read_u64_le(&self, address: u64, byte_len: usize) -> u64 {
+        debug_assert!(byte_len <= 8);
+        let offset = address - self.virtual_address;
+        if let Some(bytes) = self.contiguous_initialized_or_overlay_bytes(offset, byte_len) {
+            return low_le_bytes_to_u64(bytes);
+        }
+
+        let mut bytes = [0_u8; 8];
+        self.read_range_into(address, &mut bytes[..byte_len]);
+        u64::from_le_bytes(bytes)
+    }
+
+    #[inline(always)]
+    fn contiguous_initialized_or_overlay_bytes(
+        &self,
+        offset: u64,
+        byte_len: usize,
+    ) -> Option<&[u8]> {
+        let block_index = offset / GUEST_MEMORY_OVERLAY_BLOCK_SIZE;
+        let block_offset = (offset % GUEST_MEMORY_OVERLAY_BLOCK_SIZE) as usize;
+        if block_offset.checked_add(byte_len)? > GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE {
+            return None;
+        }
+        if let Some(block) = self.written_blocks.get(&block_index) {
+            return Some(&block[block_offset..block_offset + byte_len]);
+        }
+        let start = usize::try_from(offset).ok()?;
+        let end = start.checked_add(byte_len)?;
+        self.initialized_bytes.get(start..end)
+    }
+
     fn read_halfword(&self, address: u64) -> u16 {
         let offset = address - self.virtual_address;
         u16::from_le_bytes([self.read_byte(offset), self.read_byte(offset + 1)])
@@ -394,6 +444,16 @@ fn read_unwritten_segment_range_into(initialized_bytes: &[u8], offset: u64, byte
     let start = usize::try_from(offset).expect("initialized offset fits usize");
     let copy_len = bytes.len().min(initialized_bytes.len() - start);
     bytes[..copy_len].copy_from_slice(&initialized_bytes[start..start + copy_len]);
+}
+
+#[inline(always)]
+fn low_le_bytes_to_u64(bytes: &[u8]) -> u64 {
+    debug_assert!(bytes.len() <= 8);
+    let mut value = 0_u64;
+    for (shift, byte) in bytes.iter().enumerate() {
+        value |= u64::from(*byte) << (shift * 8);
+    }
+    value
 }
 
 fn checked_address_end(address: u64, byte_len: usize) -> Result<u64, GuestMemoryError> {
@@ -553,6 +613,62 @@ mod tests {
             .expect("mixed read should succeed");
 
         assert_eq!(bytes, [1, 2, 3, 4, 5, 6, 7, 8, 80, 81, 82, 12]);
+    }
+
+    #[test]
+    fn small_le_reads_match_initialized_zero_and_overlay_bytes() {
+        let image = sample_guest_image_with_program_header(
+            &[10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+            0x1000,
+        );
+        let mut memory = GuestMachineMemory::from_image(&image);
+
+        assert_eq!(
+            memory
+                .read_u64_le(TEST_ENTRY + 2, 4)
+                .expect("initialized read should succeed"),
+            u64::from(u32::from_le_bytes([12, 13, 14, 15]))
+        );
+        assert_eq!(
+            memory
+                .read_u64_le(TEST_ENTRY + 10, 4)
+                .expect("zero tail read should succeed"),
+            u64::from(u32::from_le_bytes([20, 21, 0, 0]))
+        );
+
+        memory
+            .write_range(TEST_ENTRY + 6, &[90, 91, 92, 93])
+            .expect("overlay write should succeed");
+        assert_eq!(
+            memory
+                .read_u64_le(TEST_ENTRY + 6, 4)
+                .expect("overlay read should succeed"),
+            u64::from(u32::from_le_bytes([90, 91, 92, 93]))
+        );
+        assert_eq!(
+            memory
+                .read_u64_le(TEST_ENTRY + 4, 8)
+                .expect("mixed read should succeed"),
+            u64::from_le_bytes([14, 15, 90, 91, 92, 93, 20, 21])
+        );
+    }
+
+    #[test]
+    fn small_le_reads_reject_widths_larger_than_u64() {
+        let image = sample_guest_image_with_program_header(&[1, 2, 3, 4], 0x1000);
+        let memory = GuestMachineMemory::from_image(&image);
+
+        let err = memory
+            .read_u64_le(TEST_ENTRY, 9)
+            .expect_err("oversized little-endian read should fail");
+
+        assert_eq!(
+            err,
+            GuestMemoryError::AddressRangeOverflow {
+                address: TEST_ENTRY,
+                byte_len: 9
+            }
+        );
     }
 
     #[test]
