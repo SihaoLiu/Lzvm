@@ -822,6 +822,14 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_segment_replay_count(),
     );
     timings.record_count(
+        "guest_trace_segment_replay_snapshot_capture_count",
+        timing.guest_trace_segment_replay_snapshot_capture_count(),
+    );
+    timings.record(
+        "guest_trace_segment_replay_snapshot_capture",
+        timing.guest_trace_segment_replay_snapshot_capture_duration(),
+    );
+    timings.record_count(
         "guest_trace_parallel_lower_workers",
         timing.guest_trace_parallel_lower_worker_count(),
     );

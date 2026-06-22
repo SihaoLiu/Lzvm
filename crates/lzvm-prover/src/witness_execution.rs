@@ -474,6 +474,8 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_copy_source_memory_read_count: usize,
     guest_trace_copy_source_indirect_read_count: usize,
     guest_trace_segment_replay_count: usize,
+    guest_trace_segment_replay_snapshot_capture_count: usize,
+    guest_trace_segment_replay_snapshot_capture_duration: Duration,
     guest_trace_seed_direct_lift_duration: Duration,
     guest_trace_seed_full_advance_duration: Duration,
     guest_trace_pending_send_wait_duration: Duration,
@@ -807,6 +809,10 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_copy_source_indirect_read_count: stream_timing
                 .trace_copy_source_indirect_read_count(),
             guest_trace_segment_replay_count: stream_timing.segment_replay_count(),
+            guest_trace_segment_replay_snapshot_capture_count: stream_timing
+                .segment_replay_snapshot_capture_count(),
+            guest_trace_segment_replay_snapshot_capture_duration: stream_timing
+                .segment_replay_snapshot_capture_duration(),
             guest_trace_seed_direct_lift_duration: stream_timing.seed_direct_lift_duration(),
             guest_trace_seed_full_advance_duration: stream_timing.seed_full_advance_duration(),
             guest_trace_pending_send_wait_duration: stream_timing.pending_send_wait_duration(),
@@ -1470,6 +1476,14 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_segment_replay_count(&self) -> usize {
         self.guest_trace_segment_replay_count
+    }
+
+    pub fn guest_trace_segment_replay_snapshot_capture_count(&self) -> usize {
+        self.guest_trace_segment_replay_snapshot_capture_count
+    }
+
+    pub fn guest_trace_segment_replay_snapshot_capture_duration(&self) -> Duration {
+        self.guest_trace_segment_replay_snapshot_capture_duration
     }
 
     pub fn guest_trace_seed_direct_lift_attempt_count(&self) -> usize {

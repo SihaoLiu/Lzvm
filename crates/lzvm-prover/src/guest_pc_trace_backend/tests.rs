@@ -1099,6 +1099,11 @@ fn replay_only_runner_seed_snapshot_elides_runner_report_buffer() {
     assert!(pending
         .iter()
         .all(|segment| segment.replay_snapshot.is_some()));
+    assert_eq!(
+        produced.timing.segment_replay_snapshot_capture_count(),
+        pending.len()
+    );
+    assert!(produced.timing.segment_replay_snapshot_capture_duration() > std::time::Duration::ZERO);
     assert_eq!(produced.timing.trace_runner_report_buffer_capacity(), 0);
     assert!(produced.timing.seed_direct_lift_attempt_count() > 0);
     assert_eq!(

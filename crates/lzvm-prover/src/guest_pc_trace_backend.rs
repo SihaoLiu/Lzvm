@@ -237,6 +237,8 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_copy_source_memory_read_count: usize,
     trace_copy_source_indirect_read_count: usize,
     segment_replay_count: usize,
+    segment_replay_snapshot_capture_count: usize,
+    segment_replay_snapshot_capture_duration: Duration,
     seed_direct_lift_duration: Duration,
     seed_full_advance_duration: Duration,
     pending_send_wait_duration: Duration,
@@ -390,6 +392,9 @@ impl GuestPcTraceStreamTiming {
         self.trace_copy_source_memory_read_count += other.trace_copy_source_memory_read_count;
         self.trace_copy_source_indirect_read_count += other.trace_copy_source_indirect_read_count;
         self.segment_replay_count += other.segment_replay_count;
+        self.segment_replay_snapshot_capture_count += other.segment_replay_snapshot_capture_count;
+        self.segment_replay_snapshot_capture_duration +=
+            other.segment_replay_snapshot_capture_duration;
         self.seed_direct_lift_duration += other.seed_direct_lift_duration;
         self.seed_full_advance_duration += other.seed_full_advance_duration;
         self.pending_send_wait_duration += other.pending_send_wait_duration;
@@ -714,6 +719,14 @@ impl GuestPcTraceStreamTiming {
 
     pub fn segment_replay_count(&self) -> usize {
         self.segment_replay_count
+    }
+
+    pub fn segment_replay_snapshot_capture_count(&self) -> usize {
+        self.segment_replay_snapshot_capture_count
+    }
+
+    pub fn segment_replay_snapshot_capture_duration(&self) -> Duration {
+        self.segment_replay_snapshot_capture_duration
     }
 
     pub fn seed_direct_lift_duration(&self) -> Duration {
@@ -4819,8 +4832,18 @@ fn produce_guest_pc_trace_pending_slices(
         .then(ZiskMainSegmentSeed::new);
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
-        let replay_snapshot = (segment_replay || carry_replay_snapshot)
-            .then(|| GuestPcTraceSegmentReplaySnapshot::capture(&memory, &state, &fcall_handler));
+        let replay_snapshot = if segment_replay || carry_replay_snapshot {
+            let capture_started = Instant::now();
+            let snapshot =
+                GuestPcTraceSegmentReplaySnapshot::capture(&memory, &state, &fcall_handler);
+            timing.segment_replay_snapshot_capture_duration += capture_started.elapsed();
+            timing.segment_replay_snapshot_capture_count = timing
+                .segment_replay_snapshot_capture_count
+                .saturating_add(1);
+            Some(snapshot)
+        } else {
+            None
+        };
         let mut runner_boundary_snapshot = if runner_seed_snapshot {
             let seed = seed_mirror.as_ref().ok_or_else(|| {
                 GuestPcTraceBackendError::InvalidPcTraceLayout {
