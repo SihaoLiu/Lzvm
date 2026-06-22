@@ -2323,6 +2323,8 @@ def cpu_trace_lowerer_action_hint(
         PERF_APPEND_DESCRIPTOR_SELF_PCT_KEY, 0.0
     )
     source_value_pct = perf_hotspots.get(PERF_SOURCE_VALUE_SELF_PCT_KEY, 0.0)
+    if append_descriptor_pct >= 5.0 and lowered_report_row_pct < 10.0:
+        return "descriptor_append_candidate"
     if lowered_report_row_pct < 10.0:
         return "none"
     if (
@@ -2672,20 +2674,6 @@ def performance_focus_hint(
         "post_segment_report_chunk_split",
     }:
         return cpu_report_storage_hint
-    if trace_pipeline_hint in trace_pipeline_hints and cpu_lowerer_hint in {
-        "row_validation_residual_profile_candidate",
-        "row_validation_residual_timer_split_candidate",
-        "row_validation_profile_candidate",
-        "source_values_residual_profile_candidate",
-        "source_values_profile_candidate",
-        "source_value_candidate",
-        "descriptor_append_candidate",
-        "visit_profile_candidate",
-    } and (
-        cpu_lowerer_detail_driven
-        or seed_direct_lift_action_hint != "profile_runner_seed_snapshot"
-    ):
-        return cpu_lowerer_hint
     if (
         trace_pipeline_hint
         in {
@@ -2706,6 +2694,20 @@ def performance_focus_hint(
         and seed_full_advances <= 1
     ):
         return "seed_ready_parallel_segment_reexecution_candidate"
+    if trace_pipeline_hint in trace_pipeline_hints and cpu_lowerer_hint in {
+        "row_validation_residual_profile_candidate",
+        "row_validation_residual_timer_split_candidate",
+        "row_validation_profile_candidate",
+        "source_values_residual_profile_candidate",
+        "source_values_profile_candidate",
+        "source_value_candidate",
+        "descriptor_append_candidate",
+        "visit_profile_candidate",
+    } and (
+        cpu_lowerer_detail_driven
+        or seed_direct_lift_action_hint != "profile_runner_seed_snapshot"
+    ):
+        return cpu_lowerer_hint
     if (
         trace_pipeline_hint
         in {
