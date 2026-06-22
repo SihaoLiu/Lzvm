@@ -4097,12 +4097,14 @@ fn guest_pc_trace_report_chunks_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_REPORT_CHUNKS", false)
 }
 
+const DEFAULT_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY: usize = 65_536;
+
 fn guest_pc_trace_report_chunk_capacity() -> usize {
     std::env::var("LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(4096)
+        .unwrap_or(DEFAULT_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY)
 }
 
 fn spawn_guest_pc_trace_thread<'scope, 'env, F, T>(

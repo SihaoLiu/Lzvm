@@ -127,6 +127,22 @@ fn guest_trace_detail_timing_sample_stride_uses_positive_env_values() {
 }
 
 #[test]
+fn guest_pc_trace_report_chunk_capacity_defaults_to_large_batches() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _capacity_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY");
+
+    assert_eq!(guest_pc_trace_report_chunk_capacity(), 65_536);
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY", "1");
+    assert_eq!(guest_pc_trace_report_chunk_capacity(), 1);
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY", "0");
+    assert_eq!(guest_pc_trace_report_chunk_capacity(), 65_536);
+}
+
+#[test]
 fn trace_shape_run_counts_track_consecutive_row_classes() {
     let mut timing = GuestPcTraceStreamTiming::default();
     let external = zisk_main_base_instruction(

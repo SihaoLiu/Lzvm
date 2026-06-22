@@ -356,7 +356,7 @@ fn live_report_chunks_mode_sets_live_chunk_env_without_seed_or_parallel_lower() 
     );
 
     assert_command_env_equals(&command, LIVE_REPORT_CHUNKS_ENV, "1");
-    assert_command_env_equals(&command, REPORT_CHUNK_CAPACITY_ENV, "4096");
+    assert_env_removed(&command, REPORT_CHUNK_CAPACITY_ENV);
     assert_env_removed(&command, PARALLEL_LOWER_ENV);
     assert_env_removed(&command, LOWER_WORKERS_ENV);
     assert_env_removed(&command, RUNNER_SEED_SNAPSHOT_ENV);
@@ -450,7 +450,7 @@ fn live_trusted_seed_snapshot_mode_sets_live_chunk_and_seed_env_without_parallel
     );
 
     assert_command_env_equals(&command, LIVE_REPORT_CHUNKS_ENV, "1");
-    assert_command_env_equals(&command, REPORT_CHUNK_CAPACITY_ENV, "4096");
+    assert_env_removed(&command, REPORT_CHUNK_CAPACITY_ENV);
     assert_command_env_equals(&command, RUNNER_SEED_SNAPSHOT_ENV, "1");
     assert_command_env_equals(&command, RUNNER_SEED_SNAPSHOT_TRUSTED_ENV, "1");
     assert_env_removed(&command, PARALLEL_LOWER_ENV);
@@ -479,7 +479,7 @@ fn live_seed_pipeline_mode_sets_live_chunk_and_parallel_lower_env() {
     );
 
     assert_command_env_equals(&command, LIVE_REPORT_CHUNKS_ENV, "1");
-    assert_command_env_equals(&command, REPORT_CHUNK_CAPACITY_ENV, "4096");
+    assert_env_removed(&command, REPORT_CHUNK_CAPACITY_ENV);
     assert_command_env_equals(&command, PARALLEL_LOWER_ENV, "1");
     assert_command_env_equals(&command, LOWER_WORKERS_ENV, "2");
     assert_env_removed(&command, PARALLEL_REPLAY_ONLY_ENV);
@@ -510,7 +510,7 @@ fn live_stream_pipeline_mode_sets_stream_chunk_and_parallel_lower_env() {
     assert_command_env_equals(&command, LIVE_REPORT_CHUNKS_ENV, "1");
     assert_command_env_equals(&command, LIVE_STREAM_START_ENV, "1");
     assert_command_env_equals(&command, PARALLEL_STREAM_CHUNKS_ENV, "1");
-    assert_command_env_equals(&command, REPORT_CHUNK_CAPACITY_ENV, "4096");
+    assert_env_removed(&command, REPORT_CHUNK_CAPACITY_ENV);
     assert_command_env_equals(&command, PARALLEL_LOWER_ENV, "1");
     assert_command_env_equals(&command, LOWER_WORKERS_ENV, "2");
     assert_env_removed(&command, PARALLEL_REPLAY_ONLY_ENV);
@@ -658,21 +658,17 @@ fn prove_command(config: &RealParityConfig, output_dir: &Path, mode: RealParityM
             command.env(OWNED_STREAMING_LOWER_ENV, "1");
         }
         RealParityMode::LiveReportChunks => {
-            command
-                .env(LIVE_REPORT_CHUNKS_ENV, "1")
-                .env(REPORT_CHUNK_CAPACITY_ENV, "4096");
+            command.env(LIVE_REPORT_CHUNKS_ENV, "1");
         }
         RealParityMode::LiveTrustedSeedSnapshot => {
             command
                 .env(LIVE_REPORT_CHUNKS_ENV, "1")
-                .env(REPORT_CHUNK_CAPACITY_ENV, "4096")
                 .env(RUNNER_SEED_SNAPSHOT_ENV, "1")
                 .env(RUNNER_SEED_SNAPSHOT_TRUSTED_ENV, "1");
         }
         RealParityMode::LiveSeedPipeline => {
             command
                 .env(LIVE_REPORT_CHUNKS_ENV, "1")
-                .env(REPORT_CHUNK_CAPACITY_ENV, "4096")
                 .env(PARALLEL_LOWER_ENV, "1")
                 .env(LOWER_WORKERS_ENV, "2");
         }
@@ -681,7 +677,6 @@ fn prove_command(config: &RealParityConfig, output_dir: &Path, mode: RealParityM
                 .env(LIVE_REPORT_CHUNKS_ENV, "1")
                 .env(LIVE_STREAM_START_ENV, "1")
                 .env(PARALLEL_STREAM_CHUNKS_ENV, "1")
-                .env(REPORT_CHUNK_CAPACITY_ENV, "4096")
                 .env(PARALLEL_LOWER_ENV, "1")
                 .env(LOWER_WORKERS_ENV, "2");
         }
