@@ -625,6 +625,7 @@ NCU_TOP_KERNEL_SM_THROUGHPUT_PCT_KEY = "ncu_top_kernel_sm_throughput_pct"
 NCU_TOP_KERNEL_DRAM_THROUGHPUT_PCT_KEY = "ncu_top_kernel_dram_throughput_pct"
 NCU_TOP_KERNEL_REGISTERS_PER_THREAD_KEY = "ncu_top_kernel_registers_per_thread"
 NCU_TOP_KERNEL_LIMITING_FACTORS_KEY = "ncu_top_kernel_limiting_factors"
+NCU_TOP_KERNEL_SEPARATION_HINT_KEY = "ncu_top_kernel_separation_hint"
 NCU_DESCRIPTOR_EXPANSION_HINT_KEY = "ncu_descriptor_expansion_hint"
 PERF_LOWERED_REPORT_ROW_SELF_PCT_KEY = "perf_lowered_report_row_self_pct"
 PERF_MEMMOVE_SELF_PCT_KEY = "perf_memmove_self_pct"
@@ -902,7 +903,7 @@ HEADER = (
     "ncu_metric_collection_hint,ncu_top_kernel,ncu_top_kernel_duration_ms,"
     "ncu_top_kernel_sm_throughput_pct,ncu_top_kernel_dram_throughput_pct,"
     "ncu_top_kernel_registers_per_thread,ncu_top_kernel_limiting_factors,"
-    "ncu_descriptor_expansion_hint,"
+    "ncu_top_kernel_separation_hint,ncu_descriptor_expansion_hint,"
     "segment_commit_cuda_memory_total_bytes,"
     "segment_commit_cuda_memory_initial_free_bytes,"
     "segment_commit_cuda_memory_effective_free_bytes,"
@@ -1228,9 +1229,11 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
     ncu_kernel_metric_block = None
     ncu_occupancy_block = None
     ncu_descriptor_expansion_block = None
+    ncu_kernel_separation_block = None
     ncu_top_kernel: str | None = None
     ncu_top_duration_ms = -1.0
     ncu_top_kernel_limits: dict[str, str] = {}
+    ncu_top_kernel_separation_hints: dict[str, str] = {}
     for line in text.splitlines():
         stripped = line.strip()
         if stripped == "cuda_transfer_triage":
@@ -1242,6 +1245,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             ncu_kernel_metric_block = None
             ncu_occupancy_block = None
             ncu_descriptor_expansion_block = None
+            ncu_kernel_separation_block = None
             continue
         if stripped == "cuda_api_backtrace_hint":
             nsys_copy_backtrace_block = stripped
@@ -1252,6 +1256,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             ncu_kernel_metric_block = None
             ncu_occupancy_block = None
             ncu_descriptor_expansion_block = None
+            ncu_kernel_separation_block = None
             continue
         if stripped == "stream_idle_gap_hotspots":
             nsys_kernel_idle_gap_block = stripped
@@ -1262,6 +1267,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             ncu_kernel_metric_block = None
             ncu_occupancy_block = None
             ncu_descriptor_expansion_block = None
+            ncu_kernel_separation_block = None
             continue
         if stripped == "cuda_graph_fusion_separation_triage":
             nsys_kernel_block = stripped
@@ -1272,6 +1278,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             ncu_kernel_metric_block = None
             ncu_occupancy_block = None
             ncu_descriptor_expansion_block = None
+            ncu_kernel_separation_block = None
             continue
         if stripped == "metric_collection_quality":
             ncu_metric_quality_block = stripped
@@ -1282,6 +1289,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             ncu_kernel_metric_block = None
             ncu_occupancy_block = None
             ncu_descriptor_expansion_block = None
+            ncu_kernel_separation_block = None
             continue
         if stripped == "kernel_metric_summary":
             ncu_kernel_metric_block = stripped
@@ -1292,6 +1300,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             ncu_metric_quality_block = None
             ncu_occupancy_block = None
             ncu_descriptor_expansion_block = None
+            ncu_kernel_separation_block = None
             continue
         if stripped == "occupancy_limits":
             ncu_occupancy_block = stripped
@@ -1302,6 +1311,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             ncu_metric_quality_block = None
             ncu_kernel_metric_block = None
             ncu_descriptor_expansion_block = None
+            ncu_kernel_separation_block = None
             continue
         if stripped == "descriptor_expansion_shape_candidates":
             ncu_descriptor_expansion_block = stripped
@@ -1312,6 +1322,18 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             ncu_metric_quality_block = None
             ncu_kernel_metric_block = None
             ncu_occupancy_block = None
+            ncu_kernel_separation_block = None
+            continue
+        if stripped == "kernel_separation_candidates":
+            ncu_kernel_separation_block = stripped
+            nsys_copy_block = None
+            nsys_copy_backtrace_block = None
+            nsys_kernel_block = None
+            nsys_kernel_idle_gap_block = None
+            ncu_metric_quality_block = None
+            ncu_kernel_metric_block = None
+            ncu_occupancy_block = None
+            ncu_descriptor_expansion_block = None
             continue
         if nsys_copy_block is not None:
             if not stripped:
@@ -1479,6 +1501,22 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             if len(row) >= 8 and row[0].strip() != "none":
                 values[NCU_DESCRIPTOR_EXPANSION_HINT_KEY] = compact_csv_token(row[7].strip())
             continue
+        if ncu_kernel_separation_block is not None:
+            if not stripped:
+                ncu_kernel_separation_block = None
+                continue
+            if stripped.startswith("kernel,"):
+                continue
+            try:
+                row = next(csv.reader([line]))
+            except csv.Error:
+                ncu_kernel_separation_block = None
+                continue
+            if len(row) >= 10 and row[0].strip() != "none":
+                ncu_top_kernel_separation_hints[row[0].strip()] = compact_csv_token(
+                    row[9].strip()
+                )
+            continue
         if "=" not in line:
             continue
         key, value = line.split("=", 1)
@@ -1493,6 +1531,10 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             continue
     if ncu_top_kernel is not None and ncu_top_kernel in ncu_top_kernel_limits:
         values[NCU_TOP_KERNEL_LIMITING_FACTORS_KEY] = ncu_top_kernel_limits[ncu_top_kernel]
+    if ncu_top_kernel is not None and ncu_top_kernel in ncu_top_kernel_separation_hints:
+        values[NCU_TOP_KERNEL_SEPARATION_HINT_KEY] = ncu_top_kernel_separation_hints[
+            ncu_top_kernel
+        ]
     return values
 
 
@@ -4793,6 +4835,9 @@ def summarize_profile_values(
     ncu_top_kernel_limiting_factors = str(
         values.get(NCU_TOP_KERNEL_LIMITING_FACTORS_KEY, "unknown")
     )
+    ncu_top_kernel_separation_hint = str(
+        values.get(NCU_TOP_KERNEL_SEPARATION_HINT_KEY, "unknown")
+    )
     ncu_descriptor_expansion_hint = str(
         values.get(NCU_DESCRIPTOR_EXPANSION_HINT_KEY, "none")
     )
@@ -5119,7 +5164,7 @@ def summarize_profile_values(
         f"{ncu_top_kernel_duration_ms},{ncu_top_kernel_sm_throughput_pct},"
         f"{ncu_top_kernel_dram_throughput_pct},"
         f"{ncu_top_kernel_registers_per_thread},{ncu_top_kernel_limiting_factors},"
-        f"{ncu_descriptor_expansion_hint},"
+        f"{ncu_top_kernel_separation_hint},{ncu_descriptor_expansion_hint},"
         f"{segment_commit_cuda_memory_total_bytes},"
         f"{segment_commit_cuda_memory_initial_free_bytes},"
         f"{segment_commit_cuda_memory_effective_free_bytes},"

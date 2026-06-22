@@ -321,6 +321,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "kernel_top_stream_idle_gap_calls",
         "kernel_top_stream_idle_gap_ms",
         "kernel_stream_idle_boundary_hint",
+        "ncu_top_kernel_separation_hint",
         "perf_lowered_report_row_self_pct",
         "perf_memmove_self_pct",
         "perf_memmove_guest_machine_pct",
@@ -1197,6 +1198,10 @@ fn prove_timing_root_summary_reads_explicit_ncu_kernel_summary() {
             "kernel,profiles,register_limit_blocks,shared_mem_limit_blocks,warp_limit_blocks,block_limit_blocks,registers_per_thread,shared_mem_kb_per_block,limiting_factors",
             "\"poseidon2_merkle_digest_parent_kernel<16, 4>\",2,6.000,14.000,6.000,24.000,38.000,1.104,register_limited|warp_limited",
             "",
+            "kernel_separation_candidates",
+            "kernel,profiles,duration_ms,registers_per_thread,register_limit_blocks,warp_limit_blocks,shared_mem_limit_blocks,sm_throughput_pct,issue_active_pct,separation_hint",
+            "\"poseidon2_merkle_digest_parent_kernel<16, 4>\",2,0.100,38.000,6.000,6.000,14.000,63.000,55.000,kernel_time_secondary",
+            "",
             "descriptor_expansion_shape_candidates",
             "kernel,profiles,duration_ms,dram_throughput_pct,sm_throughput_pct,issue_active_pct,registers_per_thread,descriptor_hint",
             "expand_zisk_main_trace_descriptors_kernel,1,4.662,35.193,4.009,0.394,40.000,redesign_descriptor_fields_before_kernel_split",
@@ -1255,6 +1260,10 @@ fn prove_timing_root_summary_reads_explicit_ncu_kernel_summary() {
         "register_limited|warp_limited"
     );
     assert_eq!(
+        value("ncu_top_kernel_separation_hint"),
+        "kernel_time_secondary"
+    );
+    assert_eq!(
         value("ncu_descriptor_expansion_hint"),
         "redesign_descriptor_fields_before_kernel_split"
     );
@@ -1306,6 +1315,10 @@ fn prove_timing_root_summary_reads_sibling_ncu_kernel_summary() {
             "occupancy_limits",
             "kernel,profiles,register_limit_blocks,shared_mem_limit_blocks,warp_limit_blocks,block_limit_blocks,registers_per_thread,shared_mem_kb_per_block,limiting_factors",
             "ntt_stage_kernel,2,6.000,14.000,6.000,24.000,38.000,1.104,register_limited|warp_limited",
+            "",
+            "kernel_separation_candidates",
+            "kernel,profiles,duration_ms,registers_per_thread,register_limit_blocks,warp_limit_blocks,shared_mem_limit_blocks,sm_throughput_pct,issue_active_pct,separation_hint",
+            "ntt_stage_kernel,2,0.100,38.000,6.000,6.000,14.000,63.000,55.000,kernel_time_secondary",
         ]
         .join("\n"),
     )
@@ -1354,6 +1367,10 @@ fn prove_timing_root_summary_reads_sibling_ncu_kernel_summary() {
     assert_eq!(
         value("ncu_top_kernel_limiting_factors"),
         "register_limited|warp_limited"
+    );
+    assert_eq!(
+        value("ncu_top_kernel_separation_hint"),
+        "kernel_time_secondary"
     );
 }
 
