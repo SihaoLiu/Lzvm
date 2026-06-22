@@ -3428,11 +3428,8 @@ fn finish_guest_pc_trace_live_report_chunk_segment_slice(
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     let last_report = match pending_report {
         Some(report) => {
-            let last_report = last_report_shape.and_then(|shape| {
-                zisk_main_runner_boundary_snapshot_requires_report(shape).then(|| report.clone())
-            });
             emit_report(report)?;
-            last_report
+            None
         }
         None => None,
     };
@@ -3781,6 +3778,9 @@ fn run_guest_pc_trace_segment_slice_inner<
                     Some(current),
                     state.registers(),
                 )?;
+                if !RETAIN_REPORTS {
+                    last_report = None;
+                }
             }
         }
         if current == RiscvInstruction::Ecall {
@@ -3898,6 +3898,9 @@ fn run_guest_pc_trace_segment_slice_inner<
                         lookahead_instruction,
                         state.registers(),
                     )?;
+                    if !RETAIN_REPORTS {
+                        last_report = None;
+                    }
                 }
             }
             let status = if current == RiscvInstruction::Ecall {
@@ -9617,14 +9620,7 @@ fn try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
     input: ZiskMainRunnerBoundarySeedInput<'_>,
 ) -> Result<Result<ZiskMainSegmentSeed, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError>
 {
-    let next_previous_c = match direct_zisk_main_segment_boundary_c_from_tail(
-        input.report_count(),
-        input.last_report(),
-        input.last_report_shape(),
-        input.lookahead_instruction,
-        input.current_seed,
-        Some(input.runner_state.registers()),
-    )? {
+    let next_previous_c = match direct_zisk_main_segment_boundary_c_from_runner_snapshot(input)? {
         Ok(next_previous_c) => next_previous_c,
         Err(reason) => return Ok(Err(reason)),
     };
@@ -9680,14 +9676,7 @@ fn lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
         });
     }
 
-    if let Ok(direct_c) = direct_zisk_main_segment_boundary_c_from_tail(
-        input.report_count(),
-        input.last_report(),
-        input.last_report_shape(),
-        input.lookahead_instruction,
-        input.current_seed,
-        Some(input.runner_state.registers()),
-    )? {
+    if let Ok(direct_c) = direct_zisk_main_segment_boundary_c_from_runner_snapshot(input)? {
         if direct_c != next_previous_c {
             return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: format!(
@@ -11488,6 +11477,54 @@ fn direct_zisk_main_segment_boundary_c_from_tail(
         direct_zisk_main_report_boundary_c(report, &lowered.instruction)
             .ok_or(ZiskMainDirectSeedLiftMissReason::BoundaryCUnavailable),
     )
+}
+
+fn direct_zisk_main_segment_boundary_c_from_runner_snapshot(
+    input: ZiskMainRunnerBoundarySeedInput<'_>,
+) -> Result<Result<u64, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError> {
+    let direct = direct_zisk_main_segment_boundary_c_from_tail(
+        input.report_count(),
+        input.last_report(),
+        input.last_report_shape(),
+        input.lookahead_instruction,
+        input.current_seed,
+        Some(input.runner_state.registers()),
+    )?;
+    if direct == Err(ZiskMainDirectSeedLiftMissReason::AmoBoundary) {
+        if let Some(boundary_c) = direct_zisk_main_amo_boundary_c_from_snapshot(
+            input.last_report_shape(),
+            input.boundary_snapshot,
+        ) {
+            return Ok(Ok(boundary_c));
+        }
+    }
+    Ok(direct)
+}
+
+fn direct_zisk_main_amo_boundary_c_from_snapshot(
+    shape: Option<GuestMachineReportShape>,
+    boundary_snapshot: &ZiskMainRunnerBoundarySnapshot,
+) -> Option<u64> {
+    let GuestMachineReportShape {
+        instruction:
+            RiscvInstruction::Amo {
+                kind: RiscvAmoKind::Add,
+                rd,
+                rs1,
+                rs2,
+                ..
+            },
+        has_memory_write: true,
+    } = shape?
+    else {
+        return None;
+    };
+    if rd == 0 || (rd != rs1 && rd != rs2) {
+        return None;
+    }
+    boundary_snapshot
+        .internal_memory
+        .get(zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER))
 }
 
 fn direct_zisk_main_store_boundary_c(

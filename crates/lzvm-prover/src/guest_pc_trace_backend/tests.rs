@@ -1207,6 +1207,70 @@ fn elided_runner_seed_snapshot_does_not_retain_alu_last_report() {
 }
 
 #[test]
+fn elided_runner_seed_snapshot_does_not_return_amo_last_report_after_snapshot() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let dir = repo_temp_dir("guest-pc-elided-runner-amo-last-report");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[riscv_amo_add_d(1, 1, 2), 0x0000_0073]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(4);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let current_seed = {
+        let mut seed = ZiskMainSegmentSeed::new();
+        seed.initial_state.registers[1] = 0x9000;
+        seed.initial_state.registers[2] = 0x10;
+        seed
+    };
+    let (mut memory, mut state, mut fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("guest trace machine should load");
+    memory
+        .map_initialized_range(0x9000, 0x1234_5678_9abc_def0_u64.to_le_bytes().to_vec())
+        .expect("test AMO data should map");
+    state
+        .set_register(1, 0x9000)
+        .expect("test register should be writable");
+    state
+        .set_register(2, 0x10)
+        .expect("test register should be writable");
+    let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+
+    let slice = run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
+        &mut memory,
+        &mut state,
+        &mut fcall_handler,
+        16,
+        layout.row_count(),
+        &mut boundary_snapshot,
+    )
+    .expect("elided AMO segment should run");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(slice.report_count, 1);
+    assert_eq!(slice.trace_rows, 4);
+    assert!(slice.reports.is_empty());
+    assert!(
+        slice.last_report.is_none(),
+        "AMO boundary snapshot should avoid returning the full last report once scratch is recorded"
+    );
+    assert_eq!(
+        boundary_snapshot
+            .internal_memory
+            .get(zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER)),
+        Some(0x1234_5678_9abc_def0)
+    );
+}
+
+#[test]
 fn live_report_chunk_runner_matches_serial_slice_without_returning_reports() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
@@ -3145,6 +3209,129 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_pending_dma_without_retai
 }
 
 #[test]
+fn runner_boundary_seed_snapshot_uses_snapshot_for_amo_boundary_without_retained_report() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let mut runner_state = GuestMachineState::new(0x8000_0004);
+    runner_state
+        .set_register(1, 0x1234_5678_9abc_def0)
+        .expect("test register should be writable");
+    let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    boundary_snapshot
+        .internal_memory
+        .insert(
+            zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER),
+            0x1234_5678_9abc_def0,
+        )
+        .expect("AMO scratch address should be supported");
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        4,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: current_seed.previous_c,
+        },
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 1,
+            last_report: None,
+            last_report_shape: Some(GuestMachineReportShape {
+                instruction: RiscvInstruction::Amo {
+                    kind: RiscvAmoKind::Add,
+                    width: RiscvAmoWidth::Doubleword,
+                    rd: 1,
+                    rs1: 1,
+                    rs2: 2,
+                    acquire: false,
+                    release: false,
+                },
+                has_memory_write: true,
+            }),
+            lookahead_instruction: Some(RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 0,
+                rs1: 0,
+                immediate: 0,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("snapshot-backed AMO seed lift should evaluate")
+    .expect("snapshot-backed AMO seed lift should succeed");
+
+    assert_eq!(lifted.initial_state.last_c, 0x1234_5678_9abc_def0);
+    assert_eq!(
+        lifted
+            .initial_state
+            .internal_memory
+            .get(zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER)),
+        Some(0x1234_5678_9abc_def0)
+    );
+}
+
+#[test]
+fn live_report_chunk_finish_emits_amo_boundary_without_returning_last_report() {
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Add,
+            width: RiscvAmoWidth::Doubleword,
+            rd: 1,
+            rs1: 1,
+            rs2: 2,
+            acquire: false,
+            release: false,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: vec![GuestRegisterWrite {
+            index: 1,
+            value: 0x1234_5678_9abc_def0,
+        }]
+        .into(),
+        memory_accesses: vec![
+            memory_read(0x1000, 0x1234_5678_9abc_def0),
+            memory_write(0x1000, 0x1234_5678_9abc_f000),
+        ]
+        .into(),
+        precompile_effects: None,
+    };
+    let shape = guest_machine_report_shape_from_report(&report);
+    let mut emitted = Vec::new();
+
+    let slice = finish_guest_pc_trace_live_report_chunk_segment_slice(
+        Some(report.clone()),
+        1,
+        &mut |report| {
+            emitted.push(report);
+            Ok(())
+        },
+        1,
+        4,
+        GuestMachineTraceSliceStatus::Paused {
+            pc: 0x8000_0004,
+            instruction: RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 0,
+                rs1: 0,
+                immediate: 0,
+            },
+        },
+        Some(shape),
+    )
+    .expect("live chunk finish should emit AMO report");
+
+    assert_eq!(emitted, vec![report]);
+    assert!(
+        slice.last_report.is_none(),
+        "AMO boundary seed lift should use the recorded snapshot instead of returning a cloned report"
+    );
+    assert_eq!(slice.last_report_shape, Some(shape));
+}
+
+#[test]
 fn direct_seed_lift_classifies_empty_segment_miss() {
     let miss = direct_zisk_main_segment_boundary_c(&[], None, &ZiskMainSegmentSeed::new(), None)
         .expect("direct boundary classification should evaluate")
@@ -4321,6 +4508,10 @@ fn riscv_addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
         | (u32::from(rs1) << 15)
         | (u32::from(rd) << 7)
         | 0x13
+}
+
+fn riscv_amo_add_d(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    (u32::from(rs2) << 20) | (u32::from(rs1) << 15) | (0b011 << 12) | (u32::from(rd) << 7) | 0x2f
 }
 
 fn commitment_column(
