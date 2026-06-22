@@ -9546,6 +9546,7 @@ fn try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
     let next_previous_c = match direct_zisk_main_segment_boundary_c_from_tail(
         input.report_count(),
         input.last_report(),
+        input.last_report_shape(),
         input.lookahead_instruction,
         input.current_seed,
         Some(input.runner_state.registers()),
@@ -9608,6 +9609,7 @@ fn lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
     if let Ok(direct_c) = direct_zisk_main_segment_boundary_c_from_tail(
         input.report_count(),
         input.last_report(),
+        input.last_report_shape(),
         input.lookahead_instruction,
         input.current_seed,
         Some(input.runner_state.registers()),
@@ -11338,6 +11340,7 @@ fn direct_zisk_main_segment_boundary_c(
     direct_zisk_main_segment_boundary_c_from_tail(
         reports.len(),
         reports.last(),
+        reports.last().map(guest_machine_report_shape_from_report),
         lookahead_instruction,
         current_seed,
         boundary_registers,
@@ -11347,11 +11350,15 @@ fn direct_zisk_main_segment_boundary_c(
 fn direct_zisk_main_segment_boundary_c_from_tail(
     report_count: usize,
     last_report: Option<&GuestMachineReport>,
+    last_report_shape: Option<GuestMachineReportShape>,
     lookahead_instruction: Option<RiscvInstruction>,
     current_seed: &ZiskMainSegmentSeed,
     boundary_registers: Option<&[u64; 32]>,
 ) -> Result<Result<u64, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError> {
-    let Some(report) = last_report else {
+    let Some(shape) = last_report
+        .map(guest_machine_report_shape_from_report)
+        .or(last_report_shape)
+    else {
         return Ok(Err(ZiskMainDirectSeedLiftMissReason::EmptySegment));
     };
     if current_seed.initial_state.pending_dma.is_some() && report_count == 1 {
@@ -11359,28 +11366,30 @@ fn direct_zisk_main_segment_boundary_c_from_tail(
             ZiskMainDirectSeedLiftMissReason::PendingDmaSingleReport,
         ));
     }
-    if matches!(report.instruction, RiscvInstruction::Amo { .. }) {
+    if matches!(shape.instruction, RiscvInstruction::Amo { .. }) {
         return Ok(Err(ZiskMainDirectSeedLiftMissReason::AmoBoundary));
     }
-    if matches!(
-        report.instruction,
-        RiscvInstruction::StoreConditional { .. }
-    ) {
+    if matches!(shape.instruction, RiscvInstruction::StoreConditional { .. }) {
         return Ok(Err(
             ZiskMainDirectSeedLiftMissReason::StoreConditionalBoundary,
         ));
     }
-    if matches!(report.instruction, RiscvInstruction::ZiskDmaPrepare { .. })
+    if matches!(shape.instruction, RiscvInstruction::ZiskDmaPrepare { .. })
         && lookahead_instruction.is_none()
     {
         return Ok(Err(
             ZiskMainDirectSeedLiftMissReason::DmaPrepareMissingLookahead,
         ));
     }
-    if let Some(boundary_c) = direct_zisk_main_store_boundary_c(report, boundary_registers) {
+    if let Some(boundary_c) =
+        direct_zisk_main_store_boundary_c(shape.instruction, boundary_registers)
+    {
         return Ok(Ok(boundary_c));
     }
 
+    let Some(report) = last_report else {
+        return Ok(Err(ZiskMainDirectSeedLiftMissReason::BoundaryCUnavailable));
+    };
     let lowered = lower_single_zisk_main_report_row(0, report, || lookahead_instruction)?;
     Ok(
         direct_zisk_main_report_boundary_c(report, &lowered.instruction)
@@ -11389,10 +11398,10 @@ fn direct_zisk_main_segment_boundary_c_from_tail(
 }
 
 fn direct_zisk_main_store_boundary_c(
-    report: &GuestMachineReport,
+    instruction: RiscvInstruction,
     boundary_registers: Option<&[u64; 32]>,
 ) -> Option<u64> {
-    let RiscvInstruction::Store { rs2, .. } = report.instruction else {
+    let RiscvInstruction::Store { rs2, .. } = instruction else {
         return None;
     };
     if rs2 == 0 {
