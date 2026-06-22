@@ -56,10 +56,8 @@ pub fn theorem_body(source: &str, name: &str) -> String {
         .find(" := by")
         .unwrap_or_else(|| panic!("Lean theorem {name} should have a proof body"));
     let body_start = theorem_start + proof_start + " := by".len();
-    let body_end = visible_source[body_start..]
-        .find("\ntheorem ")
-        .map(|offset| body_start + offset)
-        .unwrap_or_else(|| visible_source.len());
+    let body_end =
+        find_next_theorem_declaration(&visible_source, body_start).unwrap_or(visible_source.len());
     visible_source[body_start..body_end].to_owned()
 }
 
@@ -135,6 +133,27 @@ fn find_theorem_declaration(source: &str, name: &str) -> Option<usize> {
             None
         }
     })
+}
+
+fn find_next_theorem_declaration(source: &str, after: usize) -> Option<usize> {
+    source[after..]
+        .match_indices("theorem")
+        .map(|(offset, _)| after + offset)
+        .find(|&start| {
+            if start > 0 {
+                let Some(previous) = source[..start].chars().next_back() else {
+                    return false;
+                };
+                if previous.is_alphanumeric() || previous == '_' {
+                    return false;
+                }
+            }
+            let rest = &source[start + "theorem".len()..];
+            rest.chars()
+                .next()
+                .map(char::is_whitespace)
+                .unwrap_or(false)
+        })
 }
 
 #[allow(dead_code)]
@@ -405,4 +424,28 @@ fn strip_lean_comments(source: &str) -> String {
     }
 
     visible
+}
+
+#[cfg(test)]
+mod tests {
+    use super::theorem_body;
+
+    #[test]
+    fn theorem_body_stops_before_following_private_theorem() {
+        let source = r#"
+private theorem first : True := by
+  exact True.intro
+
+private theorem second : True := by
+  exact True.intro
+"#;
+
+        let body = theorem_body(source, "first");
+
+        assert!(body.contains("exact True.intro"));
+        assert!(
+            !body.contains("private theorem second"),
+            "Lean theorem body extraction should stop before a following private theorem"
+        );
+    }
 }
