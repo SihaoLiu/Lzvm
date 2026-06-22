@@ -3,6 +3,7 @@ use crate::guest_instruction::{
     RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvInstruction, RiscvOpImmKind,
     RiscvPrecompileKind, RiscvStoreKind,
 };
+use crate::guest_machine::GuestMachineReportShape;
 use crate::guest_machine::GuestPrecompileReportEffects;
 use crate::witness_layout::derive_witness_trace_layout;
 use crate::witness_loader::WitnessComputeContext;
@@ -3790,7 +3791,7 @@ fn row_mem_step_cursor_matches_direct_offset_helper() {
 
 #[test]
 fn zisk_main_report_row_count_uses_lightweight_runner_shape() {
-    let addi = ZiskMainRunnerReportRowShape {
+    let addi = GuestMachineReportShape {
         instruction: RiscvInstruction::OpImm {
             kind: RiscvOpImmKind::Addi,
             rd: 1,
@@ -3800,12 +3801,12 @@ fn zisk_main_report_row_count_uses_lightweight_runner_shape() {
         has_memory_write: false,
     };
     assert_eq!(
-        zisk_main_report_row_count_from_runner_shape(0, addi)
+        zisk_main_report_row_count_from_report_shape(0, addi)
             .expect("ordinary instruction should fit one row"),
         1
     );
 
-    let amo_overlap = ZiskMainRunnerReportRowShape {
+    let amo_overlap = GuestMachineReportShape {
         instruction: RiscvInstruction::Amo {
             kind: RiscvAmoKind::Add,
             width: RiscvAmoWidth::Doubleword,
@@ -3818,12 +3819,12 @@ fn zisk_main_report_row_count_uses_lightweight_runner_shape() {
         has_memory_write: true,
     };
     assert_eq!(
-        zisk_main_report_row_count_from_runner_shape(0, amo_overlap)
+        zisk_main_report_row_count_from_report_shape(0, amo_overlap)
             .expect("overlapping AMO add should use scratch rows"),
         4
     );
 
-    let store_conditional_write = ZiskMainRunnerReportRowShape {
+    let store_conditional_write = GuestMachineReportShape {
         instruction: RiscvInstruction::StoreConditional {
             width: RiscvAmoWidth::Doubleword,
             rd: 3,
@@ -3835,17 +3836,17 @@ fn zisk_main_report_row_count_uses_lightweight_runner_shape() {
         has_memory_write: true,
     };
     assert_eq!(
-        zisk_main_report_row_count_from_runner_shape(0, store_conditional_write)
+        zisk_main_report_row_count_from_report_shape(0, store_conditional_write)
             .expect("successful store conditional with rd should use result row"),
         2
     );
 
-    let store_conditional_missing_write = ZiskMainRunnerReportRowShape {
+    let store_conditional_missing_write = GuestMachineReportShape {
         has_memory_write: false,
         ..store_conditional_write
     };
     assert!(
-        zisk_main_report_row_count_from_runner_shape(0, store_conditional_missing_write).is_err(),
+        zisk_main_report_row_count_from_report_shape(0, store_conditional_missing_write).is_err(),
         "store conditional row shape must preserve the write-success distinction"
     );
 }

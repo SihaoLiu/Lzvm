@@ -387,6 +387,7 @@ struct GuestInstructionEffects {
     register_writes: GuestRegisterWriteList,
     register_rollback: GuestRegisterRollbackList,
     memory_accesses: GuestMemoryAccessList,
+    has_memory_write: bool,
     precompile_memory_accesses: Vec<GuestMemoryAccess>,
     precompile_result: Option<u64>,
 }
@@ -438,12 +439,20 @@ impl GuestInstructionEffects {
     }
 
     fn record_memory_write(&mut self, address: u64, byte_len: usize, value: u64) {
+        self.has_memory_write = true;
         self.memory_accesses.push(GuestMemoryAccess {
             kind: GuestMemoryAccessKind::Write,
             address,
             byte_len: guest_memory_access_byte_len(byte_len),
             value,
         });
+    }
+
+    fn report_shape(&self, instruction: RiscvInstruction) -> GuestMachineReportShape {
+        GuestMachineReportShape {
+            instruction,
+            has_memory_write: self.has_memory_write,
+        }
     }
 }
 
@@ -478,6 +487,18 @@ impl GuestMachineReport {
             .as_deref()
             .and_then(|effects| effects.result)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct GuestMachineReportShape {
+    pub(crate) instruction: RiscvInstruction,
+    pub(crate) has_memory_write: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GuestMachineAdvanceReport {
+    pub(crate) report: GuestMachineReport,
+    pub(crate) shape: GuestMachineReportShape,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -820,13 +841,13 @@ pub(crate) fn prepare_current_guest_instruction(
     })
 }
 
-pub(crate) fn advance_guest_machine_with_prepared_fcalls(
+pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
     handler: &mut dyn GuestFcallHandler,
     prepared: GuestMachinePreparedInstruction,
-) -> Result<GuestMachineReport, GuestMachineError> {
-    advance_guest_machine_prepared_inner(memory, state, Some(handler), prepared)
+) -> Result<GuestMachineAdvanceReport, GuestMachineError> {
+    advance_guest_machine_prepared_inner_with_report_shape(memory, state, Some(handler), prepared)
 }
 
 fn advance_guest_machine_inner(
@@ -845,6 +866,18 @@ fn advance_guest_machine_prepared_inner(
     handler: Option<&mut dyn GuestFcallHandler>,
     prepared: GuestMachinePreparedInstruction,
 ) -> Result<GuestMachineReport, GuestMachineError> {
+    Ok(
+        advance_guest_machine_prepared_inner_with_report_shape(memory, state, handler, prepared)?
+            .report,
+    )
+}
+
+fn advance_guest_machine_prepared_inner_with_report_shape(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: Option<&mut dyn GuestFcallHandler>,
+    prepared: GuestMachinePreparedInstruction,
+) -> Result<GuestMachineAdvanceReport, GuestMachineError> {
     let address = state.pc();
     if prepared.address != address {
         return Err(GuestMachineError::PreparedInstructionPcMismatch {
@@ -876,18 +909,22 @@ fn advance_guest_machine_prepared_inner(
     }
     state.retire_instruction();
     let next_pc = state.pc();
+    let shape = effects.report_shape(instruction);
 
-    Ok(GuestMachineReport {
-        address,
-        instruction_byte_len: guest_instruction_byte_len(byte_len),
-        instruction,
-        next_pc,
-        register_writes: effects.register_writes,
-        memory_accesses: effects.memory_accesses,
-        precompile_effects: GuestPrecompileReportEffects::from_parts(
-            effects.precompile_memory_accesses.into_boxed_slice(),
-            effects.precompile_result,
-        ),
+    Ok(GuestMachineAdvanceReport {
+        report: GuestMachineReport {
+            address,
+            instruction_byte_len: guest_instruction_byte_len(byte_len),
+            instruction,
+            next_pc,
+            register_writes: effects.register_writes,
+            memory_accesses: effects.memory_accesses,
+            precompile_effects: GuestPrecompileReportEffects::from_parts(
+                effects.precompile_memory_accesses.into_boxed_slice(),
+                effects.precompile_result,
+            ),
+        },
+        shape,
     })
 }
 
@@ -1879,6 +1916,100 @@ mod tests {
         assert_eq!(actual, expected);
         assert_eq!(prepared_state, regular_state);
         assert_eq!(prepared_memory, regular_memory);
+    }
+
+    #[test]
+    fn prepared_advance_returns_report_shape_at_execution_boundary() {
+        let mut memory = guest_machine_memory_with_words(&[addi(1, 0, 7), 0x0000_0073]);
+        let mut state = GuestMachineState::new(memory.entry_address());
+        let prepared = prepare_current_guest_instruction(&memory, state.pc())
+            .expect("instruction should prepare");
+
+        let advanced = advance_guest_machine_prepared_inner_with_report_shape(
+            &mut memory,
+            &mut state,
+            None,
+            prepared,
+        )
+        .expect("prepared advance should succeed");
+
+        assert_eq!(
+            advanced.shape,
+            GuestMachineReportShape {
+                instruction: RiscvInstruction::OpImm {
+                    kind: RiscvOpImmKind::Addi,
+                    rd: 1,
+                    rs1: 0,
+                    immediate: 7,
+                },
+                has_memory_write: false,
+            }
+        );
+        assert_eq!(advanced.report.instruction, advanced.shape.instruction);
+    }
+
+    #[test]
+    fn prepared_advance_report_shape_tracks_store_conditional_write_success() {
+        let instruction = RiscvInstruction::StoreConditional {
+            width: RiscvAmoWidth::Doubleword,
+            rd: 3,
+            rs1: 1,
+            rs2: 2,
+            acquire: false,
+            release: false,
+        };
+        let prepared = GuestMachinePreparedInstruction {
+            address: TEST_ENTRY,
+            byte_len: 4,
+            instruction,
+        };
+
+        let mut success_memory = guest_machine_memory_with_words(&[addi(0, 0, 0), 0x0000_0073]);
+        let mut success_state = GuestMachineState::new(TEST_ENTRY);
+        success_state
+            .set_register(1, TEST_ENTRY)
+            .expect("test register should be writable");
+        success_state
+            .set_register(2, 0x1122_3344_5566_7788)
+            .expect("test register should be writable");
+        success_state.set_reservation(TEST_ENTRY, RiscvAmoWidth::Doubleword);
+        let success = advance_guest_machine_prepared_inner_with_report_shape(
+            &mut success_memory,
+            &mut success_state,
+            None,
+            prepared,
+        )
+        .expect("successful store conditional should advance");
+        assert_eq!(
+            success.shape,
+            GuestMachineReportShape {
+                instruction,
+                has_memory_write: true,
+            }
+        );
+
+        let mut failure_memory = guest_machine_memory_with_words(&[addi(0, 0, 0), 0x0000_0073]);
+        let mut failure_state = GuestMachineState::new(TEST_ENTRY);
+        failure_state
+            .set_register(1, TEST_ENTRY)
+            .expect("test register should be writable");
+        failure_state
+            .set_register(2, 0x1122_3344_5566_7788)
+            .expect("test register should be writable");
+        let failure = advance_guest_machine_prepared_inner_with_report_shape(
+            &mut failure_memory,
+            &mut failure_state,
+            None,
+            prepared,
+        )
+        .expect("failed store conditional should advance");
+        assert_eq!(
+            failure.shape,
+            GuestMachineReportShape {
+                instruction,
+                has_memory_write: false,
+            }
+        );
     }
 
     #[test]

@@ -13,12 +13,13 @@ use crate::guest_instruction::{
     RiscvPrecompileKind,
 };
 use crate::guest_machine::{
-    advance_guest_machine_with_prepared_fcalls, decode_current_guest_instruction,
+    advance_guest_machine_with_prepared_fcalls_report_shape, decode_current_guest_instruction,
     prepare_current_guest_instruction, run_guest_machine_trace_with_fcalls,
     run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestFcallHandler, GuestMachineHalt,
-    GuestMachineMemory, GuestMachineReport, GuestMachineRunError, GuestMachineState,
-    GuestMachineTraceSliceStatus, GuestMemoryAccess, GuestMemoryAccessKind, GuestMemoryAccessList,
-    GuestPrecompileMemoryAccessList, GuestRegisterWrite, GuestRegisterWriteList,
+    GuestMachineMemory, GuestMachineReport, GuestMachineReportShape, GuestMachineRunError,
+    GuestMachineState, GuestMachineTraceSliceStatus, GuestMemoryAccess, GuestMemoryAccessKind,
+    GuestMemoryAccessList, GuestPrecompileMemoryAccessList, GuestRegisterWrite,
+    GuestRegisterWriteList,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{ResolvedTraceColumn, WitnessTraceBuildError, WitnessTraceLayout};
@@ -3334,10 +3335,13 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 },
             );
         }
-        let report = advance_guest_machine_with_prepared_fcalls(memory, state, handler, prepared)
-            .map_err(GuestMachineRunError::from)
-            .map_err(GuestPcTraceBackendError::GuestRun)?;
-        let report_rows = zisk_main_report_row_count(report_count, &report)?;
+        let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
+            memory, state, handler, prepared,
+        )
+        .map_err(GuestMachineRunError::from)
+        .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let report_rows =
+            zisk_main_report_row_count_from_report_shape(report_count, advanced.shape)?;
         let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "Zisk Main row count overflow".to_owned(),
@@ -3349,7 +3353,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
             });
         }
         trace_rows = next_trace_rows;
-        if let Some(previous) = pending_report.replace(report) {
+        if let Some(previous) = pending_report.replace(advanced.report) {
             emit_report(previous)?;
         }
         report_count = report_count.checked_add(1).ok_or_else(|| {
@@ -3517,10 +3521,13 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
             )
             .map(Some);
         }
-        let report = advance_guest_machine_with_prepared_fcalls(memory, state, handler, prepared)
-            .map_err(GuestMachineRunError::from)
-            .map_err(GuestPcTraceBackendError::GuestRun)?;
-        let report_rows = zisk_main_report_row_count(reports.len(), &report)?;
+        let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
+            memory, state, handler, prepared,
+        )
+        .map_err(GuestMachineRunError::from)
+        .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let report_rows =
+            zisk_main_report_row_count_from_report_shape(reports.len(), advanced.shape)?;
         let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "main trace row count overflow".to_owned(),
@@ -3538,7 +3545,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
             &mut pending_report,
             &mut next_report_index,
             timing_config,
-            report,
+            advanced.report,
         )?;
         executed_instructions += 1;
         if trace_rows == row_limit {
@@ -3770,10 +3777,13 @@ fn run_guest_pc_trace_segment_slice_inner<
                 },
             ));
         }
-        let report = advance_guest_machine_with_prepared_fcalls(memory, state, handler, prepared)
-            .map_err(GuestMachineRunError::from)
-            .map_err(GuestPcTraceBackendError::GuestRun)?;
-        let report_rows = zisk_main_report_row_count(report_count, &report)?;
+        let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
+            memory, state, handler, prepared,
+        )
+        .map_err(GuestMachineRunError::from)
+        .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let report_rows =
+            zisk_main_report_row_count_from_report_shape(report_count, advanced.shape)?;
         let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "Zisk Main row count overflow".to_owned(),
@@ -3786,9 +3796,9 @@ fn run_guest_pc_trace_segment_slice_inner<
         }
         trace_rows = next_trace_rows;
         if RETAIN_REPORTS {
-            reports.push(report);
+            reports.push(advanced.report);
         } else {
-            last_report = Some(report);
+            last_report = Some(advanced.report);
         }
         report_count = report_count.checked_add(1).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -3849,37 +3859,9 @@ fn zisk_main_instruction_max_rows(instruction: RiscvInstruction) -> usize {
     }
 }
 
-#[derive(Clone, Copy)]
-struct ZiskMainRunnerReportRowShape {
-    instruction: RiscvInstruction,
-    has_memory_write: bool,
-}
-
-impl ZiskMainRunnerReportRowShape {
-    fn from_report(report: &GuestMachineReport) -> Self {
-        Self {
-            instruction: report.instruction,
-            has_memory_write: report
-                .memory_accesses
-                .iter()
-                .any(|access| access.kind == GuestMemoryAccessKind::Write),
-        }
-    }
-}
-
-fn zisk_main_report_row_count(
+fn zisk_main_report_row_count_from_report_shape(
     row: usize,
-    report: &GuestMachineReport,
-) -> Result<usize, GuestPcTraceBackendError> {
-    zisk_main_report_row_count_from_runner_shape(
-        row,
-        ZiskMainRunnerReportRowShape::from_report(report),
-    )
-}
-
-fn zisk_main_report_row_count_from_runner_shape(
-    row: usize,
-    shape: ZiskMainRunnerReportRowShape,
+    shape: GuestMachineReportShape,
 ) -> Result<usize, GuestPcTraceBackendError> {
     match shape.instruction {
         RiscvInstruction::Amo {
