@@ -4718,7 +4718,7 @@ fn prove_timing_root_summary_flags_seed_ready_parallel_lower_result_bound() {
 }
 
 #[test]
-fn prove_timing_root_summary_flags_live_stream_job_supply_bound() {
+fn prove_timing_root_summary_flags_live_stream_segment_serial_bound() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
     let input = [
@@ -4797,11 +4797,11 @@ fn prove_timing_root_summary_flags_live_stream_job_supply_bound() {
     };
     assert_eq!(
         value("trace_pipeline_action_hint"),
-        "parallel_lower_live_stream_job_supply_bound"
+        "parallel_lower_live_stream_segment_serial_bound"
     );
     assert_eq!(
         value("performance_focus_hint"),
-        "parallel_lower_live_stream_job_supply_bound"
+        "parallel_lower_live_stream_segment_serial_bound"
     );
 }
 

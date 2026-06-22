@@ -1860,7 +1860,7 @@ def trace_pipeline_action_hint(
     return "balanced_pipeline"
 
 
-def parallel_lower_live_stream_job_supply_bound_from_values(
+def parallel_lower_live_stream_segment_serial_bound_from_values(
     values: dict[str, int],
 ) -> bool:
     stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
@@ -1933,8 +1933,8 @@ def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
         and parallel_lower_replay_duplicate_work_from_values(values)
     ):
         return "avoid_replay_only_parallel_lower"
-    if parallel_lower_live_stream_job_supply_bound_from_values(values):
-        return "parallel_lower_live_stream_job_supply_bound"
+    if parallel_lower_live_stream_segment_serial_bound_from_values(values):
+        return "parallel_lower_live_stream_segment_serial_bound"
     stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
     seed_attempts = values.get(SEED_DIRECT_LIFT_ATTEMPTS_KEY, 0)
     if (
@@ -2661,7 +2661,7 @@ def performance_focus_hint(
     if trace_pipeline_hint in {
         "avoid_segment_commit_worker_oom_fallback",
         "avoid_replay_only_parallel_lower",
-        "parallel_lower_live_stream_job_supply_bound",
+        "parallel_lower_live_stream_segment_serial_bound",
     }:
         return trace_pipeline_hint
     if trace_pipeline_hint in trace_pipeline_hints and cpu_report_storage_hint in {
