@@ -1186,46 +1186,71 @@ struct GuestLoadResult {
     register_value: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GuestLoadShape {
+    byte_len: usize,
+    signed: bool,
+}
+
 fn read_guest_load(
     memory: &GuestMachineMemory,
     kind: RiscvLoadKind,
     address: u64,
 ) -> Result<GuestLoadResult, GuestMachineError> {
-    let (byte_len, memory_value, register_value) = match kind {
-        RiscvLoadKind::Lb => {
-            let value = memory.read_u64_le(address, 1)?;
-            (1, value, i64::from(value as u8 as i8) as u64)
-        }
-        RiscvLoadKind::Lh => {
-            let value = memory.read_u64_le(address, 2)?;
-            (2, value, i64::from(value as u16 as i16) as u64)
-        }
-        RiscvLoadKind::Lw => {
-            let value = memory.read_u64_le(address, 4)?;
-            (4, value, i64::from(value as u32 as i32) as u64)
-        }
-        RiscvLoadKind::Ld => {
-            let value = memory.read_u64_le(address, 8)?;
-            (8, value, value)
-        }
-        RiscvLoadKind::Lbu => {
-            let value = memory.read_u64_le(address, 1)?;
-            (1, value, value)
-        }
-        RiscvLoadKind::Lhu => {
-            let value = memory.read_u64_le(address, 2)?;
-            (2, value, value)
-        }
-        RiscvLoadKind::Lwu => {
-            let value = memory.read_u64_le(address, 4)?;
-            (4, value, value)
-        }
-    };
+    let shape = guest_load_shape(kind);
+    let byte_len = shape.byte_len;
+    let memory_value = memory.read_u64_le(address, byte_len)?;
+    let register_value = guest_load_register_value(memory_value, shape);
     Ok(GuestLoadResult {
         byte_len,
         memory_value,
         register_value,
     })
+}
+
+fn guest_load_shape(kind: RiscvLoadKind) -> GuestLoadShape {
+    match kind {
+        RiscvLoadKind::Lb => GuestLoadShape {
+            byte_len: 1,
+            signed: true,
+        },
+        RiscvLoadKind::Lh => GuestLoadShape {
+            byte_len: 2,
+            signed: true,
+        },
+        RiscvLoadKind::Lw => GuestLoadShape {
+            byte_len: 4,
+            signed: true,
+        },
+        RiscvLoadKind::Ld => GuestLoadShape {
+            byte_len: 8,
+            signed: true,
+        },
+        RiscvLoadKind::Lbu => GuestLoadShape {
+            byte_len: 1,
+            signed: false,
+        },
+        RiscvLoadKind::Lhu => GuestLoadShape {
+            byte_len: 2,
+            signed: false,
+        },
+        RiscvLoadKind::Lwu => GuestLoadShape {
+            byte_len: 4,
+            signed: false,
+        },
+    }
+}
+
+fn guest_load_register_value(memory_value: u64, shape: GuestLoadShape) -> u64 {
+    if !shape.signed || shape.byte_len == 8 {
+        return memory_value;
+    }
+    match shape.byte_len {
+        1 => i64::from(memory_value as u8 as i8) as u64,
+        2 => i64::from(memory_value as u16 as i16) as u64,
+        4 => i64::from(memory_value as u32 as i32) as u64,
+        _ => memory_value,
+    }
 }
 
 fn write_guest_store(

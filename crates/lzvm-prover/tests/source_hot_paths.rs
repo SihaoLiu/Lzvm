@@ -8111,6 +8111,25 @@ fn guest_pc_store_apply_computes_store_value_only_for_value_stores() {
 }
 
 #[test]
+fn guest_machine_load_reads_memory_once_after_shape_decode() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+
+    let load_body = function_body(&source, "fn read_guest_load", "fn write_guest_store");
+    assert_eq!(
+        load_body.matches("memory.read_u64_le(address,").count(),
+        1,
+        "guest load decoding should make exactly one memory read after selecting load shape"
+    );
+    assert!(
+        load_body.contains("let memory_value = memory.read_u64_le(address, byte_len)?;")
+            && load_body.contains("let register_value = guest_load_register_value("),
+        "guest load decoding should normalize byte length and sign extension before reading memory"
+    );
+}
+
+#[test]
 fn guest_pc_source_value_lookup_avoids_request_wrapper() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
