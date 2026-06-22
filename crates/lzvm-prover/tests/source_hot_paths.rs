@@ -5705,9 +5705,32 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
         "parallel guest PC trace lowering should use a seeded segment helper"
     );
     assert!(
+        backend_source.contains("fn guest_pc_trace_parallel_lower_work_units_enabled"),
+        "work-unit guest PC trace lowering should expose a separate opt-in gate"
+    );
+    assert!(
+        backend_source
+            .contains("env_flag_enabled(\"LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS\", false)"),
+        "work-unit guest PC trace lowering should remain disabled by default"
+    );
+    assert!(
         backend_source
             .contains("|| guest_pc_trace_parallel_lower_enabled()"),
         "parallel guest PC trace lowering should enable runner seed snapshots for its pending segments"
+    );
+    let report_elision_body = function_body(
+        &backend_source,
+        "fn guest_pc_trace_parallel_lower_report_elision_enabled",
+        "fn guest_pc_trace_runner_seed_snapshot_enabled",
+    );
+    assert!(
+        report_elision_body.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY"),
+        "parallel lower report elision should stay tied to the replay-only diagnostic gate"
+    );
+    assert!(
+        !report_elision_body.contains("guest_pc_trace_parallel_lower_work_units_enabled")
+            && !report_elision_body.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS"),
+        "work-unit lowering should not imply replay-only report elision"
     );
     let trusted_snapshot_body = function_body(
         &backend_source,

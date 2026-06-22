@@ -6986,8 +6986,13 @@ fn guest_pc_trace_parallel_lower_job_queue_capacity() -> usize {
         .unwrap_or(DEFAULT_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE_CAPACITY)
 }
 
+fn guest_pc_trace_parallel_lower_work_units_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS", false)
+}
+
 fn guest_pc_trace_parallel_lower_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", false)
+        || guest_pc_trace_parallel_lower_work_units_enabled()
 }
 
 #[cfg(feature = "cuda")]
