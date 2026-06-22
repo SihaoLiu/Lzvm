@@ -3701,7 +3701,6 @@ fn finish_guest_pc_trace_streaming_device_segment(
 
 struct GuestPcTraceSegmentSliceFinish {
     reports: Vec<GuestMachineReport>,
-    last_report: Option<GuestMachineReport>,
     last_report_shape: Option<GuestMachineReportShape>,
     report_count: usize,
     retain_reports: bool,
@@ -3715,7 +3714,6 @@ fn finish_guest_pc_trace_segment_slice(
 ) -> GuestPcTraceSegmentSlice {
     let GuestPcTraceSegmentSliceFinish {
         reports,
-        last_report,
         last_report_shape,
         report_count,
         retain_reports,
@@ -3726,7 +3724,7 @@ fn finish_guest_pc_trace_segment_slice(
     let last_report = if retain_reports {
         reports.last().cloned()
     } else {
-        last_report
+        None
     };
     GuestPcTraceSegmentSlice {
         executed_instructions,
@@ -3756,7 +3754,6 @@ fn run_guest_pc_trace_segment_slice_inner<
     mut boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     let mut reports = Vec::new();
-    let mut last_report = None;
     let mut last_report_shape = None;
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
@@ -3768,29 +3765,20 @@ fn run_guest_pc_trace_segment_slice_inner<
             .map_err(GuestPcTraceBackendError::GuestRun)?;
         let current = prepared.instruction();
         if TRACK_BOUNDARY {
-            let boundary_report = if RETAIN_REPORTS {
-                reports.last()
-            } else {
-                last_report.as_ref()
-            };
             if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
                 record_zisk_main_runner_boundary_snapshot(
                     snapshot,
-                    boundary_report,
+                    reports.last(),
                     last_report_shape,
                     Some(current),
                     state.registers(),
                 )?;
-                if !RETAIN_REPORTS {
-                    last_report = None;
-                }
             }
         }
         if current == RiscvInstruction::Ecall {
             return Ok(finish_guest_pc_trace_segment_slice(
                 GuestPcTraceSegmentSliceFinish {
                     reports,
-                    last_report,
                     last_report_shape,
                     report_count,
                     retain_reports: RETAIN_REPORTS,
@@ -3806,7 +3794,6 @@ fn run_guest_pc_trace_segment_slice_inner<
             return Ok(finish_guest_pc_trace_segment_slice(
                 GuestPcTraceSegmentSliceFinish {
                     reports,
-                    last_report,
                     last_report_shape,
                     report_count,
                     retain_reports: RETAIN_REPORTS,
@@ -3834,7 +3821,6 @@ fn run_guest_pc_trace_segment_slice_inner<
             return Ok(finish_guest_pc_trace_segment_slice(
                 GuestPcTraceSegmentSliceFinish {
                     reports,
-                    last_report,
                     last_report_shape,
                     report_count,
                     retain_reports: RETAIN_REPORTS,
@@ -3873,8 +3859,6 @@ fn run_guest_pc_trace_segment_slice_inner<
         }
         if RETAIN_REPORTS {
             reports.push(advanced.report);
-        } else {
-            last_report = None;
         }
         report_count = report_count.checked_add(1).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -3889,22 +3873,14 @@ fn run_guest_pc_trace_segment_slice_inner<
                 .map_err(GuestPcTraceBackendError::GuestRun)?;
             let lookahead_instruction = (current != RiscvInstruction::Ecall).then_some(current);
             if TRACK_BOUNDARY {
-                let boundary_report = if RETAIN_REPORTS {
-                    reports.last()
-                } else {
-                    last_report.as_ref()
-                };
                 if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
                     record_zisk_main_runner_boundary_snapshot(
                         snapshot,
-                        boundary_report,
+                        reports.last(),
                         last_report_shape,
                         lookahead_instruction,
                         state.registers(),
                     )?;
-                    if !RETAIN_REPORTS {
-                        last_report = None;
-                    }
                 }
             }
             let status = if current == RiscvInstruction::Ecall {
@@ -3918,7 +3894,6 @@ fn run_guest_pc_trace_segment_slice_inner<
             return Ok(finish_guest_pc_trace_segment_slice(
                 GuestPcTraceSegmentSliceFinish {
                     reports,
-                    last_report,
                     last_report_shape,
                     report_count,
                     retain_reports: RETAIN_REPORTS,

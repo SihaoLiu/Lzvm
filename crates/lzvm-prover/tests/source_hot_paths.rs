@@ -8565,11 +8565,30 @@ fn guest_pc_trace_segments_report_buffer_capacity_shape() {
         "fn finish_guest_pc_trace_segment_slice",
         "fn run_guest_pc_trace_segment_slice_inner",
     );
+    let finish_fields = function_body(
+        &source,
+        "struct GuestPcTraceSegmentSliceFinish",
+        "fn finish_guest_pc_trace_segment_slice",
+    );
+    assert!(
+        !finish_fields.contains("last_report: Option<GuestMachineReport>"),
+        "runner slice finish should derive retained last_report from reports instead of carrying a separate full report"
+    );
     assert!(
         finish_body.contains("report_capacity: if retain_reports")
             && finish_body.contains("reports.capacity()")
             && finish_body.contains("} else {\n            0\n        }"),
         "guest PC trace slices should capture retained final report buffer capacity"
+    );
+    let run_slice_body = function_body(
+        &source,
+        "fn run_guest_pc_trace_segment_slice_inner",
+        "fn zisk_main_instruction_max_rows",
+    );
+    assert!(
+        !run_slice_body.contains("let mut last_report =")
+            && !run_slice_body.contains("last_report.as_ref()"),
+        "runner slices should not keep a separate full-report tail after boundary snapshots capture scratch state"
     );
     let produce_body = function_body(
         &source,
