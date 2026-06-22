@@ -1176,10 +1176,6 @@ fn elided_runner_seed_snapshot_does_not_retain_alu_last_report() {
     );
     assert!(slice.reports.is_empty());
     assert_eq!(slice.report_count, expected.report_count);
-    assert!(
-        slice.last_report.is_none(),
-        "ALU boundary seed lift should not require retaining the full last report"
-    );
 
     let segment = ZiskMainTraceSegmentInfo {
         trace_instance_index: expected.trace_instance_index,
@@ -1192,7 +1188,7 @@ fn elided_runner_seed_snapshot_does_not_retain_alu_last_report() {
         ZiskMainRunnerBoundarySeedInput {
             reports: &[],
             report_count: slice.report_count,
-            last_report: slice.last_report.as_ref(),
+            last_report: None,
             last_report_shape: slice.last_report_shape,
             lookahead_instruction: expected.lookahead_instruction,
             runner_state: &state,
@@ -1258,10 +1254,6 @@ fn elided_runner_seed_snapshot_does_not_return_amo_last_report_after_snapshot() 
     assert_eq!(slice.report_count, 1);
     assert_eq!(slice.trace_rows, 4);
     assert!(slice.reports.is_empty());
-    assert!(
-        slice.last_report.is_none(),
-        "AMO boundary snapshot should avoid returning the full last report once scratch is recorded"
-    );
     assert_eq!(
         boundary_snapshot
             .internal_memory
@@ -1328,7 +1320,6 @@ fn live_report_chunk_runner_matches_serial_slice_without_returning_reports() {
     assert_eq!(live.trace_rows, serial.trace_rows);
     assert_eq!(live.status, serial.status);
     assert_eq!(live.report_count, serial.report_count);
-    assert_eq!(live.last_report, None);
     assert_eq!(live.reports, Vec::new());
     assert_eq!(live.report_capacity, 0);
     assert_eq!(live_reports, serial.reports);
@@ -1572,10 +1563,6 @@ fn live_pending_segment_boundary_snapshot_lifts_next_seed_without_retained_repor
         Some(GuestPcTracePendingSegmentMessage::ReportChunk(_))
     ));
     assert_eq!(emitted.report_count, expected.report_count);
-    assert!(
-        emitted.last_report.is_none(),
-        "live boundary seed lift should use the last report shape instead of retaining the full report for ALU segments"
-    );
     assert_eq!(
         emitted.lookahead_instruction,
         expected.lookahead_instruction
@@ -1592,7 +1579,7 @@ fn live_pending_segment_boundary_snapshot_lifts_next_seed_without_retained_repor
         ZiskMainRunnerBoundarySeedInput {
             reports: &[],
             report_count: emitted.report_count,
-            last_report: emitted.last_report.as_ref(),
+            last_report: None,
             last_report_shape: emitted.last_report_shape,
             lookahead_instruction: emitted.lookahead_instruction,
             runner_state: &live_state,
@@ -3324,10 +3311,6 @@ fn live_report_chunk_finish_emits_amo_boundary_without_returning_last_report() {
     .expect("live chunk finish should emit AMO report");
 
     assert_eq!(emitted, vec![report]);
-    assert!(
-        slice.last_report.is_none(),
-        "AMO boundary seed lift should use the recorded snapshot instead of returning a cloned report"
-    );
     assert_eq!(slice.last_report_shape, Some(shape));
 }
 

@@ -1357,7 +1357,6 @@ struct GuestPcTraceSegmentSlice {
     status: GuestMachineTraceSliceStatus,
     report_count: usize,
     report_capacity: usize,
-    last_report: Option<GuestMachineReport>,
     last_report_shape: Option<GuestMachineReportShape>,
     reports: Vec<GuestMachineReport>,
 }
@@ -3429,20 +3428,15 @@ fn finish_guest_pc_trace_live_report_chunk_segment_slice(
     status: GuestMachineTraceSliceStatus,
     last_report_shape: Option<GuestMachineReportShape>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
-    let last_report = match pending_report {
-        Some(report) => {
-            emit_report(report)?;
-            None
-        }
-        None => None,
-    };
+    if let Some(report) = pending_report {
+        emit_report(report)?;
+    }
     Ok(GuestPcTraceSegmentSlice {
         executed_instructions,
         trace_rows,
         status,
         report_count,
         report_capacity: 0,
-        last_report,
         last_report_shape,
         reports: Vec::new(),
     })
@@ -3675,7 +3669,6 @@ fn finish_guest_pc_trace_streaming_device_segment(
     }
     let report_capacity = reports.capacity();
     let report_count = reports.len();
-    let last_report = reports.last().cloned();
     let device_build = builder.finish(terminal_pc, None)?;
     let next_seed = ZiskMainSegmentSeed {
         initial_state: device_build.continuation_state.clone(),
@@ -3688,7 +3681,6 @@ fn finish_guest_pc_trace_streaming_device_segment(
             status,
             report_count,
             report_capacity,
-            last_report,
             last_report_shape,
             reports,
         },
@@ -3721,11 +3713,6 @@ fn finish_guest_pc_trace_segment_slice(
         trace_rows,
         status,
     } = finish;
-    let last_report = if retain_reports {
-        reports.last().cloned()
-    } else {
-        None
-    };
     GuestPcTraceSegmentSlice {
         executed_instructions,
         trace_rows,
@@ -3736,7 +3723,6 @@ fn finish_guest_pc_trace_segment_slice(
         } else {
             0
         },
-        last_report,
         last_report_shape,
         reports,
     }
@@ -4369,8 +4355,6 @@ struct GuestPcTraceLivePendingSegmentEmission {
     report_chunk_count: usize,
     #[allow(dead_code)]
     status: GuestMachineTraceSliceStatus,
-    #[allow(dead_code)]
-    last_report: Option<GuestMachineReport>,
     last_report_shape: Option<GuestMachineReportShape>,
     #[allow(dead_code)]
     lookahead_instruction: Option<RiscvInstruction>,
@@ -4498,7 +4482,6 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
         stream_start_count,
         report_chunk_count,
         status,
-        last_report: slice.last_report,
         last_report_shape: slice.last_report_shape,
         lookahead_instruction,
         terminal_pc,
@@ -4647,7 +4630,7 @@ fn produce_guest_pc_trace_live_pending_messages(
                     ZiskMainRunnerBoundarySeedInput {
                         reports: &[],
                         report_count: emitted.report_count,
-                        last_report: emitted.last_report.as_ref(),
+                        last_report: None,
                         last_report_shape: emitted.last_report_shape,
                         lookahead_instruction: emitted.lookahead_instruction,
                         runner_state: &state,
@@ -4755,7 +4738,7 @@ fn produce_guest_pc_trace_live_pending_messages(
                         ZiskMainRunnerBoundarySeedInput {
                             reports: &[],
                             report_count: emitted.report_count,
-                            last_report: emitted.last_report.as_ref(),
+                            last_report: None,
                             last_report_shape: emitted.last_report_shape,
                             lookahead_instruction: emitted.lookahead_instruction,
                             runner_state: &state,
@@ -4971,7 +4954,7 @@ fn produce_guest_pc_trace_pending_slices(
                     ZiskMainRunnerBoundarySeedInput {
                         reports: &slice.reports,
                         report_count: slice.report_count,
-                        last_report: slice.last_report.as_ref(),
+                        last_report: None,
                         last_report_shape: slice.last_report_shape,
                         lookahead_instruction,
                         runner_state: &state,
@@ -5072,7 +5055,7 @@ fn produce_guest_pc_trace_pending_slices(
                         ZiskMainRunnerBoundarySeedInput {
                             reports: &slice.reports,
                             report_count: slice.report_count,
-                            last_report: slice.last_report.as_ref(),
+                            last_report: None,
                             last_report_shape: slice.last_report_shape,
                             lookahead_instruction,
                             runner_state: &state,

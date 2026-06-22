@@ -8565,6 +8565,15 @@ fn guest_pc_trace_segments_report_buffer_capacity_shape() {
         "fn finish_guest_pc_trace_segment_slice",
         "fn run_guest_pc_trace_segment_slice_inner",
     );
+    let segment_slice_fields = function_body(
+        &source,
+        "struct GuestPcTraceSegmentSlice",
+        "trait GuestPcTraceReplayHandler",
+    );
+    assert!(
+        !segment_slice_fields.contains("last_report: Option<GuestMachineReport>"),
+        "guest PC trace segment slices should not clone and store a full tail report"
+    );
     let finish_fields = function_body(
         &source,
         "struct GuestPcTraceSegmentSliceFinish",
