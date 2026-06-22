@@ -3849,11 +3849,39 @@ fn zisk_main_instruction_max_rows(instruction: RiscvInstruction) -> usize {
     }
 }
 
+#[derive(Clone, Copy)]
+struct ZiskMainRunnerReportRowShape {
+    instruction: RiscvInstruction,
+    has_memory_write: bool,
+}
+
+impl ZiskMainRunnerReportRowShape {
+    fn from_report(report: &GuestMachineReport) -> Self {
+        Self {
+            instruction: report.instruction,
+            has_memory_write: report
+                .memory_accesses
+                .iter()
+                .any(|access| access.kind == GuestMemoryAccessKind::Write),
+        }
+    }
+}
+
 fn zisk_main_report_row_count(
     row: usize,
     report: &GuestMachineReport,
 ) -> Result<usize, GuestPcTraceBackendError> {
-    match report.instruction {
+    zisk_main_report_row_count_from_runner_shape(
+        row,
+        ZiskMainRunnerReportRowShape::from_report(report),
+    )
+}
+
+fn zisk_main_report_row_count_from_runner_shape(
+    row: usize,
+    shape: ZiskMainRunnerReportRowShape,
+) -> Result<usize, GuestPcTraceBackendError> {
+    match shape.instruction {
         RiscvInstruction::Amo {
             kind: RiscvAmoKind::Add,
             rd,
@@ -3862,11 +3890,7 @@ fn zisk_main_report_row_count(
             ..
         } => Ok(amo_add_row_count(rd, rs1, rs2)),
         RiscvInstruction::StoreConditional { rd, .. } => {
-            if !report
-                .memory_accesses
-                .iter()
-                .any(|access| access.kind == GuestMemoryAccessKind::Write)
-            {
+            if !shape.has_memory_write {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message:
