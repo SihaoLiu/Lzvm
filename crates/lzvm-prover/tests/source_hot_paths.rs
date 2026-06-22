@@ -7265,7 +7265,7 @@ fn guest_machine_reports_inline_common_effect_storage() {
 #[test]
 fn guest_machine_report_record_stays_cache_line_pair_sized() {
     assert!(
-        std::mem::size_of::<GuestMachineReport>() <= 128,
+        std::mem::size_of::<GuestMachineReport>() <= 120,
         "guest trace reports should stay within two 64-byte cache lines; got {} bytes",
         std::mem::size_of::<GuestMachineReport>()
     );
