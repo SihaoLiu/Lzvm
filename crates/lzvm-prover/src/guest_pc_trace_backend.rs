@@ -11386,6 +11386,11 @@ fn direct_zisk_main_segment_boundary_c_from_tail(
     {
         return Ok(Ok(boundary_c));
     }
+    if let Some(boundary_c) =
+        direct_zisk_main_register_write_boundary_c(shape.instruction, boundary_registers)
+    {
+        return Ok(Ok(boundary_c));
+    }
 
     let Some(report) = last_report else {
         return Ok(Err(ZiskMainDirectSeedLiftMissReason::BoundaryCUnavailable));
@@ -11408,6 +11413,24 @@ fn direct_zisk_main_store_boundary_c(
         return Some(0);
     }
     boundary_registers.map(|registers| registers[usize::from(rs2)])
+}
+
+fn direct_zisk_main_register_write_boundary_c(
+    instruction: RiscvInstruction,
+    boundary_registers: Option<&[u64; 32]>,
+) -> Option<u64> {
+    let rd = match instruction {
+        RiscvInstruction::Lui { rd, .. }
+        | RiscvInstruction::OpImm { rd, .. }
+        | RiscvInstruction::OpImm32 { rd, .. }
+        | RiscvInstruction::Op { rd, .. }
+        | RiscvInstruction::Op32 { rd, .. } => rd,
+        _ => return None,
+    };
+    if rd == 0 {
+        return None;
+    }
+    boundary_registers.map(|registers| registers[usize::from(rd)])
 }
 
 fn direct_zisk_main_report_boundary_c(

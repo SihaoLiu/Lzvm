@@ -2946,6 +2946,55 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_store_boundary_without_re
 }
 
 #[test]
+fn runner_boundary_seed_snapshot_uses_report_shape_for_register_boundary_without_retained_report() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let mut runner_state = GuestMachineState::new(0x8000_0004);
+    runner_state
+        .set_register(12, 0x1234_5678_9abc_def0)
+        .expect("destination register should set");
+    let boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        1,
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 1,
+            last_report: None,
+            last_report_shape: Some(GuestMachineReportShape {
+                instruction: RiscvInstruction::OpImm {
+                    kind: RiscvOpImmKind::Addi,
+                    rd: 12,
+                    rs1: 0,
+                    immediate: 7,
+                },
+                has_memory_write: false,
+            }),
+            lookahead_instruction: Some(RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 0,
+                rs1: 0,
+                immediate: 0,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("shape-only register boundary seed lift should evaluate")
+    .expect("shape-only register boundary should use runner destination register");
+
+    assert_eq!(lifted.previous_c, 0x1234_5678_9abc_def0);
+    assert_eq!(lifted.initial_state.last_c, 0x1234_5678_9abc_def0);
+    assert_eq!(lifted.initial_state.registers[12], 0x1234_5678_9abc_def0);
+}
+
+#[test]
 fn runner_boundary_seed_snapshot_uses_report_shape_for_pending_dma_without_retained_report() {
     let current_seed = ZiskMainSegmentSeed::new();
     let runner_state = GuestMachineState::new(0x8000_0004);
