@@ -2406,6 +2406,86 @@ fn pending_work_units_parallel_lower_without_replay_snapshots() {
     }
 }
 
+#[test]
+fn work_unit_env_stream_matches_serial_without_replay() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEED_MIRROR");
+    let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
+    let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
+    let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+    let _work_units_env =
+        TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS", "1");
+    let _worker_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS", "2");
+    let _replay_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY");
+    let _parallel_snapshot_env =
+        TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT");
+    let _segment_replay_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY");
+    let _snapshot_replay_env =
+        TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY_SNAPSHOT");
+    let dir = repo_temp_dir("guest-pc-work-unit-stream");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        riscv_addi(5, 4, 13),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_main_trace_unit_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+
+    let serial = compute_guest_pc_trace_segments(32, context, &[])
+        .expect("serial guest PC trace should compute");
+    let mut streamed = Vec::new();
+    let stream = produce_guest_pc_trace_segments(32, context, &[], None, |segment| {
+        streamed.push(segment);
+        Ok(())
+    })
+    .expect("work-unit stream should produce");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(serial.len() >= 3);
+    assert_eq!(streamed.len(), serial.len());
+    assert_eq!(stream.proof_values, serial[0].proof_values);
+    assert_eq!(stream.timing.parallel_lower_worker_count(), 2);
+    assert_eq!(stream.timing.segment_replay_count(), 0);
+    assert_eq!(stream.timing.segment_replay_snapshot_capture_count(), 0);
+    assert_eq!(stream.timing.parallel_lower_snapshot_replay_count(), 0);
+    assert_eq!(stream.timing.parallel_lower_report_elided_count(), 0);
+    assert_eq!(
+        stream.timing.parallel_lower_dispatched_count(),
+        serial.len()
+    );
+    assert_eq!(stream.timing.parallel_lower_received_count(), serial.len());
+    assert_eq!(stream.timing.parallel_lower_emitted_count(), serial.len());
+    for (streamed, serial) in streamed.iter().zip(serial.iter()) {
+        assert_eq!(streamed.trace_instance_index, serial.trace_instance_index);
+        assert_eq!(
+            streamed.trace_source_prefix_rows,
+            serial.trace_source_prefix_rows
+        );
+        #[cfg(feature = "cuda")]
+        assert_eq!(
+            streamed.device_segment_material,
+            serial.device_segment_material
+        );
+        assert_eq!(streamed.trace, serial.trace);
+        assert_eq!(streamed.unit_values, serial.unit_values);
+    }
+}
+
 #[cfg(feature = "cuda")]
 #[test]
 fn seeded_pending_segment_owned_streaming_lower_matches_borrowed_output() {

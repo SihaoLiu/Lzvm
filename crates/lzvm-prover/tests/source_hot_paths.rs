@@ -5714,6 +5714,10 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
         "work-unit guest PC trace lowering should remain disabled by default"
     );
     assert!(
+        backend_source.contains("WorkUnit(Box<GuestPcTraceParallelLowerWorkUnit>)"),
+        "work-unit guest PC trace lowering should use a dedicated worker job"
+    );
+    assert!(
         backend_source
             .contains("|| guest_pc_trace_parallel_lower_enabled()"),
         "parallel guest PC trace lowering should enable runner seed snapshots for its pending segments"
@@ -5749,6 +5753,16 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
     assert!(
         !pipeline_gate_body.contains("GUEST_PC_TRACE_COMMIT_PIPELINE"),
         "trace commit pipeline should stay decoupled from the parallel lowerer gate"
+    );
+    let parallel_body = function_body(
+        &backend_source,
+        "fn lower_guest_pc_trace_pending_segments_parallel",
+        "fn validate_guest_pc_trace_pending_segment_seed",
+    );
+    assert!(
+        parallel_body.contains("GuestPcTraceParallelLowerWorkUnit::try_from")
+            && parallel_body.contains("GuestPcTraceParallelLowerJob::WorkUnit"),
+        "work-unit guest PC trace lowering should dispatch retained-report work units through the explicit worker job"
     );
 
     let helper_body = function_body(
