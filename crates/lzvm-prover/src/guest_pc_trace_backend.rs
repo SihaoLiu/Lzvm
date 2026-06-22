@@ -3755,10 +3755,14 @@ fn run_guest_pc_trace_segment_slice_inner<
             } else {
                 last_report.as_ref()
             };
-            if let (Some(snapshot), Some(report)) =
-                (boundary_snapshot.as_deref_mut(), boundary_report)
-            {
-                snapshot.record_report(report, Some(current), state.registers())?;
+            if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
+                record_zisk_main_runner_boundary_snapshot(
+                    snapshot,
+                    boundary_report,
+                    last_report_shape,
+                    Some(current),
+                    state.registers(),
+                )?;
             }
         }
         if current == RiscvInstruction::Ecall {
@@ -3843,8 +3847,12 @@ fn run_guest_pc_trace_segment_slice_inner<
         last_report_shape = Some(advanced.shape);
         if RETAIN_REPORTS {
             reports.push(advanced.report);
-        } else {
+        } else if TRACK_BOUNDARY
+            && zisk_main_runner_boundary_snapshot_requires_report(advanced.shape)
+        {
             last_report = Some(advanced.report);
+        } else {
+            last_report = None;
         }
         report_count = report_count.checked_add(1).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -3864,10 +3872,14 @@ fn run_guest_pc_trace_segment_slice_inner<
                 } else {
                     last_report.as_ref()
                 };
-                if let (Some(snapshot), Some(report)) =
-                    (boundary_snapshot.as_deref_mut(), boundary_report)
-                {
-                    snapshot.record_report(report, lookahead_instruction, state.registers())?;
+                if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
+                    record_zisk_main_runner_boundary_snapshot(
+                        snapshot,
+                        boundary_report,
+                        last_report_shape,
+                        lookahead_instruction,
+                        state.registers(),
+                    )?;
                 }
             }
             let status = if current == RiscvInstruction::Ecall {
@@ -7322,6 +7334,40 @@ impl ZiskMainRunnerBoundarySnapshot {
         )?;
         Ok(())
     }
+
+    fn record_report_shape(
+        &mut self,
+        shape: GuestMachineReportShape,
+        next_instruction: Option<RiscvInstruction>,
+        registers: &[u64; 32],
+    ) -> Result<(), GuestPcTraceBackendError> {
+        record_zisk_main_runner_scratch_update_from_shape(
+            &mut self.internal_memory,
+            registers,
+            shape.instruction,
+            next_instruction,
+        )
+    }
+}
+
+fn record_zisk_main_runner_boundary_snapshot(
+    snapshot: &mut ZiskMainRunnerBoundarySnapshot,
+    report: Option<&GuestMachineReport>,
+    shape: Option<GuestMachineReportShape>,
+    next_instruction: Option<RiscvInstruction>,
+    registers: &[u64; 32],
+) -> Result<(), GuestPcTraceBackendError> {
+    if let Some(report) = report {
+        snapshot.record_report(report, next_instruction, registers)
+    } else if let Some(shape) = shape {
+        snapshot.record_report_shape(shape, next_instruction, registers)
+    } else {
+        Ok(())
+    }
+}
+
+fn zisk_main_runner_boundary_snapshot_requires_report(shape: GuestMachineReportShape) -> bool {
+    matches!(shape.instruction, RiscvInstruction::Amo { .. })
 }
 
 #[derive(Clone, Copy)]
@@ -9716,7 +9762,21 @@ fn record_zisk_main_runner_scratch_update(
         }
     }
 
-    if let RiscvInstruction::ZiskDmaPrepare { kind, .. } = report.instruction {
+    record_zisk_main_runner_scratch_update_from_shape(
+        internal_memory,
+        registers,
+        report.instruction,
+        next_instruction,
+    )
+}
+
+fn record_zisk_main_runner_scratch_update_from_shape(
+    internal_memory: &mut ZiskMainInternalMemory,
+    registers: &[u64; 32],
+    instruction: RiscvInstruction,
+    next_instruction: Option<RiscvInstruction>,
+) -> Result<(), GuestPcTraceBackendError> {
+    if let RiscvInstruction::ZiskDmaPrepare { kind, .. } = instruction {
         if matches!(kind, RiscvDmaKind::Memcpy | RiscvDmaKind::Memcmp) {
             if let Some(RiscvInstruction::Op {
                 kind: RiscvOpKind::Add,

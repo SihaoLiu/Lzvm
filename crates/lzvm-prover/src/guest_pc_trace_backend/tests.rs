@@ -1108,6 +1108,105 @@ fn replay_only_runner_seed_snapshot_elides_runner_report_buffer() {
 }
 
 #[test]
+fn elided_runner_seed_snapshot_does_not_retain_alu_last_report() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let dir = repo_temp_dir("guest-pc-elided-runner-alu-last-report");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let mut serial_pending = Vec::new();
+    produce_guest_pc_trace_pending_slices(16, context, &[], layout.row_count(), |segment| {
+        serial_pending.push(segment);
+        Ok(())
+    })
+    .expect("serial pending slices should produce");
+    let expected = serial_pending
+        .into_iter()
+        .next()
+        .expect("fixture should produce a first segment");
+    let current_seed = ZiskMainSegmentSeed::new();
+    let serial_lowered =
+        lower_guest_pc_trace_seeded_pending_segment(&layout, &expected, &current_seed, None, None)
+            .expect("serial pending segment should lower");
+
+    let (mut memory, mut state, mut fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("guest trace machine should load");
+    let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let slice = run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
+        &mut memory,
+        &mut state,
+        &mut fcall_handler,
+        16,
+        layout.row_count(),
+        &mut boundary_snapshot,
+    )
+    .expect("elided segment should run");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        slice.executed_instructions,
+        expected.executed_instruction_count
+    );
+    assert_eq!(slice.trace_rows, expected.trace_row_count);
+    assert_eq!(
+        slice.status,
+        GuestMachineTraceSliceStatus::Paused {
+            pc: expected.terminal_pc,
+            instruction: expected
+                .lookahead_instruction
+                .expect("paused segment should have lookahead"),
+        }
+    );
+    assert!(slice.reports.is_empty());
+    assert_eq!(slice.report_count, expected.report_count);
+    assert!(
+        slice.last_report.is_none(),
+        "ALU boundary seed lift should not require retaining the full last report"
+    );
+
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: expected.trace_instance_index,
+        is_last_segment: expected.is_last_segment,
+        previous_c: current_seed.previous_c,
+    };
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        layout.row_count(),
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: slice.report_count,
+            last_report: slice.last_report.as_ref(),
+            last_report_shape: slice.last_report_shape,
+            lookahead_instruction: expected.lookahead_instruction,
+            runner_state: &state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("shape-only ALU seed lift should evaluate")
+    .expect("shape-only ALU seed lift should succeed");
+
+    assert_eq!(lifted, serial_lowered.next_seed);
+}
+
+#[test]
 fn live_report_chunk_runner_matches_serial_slice_without_returning_reports() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
