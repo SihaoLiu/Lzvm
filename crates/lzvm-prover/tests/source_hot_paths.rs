@@ -5763,6 +5763,12 @@ fn guest_pc_trace_parallel_lowerer_bounds_result_queue() {
             && parallel_body.contains("guest_pc_trace_parallel_lower_result_queue_capacity"),
         "parallel guest PC trace lowering should bound lowered-result buffering before emit/commit"
     );
+    assert!(
+        parallel_body.contains("guest_pc_trace_parallel_lower_job_queue_capacity")
+            && !parallel_body.contains("sync_channel::<GuestPcTraceParallelLowerJob>(1)")
+            && backend_source.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE"),
+        "parallel guest PC trace lowering should keep the worker job queue bounded without hard-coding a single-slot stream backpressure point"
+    );
 }
 
 #[test]

@@ -23,6 +23,7 @@ use lzvm_artifacts::witness_segment::{
 
 const PARALLEL_LOWER_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER";
 const LOWER_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
+const LOWER_JOB_QUEUE_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE";
 const COMMIT_PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE";
 const COMMIT_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS";
 const COMMIT_ASYNC_SINGLE_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_ASYNC_SINGLE";
@@ -718,6 +719,7 @@ fn clear_pipeline_env(command: &mut Command) {
         PARALLEL_LOWER_ENV,
         COMMIT_PIPELINE_ENV,
         LOWER_WORKERS_ENV,
+        LOWER_JOB_QUEUE_ENV,
         COMMIT_WORKERS_ENV,
         COMMIT_ASYNC_SINGLE_ENV,
         SEGMENT_REPLAY_ENV,
@@ -746,6 +748,7 @@ fn clear_pipeline_env_removes_current_replay_controls() {
     for name in [
         PARALLEL_LOWER_ENV,
         LOWER_WORKERS_ENV,
+        LOWER_JOB_QUEUE_ENV,
         COMMIT_WORKERS_ENV,
         COMMIT_PIPELINE_ENV,
         COMMIT_ASYNC_SINGLE_ENV,
@@ -771,6 +774,7 @@ fn clear_pipeline_env_removes_current_replay_controls() {
     for name in [
         PARALLEL_LOWER_ENV,
         LOWER_WORKERS_ENV,
+        LOWER_JOB_QUEUE_ENV,
         COMMIT_WORKERS_ENV,
         COMMIT_ASYNC_SINGLE_ENV,
         SEGMENT_REPLAY_ENV,
