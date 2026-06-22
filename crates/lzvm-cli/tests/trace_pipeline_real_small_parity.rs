@@ -110,9 +110,21 @@ fn real_large_trace_pipeline_preserves_proof_bytes() {
             RealParityMode::AsyncSingleCommit,
             RealParityMode::TrustedSeedSnapshot,
             RealParityMode::SeedPipeline,
+            RealParityMode::WorkUnitSeedPipeline,
             RealParityMode::ReplayOnlySeedPipeline,
             RealParityMode::SeedPipelineCommitWorkers,
         ],
+    );
+}
+
+#[test]
+#[ignore]
+fn trace_pipeline_real_large_default_vs_work_units() {
+    let config = RealParityConfig::from_env(REAL_LARGE_PARITY_ENV, "600000000");
+    run_real_trace_pipeline_parity(
+        &config,
+        "large-work-units",
+        &[RealParityMode::WorkUnitSeedPipeline],
     );
 }
 

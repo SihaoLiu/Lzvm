@@ -5867,6 +5867,10 @@ fn trace_pipeline_real_parity_covers_large_input() {
         large_parity_body.contains("RealParityMode::LiveStreamPipeline"),
         "large trace pipeline parity should cover live streamed parallel lowering"
     );
+    assert!(
+        large_parity_body.contains("RealParityMode::WorkUnitSeedPipeline"),
+        "large trace pipeline parity should cover retained-report work-unit lowering"
+    );
 }
 
 #[test]
