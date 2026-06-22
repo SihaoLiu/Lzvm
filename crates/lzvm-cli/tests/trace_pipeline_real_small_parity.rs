@@ -34,6 +34,7 @@ const RUNNER_SEED_SNAPSHOT_TRUSTED_ENV: &str = "LZVM_GUEST_PC_TRACE_RUNNER_SEED_
 const RUNNER_SEED_SNAPSHOT_VALIDATE_ENV: &str = "LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_VALIDATE";
 const PARALLEL_REPLAY_SNAPSHOT_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT";
 const PARALLEL_REPLAY_ONLY_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY";
+const WORK_UNITS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS";
 const LIVE_REPORT_CHUNKS_ENV: &str = "LZVM_GUEST_PC_TRACE_LIVE_REPORT_CHUNKS";
 const LIVE_STREAM_START_ENV: &str = "LZVM_GUEST_PC_TRACE_LIVE_STREAM_START";
 const PARALLEL_STREAM_CHUNKS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_STREAM_CHUNKS";
@@ -79,9 +80,21 @@ fn real_small_trace_pipeline_preserves_proof_bytes() {
             RealParityMode::AsyncSingleCommit,
             RealParityMode::TrustedSeedSnapshot,
             RealParityMode::SeedPipeline,
+            RealParityMode::WorkUnitSeedPipeline,
             RealParityMode::ReplayOnlySeedPipeline,
             RealParityMode::SeedPipelineCommitWorkers,
         ],
+    );
+}
+
+#[test]
+#[ignore]
+fn trace_pipeline_real_small_default_vs_work_units() {
+    let config = RealParityConfig::from_env(REAL_SMALL_PARITY_ENV, "120000000");
+    run_real_trace_pipeline_parity(
+        &config,
+        "small-work-units",
+        &[RealParityMode::WorkUnitSeedPipeline],
     );
 }
 
@@ -228,6 +241,7 @@ enum RealParityMode {
     AsyncSingleCommit,
     TrustedSeedSnapshot,
     SeedPipeline,
+    WorkUnitSeedPipeline,
     ReplayOnlySeedPipeline,
     SeedPipelineCommitWorkers,
 }
@@ -250,6 +264,7 @@ impl RealParityMode {
             Self::AsyncSingleCommit => "async-single-commit",
             Self::TrustedSeedSnapshot => "trusted-seed-snapshot",
             Self::SeedPipeline => "pipeline",
+            Self::WorkUnitSeedPipeline => "work-units",
             Self::ReplayOnlySeedPipeline => "replay-only-pipeline",
             Self::SeedPipelineCommitWorkers => "combined",
         }
@@ -618,6 +633,14 @@ fn run_prove_witness(
                 1,
             );
         }
+        RealParityMode::WorkUnitSeedPipeline => {
+            assert_pipeline_timing_shape(&output_text);
+            assert_timing_equals(
+                &output_text,
+                "timing_guest_segment_commit_effective_workers",
+                1,
+            );
+        }
         RealParityMode::ReplayOnlySeedPipeline => {
             assert_replay_only_pipeline_timing_shape(&output_text);
             assert_timing_equals(
@@ -698,6 +721,13 @@ fn prove_command(config: &RealParityConfig, output_dir: &Path, mode: RealParityM
                 .env(LOWER_WORKERS_ENV, "2")
                 .env(COMMIT_WORKERS_ENV, "1");
         }
+        RealParityMode::WorkUnitSeedPipeline => {
+            command
+                .env(PARALLEL_LOWER_ENV, "1")
+                .env(LOWER_WORKERS_ENV, "2")
+                .env(COMMIT_WORKERS_ENV, "1")
+                .env(WORK_UNITS_ENV, "1");
+        }
         RealParityMode::ReplayOnlySeedPipeline => {
             command
                 .env(PARALLEL_LOWER_ENV, "1")
@@ -731,6 +761,7 @@ fn clear_pipeline_env(command: &mut Command) {
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY",
         PARALLEL_REPLAY_ONLY_ENV,
         PARALLEL_REPLAY_SNAPSHOT_ENV,
+        WORK_UNITS_ENV,
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKER_REPLAY",
         LIVE_REPORT_CHUNKS_ENV,
         LIVE_STREAM_START_ENV,
@@ -760,6 +791,7 @@ fn clear_pipeline_env_removes_current_replay_controls() {
         RUNNER_SEED_SNAPSHOT_VALIDATE_ENV,
         PARALLEL_REPLAY_SNAPSHOT_ENV,
         PARALLEL_REPLAY_ONLY_ENV,
+        WORK_UNITS_ENV,
         LIVE_REPORT_CHUNKS_ENV,
         LIVE_STREAM_START_ENV,
         PARALLEL_STREAM_CHUNKS_ENV,
@@ -785,6 +817,7 @@ fn clear_pipeline_env_removes_current_replay_controls() {
         RUNNER_SEED_SNAPSHOT_VALIDATE_ENV,
         PARALLEL_REPLAY_SNAPSHOT_ENV,
         PARALLEL_REPLAY_ONLY_ENV,
+        WORK_UNITS_ENV,
         LIVE_REPORT_CHUNKS_ENV,
         LIVE_STREAM_START_ENV,
         PARALLEL_STREAM_CHUNKS_ENV,
@@ -827,6 +860,20 @@ fn combined_pipeline_timing_shape_requires_cross_segment_commit_workers() {
 
     assert_pipeline_timing_shape(&output);
     assert_combined_pipeline_timing_shape(&output);
+}
+
+#[test]
+fn work_unit_pipeline_timing_shape_requires_non_replay_lowering() {
+    let output = [
+        "timing_guest_trace_parallel_lower_workers=2",
+        "timing_guest_trace_seed_direct_lift_successes=22",
+        "timing_guest_trace_seed_full_advances=1",
+        "timing_guest_trace_parallel_lower_snapshot_replay_count=0",
+        "timing_guest_trace_parallel_lower_report_elided_count=0",
+    ]
+    .join("\n");
+
+    assert_pipeline_timing_shape(&output);
 }
 
 #[test]
@@ -914,6 +961,35 @@ fn replay_only_pipeline_mode_sets_report_elision_env() {
     assert_command_env_equals(&command, LOWER_WORKERS_ENV, "2");
     assert_command_env_equals(&command, COMMIT_WORKERS_ENV, "1");
     assert_command_env_equals(&command, PARALLEL_REPLAY_ONLY_ENV, "1");
+}
+
+#[test]
+fn work_unit_pipeline_mode_sets_dedicated_env() {
+    let workspace = workspace_root();
+    let config = RealParityConfig {
+        bin: workspace.join("target").join("release").join("lzvm"),
+        setup_dir: workspace.join("temp").join("setup"),
+        block_input: workspace.join("temp").join("eth-block.input"),
+        program_image_cache: workspace.join("temp").join("program-image.cache"),
+        input_data: workspace.join("temp").join("input-data.bin"),
+        guest_image: workspace.join("temp").join("guest.elf"),
+        trace_limit: "1".to_owned(),
+        work_dir: workspace.join("temp"),
+        tmp_dir: workspace.join("temp").join("tmp"),
+    };
+
+    let command = prove_command(
+        &config,
+        &workspace.join("temp").join("work-units.proof"),
+        RealParityMode::WorkUnitSeedPipeline,
+    );
+
+    assert_command_env_equals(&command, PARALLEL_LOWER_ENV, "1");
+    assert_command_env_equals(&command, LOWER_WORKERS_ENV, "2");
+    assert_command_env_equals(&command, COMMIT_WORKERS_ENV, "1");
+    assert_command_env_equals(&command, WORK_UNITS_ENV, "1");
+    assert_env_removed(&command, PARALLEL_REPLAY_ONLY_ENV);
+    assert_env_removed(&command, PARALLEL_REPLAY_SNAPSHOT_ENV);
 }
 
 fn assert_env_removed(command: &Command, name: &str) {
