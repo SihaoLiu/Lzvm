@@ -1442,6 +1442,105 @@ struct GuestPcTracePendingSegmentSlice {
     replay_snapshot: Option<GuestPcTraceSegmentReplaySnapshot>,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+struct GuestPcTraceParallelLowerWorkUnit {
+    trace_instance_index: u32,
+    executed_instruction_count: u64,
+    trace_row_count: usize,
+    runner_remaining_instruction_limit: u64,
+    report_count: usize,
+    report_capacity: usize,
+    reports: Vec<GuestMachineReport>,
+    reports_elided: bool,
+    terminal_pc: u64,
+    lookahead_instruction: Option<RiscvInstruction>,
+    is_last_segment: bool,
+    seed: Box<ZiskMainSegmentSeed>,
+}
+
+impl TryFrom<GuestPcTracePendingSegmentSlice> for GuestPcTraceParallelLowerWorkUnit {
+    type Error = GuestPcTraceBackendError;
+
+    fn try_from(pending: GuestPcTracePendingSegmentSlice) -> Result<Self, Self::Error> {
+        let GuestPcTracePendingSegmentSlice {
+            trace_instance_index,
+            executed_instruction_count,
+            trace_row_count,
+            runner_remaining_instruction_limit,
+            report_count,
+            report_capacity,
+            reports,
+            reports_elided,
+            terminal_pc,
+            lookahead_instruction,
+            is_last_segment,
+            seed,
+            replay_snapshot,
+        } = pending;
+        if reports_elided {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "guest PC trace work unit cannot use elided reports for segment {trace_instance_index}"
+                ),
+            });
+        }
+        if replay_snapshot.is_some() {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "guest PC trace work unit cannot carry a replay snapshot for segment {trace_instance_index}"
+                ),
+            });
+        }
+        if reports.len() != report_count {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "guest PC trace work unit retained {} reports for segment {trace_instance_index}, expected {report_count}",
+                    reports.len()
+                ),
+            });
+        }
+        let seed = seed.ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "guest PC trace work unit missing seed for segment {trace_instance_index}"
+            ),
+        })?;
+        Ok(Self {
+            trace_instance_index,
+            executed_instruction_count,
+            trace_row_count,
+            runner_remaining_instruction_limit,
+            report_count,
+            report_capacity,
+            reports,
+            reports_elided,
+            terminal_pc,
+            lookahead_instruction,
+            is_last_segment,
+            seed,
+        })
+    }
+}
+
+impl From<GuestPcTraceParallelLowerWorkUnit> for GuestPcTracePendingSegmentSlice {
+    fn from(work_unit: GuestPcTraceParallelLowerWorkUnit) -> Self {
+        Self {
+            trace_instance_index: work_unit.trace_instance_index,
+            executed_instruction_count: work_unit.executed_instruction_count,
+            trace_row_count: work_unit.trace_row_count,
+            runner_remaining_instruction_limit: work_unit.runner_remaining_instruction_limit,
+            report_count: work_unit.report_count,
+            report_capacity: work_unit.report_capacity,
+            reports: work_unit.reports,
+            reports_elided: work_unit.reports_elided,
+            terminal_pc: work_unit.terminal_pc,
+            lookahead_instruction: work_unit.lookahead_instruction,
+            is_last_segment: work_unit.is_last_segment,
+            seed: Some(work_unit.seed),
+            replay_snapshot: None,
+        }
+    }
+}
+
 struct GuestPcTracePendingReportChunk {
     trace_instance_index: u32,
     reports: Vec<GuestMachineReport>,
@@ -5289,6 +5388,25 @@ fn lower_guest_pc_trace_seeded_pending_segments_with_workers(
         expected_proof_values,
         worker_count,
         None,
+    )
+}
+
+#[cfg(test)]
+fn lower_guest_pc_trace_parallel_lower_work_units_with_workers(
+    layout: &WitnessTraceLayout,
+    work_units: Vec<GuestPcTraceParallelLowerWorkUnit>,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    worker_count: usize,
+) -> Result<Vec<GuestPcTraceLoweredSegment>, GuestPcTraceBackendError> {
+    let pending = work_units
+        .into_iter()
+        .map(GuestPcTracePendingSegmentSlice::from)
+        .collect();
+    lower_guest_pc_trace_seeded_pending_segments_with_workers(
+        layout,
+        pending,
+        expected_proof_values,
+        worker_count,
     )
 }
 

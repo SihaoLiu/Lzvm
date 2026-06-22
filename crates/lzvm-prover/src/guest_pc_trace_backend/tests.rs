@@ -2220,6 +2220,192 @@ fn seeded_pending_segments_parallel_lower_matches_serial_output() {
     }
 }
 
+fn sample_main_trace_unit_rows(row_count: u64) -> ProveUnitSchedule {
+    let base_domain_size = row_count;
+    let base_domain_bits = row_count.next_power_of_two().ilog2();
+    let extended_domain_bits = base_domain_bits + 1;
+    ProveUnitSchedule {
+        kind: KeyUnitKind::Basic,
+        group_id: Some(0),
+        unit_id: Some(0),
+        group_name: Some("group-a".to_owned()),
+        unit_name: Some("unit-a".to_owned()),
+        base_domain_bits,
+        extended_domain_bits,
+        base_domain_size,
+        extended_domain_size: base_domain_size * 2,
+        blowup_factor: 2,
+        query_count: 1,
+        proof_of_work_bits: 0,
+        merkle_tree_arity: 4,
+        last_level_verification: 0,
+        transcript_arity: Some(4),
+        hash_commits: true,
+        transcript_root_challenge_draws: vec![1, 1],
+        challenge_count: 1,
+        evaluation_value_count: 0,
+        evaluation_map: Vec::new(),
+        transcript_evaluation_challenge_draws: 1,
+        constant_width: 0,
+        stage_commit_widths: vec![27],
+        commitment_columns: vec![
+            commitment_column("a", 1, 0, 2),
+            commitment_column("b", 1, 2, 2),
+            commitment_column("c", 1, 4, 2),
+            commitment_column("flag", 1, 6, 1),
+            commitment_column("pc", 1, 7, 1),
+            commitment_column("a_src_imm", 1, 8, 1),
+            commitment_column("b_src_imm", 1, 9, 1),
+            commitment_column("a_src_reg", 1, 10, 1),
+            commitment_column("b_src_reg", 1, 11, 1),
+            commitment_column("store_reg", 1, 12, 1),
+            commitment_column("store_pc", 1, 13, 1),
+            commitment_column("set_pc", 1, 14, 1),
+            commitment_column("op", 1, 15, 1),
+            commitment_column("jmp_offset1", 1, 16, 1),
+            commitment_column("jmp_offset2", 1, 17, 1),
+            commitment_column("m32", 1, 18, 1),
+            commitment_column("is_external_op", 1, 19, 1),
+            commitment_column("is_precompiled", 1, 20, 1),
+            commitment_column("b_src_ind", 1, 21, 1),
+            commitment_column("ind_width", 1, 22, 1),
+            commitment_column("store_ind", 1, 23, 1),
+            commitment_column("store_offset", 1, 24, 1),
+            commitment_column("store_mem", 1, 25, 1),
+            commitment_column("b_offset_imm0", 1, 26, 1),
+        ],
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
+        opening_points: vec![0],
+        fri_layers: vec![PcsFriLayer {
+            input_bits: extended_domain_bits,
+            output_bits: 1,
+            folding_factor: 4,
+        }],
+        final_layer_bits: 1,
+        fixed_bytes: 0,
+        constant_tree_root: None,
+        pcs_material_bytes: None,
+        pcs_material_plan_digest: None,
+        pcs_material_fixed_column_digest: None,
+        pcs_material_constant_tree_digest: None,
+        pcs_material_constant_tree_root: None,
+        pcs_material_fixed_byte_count: None,
+        pcs_material_constant_tree_byte_count: None,
+        pcs_material_leaf_byte_count: None,
+        pcs_material_node_byte_count: None,
+    }
+}
+
+#[test]
+fn pending_work_units_parallel_lower_without_replay_snapshots() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEED_MIRROR");
+    let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
+    let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
+    let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+    let _work_units_env =
+        TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS", "1");
+    let _worker_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS", "2");
+    let _replay_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY");
+    let _segment_replay_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY");
+    let _snapshot_replay_env =
+        TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY_SNAPSHOT");
+    let dir = repo_temp_dir("guest-pc-pending-work-units");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        riscv_addi(5, 4, 13),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_main_trace_unit_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let mut pending = Vec::new();
+
+    produce_guest_pc_trace_pending_slices(
+        32,
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        &[],
+        layout.row_count(),
+        |segment| {
+            pending.push(segment);
+            Ok(())
+        },
+    )
+    .expect("pending slices should produce");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(pending.len() >= 3);
+    assert!(pending.iter().all(|segment| segment.seed.is_some()));
+    assert!(pending.iter().all(|segment| !segment.reports_elided));
+    assert!(pending
+        .iter()
+        .all(|segment| segment.replay_snapshot.is_none()));
+    assert!(pending
+        .iter()
+        .all(|segment| segment.reports.len() == segment.report_count));
+
+    let mut serial = Vec::new();
+    for segment in &pending {
+        let seed = segment
+            .seed
+            .as_deref()
+            .expect("work-unit pending segment should carry its own seed");
+        serial.push(
+            lower_guest_pc_trace_seeded_pending_segment(&layout, segment, seed, None, None)
+                .expect("serial seeded segment should lower"),
+        );
+    }
+
+    let work_units = pending
+        .into_iter()
+        .map(GuestPcTraceParallelLowerWorkUnit::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .expect("retained-report pending segments should convert into work units");
+    assert!(work_units
+        .iter()
+        .all(|unit| unit.reports.len() == unit.report_count));
+    assert!(work_units.iter().all(|unit| !unit.reports_elided));
+
+    let parallel =
+        lower_guest_pc_trace_parallel_lower_work_units_with_workers(&layout, work_units, None, 2)
+            .expect("parallel work units should lower");
+
+    assert_eq!(parallel.len(), serial.len());
+    for (parallel, serial) in parallel.iter().zip(serial.iter()) {
+        assert_eq!(parallel.next_seed, serial.next_seed);
+        assert_eq!(
+            parallel.segment.trace_instance_index,
+            serial.segment.trace_instance_index
+        );
+        assert_eq!(
+            parallel.segment.trace_source_prefix_rows,
+            serial.segment.trace_source_prefix_rows
+        );
+        #[cfg(feature = "cuda")]
+        assert_eq!(
+            parallel.segment.device_segment_material,
+            serial.segment.device_segment_material
+        );
+        assert_eq!(parallel.segment.trace, serial.segment.trace);
+        assert_eq!(parallel.segment.unit_values, serial.segment.unit_values);
+        assert_eq!(parallel.segment.proof_values, serial.segment.proof_values);
+    }
+}
+
 #[cfg(feature = "cuda")]
 #[test]
 fn seeded_pending_segment_owned_streaming_lower_matches_borrowed_output() {
