@@ -5497,6 +5497,83 @@ fn prove_timing_root_summary_reads_sibling_nsys_cpu_summary() {
 }
 
 #[test]
+fn prove_timing_root_summary_reads_csv_sibling_nsys_cpu_summary() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let temp_dir = crate_root.join("../../temp").join(format!(
+        "prove-timing-root-summary-nsys-cpu-csv-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    std::fs::create_dir_all(&temp_dir).expect("test temp directory should be created");
+    let log_path = temp_dir.join("sample.log");
+    let cpu_summary_path = temp_dir.join("sample.cpu-summary.csv");
+    std::fs::write(
+        &log_path,
+        [
+            "timing_total_ms=50311",
+            "timing_guest_trace_reports=499520693",
+            "timing_guest_stage_tree_commit_root_count=1",
+            "timing_guest_stage_tree_commit_root_materialization_groups=1",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        ]
+        .join("\n"),
+    )
+    .expect("timing log should be written");
+    std::fs::write(
+        &cpu_summary_path,
+        [
+            "application_cpu_hotspots",
+            "symbol,module,samples,application_sample_pct",
+            "lzvm_prover::guest_pc_trace_backend::apply_zisk_main_lowered_report_row,/path/lzvm,11598,25.745",
+            "lzvm_prover::guest_pc_trace_backend::run_guest_pc_trace_segment_slice,/path/lzvm,8307,18.440",
+            "lzvm_prover::guest_machine::advance_guest_machine_prepared_inner_with_report_shape,/path/lzvm,6458,14.338",
+            "lzvm_prover::guest_pc_trace_backend::append_main_device_trace_descriptor,/path/lzvm,3069,6.817",
+        ]
+        .join("\n"),
+    )
+    .expect("sibling nsys CPU summary should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("summary should print a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should print one row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("perf_lowered_report_row_self_pct"), "25.745");
+    assert_eq!(value("perf_advance_guest_machine_self_pct"), "14.338");
+    assert_eq!(value("perf_append_descriptor_self_pct"), "6.817");
+}
+
+#[test]
 fn prove_timing_root_summary_reads_real_nsys_cpu_trace_hints() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
