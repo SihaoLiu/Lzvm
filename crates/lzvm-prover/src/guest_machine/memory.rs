@@ -518,11 +518,29 @@ fn read_unwritten_segment_range_into(initialized_bytes: &[u8], offset: u64, byte
 #[inline(always)]
 fn low_le_bytes_to_u64(bytes: &[u8]) -> u64 {
     debug_assert!(bytes.len() <= 8);
+    if let Some(value) = common_width_le_bytes_to_u64(bytes) {
+        return value;
+    }
     let mut value = 0_u64;
     for (shift, byte) in bytes.iter().enumerate() {
         value |= u64::from(*byte) << (shift * 8);
     }
     value
+}
+
+#[inline(always)]
+fn common_width_le_bytes_to_u64(bytes: &[u8]) -> Option<u64> {
+    match bytes.len() {
+        1 => Some(u64::from(bytes[0])),
+        2 => Some(u64::from(u16::from_le_bytes([bytes[0], bytes[1]]))),
+        4 => Some(u64::from(u32::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3],
+        ]))),
+        8 => Some(u64::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ])),
+        _ => None,
+    }
 }
 
 fn checked_address_end(address: u64, byte_len: usize) -> Result<u64, GuestMemoryError> {
@@ -790,6 +808,21 @@ mod tests {
                 .expect("mixed read should succeed"),
             u64::from_le_bytes([14, 15, 90, 91, 92, 93, 20, 21])
         );
+    }
+
+    #[test]
+    fn common_width_le_bytes_use_native_decode() {
+        assert_eq!(common_width_le_bytes_to_u64(&[0x12]), Some(0x12));
+        assert_eq!(common_width_le_bytes_to_u64(&[0x34, 0x12]), Some(0x1234));
+        assert_eq!(
+            common_width_le_bytes_to_u64(&[0x78, 0x56, 0x34, 0x12]),
+            Some(0x1234_5678)
+        );
+        assert_eq!(
+            common_width_le_bytes_to_u64(&[0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01]),
+            Some(0x0123_4567_89ab_cdef)
+        );
+        assert_eq!(common_width_le_bytes_to_u64(&[1, 2, 3]), None);
     }
 
     #[test]
