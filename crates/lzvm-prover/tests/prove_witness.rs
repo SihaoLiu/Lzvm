@@ -2298,6 +2298,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         seed_full_advance_count: usize,
         parallel_lower_worker_count: usize,
         parallel_lower_emitted_count: usize,
+        parallel_lower_max_reorder_count: usize,
         parallel_lower_snapshot_replay_count: usize,
         parallel_lower_snapshot_replay_duration: Duration,
         parallel_lower_report_elided_count: usize,
@@ -2426,6 +2427,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
                     parallel_lower_counts = Some((
                         timing.guest_trace_parallel_lower_worker_count(),
                         timing.guest_trace_parallel_lower_emitted_count(),
+                        timing.guest_trace_parallel_lower_max_reorder_count(),
                     ));
                     parallel_lower_snapshot_replay_count =
                         Some(timing.guest_trace_parallel_lower_snapshot_replay_count());
@@ -2467,8 +2469,11 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             seed_direct_lift_success_count,
             seed_full_advance_count,
         ) = seed_counts.expect("timed run should report runner seed counts");
-        let (parallel_lower_worker_count, parallel_lower_emitted_count) =
-            parallel_lower_counts.expect("timed run should report parallel lower counts");
+        let (
+            parallel_lower_worker_count,
+            parallel_lower_emitted_count,
+            parallel_lower_max_reorder_count,
+        ) = parallel_lower_counts.expect("timed run should report parallel lower counts");
         let parallel_lower_snapshot_replay_count = parallel_lower_snapshot_replay_count
             .expect("timed run should report parallel lower replay count");
         let parallel_lower_snapshot_replay_duration = parallel_lower_snapshot_replay_duration
@@ -2577,6 +2582,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
             seed_full_advance_count,
             parallel_lower_worker_count,
             parallel_lower_emitted_count,
+            parallel_lower_max_reorder_count,
             parallel_lower_snapshot_replay_count,
             parallel_lower_snapshot_replay_duration,
             parallel_lower_report_elided_count,
@@ -2874,6 +2880,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert!(
         seed_discovery_run.parallel_lower_emitted_count > 0,
         "seed-discovery opt-in should emit lowered trace segments"
+    );
+    assert!(
+        seed_discovery_run.parallel_lower_max_reorder_count > 0,
+        "seed-discovery opt-in should track ordered replay lower result buffering"
     );
     assert_eq!(
         seed_discovery_run.parallel_lower_snapshot_replay_count,

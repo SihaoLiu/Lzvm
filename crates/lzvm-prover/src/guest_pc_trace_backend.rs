@@ -4323,20 +4323,23 @@ fn produce_guest_pc_trace_segments(
         discovery.timing.runner_duration += runner_started.elapsed();
         let mut timing = std::mem::take(&mut discovery.timing);
         let lowerer_started = Instant::now();
-        let lowered = discovery.lower_replayable_pending_segments(
+        let trace_emit_duration = std::cell::Cell::new(Duration::ZERO);
+        let pending = discovery.replayable_pending_segments(context, input)?;
+        lower_guest_pc_trace_replayable_pending_segments_emit_with_timing(
             layout,
-            context,
-            input,
+            pending,
             expected_proof_values,
             guest_pc_trace_parallel_lower_configured_worker_count(),
             Some(&mut timing),
+            |lowered| {
+                let emit_started = Instant::now();
+                emit(lowered.segment)?;
+                trace_emit_duration.set(trace_emit_duration.get() + emit_started.elapsed());
+                Ok(())
+            },
         )?;
         timing.lowerer_duration += lowerer_started.elapsed();
-        for lowered in lowered {
-            let emit_started = Instant::now();
-            emit(lowered.segment)?;
-            timing.trace_emit_duration += emit_started.elapsed();
-        }
+        timing.trace_emit_duration += trace_emit_duration.get();
         let stream = GuestPcTraceStreamResult {
             proof_values: discovery.proof_values,
             timing,
@@ -5803,29 +5806,59 @@ fn lower_guest_pc_trace_replayable_pending_job(
     })
 }
 
+enum GuestPcTraceReplayableLowerMessage {
+    Segment {
+        trace_instance_index: u32,
+        result: Box<Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError>>,
+        timing: Box<GuestPcTraceStreamTiming>,
+    },
+    Complete,
+}
+
 fn lower_guest_pc_trace_replayable_pending_segments_with_timing(
     layout: &WitnessTraceLayout,
     pending: Vec<GuestPcTracePendingSegmentSlice>,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
     worker_count: usize,
-    mut timing: Option<&mut GuestPcTraceStreamTiming>,
+    timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<Vec<GuestPcTraceLoweredSegment>, GuestPcTraceBackendError> {
+    let mut lowered = Vec::with_capacity(pending.len());
+    lower_guest_pc_trace_replayable_pending_segments_emit_with_timing(
+        layout,
+        pending,
+        expected_proof_values,
+        worker_count,
+        timing,
+        |segment| {
+            lowered.push(segment);
+            Ok(())
+        },
+    )?;
+    Ok(lowered)
+}
+
+fn lower_guest_pc_trace_replayable_pending_segments_emit_with_timing(
+    layout: &WitnessTraceLayout,
+    pending: Vec<GuestPcTracePendingSegmentSlice>,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    worker_count: usize,
+    mut timing: Option<&mut GuestPcTraceStreamTiming>,
+    mut emit: impl FnMut(GuestPcTraceLoweredSegment) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<(), GuestPcTraceBackendError> {
     if pending.is_empty() {
-        return Ok(Vec::new());
+        return Ok(());
     }
 
+    let pending_len = pending.len();
     let worker_count = worker_count.max(1).min(pending.len());
     if let Some(timing) = &mut timing {
         timing.parallel_lower_worker_count = timing.parallel_lower_worker_count.max(worker_count);
         timing.parallel_lower_dispatched_count = timing
             .parallel_lower_dispatched_count
             .saturating_add(pending.len());
-        timing.parallel_lower_received_count = timing
-            .parallel_lower_received_count
-            .saturating_add(pending.len());
     }
-    let mut lowered = Vec::with_capacity(pending.len());
     if worker_count == 1 {
+        let mut current_seed = ZiskMainSegmentSeed::new();
         for pending in pending {
             let mut job_timing = GuestPcTraceStreamTiming::default();
             let entry = lower_guest_pc_trace_replayable_pending_job(
@@ -5837,66 +5870,171 @@ fn lower_guest_pc_trace_replayable_pending_segments_with_timing(
             if let Some(timing) = &mut timing {
                 (**timing).add(job_timing);
             }
-            lowered.push(entry);
-        }
-    } else {
-        let chunk_size = pending.len().div_ceil(worker_count);
-        let mut chunks = (0..worker_count)
-            .map(|_| Vec::new())
-            .collect::<Vec<Vec<GuestPcTracePendingSegmentSlice>>>();
-        for (index, pending) in pending.into_iter().enumerate() {
-            chunks[index / chunk_size].push(pending);
-        }
-        thread::scope(|scope| {
-            let mut handles = Vec::new();
-            for chunk in chunks.into_iter().filter(|chunk| !chunk.is_empty()) {
-                handles.push(scope.spawn(move || {
-                    let mut chunk_timing = GuestPcTraceStreamTiming::default();
-                    let mut chunk_out = Vec::with_capacity(chunk.len());
-                    for pending in chunk {
-                        chunk_out.push(lower_guest_pc_trace_replayable_pending_job(
-                            layout,
-                            pending,
-                            expected_proof_values,
-                            &mut chunk_timing,
-                        )?);
-                    }
-                    Ok::<_, GuestPcTraceBackendError>((chunk_out, chunk_timing))
-                }));
+            if let Some(timing) = &mut timing {
+                timing.parallel_lower_received_count =
+                    timing.parallel_lower_received_count.saturating_add(1);
+                timing.parallel_lower_max_reorder_count =
+                    timing.parallel_lower_max_reorder_count.max(1);
             }
+            validate_guest_pc_trace_pending_segment_seed(
+                entry.lowered.segment.trace_instance_index,
+                Some(&entry.seed),
+                &current_seed.initial_state,
+                current_seed.previous_c,
+            )?;
+            current_seed = entry.lowered.next_seed.clone();
+            emit(entry.lowered)?;
+            if let Some(timing) = &mut timing {
+                timing.parallel_lower_emitted_count =
+                    timing.parallel_lower_emitted_count.saturating_add(1);
+            }
+        }
+        return Ok(());
+    }
 
-            for handle in handles {
-                let (chunk, chunk_timing) = handle.join().map_err(|_| {
-                    GuestPcTraceBackendError::InvalidPcTraceLayout {
-                        message: "replayable guest PC trace lower worker panicked".to_owned(),
+    let chunk_size = pending.len().div_ceil(worker_count);
+    let mut chunks = (0..worker_count)
+        .map(|_| Vec::new())
+        .collect::<Vec<Vec<GuestPcTracePendingSegmentSlice>>>();
+    for (index, pending) in pending.into_iter().enumerate() {
+        chunks[index / chunk_size].push(pending);
+    }
+    thread::scope(|scope| {
+        let (result_sender, result_receiver) = mpsc::sync_channel(worker_count);
+        let mut handles = Vec::new();
+        for chunk in chunks.into_iter().filter(|chunk| !chunk.is_empty()) {
+            let result_sender = result_sender.clone();
+            handles.push(scope.spawn(move || {
+                for pending in chunk {
+                    let trace_instance_index = pending.trace_instance_index;
+                    let mut job_timing = GuestPcTraceStreamTiming::default();
+                    let result = lower_guest_pc_trace_replayable_pending_job(
+                        layout,
+                        pending,
+                        expected_proof_values,
+                        &mut job_timing,
+                    );
+                    let failed = result.is_err();
+                    if result_sender
+                        .send(GuestPcTraceReplayableLowerMessage::Segment {
+                            trace_instance_index,
+                            result: Box::new(result),
+                            timing: Box::new(job_timing),
+                        })
+                        .is_err()
+                    {
+                        return;
                     }
-                })??;
-                if let Some(timing) = &mut timing {
-                    (**timing).add(chunk_timing);
+                    if failed {
+                        break;
+                    }
                 }
-                lowered.extend(chunk);
-            }
-            Ok::<(), GuestPcTraceBackendError>(())
-        })?;
-    }
+                let _ = result_sender.send(GuestPcTraceReplayableLowerMessage::Complete);
+            }));
+        }
+        drop(result_sender);
 
-    lowered.sort_by_key(|entry| entry.lowered.segment.trace_instance_index);
-    let mut current_seed = ZiskMainSegmentSeed::new();
-    for entry in &lowered {
-        validate_guest_pc_trace_pending_segment_seed(
-            entry.lowered.segment.trace_instance_index,
-            Some(&entry.seed),
-            &current_seed.initial_state,
-            current_seed.previous_c,
-        )?;
-        current_seed = entry.lowered.next_seed.clone();
-    }
-    if let Some(timing) = &mut timing {
-        timing.parallel_lower_emitted_count = timing
-            .parallel_lower_emitted_count
-            .saturating_add(lowered.len());
-    }
-    Ok(lowered.into_iter().map(|entry| entry.lowered).collect())
+        let mut completed_workers = 0_usize;
+        let active_worker_count = handles.len();
+        let mut next_emit_index = 0_u32;
+        let mut current_seed = ZiskMainSegmentSeed::new();
+        let mut reorder = BTreeMap::<u32, GuestPcTraceSeededLoweredSegment>::new();
+        let mut emitted_count = 0_usize;
+        let mut first_error = None;
+
+        while completed_workers < active_worker_count {
+            let message = match result_receiver.recv() {
+                Ok(message) => message,
+                Err(_) => {
+                    first_error.get_or_insert(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "replayable guest PC trace lower worker stopped".to_owned(),
+                    });
+                    break;
+                }
+            };
+            match message {
+                GuestPcTraceReplayableLowerMessage::Complete => {
+                    completed_workers = completed_workers.saturating_add(1);
+                }
+                GuestPcTraceReplayableLowerMessage::Segment {
+                    trace_instance_index,
+                    result,
+                    timing: worker_timing,
+                } => {
+                    if let Some(timing) = &mut timing {
+                        timing.add(*worker_timing);
+                        timing.parallel_lower_received_count =
+                            timing.parallel_lower_received_count.saturating_add(1);
+                    }
+                    match *result {
+                        Ok(entry) if first_error.is_none() => {
+                            reorder.insert(trace_instance_index, entry);
+                            if let Some(timing) = &mut timing {
+                                timing.parallel_lower_max_reorder_count =
+                                    timing.parallel_lower_max_reorder_count.max(reorder.len());
+                            }
+                            while let Some(entry) = reorder.remove(&next_emit_index) {
+                                if let Err(error) = validate_guest_pc_trace_pending_segment_seed(
+                                    entry.lowered.segment.trace_instance_index,
+                                    Some(&entry.seed),
+                                    &current_seed.initial_state,
+                                    current_seed.previous_c,
+                                ) {
+                                    first_error.get_or_insert(error);
+                                    break;
+                                }
+                                current_seed = entry.lowered.next_seed.clone();
+                                if let Err(error) = emit(entry.lowered) {
+                                    first_error.get_or_insert(error);
+                                    break;
+                                }
+                                emitted_count = emitted_count.saturating_add(1);
+                                if let Some(timing) = &mut timing {
+                                    timing.parallel_lower_emitted_count =
+                                        timing.parallel_lower_emitted_count.saturating_add(1);
+                                }
+                                next_emit_index =
+                                    next_emit_index.checked_add(1).ok_or_else(|| {
+                                        GuestPcTraceBackendError::InvalidPcTraceLayout {
+                                        message:
+                                            "replayable guest PC trace lower segment index overflow"
+                                                .to_owned(),
+                                    }
+                                    })?;
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            first_error.get_or_insert(error);
+                        }
+                    }
+                }
+            }
+        }
+
+        for handle in handles {
+            if handle.join().is_err() {
+                first_error.get_or_insert(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "replayable guest PC trace lower worker panicked".to_owned(),
+                });
+            }
+        }
+        if let Some(error) = first_error {
+            return Err(error);
+        }
+        if emitted_count != pending_len {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "replayable guest PC trace lower stopped before emitting every segment"
+                    .to_owned(),
+            });
+        }
+        if !reorder.is_empty() {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "replayable guest PC trace lower left buffered segments".to_owned(),
+            });
+        }
+        Ok::<(), GuestPcTraceBackendError>(())
+    })
 }
 
 #[cfg(test)]
