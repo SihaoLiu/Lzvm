@@ -25,6 +25,7 @@ pub(crate) struct GuestMachineMemoryOverlaySnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GuestMachineMemoryOverlayBlock {
     address: u64,
+    byte_len: usize,
     bytes: [u8; GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE],
 }
 
@@ -300,9 +301,14 @@ impl GuestMachineMemoryOverlaySnapshot {
         let mut blocks = Vec::new();
         for segment in &memory.segments {
             for (block_index, bytes) in &segment.written_blocks {
+                let block_offset = block_index * GUEST_MEMORY_OVERLAY_BLOCK_SIZE;
+                let byte_len = segment
+                    .memory_size
+                    .saturating_sub(block_offset)
+                    .min(GUEST_MEMORY_OVERLAY_BLOCK_SIZE) as usize;
                 blocks.push(GuestMachineMemoryOverlayBlock {
-                    address: segment.virtual_address
-                        + block_index * GUEST_MEMORY_OVERLAY_BLOCK_SIZE,
+                    address: segment.virtual_address + block_offset,
+                    byte_len,
                     bytes: **bytes,
                 });
             }
@@ -316,7 +322,7 @@ impl GuestMachineMemoryOverlaySnapshot {
         memory: &mut GuestMachineMemory,
     ) -> Result<(), GuestMemoryError> {
         for block in &self.blocks {
-            memory.write_range(block.address, &block.bytes)?;
+            memory.write_range(block.address, &block.bytes[..block.byte_len])?;
         }
         Ok(())
     }
@@ -651,6 +657,27 @@ mod tests {
             .expect("mixed read should succeed");
 
         assert_eq!(bytes, [1, 2, 3, 4, 5, 6, 7, 8, 80, 81, 82, 12]);
+    }
+
+    #[test]
+    fn overlay_snapshot_restores_tail_block_without_extending_segment() {
+        let image = sample_guest_image_with_program_header(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 10);
+        let mut memory = GuestMachineMemory::from_image(&image);
+        memory
+            .write_range(TEST_ENTRY + 9, &[90])
+            .expect("tail byte should be writable");
+        let snapshot = GuestMachineMemoryOverlaySnapshot::capture(&memory);
+
+        let mut restored = GuestMachineMemory::from_image(&image);
+        snapshot
+            .restore_into(&mut restored)
+            .expect("tail overlay block should restore");
+        let mut bytes = [0_u8; 10];
+        restored
+            .read_range_into(TEST_ENTRY, &mut bytes)
+            .expect("restored segment should be readable");
+
+        assert_eq!(bytes, [1, 2, 3, 4, 5, 6, 7, 8, 9, 90]);
     }
 
     #[test]

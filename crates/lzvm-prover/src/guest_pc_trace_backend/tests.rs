@@ -5,11 +5,11 @@ use crate::guest_instruction::{
 };
 use crate::guest_machine::GuestMachineReportShape;
 use crate::guest_machine::GuestPrecompileReportEffects;
-use crate::witness_layout::derive_witness_trace_layout;
+use crate::witness_layout::{derive_witness_trace_layout, WitnessTraceLayout};
 use crate::witness_loader::WitnessComputeContext;
 use crate::witness_trace::parse_witness_trace;
 use crate::ProveUnitSchedule;
-use lzvm_artifacts::guest_image::parse_guest_image;
+use lzvm_artifacts::guest_image::{parse_guest_image, GuestImageInfo};
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::setup_info::CommitmentColumn;
@@ -481,25 +481,8 @@ fn guest_pc_trace_seed_discovery_restores_written_memory_boundaries() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
     let guest_image = dir.join("guest.elf");
-    let data_offset = 64_u16;
-    let mut words = vec![
-        riscv_auipc(1, 0),
-        riscv_addi(1, 1, data_offset as i16),
-        riscv_addi(2, 0, 123),
-        riscv_sd(2, 1, 0),
-        riscv_ld(3, 1, 0),
-        riscv_addi(4, 3, 1),
-        0x0000_0073,
-    ];
-    while words.len() * std::mem::size_of::<u32>() < usize::from(data_offset) {
-        words.push(0);
-    }
-    words.extend_from_slice(&[0, 0]);
-    let guest_image_bytes = sample_guest_image_with_words(&words);
-    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
-    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
-    let unit = sample_unit_with_zisk_main_columns_rows(4);
-    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let guest_image_info = write_store_load_replay_guest_image(&guest_image);
+    let layout = store_load_replay_layout();
     let context = WitnessComputeContext {
         guest_image: Some(&guest_image),
         guest_image_info: Some(&guest_image_info),
@@ -563,25 +546,8 @@ fn guest_pc_trace_seed_discovery_builds_replayable_pending_segments() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
     let guest_image = dir.join("guest.elf");
-    let data_offset = 64_u16;
-    let mut words = vec![
-        riscv_auipc(1, 0),
-        riscv_addi(1, 1, data_offset as i16),
-        riscv_addi(2, 0, 123),
-        riscv_sd(2, 1, 0),
-        riscv_ld(3, 1, 0),
-        riscv_addi(4, 3, 1),
-        0x0000_0073,
-    ];
-    while words.len() * std::mem::size_of::<u32>() < usize::from(data_offset) {
-        words.push(0);
-    }
-    words.extend_from_slice(&[0, 0]);
-    let guest_image_bytes = sample_guest_image_with_words(&words);
-    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
-    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
-    let unit = sample_unit_with_zisk_main_columns_rows(4);
-    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let guest_image_info = write_store_load_replay_guest_image(&guest_image);
+    let layout = store_load_replay_layout();
     let context = WitnessComputeContext {
         guest_image: Some(&guest_image),
         guest_image_info: Some(&guest_image_info),
@@ -5241,6 +5207,31 @@ fn repo_temp_dir(name: &str) -> std::path::PathBuf {
         .join("../..")
         .join("temp")
         .join(format!("lzvm-prover-{}-{name}", std::process::id()))
+}
+
+fn write_store_load_replay_guest_image(guest_image: &std::path::Path) -> GuestImageInfo {
+    let data_offset = 64_u16;
+    let mut words = vec![
+        riscv_auipc(1, 0),
+        riscv_addi(1, 1, data_offset as i16),
+        riscv_addi(2, 0, 123),
+        riscv_sd(2, 1, 0),
+        riscv_ld(3, 1, 0),
+        riscv_addi(4, 3, 1),
+        0x0000_0073,
+    ];
+    while words.len() * std::mem::size_of::<u32>() < usize::from(data_offset) {
+        words.push(0);
+    }
+    words.extend_from_slice(&[0, 0]);
+    let guest_image_bytes = sample_guest_image_with_words(&words);
+    std::fs::write(guest_image, &guest_image_bytes).expect("guest image should be written");
+    parse_guest_image(&guest_image_bytes).expect("guest image should parse")
+}
+
+fn store_load_replay_layout() -> WitnessTraceLayout {
+    let unit = sample_unit_with_zisk_main_columns_rows(4);
+    derive_witness_trace_layout(&unit).expect("layout should derive")
 }
 
 const ENTRY: u64 = 0x8000_0000;
