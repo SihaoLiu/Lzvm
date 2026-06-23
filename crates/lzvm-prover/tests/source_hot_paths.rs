@@ -8739,6 +8739,51 @@ fn guest_pc_trace_streaming_discovery_lower_reuses_replay_base_memory() {
 }
 
 #[test]
+fn guest_pc_trace_streaming_discovery_workers_reuse_chunk_replay_state() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let emit_body = function_body(
+        &source,
+        "fn lower_guest_pc_trace_seed_discovery_streaming_device_segments_emit_with_timing",
+        "#[cfg(test)]",
+    );
+    assert!(
+        emit_body.contains("lower_guest_pc_trace_seed_discovery_streaming_device_chunk"),
+        "streaming discovery workers should lower each contiguous chunk through a replay-state-reusing helper"
+    );
+
+    let chunk_body = function_body(
+        &source,
+        "fn lower_guest_pc_trace_seed_discovery_streaming_device_chunk",
+        "fn lower_guest_pc_trace_seed_discovery_streaming_device_segments_with_timing",
+    );
+    let first_restore = chunk_body
+        .find("first_discovery")
+        .expect("streaming discovery chunk should restore the first boundary");
+    let loop_start = chunk_body
+        .find("for (index, discovery) in chunk.iter().enumerate()")
+        .expect("streaming discovery chunk should iterate over the contiguous chunk");
+    let fallback_guard = chunk_body
+        .find("if !advanced_replay_state")
+        .expect("streaming discovery chunk should only restore after fallback");
+    let next_restore = chunk_body
+        .find("next_discovery")
+        .expect("streaming discovery chunk should recover fallback boundaries");
+    assert!(
+        chunk_body.contains("let mut memory = replay_base.memory.clone()")
+            && first_restore < loop_start,
+        "streaming discovery chunks should restore the boundary state once and then advance the same replay state"
+    );
+    assert!(
+        !chunk_body[loop_start..fallback_guard].contains(".restore_into(&mut memory)")
+            && fallback_guard < next_restore,
+        "streaming discovery chunks should not restore sparse memory overlays before every segment"
+    );
+}
+
+#[test]
 fn fri_opening_timing_reports_unit_tree_query_and_fold_work() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let timing_path = crate_root.join("src/proof_artifact_timing.rs");

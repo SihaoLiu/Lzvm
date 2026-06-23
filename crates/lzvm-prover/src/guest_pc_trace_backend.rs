@@ -6128,6 +6128,7 @@ fn lower_guest_pc_trace_replayable_pending_segments_emit_with_timing(
 }
 
 #[cfg(feature = "cuda")]
+#[allow(dead_code)]
 fn lower_guest_pc_trace_seed_discovery_streaming_device_segment(
     layout: &WitnessTraceLayout,
     discovery: &GuestPcTraceSeedDiscoverySegment,
@@ -6146,6 +6147,33 @@ fn lower_guest_pc_trace_seed_discovery_streaming_device_segment(
         .restore_into(&mut memory)
         .map_err(GuestPcTraceBackendError::GuestMemory)?;
     let mut state = discovery.machine_state.clone();
+    lower_guest_pc_trace_seed_discovery_streaming_device_segment_with_replay_state(
+        layout,
+        discovery,
+        replay_base,
+        input,
+        expected_proof_values,
+        &mut memory,
+        &mut state,
+        &mut fcall_handler,
+        timing,
+    )
+    .map(|(entry, _)| entry)
+}
+
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+fn lower_guest_pc_trace_seed_discovery_streaming_device_segment_with_replay_state(
+    layout: &WitnessTraceLayout,
+    discovery: &GuestPcTraceSeedDiscoverySegment,
+    replay_base: &GuestPcTraceSeedDiscoveryReplayBase,
+    input: &[u8],
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    fcall_handler: &mut ZiskInputFcallHandler,
+    timing: &mut GuestPcTraceStreamTiming,
+) -> Result<(GuestPcTraceSeededLoweredSegment, bool), GuestPcTraceBackendError> {
     let segment = ZiskMainTraceSegmentInfo {
         trace_instance_index: discovery.trace_instance_index,
         is_last_segment: discovery.is_last_segment,
@@ -6156,9 +6184,9 @@ fn lower_guest_pc_trace_seed_discovery_streaming_device_segment(
         layout,
         &discovery.seed.initial_state,
         segment,
-        &mut memory,
-        &mut state,
-        &mut fcall_handler,
+        memory,
+        state,
+        fcall_handler,
         discovery.runner_remaining_instruction_limit,
         layout.row_count(),
     )?
@@ -6187,7 +6215,8 @@ fn lower_guest_pc_trace_seed_discovery_streaming_device_segment(
             pending,
             expected_proof_values,
             timing,
-        );
+        )
+        .map(|entry| (entry, false));
     };
     timing.trace_lower_duration += lower_started.elapsed();
     let (streamed_halted, terminal_pc, lookahead_instruction) = match &streamed.slice.status {
@@ -6233,23 +6262,92 @@ fn lower_guest_pc_trace_seed_discovery_streaming_device_segment(
     }
     timing.parallel_lower_stream_segment_count =
         timing.parallel_lower_stream_segment_count.saturating_add(1);
-    Ok(GuestPcTraceSeededLoweredSegment {
-        seed: discovery.seed.clone(),
-        lowered: GuestPcTraceLoweredSegment {
-            segment: GuestPcTraceSegmentTrace {
-                trace_instance_index: discovery.trace_instance_index,
-                trace_source_prefix_rows: streamed
-                    .device_build
-                    .device_segment_material
-                    .trace_source_prefix_rows,
-                device_segment_material: Some(streamed.device_build.device_segment_material),
-                trace: None,
-                unit_values: streamed.device_build.unit_values,
-                proof_values: expected_proof_values.unwrap_or_default().to_vec(),
+    Ok((
+        GuestPcTraceSeededLoweredSegment {
+            seed: discovery.seed.clone(),
+            lowered: GuestPcTraceLoweredSegment {
+                segment: GuestPcTraceSegmentTrace {
+                    trace_instance_index: discovery.trace_instance_index,
+                    trace_source_prefix_rows: streamed
+                        .device_build
+                        .device_segment_material
+                        .trace_source_prefix_rows,
+                    device_segment_material: Some(streamed.device_build.device_segment_material),
+                    trace: None,
+                    unit_values: streamed.device_build.unit_values,
+                    proof_values: expected_proof_values.unwrap_or_default().to_vec(),
+                },
+                next_seed: streamed.next_seed,
             },
-            next_seed: streamed.next_seed,
         },
-    })
+        true,
+    ))
+}
+
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+fn lower_guest_pc_trace_seed_discovery_streaming_device_chunk(
+    layout: &WitnessTraceLayout,
+    chunk: &[GuestPcTraceSeedDiscoverySegment],
+    replay_base: &GuestPcTraceSeedDiscoveryReplayBase,
+    input: &[u8],
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    mut emit_result: impl FnMut(
+        u32,
+        Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError>,
+        GuestPcTraceStreamTiming,
+    ) -> Result<bool, GuestPcTraceBackendError>,
+) -> Result<(), GuestPcTraceBackendError> {
+    let Some(first_discovery) = chunk.first() else {
+        return Ok(());
+    };
+    let mut memory = replay_base.memory.clone();
+    let mut fcall_handler = first_discovery
+        .fcall_state
+        .rebuild_input_handler_with_memory(input, &mut memory)
+        .map_err(GuestPcTraceBackendError::ZiskInput)?;
+    first_discovery
+        .memory_state
+        .restore_into(&mut memory)
+        .map_err(GuestPcTraceBackendError::GuestMemory)?;
+    let mut state = first_discovery.machine_state.clone();
+
+    for (index, discovery) in chunk.iter().enumerate() {
+        let trace_instance_index = discovery.trace_instance_index;
+        let mut job_timing = GuestPcTraceStreamTiming::default();
+        let result = lower_guest_pc_trace_seed_discovery_streaming_device_segment_with_replay_state(
+            layout,
+            discovery,
+            replay_base,
+            input,
+            expected_proof_values,
+            &mut memory,
+            &mut state,
+            &mut fcall_handler,
+            &mut job_timing,
+        );
+        let failed = result.is_err();
+        let advanced_replay_state = matches!(result, Ok((_, true)));
+        let result = result.map(|(entry, _)| entry);
+        if !emit_result(trace_instance_index, result, job_timing)? || failed {
+            return Ok(());
+        }
+        if !advanced_replay_state {
+            if let Some(next_discovery) = chunk.get(index + 1) {
+                memory = replay_base.memory.clone();
+                fcall_handler = next_discovery
+                    .fcall_state
+                    .rebuild_input_handler_with_memory(input, &mut memory)
+                    .map_err(GuestPcTraceBackendError::ZiskInput)?;
+                next_discovery
+                    .memory_state
+                    .restore_into(&mut memory)
+                    .map_err(GuestPcTraceBackendError::GuestMemory)?;
+                state = next_discovery.machine_state.clone();
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "cuda")]
@@ -6306,36 +6404,36 @@ fn lower_guest_pc_trace_seed_discovery_streaming_device_segments_emit_with_timin
 
     if worker_count == 1 {
         let mut current_seed = ZiskMainSegmentSeed::new();
-        for segment in segments {
-            let mut job_timing = GuestPcTraceStreamTiming::default();
-            let entry = lower_guest_pc_trace_seed_discovery_streaming_device_segment(
-                layout,
-                segment,
-                replay_base.as_ref(),
-                input,
-                expected_proof_values,
-                &mut job_timing,
-            )?;
-            if let Some(timing) = &mut timing {
-                timing.add(job_timing);
-                timing.parallel_lower_received_count =
-                    timing.parallel_lower_received_count.saturating_add(1);
-                timing.parallel_lower_max_reorder_count =
-                    timing.parallel_lower_max_reorder_count.max(1);
-            }
-            validate_guest_pc_trace_pending_segment_seed(
-                entry.lowered.segment.trace_instance_index,
-                Some(&entry.seed),
-                &current_seed.initial_state,
-                current_seed.previous_c,
-            )?;
-            current_seed = entry.lowered.next_seed.clone();
-            emit(entry.lowered)?;
-            if let Some(timing) = &mut timing {
-                timing.parallel_lower_emitted_count =
-                    timing.parallel_lower_emitted_count.saturating_add(1);
-            }
-        }
+        lower_guest_pc_trace_seed_discovery_streaming_device_chunk(
+            layout,
+            segments,
+            replay_base.as_ref(),
+            input,
+            expected_proof_values,
+            |_, result, job_timing| {
+                let entry = result?;
+                if let Some(timing) = &mut timing {
+                    timing.add(job_timing);
+                    timing.parallel_lower_received_count =
+                        timing.parallel_lower_received_count.saturating_add(1);
+                    timing.parallel_lower_max_reorder_count =
+                        timing.parallel_lower_max_reorder_count.max(1);
+                }
+                validate_guest_pc_trace_pending_segment_seed(
+                    entry.lowered.segment.trace_instance_index,
+                    Some(&entry.seed),
+                    &current_seed.initial_state,
+                    current_seed.previous_c,
+                )?;
+                current_seed = entry.lowered.next_seed.clone();
+                emit(entry.lowered)?;
+                if let Some(timing) = &mut timing {
+                    timing.parallel_lower_emitted_count =
+                        timing.parallel_lower_emitted_count.saturating_add(1);
+                }
+                Ok(true)
+            },
+        )?;
         return Ok(());
     }
 
@@ -6347,31 +6445,34 @@ fn lower_guest_pc_trace_seed_discovery_streaming_device_segments_emit_with_timin
             let result_sender = result_sender.clone();
             let replay_base = Arc::clone(&replay_base);
             handles.push(scope.spawn(move || {
-                for segment in chunk {
-                    let trace_instance_index = segment.trace_instance_index;
-                    let mut job_timing = GuestPcTraceStreamTiming::default();
-                    let result = lower_guest_pc_trace_seed_discovery_streaming_device_segment(
-                        layout,
-                        segment,
-                        replay_base.as_ref(),
-                        input,
-                        expected_proof_values,
-                        &mut job_timing,
-                    );
-                    let failed = result.is_err();
-                    if result_sender
-                        .send(GuestPcTraceReplayableLowerMessage::Segment {
-                            trace_instance_index,
-                            result: Box::new(result),
-                            timing: Box::new(job_timing),
-                        })
-                        .is_err()
-                    {
-                        return;
-                    }
-                    if failed {
-                        break;
-                    }
+                let chunk_result = lower_guest_pc_trace_seed_discovery_streaming_device_chunk(
+                    layout,
+                    chunk,
+                    replay_base.as_ref(),
+                    input,
+                    expected_proof_values,
+                    |trace_instance_index, result, job_timing| {
+                        let failed = result.is_err();
+                        let sent = result_sender
+                            .send(GuestPcTraceReplayableLowerMessage::Segment {
+                                trace_instance_index,
+                                result: Box::new(result),
+                                timing: Box::new(job_timing),
+                            })
+                            .is_ok();
+                        Ok(sent && !failed)
+                    },
+                );
+                if let Err(error) = chunk_result {
+                    let trace_instance_index = chunk
+                        .first()
+                        .map(|segment| segment.trace_instance_index)
+                        .unwrap_or_default();
+                    let _ = result_sender.send(GuestPcTraceReplayableLowerMessage::Segment {
+                        trace_instance_index,
+                        result: Box::new(Err(error)),
+                        timing: Box::new(GuestPcTraceStreamTiming::default()),
+                    });
                 }
                 let _ = result_sender.send(GuestPcTraceReplayableLowerMessage::Complete);
             }));
