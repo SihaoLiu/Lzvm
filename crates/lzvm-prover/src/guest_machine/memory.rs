@@ -40,14 +40,16 @@ struct GuestMachineMemorySegment {
 
 impl GuestMachineMemory {
     pub fn from_image(image: &GuestMemoryImage) -> Self {
-        Self {
+        let mut memory = Self {
             entry_address: image.entry_address(),
             segments: image
                 .segments()
                 .iter()
                 .map(GuestMachineMemorySegment::from_image_segment)
                 .collect(),
-        }
+        };
+        memory.sort_segments_by_address();
+        memory
     }
 
     pub fn entry_address(&self) -> u64 {
@@ -57,11 +59,9 @@ impl GuestMachineMemory {
     pub fn read_range_into(&self, address: u64, bytes: &mut [u8]) -> Result<(), GuestMemoryError> {
         let byte_len = bytes.len();
         let end_address = checked_address_end(address, byte_len)?;
-        for segment in &self.segments {
-            if segment.contains_range(address, end_address)? {
-                segment.read_range_into(address, bytes);
-                return Ok(());
-            }
+        if let Some(index) = self.segment_index_containing_range(address, end_address)? {
+            self.segments[index].read_range_into(address, bytes);
+            return Ok(());
         }
         Err(GuestMemoryError::AddressNotMapped { address, byte_len })
     }
@@ -76,10 +76,8 @@ impl GuestMachineMemory {
             return Err(GuestMemoryError::AddressRangeOverflow { address, byte_len });
         }
         let end_address = checked_address_end(address, byte_len)?;
-        for segment in &self.segments {
-            if segment.contains_range(address, end_address)? {
-                return Ok(segment.read_u64_le(address, byte_len));
-            }
+        if let Some(index) = self.segment_index_containing_range(address, end_address)? {
+            return Ok(self.segments[index].read_u64_le(address, byte_len));
         }
         Err(GuestMemoryError::AddressNotMapped { address, byte_len })
     }
@@ -93,10 +91,8 @@ impl GuestMachineMemory {
         }
 
         let low_end_address = checked_address_end(address, 2)?;
-        for segment in &self.segments {
-            if segment.contains_range(address, low_end_address)? {
-                return self.fetch_instruction_from_segment(segment, address);
-            }
+        if let Some(index) = self.segment_index_containing_range(address, low_end_address)? {
+            return self.fetch_instruction_from_segment(&self.segments[index], address);
         }
 
         Err(GuestMemoryError::AddressNotMapped {
@@ -135,26 +131,45 @@ impl GuestMachineMemory {
     pub fn write_range(&mut self, address: u64, bytes: &[u8]) -> Result<(), GuestMemoryError> {
         let byte_len = bytes.len();
         let end_address = checked_address_end(address, byte_len)?;
-        for segment in &mut self.segments {
-            if segment.contains_range(address, end_address)? {
-                segment.write_range(address, bytes);
-                return Ok(());
-            }
+        if let Some(index) = self.segment_index_containing_range(address, end_address)? {
+            self.segments[index].write_range(address, bytes);
+            return Ok(());
         }
         Err(GuestMemoryError::AddressNotMapped { address, byte_len })
     }
 
     fn read_halfword(&self, address: u64) -> Result<u16, GuestMemoryError> {
         let end_address = checked_address_end(address, 2)?;
-        for segment in &self.segments {
-            if segment.contains_range(address, end_address)? {
-                return Ok(segment.read_halfword(address));
-            }
+        if let Some(index) = self.segment_index_containing_range(address, end_address)? {
+            return Ok(self.segments[index].read_halfword(address));
         }
         Err(GuestMemoryError::AddressNotMapped {
             address,
             byte_len: 2,
         })
+    }
+
+    fn segment_index_containing_range(
+        &self,
+        address: u64,
+        end_address: u64,
+    ) -> Result<Option<usize>, GuestMemoryError> {
+        let Some(candidate) = self
+            .segments
+            .partition_point(|segment| segment.virtual_address <= address)
+            .checked_sub(1)
+        else {
+            return Ok(None);
+        };
+        if self.segments[candidate].contains_range(address, end_address)? {
+            Ok(Some(candidate))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn sort_segments_by_address(&mut self) {
+        self.segments.sort_by_key(|segment| segment.virtual_address);
     }
 
     pub fn map_initialized_range(
@@ -194,7 +209,7 @@ impl GuestMachineMemory {
             }
         }
         self.segments.push(mapped_segment);
-        self.segments.sort_by_key(|segment| segment.virtual_address);
+        self.sort_segments_by_address();
         Ok(())
     }
 
@@ -234,7 +249,7 @@ impl GuestMachineMemory {
             ));
         }
         self.segments.extend(mapped_segments);
-        self.segments.sort_by_key(|segment| segment.virtual_address);
+        self.sort_segments_by_address();
         Ok(())
     }
 
@@ -283,7 +298,7 @@ impl GuestMachineMemory {
             }
         }
         self.segments.push(mapped_segment);
-        self.segments.sort_by_key(|segment| segment.virtual_address);
+        self.sort_segments_by_address();
         Ok(())
     }
 
@@ -593,6 +608,29 @@ mod tests {
             .expect("split standard instruction should fetch");
 
         assert_eq!(fetched.encoded, RiscvEncodedInstruction::Standard(word));
+    }
+
+    #[test]
+    fn segment_lookup_uses_address_order_without_accepting_cross_segment_ranges() {
+        let image = sample_guest_image_with_program_headers(&[
+            (TEST_ENTRY + 0x2000, &[9, 10, 11, 12], 4),
+            (TEST_ENTRY, &[1, 2, 3, 4], 4),
+            (TEST_ENTRY + 0x1000, &[5, 6, 7, 8], 4),
+        ]);
+        let memory = GuestMachineMemory::from_image(&image);
+
+        let middle = memory
+            .segment_index_containing_range(TEST_ENTRY + 0x1000, TEST_ENTRY + 0x1004)
+            .expect("middle segment lookup should evaluate")
+            .expect("middle range should be mapped");
+        assert_eq!(memory.segments[middle].virtual_address, TEST_ENTRY + 0x1000);
+
+        assert_eq!(
+            memory
+                .segment_index_containing_range(TEST_ENTRY + 2, TEST_ENTRY + 0x1002)
+                .expect("cross-segment lookup should evaluate"),
+            None
+        );
     }
 
     #[test]
