@@ -3401,7 +3401,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 pending_report.as_ref(),
                 last_report_shape,
             );
-            record_zisk_main_runner_boundary_snapshot(
+            record_zisk_main_runner_pre_boundary_snapshot(
                 snapshot,
                 boundary_report,
                 last_report_shape,
@@ -3501,7 +3501,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                     pending_report.as_ref(),
                     last_report_shape,
                 );
-                record_zisk_main_runner_boundary_snapshot(
+                record_zisk_main_runner_pre_boundary_snapshot(
                     snapshot,
                     boundary_report,
                     last_report_shape,
@@ -3864,7 +3864,7 @@ fn run_guest_pc_trace_segment_slice_inner<
         let current = prepared.instruction();
         if TRACK_BOUNDARY {
             if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
-                record_zisk_main_runner_boundary_snapshot(
+                record_zisk_main_runner_pre_boundary_snapshot(
                     snapshot,
                     reports.last(),
                     last_report_shape,
@@ -3972,7 +3972,7 @@ fn run_guest_pc_trace_segment_slice_inner<
             let lookahead_instruction = (current != RiscvInstruction::Ecall).then_some(current);
             if TRACK_BOUNDARY {
                 if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
-                    record_zisk_main_runner_boundary_snapshot(
+                    record_zisk_main_runner_pre_boundary_snapshot(
                         snapshot,
                         reports.last(),
                         last_report_shape,
@@ -8676,6 +8676,7 @@ impl ZiskMainRunnerBoundarySnapshot {
         self.last_report_context = Some((address, instruction_byte_len));
     }
 
+    #[cfg(test)]
     fn record_report(
         &mut self,
         report: &GuestMachineReport,
@@ -8692,6 +8693,7 @@ impl ZiskMainRunnerBoundarySnapshot {
         Ok(())
     }
 
+    #[cfg(test)]
     fn record_report_shape(
         &mut self,
         shape: GuestMachineReportShape,
@@ -8707,6 +8709,7 @@ impl ZiskMainRunnerBoundarySnapshot {
     }
 }
 
+#[cfg(test)]
 fn record_zisk_main_runner_boundary_snapshot(
     snapshot: &mut ZiskMainRunnerBoundarySnapshot,
     report: Option<&GuestMachineReport>,
@@ -8721,6 +8724,52 @@ fn record_zisk_main_runner_boundary_snapshot(
     } else {
         Ok(())
     }
+}
+
+fn record_zisk_main_runner_pre_boundary_snapshot(
+    snapshot: &mut ZiskMainRunnerBoundarySnapshot,
+    report: Option<&GuestMachineReport>,
+    shape: Option<GuestMachineReportShape>,
+    next_instruction: Option<RiscvInstruction>,
+    registers: &[u64; 32],
+) -> Result<(), GuestPcTraceBackendError> {
+    let instruction = if let Some(report) = report {
+        snapshot.record_report_context(report.address, report.instruction_byte_len);
+        Some(report.instruction)
+    } else {
+        shape.map(|shape| shape.instruction)
+    };
+    let Some(instruction) = instruction else {
+        return Ok(());
+    };
+    if !zisk_main_runner_pre_boundary_scratch_update_needed(instruction, next_instruction) {
+        return Ok(());
+    }
+    record_zisk_main_runner_scratch_update_from_shape(
+        &mut snapshot.internal_memory,
+        registers,
+        instruction,
+        next_instruction,
+    )
+}
+
+fn zisk_main_runner_pre_boundary_scratch_update_needed(
+    instruction: RiscvInstruction,
+    next_instruction: Option<RiscvInstruction>,
+) -> bool {
+    matches!(
+        instruction,
+        RiscvInstruction::ZiskDmaPrepare {
+            kind: RiscvDmaKind::Memcpy | RiscvDmaKind::Memcmp,
+            ..
+        }
+    ) && matches!(
+        next_instruction,
+        Some(RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            ..
+        })
+    )
 }
 
 fn zisk_main_runner_boundary_report_for_shape(
@@ -11067,6 +11116,7 @@ fn zisk_main_runner_boundary_snapshot_from_reports(
     Ok(snapshot)
 }
 
+#[cfg(test)]
 fn record_zisk_main_runner_scratch_update(
     internal_memory: &mut ZiskMainInternalMemory,
     registers: &[u64; 32],

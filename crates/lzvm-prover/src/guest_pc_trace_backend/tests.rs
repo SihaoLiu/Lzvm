@@ -4520,6 +4520,101 @@ fn runner_boundary_seed_snapshot_uses_snapshot_for_amo_boundary_without_retained
 }
 
 #[test]
+fn runner_pre_boundary_snapshot_skips_redundant_amo_report_replay() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let runner_state = GuestMachineState::new(0x8000_0004);
+    let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    boundary_snapshot
+        .internal_memory
+        .insert(
+            zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER),
+            0x1234_5678_9abc_def0,
+        )
+        .expect("AMO scratch address should be supported");
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Add,
+            width: RiscvAmoWidth::Doubleword,
+            rd: 1,
+            rs1: 1,
+            rs2: 2,
+            acquire: false,
+            release: false,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: Vec::new().into(),
+        memory_accesses: Vec::new().into(),
+        precompile_effects: None,
+    };
+
+    record_zisk_main_runner_pre_boundary_snapshot(
+        &mut boundary_snapshot,
+        Some(&report),
+        None,
+        Some(RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 0,
+            rs1: 0,
+            immediate: 0,
+        }),
+        runner_state.registers(),
+    )
+    .expect("pre-boundary snapshot should not replay AMO scratch from the previous report");
+
+    assert_eq!(
+        boundary_snapshot
+            .internal_memory
+            .get(zisk_internal_register_address_u64(ZISK_AMO_TEMP_REGISTER)),
+        Some(0x1234_5678_9abc_def0)
+    );
+}
+
+#[test]
+fn runner_pre_boundary_snapshot_keeps_dma_extra_params_update() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let mut runner_state = GuestMachineState::new(0x8000_0004);
+    runner_state
+        .set_register(9, 0xfeed_face_cafe_babe)
+        .expect("test register should be writable");
+    let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::ZiskDmaPrepare {
+            kind: RiscvDmaKind::Memcpy,
+            rs1: 5,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: Vec::new().into(),
+        memory_accesses: Vec::new().into(),
+        precompile_effects: None,
+    };
+
+    record_zisk_main_runner_pre_boundary_snapshot(
+        &mut boundary_snapshot,
+        Some(&report),
+        None,
+        Some(RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd: 3,
+            rs1: 4,
+            rs2: 9,
+        }),
+        runner_state.registers(),
+    )
+    .expect("pre-boundary snapshot should keep DMA extra-params scratch update");
+
+    assert_eq!(
+        boundary_snapshot
+            .internal_memory
+            .get(ZISK_EXTRA_PARAMS_ADDRESS),
+        Some(0xfeed_face_cafe_babe)
+    );
+}
+
+#[test]
 fn live_report_chunk_finish_emits_amo_boundary_without_returning_last_report() {
     let report = GuestMachineReport {
         address: 0x8000_0000,
