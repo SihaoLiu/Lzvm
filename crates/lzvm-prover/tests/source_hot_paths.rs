@@ -8166,6 +8166,25 @@ fn guest_machine_load_reads_memory_once_after_shape_decode() {
 }
 
 #[test]
+fn guest_machine_load_helpers_are_inlined_on_runner_hot_path() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+
+    for function_name in [
+        "read_guest_load",
+        "guest_load_shape",
+        "guest_load_register_value",
+    ] {
+        let needle = format!("#[inline(always)]\nfn {function_name}");
+        assert!(
+            source.contains(&needle),
+            "guest load helper {function_name} should stay inlined on the runner hot path"
+        );
+    }
+}
+
+#[test]
 fn guest_pc_source_value_lookup_avoids_request_wrapper() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");

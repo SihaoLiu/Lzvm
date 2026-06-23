@@ -1193,6 +1193,7 @@ struct GuestLoadShape {
     signed: bool,
 }
 
+#[inline(always)]
 fn read_guest_load(
     memory: &GuestMachineMemory,
     kind: RiscvLoadKind,
@@ -1209,6 +1210,7 @@ fn read_guest_load(
     })
 }
 
+#[inline(always)]
 fn guest_load_shape(kind: RiscvLoadKind) -> GuestLoadShape {
     match kind {
         RiscvLoadKind::Lb => GuestLoadShape {
@@ -1242,6 +1244,7 @@ fn guest_load_shape(kind: RiscvLoadKind) -> GuestLoadShape {
     }
 }
 
+#[inline(always)]
 fn guest_load_register_value(memory_value: u64, shape: GuestLoadShape) -> u64 {
     if !shape.signed || shape.byte_len == 8 {
         return memory_value;
