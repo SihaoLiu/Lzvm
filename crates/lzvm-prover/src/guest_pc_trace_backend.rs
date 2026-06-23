@@ -9,8 +9,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::guest_instruction::{
-    RiscvAmoKind, RiscvAmoWidth, RiscvDmaKind, RiscvInstruction, RiscvOpImmKind, RiscvOpKind,
-    RiscvPrecompileKind,
+    RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvDmaKind, RiscvInstruction, RiscvOpImmKind,
+    RiscvOpKind, RiscvPrecompileKind,
 };
 use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls_report_shape, decode_current_guest_instruction,
@@ -8101,13 +8101,19 @@ impl ZiskMainSegmentSeed {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ZiskMainRunnerBoundarySnapshot {
     internal_memory: ZiskMainInternalMemory,
+    last_report_context: Option<(u64, u8)>,
 }
 
 impl ZiskMainRunnerBoundarySnapshot {
     fn new(seed: &ZiskMainSegmentSeed) -> Self {
         Self {
             internal_memory: seed.initial_state.internal_memory,
+            last_report_context: None,
         }
+    }
+
+    fn record_report_context(&mut self, address: u64, instruction_byte_len: u8) {
+        self.last_report_context = Some((address, instruction_byte_len));
     }
 
     fn record_report(
@@ -8116,6 +8122,7 @@ impl ZiskMainRunnerBoundarySnapshot {
         next_instruction: Option<RiscvInstruction>,
         registers: &[u64; 32],
     ) -> Result<(), GuestPcTraceBackendError> {
+        self.record_report_context(report.address, report.instruction_byte_len);
         record_zisk_main_runner_scratch_update(
             &mut self.internal_memory,
             registers,
@@ -10519,6 +10526,7 @@ fn record_zisk_main_runner_amo_scratch_snapshot(
     snapshot: &mut ZiskMainRunnerBoundarySnapshot,
     report: &GuestMachineReport,
 ) -> Result<(), GuestPcTraceBackendError> {
+    snapshot.record_report_context(report.address, report.instruction_byte_len);
     record_zisk_main_amo_scratch_update(&mut snapshot.internal_memory, report)
 }
 
@@ -12191,24 +12199,44 @@ fn direct_zisk_main_segment_boundary_c(
     current_seed: &ZiskMainSegmentSeed,
     boundary_registers: Option<&[u64; 32]>,
 ) -> Result<Result<u64, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError> {
-    direct_zisk_main_segment_boundary_c_from_tail(
-        reports.len(),
-        reports.last(),
-        reports.last().map(guest_machine_report_shape_from_report),
+    direct_zisk_main_segment_boundary_c_from_tail(ZiskMainDirectBoundaryTailInput {
+        report_count: reports.len(),
+        last_report: reports.last(),
+        last_report_shape: reports.last().map(guest_machine_report_shape_from_report),
         lookahead_instruction,
         current_seed,
         boundary_registers,
-    )
+        boundary_pc: None,
+        last_report_context: reports
+            .last()
+            .map(|report| (report.address, report.instruction_byte_len)),
+    })
+}
+
+struct ZiskMainDirectBoundaryTailInput<'a> {
+    report_count: usize,
+    last_report: Option<&'a GuestMachineReport>,
+    last_report_shape: Option<GuestMachineReportShape>,
+    lookahead_instruction: Option<RiscvInstruction>,
+    current_seed: &'a ZiskMainSegmentSeed,
+    boundary_registers: Option<&'a [u64; 32]>,
+    boundary_pc: Option<u64>,
+    last_report_context: Option<(u64, u8)>,
 }
 
 fn direct_zisk_main_segment_boundary_c_from_tail(
-    report_count: usize,
-    last_report: Option<&GuestMachineReport>,
-    last_report_shape: Option<GuestMachineReportShape>,
-    lookahead_instruction: Option<RiscvInstruction>,
-    current_seed: &ZiskMainSegmentSeed,
-    boundary_registers: Option<&[u64; 32]>,
+    input: ZiskMainDirectBoundaryTailInput<'_>,
 ) -> Result<Result<u64, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError> {
+    let ZiskMainDirectBoundaryTailInput {
+        report_count,
+        last_report,
+        last_report_shape,
+        lookahead_instruction,
+        current_seed,
+        boundary_registers,
+        boundary_pc,
+        last_report_context,
+    } = input;
     let Some(shape) = last_report
         .map(guest_machine_report_shape_from_report)
         .or(last_report_shape)
@@ -12245,6 +12273,20 @@ fn direct_zisk_main_segment_boundary_c_from_tail(
     {
         return Ok(Ok(boundary_c));
     }
+    if let Some(boundary_c) = direct_zisk_main_flag_boundary_c(shape.instruction) {
+        return Ok(Ok(boundary_c));
+    }
+    if let Some(boundary_c) = direct_zisk_main_fixed_precompile_boundary_c(shape.instruction) {
+        return Ok(Ok(boundary_c));
+    }
+    if let Some(boundary_c) = direct_zisk_main_jalr_boundary_c(shape.instruction, boundary_pc) {
+        return Ok(Ok(boundary_c));
+    }
+    if let Some(boundary_c) =
+        direct_zisk_main_branch_boundary_c(shape.instruction, last_report_context, boundary_pc)
+    {
+        return Ok(Ok(boundary_c));
+    }
     if let Some(boundary_c) =
         direct_zisk_main_register_write_boundary_c(shape.instruction, boundary_registers)
     {
@@ -12264,14 +12306,19 @@ fn direct_zisk_main_segment_boundary_c_from_tail(
 fn direct_zisk_main_segment_boundary_c_from_runner_snapshot(
     input: ZiskMainRunnerBoundarySeedInput<'_>,
 ) -> Result<Result<u64, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError> {
-    let direct = direct_zisk_main_segment_boundary_c_from_tail(
-        input.report_count(),
-        input.last_report(),
-        input.last_report_shape(),
-        input.lookahead_instruction,
-        input.current_seed,
-        Some(input.runner_state.registers()),
-    )?;
+    let direct = direct_zisk_main_segment_boundary_c_from_tail(ZiskMainDirectBoundaryTailInput {
+        report_count: input.report_count(),
+        last_report: input.last_report(),
+        last_report_shape: input.last_report_shape(),
+        lookahead_instruction: input.lookahead_instruction,
+        current_seed: input.current_seed,
+        boundary_registers: Some(input.runner_state.registers()),
+        boundary_pc: Some(input.runner_state.pc()),
+        last_report_context: input
+            .last_report()
+            .map(|report| (report.address, report.instruction_byte_len))
+            .or(input.boundary_snapshot.last_report_context),
+    })?;
     if direct == Err(ZiskMainDirectSeedLiftMissReason::AmoBoundary) {
         if let Some(boundary_c) = direct_zisk_main_amo_boundary_c_from_snapshot(
             input.last_report_shape(),
@@ -12332,6 +12379,72 @@ fn direct_zisk_main_fcall_boundary_c(
     }
 }
 
+fn direct_zisk_main_jalr_boundary_c(
+    instruction: RiscvInstruction,
+    boundary_pc: Option<u64>,
+) -> Option<u64> {
+    let RiscvInstruction::Jalr { offset, .. } = instruction else {
+        return None;
+    };
+    boundary_pc.map(|pc| wrapping_sub_signed(pc, offset))
+}
+
+fn direct_zisk_main_flag_boundary_c(instruction: RiscvInstruction) -> Option<u64> {
+    matches!(
+        instruction,
+        RiscvInstruction::Auipc { .. } | RiscvInstruction::Jal { .. }
+    )
+    .then_some(0)
+}
+
+fn direct_zisk_main_fixed_precompile_boundary_c(instruction: RiscvInstruction) -> Option<u64> {
+    let RiscvInstruction::ZiskPrecompile { kind, .. } = instruction else {
+        return None;
+    };
+    matches!(
+        kind,
+        RiscvPrecompileKind::Keccak
+            | RiscvPrecompileKind::Arith256
+            | RiscvPrecompileKind::Arith256Mod
+            | RiscvPrecompileKind::Secp256k1Add
+            | RiscvPrecompileKind::Secp256k1Dbl
+    )
+    .then_some(0)
+}
+
+fn direct_zisk_main_branch_boundary_c(
+    instruction: RiscvInstruction,
+    last_report_context: Option<(u64, u8)>,
+    boundary_pc: Option<u64>,
+) -> Option<u64> {
+    let RiscvInstruction::Branch { kind, offset, .. } = instruction else {
+        return None;
+    };
+    let (pc, instruction_byte_len) = last_report_context?;
+    let boundary_pc = boundary_pc?;
+    let instruction_size = i64::from(instruction_byte_len);
+    let (flag_offset, fallthrough_offset) = match kind {
+        RiscvBranchKind::Beq | RiscvBranchKind::Blt | RiscvBranchKind::Bltu => {
+            (offset, instruction_size)
+        }
+        RiscvBranchKind::Bne | RiscvBranchKind::Bge | RiscvBranchKind::Bgeu => {
+            (instruction_size, offset)
+        }
+    };
+    let flag_next_pc = pc.wrapping_add_signed(flag_offset);
+    let fallthrough_next_pc = pc.wrapping_add_signed(fallthrough_offset);
+    if flag_next_pc == fallthrough_next_pc {
+        return None;
+    }
+    if boundary_pc == flag_next_pc {
+        Some(1)
+    } else if boundary_pc == fallthrough_next_pc {
+        Some(0)
+    } else {
+        None
+    }
+}
+
 fn direct_zisk_main_source_register_boundary_c(
     register: u8,
     boundary_registers: Option<&[u64; 32]>,
@@ -12348,6 +12461,8 @@ fn direct_zisk_main_register_write_boundary_c(
 ) -> Option<u64> {
     let rd = match instruction {
         RiscvInstruction::Lui { rd, .. }
+        | RiscvInstruction::Load { rd, .. }
+        | RiscvInstruction::LoadReserved { rd, .. }
         | RiscvInstruction::OpImm { rd, .. }
         | RiscvInstruction::OpImm32 { rd, .. }
         | RiscvInstruction::Op { rd, .. }

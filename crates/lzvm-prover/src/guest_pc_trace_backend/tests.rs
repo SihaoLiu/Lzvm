@@ -1,7 +1,7 @@
 use super::*;
 use crate::guest_instruction::{
     decode_riscv_instruction, RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvInstruction,
-    RiscvOpImmKind, RiscvPrecompileKind, RiscvStoreKind,
+    RiscvLoadKind, RiscvOpImmKind, RiscvPrecompileKind, RiscvStoreKind,
 };
 use crate::guest_machine::GuestMachineReportShape;
 use crate::guest_machine::GuestPrecompileReportEffects;
@@ -3941,6 +3941,299 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_register_boundary_without
     assert_eq!(lifted.previous_c, 0x1234_5678_9abc_def0);
     assert_eq!(lifted.initial_state.last_c, 0x1234_5678_9abc_def0);
     assert_eq!(lifted.initial_state.registers[12], 0x1234_5678_9abc_def0);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_report_shape_for_load_boundary_without_retained_report() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let mut runner_state = GuestMachineState::new(0x8000_0004);
+    runner_state
+        .set_register(28, 0x7f)
+        .expect("destination register should set");
+    let boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        1,
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 1,
+            last_report_shape: Some(GuestMachineReportShape {
+                instruction: RiscvInstruction::Load {
+                    kind: RiscvLoadKind::Lbu,
+                    rd: 28,
+                    rs1: 12,
+                    offset: 107,
+                },
+                has_memory_write: false,
+            }),
+            lookahead_instruction: Some(RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Slli,
+                rd: 10,
+                rs1: 10,
+                immediate: 8,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("shape-only load boundary seed lift should evaluate")
+    .expect("shape-only load boundary should use runner destination register");
+
+    assert_eq!(lifted.previous_c, 0x7f);
+    assert_eq!(lifted.initial_state.last_c, 0x7f);
+    assert_eq!(lifted.initial_state.registers[28], 0x7f);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_report_shape_for_jalr_boundary_without_retained_report() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let runner_state = GuestMachineState::new(0x8000_1234);
+    let boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        1,
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 1,
+            last_report_shape: Some(GuestMachineReportShape {
+                instruction: RiscvInstruction::Jalr {
+                    rd: 0,
+                    rs1: 1,
+                    offset: 4,
+                },
+                has_memory_write: false,
+            }),
+            lookahead_instruction: Some(RiscvInstruction::Load {
+                kind: RiscvLoadKind::Ld,
+                rd: 10,
+                rs1: 2,
+                offset: 600,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("shape-only JALR boundary seed lift should evaluate")
+    .expect("shape-only JALR boundary should use runner next PC");
+
+    assert_eq!(lifted.previous_c, 0x8000_1230);
+    assert_eq!(lifted.initial_state.last_c, 0x8000_1230);
+    assert_eq!(lifted.initial_state.next_pc, 0x8000_1234);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_report_shape_for_branch_boundary_without_retained_report() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Branch {
+            kind: RiscvBranchKind::Bne,
+            rs1: 22,
+            rs2: 11,
+            offset: 84,
+        },
+        next_pc: 0x8000_0054,
+        register_writes: Vec::new().into(),
+        memory_accesses: Vec::new().into(),
+        precompile_effects: None,
+    };
+    let runner_state = GuestMachineState::new(report.next_pc);
+    let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    record_zisk_main_runner_boundary_snapshot(
+        &mut boundary_snapshot,
+        Some(&report),
+        None,
+        Some(RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd: 11,
+            rs1: 19,
+            rs2: 23,
+        }),
+        runner_state.registers(),
+    )
+    .expect("boundary snapshot should record branch report context");
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        1,
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 1,
+            last_report_shape: Some(GuestMachineReportShape {
+                instruction: report.instruction,
+                has_memory_write: false,
+            }),
+            lookahead_instruction: Some(RiscvInstruction::Op {
+                kind: RiscvOpKind::Add,
+                rd: 11,
+                rs1: 19,
+                rs2: 23,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("shape-only branch boundary seed lift should evaluate")
+    .expect("shape-only branch boundary should use recorded report context");
+
+    assert_eq!(lifted.previous_c, 0);
+    assert_eq!(lifted.initial_state.last_c, 0);
+    assert_eq!(lifted.initial_state.next_pc, report.next_pc);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_report_shape_for_jal_boundary_without_retained_report() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let runner_state = GuestMachineState::new(0x8000_001c);
+    let boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        1,
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 1,
+            last_report_shape: Some(GuestMachineReportShape {
+                instruction: RiscvInstruction::Jal { rd: 0, offset: 28 },
+                has_memory_write: false,
+            }),
+            lookahead_instruction: Some(RiscvInstruction::Load {
+                kind: RiscvLoadKind::Ld,
+                rd: 10,
+                rs1: 19,
+                offset: 8,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("shape-only JAL boundary seed lift should evaluate")
+    .expect("shape-only JAL boundary should use flag result");
+
+    assert_eq!(lifted.previous_c, 0);
+    assert_eq!(lifted.initial_state.last_c, 0);
+    assert_eq!(lifted.initial_state.next_pc, 0x8000_001c);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_report_shape_for_auipc_boundary_without_retained_report() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let mut runner_state = GuestMachineState::new(0x8000_0004);
+    runner_state
+        .set_register(12, 0x8005_4000)
+        .expect("destination register should set");
+    let boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        1,
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 1,
+            last_report_shape: Some(GuestMachineReportShape {
+                instruction: RiscvInstruction::Auipc {
+                    rd: 12,
+                    immediate: 344064,
+                },
+                has_memory_write: false,
+            }),
+            lookahead_instruction: Some(RiscvInstruction::Load {
+                kind: RiscvLoadKind::Ld,
+                rd: 16,
+                rs1: 11,
+                offset: -328,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("shape-only AUIPC boundary seed lift should evaluate")
+    .expect("shape-only AUIPC boundary should use flag result");
+
+    assert_eq!(lifted.previous_c, 0);
+    assert_eq!(lifted.initial_state.last_c, 0);
+    assert_eq!(lifted.initial_state.registers[12], 0x8005_4000);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_report_shape_for_keccak_precompile_boundary_without_retained_report(
+) {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let mut runner_state = GuestMachineState::new(0x8027_0014);
+    runner_state
+        .set_register(10, 0x9000_0000)
+        .expect("precompile operand register should set");
+    let boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: 0,
+    };
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        1,
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 1,
+            last_report_shape: Some(GuestMachineReportShape {
+                instruction: RiscvInstruction::ZiskPrecompile {
+                    kind: RiscvPrecompileKind::Keccak,
+                    rs1: 10,
+                    rd: 0,
+                },
+                has_memory_write: false,
+            }),
+            lookahead_instruction: Some(RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 11,
+                rs1: 2,
+                immediate: 440,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("shape-only Keccak precompile boundary seed lift should evaluate")
+    .expect("shape-only Keccak precompile boundary should use fixed result");
+
+    assert_eq!(lifted.previous_c, 0);
+    assert_eq!(lifted.initial_state.last_c, 0);
+    assert_eq!(lifted.initial_state.next_pc, 0x8027_0014);
 }
 
 #[test]
