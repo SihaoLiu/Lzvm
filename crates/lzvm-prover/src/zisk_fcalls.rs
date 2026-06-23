@@ -114,6 +114,18 @@ impl ZiskInputFcallHandler {
         self.input_image.is_none()
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn new_for_replay(
+        framed_stdin: &[u8],
+        input_data_was_mapped: bool,
+    ) -> Result<Self, ZiskInputFcallError> {
+        let mut handler = Self::new(framed_stdin)?;
+        if input_data_was_mapped {
+            handler.input_image = None;
+        }
+        Ok(handler)
+    }
+
     fn handle_input_ready(
         &mut self,
         request: GuestFcallRequest,

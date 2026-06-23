@@ -4467,12 +4467,38 @@ struct GuestPcTraceSeedDiscoverySegment {
     report_count: usize,
     runner_remaining_instruction_limit: u64,
     machine_state: GuestMachineState,
-    input_data_was_mapped: bool,
+    fcall_state: GuestPcTraceFcallBoundaryState,
     terminal_pc: u64,
     lookahead_instruction: Option<RiscvInstruction>,
     is_last_segment: bool,
     seed: ZiskMainSegmentSeed,
     next_seed: Option<ZiskMainSegmentSeed>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GuestPcTraceFcallBoundaryState {
+    input_data_was_mapped: bool,
+}
+
+#[allow(dead_code)]
+impl GuestPcTraceFcallBoundaryState {
+    fn capture(handler: &ZiskInputFcallHandler) -> Self {
+        Self {
+            input_data_was_mapped: handler.input_data_was_mapped(),
+        }
+    }
+
+    fn input_data_was_mapped(&self) -> bool {
+        self.input_data_was_mapped
+    }
+
+    fn rebuild_input_handler(
+        &self,
+        input: &[u8],
+    ) -> Result<ZiskInputFcallHandler, ZiskInputFcallError> {
+        ZiskInputFcallHandler::new_for_replay(input, self.input_data_was_mapped)
+    }
 }
 
 #[allow(dead_code)]
@@ -5296,7 +5322,7 @@ fn discover_guest_pc_trace_segment_seeds(
             }
         })?;
         let machine_state = state.clone();
-        let input_data_was_mapped = fcall_handler.input_data_was_mapped();
+        let fcall_state = GuestPcTraceFcallBoundaryState::capture(&fcall_handler);
         let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
         let slice = run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
             &mut memory,
@@ -5379,7 +5405,7 @@ fn discover_guest_pc_trace_segment_seeds(
             report_count: slice.report_count,
             runner_remaining_instruction_limit: remaining_limit,
             machine_state,
-            input_data_was_mapped,
+            fcall_state,
             terminal_pc,
             lookahead_instruction,
             is_last_segment,
@@ -11818,6 +11844,11 @@ fn direct_zisk_main_segment_boundary_c_from_tail(
         return Ok(Ok(boundary_c));
     }
     if let Some(boundary_c) =
+        direct_zisk_main_store_none_boundary_c(shape.instruction, boundary_registers)
+    {
+        return Ok(Ok(boundary_c));
+    }
+    if let Some(boundary_c) =
         direct_zisk_main_register_write_boundary_c(shape.instruction, boundary_registers)
     {
         return Ok(Ok(boundary_c));
@@ -11892,6 +11923,23 @@ fn direct_zisk_main_store_boundary_c(
         return Some(0);
     }
     boundary_registers.map(|registers| registers[usize::from(rs2)])
+}
+
+fn direct_zisk_main_store_none_boundary_c(
+    instruction: RiscvInstruction,
+    boundary_registers: Option<&[u64; 32]>,
+) -> Option<u64> {
+    match instruction {
+        RiscvInstruction::ZiskFcallInvoke { .. } => Some(0),
+        RiscvInstruction::ZiskFcallParam { rs1, .. } => {
+            if rs1 == 0 {
+                Some(0)
+            } else {
+                boundary_registers.map(|registers| registers[usize::from(rs1)])
+            }
+        }
+        _ => None,
+    }
 }
 
 fn direct_zisk_main_register_write_boundary_c(

@@ -1,7 +1,7 @@
 use super::*;
 use crate::guest_instruction::{
-    RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvInstruction, RiscvOpImmKind,
-    RiscvPrecompileKind, RiscvStoreKind,
+    decode_riscv_instruction, RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvInstruction,
+    RiscvOpImmKind, RiscvPrecompileKind, RiscvStoreKind,
 };
 use crate::guest_machine::GuestMachineReportShape;
 use crate::guest_machine::GuestPrecompileReportEffects;
@@ -270,7 +270,7 @@ fn guest_pc_trace_seed_discovery_scans_without_retaining_reports() {
                 .expect("trace instance index should fit")]
         );
         assert_eq!(
-            discovered.input_data_was_mapped,
+            discovered.fcall_state.input_data_was_mapped(),
             expected_input_mapped_states[usize::try_from(discovered.trace_instance_index)
                 .expect("trace instance index should fit")]
         );
@@ -310,6 +310,94 @@ fn guest_pc_trace_seed_discovery_scans_without_retaining_reports() {
         .expect("serial pending segment should lower");
         assert_eq!(next_discovered, &expected_lowered.next_seed);
     }
+}
+
+#[test]
+fn guest_pc_trace_seed_discovery_tracks_input_mapping_boundaries() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-seed-discovery-input-map");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_lui(1, 0x40000),
+        riscv_addi(1, 1, 7),
+        riscv_zisk_fcall_param(0, 1),
+        riscv_zisk_fcall_invoke(crate::zisk_fcalls::ZISK_INPUT_READY_FCALL_ID),
+        riscv_addi(2, 0, 5),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let discovered = discover_guest_pc_trace_segment_seeds(32, context, &[], layout.row_count())
+        .expect("seed discovery should scan the input-ready program");
+    let (mut expected_memory, mut expected_state, mut expected_fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("expected machine should load");
+    let mut expected_input_mapped_states = Vec::new();
+    for discovered_segment in &discovered.segments {
+        expected_input_mapped_states.push(expected_fcall_handler.input_data_was_mapped());
+        run_guest_pc_trace_segment_slice(
+            &mut expected_memory,
+            &mut expected_state,
+            &mut expected_fcall_handler,
+            discovered_segment.runner_remaining_instruction_limit,
+            layout.row_count(),
+        )
+        .expect("expected input-ready segment should run");
+    }
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let discovered_input_mapped_states = discovered
+        .segments
+        .iter()
+        .map(|segment| segment.fcall_state.input_data_was_mapped())
+        .collect::<Vec<_>>();
+    assert_eq!(discovered_input_mapped_states, expected_input_mapped_states);
+    assert!(
+        discovered_input_mapped_states
+            .windows(2)
+            .any(|window| window == [false, true]),
+        "input-ready fcall should flip the boundary state between segments"
+    );
+
+    let rebuilt = discovered
+        .segments
+        .iter()
+        .map(|segment| {
+            segment
+                .fcall_state
+                .rebuild_input_handler(&[])
+                .expect("boundary fcall state should rebuild")
+                .input_data_was_mapped()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(rebuilt, discovered_input_mapped_states);
+}
+
+#[test]
+fn guest_pc_trace_fcall_fixture_words_decode() {
+    assert_eq!(
+        decode_riscv_instruction(riscv_zisk_fcall_param(0, 1)),
+        RiscvInstruction::ZiskFcallParam { port: 0, rs1: 1 }
+    );
+    assert_eq!(
+        decode_riscv_instruction(riscv_zisk_fcall_invoke(
+            crate::zisk_fcalls::ZISK_INPUT_READY_FCALL_ID
+        )),
+        RiscvInstruction::ZiskFcallInvoke {
+            function_id: crate::zisk_fcalls::ZISK_INPUT_READY_FCALL_ID
+        }
+    );
 }
 
 #[test]
@@ -4943,6 +5031,21 @@ fn riscv_addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
         | (u32::from(rs1) << 15)
         | (u32::from(rd) << 7)
         | 0x13
+}
+
+fn riscv_lui(rd: u8, upper: u32) -> u32 {
+    (upper << 12) | (u32::from(rd) << 7) | 0x37
+}
+
+fn riscv_zisk_fcall_param(port: u8, rs1: u8) -> u32 {
+    let csr = 0x08f0_u32 + u32::from(port);
+    (csr << 20) | (u32::from(rs1) << 15) | (2 << 12) | 0x73
+}
+
+fn riscv_zisk_fcall_invoke(function_id: u16) -> u32 {
+    let bank = u32::from(function_id / 32);
+    let rs1 = u32::from(function_id % 32);
+    ((0x08c0 + bank) << 20) | (rs1 << 15) | (5 << 12) | 0x73
 }
 
 fn riscv_amo_add_d(rd: u8, rs1: u8, rs2: u8) -> u32 {
