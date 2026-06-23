@@ -4324,20 +4324,54 @@ fn produce_guest_pc_trace_segments(
         let mut timing = std::mem::take(&mut discovery.timing);
         let lowerer_started = Instant::now();
         let trace_emit_duration = std::cell::Cell::new(Duration::ZERO);
-        let pending = discovery.replayable_pending_segments(context, input)?;
-        lower_guest_pc_trace_replayable_pending_segments_emit_with_timing(
-            layout,
-            pending,
-            expected_proof_values,
-            guest_pc_trace_parallel_lower_configured_worker_count(),
-            Some(&mut timing),
-            |lowered| {
+        #[cfg(feature = "cuda")]
+        if guest_pc_trace_seed_discovery_streaming_device_lower_enabled() {
+            let lowered = discovery.lower_streaming_device_segments(
+                layout,
+                context,
+                input,
+                expected_proof_values,
+                guest_pc_trace_parallel_lower_configured_worker_count(),
+                Some(&mut timing),
+            )?;
+            for lowered in lowered {
                 let emit_started = Instant::now();
                 emit(lowered.segment)?;
                 trace_emit_duration.set(trace_emit_duration.get() + emit_started.elapsed());
-                Ok(())
-            },
-        )?;
+            }
+        } else {
+            let pending = discovery.replayable_pending_segments(context, input)?;
+            lower_guest_pc_trace_replayable_pending_segments_emit_with_timing(
+                layout,
+                pending,
+                expected_proof_values,
+                guest_pc_trace_parallel_lower_configured_worker_count(),
+                Some(&mut timing),
+                |lowered| {
+                    let emit_started = Instant::now();
+                    emit(lowered.segment)?;
+                    trace_emit_duration.set(trace_emit_duration.get() + emit_started.elapsed());
+                    Ok(())
+                },
+            )?;
+        }
+        #[cfg(not(feature = "cuda"))]
+        {
+            let pending = discovery.replayable_pending_segments(context, input)?;
+            lower_guest_pc_trace_replayable_pending_segments_emit_with_timing(
+                layout,
+                pending,
+                expected_proof_values,
+                guest_pc_trace_parallel_lower_configured_worker_count(),
+                Some(&mut timing),
+                |lowered| {
+                    let emit_started = Instant::now();
+                    emit(lowered.segment)?;
+                    trace_emit_duration.set(trace_emit_duration.get() + emit_started.elapsed());
+                    Ok(())
+                },
+            )?;
+        }
         timing.lowerer_duration += lowerer_started.elapsed();
         timing.trace_emit_duration += trace_emit_duration.get();
         let stream = GuestPcTraceStreamResult {
@@ -4613,6 +4647,28 @@ impl GuestPcTraceSeedDiscovery {
         lower_guest_pc_trace_replayable_pending_segments_with_timing(
             layout,
             pending,
+            expected_proof_values,
+            worker_count,
+            timing,
+        )
+    }
+
+    #[cfg(feature = "cuda")]
+    #[allow(dead_code)]
+    fn lower_streaming_device_segments(
+        &self,
+        layout: &WitnessTraceLayout,
+        context: WitnessComputeContext<'_>,
+        input: &[u8],
+        expected_proof_values: Option<&[WitnessTraceProofValue]>,
+        worker_count: usize,
+        timing: Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<Vec<GuestPcTraceLoweredSegment>, GuestPcTraceBackendError> {
+        lower_guest_pc_trace_seed_discovery_streaming_device_segments_with_timing(
+            layout,
+            &self.segments,
+            context,
+            input,
             expected_proof_values,
             worker_count,
             timing,
@@ -6030,6 +6086,233 @@ fn lower_guest_pc_trace_replayable_pending_segments_emit_with_timing(
         }
         Ok::<(), GuestPcTraceBackendError>(())
     })
+}
+
+#[cfg(feature = "cuda")]
+fn lower_guest_pc_trace_seed_discovery_streaming_device_segment(
+    layout: &WitnessTraceLayout,
+    discovery: &GuestPcTraceSeedDiscoverySegment,
+    context: WitnessComputeContext<'_>,
+    input: &[u8],
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    timing: &mut GuestPcTraceStreamTiming,
+) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
+    let (mut memory, _, _) = load_guest_pc_trace_machine(context, input)?;
+    let mut fcall_handler = discovery
+        .fcall_state
+        .rebuild_input_handler_with_memory(input, &mut memory)
+        .map_err(GuestPcTraceBackendError::ZiskInput)?;
+    discovery
+        .memory_state
+        .restore_into(&mut memory)
+        .map_err(GuestPcTraceBackendError::GuestMemory)?;
+    let mut state = discovery.machine_state.clone();
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: discovery.trace_instance_index,
+        is_last_segment: discovery.is_last_segment,
+        previous_c: discovery.seed.previous_c,
+    };
+    let lower_started = Instant::now();
+    let Some(streamed) = run_guest_pc_trace_segment_slice_with_streaming_device_material(
+        layout,
+        &discovery.seed.initial_state,
+        segment,
+        &mut memory,
+        &mut state,
+        &mut fcall_handler,
+        discovery.runner_remaining_instruction_limit,
+        layout.row_count(),
+    )?
+    else {
+        timing.parallel_lower_stream_fallback_count = timing
+            .parallel_lower_stream_fallback_count
+            .saturating_add(1);
+        let mut pending = GuestPcTracePendingSegmentSlice {
+            trace_instance_index: discovery.trace_instance_index,
+            executed_instruction_count: discovery.executed_instruction_count,
+            trace_row_count: discovery.trace_row_count,
+            runner_remaining_instruction_limit: discovery.runner_remaining_instruction_limit,
+            report_count: discovery.report_count,
+            report_capacity: discovery.report_capacity,
+            reports: Vec::new(),
+            reports_elided: true,
+            terminal_pc: discovery.terminal_pc,
+            lookahead_instruction: discovery.lookahead_instruction,
+            is_last_segment: discovery.is_last_segment,
+            seed: Some(Box::new(discovery.seed.clone())),
+            replay_snapshot: Some(discovery.replay_snapshot(context, input)?),
+        };
+        replay_guest_pc_trace_pending_segment_reports(layout, &mut pending, timing)?;
+        return lower_guest_pc_trace_parallel_pending_job(
+            layout,
+            pending,
+            expected_proof_values,
+            timing,
+        );
+    };
+    timing.trace_lower_duration += lower_started.elapsed();
+    let (streamed_halted, terminal_pc, lookahead_instruction) = match &streamed.slice.status {
+        GuestMachineTraceSliceStatus::Halted(halt) => (true, guest_machine_halt_pc(halt), None),
+        GuestMachineTraceSliceStatus::Paused { pc, instruction } => {
+            (false, *pc, Some(*instruction))
+        }
+    };
+    let streamed_is_last = streamed_halted && streamed.slice.trace_rows != layout.row_count();
+    if streamed.slice.executed_instructions != discovery.executed_instruction_count
+        || streamed.slice.trace_rows != discovery.trace_row_count
+        || streamed.slice.report_count != discovery.report_count
+        || streamed_is_last != discovery.is_last_segment
+        || terminal_pc != discovery.terminal_pc
+        || lookahead_instruction != discovery.lookahead_instruction
+    {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "streaming guest PC trace discovery lower diverged for segment {}: exec {} vs {}, rows {} vs {}, reports {} vs {}, last {} vs {}, pc {terminal_pc} vs {}, lookahead {lookahead_instruction:?} vs {:?}",
+                discovery.trace_instance_index,
+                streamed.slice.executed_instructions,
+                discovery.executed_instruction_count,
+                streamed.slice.trace_rows,
+                discovery.trace_row_count,
+                streamed.slice.report_count,
+                discovery.report_count,
+                streamed_is_last,
+                discovery.is_last_segment,
+                discovery.terminal_pc,
+                discovery.lookahead_instruction
+            ),
+        });
+    }
+    if let Some(expected_next_seed) = discovery.next_seed.as_ref() {
+        if &streamed.next_seed != expected_next_seed {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                    "streaming guest PC trace discovery seed mismatch for segment {}",
+                    discovery.trace_instance_index
+                ),
+            });
+        }
+    }
+    timing.parallel_lower_stream_segment_count =
+        timing.parallel_lower_stream_segment_count.saturating_add(1);
+    Ok(GuestPcTraceSeededLoweredSegment {
+        seed: discovery.seed.clone(),
+        lowered: GuestPcTraceLoweredSegment {
+            segment: GuestPcTraceSegmentTrace {
+                trace_instance_index: discovery.trace_instance_index,
+                trace_source_prefix_rows: streamed
+                    .device_build
+                    .device_segment_material
+                    .trace_source_prefix_rows,
+                device_segment_material: Some(streamed.device_build.device_segment_material),
+                trace: None,
+                unit_values: streamed.device_build.unit_values,
+                proof_values: expected_proof_values.unwrap_or_default().to_vec(),
+            },
+            next_seed: streamed.next_seed,
+        },
+    })
+}
+
+#[cfg(feature = "cuda")]
+fn lower_guest_pc_trace_seed_discovery_streaming_device_segments_with_timing(
+    layout: &WitnessTraceLayout,
+    segments: &[GuestPcTraceSeedDiscoverySegment],
+    context: WitnessComputeContext<'_>,
+    input: &[u8],
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    worker_count: usize,
+    mut timing: Option<&mut GuestPcTraceStreamTiming>,
+) -> Result<Vec<GuestPcTraceLoweredSegment>, GuestPcTraceBackendError> {
+    if segments.is_empty() {
+        return Ok(Vec::new());
+    }
+    let worker_count = worker_count.max(1).min(segments.len());
+    if let Some(timing) = &mut timing {
+        timing.parallel_lower_worker_count = timing.parallel_lower_worker_count.max(worker_count);
+        timing.parallel_lower_dispatched_count = timing
+            .parallel_lower_dispatched_count
+            .saturating_add(segments.len());
+    }
+
+    let mut lowered = Vec::with_capacity(segments.len());
+    if worker_count == 1 {
+        for segment in segments {
+            let mut job_timing = GuestPcTraceStreamTiming::default();
+            lowered.push(
+                lower_guest_pc_trace_seed_discovery_streaming_device_segment(
+                    layout,
+                    segment,
+                    context,
+                    input,
+                    expected_proof_values,
+                    &mut job_timing,
+                )?,
+            );
+            if let Some(timing) = &mut timing {
+                timing.add(job_timing);
+            }
+        }
+    } else {
+        let chunk_size = segments.len().div_ceil(worker_count);
+        thread::scope(|scope| {
+            let mut handles = Vec::new();
+            for chunk in segments.chunks(chunk_size) {
+                handles.push(scope.spawn(move || {
+                    let mut chunk_timing = GuestPcTraceStreamTiming::default();
+                    let mut chunk_out = Vec::with_capacity(chunk.len());
+                    for segment in chunk {
+                        chunk_out.push(
+                            lower_guest_pc_trace_seed_discovery_streaming_device_segment(
+                                layout,
+                                segment,
+                                context,
+                                input,
+                                expected_proof_values,
+                                &mut chunk_timing,
+                            )?,
+                        );
+                    }
+                    Ok::<_, GuestPcTraceBackendError>((chunk_out, chunk_timing))
+                }));
+            }
+
+            for handle in handles {
+                let (chunk, chunk_timing) = handle.join().map_err(|_| {
+                    GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "streaming guest PC trace discovery worker panicked".to_owned(),
+                    }
+                })??;
+                if let Some(timing) = &mut timing {
+                    timing.add(chunk_timing);
+                }
+                lowered.extend(chunk);
+            }
+            Ok::<(), GuestPcTraceBackendError>(())
+        })?;
+    }
+
+    lowered.sort_by_key(|entry| entry.lowered.segment.trace_instance_index);
+    let mut current_seed = ZiskMainSegmentSeed::new();
+    let mut out = Vec::with_capacity(lowered.len());
+    for entry in lowered {
+        validate_guest_pc_trace_pending_segment_seed(
+            entry.lowered.segment.trace_instance_index,
+            Some(&entry.seed),
+            &current_seed.initial_state,
+            current_seed.previous_c,
+        )?;
+        current_seed = entry.lowered.next_seed.clone();
+        out.push(entry.lowered);
+        if let Some(timing) = &mut timing {
+            timing.parallel_lower_received_count =
+                timing.parallel_lower_received_count.saturating_add(1);
+            timing.parallel_lower_emitted_count =
+                timing.parallel_lower_emitted_count.saturating_add(1);
+            timing.parallel_lower_max_reorder_count =
+                timing.parallel_lower_max_reorder_count.max(1);
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -7701,6 +7984,14 @@ fn guest_pc_trace_seed_mirror_enabled() -> bool {
 #[allow(dead_code)]
 fn guest_pc_trace_seed_discovery_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_SEED_DISCOVERY", false)
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_trace_seed_discovery_streaming_device_lower_enabled() -> bool {
+    env_flag_enabled(
+        "LZVM_GUEST_PC_TRACE_SEED_DISCOVERY_STREAMING_DEVICE_LOWER",
+        false,
+    )
 }
 
 fn guest_pc_trace_segment_replay_enabled() -> bool {

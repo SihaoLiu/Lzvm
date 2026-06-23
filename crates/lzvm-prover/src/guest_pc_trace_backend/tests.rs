@@ -177,6 +177,30 @@ fn guest_pc_trace_seed_discovery_stays_opt_in() {
 }
 
 #[test]
+#[cfg(feature = "cuda")]
+fn guest_pc_trace_seed_discovery_streaming_device_lower_stays_opt_in() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _streaming_env =
+        TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEED_DISCOVERY_STREAMING_DEVICE_LOWER");
+
+    assert!(!guest_pc_trace_seed_discovery_streaming_device_lower_enabled());
+
+    std::env::set_var(
+        "LZVM_GUEST_PC_TRACE_SEED_DISCOVERY_STREAMING_DEVICE_LOWER",
+        "1",
+    );
+    assert!(guest_pc_trace_seed_discovery_streaming_device_lower_enabled());
+
+    std::env::set_var(
+        "LZVM_GUEST_PC_TRACE_SEED_DISCOVERY_STREAMING_DEVICE_LOWER",
+        "0",
+    );
+    assert!(!guest_pc_trace_seed_discovery_streaming_device_lower_enabled());
+}
+
+#[test]
 fn guest_pc_trace_seed_discovery_scans_without_retaining_reports() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
@@ -670,6 +694,82 @@ fn guest_pc_trace_seed_discovery_lowers_replayable_pending_segments() {
     assert_eq!(
         timing.parallel_lower_snapshot_replay_count(),
         replay_lowered.len()
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn guest_pc_trace_seed_discovery_streaming_device_lower_matches_serial_lower() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-seed-discovery-streaming-device-lower");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_device_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let mut serial_pending = Vec::new();
+    produce_guest_pc_trace_pending_slices(32, context, &[], layout.row_count(), |segment| {
+        serial_pending.push(segment);
+        Ok(())
+    })
+    .expect("serial pending slices should produce");
+    let discovered = discover_guest_pc_trace_segment_seeds(32, context, &[], layout.row_count())
+        .expect("seed discovery should scan the device fixture");
+    let serial_lowered =
+        lower_guest_pc_trace_seeded_pending_segments_with_workers(&layout, serial_pending, None, 2)
+            .expect("serial pending segments should lower");
+    let mut streaming_timing = GuestPcTraceStreamTiming::default();
+    let streaming_lowered = discovered
+        .lower_streaming_device_segments(
+            &layout,
+            context,
+            &[],
+            None,
+            2,
+            Some(&mut streaming_timing),
+        )
+        .expect("seed discovery streaming lower should produce segments");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(streaming_lowered.len(), serial_lowered.len());
+    for (streaming, serial) in streaming_lowered.iter().zip(&serial_lowered) {
+        assert_eq!(streaming.next_seed, serial.next_seed);
+        assert_eq!(
+            streaming.segment.trace_instance_index,
+            serial.segment.trace_instance_index
+        );
+        assert_eq!(
+            streaming.segment.trace_source_prefix_rows,
+            serial.segment.trace_source_prefix_rows
+        );
+        assert_eq!(
+            streaming.segment.device_segment_material,
+            serial.segment.device_segment_material
+        );
+        assert_eq!(streaming.segment.unit_values, serial.segment.unit_values);
+        assert_eq!(streaming.segment.proof_values, serial.segment.proof_values);
+    }
+    assert_eq!(streaming_timing.parallel_lower_snapshot_replay_count(), 0);
+    assert_eq!(
+        streaming_timing.parallel_lower_stream_segment_count(),
+        streaming_lowered.len()
     );
 }
 
