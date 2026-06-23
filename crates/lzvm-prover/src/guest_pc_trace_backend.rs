@@ -4459,6 +4459,25 @@ struct GuestPcTracePendingSliceProduction {
     timing: GuestPcTraceStreamTiming,
 }
 
+#[allow(dead_code)]
+struct GuestPcTraceSeedDiscoverySegment {
+    trace_instance_index: u32,
+    executed_instruction_count: u64,
+    trace_row_count: usize,
+    report_count: usize,
+    terminal_pc: u64,
+    lookahead_instruction: Option<RiscvInstruction>,
+    is_last_segment: bool,
+    seed: ZiskMainSegmentSeed,
+}
+
+#[allow(dead_code)]
+struct GuestPcTraceSeedDiscovery {
+    proof_values: Vec<WitnessTraceProofValue>,
+    segments: Vec<GuestPcTraceSeedDiscoverySegment>,
+    timing: GuestPcTraceStreamTiming,
+}
+
 struct GuestPcTraceLivePendingSegmentEmission {
     executed_instruction_count: u64,
     trace_row_count: usize,
@@ -5247,6 +5266,147 @@ fn produce_guest_pc_trace_pending_slices(
             fcall_handler.input_data_was_mapped(),
             state.dma_proof_value_flags(),
         ),
+        timing,
+    })
+}
+
+#[allow(dead_code)]
+fn discover_guest_pc_trace_segment_seeds(
+    instruction_limit: u64,
+    context: WitnessComputeContext<'_>,
+    input: &[u8],
+    row_count: usize,
+) -> Result<GuestPcTraceSeedDiscovery, GuestPcTraceBackendError> {
+    let (mut memory, mut state, mut fcall_handler) = load_guest_pc_trace_machine(context, input)?;
+    let mut executed_instructions = 0_u64;
+    let mut trace_instance_count = 0_usize;
+    let mut current_seed = ZiskMainSegmentSeed::new();
+    let mut timing = GuestPcTraceStreamTiming::default();
+    let mut segments = Vec::new();
+
+    loop {
+        let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
+        let trace_instance_index = u32::try_from(trace_instance_count).map_err(|_| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main trace instance index is too large".to_owned(),
+            }
+        })?;
+        let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+        let slice = run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
+            &mut memory,
+            &mut state,
+            &mut fcall_handler,
+            remaining_limit,
+            row_count,
+            &mut boundary_snapshot,
+        )?;
+        timing.trace_runner_report_buffer_capacity += slice.report_capacity;
+        timing.trace_runner_report_buffer_max_capacity = timing
+            .trace_runner_report_buffer_max_capacity
+            .max(slice.report_capacity);
+        timing.trace_runner_report_buffer_excess_capacity +=
+            slice.report_capacity.saturating_sub(slice.reports.len());
+        executed_instructions = executed_instructions
+            .checked_add(slice.executed_instructions)
+            .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest instruction count overflow".to_owned(),
+            })?;
+        let (halted, terminal_pc, lookahead_instruction) = match &slice.status {
+            GuestMachineTraceSliceStatus::Halted(halt) => (true, guest_machine_halt_pc(halt), None),
+            GuestMachineTraceSliceStatus::Paused { pc, instruction } => {
+                (false, *pc, Some(*instruction))
+            }
+        };
+        let needs_terminal_segment = halted && slice.trace_rows == row_count;
+        let is_last_segment = halted && !needs_terminal_segment;
+        if !is_last_segment && slice.trace_rows < row_count {
+            return Err(GuestPcTraceBackendError::GuestRun(
+                GuestMachineRunError::InstructionLimitExceeded {
+                    instruction_limit,
+                    pc: terminal_pc,
+                },
+            ));
+        }
+        let segment_info = ZiskMainTraceSegmentInfo {
+            trace_instance_index,
+            is_last_segment,
+            previous_c: current_seed.previous_c,
+        };
+        let next_seed = if !is_last_segment {
+            let direct_lift_started = Instant::now();
+            timing.seed_direct_lift_attempt_count += 1;
+            let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+                row_count,
+                segment_info,
+                ZiskMainRunnerBoundarySeedInput {
+                    reports: &[],
+                    report_count: slice.report_count,
+                    last_report_shape: slice.last_report_shape,
+                    lookahead_instruction,
+                    runner_state: &state,
+                    current_seed: &current_seed,
+                    boundary_snapshot: &boundary_snapshot,
+                },
+            )?;
+            timing.seed_direct_lift_duration += direct_lift_started.elapsed();
+            match lifted {
+                Ok(next_seed) => {
+                    timing.seed_direct_lift_success_count += 1;
+                    Some(next_seed)
+                }
+                Err(reason) => {
+                    timing.record_seed_direct_lift_miss(reason);
+                    return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: format!(
+                            "guest PC trace seed discovery could not lift segment {trace_instance_index}: {reason:?}"
+                        ),
+                    });
+                }
+            }
+        } else {
+            None
+        };
+        segments.push(GuestPcTraceSeedDiscoverySegment {
+            trace_instance_index,
+            executed_instruction_count: slice.executed_instructions,
+            trace_row_count: slice.trace_rows,
+            report_count: slice.report_count,
+            terminal_pc,
+            lookahead_instruction,
+            is_last_segment,
+            seed: current_seed.clone(),
+        });
+        if let Some(next_seed) = next_seed {
+            current_seed = next_seed;
+        }
+        trace_instance_count = trace_instance_count.checked_add(1).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main trace instance count overflow".to_owned(),
+            }
+        })?;
+        if is_last_segment {
+            break;
+        }
+        if needs_terminal_segment {
+            continue;
+        }
+        if executed_instructions == instruction_limit {
+            return Err(GuestPcTraceBackendError::GuestRun(
+                GuestMachineRunError::InstructionLimitExceeded {
+                    instruction_limit,
+                    pc: terminal_pc,
+                },
+            ));
+        }
+    }
+
+    Ok(GuestPcTraceSeedDiscovery {
+        proof_values: zisk_runtime_proof_values(
+            executed_instructions != 0,
+            fcall_handler.input_data_was_mapped(),
+            state.dma_proof_value_flags(),
+        ),
+        segments,
         timing,
     })
 }
@@ -7107,6 +7267,11 @@ fn validate_guest_pc_trace_pending_segment_seed(
 
 fn guest_pc_trace_seed_mirror_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_SEED_MIRROR", false)
+}
+
+#[allow(dead_code)]
+fn guest_pc_trace_seed_discovery_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_SEED_DISCOVERY", false)
 }
 
 fn guest_pc_trace_segment_replay_enabled() -> bool {

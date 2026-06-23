@@ -161,6 +161,94 @@ fn guest_pc_trace_parallel_lower_job_queue_capacity_is_bounded_and_configurable(
 }
 
 #[test]
+fn guest_pc_trace_seed_discovery_stays_opt_in() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _discovery_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEED_DISCOVERY");
+
+    assert!(!guest_pc_trace_seed_discovery_enabled());
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_SEED_DISCOVERY", "1");
+    assert!(guest_pc_trace_seed_discovery_enabled());
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_SEED_DISCOVERY", "0");
+    assert!(!guest_pc_trace_seed_discovery_enabled());
+}
+
+#[test]
+fn guest_pc_trace_seed_discovery_scans_without_retaining_reports() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-seed-discovery");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let mut serial_pending = Vec::new();
+    let serial =
+        produce_guest_pc_trace_pending_slices(32, context, &[], layout.row_count(), |segment| {
+            serial_pending.push(segment);
+            Ok(())
+        })
+        .expect("serial seed mirror should produce pending slices");
+    let discovered = discover_guest_pc_trace_segment_seeds(32, context, &[], layout.row_count())
+        .expect("seed discovery should scan the same segments");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(discovered.proof_values, serial.proof_values);
+    assert_eq!(discovered.segments.len(), serial_pending.len());
+    assert_eq!(
+        discovered.timing.seed_direct_lift_success_count(),
+        serial_pending.len().saturating_sub(1)
+    );
+    assert_eq!(discovered.timing.seed_full_advance_count(), 0);
+    assert_eq!(discovered.timing.trace_runner_report_buffer_capacity(), 0);
+    for (discovered, expected) in discovered.segments.iter().zip(&serial_pending) {
+        assert_eq!(
+            &discovered.seed,
+            expected
+                .seed
+                .as_deref()
+                .expect("serial seed mirror should attach segment seeds")
+        );
+        assert_eq!(
+            discovered.trace_instance_index,
+            expected.trace_instance_index
+        );
+        assert_eq!(
+            discovered.executed_instruction_count,
+            expected.executed_instruction_count
+        );
+        assert_eq!(discovered.trace_row_count, expected.trace_row_count);
+        assert_eq!(discovered.report_count, expected.report_count);
+        assert_eq!(discovered.terminal_pc, expected.terminal_pc);
+        assert_eq!(
+            discovered.lookahead_instruction,
+            expected.lookahead_instruction
+        );
+        assert_eq!(discovered.is_last_segment, expected.is_last_segment);
+    }
+}
+
+#[test]
 fn trace_shape_run_counts_track_consecutive_row_classes() {
     let mut timing = GuestPcTraceStreamTiming::default();
     let external = zisk_main_base_instruction(
