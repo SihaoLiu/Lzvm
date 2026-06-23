@@ -4580,11 +4580,6 @@ impl GuestPcTraceSeedDiscovery {
         self.segments
             .iter()
             .map(|segment| {
-                let replay_context = WitnessComputeContext {
-                    guest_image: context.guest_image,
-                    guest_image_info: context.guest_image_info,
-                    trace_layout: context.trace_layout,
-                };
                 Ok(GuestPcTracePendingSegmentSlice {
                     trace_instance_index: segment.trace_instance_index,
                     executed_instruction_count: segment.executed_instruction_count,
@@ -4598,7 +4593,7 @@ impl GuestPcTraceSeedDiscovery {
                     lookahead_instruction: segment.lookahead_instruction,
                     is_last_segment: segment.is_last_segment,
                     seed: Some(Box::new(segment.seed.clone())),
-                    replay_snapshot: Some(segment.replay_snapshot(replay_context, input)?),
+                    replay_snapshot: Some(segment.replay_snapshot(context, input)?),
                 })
             })
             .collect()
