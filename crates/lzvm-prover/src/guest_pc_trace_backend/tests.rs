@@ -214,8 +214,10 @@ fn guest_pc_trace_seed_discovery_scans_without_retaining_reports() {
     let (mut expected_memory, mut expected_state, mut expected_fcall_handler) =
         load_guest_pc_trace_machine(context, &[]).expect("expected machine should load");
     let mut expected_machine_states = Vec::new();
+    let mut expected_input_mapped_states = Vec::new();
     for expected in &serial_pending {
         expected_machine_states.push(expected_state.clone());
+        expected_input_mapped_states.push(expected_fcall_handler.input_data_was_mapped());
         let slice = run_guest_pc_trace_segment_slice(
             &mut expected_memory,
             &mut expected_state,
@@ -265,6 +267,11 @@ fn guest_pc_trace_seed_discovery_scans_without_retaining_reports() {
         assert_eq!(
             &discovered.machine_state,
             &expected_machine_states[usize::try_from(discovered.trace_instance_index)
+                .expect("trace instance index should fit")]
+        );
+        assert_eq!(
+            discovered.input_data_was_mapped,
+            expected_input_mapped_states[usize::try_from(discovered.trace_instance_index)
                 .expect("trace instance index should fit")]
         );
         assert_eq!(discovered.terminal_pc, expected.terminal_pc);

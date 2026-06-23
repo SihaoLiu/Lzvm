@@ -4467,6 +4467,7 @@ struct GuestPcTraceSeedDiscoverySegment {
     report_count: usize,
     runner_remaining_instruction_limit: u64,
     machine_state: GuestMachineState,
+    input_data_was_mapped: bool,
     terminal_pc: u64,
     lookahead_instruction: Option<RiscvInstruction>,
     is_last_segment: bool,
@@ -5295,6 +5296,7 @@ fn discover_guest_pc_trace_segment_seeds(
             }
         })?;
         let machine_state = state.clone();
+        let input_data_was_mapped = fcall_handler.input_data_was_mapped();
         let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
         let slice = run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
             &mut memory,
@@ -5377,6 +5379,7 @@ fn discover_guest_pc_trace_segment_seeds(
             report_count: slice.report_count,
             runner_remaining_instruction_limit: remaining_limit,
             machine_state,
+            input_data_was_mapped,
             terminal_pc,
             lookahead_instruction,
             is_last_segment,
