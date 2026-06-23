@@ -4493,11 +4493,12 @@ impl GuestPcTraceFcallBoundaryState {
         self.input_data_was_mapped
     }
 
-    fn rebuild_input_handler(
+    fn rebuild_input_handler_with_memory(
         &self,
         input: &[u8],
+        memory: &mut GuestMachineMemory,
     ) -> Result<ZiskInputFcallHandler, ZiskInputFcallError> {
-        ZiskInputFcallHandler::new_for_replay(input, self.input_data_was_mapped)
+        ZiskInputFcallHandler::new_for_replay(input, self.input_data_was_mapped, memory)
     }
 }
 

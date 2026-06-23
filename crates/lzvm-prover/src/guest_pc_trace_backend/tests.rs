@@ -339,10 +339,11 @@ fn guest_pc_trace_seed_discovery_tracks_input_mapping_boundaries() {
         guest_image_info: Some(&guest_image_info),
         trace_layout: Some(&layout),
     };
-    let discovered = discover_guest_pc_trace_segment_seeds(32, context, &[], layout.row_count())
+    let input = framed_stdin_chunk(b"abc");
+    let discovered = discover_guest_pc_trace_segment_seeds(32, context, &input, layout.row_count())
         .expect("seed discovery should scan the input-ready program");
     let (mut expected_memory, mut expected_state, mut expected_fcall_handler) =
-        load_guest_pc_trace_machine(context, &[]).expect("expected machine should load");
+        load_guest_pc_trace_machine(context, &input).expect("expected machine should load");
     let mut expected_input_mapped_states = Vec::new();
     for discovered_segment in &discovered.segments {
         expected_input_mapped_states.push(expected_fcall_handler.input_data_was_mapped());
@@ -355,8 +356,6 @@ fn guest_pc_trace_seed_discovery_tracks_input_mapping_boundaries() {
         )
         .expect("expected input-ready segment should run");
     }
-    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
-
     let discovered_input_mapped_states = discovered
         .segments
         .iter()
@@ -374,14 +373,28 @@ fn guest_pc_trace_seed_discovery_tracks_input_mapping_boundaries() {
         .segments
         .iter()
         .map(|segment| {
-            segment
+            let (mut rebuilt_memory, _, _) =
+                load_guest_pc_trace_machine(context, &input).expect("replay machine should load");
+            let handler = segment
                 .fcall_state
-                .rebuild_input_handler(&[])
-                .expect("boundary fcall state should rebuild")
-                .input_data_was_mapped()
+                .rebuild_input_handler_with_memory(&input, &mut rebuilt_memory)
+                .expect("boundary fcall state should rebuild");
+            if segment.fcall_state.input_data_was_mapped() {
+                let mut expected = vec![0; 8 + input.len()];
+                let mut rebuilt = vec![0; expected.len()];
+                expected_memory
+                    .read_range_into(ZISK_INPUT_ADDRESS, &mut expected)
+                    .expect("expected mapped input image should read");
+                rebuilt_memory
+                    .read_range_into(ZISK_INPUT_ADDRESS, &mut rebuilt)
+                    .expect("rebuilt mapped input image should read");
+                assert_eq!(rebuilt, expected);
+            }
+            handler.input_data_was_mapped()
         })
         .collect::<Vec<_>>();
     assert_eq!(rebuilt, discovered_input_mapped_states);
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]
@@ -5046,6 +5059,14 @@ fn riscv_zisk_fcall_invoke(function_id: u16) -> u32 {
     let bank = u32::from(function_id / 32);
     let rs1 = u32::from(function_id % 32);
     ((0x08c0 + bank) << 20) | (rs1 << 15) | (5 << 12) | 0x73
+}
+
+fn framed_stdin_chunk(payload: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(payload);
+    bytes.resize(bytes.len().next_multiple_of(8), 0);
+    bytes
 }
 
 fn riscv_amo_add_d(rd: u8, rs1: u8, rs2: u8) -> u32 {
