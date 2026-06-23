@@ -2687,6 +2687,7 @@ def performance_focus_hint(
     retained_parent_checkpoint_action_hint: str,
     seed_direct_lift_action_hint: str,
     seed_full_advances: int,
+    seed_snapshot_runtime_hint: str,
     cpu_report_storage_hint: str,
     cpu_lowerer_hint: str,
     cpu_lowerer_detail_driven: bool = False,
@@ -2708,6 +2709,8 @@ def performance_focus_hint(
         "parallel_lower_live_stream_segment_serial_bound",
     }:
         return trace_pipeline_hint
+    if seed_snapshot_runtime_hint == "trusted_seed_snapshot_seed_only_probe":
+        return seed_snapshot_runtime_hint
     if trace_pipeline_hint in trace_pipeline_hints and cpu_report_storage_hint in {
         "fused_runner_lowerer_report_storage_candidate",
         "runner_streaming_report_storage_candidate",
@@ -4845,6 +4848,7 @@ def summarize_profile_values(
         retained_parent_checkpoint_action_hint,
         seed_direct_lift_action,
         seed_full_advances,
+        seed_snapshot_runtime,
         cpu_report_storage_hint,
         lowerer_hint,
         trace_report_detail_action != "none",

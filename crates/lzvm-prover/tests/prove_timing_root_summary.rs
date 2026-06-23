@@ -6489,7 +6489,7 @@ fn prove_timing_root_summary_prioritizes_trace_pipeline_over_secondary_opening_l
 }
 
 #[test]
-fn prove_timing_root_summary_prioritizes_seed_ready_trace_pipeline() {
+fn prove_timing_root_summary_prioritizes_seed_snapshot_only_probe() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
     let input = [
@@ -6581,7 +6581,7 @@ fn prove_timing_root_summary_prioritizes_seed_ready_trace_pipeline() {
     );
     assert_eq!(
         value("performance_focus_hint"),
-        "seed_ready_parallel_segment_reexecution_candidate"
+        "trusted_seed_snapshot_seed_only_probe"
     );
     assert_eq!(
         value("seed_snapshot_runtime_hint"),
@@ -6956,7 +6956,7 @@ fn prove_timing_root_summary_prefers_lowerer_detail_focus_over_seed_snapshot_pro
 }
 
 #[test]
-fn prove_timing_root_summary_keeps_seed_ready_focus_over_perf_only_descriptor_symbol() {
+fn prove_timing_root_summary_keeps_seed_snapshot_focus_over_perf_only_descriptor_symbol() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
     let input = [
@@ -7040,7 +7040,11 @@ fn prove_timing_root_summary_keeps_seed_ready_focus_over_perf_only_descriptor_sy
     );
     assert_eq!(
         value("performance_focus_hint"),
-        "seed_ready_parallel_segment_reexecution_candidate"
+        "trusted_seed_snapshot_seed_only_probe"
+    );
+    assert_eq!(
+        value("seed_snapshot_runtime_hint"),
+        "trusted_seed_snapshot_seed_only_probe"
     );
 }
 
