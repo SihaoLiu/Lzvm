@@ -239,6 +239,10 @@ fn guest_pc_trace_seed_discovery_scans_without_retaining_reports() {
         );
         assert_eq!(discovered.trace_row_count, expected.trace_row_count);
         assert_eq!(discovered.report_count, expected.report_count);
+        assert_eq!(
+            discovered.runner_remaining_instruction_limit,
+            expected.runner_remaining_instruction_limit
+        );
         assert_eq!(discovered.terminal_pc, expected.terminal_pc);
         assert_eq!(
             discovered.lookahead_instruction,
