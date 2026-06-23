@@ -66,6 +66,16 @@ fn lean_transcript_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
+        "runtime_transcript_binding_checked_acceptance_sound",
+        &["abstract_verifier_sound"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_sound",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
         "runtime_transcript_binding_checked_acceptance_verifier_core_contract",
         &["runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract"],
     );
