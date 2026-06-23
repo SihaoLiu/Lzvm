@@ -538,30 +538,19 @@ fn guest_pc_trace_seed_discovery_restores_written_memory_boundaries() {
     )
     .expect("expected second segment should run");
 
-    let (mut replay_memory, _, _) =
-        load_guest_pc_trace_machine(context, &[]).expect("replay machine should load");
-    let mut replay_state = boundary.machine_state.clone();
-    let mut replay_fcall_handler = boundary
-        .fcall_state
-        .rebuild_input_handler_with_memory(&[], &mut replay_memory)
-        .expect("boundary fcall state should rebuild");
-    boundary
-        .memory_state
-        .restore_into(&mut replay_memory)
-        .expect("boundary memory state should rebuild");
-    let replay_second = run_guest_pc_trace_segment_slice(
-        &mut replay_memory,
-        &mut replay_state,
-        &mut replay_fcall_handler,
+    let replay = replay_guest_pc_trace_segment_from_snapshot(
+        boundary
+            .replay_snapshot(context, &[])
+            .expect("boundary replay snapshot should rebuild"),
         boundary.runner_remaining_instruction_limit,
         layout.row_count(),
     )
     .expect("replayed second segment should run");
     std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    assert_eq!(replay_second.reports, expected_second.reports);
-    assert_eq!(replay_state, expected_second_state);
-    assert_eq!(replay_memory, expected_second_memory);
+    assert_eq!(replay.slice.reports, expected_second.reports);
+    assert_eq!(replay.state, expected_second_state);
+    assert_eq!(replay.memory, expected_second_memory);
 }
 
 #[test]

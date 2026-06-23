@@ -4476,6 +4476,29 @@ struct GuestPcTraceSeedDiscoverySegment {
     next_seed: Option<ZiskMainSegmentSeed>,
 }
 
+impl GuestPcTraceSeedDiscoverySegment {
+    #[allow(dead_code)]
+    fn replay_snapshot(
+        &self,
+        context: WitnessComputeContext<'_>,
+        input: &[u8],
+    ) -> Result<GuestPcTraceSegmentReplaySnapshot, GuestPcTraceBackendError> {
+        let (mut memory, _, _) = load_guest_pc_trace_machine(context, input)?;
+        let fcall_handler = self
+            .fcall_state
+            .rebuild_input_handler_with_memory(input, &mut memory)
+            .map_err(GuestPcTraceBackendError::ZiskInput)?;
+        self.memory_state
+            .restore_into(&mut memory)
+            .map_err(GuestPcTraceBackendError::GuestMemory)?;
+        Ok(GuestPcTraceSegmentReplaySnapshot {
+            memory,
+            state: self.machine_state.clone(),
+            fcall_handler: Box::new(fcall_handler),
+        })
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct GuestPcTraceFcallBoundaryState {
