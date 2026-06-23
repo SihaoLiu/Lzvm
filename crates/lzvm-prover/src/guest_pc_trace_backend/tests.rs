@@ -211,6 +211,25 @@ fn guest_pc_trace_seed_discovery_scans_without_retaining_reports() {
         .expect("serial seed mirror should produce pending slices");
     let discovered = discover_guest_pc_trace_segment_seeds(32, context, &[], layout.row_count())
         .expect("seed discovery should scan the same segments");
+    let (mut expected_memory, mut expected_state, mut expected_fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("expected machine should load");
+    let mut expected_machine_states = Vec::new();
+    for expected in &serial_pending {
+        expected_machine_states.push(expected_state.clone());
+        let slice = run_guest_pc_trace_segment_slice(
+            &mut expected_memory,
+            &mut expected_state,
+            &mut expected_fcall_handler,
+            expected.runner_remaining_instruction_limit,
+            layout.row_count(),
+        )
+        .expect("expected machine segment should run");
+        assert_eq!(
+            slice.executed_instructions,
+            expected.executed_instruction_count
+        );
+        assert_eq!(slice.trace_rows, expected.trace_row_count);
+    }
     std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(discovered.proof_values, serial.proof_values);
@@ -242,6 +261,11 @@ fn guest_pc_trace_seed_discovery_scans_without_retaining_reports() {
         assert_eq!(
             discovered.runner_remaining_instruction_limit,
             expected.runner_remaining_instruction_limit
+        );
+        assert_eq!(
+            &discovered.machine_state,
+            &expected_machine_states[usize::try_from(discovered.trace_instance_index)
+                .expect("trace instance index should fit")]
         );
         assert_eq!(discovered.terminal_pc, expected.terminal_pc);
         assert_eq!(

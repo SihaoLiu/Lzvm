@@ -4466,6 +4466,7 @@ struct GuestPcTraceSeedDiscoverySegment {
     trace_row_count: usize,
     report_count: usize,
     runner_remaining_instruction_limit: u64,
+    machine_state: GuestMachineState,
     terminal_pc: u64,
     lookahead_instruction: Option<RiscvInstruction>,
     is_last_segment: bool,
@@ -5293,6 +5294,7 @@ fn discover_guest_pc_trace_segment_seeds(
                 message: "Zisk Main trace instance index is too large".to_owned(),
             }
         })?;
+        let machine_state = state.clone();
         let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
         let slice = run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
             &mut memory,
@@ -5374,6 +5376,7 @@ fn discover_guest_pc_trace_segment_seeds(
             trace_row_count: slice.trace_rows,
             report_count: slice.report_count,
             runner_remaining_instruction_limit: remaining_limit,
+            machine_state,
             terminal_pc,
             lookahead_instruction,
             is_last_segment,
