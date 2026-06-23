@@ -2280,6 +2280,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     const SNAPSHOT_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY_SNAPSHOT";
     const WORKER_REPLAY_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT";
     const REPLAY_ONLY_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY";
+    const SEED_DISCOVERY_ENV: &str = "LZVM_GUEST_PC_TRACE_SEED_DISCOVERY";
     const COMMIT_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS";
     const ROOTS_ENV: &str = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS";
 
@@ -2344,6 +2345,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     let _snapshot_guard = TestEnvVarGuard::unset(SNAPSHOT_ENV);
     let _worker_replay_guard = TestEnvVarGuard::unset(WORKER_REPLAY_ENV);
     let _replay_only_guard = TestEnvVarGuard::unset(REPLAY_ONLY_ENV);
+    let _seed_discovery_guard = TestEnvVarGuard::unset(SEED_DISCOVERY_ENV);
     let _commit_workers_guard = TestEnvVarGuard::unset(COMMIT_WORKERS_ENV);
     let _roots_guard = TestEnvVarGuard::unset(ROOTS_ENV);
     std::env::set_var(ROOTS_ENV, "0");
@@ -2633,6 +2635,11 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     std::env::set_var(COMMIT_WORKERS_ENV, "2");
     let commit_worker_run = run("commit-worker");
     std::env::remove_var(COMMIT_WORKERS_ENV);
+    std::env::set_var(SEED_DISCOVERY_ENV, "1");
+    std::env::set_var(PIPELINE_WORKERS_ENV, "2");
+    let seed_discovery_run = run("seed-discovery");
+    std::env::remove_var(SEED_DISCOVERY_ENV);
+    std::env::remove_var(PIPELINE_WORKERS_ENV);
     std::env::set_var(PARALLEL_LOWER_ENV, "1");
     std::env::set_var(PIPELINE_ENV, "1");
     std::env::set_var(PIPELINE_WORKERS_ENV, "2");
@@ -2861,6 +2868,45 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
         "explicit segment commit workers should report final drain joins"
     );
     assert!(
+        seed_discovery_run.parallel_lower_worker_count >= 2,
+        "seed-discovery opt-in should use configured replay lower workers"
+    );
+    assert!(
+        seed_discovery_run.parallel_lower_emitted_count > 0,
+        "seed-discovery opt-in should emit lowered trace segments"
+    );
+    assert_eq!(
+        seed_discovery_run.parallel_lower_snapshot_replay_count,
+        seed_discovery_run.parallel_lower_emitted_count,
+        "seed-discovery opt-in should lower from replayed discovery snapshots"
+    );
+    assert!(
+        seed_discovery_run.parallel_lower_snapshot_replay_duration > Duration::ZERO,
+        "seed-discovery opt-in should report worker snapshot replay time"
+    );
+    assert_eq!(
+        seed_discovery_run.parallel_lower_report_elided_count,
+        seed_discovery_run.parallel_lower_emitted_count,
+        "seed-discovery opt-in should avoid carrying reports into lower workers"
+    );
+    assert!(
+        seed_discovery_run.seed_direct_lift_attempt_count > 0,
+        "seed-discovery opt-in should directly lift runner boundary seeds"
+    );
+    assert_eq!(
+        seed_discovery_run.seed_direct_lift_attempt_count,
+        seed_discovery_run.seed_direct_lift_success_count,
+        "seed-discovery opt-in should lift every non-final runner boundary seed in the fixture"
+    );
+    assert_eq!(
+        seed_discovery_run.seed_full_advance_count, 0,
+        "seed-discovery opt-in should not recompute seeds from carried reports"
+    );
+    assert_eq!(
+        seed_discovery_run.segment_commit_effective_worker_count, 1,
+        "seed-discovery opt-in should not enable commit workers by itself"
+    );
+    assert!(
         combined_run.parallel_lower_worker_count >= 2,
         "combined opt-in should use configured parallel lower workers"
     );
@@ -2929,6 +2975,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     );
     assert_eq!(
         default_run.witness_segment_bytes,
+        seed_discovery_run.witness_segment_bytes
+    );
+    assert_eq!(
+        default_run.witness_segment_bytes,
         combined_run.witness_segment_bytes
     );
     assert_eq!(default_run.stage_roots, stream_run.stage_roots);
@@ -2937,6 +2987,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert_eq!(default_run.stage_roots, seed_pipeline_run.stage_roots);
     assert_eq!(default_run.stage_roots, pipeline_run.stage_roots);
     assert_eq!(default_run.stage_roots, commit_worker_run.stage_roots);
+    assert_eq!(default_run.stage_roots, seed_discovery_run.stage_roots);
     assert_eq!(default_run.stage_roots, combined_run.stage_roots);
     assert_eq!(
         default_run.transcript_segment_bytes,
@@ -2961,6 +3012,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert_eq!(
         default_run.transcript_segment_bytes,
         commit_worker_run.transcript_segment_bytes
+    );
+    assert_eq!(
+        default_run.transcript_segment_bytes,
+        seed_discovery_run.transcript_segment_bytes
     );
     assert_eq!(
         default_run.transcript_segment_bytes,
@@ -2992,6 +3047,10 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     );
     assert_eq!(
         default_run.public_values_bytes,
+        seed_discovery_run.public_values_bytes
+    );
+    assert_eq!(
+        default_run.public_values_bytes,
         combined_run.public_values_bytes
     );
     assert_eq!(default_run.proof_bytes, stream_run.proof_bytes);
@@ -3000,6 +3059,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     assert_eq!(default_run.proof_bytes, seed_pipeline_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, pipeline_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, commit_worker_run.proof_bytes);
+    assert_eq!(default_run.proof_bytes, seed_discovery_run.proof_bytes);
     assert_eq!(default_run.proof_bytes, combined_run.proof_bytes);
 }
 

@@ -4316,6 +4316,39 @@ fn produce_guest_pc_trace_segments(
             message: "Zisk Main layout has zero rows".to_owned(),
         });
     }
+    if guest_pc_trace_seed_discovery_enabled() {
+        let runner_started = Instant::now();
+        let mut discovery =
+            discover_guest_pc_trace_segment_seeds(instruction_limit, context, input, row_count)?;
+        discovery.timing.runner_duration += runner_started.elapsed();
+        let mut timing = std::mem::take(&mut discovery.timing);
+        let lowerer_started = Instant::now();
+        let lowered = discovery.lower_replayable_pending_segments(
+            layout,
+            context,
+            input,
+            expected_proof_values,
+            guest_pc_trace_parallel_lower_configured_worker_count(),
+            Some(&mut timing),
+        )?;
+        timing.lowerer_duration += lowerer_started.elapsed();
+        for lowered in lowered {
+            let emit_started = Instant::now();
+            emit(lowered.segment)?;
+            timing.trace_emit_duration += emit_started.elapsed();
+        }
+        let stream = GuestPcTraceStreamResult {
+            proof_values: discovery.proof_values,
+            timing,
+        };
+        if expected_proof_values.is_some_and(|expected| stream.proof_values.as_slice() != expected)
+        {
+            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace runtime proof values changed between passes".to_owned(),
+            });
+        }
+        return Ok(stream);
+    }
 
     let (pending_sender, pending_receiver) =
         mpsc::sync_channel(guest_pc_trace_segment_queue_capacity());
@@ -5729,6 +5762,10 @@ fn lower_guest_pc_trace_replayable_pending_job(
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
     timing: &mut GuestPcTraceStreamTiming,
 ) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
+    if pending.reports_elided {
+        timing.parallel_lower_report_elided_count =
+            timing.parallel_lower_report_elided_count.saturating_add(1);
+    }
     replay_guest_pc_trace_pending_segment_reports(layout, &mut pending, timing)?;
     let trace_instance_index = pending.trace_instance_index;
     let seed =
@@ -5778,6 +5815,15 @@ fn lower_guest_pc_trace_replayable_pending_segments_with_timing(
     }
 
     let worker_count = worker_count.max(1).min(pending.len());
+    if let Some(timing) = &mut timing {
+        timing.parallel_lower_worker_count = timing.parallel_lower_worker_count.max(worker_count);
+        timing.parallel_lower_dispatched_count = timing
+            .parallel_lower_dispatched_count
+            .saturating_add(pending.len());
+        timing.parallel_lower_received_count = timing
+            .parallel_lower_received_count
+            .saturating_add(pending.len());
+    }
     let mut lowered = Vec::with_capacity(pending.len());
     if worker_count == 1 {
         for pending in pending {
@@ -5844,6 +5890,11 @@ fn lower_guest_pc_trace_replayable_pending_segments_with_timing(
             current_seed.previous_c,
         )?;
         current_seed = entry.lowered.next_seed.clone();
+    }
+    if let Some(timing) = &mut timing {
+        timing.parallel_lower_emitted_count = timing
+            .parallel_lower_emitted_count
+            .saturating_add(lowered.len());
     }
     Ok(lowered.into_iter().map(|entry| entry.lowered).collect())
 }
@@ -7555,6 +7606,10 @@ fn guest_pc_trace_parallel_lower_worker_count() -> Option<usize> {
     if !guest_pc_trace_parallel_lower_enabled() {
         return None;
     }
+    Some(guest_pc_trace_parallel_lower_configured_worker_count())
+}
+
+fn guest_pc_trace_parallel_lower_configured_worker_count() -> usize {
     let configured = std::env::var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
@@ -7564,7 +7619,7 @@ fn guest_pc_trace_parallel_lower_worker_count() -> Option<usize> {
             .map(usize::from)
             .unwrap_or(1)
     });
-    Some(worker_count.max(1))
+    worker_count.max(1)
 }
 
 fn guest_pc_trace_parallel_lower_result_queue_capacity(worker_count: usize) -> usize {
