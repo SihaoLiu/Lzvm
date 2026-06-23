@@ -4567,6 +4567,26 @@ impl GuestPcTraceSeedDiscovery {
             })
             .collect()
     }
+
+    #[allow(dead_code)]
+    fn lower_replayable_pending_segments(
+        &self,
+        layout: &WitnessTraceLayout,
+        context: WitnessComputeContext<'_>,
+        input: &[u8],
+        expected_proof_values: Option<&[WitnessTraceProofValue]>,
+        worker_count: usize,
+        timing: Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<Vec<GuestPcTraceLoweredSegment>, GuestPcTraceBackendError> {
+        let pending = self.replayable_pending_segments(context, input)?;
+        lower_guest_pc_trace_replayable_pending_segments_with_timing(
+            layout,
+            pending,
+            expected_proof_values,
+            worker_count,
+            timing,
+        )
+    }
 }
 
 struct GuestPcTraceLivePendingSegmentEmission {
@@ -5701,6 +5721,131 @@ fn lower_guest_pc_trace_parallel_work_unit_job(
             Some(timing),
         )?,
     })
+}
+
+fn lower_guest_pc_trace_replayable_pending_job(
+    layout: &WitnessTraceLayout,
+    mut pending: GuestPcTracePendingSegmentSlice,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    timing: &mut GuestPcTraceStreamTiming,
+) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
+    replay_guest_pc_trace_pending_segment_reports(layout, &mut pending, timing)?;
+    let trace_instance_index = pending.trace_instance_index;
+    let seed =
+        pending
+            .seed
+            .as_deref()
+            .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: format!(
+                "replayable guest PC trace lower requires seed for segment {trace_instance_index}"
+            ),
+            })?;
+    #[cfg(feature = "cuda")]
+    if guest_pc_trace_owned_streaming_lower_enabled() {
+        let seed = seed.clone();
+        return Ok(GuestPcTraceSeededLoweredSegment {
+            seed: seed.clone(),
+            lowered: lower_guest_pc_trace_owned_streaming_pending_segment(
+                layout,
+                pending,
+                &seed,
+                expected_proof_values,
+                Some(timing),
+            )?,
+        });
+    }
+    Ok(GuestPcTraceSeededLoweredSegment {
+        seed: seed.clone(),
+        lowered: lower_guest_pc_trace_seeded_pending_segment(
+            layout,
+            &pending,
+            seed,
+            expected_proof_values,
+            Some(timing),
+        )?,
+    })
+}
+
+fn lower_guest_pc_trace_replayable_pending_segments_with_timing(
+    layout: &WitnessTraceLayout,
+    pending: Vec<GuestPcTracePendingSegmentSlice>,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    worker_count: usize,
+    mut timing: Option<&mut GuestPcTraceStreamTiming>,
+) -> Result<Vec<GuestPcTraceLoweredSegment>, GuestPcTraceBackendError> {
+    if pending.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let worker_count = worker_count.max(1).min(pending.len());
+    let mut lowered = Vec::with_capacity(pending.len());
+    if worker_count == 1 {
+        for pending in pending {
+            let mut job_timing = GuestPcTraceStreamTiming::default();
+            let entry = lower_guest_pc_trace_replayable_pending_job(
+                layout,
+                pending,
+                expected_proof_values,
+                &mut job_timing,
+            )?;
+            if let Some(timing) = &mut timing {
+                (**timing).add(job_timing);
+            }
+            lowered.push(entry);
+        }
+    } else {
+        let chunk_size = pending.len().div_ceil(worker_count);
+        let mut chunks = (0..worker_count)
+            .map(|_| Vec::new())
+            .collect::<Vec<Vec<GuestPcTracePendingSegmentSlice>>>();
+        for (index, pending) in pending.into_iter().enumerate() {
+            chunks[index / chunk_size].push(pending);
+        }
+        thread::scope(|scope| {
+            let mut handles = Vec::new();
+            for chunk in chunks.into_iter().filter(|chunk| !chunk.is_empty()) {
+                handles.push(scope.spawn(move || {
+                    let mut chunk_timing = GuestPcTraceStreamTiming::default();
+                    let mut chunk_out = Vec::with_capacity(chunk.len());
+                    for pending in chunk {
+                        chunk_out.push(lower_guest_pc_trace_replayable_pending_job(
+                            layout,
+                            pending,
+                            expected_proof_values,
+                            &mut chunk_timing,
+                        )?);
+                    }
+                    Ok::<_, GuestPcTraceBackendError>((chunk_out, chunk_timing))
+                }));
+            }
+
+            for handle in handles {
+                let (chunk, chunk_timing) = handle.join().map_err(|_| {
+                    GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "replayable guest PC trace lower worker panicked".to_owned(),
+                    }
+                })??;
+                if let Some(timing) = &mut timing {
+                    (**timing).add(chunk_timing);
+                }
+                lowered.extend(chunk);
+            }
+            Ok::<(), GuestPcTraceBackendError>(())
+        })?;
+    }
+
+    lowered.sort_by_key(|entry| entry.lowered.segment.trace_instance_index);
+    let mut current_seed = ZiskMainSegmentSeed::new();
+    for entry in &lowered {
+        validate_guest_pc_trace_pending_segment_seed(
+            entry.lowered.segment.trace_instance_index,
+            Some(&entry.seed),
+            &current_seed.initial_state,
+            current_seed.previous_c,
+        )?;
+        current_seed = entry.lowered.next_seed.clone();
+    }
+    Ok(lowered.into_iter().map(|entry| entry.lowered).collect())
 }
 
 #[cfg(test)]

@@ -620,6 +620,60 @@ fn guest_pc_trace_seed_discovery_builds_replayable_pending_segments() {
 }
 
 #[test]
+fn guest_pc_trace_seed_discovery_lowers_replayable_pending_segments() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-seed-discovery-lower-replayable-pending");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_info = write_store_load_replay_guest_image(&guest_image);
+    let layout = store_load_replay_layout();
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let mut serial_pending = Vec::new();
+    produce_guest_pc_trace_pending_slices(32, context, &[], layout.row_count(), |segment| {
+        serial_pending.push(segment);
+        Ok(())
+    })
+    .expect("serial pending slices should produce");
+    let discovered = discover_guest_pc_trace_segment_seeds(32, context, &[], layout.row_count())
+        .expect("seed discovery should scan the store-load fixture");
+    let mut timing = GuestPcTraceStreamTiming::default();
+    let replay_lowered = discovered
+        .lower_replayable_pending_segments(&layout, context, &[], None, 2, Some(&mut timing))
+        .expect("seed discovery should lower replayable pending segments");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let serial_lowered =
+        lower_guest_pc_trace_seeded_pending_segments_with_workers(&layout, serial_pending, None, 2)
+            .expect("serial pending segments should lower");
+    assert_eq!(replay_lowered.len(), serial_lowered.len());
+    for (replay, serial) in replay_lowered.iter().zip(&serial_lowered) {
+        assert_eq!(replay.next_seed, serial.next_seed);
+        assert_eq!(
+            replay.segment.trace_instance_index,
+            serial.segment.trace_instance_index
+        );
+        assert_eq!(
+            replay.segment.trace_source_prefix_rows,
+            serial.segment.trace_source_prefix_rows
+        );
+        assert_eq!(replay.segment.trace, serial.segment.trace);
+        assert_eq!(replay.segment.unit_values, serial.segment.unit_values);
+    }
+    assert_eq!(
+        timing.parallel_lower_snapshot_replay_count(),
+        replay_lowered.len()
+    );
+}
+
+#[test]
 fn guest_pc_trace_fcall_fixture_words_decode() {
     assert_eq!(
         decode_riscv_instruction(riscv_zisk_fcall_param(0, 1)),
