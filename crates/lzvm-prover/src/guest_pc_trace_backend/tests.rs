@@ -380,7 +380,7 @@ fn guest_pc_trace_seed_discovery_tracks_input_mapping_boundaries() {
                 .rebuild_input_handler_with_memory(&input, &mut rebuilt_memory)
                 .expect("boundary fcall state should rebuild");
             if segment.fcall_state.input_data_was_mapped() {
-                let mut expected = vec![0; 8 + input.len()];
+                let mut expected = vec![0; std::mem::size_of::<u64>() + input.len()];
                 let mut rebuilt = vec![0; expected.len()];
                 expected_memory
                     .read_range_into(ZISK_INPUT_ADDRESS, &mut expected)
@@ -395,6 +395,80 @@ fn guest_pc_trace_seed_discovery_tracks_input_mapping_boundaries() {
         .collect::<Vec<_>>();
     assert_eq!(rebuilt, discovered_input_mapped_states);
     std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn guest_pc_trace_seed_discovery_lifts_fcall_result_boundary() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-seed-discovery-fcall-result");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let data_offset = 64_u16;
+    let mut words = vec![
+        riscv_auipc(10, 0),
+        riscv_addi(10, 10, data_offset as i16),
+        riscv_addi(11, 0, 2),
+        riscv_zisk_fcall_param(0, 11),
+        riscv_zisk_fcall_param(2, 10),
+        riscv_addi(10, 10, 32),
+        riscv_zisk_fcall_param(2, 10),
+        riscv_zisk_fcall_invoke(crate::zisk_fcalls::ZISK_MSB_POS_256_FCALL_ID),
+        riscv_zisk_fcall_result(12),
+        riscv_addi(13, 12, 1),
+        0x0000_0073,
+    ];
+    while words.len() * std::mem::size_of::<u32>() < usize::from(data_offset) {
+        words.push(0);
+    }
+    for value in [0_u64, 1 << 9, 0, 0, 0, 0, 0, 0] {
+        let bytes = value.to_le_bytes();
+        words.push(u32::from_le_bytes(bytes[..4].try_into().expect("low word")));
+        words.push(u32::from_le_bytes(
+            bytes[4..].try_into().expect("high word"),
+        ));
+    }
+    let guest_image_bytes = sample_guest_image_with_words(&words);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(3);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let mut serial_pending = Vec::new();
+    produce_guest_pc_trace_pending_slices(32, context, &[], layout.row_count(), |segment| {
+        serial_pending.push(segment);
+        Ok(())
+    })
+    .expect("serial pending slices should produce");
+    assert!(
+        serial_pending
+            .iter()
+            .any(|segment| segment.terminal_pc == ENTRY + 9 * 4),
+        "fixture should end a non-final segment after the fcall result"
+    );
+
+    let discovered = discover_guest_pc_trace_segment_seeds(32, context, &[], layout.row_count())
+        .expect("seed discovery should lift the fcall-result boundary");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(discovered.segments.len(), serial_pending.len());
+    for (discovered, expected) in discovered.segments.iter().zip(&serial_pending) {
+        assert_eq!(
+            &discovered.seed,
+            expected
+                .seed
+                .as_deref()
+                .expect("serial seed mirror should attach segment seeds")
+        );
+        assert_eq!(discovered.terminal_pc, expected.terminal_pc);
+    }
 }
 
 #[test]
@@ -5046,6 +5120,10 @@ fn riscv_addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
         | 0x13
 }
 
+fn riscv_auipc(rd: u8, upper: u32) -> u32 {
+    (upper << 12) | (u32::from(rd) << 7) | 0x17
+}
+
 fn riscv_lui(rd: u8, upper: u32) -> u32 {
     (upper << 12) | (u32::from(rd) << 7) | 0x37
 }
@@ -5061,11 +5139,15 @@ fn riscv_zisk_fcall_invoke(function_id: u16) -> u32 {
     ((0x08c0 + bank) << 20) | (rs1 << 15) | (5 << 12) | 0x73
 }
 
+fn riscv_zisk_fcall_result(rd: u8) -> u32 {
+    (0x0ffe << 20) | (2 << 12) | (u32::from(rd) << 7) | 0x73
+}
+
 fn framed_stdin_chunk(payload: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
     bytes.extend_from_slice(payload);
-    bytes.resize(bytes.len().next_multiple_of(8), 0);
+    bytes.resize(bytes.len().next_multiple_of(std::mem::size_of::<u64>()), 0);
     bytes
 }
 

@@ -11845,7 +11845,7 @@ fn direct_zisk_main_segment_boundary_c_from_tail(
         return Ok(Ok(boundary_c));
     }
     if let Some(boundary_c) =
-        direct_zisk_main_store_none_boundary_c(shape.instruction, boundary_registers)
+        direct_zisk_main_fcall_boundary_c(shape.instruction, boundary_registers)
     {
         return Ok(Ok(boundary_c));
     }
@@ -11920,27 +11920,30 @@ fn direct_zisk_main_store_boundary_c(
     let RiscvInstruction::Store { rs2, .. } = instruction else {
         return None;
     };
-    if rs2 == 0 {
-        return Some(0);
-    }
-    boundary_registers.map(|registers| registers[usize::from(rs2)])
+    direct_zisk_main_source_register_boundary_c(rs2, boundary_registers)
 }
 
-fn direct_zisk_main_store_none_boundary_c(
+fn direct_zisk_main_fcall_boundary_c(
     instruction: RiscvInstruction,
     boundary_registers: Option<&[u64; 32]>,
 ) -> Option<u64> {
     match instruction {
         RiscvInstruction::ZiskFcallInvoke { .. } => Some(0),
         RiscvInstruction::ZiskFcallParam { rs1, .. } => {
-            if rs1 == 0 {
-                Some(0)
-            } else {
-                boundary_registers.map(|registers| registers[usize::from(rs1)])
-            }
+            direct_zisk_main_source_register_boundary_c(rs1, boundary_registers)
         }
         _ => None,
     }
+}
+
+fn direct_zisk_main_source_register_boundary_c(
+    register: u8,
+    boundary_registers: Option<&[u64; 32]>,
+) -> Option<u64> {
+    if register == 0 {
+        return Some(0);
+    }
+    boundary_registers.map(|registers| registers[usize::from(register)])
 }
 
 fn direct_zisk_main_register_write_boundary_c(
@@ -11952,7 +11955,8 @@ fn direct_zisk_main_register_write_boundary_c(
         | RiscvInstruction::OpImm { rd, .. }
         | RiscvInstruction::OpImm32 { rd, .. }
         | RiscvInstruction::Op { rd, .. }
-        | RiscvInstruction::Op32 { rd, .. } => rd,
+        | RiscvInstruction::Op32 { rd, .. }
+        | RiscvInstruction::ZiskFcallResult { rd } => rd,
         _ => return None,
     };
     if rd == 0 {
