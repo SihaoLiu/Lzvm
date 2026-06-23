@@ -8707,6 +8707,38 @@ fn guest_pc_trace_segments_report_buffer_capacity_shape() {
 }
 
 #[test]
+fn guest_pc_trace_streaming_discovery_lower_reuses_replay_base_memory() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let segment_body = function_body(
+        &source,
+        "fn lower_guest_pc_trace_seed_discovery_streaming_device_segment",
+        "fn lower_guest_pc_trace_seed_discovery_streaming_device_segments_with_timing",
+    );
+    assert!(
+        segment_body.contains("GuestPcTraceSeedDiscoveryReplayBase")
+            || segment_body.contains("replay_base.memory.clone()"),
+        "streaming discovery segment lower should reuse a prepared replay base memory"
+    );
+    assert!(
+        !segment_body.contains("load_guest_pc_trace_machine("),
+        "streaming discovery segment lower should not reload the guest machine for every segment"
+    );
+
+    let emit_body = function_body(
+        &source,
+        "fn lower_guest_pc_trace_seed_discovery_streaming_device_segments_emit_with_timing",
+        "#[cfg(test)]",
+    );
+    assert!(
+        emit_body.contains("GuestPcTraceSeedDiscoveryReplayBase::new(context, input)?"),
+        "streaming discovery lower should prepare the replay base once before ordered emission"
+    );
+}
+
+#[test]
 fn fri_opening_timing_reports_unit_tree_query_and_fold_work() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let timing_path = crate_root.join("src/proof_artifact_timing.rs");

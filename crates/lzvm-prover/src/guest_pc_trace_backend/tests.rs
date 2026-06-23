@@ -774,6 +774,80 @@ fn guest_pc_trace_seed_discovery_streaming_device_lower_matches_serial_lower() {
 }
 
 #[test]
+#[cfg(feature = "cuda")]
+fn guest_pc_trace_seed_discovery_streaming_device_lower_emits_ordered_segments() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-seed-discovery-streaming-device-emit");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        riscv_addi(1, 0, 7),
+        riscv_addi(2, 1, 3),
+        riscv_addi(3, 2, 5),
+        riscv_addi(4, 3, 11),
+        0x0000_0073,
+    ]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_device_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let mut serial_pending = Vec::new();
+    produce_guest_pc_trace_pending_slices(32, context, &[], layout.row_count(), |segment| {
+        serial_pending.push(segment);
+        Ok(())
+    })
+    .expect("serial pending slices should produce");
+    let discovered = discover_guest_pc_trace_segment_seeds(32, context, &[], layout.row_count())
+        .expect("seed discovery should scan the device fixture");
+    let serial_lowered =
+        lower_guest_pc_trace_seeded_pending_segments_with_workers(&layout, serial_pending, None, 2)
+            .expect("serial pending segments should lower");
+    let mut timing = GuestPcTraceStreamTiming::default();
+    let mut emitted = Vec::new();
+    lower_guest_pc_trace_seed_discovery_streaming_device_segments_emit_with_timing(
+        &layout,
+        &discovered.segments,
+        context,
+        &[],
+        None,
+        2,
+        Some(&mut timing),
+        |lowered| {
+            emitted.push(lowered);
+            Ok(())
+        },
+    )
+    .expect("streaming discovery lower should emit ordered segments");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(emitted.len(), serial_lowered.len());
+    for (emitted, serial) in emitted.iter().zip(&serial_lowered) {
+        assert_eq!(
+            emitted.segment.trace_instance_index,
+            serial.segment.trace_instance_index
+        );
+        assert_eq!(emitted.next_seed, serial.next_seed);
+        assert_eq!(
+            emitted.segment.device_segment_material,
+            serial.segment.device_segment_material
+        );
+        assert_eq!(emitted.segment.unit_values, serial.segment.unit_values);
+    }
+    assert_eq!(timing.parallel_lower_emitted_count(), emitted.len());
+    assert_eq!(timing.parallel_lower_stream_segment_count(), emitted.len());
+    assert_eq!(timing.parallel_lower_snapshot_replay_count(), 0);
+}
+
+#[test]
 fn guest_pc_trace_fcall_fixture_words_decode() {
     assert_eq!(
         decode_riscv_instruction(riscv_zisk_fcall_param(0, 1)),
