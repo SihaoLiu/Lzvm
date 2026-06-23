@@ -18,6 +18,17 @@ pub struct GuestMachineMemory {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GuestMachineMemoryOverlaySnapshot {
+    blocks: Vec<GuestMachineMemoryOverlayBlock>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GuestMachineMemoryOverlayBlock {
+    address: u64,
+    bytes: [u8; GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct GuestMachineMemorySegment {
     program_header_index: u16,
     virtual_address: u64,
@@ -281,6 +292,33 @@ impl GuestMachineMemory {
             .iter()
             .map(|segment| segment.written_blocks.len())
             .sum()
+    }
+}
+
+impl GuestMachineMemoryOverlaySnapshot {
+    pub(crate) fn capture(memory: &GuestMachineMemory) -> Self {
+        let mut blocks = Vec::new();
+        for segment in &memory.segments {
+            for (block_index, bytes) in &segment.written_blocks {
+                blocks.push(GuestMachineMemoryOverlayBlock {
+                    address: segment.virtual_address
+                        + block_index * GUEST_MEMORY_OVERLAY_BLOCK_SIZE,
+                    bytes: **bytes,
+                });
+            }
+        }
+        Self { blocks }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn restore_into(
+        &self,
+        memory: &mut GuestMachineMemory,
+    ) -> Result<(), GuestMemoryError> {
+        for block in &self.blocks {
+            memory.write_range(block.address, &block.bytes)?;
+        }
+        Ok(())
     }
 }
 

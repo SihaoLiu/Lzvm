@@ -472,6 +472,99 @@ fn guest_pc_trace_seed_discovery_lifts_fcall_result_boundary() {
 }
 
 #[test]
+fn guest_pc_trace_seed_discovery_restores_written_memory_boundaries() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-seed-discovery-memory-boundary");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let data_offset = 64_u16;
+    let mut words = vec![
+        riscv_auipc(1, 0),
+        riscv_addi(1, 1, data_offset as i16),
+        riscv_addi(2, 0, 123),
+        riscv_sd(2, 1, 0),
+        riscv_ld(3, 1, 0),
+        riscv_addi(4, 3, 1),
+        0x0000_0073,
+    ];
+    while words.len() * std::mem::size_of::<u32>() < usize::from(data_offset) {
+        words.push(0);
+    }
+    words.extend_from_slice(&[0, 0]);
+    let guest_image_bytes = sample_guest_image_with_words(&words);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(4);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let discovered = discover_guest_pc_trace_segment_seeds(32, context, &[], layout.row_count())
+        .expect("seed discovery should scan the store-load fixture");
+    assert!(
+        discovered.segments.len() >= 2,
+        "fixture should split after the store"
+    );
+    assert_eq!(discovered.segments[0].terminal_pc, ENTRY + 4 * 4);
+
+    let (mut expected_memory, mut expected_state, mut expected_fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("expected machine should load");
+    run_guest_pc_trace_segment_slice(
+        &mut expected_memory,
+        &mut expected_state,
+        &mut expected_fcall_handler,
+        discovered.segments[0].runner_remaining_instruction_limit,
+        layout.row_count(),
+    )
+    .expect("expected first segment should run");
+
+    let boundary = &discovered.segments[1];
+    let mut expected_second_memory = expected_memory.clone();
+    let mut expected_second_state = expected_state.clone();
+    let mut expected_second_fcall_handler = ZiskInputFcallHandler::new(&[])
+        .expect("expected second segment fcall handler should build");
+    let expected_second = run_guest_pc_trace_segment_slice(
+        &mut expected_second_memory,
+        &mut expected_second_state,
+        &mut expected_second_fcall_handler,
+        boundary.runner_remaining_instruction_limit,
+        layout.row_count(),
+    )
+    .expect("expected second segment should run");
+
+    let (mut replay_memory, _, _) =
+        load_guest_pc_trace_machine(context, &[]).expect("replay machine should load");
+    let mut replay_state = boundary.machine_state.clone();
+    let mut replay_fcall_handler = boundary
+        .fcall_state
+        .rebuild_input_handler_with_memory(&[], &mut replay_memory)
+        .expect("boundary fcall state should rebuild");
+    boundary
+        .memory_state
+        .restore_into(&mut replay_memory)
+        .expect("boundary memory state should rebuild");
+    let replay_second = run_guest_pc_trace_segment_slice(
+        &mut replay_memory,
+        &mut replay_state,
+        &mut replay_fcall_handler,
+        boundary.runner_remaining_instruction_limit,
+        layout.row_count(),
+    )
+    .expect("replayed second segment should run");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(replay_second.reports, expected_second.reports);
+    assert_eq!(replay_state, expected_second_state);
+    assert_eq!(replay_memory, expected_second_memory);
+}
+
+#[test]
 fn guest_pc_trace_fcall_fixture_words_decode() {
     assert_eq!(
         decode_riscv_instruction(riscv_zisk_fcall_param(0, 1)),
@@ -5118,6 +5211,24 @@ fn riscv_addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
         | (u32::from(rs1) << 15)
         | (u32::from(rd) << 7)
         | 0x13
+}
+
+fn riscv_ld(rd: u8, rs1: u8, offset: i16) -> u32 {
+    (((offset as i32 as u32) & 0x0fff) << 20)
+        | (u32::from(rs1) << 15)
+        | (3 << 12)
+        | (u32::from(rd) << 7)
+        | 0x03
+}
+
+fn riscv_sd(rs2: u8, rs1: u8, offset: i16) -> u32 {
+    let immediate = (offset as i32 as u32) & 0x0fff;
+    ((immediate >> 5) << 25)
+        | (u32::from(rs2) << 20)
+        | (u32::from(rs1) << 15)
+        | (3 << 12)
+        | ((immediate & 0x1f) << 7)
+        | 0x23
 }
 
 fn riscv_auipc(rd: u8, upper: u32) -> u32 {

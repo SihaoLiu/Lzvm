@@ -16,10 +16,10 @@ use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls_report_shape, decode_current_guest_instruction,
     prepare_current_guest_instruction, run_guest_machine_trace_with_fcalls,
     run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestFcallHandler, GuestMachineHalt,
-    GuestMachineMemory, GuestMachineReport, GuestMachineReportShape, GuestMachineRunError,
-    GuestMachineState, GuestMachineTraceSliceStatus, GuestMemoryAccess, GuestMemoryAccessKind,
-    GuestMemoryAccessList, GuestPrecompileMemoryAccessList, GuestRegisterWrite,
-    GuestRegisterWriteList,
+    GuestMachineMemory, GuestMachineMemoryOverlaySnapshot, GuestMachineReport,
+    GuestMachineReportShape, GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus,
+    GuestMemoryAccess, GuestMemoryAccessKind, GuestMemoryAccessList,
+    GuestPrecompileMemoryAccessList, GuestRegisterWrite, GuestRegisterWriteList,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{ResolvedTraceColumn, WitnessTraceBuildError, WitnessTraceLayout};
@@ -4467,6 +4467,7 @@ struct GuestPcTraceSeedDiscoverySegment {
     report_count: usize,
     runner_remaining_instruction_limit: u64,
     machine_state: GuestMachineState,
+    memory_state: GuestMachineMemoryOverlaySnapshot,
     fcall_state: GuestPcTraceFcallBoundaryState,
     terminal_pc: u64,
     lookahead_instruction: Option<RiscvInstruction>,
@@ -5323,6 +5324,7 @@ fn discover_guest_pc_trace_segment_seeds(
             }
         })?;
         let machine_state = state.clone();
+        let memory_state = GuestMachineMemoryOverlaySnapshot::capture(&memory);
         let fcall_state = GuestPcTraceFcallBoundaryState::capture(&fcall_handler);
         let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
         let slice = run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
@@ -5406,6 +5408,7 @@ fn discover_guest_pc_trace_segment_seeds(
             report_count: slice.report_count,
             runner_remaining_instruction_limit: remaining_limit,
             machine_state,
+            memory_state,
             fcall_state,
             terminal_pc,
             lookahead_instruction,

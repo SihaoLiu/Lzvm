@@ -13,6 +13,7 @@ use crate::guest_memory::GuestMemoryError;
 mod memory;
 mod precompile;
 pub use memory::GuestMachineMemory;
+pub(crate) use memory::GuestMachineMemoryOverlaySnapshot;
 use precompile::execute_precompile;
 
 const GUEST_REGISTER_COUNT: usize = 32;
