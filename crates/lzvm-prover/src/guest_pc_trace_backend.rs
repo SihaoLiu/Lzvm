@@ -6127,6 +6127,64 @@ fn lower_guest_pc_trace_replayable_pending_segments_emit_with_timing(
     })
 }
 
+#[cfg(any(test, feature = "cuda"))]
+fn guest_pc_trace_weighted_contiguous_chunk_ranges<T>(
+    items: &[T],
+    worker_count: usize,
+    mut item_weight: impl FnMut(&T) -> usize,
+) -> Vec<std::ops::Range<usize>> {
+    if items.is_empty() {
+        return Vec::new();
+    }
+    let chunk_count = worker_count.max(1).min(items.len());
+    let weights = items
+        .iter()
+        .map(|item| item_weight(item).max(1))
+        .collect::<Vec<_>>();
+    let mut remaining_weight = weights.iter().copied().fold(0_usize, usize::saturating_add);
+    let mut ranges = Vec::with_capacity(chunk_count);
+    let mut start = 0_usize;
+    let mut chunks_left = chunk_count;
+    while chunks_left > 0 {
+        if chunks_left == 1 {
+            ranges.push(start..items.len());
+            break;
+        }
+
+        let target_weight = remaining_weight.div_ceil(chunks_left);
+        let max_end = items.len() - (chunks_left - 1);
+        let mut end = start;
+        let mut chunk_weight = 0_usize;
+        while end < max_end {
+            let next_weight = weights[end];
+            if end > start {
+                if chunk_weight >= target_weight {
+                    break;
+                }
+                let under_target = target_weight.saturating_sub(chunk_weight);
+                let over_target = chunk_weight
+                    .saturating_add(next_weight)
+                    .saturating_sub(target_weight);
+                if over_target > under_target {
+                    break;
+                }
+            }
+            chunk_weight = chunk_weight.saturating_add(next_weight);
+            end += 1;
+        }
+        if end == start {
+            chunk_weight = weights[start];
+            end += 1;
+        }
+
+        ranges.push(start..end);
+        remaining_weight = remaining_weight.saturating_sub(chunk_weight);
+        start = end;
+        chunks_left -= 1;
+    }
+    ranges
+}
+
 #[cfg(feature = "cuda")]
 #[allow(dead_code)]
 fn lower_guest_pc_trace_seed_discovery_streaming_device_segment(
@@ -6437,11 +6495,15 @@ fn lower_guest_pc_trace_seed_discovery_streaming_device_segments_emit_with_timin
         return Ok(());
     }
 
-    let chunk_size = segments.len().div_ceil(worker_count);
+    let chunk_ranges =
+        guest_pc_trace_weighted_contiguous_chunk_ranges(segments, worker_count, |segment| {
+            segment.trace_row_count.max(segment.report_count)
+        });
     thread::scope(|scope| {
         let (result_sender, result_receiver) = mpsc::sync_channel(worker_count);
         let mut handles = Vec::new();
-        for chunk in segments.chunks(chunk_size) {
+        for chunk_range in chunk_ranges {
+            let chunk = &segments[chunk_range];
             let result_sender = result_sender.clone();
             let replay_base = Arc::clone(&replay_base);
             handles.push(scope.spawn(move || {

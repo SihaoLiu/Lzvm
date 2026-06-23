@@ -201,6 +201,18 @@ fn guest_pc_trace_seed_discovery_streaming_device_lower_stays_opt_in() {
 }
 
 #[test]
+fn guest_pc_trace_weighted_contiguous_chunks_isolate_heavy_segments() {
+    let weights = [1_usize, 1, 1, 1, 100, 1, 1, 1, 1, 1, 1, 1];
+
+    let ranges = guest_pc_trace_weighted_contiguous_chunk_ranges(&weights, 3, |weight| *weight);
+
+    assert_eq!(ranges, vec![0..4, 4..5, 5..12]);
+    assert!(ranges.iter().all(|range| !range.is_empty()));
+    assert_eq!(ranges.first().map(|range| range.start), Some(0));
+    assert_eq!(ranges.last().map(|range| range.end), Some(weights.len()));
+}
+
+#[test]
 fn guest_pc_trace_seed_discovery_scans_without_retaining_reports() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
