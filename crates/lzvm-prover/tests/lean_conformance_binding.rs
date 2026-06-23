@@ -31,4 +31,31 @@ fn lean_conformance_binding_exports_core_contract_projection() {
             "runtime_artifact_checked_acceptance_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_artifact_checked_acceptance_sound",
+        &[
+            "runtime_artifact_checked_acceptance_obligations",
+            "abstract_verifier_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_artifact_checked_acceptance_sound",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_artifact_checked_acceptance_verifier_core_contract",
+        &["runtime_artifact_checked_acceptance_obligations"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_artifact_checked_acceptance_verifier_core_contract",
+        &[
+            "runtime_artifact_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+            "abstract_verifier_sound",
+        ],
+    );
 }
