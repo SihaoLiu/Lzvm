@@ -423,8 +423,18 @@ impl GuestMachineMemorySegment {
     }
 
     fn read_halfword(&self, address: u64) -> u16 {
+        if let Some(value) = self.read_contiguous_halfword(address) {
+            return value;
+        }
         let offset = address - self.virtual_address;
         u16::from_le_bytes([self.read_byte(offset), self.read_byte(offset + 1)])
+    }
+
+    #[inline(always)]
+    fn read_contiguous_halfword(&self, address: u64) -> Option<u16> {
+        let offset = address - self.virtual_address;
+        let bytes = self.contiguous_initialized_or_overlay_bytes(offset, 2)?;
+        Some(u16::from_le_bytes([bytes[0], bytes[1]]))
     }
 
     fn read_byte(&self, offset: u64) -> u8 {
@@ -608,6 +618,32 @@ mod tests {
             .expect("split standard instruction should fetch");
 
         assert_eq!(fetched.encoded, RiscvEncodedInstruction::Standard(word));
+    }
+
+    #[test]
+    fn halfword_fast_path_matches_initialized_and_overlay_bytes() {
+        let image = sample_guest_image_with_program_header(
+            &[10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+            0x1000,
+        );
+        let mut memory = GuestMachineMemory::from_image(&image);
+        let segment_index = memory
+            .segment_index_containing_range(TEST_ENTRY, TEST_ENTRY + 12)
+            .expect("segment lookup should evaluate")
+            .expect("segment should contain initialized bytes");
+
+        assert_eq!(
+            memory.segments[segment_index].read_contiguous_halfword(TEST_ENTRY + 2),
+            Some(u16::from_le_bytes([12, 13]))
+        );
+
+        memory
+            .write_range(TEST_ENTRY + 6, &[90, 91])
+            .expect("overlay write should succeed");
+        assert_eq!(
+            memory.segments[segment_index].read_contiguous_halfword(TEST_ENTRY + 6),
+            Some(u16::from_le_bytes([90, 91]))
+        );
     }
 
     #[test]
