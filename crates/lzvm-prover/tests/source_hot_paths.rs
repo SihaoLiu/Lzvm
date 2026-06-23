@@ -1743,6 +1743,36 @@ fn guest_pc_trace_device_descriptors_pack_kind_fields_into_control_word() {
 }
 
 #[test]
+fn guest_pc_sparse_high32_descriptors_remain_explicit_opt_in() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let backend_source =
+        std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+
+    let descriptor_selection = function_body(
+        &backend_source,
+        "fn main_segment_descriptor_words",
+        "fn main_segment_mem_steps_fit_compact",
+    );
+    assert!(
+        descriptor_selection.contains("guest_pc_trace_sparse_high32_descriptors_enabled()"),
+        "sparse high32 descriptor selection should stay behind its explicit gate"
+    );
+
+    let gate_body = function_body(
+        &backend_source,
+        "fn guest_pc_trace_sparse_high32_descriptors_enabled",
+        "fn guest_pc_trace_owned_streaming_lower_enabled",
+    );
+    assert!(
+        gate_body.contains(
+            "env_flag_enabled(\"LZVM_CUDA_GUEST_PC_SPARSE_HIGH32_DESCRIPTORS\", false)"
+        ),
+        "sparse high32 descriptors should remain default-off until benchmark evidence supports default enablement"
+    );
+}
+
+#[test]
 fn zisk_main_descriptor_expansion_writes_rows_without_full_zero_prefill() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let cuda_path = crate_root.join("../lzvm-accel/native/cuda_zisk_main_trace.cuh");
