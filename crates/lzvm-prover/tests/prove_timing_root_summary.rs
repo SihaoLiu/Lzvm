@@ -3503,7 +3503,7 @@ fn prove_timing_root_summary_reports_parallel_reexecution_hint_for_row_volume_fl
     );
     assert_eq!(
         value("trace_pipeline_action_hint"),
-        "parallel_segment_reexecution_authorization_required"
+        "parallel_segment_reexecution_candidate"
     );
     assert_eq!(
         value("trace_shape_profile_hint"),

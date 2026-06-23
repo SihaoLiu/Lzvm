@@ -2020,7 +2020,7 @@ def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
         "parallel_trace_lowering_candidate",
         "trace_generation_parallelism_candidate",
     } and trace_shape_points_to_segment_reexecution(values):
-        return "parallel_segment_reexecution_authorization_required"
+        return "parallel_segment_reexecution_candidate"
     return base_hint
 
 
