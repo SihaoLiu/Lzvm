@@ -2691,6 +2691,7 @@ def performance_focus_hint(
     cpu_report_storage_hint: str,
     cpu_lowerer_hint: str,
     cpu_lowerer_detail_driven: bool = False,
+    trace_shape_reexecution_driven: bool = False,
 ) -> str:
     trace_pipeline_hints = {
         "trace_generation_and_commit_pipeline_candidate",
@@ -2711,6 +2712,12 @@ def performance_focus_hint(
         return trace_pipeline_hint
     if seed_snapshot_runtime_hint == "trusted_seed_snapshot_seed_only_probe":
         return seed_snapshot_runtime_hint
+    if (
+        trace_pipeline_hint == "parallel_segment_reexecution_candidate"
+        and trace_shape_reexecution_driven
+        and seed_direct_lift_action_hint == "profile_runner_seed_snapshot"
+    ):
+        return trace_pipeline_hint
     if trace_pipeline_hint in trace_pipeline_hints and cpu_report_storage_hint in {
         "fused_runner_lowerer_report_storage_candidate",
         "runner_streaming_report_storage_candidate",
@@ -4852,6 +4859,7 @@ def summarize_profile_values(
         cpu_report_storage_hint,
         lowerer_hint,
         trace_report_detail_action != "none",
+        trace_shape_points_to_segment_reexecution(values),
     )
     opening_source_row_value_hint = opening_source_row_value_action_hint(
         total_ms,
