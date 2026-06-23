@@ -4470,6 +4470,7 @@ struct GuestPcTraceSeedDiscoverySegment {
     lookahead_instruction: Option<RiscvInstruction>,
     is_last_segment: bool,
     seed: ZiskMainSegmentSeed,
+    next_seed: Option<ZiskMainSegmentSeed>,
 }
 
 #[allow(dead_code)]
@@ -5377,6 +5378,7 @@ fn discover_guest_pc_trace_segment_seeds(
             lookahead_instruction,
             is_last_segment,
             seed: current_seed.clone(),
+            next_seed: next_seed.clone(),
         });
         if let Some(next_seed) = next_seed {
             current_seed = next_seed;

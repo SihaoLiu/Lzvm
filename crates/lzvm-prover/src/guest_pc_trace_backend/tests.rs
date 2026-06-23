@@ -250,6 +250,35 @@ fn guest_pc_trace_seed_discovery_scans_without_retaining_reports() {
         );
         assert_eq!(discovered.is_last_segment, expected.is_last_segment);
     }
+    for (index, discovery) in discovered.segments.iter().enumerate() {
+        if discovery.is_last_segment {
+            assert!(discovery.next_seed.is_none());
+            continue;
+        }
+        let next_discovered = discovery
+            .next_seed
+            .as_ref()
+            .expect("non-terminal discovery segment should carry its next seed");
+        assert_eq!(
+            next_discovered,
+            &discovered.segments[index + 1].seed,
+            "discovery next seed should match the following segment seed"
+        );
+        let expected = &serial_pending[index];
+        let expected_seed = expected
+            .seed
+            .as_deref()
+            .expect("serial seed mirror should attach segment seeds");
+        let expected_lowered = lower_guest_pc_trace_seeded_pending_segment(
+            &layout,
+            expected,
+            expected_seed,
+            None,
+            None,
+        )
+        .expect("serial pending segment should lower");
+        assert_eq!(next_discovered, &expected_lowered.next_seed);
+    }
 }
 
 #[test]
