@@ -394,6 +394,9 @@ impl GuestMachineMemorySegment {
     fn read_u64_le(&self, address: u64, byte_len: usize) -> u64 {
         debug_assert!(byte_len <= 8);
         let offset = address - self.virtual_address;
+        if self.written_blocks.is_empty() {
+            return self.read_unwritten_u64_le(offset, byte_len);
+        }
         if let Some(bytes) = self.contiguous_initialized_or_overlay_bytes(offset, byte_len) {
             return low_le_bytes_to_u64(bytes);
         }
@@ -401,6 +404,24 @@ impl GuestMachineMemorySegment {
         let mut bytes = [0_u8; 8];
         self.read_range_into(address, &mut bytes[..byte_len]);
         u64::from_le_bytes(bytes)
+    }
+
+    #[inline(always)]
+    fn read_unwritten_u64_le(&self, offset: u64, byte_len: usize) -> u64 {
+        if let Some(bytes) = self.contiguous_initialized_bytes(offset, byte_len) {
+            return low_le_bytes_to_u64(bytes);
+        }
+
+        let mut bytes = [0_u8; 8];
+        self.read_unwritten_range_into(offset, &mut bytes[..byte_len]);
+        u64::from_le_bytes(bytes)
+    }
+
+    #[inline(always)]
+    fn contiguous_initialized_bytes(&self, offset: u64, byte_len: usize) -> Option<&[u8]> {
+        let start = usize::try_from(offset).ok()?;
+        let end = start.checked_add(byte_len)?;
+        self.initialized_bytes.get(start..end)
     }
 
     #[inline(always)]
@@ -417,9 +438,7 @@ impl GuestMachineMemorySegment {
         if let Some(block) = self.written_blocks.get(&block_index) {
             return Some(&block[block_offset..block_offset + byte_len]);
         }
-        let start = usize::try_from(offset).ok()?;
-        let end = start.checked_add(byte_len)?;
-        self.initialized_bytes.get(start..end)
+        self.contiguous_initialized_bytes(offset, byte_len)
     }
 
     fn read_halfword(&self, address: u64) -> u16 {

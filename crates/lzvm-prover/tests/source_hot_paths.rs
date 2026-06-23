@@ -5701,11 +5701,12 @@ fn guest_pc_trace_runner_seed_snapshot_tracks_boundary_inside_runner_slice() {
 
     let runner_body = function_body(
         &backend_source,
-        "fn run_guest_pc_trace_segment_slice_with_boundary_snapshot",
+        "fn run_guest_pc_trace_segment_slice_inner",
         "fn zisk_main_instruction_max_rows",
     );
     assert!(
-        runner_body.contains("record_zisk_main_runner_boundary_snapshot")
+        runner_body.contains("record_zisk_main_runner_pre_boundary_snapshot")
+            && runner_body.contains("record_zisk_main_runner_amo_scratch_snapshot")
             && runner_body.contains("last_report_shape"),
         "runner boundary snapshots should be updated while guest reports are produced"
     );
@@ -8520,6 +8521,30 @@ fn guest_machine_fetch_reuses_located_segment_for_standard_word() {
     assert!(
         !body.contains("let high = self.read_halfword(address + 2)?;"),
         "guest machine standard-word fetch should not rescan all segments for the high halfword when the word stays in one segment"
+    );
+}
+
+#[test]
+fn guest_machine_memory_load_skips_overlay_lookup_for_unwritten_segments() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/memory.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("guest machine memory source should read");
+    let body = function_body(
+        &source,
+        "    fn read_u64_le(&self, address: u64, byte_len: usize) -> u64",
+        "    #[inline(always)]\n    fn contiguous_initialized_or_overlay_bytes",
+    );
+
+    let empty_overlay_index = body
+        .find("if self.written_blocks.is_empty()")
+        .expect("unwritten segments should use a no-overlay read path before BTreeMap lookup");
+    let overlay_lookup_index = body
+        .find("contiguous_initialized_or_overlay_bytes")
+        .expect("overlay-capable segments should still use the overlay lookup path");
+    assert!(
+        empty_overlay_index < overlay_lookup_index,
+        "the common immutable segment load path should avoid overlay lookup before falling back to overlay-aware reads"
     );
 }
 
