@@ -4465,6 +4465,7 @@ struct GuestPcTraceSeedDiscoverySegment {
     executed_instruction_count: u64,
     trace_row_count: usize,
     report_count: usize,
+    report_capacity: usize,
     runner_remaining_instruction_limit: u64,
     machine_state: GuestMachineState,
     memory_state: GuestMachineMemoryOverlaySnapshot,
@@ -4531,6 +4532,41 @@ struct GuestPcTraceSeedDiscovery {
     proof_values: Vec<WitnessTraceProofValue>,
     segments: Vec<GuestPcTraceSeedDiscoverySegment>,
     timing: GuestPcTraceStreamTiming,
+}
+
+impl GuestPcTraceSeedDiscovery {
+    #[allow(dead_code)]
+    fn replayable_pending_segments(
+        &self,
+        context: WitnessComputeContext<'_>,
+        input: &[u8],
+    ) -> Result<Vec<GuestPcTracePendingSegmentSlice>, GuestPcTraceBackendError> {
+        self.segments
+            .iter()
+            .map(|segment| {
+                let replay_context = WitnessComputeContext {
+                    guest_image: context.guest_image,
+                    guest_image_info: context.guest_image_info,
+                    trace_layout: context.trace_layout,
+                };
+                Ok(GuestPcTracePendingSegmentSlice {
+                    trace_instance_index: segment.trace_instance_index,
+                    executed_instruction_count: segment.executed_instruction_count,
+                    trace_row_count: segment.trace_row_count,
+                    runner_remaining_instruction_limit: segment.runner_remaining_instruction_limit,
+                    report_count: segment.report_count,
+                    report_capacity: segment.report_capacity,
+                    reports: Vec::new(),
+                    reports_elided: true,
+                    terminal_pc: segment.terminal_pc,
+                    lookahead_instruction: segment.lookahead_instruction,
+                    is_last_segment: segment.is_last_segment,
+                    seed: Some(Box::new(segment.seed.clone())),
+                    replay_snapshot: Some(segment.replay_snapshot(replay_context, input)?),
+                })
+            })
+            .collect()
+    }
 }
 
 struct GuestPcTraceLivePendingSegmentEmission {
@@ -5429,6 +5465,7 @@ fn discover_guest_pc_trace_segment_seeds(
             executed_instruction_count: slice.executed_instructions,
             trace_row_count: slice.trace_rows,
             report_count: slice.report_count,
+            report_capacity: slice.report_capacity,
             runner_remaining_instruction_limit: remaining_limit,
             machine_state,
             memory_state,

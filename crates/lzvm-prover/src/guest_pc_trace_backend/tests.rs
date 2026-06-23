@@ -554,6 +554,106 @@ fn guest_pc_trace_seed_discovery_restores_written_memory_boundaries() {
 }
 
 #[test]
+fn guest_pc_trace_seed_discovery_builds_replayable_pending_segments() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _mirror_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_SEED_MIRROR", "1");
+    let dir = repo_temp_dir("guest-pc-seed-discovery-replayable-pending");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let data_offset = 64_u16;
+    let mut words = vec![
+        riscv_auipc(1, 0),
+        riscv_addi(1, 1, data_offset as i16),
+        riscv_addi(2, 0, 123),
+        riscv_sd(2, 1, 0),
+        riscv_ld(3, 1, 0),
+        riscv_addi(4, 3, 1),
+        0x0000_0073,
+    ];
+    while words.len() * std::mem::size_of::<u32>() < usize::from(data_offset) {
+        words.push(0);
+    }
+    words.extend_from_slice(&[0, 0]);
+    let guest_image_bytes = sample_guest_image_with_words(&words);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(4);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: Some(&layout),
+    };
+    let mut serial_pending = Vec::new();
+    let serial =
+        produce_guest_pc_trace_pending_slices(32, context, &[], layout.row_count(), |segment| {
+            serial_pending.push(segment);
+            Ok(())
+        })
+        .expect("serial pending slices should produce");
+    let discovered = discover_guest_pc_trace_segment_seeds(32, context, &[], layout.row_count())
+        .expect("seed discovery should scan the store-load fixture");
+    let mut replayable = discovered
+        .replayable_pending_segments(context, &[])
+        .expect("seed discovery should build replayable pending segments");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(discovered.proof_values, serial.proof_values);
+    assert_eq!(replayable.len(), serial_pending.len());
+    let mut timing = GuestPcTraceStreamTiming::default();
+    for (rebuilt, expected) in replayable.iter_mut().zip(&serial_pending) {
+        assert_eq!(rebuilt.trace_instance_index, expected.trace_instance_index);
+        assert_eq!(
+            rebuilt.executed_instruction_count,
+            expected.executed_instruction_count
+        );
+        assert_eq!(rebuilt.trace_row_count, expected.trace_row_count);
+        assert_eq!(
+            rebuilt.runner_remaining_instruction_limit,
+            expected.runner_remaining_instruction_limit
+        );
+        assert_eq!(rebuilt.report_count, expected.report_count);
+        assert!(rebuilt.reports.is_empty());
+        assert!(rebuilt.reports_elided);
+        assert_eq!(rebuilt.terminal_pc, expected.terminal_pc);
+        assert_eq!(
+            rebuilt.lookahead_instruction,
+            expected.lookahead_instruction
+        );
+        assert_eq!(rebuilt.is_last_segment, expected.is_last_segment);
+        assert_eq!(rebuilt.seed, expected.seed);
+        assert!(rebuilt.replay_snapshot.is_some());
+
+        replay_guest_pc_trace_pending_segment_reports(&layout, rebuilt, &mut timing)
+            .expect("replayable pending segment should restore reports");
+        assert_eq!(rebuilt.reports, expected.reports);
+        let seed = rebuilt
+            .seed
+            .as_deref()
+            .expect("replayable pending segment should carry a seed");
+        let replay_lowered =
+            lower_guest_pc_trace_seeded_pending_segment(&layout, rebuilt, seed, None, None)
+                .expect("replayable pending segment should lower");
+        let serial_lowered =
+            lower_guest_pc_trace_seeded_pending_segment(&layout, expected, seed, None, None)
+                .expect("serial pending segment should lower");
+        assert_eq!(replay_lowered.next_seed, serial_lowered.next_seed);
+        assert_eq!(replay_lowered.segment.trace, serial_lowered.segment.trace);
+        assert_eq!(
+            replay_lowered.segment.unit_values,
+            serial_lowered.segment.unit_values
+        );
+    }
+    assert_eq!(
+        timing.parallel_lower_snapshot_replay_count(),
+        replayable.len()
+    );
+}
+
+#[test]
 fn guest_pc_trace_fcall_fixture_words_decode() {
     assert_eq!(
         decode_riscv_instruction(riscv_zisk_fcall_param(0, 1)),
