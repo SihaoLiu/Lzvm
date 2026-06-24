@@ -4538,13 +4538,7 @@ fn rejects_unbound_program_image_cache_public_values_in_prover_unit_request() {
 
 #[test]
 fn rejects_unit_witness_challenge_mismatch_without_output_verification() {
-    let dir = std::env::var_os("TMPDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(format!(
-            "lzvm-prover-witness-{}-unit-proof-bad-challenge-no-verify",
-            std::process::id()
-        ));
+    let dir = temp_dir("unit-proof-bad-challenge-no-verify");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("fixture directory should be created");
     let witness_library = build_shared_library(&dir, "witness", witness_source());
@@ -4624,13 +4618,7 @@ fn rejects_unit_witness_challenge_mismatch_without_output_verification() {
 
 #[test]
 fn rejects_witness_contribution_segment_without_challenge_values() {
-    let dir = std::env::var_os("TMPDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(format!(
-            "lzvm-prover-witness-{}-missing-contribution-challenge",
-            std::process::id()
-        ));
+    let dir = temp_dir("missing-contribution-challenge");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("fixture directory should be created");
     let witness_library = build_shared_library(&dir, "witness", witness_source());
@@ -5436,13 +5424,7 @@ fn rejects_all_units_contribution_proof_artifact_with_mismatched_challenge_segme
 
 #[test]
 fn rejects_contribution_challenge_mismatch_without_output_verification() {
-    let dir = std::env::var_os("TMPDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(format!(
-            "lzvm-prover-witness-{}-contribution-proof-bad-challenge-no-verify",
-            std::process::id()
-        ));
+    let dir = temp_dir("contribution-proof-bad-challenge-no-verify");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("fixture directory should be created");
     let witness_library = build_shared_library(&dir, "witness", witness_source());
@@ -5523,13 +5505,7 @@ fn rejects_contribution_challenge_mismatch_without_output_verification() {
 
 #[test]
 fn rejects_full_witness_challenge_mismatch_without_output_verification() {
-    let dir = std::env::var_os("TMPDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(format!(
-            "lzvm-prover-witness-{}-full-proof-bad-challenge-no-verify",
-            std::process::id()
-        ));
+    let dir = temp_dir("full-proof-bad-challenge-no-verify");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("fixture directory should be created");
     let witness_library = build_shared_library(&dir, "witness", witness_source());
