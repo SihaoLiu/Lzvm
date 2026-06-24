@@ -1,6 +1,37 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+fn parse_csv_line(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut chars = line.chars().peekable();
+    let mut quoted = false;
+
+    while let Some(ch) = chars.next() {
+        if quoted {
+            if ch == '"' {
+                if chars.peek() == Some(&'"') {
+                    field.push('"');
+                    chars.next();
+                } else {
+                    quoted = false;
+                }
+            } else {
+                field.push(ch);
+            }
+        } else if ch == ',' {
+            fields.push(std::mem::take(&mut field));
+        } else if ch == '"' && field.is_empty() {
+            quoted = true;
+        } else {
+            field.push(ch);
+        }
+    }
+
+    fields.push(field);
+    fields
+}
+
 #[cfg(unix)]
 #[test]
 fn prove_timing_root_summary_script_is_directly_executable() {
@@ -1040,7 +1071,7 @@ fn prove_timing_root_summary_reads_explicit_nsys_kernel_summary() {
         [
             "stream_idle_gap_hotspots",
             "previous_kernel,next_kernel,calls,idle_gap_ms,max_idle_gap_ms",
-            "poseidon2_merkle_digest_parent_kernel,trace_descriptor_expand_kernel,120,22171.505,1776.126",
+            "\"poseidon2_merkle_digest_parent_kernel<16, 4>\",\"trace_descriptor_expand_kernel<8, 2>\",120,22171.505,1776.126",
             "",
             "cuda_graph_fusion_separation_triage",
             "metric,value,detail",
@@ -1070,23 +1101,20 @@ fn prove_timing_root_summary_reads_explicit_nsys_kernel_summary() {
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     let mut lines = stdout.lines();
-    let headers = lines
-        .next()
-        .expect("summary should include a header")
-        .split(',')
-        .collect::<Vec<_>>();
-    let row = lines
-        .next()
-        .expect("summary should include a data row")
-        .split(',')
-        .collect::<Vec<_>>();
+    let headers = parse_csv_line(lines.next().expect("summary should include a header"));
+    let row = parse_csv_line(lines.next().expect("summary should include a data row"));
+    assert_eq!(
+        headers.len(),
+        row.len(),
+        "summary CSV header and row should stay aligned: stdout={stdout}"
+    );
     let value = |name: &str| {
         let index = headers
             .iter()
-            .position(|header| *header == name)
+            .position(|header| header == name)
             .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
         row.get(index)
-            .copied()
+            .map(String::as_str)
             .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
     };
 
@@ -1106,11 +1134,11 @@ fn prove_timing_root_summary_reads_explicit_nsys_kernel_summary() {
     );
     assert_eq!(
         value("kernel_top_stream_idle_gap_previous_kernel"),
-        "poseidon2_merkle_digest_parent_kernel"
+        "poseidon2_merkle_digest_parent_kernel<16, 4>"
     );
     assert_eq!(
         value("kernel_top_stream_idle_gap_next_kernel"),
-        "trace_descriptor_expand_kernel"
+        "trace_descriptor_expand_kernel<8, 2>"
     );
     assert_eq!(value("kernel_top_stream_idle_gap_calls"), "120");
     assert_eq!(value("kernel_top_stream_idle_gap_ms"), "22171.505");

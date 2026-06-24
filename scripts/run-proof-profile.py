@@ -491,37 +491,58 @@ def run_profile(args: argparse.Namespace) -> int:
     if args.summarize:
         summarize_proof_timing(root, outputs)
     if args.tool == "nsys" and not args.skip_nsys_export:
-        export_nsys_sqlite(args, root, outputs)
-        print(f"nsys_exported_sqlite={display_path_for_shell(outputs['sqlite'], root)}")
-        if args.summarize:
-            summarize_nsys(root, outputs)
+        try:
+            export_nsys_sqlite(args, root, outputs)
+            print(f"nsys_exported_sqlite={display_path_for_shell(outputs['sqlite'], root)}")
+            if args.summarize:
+                summarize_nsys(root, outputs)
+                print(
+                    "nsys_kernel_summary="
+                    f"{display_path_for_shell(outputs['kernel_summary'], root)}"
+                )
+                print(
+                    f"nsys_sync_summary={display_path_for_shell(outputs['sync_summary'], root)}"
+                )
+                print(
+                    f"nsys_copy_summary={display_path_for_shell(outputs['copy_summary'], root)}"
+                )
+                summarize_proof_timing(
+                    root,
+                    outputs,
+                    [
+                        "--nsys-kernel-summary",
+                        str(outputs["kernel_summary"]),
+                        "--nsys-copy-summary",
+                        str(outputs["copy_summary"]),
+                    ],
+                )
+        except SystemExit:
+            if args.summarize:
+                remove_stale_summary(outputs["proof_timing_summary"])
+            raise
+    elif args.tool == "ncu" and args.summarize:
+        try:
+            summarize_ncu(root, outputs)
             print(
-                f"nsys_kernel_summary={display_path_for_shell(outputs['kernel_summary'], root)}"
+                f"ncu_kernel_summary={display_path_for_shell(outputs['kernel_summary'], root)}"
             )
-            print(f"nsys_sync_summary={display_path_for_shell(outputs['sync_summary'], root)}")
-            print(f"nsys_copy_summary={display_path_for_shell(outputs['copy_summary'], root)}")
             summarize_proof_timing(
                 root,
                 outputs,
-                [
-                    "--nsys-kernel-summary",
-                    str(outputs["kernel_summary"]),
-                    "--nsys-copy-summary",
-                    str(outputs["copy_summary"]),
-                ],
+                ["--ncu-kernel-summary", str(outputs["kernel_summary"])],
             )
-    elif args.tool == "ncu" and args.summarize:
-        summarize_ncu(root, outputs)
-        print(f"ncu_kernel_summary={display_path_for_shell(outputs['kernel_summary'], root)}")
-        summarize_proof_timing(
-            root,
-            outputs,
-            ["--ncu-kernel-summary", str(outputs["kernel_summary"])],
-        )
+        except SystemExit:
+            remove_stale_summary(outputs["proof_timing_summary"])
+            raise
     return 0
 
 
-def write_fake_profiler(path: Path, tool: str, log_path: Path) -> None:
+def write_fake_profiler(
+    path: Path,
+    tool: str,
+    log_path: Path,
+    ncu_csv_text: str = "Kernel Name,gpu__time_duration.sum\nself,1\n",
+) -> None:
     path.write_text(
         "\n".join(
             [
@@ -544,7 +565,9 @@ def write_fake_profiler(path: Path, tool: str, log_path: Path) -> None:
                 "if 'export' in args and '--output' in args:",
                 "    pathlib.Path(args[args.index('--output') + 1]).write_text('sqlite\\n', encoding='utf-8')",
                 "if '--log-file' in args:",
-                "    pathlib.Path(args[args.index('--log-file') + 1]).write_text('Kernel Name,gpu__time_duration.sum\\nself,1\\n', encoding='utf-8')",
+                "    pathlib.Path(args[args.index('--log-file') + 1]).write_text("
+                + repr(ncu_csv_text)
+                + ", encoding='utf-8')",
                 "if '--export' in args:",
                 "    pathlib.Path(args[args.index('--export') + 1]).write_text('report\\n', encoding='utf-8')",
                 "if '--' in args:",
@@ -581,8 +604,15 @@ def self_test() -> None:
     work_dir.mkdir(parents=True)
     fake_nsys = work_dir / "fake-nsys.py"
     fake_ncu = work_dir / "fake-ncu.py"
+    fake_bad_ncu = work_dir / "fake-bad-ncu.py"
     write_fake_profiler(fake_nsys, "nsys", work_dir / "fake-nsys.argv")
     write_fake_profiler(fake_ncu, "ncu", work_dir / "fake-ncu.argv")
+    write_fake_profiler(
+        fake_bad_ncu,
+        "bad-ncu",
+        work_dir / "fake-bad-ncu.argv",
+        "Kernel Name,unexpected_metric\nself,1\n",
+    )
     try:
         base = {
             "command": [
@@ -696,6 +726,32 @@ def self_test() -> None:
             raise SystemExit("fake ncu missing-key profile failed")
         if stale_summary.exists() or stale_stderr.exists():
             raise SystemExit("fake ncu missing-key proof timing summary was not removed")
+
+        failed_summary_base = dict(base)
+        failed_summary_base["name"] = "self-test-ncu-summary-failure"
+        failed_summary_base["summarize"] = True
+        failed_summary = (
+            work_dir
+            / "profiles"
+            / "self-test-ncu-summary-failure.proof-timing-summary.csv"
+        )
+        failed_summary_stderr = prefixed_path(
+            failed_summary.parent, failed_summary.name, ".stderr"
+        )
+        failed_args = argparse.Namespace(
+            **failed_summary_base,
+            tool="ncu",
+            nsys_command=None,
+            ncu_command=str(fake_bad_ncu),
+        )
+        try:
+            run_profile(failed_args)
+        except SystemExit:
+            pass
+        else:
+            raise SystemExit("fake ncu summary failure unexpectedly passed")
+        if failed_summary.exists() or failed_summary_stderr.exists():
+            raise SystemExit("fake ncu failed proof timing summary was not removed")
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 

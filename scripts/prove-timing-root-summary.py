@@ -1250,6 +1250,13 @@ def compact_csv_token(value: str) -> str:
     return value.replace(",", "|").replace(" ", "_")
 
 
+def csv_cell(value: object) -> str:
+    text = str(value).replace("\r", " ").replace("\n", " ")
+    if "," in text or '"' in text:
+        return '"' + text.replace('"', '""') + '"'
+    return text
+
+
 def parse_timing_log(text: str) -> dict[str, int | str]:
     values: dict[str, int | str] = {}
     nsys_copy_block = None
@@ -5074,7 +5081,7 @@ def summarize_profile_values(
     )
     runner_hint = cpu_runner_hotspot_hint(perf_hotspots)
     return (
-        f"{label},{input_bytes},{total_ms},"
+        f"{csv_cell(label)},{input_bytes},{total_ms},"
         f"{constant_material_elapsed_ms},{constant_material_join_wait_ms},"
         f"{constant_material_hint},{runner_ms},{lowerer_ms},"
         f"{trace_lower_ms},{trace_report_ms},"
@@ -5236,10 +5243,10 @@ def summarize_profile_values(
         f"{memory_source_read_pct:.3f},{register_store_rows},"
         f"{memory_store_rows},{memory_store_row_pct:.3f},"
         f"{no_store_rows},{no_store_row_pct:.3f},{trace_shape_hint},"
-        f"{row_shape_top_1_pattern},{row_shape_top_1_count},{row_shape_top_1_shape},"
-        f"{row_shape_top_2_pattern},{row_shape_top_2_count},{row_shape_top_2_shape},"
-        f"{row_shape_top_3_pattern},{row_shape_top_3_count},{row_shape_top_3_shape},"
-        f"{row_shape_top_4_pattern},{row_shape_top_4_count},{row_shape_top_4_shape},"
+        f"{csv_cell(row_shape_top_1_pattern)},{row_shape_top_1_count},{row_shape_top_1_shape},"
+        f"{csv_cell(row_shape_top_2_pattern)},{row_shape_top_2_count},{row_shape_top_2_shape},"
+        f"{csv_cell(row_shape_top_3_pattern)},{row_shape_top_3_count},{row_shape_top_3_shape},"
+        f"{csv_cell(row_shape_top_4_pattern)},{row_shape_top_4_count},{row_shape_top_4_shape},"
         f"{trace_precompile_action},"
         f"{copy_memory_source_rows},{copy_memory_source_row_pct:.3f},"
         f"{copy_indirect_memory_rows},{copy_indirect_memory_row_pct:.3f},"
@@ -5262,7 +5269,7 @@ def summarize_profile_values(
         f"{trace_report_instruction_result_ms},{trace_report_next_pc_ms},"
         f"{trace_report_register_access_ms},{trace_report_memory_access_ms},"
         f"{trace_report_store_apply_ms},{trace_report_visit_ms},"
-        f"{trace_report_exact_hotspot_name},"
+        f"{csv_cell(trace_report_exact_hotspot_name)},"
         f"{trace_report_exact_hotspot_pct:.3f},{trace_report_exact_action},"
         f"{trace_report_detail_samples},{trace_report_detail_sample_pct:.3f},"
         f"{trace_report_detail_sample_ppm:.3f},{trace_report_detail_hint},"
@@ -5284,9 +5291,9 @@ def summarize_profile_values(
         f"{trace_report_row_validation_residual_share_ms:.3f},"
         f"{trace_report_visit_share_ms:.3f},"
         f"{trace_report_descriptor_share_ms:.3f},"
-        f"{trace_report_detail_hotspot_name},{trace_report_detail_hotspot_pct:.3f},"
+        f"{csv_cell(trace_report_detail_hotspot_name)},{trace_report_detail_hotspot_pct:.3f},"
         f"{trace_report_detail_action},"
-        f"{trace_report_row_validation_hotspot_name},"
+        f"{csv_cell(trace_report_row_validation_hotspot_name)},"
         f"{trace_report_row_validation_hotspot_pct:.3f},"
         f"{trace_report_row_validation_explained_pct:.3f},"
         f"{trace_report_row_validation_residual_pct:.3f},"
@@ -5298,7 +5305,7 @@ def summarize_profile_values(
         f"{source_memory_reads},{source_memory_read_pct:.3f},"
         f"{source_indirect_reads},{source_indirect_read_pct:.3f},"
         f"{source_last_c_reads},{source_last_c_read_pct:.3f},"
-        f"{trace_report_source_kind_hotspot},"
+        f"{csv_cell(trace_report_source_kind_hotspot)},"
         f"{trace_report_source_kind_hotspot_pct:.3f},"
         f"{trace_report_source_kind_coverage_pct:.3f},"
         f"{trace_report_source_kind_residual_pct:.3f},"
@@ -5320,13 +5327,15 @@ def summarize_profile_values(
         f"{kernel_graph_fusion_priority_hint},{kernel_next_action_hint},"
         f"{kernel_graph_fusion_upper_bound_ms},"
         f"{kernel_top_stream_idle_ms},{kernel_separation_hint},"
-        f"{kernel_top_stream_idle_gap_previous},{kernel_top_stream_idle_gap_next},"
+        f"{csv_cell(kernel_top_stream_idle_gap_previous)},"
+        f"{csv_cell(kernel_top_stream_idle_gap_next)},"
         f"{kernel_top_stream_idle_gap_calls},{kernel_top_stream_idle_gap_ms},"
         f"{kernel_stream_idle_boundary},"
-        f"{ncu_metric_collection_hint},{ncu_top_kernel},"
+        f"{ncu_metric_collection_hint},{csv_cell(ncu_top_kernel)},"
         f"{ncu_top_kernel_duration_ms},{ncu_top_kernel_sm_throughput_pct},"
         f"{ncu_top_kernel_dram_throughput_pct},"
-        f"{ncu_top_kernel_registers_per_thread},{ncu_top_kernel_limiting_factors},"
+        f"{ncu_top_kernel_registers_per_thread},"
+        f"{csv_cell(ncu_top_kernel_limiting_factors)},"
         f"{ncu_top_kernel_separation_hint},{ncu_descriptor_expansion_hint},"
         f"{segment_commit_cuda_memory_total_bytes},"
         f"{segment_commit_cuda_memory_initial_free_bytes},"
