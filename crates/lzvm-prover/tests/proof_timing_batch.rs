@@ -49,6 +49,29 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         stdout.contains("large_runs=3"),
         "batch output should report large run count: {stdout}"
     );
+    let batch_dir = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("batch_dir="))
+        .map(std::path::PathBuf::from)
+        .expect("batch output should include a batch dir");
+    assert!(
+        stdout.contains("batch_json="),
+        "batch output should report the batch json path: {stdout}"
+    );
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    assert!(
+        batch_json.contains("\"appended\": true"),
+        "batch json should record successful append: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("\"small_command\": \"printf 'status=ok"),
+        "batch json should record command templates: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("\"small_logs\": ["),
+        "batch json should record input logs: {batch_json}"
+    );
 
     let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
     assert!(

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import re
 import shlex
@@ -275,6 +276,46 @@ def append_improve_log(
         )
 
 
+def path_texts(paths: list[Path]) -> list[str]:
+    return [str(path) for path in paths]
+
+
+def write_batch_json(
+    path: Path,
+    args: argparse.Namespace,
+    root: Path,
+    batch_dir: Path,
+    cwd: Path,
+    improve_log_path: Path,
+    small_logs: list[Path] | None,
+    large_logs: list[Path] | None,
+    appended: bool,
+) -> None:
+    payload = {
+        "created_at": datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "workspace": str(root),
+        "batch_dir": str(batch_dir),
+        "cwd": str(cwd),
+        "improve_log": str(improve_log_path),
+        "appended": appended,
+        "runs": args.runs,
+        "small_timeout_s": args.small_timeout,
+        "large_timeout_s": args.large_timeout,
+        "max_relative_spread": args.max_relative_spread,
+        "commit": args.commit,
+        "summary": args.summary,
+        "small_command": args.small_command,
+        "large_command": args.large_command,
+        "require_text": list(args.require_text or []),
+        "small_require_text": list(args.small_require_text or []),
+        "large_require_text": list(args.large_require_text or []),
+        "require_proof_output": args.require_proof_output,
+        "small_logs": path_texts(small_logs or []),
+        "large_logs": path_texts(large_logs or []),
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def batch_dir_name() -> str:
     timestamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z")
     return f"{timestamp}-{os.getpid()}"
@@ -308,6 +349,18 @@ def run_batch(args: argparse.Namespace) -> Path:
     if not cwd.exists():
         raise SystemExit(f"{cwd}: command working directory does not exist")
     improve_log_path = resolve_workspace_path(args.path, root)
+    batch_json_path = batch_dir / "batch.json"
+    write_batch_json(
+        batch_json_path,
+        args,
+        root,
+        batch_dir,
+        cwd,
+        improve_log_path,
+        None,
+        None,
+        False,
+    )
 
     small_logs = run_group(
         "small",
@@ -338,8 +391,20 @@ def run_batch(args: argparse.Namespace) -> Path:
         root,
         batch_dir,
     )
+    write_batch_json(
+        batch_json_path,
+        args,
+        root,
+        batch_dir,
+        cwd,
+        improve_log_path,
+        small_logs,
+        large_logs,
+        True,
+    )
 
     print(f"batch_dir={batch_dir}")
+    print(f"batch_json={batch_json_path}")
     if small_logs:
         print(f"small_runs={len(small_logs)}")
     if large_logs:
