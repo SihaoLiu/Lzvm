@@ -106,11 +106,18 @@ fn rejects_tampered_constant_tree_opening_values() {
 #[test]
 fn opens_constant_tree_rows_from_file() {
     let (tree, root) = sample_tree();
-    let path = std::env::temp_dir().join(format!(
-        "lzvm-constant-tree-opening-{}-{}.bin",
-        std::process::id(),
-        "from-file"
-    ));
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-constant-tree-opening-{}-{}.bin",
+            std::process::id(),
+            "from-file"
+        ));
+    fs::create_dir_all(path.parent().expect("tree path should have parent"))
+        .expect("fixture directory should be created");
     fs::write(&path, &tree.bytes).expect("tree bytes should write");
 
     let opening = open_constant_tree_row_from_file(&path, &sample_setup(), 2, 4)

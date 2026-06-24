@@ -227,7 +227,12 @@ fn temp_dir(name: &str) -> std::path::PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("system clock should be after epoch")
         .as_nanos();
-    std::env::temp_dir().join(format!("lzvm-prover-{name}-{stamp}"))
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!("lzvm-prover-{name}-{stamp}"))
 }
 
 fn sample_setup() -> UnitSetupInfo {
