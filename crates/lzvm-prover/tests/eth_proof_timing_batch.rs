@@ -9,6 +9,13 @@ const REQUIRED_SUFFIXES: &[&str] = &[
     "INPUT_DATA",
     "GUEST_IMAGE",
 ];
+const VERIFY_REQUIRED_TEXTS: &[&str] = &[
+    "verify_proof_status=ok",
+    "artifact_public_input_match=ok",
+    "artifact_proof_match=ok",
+    "eth_block_input_match=ok",
+    "program_image_cache_match=ok",
+];
 
 fn workspace_root() -> &'static std::path::Path {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -108,6 +115,20 @@ fn verify_command_tail(command_text: &str) -> &str {
         .unwrap_or("")
 }
 
+fn has_required_text_arg(command_text: &str, marker: &str) -> bool {
+    command_text.contains(&format!("--require-text {marker}"))
+        || command_text.contains(&format!("--require-text\n{marker}"))
+}
+
+fn assert_verify_required_text_args(command_text: &str, context: &str) {
+    for marker in VERIFY_REQUIRED_TEXTS {
+        assert!(
+            has_required_text_arg(command_text, marker),
+            "{context} should require verify marker {marker}: {command_text}"
+        );
+    }
+}
+
 #[test]
 fn eth_proof_timing_batch_self_test_runs() {
     let output = Command::new(script_path())
@@ -175,20 +196,7 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         stdout.contains("--require-proof-output"),
         "runner command should require proof markers: {stdout}"
     );
-    assert!(
-        stdout.contains("--require-text verify_proof_status=ok"),
-        "runner command should require the external proof verify marker: {stdout}"
-    );
-    assert!(
-        stdout.contains("--require-text artifact_public_input_match=ok")
-            && stdout.contains("--require-text artifact_proof_match=ok"),
-        "runner command should require artifact binding markers: {stdout}"
-    );
-    assert!(
-        stdout.contains("--require-text eth_block_input_match=ok")
-            && stdout.contains("--require-text program_image_cache_match=ok"),
-        "runner command should require ETH binding markers: {stdout}"
-    );
+    assert_verify_required_text_args(&stdout, "runner command");
     assert!(
         stdout.contains("small_command=env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
         "small command should clear pipeline environment: {stdout}"
@@ -211,11 +219,10 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
     assert!(
         verify_command.contains("verify proof --eth-block-input")
             && verify_command.contains("--program-image-cache")
-            && stdout.contains("{batch_dir}/small-{run_padded}.proof/proof.bin")
-            && stdout.contains("{batch_dir}/small-{run_padded}.proof/eth-block-public-values.bin")
-            && stdout.contains("verify_proof_status=ok")
-            && stdout.contains("eth_block_input_match=ok")
-            && stdout.contains("program_image_cache_match=ok"),
+            && verify_command.contains("{batch_dir}/small-{run_padded}.proof/proof.bin")
+            && verify_command
+                .contains("{batch_dir}/small-{run_padded}.proof/eth-block-public-values.bin")
+            && verify_command.contains("verify_proof_status=ok"),
         "small command should run an external proof verification after proving: {stdout}"
     );
     assert!(
@@ -320,13 +327,12 @@ fn eth_proof_timing_batch_run_uses_runner_tmpdir_token() {
         runner_args.contains("TMPDIR={tmp_dir}"),
         "runner should receive the per-run temp token: {runner_args}"
     );
+    assert_verify_required_text_args(&runner_args, "runner");
     let verify_command = verify_command_tail(&runner_args);
     assert!(
         verify_command.contains("verify proof --eth-block-input")
             && verify_command.contains("--program-image-cache")
-            && runner_args.contains("verify_proof_status=ok")
-            && runner_args.contains("eth_block_input_match=ok")
-            && runner_args.contains("program_image_cache_match=ok"),
+            && verify_command.contains("verify_proof_status=ok"),
         "runner should receive a prove-then-verify command: {runner_args}"
     );
     assert!(
@@ -782,12 +788,12 @@ fn eth_proof_timing_batch_available_suite_uses_only_configured_large_env() {
         stdout.contains("large_command=env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
         "available suite should include the configured large command: {stdout}"
     );
+    assert_verify_required_text_args(&stdout, "available runner command");
     let verify_command = verify_command_tail(&stdout);
     assert!(
         verify_command.contains("verify proof --eth-block-input")
             && verify_command.contains("--program-image-cache")
-            && stdout.contains("eth_block_input_match=ok")
-            && stdout.contains("program_image_cache_match=ok"),
+            && verify_command.contains("verify_proof_status=ok"),
         "available suite should include external verification in the large command: {stdout}"
     );
     assert!(
