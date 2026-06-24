@@ -6,6 +6,9 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
     let assumptions_path = crate_root.join("../../lean/Lzvm/Assumptions.lean");
     let assumptions_source =
         std::fs::read_to_string(&assumptions_path).expect("Lean assumptions source should read");
+    let audit_path = crate_root.join("../../lean/Lzvm/AssumptionAudit.lean");
+    let audit_source =
+        std::fs::read_to_string(&audit_path).expect("Lean assumption audit source should read");
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
@@ -38,5 +41,18 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
             && assumptions_source.contains("system.constraintsSatisfied constraints trace")
             && assumptions_source.contains("system.witnessMatchesTrace witness trace"),
         "Lean semantic assumptions should make accepted-proof binding, trace, constraints, and witness obligations explicit"
+    );
+    assert!(
+        audit_source.contains("def RequiredSemanticAssumptionStatements")
+            && audit_source.contains("required_semantic_assumptions_public_input_binding")
+            && audit_source.contains("required_semantic_assumptions_trace_extraction")
+            && audit_source.contains("required_semantic_assumptions_constraint_satisfaction")
+            && audit_source.contains("required_semantic_assumptions_witness_extraction")
+            && audit_source.contains("assumptions.public_input_binding")
+            && audit_source.contains("assumptions.trace_extraction")
+            && audit_source.contains("assumptions.constraint_satisfaction")
+            && audit_source.contains("assumptions.witness_extraction")
+            && !audit_source.contains("_assumptions : SemanticAssumptions system) : Prop :=\n  SemanticAssumptions system"),
+        "Lean assumption audit should expose semantic obligations as explicit public input, trace, constraint, and witness statements"
     );
 }
