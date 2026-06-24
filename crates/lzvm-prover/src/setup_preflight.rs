@@ -746,14 +746,22 @@ fn validate_optional_unit_value_segments(
     schedule: &crate::ProveSchedule,
     proof: &ProofArtifact,
 ) -> Result<(), SetupPreflightError> {
+    if !proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == UNIT_VALUES_SEGMENT_ID)
+    {
+        return Ok(());
+    }
+
+    let query_plan = load_pcs_query_plan_from_segments(&proof.segments)
+        .map_err(SetupPreflightError::UnitValueQueryPlan)?;
     let Some(unit_values) = load_unit_values_segment_from_segments(&proof.segments)
         .map_err(SetupPreflightError::UnitValues)?
     else {
         return Ok(());
     };
 
-    let query_plan = load_pcs_query_plan_from_segments(&proof.segments)
-        .map_err(SetupPreflightError::UnitValueQueryPlan)?;
     validate_unit_values_units_match_query_units_from_segment(
         &query_plan.units,
         Some(&unit_values),

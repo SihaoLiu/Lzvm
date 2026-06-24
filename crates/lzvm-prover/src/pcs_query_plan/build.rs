@@ -49,12 +49,12 @@ pub fn build_pcs_query_plan_segment_with_bindings(
     witness_segments: &[ProofSegment],
     binding_segments: &[ProofSegment],
 ) -> Result<ProofSegment, ProvePcsQueryPlanSegmentError> {
-    let witness_segments = witness_segments.iter().collect::<Vec<_>>();
+    let witness_segment_refs = witness_segments.iter().collect::<Vec<_>>();
     build_pcs_query_plan_segment_with_binding_refs(
         schedule,
         public_values_hash,
         material_segment,
-        &witness_segments,
+        &witness_segment_refs,
         binding_segments,
     )
 }
@@ -217,8 +217,13 @@ pub fn build_pcs_query_plan_segment_from_challenge(
     challenge: Ext3,
     nonce: Felt,
 ) -> Result<ProofSegment, ProvePcsQueryPlanSegmentError> {
-    let witness_segments = witness_segments.iter().collect::<Vec<_>>();
-    build_pcs_query_plan_segment_from_challenge_refs(schedule, &witness_segments, challenge, nonce)
+    let witness_segment_refs = witness_segments.iter().collect::<Vec<_>>();
+    build_pcs_query_plan_segment_from_challenge_refs(
+        schedule,
+        &witness_segment_refs,
+        challenge,
+        nonce,
+    )
 }
 
 pub(super) fn build_pcs_query_plan_segment_from_challenge_refs(
@@ -280,8 +285,8 @@ fn build_pcs_query_plan_segment_from_sorted_challenge(
 fn sorted_witness_commitment_segments(
     witness_segments: &[ProofSegment],
 ) -> Result<Vec<&ProofSegment>, ProvePcsQueryPlanSegmentError> {
-    let witness_segments = witness_segments.iter().collect::<Vec<_>>();
-    sorted_witness_commitment_segment_refs(&witness_segments)
+    let witness_segment_refs = witness_segments.iter().collect::<Vec<_>>();
+    sorted_witness_commitment_segment_refs(&witness_segment_refs)
 }
 
 fn sorted_witness_commitment_segment_refs<'a>(

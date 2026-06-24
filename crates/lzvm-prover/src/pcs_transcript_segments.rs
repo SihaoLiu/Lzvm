@@ -154,14 +154,14 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
         .map_err(PcsTranscriptProofSegmentsError::Material)?;
     let fri = load_pcs_fri_opening_segment_from_segments(segments)
         .map_err(|error| PcsTranscriptProofSegmentsError::Fri(error.into()))?;
-    let evaluation_segment = load_pcs_evaluation_segment_from_segments(segments)
-        .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
-    let unit_values_segment = load_unit_values_segment_from_segments(segments)
-        .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
     let witness_segments = load_witness_commitment_segment_refs(&schedule.units, segments)
         .map_err(PcsTranscriptProofSegmentsError::Witness)?;
     let binding_segments = checked_proof_binding_segments(segments)
         .map_err(|id| PcsTranscriptProofSegmentsError::DuplicateBindingSegment { id })?;
+    let evaluation_segment = load_pcs_evaluation_segment_from_segments(segments)
+        .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
+    let unit_values_segment = load_unit_values_segment_from_segments(segments)
+        .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
     let mut units = Vec::new();
 
     for query_unit in &query_plan.units {
@@ -224,7 +224,7 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
                 public_values,
                 unit_values: &unit_values,
                 witness: &witness,
-                evaluations: &evaluation_unit,
+                evaluations: evaluation_unit,
                 fri: fri_unit,
                 root_challenge_draws: &unit.transcript_root_challenge_draws,
                 evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,

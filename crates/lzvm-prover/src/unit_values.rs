@@ -264,11 +264,13 @@ pub fn load_unit_values_for_identity_from_segments(
     unit_value_map: &[StageValue],
     segments: &[ProofSegment],
 ) -> Result<Vec<Felt>, LoadUnitValuesSegmentError> {
+    let expected_count = expected_packed_unit_value_count(unit_value_map)
+        .map_err(|_| LoadUnitValuesSegmentError::LengthOverflow)?;
     let parsed = load_unit_values_segment_from_segments(segments)?;
-    load_unit_values_for_identity_from_parsed_segment(
+    load_unit_values_for_identity_from_parsed_segment_with_expected_count(
         unit_index,
         trace_instance_index,
-        unit_value_map,
+        expected_count,
         parsed.as_ref(),
     )
 }
@@ -298,6 +300,20 @@ pub(crate) fn load_unit_values_for_identity_from_parsed_segment(
 ) -> Result<Vec<Felt>, LoadUnitValuesSegmentError> {
     let expected_count = expected_packed_unit_value_count(unit_value_map)
         .map_err(|_| LoadUnitValuesSegmentError::LengthOverflow)?;
+    load_unit_values_for_identity_from_parsed_segment_with_expected_count(
+        unit_index,
+        trace_instance_index,
+        expected_count,
+        parsed,
+    )
+}
+
+fn load_unit_values_for_identity_from_parsed_segment_with_expected_count(
+    unit_index: usize,
+    trace_instance_index: u32,
+    expected_count: usize,
+    parsed: Option<&UnitValuesSegment>,
+) -> Result<Vec<Felt>, LoadUnitValuesSegmentError> {
     let unit_index_u32 = u32::try_from(unit_index)
         .map_err(|_| LoadUnitValuesSegmentError::UnitIndexOverflow { unit_index })?;
     let unit_values = parsed.and_then(|parsed| {

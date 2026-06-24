@@ -312,14 +312,14 @@ fn validate_transcript_query_plan_unit_inputs(
             parse_witness_commitment_segment(&witness_segment.data).map_err(|source| {
                 ValidatePcsQueryPlanSegmentsError::WitnessSegment { unit_index, source }
             })?;
-        let evaluations = load_pcs_evaluation_unit_for_identity_from_parsed_segment(
+        let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_parsed_segment(
             unit_index,
             query_unit.trace_instance_index,
             unit,
             &evaluation_segment,
         )
         .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
-        let fri = fri_segment
+        let fri_unit = fri_segment
             .units
             .iter()
             .find(|unit| {
@@ -342,8 +342,8 @@ fn validate_transcript_query_plan_unit_inputs(
                 public_values,
                 unit_values: &unit_values,
                 witness: &witness,
-                evaluations: &evaluations,
-                fri: &fri,
+                evaluations: evaluation_unit,
+                fri: fri_unit,
                 root_challenge_draws: &unit.transcript_root_challenge_draws,
                 evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
                 binding_segments: &binding_segments,
