@@ -13357,19 +13357,22 @@ fn write_memory_columns(
     kind: GuestMemoryAccessKind,
     columns: &MemoryAccessColumns<'_>,
 ) -> Result<(), GuestPcTraceBackendError> {
-    let mut matching = memory_accesses.iter().filter(|access| access.kind == kind);
-    let Some(access) = matching.next() else {
+    let mut first = None;
+    let mut found = 0_usize;
+    for access in memory_accesses {
+        if access.kind != kind {
+            continue;
+        }
+        found += 1;
+        if first.is_none() {
+            first = Some(access);
+        }
+    }
+    let Some(access) = first else {
         return Ok(());
     };
-    if matching.next().is_some() {
-        return Err(GuestPcTraceBackendError::TooManyMemoryAccesses {
-            row,
-            kind,
-            found: memory_accesses
-                .iter()
-                .filter(|access| access.kind == kind)
-                .count(),
-        });
+    if found > 1 {
+        return Err(GuestPcTraceBackendError::TooManyMemoryAccesses { row, kind, found });
     }
     write_column(builder, row, &columns.address, access.address)?;
     write_column(builder, row, &columns.value, access.value)?;

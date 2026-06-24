@@ -8135,6 +8135,23 @@ fn guest_pc_memory_access_validation_has_no_store_fast_path() {
 }
 
 #[test]
+fn memory_column_writer_counts_matches_in_one_pass() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let body = function_body(&source, "fn write_memory_columns", "fn write_column");
+    assert!(
+        body.contains("let mut found = 0_usize"),
+        "memory column writing should count matching accesses during the scan"
+    );
+    assert!(
+        !body.contains(".iter().filter(|access| access.kind == kind).count()"),
+        "memory column writing should not rescan matching accesses for error counts"
+    );
+}
+
+#[test]
 fn guest_pc_store_apply_computes_store_value_only_for_value_stores() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
