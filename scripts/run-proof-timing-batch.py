@@ -78,6 +78,10 @@ def write_combined_log(path: Path, stdout: str, stderr: str) -> None:
     path.write_text("".join(combined), encoding="utf-8")
 
 
+def write_status(path: Path, lines: list[str]) -> None:
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def timing_total_ms_from_text(text: str, path: Path) -> int:
     matches = [int(match.group(1)) for match in TIMING_TOTAL_RE.finditer(text)]
     if len(matches) != 1:
@@ -201,21 +205,26 @@ def run_once(
         f"combined_log={combined_path}",
     ]
     if timed_out:
-        status_path.write_text("\n".join(status_lines) + "\n", encoding="utf-8")
+        write_status(status_path, status_lines)
         raise SystemExit(
             f"{label} run {run_index} timed out after {timeout:.3f}s; log: {combined_path}"
         )
     if exit_code != 0:
-        status_path.write_text("\n".join(status_lines) + "\n", encoding="utf-8")
+        write_status(status_path, status_lines)
         raise SystemExit(
             f"{label} run {run_index} exited with status {exit_code}; log: {combined_path}"
         )
 
     combined_text = read_text(combined_path)
-    require_texts_in_log(combined_text, combined_path, required_texts)
-    total_ms = timing_total_ms_from_text(combined_text, combined_path)
+    try:
+        require_texts_in_log(combined_text, combined_path, required_texts)
+        total_ms = timing_total_ms_from_text(combined_text, combined_path)
+    except SystemExit as error:
+        status_lines.append(f"validation_error={error}")
+        write_status(status_path, status_lines)
+        raise
     status_lines.append(f"timing_total_ms={total_ms}")
-    status_path.write_text("\n".join(status_lines) + "\n", encoding="utf-8")
+    write_status(status_path, status_lines)
     return combined_path
 
 

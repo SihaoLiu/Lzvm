@@ -15,6 +15,21 @@ fn test_dir(name: &str) -> std::path::PathBuf {
     workspace_root().join(format!("temp/{name}-{}", std::process::id()))
 }
 
+fn single_batch_dir(dir: &std::path::Path) -> std::path::PathBuf {
+    let mut batch_dirs = std::fs::read_dir(dir)
+        .expect("fixture dir should read")
+        .map(|entry| entry.expect("batch entry should read").path())
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    batch_dirs.sort();
+    assert_eq!(
+        batch_dirs.len(),
+        1,
+        "run should leave exactly one batch dir"
+    );
+    batch_dirs.remove(0)
+}
+
 #[test]
 fn proof_timing_batch_runs_commands_and_appends_stable_log() {
     let script_path = batch_script_path();
@@ -95,7 +110,7 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
 #[test]
 fn proof_timing_batch_sets_run_tmpdir_under_batch_dir() {
     let script_path = batch_script_path();
-    let dir = test_dir("proof-timing-batch-tmpdir");
+    let dir = test_dir("proof timing batch tmpdir");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture dir should be created");
     let log_path = dir.join("improve-log.csv");
@@ -161,6 +176,131 @@ fn proof_timing_batch_sets_run_tmpdir_under_batch_dir() {
         "status should record the managed TMPDIR: {status}"
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn proof_timing_batch_records_status_when_command_exits_nonzero() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-nonzero");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg("if [ -d \"$TMPDIR\" ]; then printf 'tmpdir_ok=true\\n'; fi; exit 5")
+        .arg("--summary")
+        .arg("nonzero status")
+        .output()
+        .expect("proof timing batch should run");
+
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let expected_tmp = batch_dir.join("small-001.tmp");
+    let tmp_dir_exists = expected_tmp.exists();
+    let log =
+        std::fs::read_to_string(batch_dir.join("small-001.log")).expect("run log should read");
+    let status = std::fs::read_to_string(batch_dir.join("small-001.status"))
+        .expect("status file should read");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should fail when a command exits nonzero"
+    );
+    assert!(
+        stderr.contains("exited with status 5"),
+        "nonzero exit should explain the failing status: stderr={stderr}"
+    );
+    assert!(
+        tmp_dir_exists,
+        "managed TMPDIR should be created before a nonzero command exits"
+    );
+    assert!(
+        log.contains("tmpdir_ok=true"),
+        "nonzero command should observe the managed TMPDIR: {log}"
+    );
+    assert!(
+        status.contains("exit_code=5"),
+        "status should record the failing exit code: {status}"
+    );
+    assert!(
+        status.contains("timed_out=false"),
+        "status should record that the run did not time out: {status}"
+    );
+    assert!(
+        status.contains(&format!("tmp_dir={}", expected_tmp.display())),
+        "status should record the managed TMPDIR: {status}"
+    );
+}
+
+#[test]
+fn proof_timing_batch_records_status_when_command_times_out() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-timeout");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-timeout")
+        .arg("0.2")
+        .arg("--small-command")
+        .arg("if [ -d \"$TMPDIR\" ]; then printf 'tmpdir_ok=true\\n'; fi; sleep 5")
+        .arg("--summary")
+        .arg("timeout status")
+        .output()
+        .expect("proof timing batch should run");
+
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let expected_tmp = batch_dir.join("small-001.tmp");
+    let tmp_dir_exists = expected_tmp.exists();
+    let log =
+        std::fs::read_to_string(batch_dir.join("small-001.log")).expect("run log should read");
+    let status = std::fs::read_to_string(batch_dir.join("small-001.status"))
+        .expect("status file should read");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(!success, "proof timing batch should fail on timeout");
+    assert!(
+        stderr.contains("timed out after 0.200s"),
+        "timeout should explain the timeout duration: stderr={stderr}"
+    );
+    assert!(
+        tmp_dir_exists,
+        "managed TMPDIR should be created before a timed-out command runs"
+    );
+    assert!(
+        log.contains("tmpdir_ok=true"),
+        "timed-out command should observe the managed TMPDIR: {log}"
+    );
+    assert!(
+        status.contains("timed_out=true"),
+        "status should record the timeout: {status}"
+    );
+    assert!(
+        status.contains(&format!("tmp_dir={}", expected_tmp.display())),
+        "status should record the managed TMPDIR: {status}"
+    );
 }
 
 #[test]
@@ -290,16 +430,34 @@ fn proof_timing_batch_rejects_missing_required_output_text() {
         .arg("missing marker")
         .output()
         .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let expected_tmp = batch_dir.join("small-001.tmp");
+    let status = std::fs::read_to_string(batch_dir.join("small-001.status"))
+        .expect("status file should read");
     let _ = std::fs::remove_dir_all(&dir);
 
     assert!(
-        !output.status.success(),
+        !success,
         "proof timing batch should reject output without the required marker"
     );
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("missing required text"),
+        stderr.contains("missing required text"),
         "required text rejection should explain the missing marker: stderr={}",
-        String::from_utf8_lossy(&output.stderr)
+        stderr
+    );
+    assert!(
+        status.contains("validation_error=") && status.contains("missing required text"),
+        "validation failure should be recorded in status: {status}"
+    );
+    assert!(
+        status.contains("exit_code=0"),
+        "status should preserve the command exit code for validation failures: {status}"
+    );
+    assert!(
+        status.contains(&format!("tmp_dir={}", expected_tmp.display())),
+        "status should record the managed TMPDIR for validation failures: {status}"
     );
 }
 

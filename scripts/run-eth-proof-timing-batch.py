@@ -280,11 +280,6 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
     return command
 
 
-def ensure_runtime_dirs(args: argparse.Namespace, root: Path) -> None:
-    for config, _mode in selected_envs(args, root):
-        configured_paths(config)["tmp_dir"].mkdir(parents=True, exist_ok=True)
-
-
 def run(args: argparse.Namespace) -> int:
     root = workspace_root()
     if args.check_env:
@@ -299,7 +294,6 @@ def run(args: argparse.Namespace) -> int:
             if part in ("--small-command", "--large-command") and index + 1 < len(command):
                 print(f"{part[2:].replace('-', '_')}={command[index + 1]}")
         return 0
-    ensure_runtime_dirs(args, root)
     return subprocess.run(command, cwd=root).returncode
 
 

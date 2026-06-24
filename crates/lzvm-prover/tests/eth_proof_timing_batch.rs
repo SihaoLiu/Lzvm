@@ -178,8 +178,67 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         "small command should use the per-run temp dir token: {stdout}"
     );
     assert!(
+        !stdout.contains(&fixture.tmp_dir.display().to_string()),
+        "dry-run command should not use the configured TMPDIR as a shared run dir: {stdout}"
+    );
+    assert!(
         stdout.contains(&format!("'{}'", fixture.fake_bin.display())),
         "binary path containing spaces should be shell-quoted: {stdout}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_run_does_not_create_configured_tmp_dir() {
+    let fixture = ProofFixture::new("eth proof timing batch actual run");
+    let runner = fixture.dir.join("fake-runner.py");
+    let runner_args_path = fixture.dir.join("runner-args.txt");
+    std::fs::write(
+        &runner,
+        format!(
+            "import pathlib\nimport sys\npathlib.Path({:?}).write_text('\\n'.join(sys.argv[1:]) + '\\n', encoding='utf-8')\n",
+            runner_args_path.display().to_string()
+        ),
+    )
+    .expect("fake runner should write");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--runner")
+        .arg(&runner)
+        .arg("--work-dir")
+        .arg(fixture.dir.join("runs"))
+        .arg("--path")
+        .arg(fixture.dir.join("improve-log.csv"))
+        .arg("--summary")
+        .arg("actual run");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch run should invoke the runner");
+    let tmp_dir_created = fixture.tmp_dir.exists();
+    let runner_args =
+        std::fs::read_to_string(&runner_args_path).expect("fake runner args should read");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "actual run should invoke the runner: stderr={stderr}"
+    );
+    assert!(
+        !tmp_dir_created,
+        "actual run should not create the configured TMPDIR"
+    );
+    assert!(
+        runner_args.contains("TMPDIR={tmp_dir}"),
+        "runner should receive the per-run temp token: {runner_args}"
+    );
+    assert!(
+        !runner_args.contains(&fixture.tmp_dir.display().to_string()),
+        "runner command should not use the configured TMPDIR as a shared run dir: {runner_args}"
     );
 }
 
