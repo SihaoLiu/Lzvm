@@ -810,6 +810,8 @@ HEADER = (
     "opening_row_value_device_download_batches,"
     "opening_row_value_device_batch_stage_count,"
     "opening_row_value_device_batch_max_stage,"
+    "opening_row_value_device_batch_stage_sum,"
+    "opening_row_value_device_batch_unattributed,"
     "opening_row_value_device_single_downloads,"
     "opening_row_value_device_single_stage_count,"
     "opening_row_value_device_single_max_stage,"
@@ -2616,7 +2618,7 @@ def opening_device_single_stage_shape(values: dict[str, int]) -> tuple[int, int,
     return (stage_count, max_stage_count, batch_savings)
 
 
-def opening_device_batch_stage_shape(values: dict[str, int]) -> tuple[int, int]:
+def opening_device_batch_stage_shape(values: dict[str, int]) -> tuple[int, int, int]:
     stage_counts = [
         count
         for key, count in values.items()
@@ -2624,8 +2626,8 @@ def opening_device_batch_stage_shape(values: dict[str, int]) -> tuple[int, int]:
         and count > 0
     ]
     if not stage_counts:
-        return (0, 0)
-    return (len(stage_counts), max(stage_counts))
+        return (0, 0, 0)
+    return (len(stage_counts), max(stage_counts), sum(stage_counts))
 
 
 def retained_parent_checkpoint_cross_stage_gather_launch_shape(
@@ -4691,7 +4693,12 @@ def summarize_profile_values(
     (
         opening_row_value_device_batch_stage_count,
         opening_row_value_device_batch_max_stage,
+        opening_row_value_device_batch_stage_sum,
     ) = opening_device_batch_stage_shape(values)
+    opening_row_value_device_batch_unattributed = max(
+        opening_row_value_device_download_batches - opening_row_value_device_batch_stage_sum,
+        0,
+    )
     opening_row_value_device_single_downloads = values.get(
         OPENING_ROW_VALUE_DEVICE_SINGLE_DOWNLOADS_KEY, 0
     )
@@ -5176,6 +5183,8 @@ def summarize_profile_values(
         f"{opening_row_value_device_download_batches},"
         f"{opening_row_value_device_batch_stage_count},"
         f"{opening_row_value_device_batch_max_stage},"
+        f"{opening_row_value_device_batch_stage_sum},"
+        f"{opening_row_value_device_batch_unattributed},"
         f"{opening_row_value_device_single_downloads},"
         f"{opening_row_value_device_single_stage_count},"
         f"{opening_row_value_device_single_max_stage},"
