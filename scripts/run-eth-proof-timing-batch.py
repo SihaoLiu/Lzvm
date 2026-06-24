@@ -244,19 +244,105 @@ def template_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, 
     return requested[args.suite]
 
 
-def print_env_template(args: argparse.Namespace, root: Path) -> None:
-    print("# build default binary first:")
-    print(f"# {DEFAULT_BIN_BUILD_COMMAND}")
-    print()
+def env_template_text(args: argparse.Namespace, root: Path) -> str:
+    lines = [
+        "# build default binary first:",
+        f"# {DEFAULT_BIN_BUILD_COMMAND}",
+        "",
+    ]
     for index, (config, mode) in enumerate(template_envs(args, root)):
         if index:
-            print()
-        print(f"# {config.label} suite")
-        print(f"# run with --{config.label}-mode {mode}")
-        print(shell_export(config.var("BIN"), DEFAULT_BIN_RELATIVE))
+            lines.append("")
+        lines.append(f"# {config.label} suite")
+        lines.append(f"# run with --{config.label}-mode {mode}")
+        lines.append(shell_export(config.var("BIN"), DEFAULT_BIN_RELATIVE))
         for suffix in REQUIRED_SUFFIXES:
-            print(shell_export(config.var(suffix), ""))
-        print(shell_export(config.var("TRACE_LIMIT"), config.default_trace_limit))
+            lines.append(shell_export(config.var(suffix), ""))
+        lines.append(shell_export(config.var("TRACE_LIMIT"), config.default_trace_limit))
+    return "\n".join(lines) + "\n"
+
+
+def print_env_template(args: argparse.Namespace, root: Path) -> None:
+    sys.stdout.write(env_template_text(args, root))
+
+
+def display_path_for_shell(path: Path, root: Path) -> str:
+    resolved = path.resolve(strict=False)
+    try:
+        return str(resolved.relative_to(root.resolve(strict=False)))
+    except ValueError:
+        return str(resolved)
+
+
+def mode_args(args: argparse.Namespace) -> list[str]:
+    result = ["--small-mode", args.small_mode, "--large-mode", args.large_mode]
+    if args.skip_verify_proof:
+        result.append("--skip-verify-proof")
+    return result
+
+
+def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
+    parts = [
+        "scripts/run-eth-proof-timing-batch.py",
+        "--suite",
+        args.suite,
+        *mode_args(args),
+        "--runs",
+        str(args.runs),
+    ]
+    if args.max_runs is not None:
+        parts.extend(["--max-runs", str(args.max_runs)])
+    parts.extend(
+        [
+            "--small-timeout",
+            str(args.small_timeout),
+            "--large-timeout",
+            str(args.large_timeout),
+            "--max-relative-spread",
+            str(args.max_relative_spread),
+            "--work-dir",
+            display_path_for_shell(resolve_workspace_path(args.work_dir, root), root),
+            "--path",
+            display_path_for_shell(resolve_workspace_path(args.path, root), root),
+        ]
+    )
+    if args.enforce_targets:
+        parts.append("--enforce-targets")
+    if args.small_max_avg_s is not None:
+        parts.extend(["--small-max-avg-s", str(args.small_max_avg_s)])
+    if args.large_max_avg_s is not None:
+        parts.extend(["--large-max-avg-s", str(args.large_max_avg_s)])
+    if args.commit is not None:
+        parts.extend(["--commit", args.commit])
+    return parts
+
+
+def shell_join(parts: list[str | Path]) -> str:
+    control_operators = {"&&", "||", ";", "|"}
+    return " ".join(
+        str(part) if str(part) in control_operators else shell_arg(part)
+        for part in parts
+    )
+
+
+def write_env_template(args: argparse.Namespace, root: Path) -> None:
+    path = require_workspace_temp_path(
+        resolve_workspace_path(args.write_env_template, root),
+        root,
+        "--write-env-template",
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(env_template_text(args, root), encoding="utf-8")
+
+    env_path = display_path_for_shell(path, root)
+    base_parts = next_command_parts(args, root)
+    check_command = shell_join([".", env_path, "&&", *base_parts, "--check-env"])
+    run_command = shell_join(
+        [".", env_path, "&&", *base_parts, "--summary", "real proof timing"]
+    )
+    print(f"env_template={env_path}")
+    print(f"next_check_command={check_command}")
+    print(f"next_run_command={run_command}")
 
 
 def command_for_env(config: ProofEnv, mode: str, verify_proof: bool) -> str:
@@ -399,6 +485,9 @@ def run(args: argparse.Namespace) -> int:
         raise SystemExit("--max-runs must be at least --runs")
     if args.print_env_template:
         print_env_template(args, root)
+    if args.write_env_template is not None:
+        write_env_template(args, root)
+    if args.print_env_template or args.write_env_template is not None:
         return 0
     if args.check_env:
         check_env(args, root)
@@ -516,6 +605,7 @@ def self_test() -> None:
         enforce_targets=False,
         large_max_avg_s=None,
         print_env_template=False,
+        write_env_template=None,
         skip_verify_proof=False,
     )
     try:
@@ -554,6 +644,7 @@ def main() -> None:
     parser.add_argument("--check-env", action="store_true")
     parser.add_argument("--enforce-targets", action="store_true")
     parser.add_argument("--print-env-template", action="store_true")
+    parser.add_argument("--write-env-template")
     parser.add_argument("--skip-verify-proof", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()

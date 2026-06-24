@@ -506,6 +506,123 @@ fn eth_proof_timing_batch_prints_env_template_without_config() {
 }
 
 #[test]
+fn eth_proof_timing_batch_writes_env_template_under_temp() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-write-env-template");
+    let template_path = fixture.dir.join("real-proof.env");
+    let template_rel = template_path
+        .strip_prefix(workspace_root())
+        .expect("template path should be under workspace")
+        .display()
+        .to_string();
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("both")
+        .arg("--small-mode")
+        .arg("pipeline")
+        .arg("--large-mode")
+        .arg("work-units")
+        .arg("--runs")
+        .arg("3")
+        .arg("--max-runs")
+        .arg("5")
+        .arg("--work-dir")
+        .arg(fixture.dir.join("runs"))
+        .arg("--path")
+        .arg(fixture.dir.join("improve-log.csv"))
+        .arg("--write-env-template")
+        .arg(&template_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env template should write");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let template = std::fs::read_to_string(&template_path).expect("env template should be written");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "env template should write under temp: stderr={stderr}"
+    );
+    assert!(
+        stderr.is_empty(),
+        "env template write should not warn: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains(&format!("env_template={template_rel}\n")),
+        "env template path should be reported: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("next_check_command=. {template_rel} && scripts/run-eth-proof-timing-batch.py --suite both")),
+        "env template should report a check command: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("next_run_command=. {template_rel} && scripts/run-eth-proof-timing-batch.py --suite both")),
+        "env template should report a run command: {stdout}"
+    );
+    assert!(
+        stdout.contains("--max-runs 5") && stdout.contains("--summary 'real proof timing'"),
+        "run command should preserve the retry cap and summary placeholder: {stdout}"
+    );
+    assert!(
+        template.contains("# run with --small-mode pipeline")
+            && template.contains("# run with --large-mode work-units"),
+        "template should record selected modes: {template}"
+    );
+    assert!(
+        template.contains("export LZVM_REAL_SMALL_PARITY_SETUP=")
+            && template.contains("export LZVM_REAL_LARGE_PARITY_SETUP="),
+        "template should include both selected suites: {template}"
+    );
+    assert!(
+        !template.contains("TMP_DIR"),
+        "template should not expose a shared TMPDIR: {template}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_rejects_env_template_outside_temp() {
+    let template_path = workspace_root().join(format!(
+        "eth-proof-timing-batch-env-template-{}.env",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&template_path);
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--write-env-template")
+        .arg(&template_path);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env template should reject outside temp");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let template_created = template_path.exists();
+    let _ = std::fs::remove_file(&template_path);
+
+    assert!(!success, "env template should reject paths outside temp");
+    assert!(
+        stdout.is_empty(),
+        "failed env template write should not report commands: {stdout}"
+    );
+    assert!(
+        stderr.contains("--write-env-template must be under"),
+        "env template should explain the path constraint: stderr={stderr}"
+    );
+    assert!(
+        !template_created,
+        "rejected env template path should not be created"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_env_rejects_missing_config() {
     let mut command = Command::new(script_path());
     command.arg("--suite").arg("small").arg("--check-env");
