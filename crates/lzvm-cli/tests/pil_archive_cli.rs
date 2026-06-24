@@ -23,10 +23,10 @@ fn write_file(path: &Path, contents: &str) {
 }
 
 fn target_temp_dir(name: &str) -> PathBuf {
-    std::env::current_dir()
-        .expect("current directory should be available")
-        .join("..")
-        .join("..")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
         .join("temp")
         .join(format!(
             "lzvm-cli-pil-archive-{}-{name}",
@@ -36,9 +36,32 @@ fn target_temp_dir(name: &str) -> PathBuf {
 
 fn relative_to_current_dir(path: &Path) -> PathBuf {
     let current_dir = std::env::current_dir().expect("current directory should be available");
-    path.strip_prefix(&current_dir)
-        .expect("path should be inside current directory")
-        .to_path_buf()
+    relative_path(path, &current_dir)
+}
+
+fn relative_path(path: &Path, base: &Path) -> PathBuf {
+    let path = path.canonicalize().expect("path should resolve");
+    let base = base.canonicalize().expect("base path should resolve");
+    if let Ok(relative) = path.strip_prefix(&base) {
+        return relative.to_path_buf();
+    }
+
+    let path_components = path.components().collect::<Vec<_>>();
+    let base_components = base.components().collect::<Vec<_>>();
+    let common_len = path_components
+        .iter()
+        .zip(&base_components)
+        .take_while(|(left, right)| left == right)
+        .count();
+
+    let mut relative = PathBuf::new();
+    for _ in common_len..base_components.len() {
+        relative.push("..");
+    }
+    for component in &path_components[common_len..] {
+        relative.push(component.as_os_str());
+    }
+    relative
 }
 
 #[test]

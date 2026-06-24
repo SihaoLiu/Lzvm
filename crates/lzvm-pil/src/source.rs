@@ -378,10 +378,10 @@ mod tests {
 
     fn case_dir_inside_working_dir(name: &str) -> PathBuf {
         let id = CASE_ID.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::current_dir()
-            .expect("current directory should be available")
-            .join("..")
-            .join("..")
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root should resolve")
             .join("temp")
             .join(format!(
                 "lzvm-pil-source-{}-{id}-{name}",
@@ -394,9 +394,32 @@ mod tests {
 
     fn relative_to_working_dir(path: &Path) -> PathBuf {
         let working_dir = std::env::current_dir().expect("current directory should be available");
-        path.strip_prefix(&working_dir)
-            .expect("path should be inside current directory")
-            .to_path_buf()
+        relative_path(path, &working_dir)
+    }
+
+    fn relative_path(path: &Path, base: &Path) -> PathBuf {
+        let path = path.canonicalize().expect("path should resolve");
+        let base = base.canonicalize().expect("base path should resolve");
+        if let Ok(relative) = path.strip_prefix(&base) {
+            return relative.to_path_buf();
+        }
+
+        let path_components = path.components().collect::<Vec<_>>();
+        let base_components = base.components().collect::<Vec<_>>();
+        let common_len = path_components
+            .iter()
+            .zip(&base_components)
+            .take_while(|(left, right)| left == right)
+            .count();
+
+        let mut relative = PathBuf::new();
+        for _ in common_len..base_components.len() {
+            relative.push("..");
+        }
+        for component in &path_components[common_len..] {
+            relative.push(component.as_os_str());
+        }
+        relative
     }
 
     #[test]
