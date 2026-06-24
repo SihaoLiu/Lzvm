@@ -13,6 +13,12 @@ from datetime import datetime
 from pathlib import Path
 
 TIMING_TOTAL_RE = re.compile(r"^timing_total_ms=(\d+)\s*$", re.MULTILINE)
+TIMING_SUMMARY_REQUIRED_KEYS = [
+    "timing_total_ms",
+    "timing_guest_stage_tree_commit_root_count",
+    "timing_guest_stage_tree_commit_root_materialization_groups",
+    "timing_guest_stage_tree_commit_root_materialization_max_group_size",
+]
 
 
 def workspace_root() -> Path:
@@ -82,6 +88,14 @@ def write_status(path: Path, lines: list[str]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def line_key_present(text: str, key: str) -> bool:
+    return any(line.startswith(f"{key}=") for line in text.splitlines())
+
+
+def missing_timing_summary_keys(text: str) -> list[str]:
+    return [key for key in TIMING_SUMMARY_REQUIRED_KEYS if not line_key_present(text, key)]
+
+
 def timing_total_ms_from_text(text: str, path: Path) -> int:
     matches = [int(match.group(1)) for match in TIMING_TOTAL_RE.finditer(text)]
     if len(matches) != 1:
@@ -139,6 +153,38 @@ def require_texts_in_log(text: str, path: Path, required_texts: list[str]) -> No
             raise SystemExit(f"{path}: missing required text {required!r}")
 
 
+def write_timing_summary(
+    summary_script: Path,
+    input_log: Path,
+    output_path: Path,
+    text: str,
+    root: Path,
+) -> str:
+    missing_keys = missing_timing_summary_keys(text)
+    if missing_keys:
+        return "skipped_missing_keys=" + ";".join(missing_keys)
+    stderr_path = prefixed_path(output_path.parent, output_path.name, ".stderr")
+    result = subprocess.run(
+        [sys.executable, str(summary_script), str(input_log)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    output_path.write_text(result.stdout, encoding="utf-8")
+    stderr_path.write_text(result.stderr, encoding="utf-8")
+    if result.returncode != 0:
+        raise SystemExit(
+            "timing summary failed with status "
+            f"{result.returncode}; stderr: {stderr_path}"
+        )
+    return str(output_path)
+
+
+def prefixed_path(output_dir: Path, name: str, suffix: str) -> Path:
+    return Path(str(output_dir / name) + suffix)
+
+
 def stop_process_group(process: subprocess.Popen[str]) -> None:
     if process.poll() is not None:
         return
@@ -186,6 +232,8 @@ def run_once(
     timeout: float,
     batch_dir: Path,
     cwd: Path,
+    root: Path,
+    timing_summary_script: Path,
     required_texts: list[str],
 ) -> Path:
     stem = f"{label}-{run_index:03d}"
@@ -204,6 +252,7 @@ def run_once(
     stdout_path = batch_dir / f"{stem}.stdout"
     stderr_path = batch_dir / f"{stem}.stderr"
     combined_path = batch_dir / f"{stem}.log"
+    timing_summary_path = batch_dir / f"{stem}.proof-timing-summary.csv"
     status_path = batch_dir / f"{stem}.status"
     env = os.environ.copy()
     env["LZVM_TIMING_BATCH_LABEL"] = label
@@ -264,11 +313,19 @@ def run_once(
     try:
         require_texts_in_log(combined_text, combined_path, required_texts)
         total_ms = timing_total_ms_from_text(combined_text, combined_path)
+        timing_summary = write_timing_summary(
+            timing_summary_script,
+            combined_path,
+            timing_summary_path,
+            combined_text,
+            root,
+        )
     except SystemExit as error:
         status_lines.append(f"validation_error={error}")
         write_status(status_path, status_lines)
         raise
     status_lines.append(f"timing_total_ms={total_ms}")
+    status_lines.append(f"proof_timing_summary={timing_summary}")
     write_status(status_path, status_lines)
     return combined_path
 
@@ -281,6 +338,8 @@ def run_group(
     timeout: float,
     batch_dir: Path,
     cwd: Path,
+    root: Path,
+    timing_summary_script: Path,
     required_texts: list[str],
     max_relative_spread: float,
 ) -> list[Path]:
@@ -298,6 +357,8 @@ def run_group(
                 timeout,
                 batch_dir,
                 cwd,
+                root,
+                timing_summary_script,
                 required_texts,
             )
         )
@@ -384,6 +445,8 @@ def write_batch_json(
     large_logs: list[Path] | None,
     small_statuses: list[Path] | None,
     large_statuses: list[Path] | None,
+    small_timing_summaries: list[Path] | None,
+    large_timing_summaries: list[Path] | None,
     appended: bool,
 ) -> None:
     payload = {
@@ -404,6 +467,7 @@ def write_batch_json(
         "summary": args.summary,
         "small_command": args.small_command,
         "large_command": args.large_command,
+        "timing_summary_script": args.timing_summary_script,
         "require_text": list(args.require_text or []),
         "small_require_text": list(args.small_require_text or []),
         "large_require_text": list(args.large_require_text or []),
@@ -412,6 +476,8 @@ def write_batch_json(
         "large_logs": path_texts(large_logs or []),
         "small_statuses": path_texts(small_statuses or []),
         "large_statuses": path_texts(large_statuses or []),
+        "small_timing_summaries": path_texts(small_timing_summaries or []),
+        "large_timing_summaries": path_texts(large_timing_summaries or []),
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -445,6 +511,9 @@ def run_batch(args: argparse.Namespace) -> Path:
     append_script = resolve_workspace_path(args.append_script, root)
     if not append_script.exists():
         raise SystemExit(f"{append_script}: append script does not exist")
+    timing_summary_script = resolve_workspace_path(args.timing_summary_script, root)
+    if not timing_summary_script.exists():
+        raise SystemExit(f"{timing_summary_script}: timing summary script does not exist")
     work_dir = require_workspace_temp_path(
         resolve_workspace_path(args.work_dir, root),
         root,
@@ -471,6 +540,16 @@ def run_batch(args: argparse.Namespace) -> Path:
     ) -> None:
         small_statuses = discovered_run_paths(batch_dir, "small", ".status")
         large_statuses = discovered_run_paths(batch_dir, "large", ".status")
+        small_timing_summaries = discovered_run_paths(
+            batch_dir,
+            "small",
+            ".proof-timing-summary.csv",
+        )
+        large_timing_summaries = discovered_run_paths(
+            batch_dir,
+            "large",
+            ".proof-timing-summary.csv",
+        )
         write_batch_json(
             batch_json_path,
             args,
@@ -482,6 +561,8 @@ def run_batch(args: argparse.Namespace) -> Path:
             large_logs,
             small_statuses,
             large_statuses,
+            small_timing_summaries,
+            large_timing_summaries,
             appended,
         )
 
@@ -498,6 +579,8 @@ def run_batch(args: argparse.Namespace) -> Path:
             args.small_timeout,
             batch_dir,
             cwd,
+            root,
+            timing_summary_script,
             required_texts_for_label(args, "small"),
             args.max_relative_spread,
         )
@@ -509,6 +592,8 @@ def run_batch(args: argparse.Namespace) -> Path:
             args.large_timeout,
             batch_dir,
             cwd,
+            root,
+            timing_summary_script,
             required_texts_for_label(args, "large"),
             args.max_relative_spread,
         )
@@ -543,8 +628,16 @@ def run_batch(args: argparse.Namespace) -> Path:
     print(f"batch_json={batch_json_path}")
     if small_logs:
         print(f"small_runs={len(small_logs)}")
+        print(
+            "small_timing_summaries="
+            f"{len(discovered_run_paths(batch_dir, 'small', '.proof-timing-summary.csv'))}"
+        )
     if large_logs:
         print(f"large_runs={len(large_logs)}")
+        print(
+            "large_timing_summaries="
+            f"{len(discovered_run_paths(batch_dir, 'large', '.proof-timing-summary.csv'))}"
+        )
     print(f"improve_log={improve_log_path}")
     return batch_dir
 
@@ -553,13 +646,25 @@ def self_test() -> None:
     root = workspace_root()
     work_dir = root / "temp" / f"proof-timing-batch-self-test-{os.getpid()}"
     shutil.rmtree(work_dir, ignore_errors=True)
-    command = shlex.join([sys.executable, "-c", "print('timing_total_ms=1000')"])
+    command = shlex.join(
+        [
+            sys.executable,
+            "-c",
+            (
+                "print('timing_total_ms=1000'); "
+                "print('timing_guest_stage_tree_commit_root_count=1'); "
+                "print('timing_guest_stage_tree_commit_root_materialization_groups=1'); "
+                "print('timing_guest_stage_tree_commit_root_materialization_max_group_size=1')"
+            ),
+        ]
+    )
     args = argparse.Namespace(
         append_script="scripts/append-improve-log.py",
         commit="selftest",
         cwd=".",
         large_command=command,
         large_timeout=10.0,
+        timing_summary_script="scripts/prove-timing-root-summary.py",
         max_relative_spread=0.10,
         max_runs=None,
         small_max_avg_s=None,
@@ -576,11 +681,16 @@ def self_test() -> None:
         large_require_text=[],
     )
     try:
-        run_batch(args)
+        batch_dir = run_batch(args)
         contents = (work_dir / "improve-log.csv").read_text(encoding="utf-8")
         expected = '"avg=1.000 samples=1.000;1.000;1.000 used=3/3"'
         if expected not in contents:
             raise SystemExit("self-test improve log did not contain the expected average")
+        summary = batch_dir / "small-001.proof-timing-summary.csv"
+        if not summary.exists():
+            raise SystemExit("self-test timing summary missing")
+        if not summary.read_text(encoding="utf-8").startswith("profile,"):
+            raise SystemExit("self-test timing summary is not CSV")
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -604,6 +714,7 @@ def main() -> None:
     parser.add_argument("--small-max-avg-s", type=positive_timeout, default=None)
     parser.add_argument("--large-max-avg-s", type=positive_timeout, default=None)
     parser.add_argument("--append-script", default="scripts/append-improve-log.py")
+    parser.add_argument("--timing-summary-script", default="scripts/prove-timing-root-summary.py")
     parser.add_argument("--require-text", action="append", default=[])
     parser.add_argument("--small-require-text", action="append", default=[])
     parser.add_argument("--large-require-text", action="append", default=[])

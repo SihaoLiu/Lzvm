@@ -147,8 +147,16 @@ fn eth_proof_timing_batch_self_test_runs() {
         "self-test should run the small command: {stdout}"
     );
     assert!(
+        stdout.contains("small_timing_summaries=3"),
+        "self-test should summarize small timing logs: {stdout}"
+    );
+    assert!(
         stdout.contains("large_runs=3"),
         "self-test should run the large command: {stdout}"
+    );
+    assert!(
+        stdout.contains("large_timing_summaries=3"),
+        "self-test should summarize large timing logs: {stdout}"
     );
 }
 

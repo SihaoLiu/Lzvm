@@ -691,6 +691,9 @@ def self_test() -> None:
                 "print('status=ok')",
                 "print('verify_outputs=true')",
                 "print(f'timing_total_ms={base + run}')",
+                "print('timing_guest_stage_tree_commit_root_count=1')",
+                "print('timing_guest_stage_tree_commit_root_materialization_groups=1')",
+                "print('timing_guest_stage_tree_commit_root_materialization_max_group_size=1')",
             ]
         )
         + "\n",

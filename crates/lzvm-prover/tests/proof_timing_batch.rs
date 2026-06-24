@@ -94,9 +94,19 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         .arg("3")
         .arg("--require-proof-output")
         .arg("--small-command")
-        .arg("printf 'status=ok\nverify_outputs=true\ntiming_total_ms=100{run}\n'")
+        .arg(concat!(
+            "printf 'status=ok\\nverify_outputs=true\\ntiming_total_ms=100{run}\\n",
+            "timing_guest_stage_tree_commit_root_count=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_groups=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n'"
+        ))
         .arg("--large-command")
-        .arg("printf 'status=ok\nverify_outputs=true\ntiming_total_ms=200{run}\n'")
+        .arg(concat!(
+            "printf 'status=ok\\nverify_outputs=true\\ntiming_total_ms=200{run}\\n",
+            "timing_guest_stage_tree_commit_root_count=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_groups=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n'"
+        ))
         .arg("--summary")
         .arg("batch timing")
         .output()
@@ -113,8 +123,16 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         "batch output should report small run count: {stdout}"
     );
     assert!(
+        stdout.contains("small_timing_summaries=3"),
+        "batch output should report small timing summary count: {stdout}"
+    );
+    assert!(
         stdout.contains("large_runs=3"),
         "batch output should report large run count: {stdout}"
+    );
+    assert!(
+        stdout.contains("large_timing_summaries=3"),
+        "batch output should report large timing summary count: {stdout}"
     );
     let batch_dir = stdout
         .lines()
@@ -142,6 +160,27 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
     assert!(
         batch_json.contains("\"small_statuses\": [") && batch_json.contains("small-001.status"),
         "batch json should record per-run status paths: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("\"small_timing_summaries\": [")
+            && batch_json.contains("small-001.proof-timing-summary.csv")
+            && batch_json.contains("\"large_timing_summaries\": [")
+            && batch_json.contains("large-001.proof-timing-summary.csv"),
+        "batch json should record per-run timing summary paths: {batch_json}"
+    );
+    let small_status =
+        std::fs::read_to_string(batch_dir.join("small-001.status")).expect("status should read");
+    assert!(
+        small_status.contains("proof_timing_summary=")
+            && small_status.contains("small-001.proof-timing-summary.csv"),
+        "status should record the per-run timing summary: {small_status}"
+    );
+    let small_summary =
+        std::fs::read_to_string(batch_dir.join("small-001.proof-timing-summary.csv"))
+            .expect("small timing summary should read");
+    assert!(
+        small_summary.starts_with("profile,") && small_summary.contains(",0,1001,"),
+        "per-run timing summary should contain CSV timing data: {small_summary}"
     );
 
     let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
