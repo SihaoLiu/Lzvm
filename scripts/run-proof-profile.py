@@ -13,6 +13,12 @@ from pathlib import Path
 
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 TIMING_TOTAL_RE = re.compile(r"^timing_total_ms=", re.MULTILINE)
+TIMING_SUMMARY_REQUIRED_KEYS = [
+    "timing_total_ms",
+    "timing_guest_stage_tree_commit_root_count",
+    "timing_guest_stage_tree_commit_root_materialization_groups",
+    "timing_guest_stage_tree_commit_root_materialization_max_group_size",
+]
 
 
 def workspace_root() -> Path:
@@ -74,6 +80,14 @@ def resolve_tool(explicit: str | None, env_name: str, default: str) -> str:
 
 def prefixed_path(output_dir: Path, name: str, suffix: str) -> Path:
     return Path(str(output_dir / name) + suffix)
+
+
+def line_key_present(text: str, key: str) -> bool:
+    return any(line.startswith(f"{key}=") for line in text.splitlines())
+
+
+def missing_timing_summary_keys(text: str) -> list[str]:
+    return [key for key in TIMING_SUMMARY_REQUIRED_KEYS if not line_key_present(text, key)]
 
 
 def common_outputs(output_dir: Path, name: str) -> dict[str, Path]:
@@ -409,6 +423,11 @@ def summarize_proof_timing(root: Path, outputs: dict[str, Path]) -> bool:
         remove_stale_summary(outputs["proof_timing_summary"])
         print("proof_timing_summary=skipped_no_timing_total")
         return False
+    missing_keys = missing_timing_summary_keys(log_text)
+    if missing_keys:
+        remove_stale_summary(outputs["proof_timing_summary"])
+        print("proof_timing_summary=skipped_missing_keys=" + ";".join(missing_keys))
+        return False
     run_summary(
         ["scripts/prove-timing-root-summary.py", str(profile_log)],
         root,
@@ -603,6 +622,33 @@ def self_test() -> None:
             raise SystemExit("fake ncu did not receive managed TMPDIR")
         if f"TMPDIR={work_dir / 'profiles' / 'self-test-ncu.target.tmp'}" not in ncu_argv:
             raise SystemExit("fake ncu did not wrap target TMPDIR")
+
+        missing_base = dict(base)
+        missing_base["command"] = [
+            sys.executable,
+            "-c",
+            "print('timing_total_ms=1000')",
+        ]
+        missing_base["name"] = "self-test-ncu-missing-keys"
+        missing_base["summarize"] = True
+        stale_summary = (
+            work_dir
+            / "profiles"
+            / "self-test-ncu-missing-keys.proof-timing-summary.csv"
+        )
+        stale_stderr = prefixed_path(stale_summary.parent, stale_summary.name, ".stderr")
+        stale_summary.write_text("stale\n", encoding="utf-8")
+        stale_stderr.write_text("stale\n", encoding="utf-8")
+        missing_args = argparse.Namespace(
+            **missing_base,
+            tool="ncu",
+            nsys_command=None,
+            ncu_command=str(fake_ncu),
+        )
+        if run_profile(missing_args) != 0:
+            raise SystemExit("fake ncu missing-key profile failed")
+        if stale_summary.exists() or stale_stderr.exists():
+            raise SystemExit("fake ncu missing-key proof timing summary was not removed")
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 

@@ -35,6 +35,14 @@ fn proof_profile_self_test_runs() {
             && stdout.contains("proof_timing_summary=temp/proof-profile-self-test-"),
         "self-test should report profiler output paths: {stdout}"
     );
+    assert!(
+        stdout.contains("proof_timing_summary=skipped_missing_keys=")
+            && stdout.contains("timing_guest_stage_tree_commit_root_count")
+            && stdout.contains("timing_guest_stage_tree_commit_root_materialization_groups")
+            && stdout
+                .contains("timing_guest_stage_tree_commit_root_materialization_max_group_size"),
+        "self-test should skip incomplete proof timing summaries without failing: {stdout}"
+    );
 }
 
 #[test]
