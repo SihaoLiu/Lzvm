@@ -78,7 +78,9 @@ use lzvm_artifacts::public_values::{
     encode_public_values, parse_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_artifacts::rlp::parse_rlp;
-use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
+use lzvm_artifacts::sectioned::{
+    encode_sectioned_file, parse_sectioned_file, SectionedFile, SectionedSection,
+};
 use lzvm_artifacts::setup_info::{encode_unit_setup_info, UnitSetupInfo};
 use lzvm_artifacts::setup_info::{CommitmentColumn, FriStep, StageValue};
 use lzvm_artifacts::setup_manifest::{
@@ -703,6 +705,55 @@ fn write_preflight_artifacts(
         encode_public_values(public_values).expect("public values should encode"),
     );
     (proof_path, public_values_path)
+}
+
+fn duplicate_segment_proof_artifact_bytes(public_values: &PublicValues) -> Vec<u8> {
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"prf0",
+        version: 1,
+        sections: vec![
+            SectionedSection {
+                id: 1,
+                data: proof_artifact_metadata(public_values),
+            },
+            SectionedSection {
+                id: 100,
+                data: vec![1],
+            },
+            SectionedSection {
+                id: 100,
+                data: vec![2],
+            },
+        ],
+    })
+    .expect("duplicate proof artifact container should encode")
+}
+
+fn invalid_kind_proof_artifact_bytes(public_values: &PublicValues) -> Vec<u8> {
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"bad!",
+        version: 1,
+        sections: vec![
+            SectionedSection {
+                id: 1,
+                data: proof_artifact_metadata(public_values),
+            },
+            SectionedSection {
+                id: 100,
+                data: vec![1],
+            },
+        ],
+    })
+    .expect("invalid-kind proof artifact container should encode")
+}
+
+fn proof_artifact_metadata(public_values: &PublicValues) -> Vec<u8> {
+    let mut metadata = Vec::with_capacity(64);
+    metadata.extend_from_slice(&public_values.setup_hash);
+    metadata.extend_from_slice(
+        &public_values_digest(public_values).expect("public values digest should compute"),
+    );
+    metadata
 }
 
 fn sample_pcs_fri_opening_segment(
@@ -1488,6 +1539,13 @@ fn sample_witness_library() -> Vec<u8> {
 
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-cli-{}-{name}", std::process::id()))
+}
+
+fn repo_temp_dir(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("temp")
+        .join(format!("lzvm-cli-{}-{name}", std::process::id()))
 }
 
 fn run_lzvm_segmented_guest_pc_proof_with_cross_segment_roots_env(
@@ -19022,6 +19080,96 @@ fn reports_usage_for_missing_verify_proof_inputs() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "usage: lzvm verify proof [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>\n"
+    );
+}
+
+#[test]
+fn verify_proof_rejects_duplicate_proof_segment_ids() {
+    let dir = repo_temp_dir("verify-proof-duplicate-segment");
+    let _ = fs::remove_dir_all(&dir);
+    let setup_dir = dir.join("setup");
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let public_values = sample_public_values([42; 32]);
+    write_setup_directory_with_public_values(&setup_dir, &public_values);
+
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public-values.bin");
+    write_bytes(
+        &proof_path,
+        duplicate_segment_proof_artifact_bytes(&public_values),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "proof",
+            setup_dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify proof failed: duplicate proof segment id: 100\n"
+    );
+}
+
+#[test]
+fn verify_proof_rejects_invalid_proof_container_kind() {
+    let dir = repo_temp_dir("verify-proof-invalid-proof-kind");
+    let _ = fs::remove_dir_all(&dir);
+    let setup_dir = dir.join("setup");
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let public_values = sample_public_values([43; 32]);
+    write_setup_directory_with_public_values(&setup_dir, &public_values);
+
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public-values.bin");
+    write_bytes(
+        &proof_path,
+        invalid_kind_proof_artifact_bytes(&public_values),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "proof",
+            setup_dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify proof failed: proof artifact container error: invalid sectioned file kind: expected prf0, found bad!\n"
     );
 }
 

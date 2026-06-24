@@ -18,7 +18,7 @@ use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
 use lzvm_artifacts::pcs_material::PcsSetupMaterial;
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
 use lzvm_artifacts::pcs_query_segment::parse_pcs_query_plan_segment;
-use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
+use lzvm_artifacts::proof::{ProofArtifact, ProofArtifactError, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, PublicValueEntry, PublicValues};
 use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::trace_constraint_segment::{
@@ -661,6 +661,59 @@ fn validates_setup_preflight_hashes() {
 }
 
 #[test]
+fn rejects_setup_preflight_hashes_with_malformed_proof_artifacts() {
+    let catalog = sample_catalog();
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_public_values(setup_hash);
+
+    let mut missing_segments = sample_proof(&public_values);
+    missing_segments.segments.clear();
+    assert_eq!(
+        validate_setup_preflight_hashes(&catalog, &missing_segments, &public_values)
+            .expect_err("setup preflight hashes should reject proofs without segments"),
+        SetupPreflightError::Proof(ProofPreflightError::ProofArtifact(
+            ProofArtifactError::MissingSegments
+        ))
+    );
+
+    let mut reserved_segment_id = sample_proof(&public_values);
+    reserved_segment_id.segments[0].id = 1;
+    assert_eq!(
+        validate_setup_preflight_hashes(&catalog, &reserved_segment_id, &public_values)
+            .expect_err("setup preflight hashes should reject reserved segment ids"),
+        SetupPreflightError::Proof(ProofPreflightError::ProofArtifact(
+            ProofArtifactError::ReservedSegmentId { id: 1 }
+        ))
+    );
+
+    let mut duplicate_segment_id = sample_proof(&public_values);
+    duplicate_segment_id
+        .segments
+        .push(duplicate_segment_id.segments[0].clone());
+    assert_eq!(
+        validate_setup_preflight_hashes(&catalog, &duplicate_segment_id, &public_values)
+            .expect_err("setup preflight hashes should reject duplicate segment ids"),
+        SetupPreflightError::Proof(ProofPreflightError::ProofArtifact(
+            ProofArtifactError::DuplicateSegmentId {
+                id: SAMPLE_AUX_SEGMENT_ID
+            }
+        ))
+    );
+
+    let mut empty_segment = sample_proof(&public_values);
+    empty_segment.segments[0].data.clear();
+    assert_eq!(
+        validate_setup_preflight_hashes(&catalog, &empty_segment, &public_values)
+            .expect_err("setup preflight hashes should reject empty proof segments"),
+        SetupPreflightError::Proof(ProofPreflightError::ProofArtifact(
+            ProofArtifactError::EmptySegment {
+                id: SAMPLE_AUX_SEGMENT_ID
+            }
+        ))
+    );
+}
+
+#[test]
 fn rejects_setup_preflight_catalog_hash_mismatches() {
     let catalog = sample_catalog();
     let mut wrong_setup_hash =
@@ -746,6 +799,33 @@ fn rejects_seeded_required_pcs_fri_unit_without_opening_segment() {
                 LoadPcsFriOpeningSegmentError::MissingSegment
             )
         )
+    );
+}
+
+#[test]
+fn rejects_seeded_proof_with_duplicate_trace_constraint_segments() {
+    let catalog = sample_catalog_with_fri_unit();
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_empty_public_values(setup_hash);
+    let mut proof = seeded_required_fri_proof_without_opening(&catalog, &public_values);
+    let duplicate = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == TRACE_CONSTRAINT_SEGMENT_ID)
+        .expect("sample proof should contain trace constraint evidence")
+        .clone();
+    proof.segments.push(duplicate);
+
+    let error = validate_setup_preflight(&catalog, &proof, &public_values)
+        .expect_err("setup preflight should reject ambiguous trace constraint evidence");
+
+    assert_eq!(
+        error,
+        SetupPreflightError::Proof(ProofPreflightError::ProofArtifact(
+            ProofArtifactError::DuplicateSegmentId {
+                id: TRACE_CONSTRAINT_SEGMENT_ID
+            }
+        ))
     );
 }
 
