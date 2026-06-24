@@ -6,10 +6,15 @@ use lzvm_artifacts::hint_program::HintOperand;
 use lzvm_cli::run_cli;
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-cli-setup-generate-source-global-static-while-{}-{name}",
-        std::process::id()
-    ))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-cli-setup-generate-source-global-static-while-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn write_file(path: &Path, contents: impl AsRef<[u8]>) {
