@@ -176,7 +176,12 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
         .arg("--max-runs")
         .arg("4")
         .arg("--small-command")
-        .arg("if [ \"{run}\" = \"1\" ]; then printf 'timing_total_ms=9000\n'; else printf 'timing_total_ms=100{run}\n'; fi")
+        .arg(concat!(
+            "printf 'runs={runs}\\nmax_runs={max_runs}\\nenv_runs=%s\\nenv_max_runs=%s\\n' ",
+            "\"$LZVM_TIMING_BATCH_RUNS\" \"$LZVM_TIMING_BATCH_MAX_RUNS\"; ",
+            "if [ \"{run}\" = \"1\" ]; then printf 'timing_total_ms=9000\\n'; ",
+            "else printf 'timing_total_ms=100{run}\\n'; fi"
+        ))
         .arg("--summary")
         .arg("rerun stable")
         .output()
@@ -200,6 +205,15 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
     assert!(
         batch_dir.join("small-004.status").exists(),
         "extra run status should be recorded"
+    );
+    let extra_log =
+        std::fs::read_to_string(batch_dir.join("small-004.log")).expect("extra log should read");
+    assert!(
+        extra_log.contains("runs=3\n")
+            && extra_log.contains("max_runs=4\n")
+            && extra_log.contains("env_runs=3\n")
+            && extra_log.contains("env_max_runs=4\n"),
+        "command template and environment should keep target runs distinct from max runs: {extra_log}"
     );
     let batch_json =
         std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");

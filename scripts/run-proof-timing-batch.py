@@ -156,6 +156,7 @@ def expand_command_template(
     label: str,
     run_index: int,
     run_count: int,
+    max_run_count: int,
     batch_dir: Path,
     tmp_dir: Path,
     cwd: Path,
@@ -165,6 +166,7 @@ def expand_command_template(
         "{run}": str(run_index),
         "{run_padded}": f"{run_index:03d}",
         "{runs}": str(run_count),
+        "{max_runs}": str(max_run_count),
         "{batch_dir}": shlex.quote(str(batch_dir)),
         "{tmp_dir}": shlex.quote(str(tmp_dir)),
         "{cwd}": shlex.quote(str(cwd)),
@@ -180,6 +182,7 @@ def run_once(
     command_template: str,
     run_index: int,
     run_count: int,
+    max_run_count: int,
     timeout: float,
     batch_dir: Path,
     cwd: Path,
@@ -193,6 +196,7 @@ def run_once(
         label,
         run_index,
         run_count,
+        max_run_count,
         batch_dir,
         tmp_dir,
         cwd,
@@ -205,6 +209,7 @@ def run_once(
     env["LZVM_TIMING_BATCH_LABEL"] = label
     env["LZVM_TIMING_BATCH_RUN"] = str(run_index)
     env["LZVM_TIMING_BATCH_RUNS"] = str(run_count)
+    env["LZVM_TIMING_BATCH_MAX_RUNS"] = str(max_run_count)
     env["TMPDIR"] = str(tmp_dir)
 
     start = time.monotonic()
@@ -288,6 +293,7 @@ def run_group(
                 label,
                 command,
                 run_index,
+                run_count,
                 max_run_count,
                 timeout,
                 batch_dir,
