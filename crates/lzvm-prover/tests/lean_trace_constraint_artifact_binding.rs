@@ -20,6 +20,7 @@ fn lean_trace_constraint_artifact_binding_exports_core_contract_projection() {
     assert!(
         lean_source.contains("RuntimeTraceConstraintArtifactBindingValidation")
             && lean_source.contains("RuntimeTraceConstraintPreflightBindingEvidence")
+            && lean_source.contains("RuntimeTraceConstraintSemanticEvidenceComplete")
             && lean_source.contains("RuntimeTraceConstraintEvidence")
             && lean_source.contains("RuntimeTraceConstraintSoundnessObligations")
             && lean_source.contains("RuntimeTraceConstraintCheckedAcceptance")
@@ -31,6 +32,7 @@ fn lean_trace_constraint_artifact_binding_exports_core_contract_projection() {
         &lean_source,
         &[
             "runtime_trace_constraint_artifact_binding_checked_acceptance_pcs_fri_backend_contract",
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_semantic_evidence_complete",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_sound",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_soundness_obligations",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract",
@@ -44,8 +46,14 @@ fn lean_trace_constraint_artifact_binding_exports_core_contract_projection() {
             "system.pcsOpeningsValid publicInput proof",
             "system.friQueriesValid publicInput proof",
             "RuntimeTraceConstraintArtifactBindingEvidence",
+            "RuntimeTraceConstraintSemanticEvidenceComplete",
             "RuntimeTraceConstraintBackendContract",
         ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_artifact_binding_checked_acceptance_semantic_evidence_complete",
+        &["runtime_trace_constraint_checked_acceptance_semantic_evidence_complete"],
     );
     lean_binding::assert_theorem_prefix_omits(
         &lean_source,

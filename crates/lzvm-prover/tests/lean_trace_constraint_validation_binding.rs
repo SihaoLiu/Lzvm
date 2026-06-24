@@ -20,6 +20,7 @@ fn lean_trace_constraint_validation_binding_exports_core_contract_projection() {
     assert!(
         lean_source.contains("RuntimeTraceConstraintValidation")
             && lean_source.contains("RuntimeTraceConstraintSoundnessObligations")
+            && lean_source.contains("RuntimeTraceConstraintSemanticEvidenceComplete")
             && lean_source.contains("RuntimeTraceConstraintBackendContract")
             && lean_source.contains("requiresExternalSource ->")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
@@ -30,6 +31,8 @@ fn lean_trace_constraint_validation_binding_exports_core_contract_projection() {
         &lean_source,
         &[
             "runtime_trace_constraint_checked_acceptance_sound",
+            "runtime_trace_constraint_evidence_implies_semantic_evidence_complete",
+            "runtime_trace_constraint_checked_acceptance_semantic_evidence_complete",
             "runtime_trace_constraint_evidence_implies_backend_contract",
             "runtime_trace_constraint_checked_acceptance_backend_contract",
             "runtime_trace_constraint_checked_acceptance_verifier_core_contract",
@@ -49,8 +52,14 @@ fn lean_trace_constraint_validation_binding_exports_core_contract_projection() {
             "system.pcsOpeningsValid publicInput proof",
             "system.friQueriesValid publicInput proof",
             "RuntimeTraceConstraintArtifactBindingEvidence",
+            "RuntimeTraceConstraintSemanticEvidenceComplete",
             "RuntimeTraceConstraintBackendContract",
         ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_semantic_evidence_complete",
+        &["runtime_trace_constraint_checked_acceptance_trace_witness_evidence"],
     );
     lean_binding::assert_theorem_prefix_omits(
         &lean_source,

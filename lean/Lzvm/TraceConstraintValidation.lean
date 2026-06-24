@@ -140,6 +140,23 @@ def RuntimeTraceConstraintBackendContract
         trace
       /\ system.constraintsSatisfied constraints trace
 
+def RuntimeTraceConstraintSemanticEvidenceComplete
+    (_system : VerifierModel)
+    (validation : RuntimeTraceConstraintValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  exists witness trace constraints,
+    validation.traceExtracted artifact publicInput proof trace
+      /\ validation.constraintsEvaluated artifact publicInput proof constraints trace
+      /\ validation.witnessExtractedFromTrace artifact publicInput proof witness trace
+      /\ validation.constraintBackendConformant
+        artifact
+        publicInput
+        proof
+        constraints
+        trace
+
 def RuntimeTraceConstraintSoundnessObligations
     (system : VerifierModel)
     (validation : RuntimeTraceConstraintValidation system)
@@ -319,6 +336,46 @@ theorem runtime_trace_constraint_checked_acceptance_trace_witness_evidence
                         (And.intro traceConsistent
                           (And.intro constraintsSatisfied witnessMatchesTrace))))))))
 
+theorem runtime_trace_constraint_checked_acceptance_semantic_evidence_complete
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintSemanticEvidenceComplete
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have traceWitnessEvidence :=
+    runtime_trace_constraint_checked_acceptance_trace_witness_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  cases traceWitnessEvidence with
+  | intro witness tail =>
+    cases tail with
+    | intro trace tail =>
+      cases tail with
+      | intro constraints evidence =>
+        exact
+          Exists.intro witness
+            (Exists.intro trace
+              (Exists.intro constraints
+                (And.intro evidence.left
+                  (And.intro evidence.right.left
+                    (And.intro
+                      evidence.right.right.left
+                      evidence.right.right.right.left)))))
+
 theorem runtime_trace_constraint_checked_acceptance_backend_contract
     {system : VerifierModel}
     (validation : RuntimeTraceConstraintValidation system) :
@@ -376,6 +433,12 @@ theorem runtime_trace_constraint_checked_acceptance_pcs_fri_backend_contract
             artifact
             publicInput
             proof
+          /\ RuntimeTraceConstraintSemanticEvidenceComplete
+            system
+            validation
+            artifact
+            publicInput
+            proof
           /\ RuntimeTraceConstraintBackendContract
             system
             validation
@@ -403,6 +466,13 @@ theorem runtime_trace_constraint_checked_acceptance_pcs_fri_backend_contract
       publicInput
       proof
       accepted
+  have semanticEvidenceComplete :=
+    runtime_trace_constraint_checked_acceptance_semantic_evidence_complete
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   have backendContract :=
     runtime_trace_constraint_checked_acceptance_backend_contract
       validation
@@ -413,7 +483,8 @@ theorem runtime_trace_constraint_checked_acceptance_pcs_fri_backend_contract
   exact
     And.intro openingChecks.left
       (And.intro openingChecks.right
-        (And.intro artifactBindingEvidence backendContract))
+        (And.intro artifactBindingEvidence
+          (And.intro semanticEvidenceComplete backendContract)))
 
 theorem runtime_trace_constraint_checked_acceptance_evidence
     {system : VerifierModel}
@@ -731,6 +802,40 @@ theorem runtime_trace_constraint_evidence_implies_trace_witness_evidence
             /\ system.witnessMatchesTrace witness trace := by
   intro artifact publicInput proof requiresExternalSource evidence
   exact evidence.right.right
+
+theorem runtime_trace_constraint_evidence_implies_semantic_evidence_complete
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeTraceConstraintSemanticEvidenceComplete
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  cases evidence.right.right with
+  | intro witness tail =>
+    cases tail with
+    | intro trace tail =>
+      cases tail with
+      | intro constraints traceEvidence =>
+        exact
+          Exists.intro witness
+            (Exists.intro trace
+              (Exists.intro constraints
+                (And.intro traceEvidence.left
+                  (And.intro traceEvidence.right.left
+                    (And.intro
+                      traceEvidence.right.right.left
+                      traceEvidence.right.right.right.left)))))
 
 theorem runtime_trace_constraint_evidence_implies_backend_contract
     {system : VerifierModel}
