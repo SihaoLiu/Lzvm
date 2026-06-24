@@ -652,6 +652,15 @@ mod tests {
     };
     use lzvm_artifacts::eth_public_input::parse_eth_public_block_prefix;
 
+    fn temp_dir(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root should resolve")
+            .join("temp")
+            .join(format!("lzvm-prove-inputs-{name}-{}", std::process::id()))
+    }
+
     #[test]
     fn rejects_trace_bytes_with_aggregate_during_parse() {
         let result = parse_inputs_args(&[
@@ -835,10 +844,7 @@ mod tests {
 
     #[test]
     fn writes_eth_public_input_option_as_block_input_artifact() {
-        let dir = std::env::temp_dir().join(format!(
-            "lzvm-prove-inputs-eth-public-{}",
-            std::process::id()
-        ));
+        let dir = temp_dir("eth-public");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("temp dir should be created");
         let input_path = dir.join("public.bin");
@@ -876,10 +882,7 @@ mod tests {
 
     #[test]
     fn rejects_eth_public_input_with_trailing_bytes() {
-        let dir = std::env::temp_dir().join(format!(
-            "lzvm-prove-inputs-eth-public-trailing-{}",
-            std::process::id()
-        ));
+        let dir = temp_dir("eth-public-trailing");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("temp dir should be created");
         let input_path = dir.join("public.bin");
@@ -915,10 +918,7 @@ mod tests {
 
     #[test]
     fn writes_eth_public_input_with_allowed_trailing_bytes_as_block_input_artifact() {
-        let dir = std::env::temp_dir().join(format!(
-            "lzvm-prove-inputs-eth-public-allow-trailing-{}",
-            std::process::id()
-        ));
+        let dir = temp_dir("eth-public-allow-trailing");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("temp dir should be created");
         let input_path = dir.join("public.bin");
@@ -977,10 +977,7 @@ mod tests {
 
     #[test]
     fn validates_eth_block_input_artifacts() {
-        let dir = std::env::temp_dir().join(format!(
-            "lzvm-prove-inputs-eth-block-{}",
-            std::process::id()
-        ));
+        let dir = temp_dir("eth-block");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("temp dir should be created");
         let input_path = dir.join("block.input");

@@ -5,6 +5,16 @@ use super::timing::{
 use super::*;
 use lzvm_artifacts::eth_block_input::parse_eth_block_input;
 use lzvm_artifacts::eth_public_input::parse_eth_public_block_prefix;
+use std::path::{Path, PathBuf};
+
+fn temp_dir(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!("lzvm-prove-witness-{name}-{}", std::process::id()))
+}
 
 #[test]
 fn rejects_trace_bytes_with_all_units_during_parse() {
@@ -858,10 +868,7 @@ fn rejects_missing_eth_public_input_value_during_parse() {
 
 #[test]
 fn writes_eth_public_input_option_as_block_input_artifact() {
-    let dir = std::env::temp_dir().join(format!(
-        "lzvm-prove-witness-eth-public-{}",
-        std::process::id()
-    ));
+    let dir = temp_dir("eth-public");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("temp dir should be created");
     let input_path = dir.join("public.bin");
@@ -899,10 +906,7 @@ fn writes_eth_public_input_option_as_block_input_artifact() {
 
 #[test]
 fn rejects_eth_public_input_with_trailing_bytes() {
-    let dir = std::env::temp_dir().join(format!(
-        "lzvm-prove-witness-eth-public-trailing-{}",
-        std::process::id()
-    ));
+    let dir = temp_dir("eth-public-trailing");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("temp dir should be created");
     let input_path = dir.join("public.bin");
@@ -938,10 +942,7 @@ fn rejects_eth_public_input_with_trailing_bytes() {
 
 #[test]
 fn writes_eth_public_input_with_allowed_trailing_bytes_as_block_input_artifact() {
-    let dir = std::env::temp_dir().join(format!(
-        "lzvm-prove-witness-eth-public-allow-trailing-{}",
-        std::process::id()
-    ));
+    let dir = temp_dir("eth-public-allow-trailing");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("temp dir should be created");
     let input_path = dir.join("public.bin");
