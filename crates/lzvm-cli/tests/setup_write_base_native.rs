@@ -32,10 +32,15 @@ fn sample_columns() -> FixedColumns {
 }
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-cli-write-base-native-{}-{name}",
-        std::process::id()
-    ))
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-cli-write-base-native-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn root_from_tree(tree: &[u8]) -> VerificationKeyRoot {
