@@ -173,6 +173,11 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         "runner command should require the external proof verify marker: {stdout}"
     );
     assert!(
+        stdout.contains("--require-text artifact_public_input_match=ok")
+            && stdout.contains("--require-text artifact_proof_match=ok"),
+        "runner command should require artifact binding markers: {stdout}"
+    );
+    assert!(
         stdout.contains("small_command=env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
         "small command should clear pipeline environment: {stdout}"
     );
@@ -338,7 +343,9 @@ fn eth_proof_timing_batch_skip_verify_omits_external_verify() {
     assert!(
         !stdout.contains("verify proof --eth-block-input")
             && !stdout.contains("verify_proof_status=ok")
-            && !stdout.contains("--require-text verify_proof_status=ok"),
+            && !stdout.contains("--require-text verify_proof_status=ok")
+            && !stdout.contains("artifact_public_input_match=ok")
+            && !stdout.contains("artifact_proof_match=ok"),
         "skip mode should omit external proof verification: {stdout}"
     );
 }
