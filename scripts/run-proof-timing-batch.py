@@ -216,6 +216,35 @@ def write_timing_summary(
     return str(output_path)
 
 
+def write_group_timing_summary(
+    summary_script: Path,
+    logs: list[Path],
+    output_path: Path,
+    root: Path,
+) -> Path | None:
+    if not logs:
+        return None
+    for path in logs:
+        if missing_timing_summary_keys(read_text(path)):
+            return None
+    stderr_path = prefixed_path(output_path.parent, output_path.name, ".stderr")
+    result = subprocess.run(
+        [sys.executable, str(summary_script), *[str(path) for path in logs]],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    output_path.write_text(result.stdout, encoding="utf-8")
+    stderr_path.write_text(result.stderr, encoding="utf-8")
+    if result.returncode != 0:
+        raise SystemExit(
+            "group timing summary failed with status "
+            f"{result.returncode}; stderr: {stderr_path}"
+        )
+    return output_path
+
+
 def prefixed_path(output_dir: Path, name: str, suffix: str) -> Path:
     return Path(str(output_dir / name) + suffix)
 
@@ -494,6 +523,8 @@ def write_batch_json(
     large_stable_logs: list[Path] | None,
     small_timing_summaries: list[Path] | None,
     large_timing_summaries: list[Path] | None,
+    small_stable_timing_summary: Path | None,
+    large_stable_timing_summary: Path | None,
     appended: bool,
 ) -> None:
     payload = {
@@ -527,6 +558,12 @@ def write_batch_json(
         "large_statuses": path_texts(large_statuses or []),
         "small_timing_summaries": path_texts(small_timing_summaries or []),
         "large_timing_summaries": path_texts(large_timing_summaries or []),
+        "small_stable_timing_summary": (
+            str(small_stable_timing_summary) if small_stable_timing_summary else None
+        ),
+        "large_stable_timing_summary": (
+            str(large_stable_timing_summary) if large_stable_timing_summary else None
+        ),
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -581,6 +618,10 @@ def run_batch(args: argparse.Namespace) -> Path:
     batch_dir = work_dir / batch_dir_name()
     batch_dir.mkdir(parents=True, exist_ok=False)
     batch_json_path = batch_dir / "batch.json"
+    stable_timing_summary_paths: dict[str, Path | None] = {
+        "small": None,
+        "large": None,
+    }
 
     def record_batch_json(
         small_logs: list[Path] | None = None,
@@ -622,6 +663,8 @@ def run_batch(args: argparse.Namespace) -> Path:
             large_stable_logs,
             small_timing_summaries,
             large_timing_summaries,
+            stable_timing_summary_paths["small"],
+            stable_timing_summary_paths["large"],
             appended,
         )
 
@@ -663,6 +706,18 @@ def run_batch(args: argparse.Namespace) -> Path:
             appended=False,
         )
         raise
+    stable_timing_summary_paths["small"] = write_group_timing_summary(
+        timing_summary_script,
+        safe_stable_timing_group(small_logs, args.max_relative_spread),
+        batch_dir / "small-stable.proof-timing-summary.csv",
+        root,
+    )
+    stable_timing_summary_paths["large"] = write_group_timing_summary(
+        timing_summary_script,
+        safe_stable_timing_group(large_logs, args.max_relative_spread),
+        batch_dir / "large-stable.proof-timing-summary.csv",
+        root,
+    )
     record_batch_json(small_logs, large_logs, appended=False)
     try:
         append_improve_log(
@@ -695,6 +750,8 @@ def run_batch(args: argparse.Namespace) -> Path:
             "small_timing_summaries="
             f"{len(discovered_run_paths(batch_dir, 'small', '.proof-timing-summary.csv'))}"
         )
+        if stable_timing_summary_paths["small"] is not None:
+            print(f"small_stable_timing_summary={stable_timing_summary_paths['small']}")
     if large_logs:
         print(f"large_runs={len(large_logs)}")
         print(
@@ -705,6 +762,8 @@ def run_batch(args: argparse.Namespace) -> Path:
             "large_timing_summaries="
             f"{len(discovered_run_paths(batch_dir, 'large', '.proof-timing-summary.csv'))}"
         )
+        if stable_timing_summary_paths["large"] is not None:
+            print(f"large_stable_timing_summary={stable_timing_summary_paths['large']}")
     print(f"improve_log={improve_log_path}")
     return batch_dir
 
@@ -758,6 +817,12 @@ def self_test() -> None:
             raise SystemExit("self-test timing summary missing")
         if not summary.read_text(encoding="utf-8").startswith("profile,"):
             raise SystemExit("self-test timing summary is not CSV")
+        stable_summary = batch_dir / "small-stable.proof-timing-summary.csv"
+        if not stable_summary.exists():
+            raise SystemExit("self-test stable timing summary missing")
+        stable_summary_text = stable_summary.read_text(encoding="utf-8")
+        if "aggregate,total_count,valid_total_count" not in stable_summary_text:
+            raise SystemExit("self-test stable timing summary missing aggregate row")
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 

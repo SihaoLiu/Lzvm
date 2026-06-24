@@ -131,6 +131,10 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         "batch output should report small timing summary count: {stdout}"
     );
     assert!(
+        stdout.contains("small_stable_timing_summary="),
+        "batch output should report the stable small timing summary: {stdout}"
+    );
+    assert!(
         stdout.contains("large_runs=3"),
         "batch output should report large run count: {stdout}"
     );
@@ -141,6 +145,10 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
     assert!(
         stdout.contains("large_timing_summaries=3"),
         "batch output should report large timing summary count: {stdout}"
+    );
+    assert!(
+        stdout.contains("large_stable_timing_summary="),
+        "batch output should report the stable large timing summary: {stdout}"
     );
     let batch_dir = stdout
         .lines()
@@ -183,6 +191,13 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
             && batch_json.contains("large-001.proof-timing-summary.csv"),
         "batch json should record per-run timing summary paths: {batch_json}"
     );
+    assert!(
+        batch_json.contains("\"small_stable_timing_summary\":")
+            && batch_json.contains("small-stable.proof-timing-summary.csv")
+            && batch_json.contains("\"large_stable_timing_summary\":")
+            && batch_json.contains("large-stable.proof-timing-summary.csv"),
+        "batch json should record stable timing summary paths: {batch_json}"
+    );
     let small_status =
         std::fs::read_to_string(batch_dir.join("small-001.status")).expect("status should read");
     assert!(
@@ -196,6 +211,17 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
     assert!(
         small_summary.starts_with("profile,") && small_summary.contains(",0,1001,"),
         "per-run timing summary should contain CSV timing data: {small_summary}"
+    );
+    let small_stable_summary =
+        std::fs::read_to_string(batch_dir.join("small-stable.proof-timing-summary.csv"))
+            .expect("stable small timing summary should read");
+    assert!(
+        small_stable_summary.contains("aggregate,total_count,valid_total_count")
+            && small_stable_summary.contains(
+                "dominant_segment_commit_memory_pressure_hint"
+            )
+            && small_stable_summary.contains("aggregate,3,3,1001"),
+        "stable timing summary should contain aggregate timing and memory columns: {small_stable_summary}"
     );
 
     let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
@@ -234,7 +260,10 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
             "printf 'runs={runs}\\nmax_runs={max_runs}\\nenv_runs=%s\\nenv_max_runs=%s\\n' ",
             "\"$LZVM_TIMING_BATCH_RUNS\" \"$LZVM_TIMING_BATCH_MAX_RUNS\"; ",
             "if [ \"{run}\" = \"1\" ]; then printf 'timing_total_ms=9000\\n'; ",
-            "else printf 'timing_total_ms=100{run}\\n'; fi"
+            "else printf 'timing_total_ms=100{run}\\n'; fi; ",
+            "printf 'timing_guest_stage_tree_commit_root_count=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_groups=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n'"
         ))
         .arg("--summary")
         .arg("rerun stable")
@@ -290,6 +319,14 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
             && stable_logs.contains("small-003.log")
             && stable_logs.contains("small-004.log"),
         "batch json should identify the stable timing subset: {batch_json}"
+    );
+    let stable_summary =
+        std::fs::read_to_string(batch_dir.join("small-stable.proof-timing-summary.csv"))
+            .expect("stable timing summary should read");
+    assert!(
+        stable_summary.contains("aggregate,3,3,1002,1003.000,1003.000,1004")
+            && !stable_summary.contains("9000"),
+        "stable timing summary should exclude the outlier run: {stable_summary}"
     );
     let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
     assert!(
