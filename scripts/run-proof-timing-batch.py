@@ -113,6 +113,7 @@ def expand_command_template(
     run_index: int,
     run_count: int,
     batch_dir: Path,
+    tmp_dir: Path,
     cwd: Path,
 ) -> str:
     replacements = {
@@ -121,6 +122,7 @@ def expand_command_template(
         "{run_padded}": f"{run_index:03d}",
         "{runs}": str(run_count),
         "{batch_dir}": shlex.quote(str(batch_dir)),
+        "{tmp_dir}": shlex.quote(str(tmp_dir)),
         "{cwd}": shlex.quote(str(cwd)),
     }
     expanded = command
@@ -139,21 +141,22 @@ def run_once(
     cwd: Path,
     required_texts: list[str],
 ) -> Path:
+    stem = f"{label}-{run_index:03d}"
+    tmp_dir = batch_dir / f"{stem}.tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
     command = expand_command_template(
         command_template,
         label,
         run_index,
         run_count,
         batch_dir,
+        tmp_dir,
         cwd,
     )
-    stem = f"{label}-{run_index:03d}"
     stdout_path = batch_dir / f"{stem}.stdout"
     stderr_path = batch_dir / f"{stem}.stderr"
     combined_path = batch_dir / f"{stem}.log"
     status_path = batch_dir / f"{stem}.status"
-    tmp_dir = batch_dir / f"{stem}.tmp"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["LZVM_TIMING_BATCH_LABEL"] = label
     env["LZVM_TIMING_BATCH_RUN"] = str(run_index)

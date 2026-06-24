@@ -111,10 +111,12 @@ fn proof_timing_batch_sets_run_tmpdir_under_batch_dir() {
         .arg("3")
         .arg("--small-command")
         .arg(concat!(
+            "printf marker > {tmp_dir}/marker && ",
             "python3 -c \"import os; ",
             "tmp=os.environ.get('TMPDIR',''); ",
             "print('tmpdir=' + tmp); ",
             "print('tmpdir_ok=' + str(os.path.isdir(tmp)).lower()); ",
+            "print('marker_ok=' + str(os.path.exists(os.path.join(tmp, 'marker'))).lower()); ",
             "print('timing_total_ms=1000')\""
         ))
         .arg("--summary")
@@ -143,6 +145,14 @@ fn proof_timing_batch_sets_run_tmpdir_under_batch_dir() {
     assert!(
         log.contains("tmpdir_ok=true"),
         "managed TMPDIR should exist before the command runs: {log}"
+    );
+    assert!(
+        log.contains("marker_ok=true"),
+        "command template should expose the managed TMPDIR: {log}"
+    );
+    assert!(
+        expected_tmp.join("marker").exists(),
+        "template-created marker should stay inside the run TMPDIR"
     );
     let status = std::fs::read_to_string(batch_dir.join("small-001.status"))
         .expect("status file should read");
