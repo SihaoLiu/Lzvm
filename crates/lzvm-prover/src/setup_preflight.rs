@@ -33,7 +33,7 @@ use lzvm_artifacts::setup_manifest::{
 use lzvm_artifacts::trace_constraint_segment::{
     parse_trace_constraint_segment, TraceConstraintSegmentError, TRACE_CONSTRAINT_SEGMENT_ID,
 };
-use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
+use lzvm_artifacts::unit_values_segment::UNIT_VALUES_SEGMENT_ID;
 use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
 use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, witness_commitment_segment_identity,
@@ -79,7 +79,10 @@ use crate::proof_values::{
     ProvePcsProofValuesSegmentError,
 };
 use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
-use crate::unit_values::{load_unit_values_for_identity_from_segments, LoadUnitValuesSegmentError};
+use crate::unit_values::{
+    load_unit_values_for_identity_from_parsed_segment, load_unit_values_segment_from_segments,
+    validate_unit_values_units_match_query_units_from_segment, LoadUnitValuesSegmentError,
+};
 use crate::witness_commitment::{
     load_witness_commitment_segment_refs, LoadWitnessCommitmentSegmentsError,
 };
@@ -743,47 +746,20 @@ fn validate_optional_unit_value_segments(
     schedule: &crate::ProveSchedule,
     proof: &ProofArtifact,
 ) -> Result<(), SetupPreflightError> {
-    if !proof
-        .segments
-        .iter()
-        .any(|segment| segment.id == UNIT_VALUES_SEGMENT_ID)
-    {
+    let Some(unit_values) = load_unit_values_segment_from_segments(&proof.segments)
+        .map_err(SetupPreflightError::UnitValues)?
+    else {
         return Ok(());
-    }
+    };
 
     let query_plan = load_pcs_query_plan_from_segments(&proof.segments)
         .map_err(SetupPreflightError::UnitValueQueryPlan)?;
-    let mut matching_segments = proof
-        .segments
-        .iter()
-        .filter(|segment| segment.id == UNIT_VALUES_SEGMENT_ID);
-    let segment = matching_segments
-        .next()
-        .ok_or(SetupPreflightError::UnitValues(
-            LoadUnitValuesSegmentError::MissingSegment,
-        ))?;
-    if matching_segments.next().is_some() {
-        return Err(SetupPreflightError::UnitValues(
-            LoadUnitValuesSegmentError::DuplicateSegment,
-        ));
-    }
-    let unit_values = parse_unit_values_segment(&segment.data)
-        .map_err(LoadUnitValuesSegmentError::Segment)
-        .map_err(SetupPreflightError::UnitValues)?;
-    for unit_value in unit_values.units {
-        if !query_plan.units.iter().any(|query_unit| {
-            query_unit.unit_index == unit_value.unit_index
-                && query_unit.trace_instance_index == unit_value.trace_instance_index
-        }) {
-            let unit_index = usize::try_from(unit_value.unit_index).map_err(|_| {
-                SetupPreflightError::UnitValues(LoadUnitValuesSegmentError::UnitIndexOverflow {
-                    unit_index: usize::MAX,
-                })
-            })?;
-            return Err(SetupPreflightError::UnitValues(
-                LoadUnitValuesSegmentError::UnexpectedUnit { unit_index },
-            ));
-        }
+    validate_unit_values_units_match_query_units_from_segment(
+        &query_plan.units,
+        Some(&unit_values),
+    )
+    .map_err(SetupPreflightError::UnitValues)?;
+    for unit_value in &unit_values.units {
         let unit_index = usize::try_from(unit_value.unit_index).map_err(|_| {
             SetupPreflightError::UnitValues(LoadUnitValuesSegmentError::UnitIndexOverflow {
                 unit_index: usize::MAX,
@@ -795,11 +771,11 @@ fn validate_optional_unit_value_segments(
             .ok_or(SetupPreflightError::UnitValues(
                 LoadUnitValuesSegmentError::MissingUnit { unit_index },
             ))?;
-        load_unit_values_for_identity_from_segments(
+        load_unit_values_for_identity_from_parsed_segment(
             unit_index,
             unit_value.trace_instance_index,
             &unit.unit_value_map,
-            &proof.segments,
+            Some(&unit_values),
         )
         .map(|_| ())
         .map_err(SetupPreflightError::UnitValues)?;

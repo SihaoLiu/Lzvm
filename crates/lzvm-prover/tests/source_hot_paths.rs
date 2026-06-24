@@ -7959,8 +7959,14 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     );
     assert!(
         setup_preflight_source.contains("load_witness_commitment_segment_refs")
+            && setup_preflight_source.contains("load_unit_values_segment_from_segments")
+            && setup_preflight_source.contains("load_unit_values_for_identity_from_parsed_segment")
+            && setup_preflight_source
+                .contains("validate_unit_values_units_match_query_units_from_segment")
+            && !setup_preflight_source.contains("load_unit_values_for_identity_from_segments")
+            && !setup_preflight_source.contains("parse_unit_values_segment")
             && !setup_preflight_source.contains("load_witness_commitment_segments("),
-        "setup preflight should reuse borrowed witness commitment segments for trace binding checks"
+        "setup preflight should reuse parsed proof payloads for trace and unit value checks"
     );
 }
 
