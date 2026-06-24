@@ -9,10 +9,18 @@ use std::path::PathBuf;
 mod fixtures;
 
 fn temp_file_path(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-expression-info-{}-{name}",
-        std::process::id()
-    ))
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-expression-info-{}-{name}",
+            std::process::id()
+        ));
+    fs::create_dir_all(path.parent().expect("fixture path should have parent"))
+        .expect("fixture directory should be created");
+    path
 }
 
 fn expression_info_file(section: Vec<u8>) -> Vec<u8> {
