@@ -171,15 +171,29 @@ pub fn derive_pcs_final_query_challenge(
 pub fn aggregate_pcs_final_query_challenges(
     challenges: &[Ext3],
 ) -> Result<Ext3, PcsTranscriptError> {
-    if challenges.is_empty() {
+    aggregate_pcs_final_query_challenges_iter(challenges.iter().copied())
+}
+
+pub fn aggregate_pcs_final_query_challenges_iter<I>(
+    challenges: I,
+) -> Result<Ext3, PcsTranscriptError>
+where
+    I: IntoIterator<Item = Ext3>,
+    I::IntoIter: ExactSizeIterator,
+{
+    let challenges = challenges.into_iter();
+    let count = challenges.len();
+    if count == 0 {
         return Err(PcsTranscriptError::EmptyFinalPolynomial);
     }
-    if challenges.len() == 1 {
-        return Ok(challenges[0]);
+    if count == 1 {
+        return challenges
+            .last()
+            .ok_or(PcsTranscriptError::EmptyFinalPolynomial);
     }
 
     let mut transcript = PoseidonTranscript::new(2)?;
-    let count = u64::try_from(challenges.len()).map_err(|_| PcsTranscriptError::LengthOverflow)?;
+    let count = u64::try_from(count).map_err(|_| PcsTranscriptError::LengthOverflow)?;
     transcript.put(&[Felt::from_u64(count)]);
     for challenge in challenges {
         transcript.put(&[challenge.c0, challenge.c1, challenge.c2]);

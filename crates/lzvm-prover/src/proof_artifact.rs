@@ -35,7 +35,7 @@ use crate::contribution::{
     derive_global_challenge_from_proof_segments, derive_worker_contribution_entry,
 };
 use crate::group_values::build_group_values_segment;
-use crate::pcs_transcript::aggregate_pcs_final_query_challenges;
+use crate::pcs_transcript::aggregate_pcs_final_query_challenges_iter;
 use crate::proof_artifact_timing::WitnessProofArtifactTiming;
 use crate::proof_preflight::{contains_named_eth_block_public_values, public_values_as_fields};
 use crate::proof_values::{
@@ -580,13 +580,12 @@ fn build_witness_proof_artifact_for_unit_inner(
     let query_start = Instant::now();
     let query_segment = match &transcript_values {
         Some((_, values)) => {
-            let final_query_challenges = values
-                .iter()
-                .map(|value| value.commitments.final_query_challenge)
-                .collect::<Vec<_>>();
-            let final_query_challenge =
-                aggregate_pcs_final_query_challenges(&final_query_challenges)
-                    .map_err(|error| format!("build query challenge failed: {error}"))?;
+            let final_query_challenge = aggregate_pcs_final_query_challenges_iter(
+                values
+                    .iter()
+                    .map(|value| value.commitments.final_query_challenge),
+            )
+            .map_err(|error| format!("build query challenge failed: {error}"))?;
             let nonce_segment = build_pcs_query_nonce_segment_with_streams(
                 request.schedule,
                 final_query_challenge,
@@ -1494,12 +1493,12 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     if let Some(timing) = timing.as_deref_mut() {
         timing.add_fri_opening_build_timing(&fri_build_timing);
     }
-    let final_query_challenges = transcript_values
-        .iter()
-        .map(|value| value.commitments.final_query_challenge)
-        .collect::<Vec<_>>();
-    let final_query_challenge = aggregate_pcs_final_query_challenges(&final_query_challenges)
-        .map_err(|error| format!("build query challenge failed: {error}"))?;
+    let final_query_challenge = aggregate_pcs_final_query_challenges_iter(
+        transcript_values
+            .iter()
+            .map(|value| value.commitments.final_query_challenge),
+    )
+    .map_err(|error| format!("build query challenge failed: {error}"))?;
     let query_start = Instant::now();
     let nonce_segment = build_pcs_query_nonce_segment_with_streams(
         request.schedule,

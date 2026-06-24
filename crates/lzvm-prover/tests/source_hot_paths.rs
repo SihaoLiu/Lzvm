@@ -7561,6 +7561,11 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
         !body.contains("request.outputs.iter().collect::<Vec<_>>()"),
         "all-units transcript proof should reuse the pre-collected witness output refs"
     );
+    assert!(
+        body.contains("aggregate_pcs_final_query_challenges_iter")
+            && !body.contains("let final_query_challenges = transcript_values"),
+        "all-units transcript proof should aggregate final query challenges without a temporary vector"
+    );
 
     let fri_source_path = crate_root.join("src/prove_fri_opening.rs");
     let fri_source =
@@ -7594,6 +7599,11 @@ fn unit_transcript_proof_uses_trace_output_witness_openings() {
     assert!(
         body.contains("build_witness_opening_segment_batch_from_trace_outputs"),
         "unit transcript proof should build witness openings from trace outputs so CUDA source buffers can be reused"
+    );
+    assert!(
+        body.contains("aggregate_pcs_final_query_challenges_iter")
+            && !body.contains("let final_query_challenges = values"),
+        "unit transcript proof should aggregate final query challenges without a temporary vector"
     );
     assert!(
         body.contains("&[request.output]"),
