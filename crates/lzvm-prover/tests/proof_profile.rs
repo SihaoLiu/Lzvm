@@ -26,7 +26,9 @@ fn proof_profile_self_test_runs() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains("nsys_report=temp/proof-profile-self-test-")
-            && stdout.contains("ncu_csv=temp/proof-profile-self-test-"),
+            && stdout.contains("nsys_exported_sqlite=temp/proof-profile-self-test-")
+            && stdout.contains("ncu_csv=temp/proof-profile-self-test-")
+            && stdout.contains("ncu_kernel_summary=temp/proof-profile-self-test-"),
         "self-test should report profiler output paths: {stdout}"
     );
 }
@@ -77,7 +79,9 @@ fn proof_profile_nsys_dry_run_prints_summary_commands() {
     assert!(
         stdout.contains("nsys_export_command=nsys export --type sqlite")
             && stdout.contains("nsys_cuda_kernel_summary_command=")
+            && stdout.contains("nsys_cuda_kernel_summary_output=")
             && stdout.contains("nsys_cuda_sync_summary_command=")
+            && stdout.contains("nsys_cuda_sync_summary_output=")
             && stdout.contains("nsys_cuda_copy_summary_command="),
         "dry-run should print follow-up summary commands: {stdout}"
     );
@@ -136,6 +140,10 @@ fn proof_profile_ncu_dry_run_prints_csv_summary_command() {
         stdout.contains("ncu_cuda_kernel_summary_command=scripts/ncu-cuda-kernel-summary.py"),
         "dry-run should print the ncu summary command: {stdout}"
     );
+    assert!(
+        stdout.contains("ncu_cuda_kernel_summary_output=temp/proof-profile-ncu-dry-run-"),
+        "dry-run should print where the ncu summary will be written: {stdout}"
+    );
 }
 
 #[test]
@@ -177,6 +185,32 @@ fn proof_profile_rejects_output_dir_outside_temp() {
     assert!(
         !created,
         "rejected output dir should not be created outside temp"
+    );
+}
+
+#[test]
+fn proof_profile_rejects_nsys_summary_without_sqlite_export() {
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("nsys")
+        .arg("--summarize")
+        .arg("--skip-nsys-export")
+        .arg("--dry-run")
+        .arg("--")
+        .arg("python3")
+        .arg("-c")
+        .arg("print('timing_total_ms=1000')")
+        .output()
+        .expect("proof profile dry-run should reject incompatible nsys options");
+
+    assert!(
+        !output.status.success(),
+        "nsys summary should require a SQLite export"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("--summarize requires nsys SQLite export"),
+        "incompatible nsys options should explain the missing export: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 

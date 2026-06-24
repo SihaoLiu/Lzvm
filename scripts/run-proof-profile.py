@@ -79,6 +79,11 @@ def nsys_outputs(output_dir: Path, name: str) -> dict[str, Path]:
         "prefix": output_dir / name,
         "report": prefixed_path(output_dir, name, ".nsys-rep"),
         "sqlite": prefixed_path(output_dir, name, ".sqlite"),
+        "export_stdout": prefixed_path(output_dir, name, ".nsys-export.stdout"),
+        "export_stderr": prefixed_path(output_dir, name, ".nsys-export.stderr"),
+        "kernel_summary": prefixed_path(output_dir, name, ".nsys-kernel-summary.txt"),
+        "sync_summary": prefixed_path(output_dir, name, ".nsys-sync-summary.txt"),
+        "copy_summary": prefixed_path(output_dir, name, ".nsys-copy-summary.txt"),
     }
 
 
@@ -86,6 +91,7 @@ def ncu_outputs(output_dir: Path, name: str) -> dict[str, Path]:
     return {
         "report": prefixed_path(output_dir, name, ".ncu-rep"),
         "csv": prefixed_path(output_dir, name, ".ncu.csv"),
+        "kernel_summary": prefixed_path(output_dir, name, ".ncu-kernel-summary.txt"),
     }
 
 
@@ -108,6 +114,22 @@ def build_nsys_command(
         *command,
     ]
     return profile, outputs
+
+
+def build_nsys_export_command(
+    args: argparse.Namespace,
+    outputs: dict[str, Path],
+) -> list[str]:
+    return [
+        resolve_tool(args.nsys_command, "LZVM_NSYS_COMMAND", "nsys"),
+        "export",
+        "--type",
+        "sqlite",
+        "--force-overwrite=true",
+        "--output",
+        str(outputs["sqlite"]),
+        str(outputs["report"]),
+    ]
 
 
 def build_ncu_command(
@@ -140,6 +162,9 @@ def build_ncu_command(
 def print_nsys_outputs(outputs: dict[str, Path], root: Path) -> None:
     report = display_path_for_shell(outputs["report"], root)
     sqlite = display_path_for_shell(outputs["sqlite"], root)
+    kernel_summary = display_path_for_shell(outputs["kernel_summary"], root)
+    sync_summary = display_path_for_shell(outputs["sync_summary"], root)
+    copy_summary = display_path_for_shell(outputs["copy_summary"], root)
     print(f"nsys_report={report}")
     print(f"nsys_sqlite={sqlite}")
     print(
@@ -157,23 +182,76 @@ def print_nsys_outputs(outputs: dict[str, Path], root: Path) -> None:
             ]
         )
     )
-    for script in [
-        "scripts/nsys-cuda-kernel-summary.py",
-        "scripts/nsys-cuda-sync-summary.py",
-        "scripts/nsys-cuda-copy-summary.py",
+    for script, summary in [
+        ("scripts/nsys-cuda-kernel-summary.py", kernel_summary),
+        ("scripts/nsys-cuda-sync-summary.py", sync_summary),
+        ("scripts/nsys-cuda-copy-summary.py", copy_summary),
     ]:
         name = Path(script).stem.replace("-", "_")
         print(f"{name}_command=" + shell_join([script, sqlite]))
+        print(f"{name}_output={summary}")
 
 
 def print_ncu_outputs(outputs: dict[str, Path], root: Path) -> None:
     report = display_path_for_shell(outputs["report"], root)
     csv_path = display_path_for_shell(outputs["csv"], root)
+    kernel_summary = display_path_for_shell(outputs["kernel_summary"], root)
     print(f"ncu_report={report}")
     print(f"ncu_csv={csv_path}")
     print(
         "ncu_cuda_kernel_summary_command="
         + shell_join(["scripts/ncu-cuda-kernel-summary.py", csv_path])
+    )
+    print(f"ncu_cuda_kernel_summary_output={kernel_summary}")
+
+
+def run_captured(command: list[str], cwd: Path, stdout_path: Path, stderr_path: Path) -> int:
+    completed = subprocess.run(
+        command,
+        cwd=cwd,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    stdout_path.write_text(completed.stdout, encoding="utf-8")
+    stderr_path.write_text(completed.stderr, encoding="utf-8")
+    return completed.returncode
+
+
+def run_summary(command: list[str], cwd: Path, output_path: Path) -> None:
+    stderr_path = prefixed_path(output_path.parent, output_path.name, ".stderr")
+    code = run_captured(command, cwd, output_path, stderr_path)
+    if code != 0:
+        raise SystemExit(
+            f"summary command failed with status {code}: "
+            f"{shell_join(command)}; stderr: {stderr_path}"
+        )
+
+
+def export_nsys_sqlite(args: argparse.Namespace, root: Path, outputs: dict[str, Path]) -> None:
+    command = build_nsys_export_command(args, outputs)
+    code = run_captured(command, root, outputs["export_stdout"], outputs["export_stderr"])
+    if code != 0:
+        raise SystemExit(
+            "nsys export failed with status "
+            f"{code}: {outputs['export_stderr']}"
+        )
+
+
+def summarize_nsys(root: Path, outputs: dict[str, Path]) -> None:
+    for script, output in [
+        ("scripts/nsys-cuda-kernel-summary.py", outputs["kernel_summary"]),
+        ("scripts/nsys-cuda-sync-summary.py", outputs["sync_summary"]),
+        ("scripts/nsys-cuda-copy-summary.py", outputs["copy_summary"]),
+    ]:
+        run_summary([script, str(outputs["sqlite"])], root, output)
+
+
+def summarize_ncu(root: Path, outputs: dict[str, Path]) -> None:
+    run_summary(
+        ["scripts/ncu-cuda-kernel-summary.py", str(outputs["csv"])],
+        root,
+        outputs["kernel_summary"],
     )
 
 
@@ -182,6 +260,8 @@ def run_profile(args: argparse.Namespace) -> int:
     command = strip_separator(args.command)
     if not command:
         raise SystemExit("profiled command is required after --")
+    if args.tool == "nsys" and args.summarize and args.skip_nsys_export:
+        raise SystemExit("--summarize requires nsys SQLite export; remove --skip-nsys-export")
     output_dir = require_workspace_temp_path(
         resolve_workspace_path(args.output_dir, root),
         root,
@@ -205,7 +285,23 @@ def run_profile(args: argparse.Namespace) -> int:
 
     if args.dry_run:
         return 0
-    return subprocess.run(profile_command, cwd=cwd).returncode
+    profile_code = subprocess.run(profile_command, cwd=cwd).returncode
+    if profile_code != 0:
+        return profile_code
+    if args.tool == "nsys" and not args.skip_nsys_export:
+        export_nsys_sqlite(args, root, outputs)
+        print(f"nsys_exported_sqlite={display_path_for_shell(outputs['sqlite'], root)}")
+        if args.summarize:
+            summarize_nsys(root, outputs)
+            print(
+                f"nsys_kernel_summary={display_path_for_shell(outputs['kernel_summary'], root)}"
+            )
+            print(f"nsys_sync_summary={display_path_for_shell(outputs['sync_summary'], root)}")
+            print(f"nsys_copy_summary={display_path_for_shell(outputs['copy_summary'], root)}")
+    elif args.tool == "ncu" and args.summarize:
+        summarize_ncu(root, outputs)
+        print(f"ncu_kernel_summary={display_path_for_shell(outputs['kernel_summary'], root)}")
+    return 0
 
 
 def write_fake_profiler(path: Path, tool: str, log_path: Path) -> None:
@@ -223,6 +319,8 @@ def write_fake_profiler(path: Path, tool: str, log_path: Path) -> None:
                 "if 'profile' in args and '--output' in args:",
                 "    prefix = pathlib.Path(args[args.index('--output') + 1])",
                 "    pathlib.Path(str(prefix) + '.nsys-rep').write_text('report\\n', encoding='utf-8')",
+                "if 'export' in args and '--output' in args:",
+                "    pathlib.Path(args[args.index('--output') + 1]).write_text('sqlite\\n', encoding='utf-8')",
                 "if '--log-file' in args:",
                 "    pathlib.Path(args[args.index('--log-file') + 1]).write_text('Kernel Name,gpu__time_duration.sum\\nself,1\\n', encoding='utf-8')",
                 "if '--export' in args:",
@@ -263,6 +361,8 @@ def self_test() -> None:
             "ncu_set": "basic",
             "ncu_target_processes": "all",
             "nsys_trace": "cuda,nvtx,osrt",
+            "skip_nsys_export": False,
+            "summarize": False,
         }
         nsys_args = argparse.Namespace(
             **base,
@@ -274,9 +374,12 @@ def self_test() -> None:
             raise SystemExit("fake nsys profile failed")
         if not (work_dir / "profiles" / "self-test.nsys-rep").exists():
             raise SystemExit("fake nsys report missing")
+        if not (work_dir / "profiles" / "self-test.sqlite").exists():
+            raise SystemExit("fake nsys sqlite export missing")
 
         ncu_base = dict(base)
         ncu_base["name"] = "self-test-ncu"
+        ncu_base["summarize"] = True
         ncu_args = argparse.Namespace(
             **ncu_base,
             tool="ncu",
@@ -289,6 +392,8 @@ def self_test() -> None:
             raise SystemExit("fake ncu csv missing")
         if not (work_dir / "profiles" / "self-test-ncu.ncu-rep").exists():
             raise SystemExit("fake ncu report missing")
+        if not (work_dir / "profiles" / "self-test-ncu.ncu-kernel-summary.txt").exists():
+            raise SystemExit("fake ncu summary missing")
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -307,6 +412,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ncu-set", default="basic")
     parser.add_argument("--ncu-target-processes", default="all")
     parser.add_argument("--profile-arg", action="append", default=[])
+    parser.add_argument("--skip-nsys-export", action="store_true")
+    parser.add_argument("--summarize", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
