@@ -118,6 +118,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations",
             "runtime_pipeline_binding_checked_acceptance_verifier_sound_witness",
             "runtime_pipeline_binding_checked_acceptance_verifier_core_contract",
+            "runtime_pipeline_binding_checked_acceptance_core_trace_semantic_sound_contract",
             "runtime_pipeline_binding_checked_acceptance_execution_obligations",
             "runtime_pipeline_binding_checked_acceptance_runtime_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract",
@@ -380,6 +381,33 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_trace_semantic_evidence_complete",
         &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_core_trace_semantic_sound_contract",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "RuntimeTraceConstraintSemanticEvidenceComplete",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_core_trace_semantic_sound_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_verifier_sound_witness",
+            "runtime_pipeline_binding_checked_acceptance_core_obligations",
+            "runtime_pipeline_binding_checked_acceptance_trace_semantic_evidence_complete",
+            "runtime_pipeline_binding_checked_acceptance_pcs_and_fri",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_core_trace_semantic_sound_contract",
+        &["RuntimePipelineBindingEvidence"],
     );
     for theorem in [
         "runtime_pipeline_binding_evidence_implies_transcript_bound",

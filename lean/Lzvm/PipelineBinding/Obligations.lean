@@ -1386,6 +1386,67 @@ theorem runtime_pipeline_binding_checked_acceptance_verifier_core_contract
       accepted
   exact And.intro verifierAccepts coreObligations
 
+theorem runtime_pipeline_binding_checked_acceptance_core_trace_semantic_sound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ RuntimeTraceConstraintSemanticEvidenceComplete
+            system
+            validation.traceBindingValidation.traceConstraintValidation
+            artifact
+            publicInput
+            proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have verifierSound :=
+    runtime_pipeline_binding_checked_acceptance_verifier_sound_witness
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have coreObligations :=
+    runtime_pipeline_binding_checked_acceptance_core_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceSemantic :=
+    runtime_pipeline_binding_checked_acceptance_trace_semantic_evidence_complete
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have pcsAndFri :=
+    runtime_pipeline_binding_checked_acceptance_pcs_and_fri
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro verifierSound.left
+      (And.intro coreObligations
+        (And.intro traceSemantic
+          (And.intro pcsAndFri.left
+            (And.intro pcsAndFri.right verifierSound.right))))
+
 theorem runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
