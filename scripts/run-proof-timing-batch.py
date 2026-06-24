@@ -93,6 +93,46 @@ def timing_total_ms_from_text(text: str, path: Path) -> int:
     return matches[0]
 
 
+def timing_total_seconds_from_log(path: Path) -> float:
+    return timing_total_ms_from_text(read_text(path), path) / 1000.0
+
+
+def stable_sample_values(
+    samples: list[float],
+    max_relative_spread: float,
+    min_stable_count: int = 3,
+) -> list[float] | None:
+    if len(samples) < min_stable_count:
+        return None
+
+    ordered = sorted(samples)
+    best: list[float] | None = None
+    for start in range(len(ordered)):
+        for end in range(start + min_stable_count, len(ordered) + 1):
+            candidate = ordered[start:end]
+            median = candidate[len(candidate) // 2]
+            if median == 0.0:
+                continue
+            relative_spread = (candidate[-1] - candidate[0]) / median
+            if relative_spread <= max_relative_spread:
+                if best is None or len(candidate) > len(best):
+                    best = candidate
+                elif best is not None and len(candidate) == len(best):
+                    best_spread = (best[-1] - best[0]) / best[len(best) // 2]
+                    if relative_spread < best_spread:
+                        best = candidate
+    return best
+
+
+def has_stable_timing_group(
+    logs: list[Path],
+    max_relative_spread: float,
+    min_stable_count: int = 3,
+) -> bool:
+    samples = [timing_total_seconds_from_log(path) for path in logs]
+    return stable_sample_values(samples, max_relative_spread, min_stable_count) is not None
+
+
 def require_texts_in_log(text: str, path: Path, required_texts: list[str]) -> None:
     for required in required_texts:
         if required not in text:
@@ -232,27 +272,34 @@ def run_group(
     label: str,
     command: str | None,
     run_count: int,
+    max_run_count: int,
     timeout: float,
     batch_dir: Path,
     cwd: Path,
     required_texts: list[str],
+    max_relative_spread: float,
 ) -> list[Path]:
     if command is None:
         return []
     logs = []
-    for run_index in range(1, run_count + 1):
+    for run_index in range(1, max_run_count + 1):
         logs.append(
             run_once(
                 label,
                 command,
                 run_index,
-                run_count,
+                max_run_count,
                 timeout,
                 batch_dir,
                 cwd,
                 required_texts,
             )
         )
+        if len(logs) >= run_count:
+            if max_run_count == run_count:
+                break
+            if has_stable_timing_group(logs, max_relative_spread):
+                break
     return logs
 
 
@@ -341,6 +388,7 @@ def write_batch_json(
         "improve_log": str(improve_log_path),
         "appended": appended,
         "runs": args.runs,
+        "max_runs": args.max_runs,
         "small_timeout_s": args.small_timeout,
         "large_timeout_s": args.large_timeout,
         "max_relative_spread": args.max_relative_spread,
@@ -384,6 +432,9 @@ def run_batch(args: argparse.Namespace) -> Path:
         raise SystemExit("provide --small-command and/or --large-command")
     if args.summary is None:
         raise SystemExit("--summary is required")
+    max_runs = args.max_runs if args.max_runs is not None else args.runs
+    if max_runs < args.runs:
+        raise SystemExit("--max-runs must be at least --runs")
 
     append_script = resolve_workspace_path(args.append_script, root)
     if not append_script.exists():
@@ -437,19 +488,23 @@ def run_batch(args: argparse.Namespace) -> Path:
             "small",
             args.small_command,
             args.runs,
+            max_runs,
             args.small_timeout,
             batch_dir,
             cwd,
             required_texts_for_label(args, "small"),
+            args.max_relative_spread,
         )
         large_logs = run_group(
             "large",
             args.large_command,
             args.runs,
+            max_runs,
             args.large_timeout,
             batch_dir,
             cwd,
             required_texts_for_label(args, "large"),
+            args.max_relative_spread,
         )
     except SystemExit:
         record_batch_json(
@@ -500,6 +555,7 @@ def self_test() -> None:
         large_command=command,
         large_timeout=10.0,
         max_relative_spread=0.10,
+        max_runs=None,
         small_max_avg_s=None,
         large_max_avg_s=None,
         path=str(work_dir / "improve-log.csv"),
@@ -530,6 +586,7 @@ def main() -> None:
     parser.add_argument("--small-command")
     parser.add_argument("--large-command")
     parser.add_argument("--runs", type=positive_run_count, default=3)
+    parser.add_argument("--max-runs", type=positive_run_count, default=None)
     parser.add_argument("--small-timeout", type=positive_timeout, default=60.0)
     parser.add_argument("--large-timeout", type=positive_timeout, default=180.0)
     parser.add_argument("--work-dir", default="temp/proof-timing-batch")

@@ -157,6 +157,65 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
 }
 
 #[test]
+fn proof_timing_batch_reruns_until_stable_sample_group() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-rerun-stable");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--max-runs")
+        .arg("4")
+        .arg("--small-command")
+        .arg("if [ \"{run}\" = \"1\" ]; then printf 'timing_total_ms=9000\n'; else printf 'timing_total_ms=100{run}\n'; fi")
+        .arg("--summary")
+        .arg("rerun stable")
+        .output()
+        .expect("proof timing batch should run");
+    assert!(
+        output.status.success(),
+        "proof timing batch should rerun through an unstable sample: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("small_runs=4"),
+        "batch output should report the extra run: {stdout}"
+    );
+    let batch_dir = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("batch_dir="))
+        .map(std::path::PathBuf::from)
+        .expect("batch output should include a batch dir");
+    assert!(
+        batch_dir.join("small-004.status").exists(),
+        "extra run status should be recorded"
+    );
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    assert!(
+        batch_json.contains("\"runs\": 3") && batch_json.contains("\"max_runs\": 4"),
+        "batch json should record the stable-run target and cap: {batch_json}"
+    );
+    let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
+    assert!(
+        contents.contains("\"avg=1.003 samples=1.002;1.003;1.004 used=3/4\""),
+        "improve log should drop the outlier after the extra run: {contents}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn proof_timing_batch_rejects_average_above_max() {
     let script_path = batch_script_path();
     let dir = test_dir("proof-timing-batch-max-average");

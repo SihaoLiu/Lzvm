@@ -252,6 +252,8 @@ fn eth_proof_timing_batch_target_thresholds_follow_selected_suite() {
         .arg("small")
         .arg("--dry-run")
         .arg("--enforce-targets")
+        .arg("--max-runs")
+        .arg("5")
         .arg("--summary")
         .arg("target thresholds");
     fixture.apply_env(&mut command, SMALL_PREFIX);
@@ -271,6 +273,10 @@ fn eth_proof_timing_batch_target_thresholds_follow_selected_suite() {
     assert!(
         stdout.contains("--small-max-avg-s 10.0"),
         "small target threshold should be passed to the runner: {stdout}"
+    );
+    assert!(
+        stdout.contains("--max-runs 5"),
+        "rerun cap should be passed to the runner: {stdout}"
     );
     assert!(
         !stdout.contains("--large-max-avg-s"),

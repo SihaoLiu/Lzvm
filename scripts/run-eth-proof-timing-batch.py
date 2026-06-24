@@ -371,6 +371,8 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
         "--max-relative-spread",
         str(args.max_relative_spread),
     ]
+    if args.max_runs is not None:
+        command.extend(["--max-runs", str(args.max_runs)])
     if not args.skip_verify_proof:
         for required_text in VERIFY_REQUIRED_TEXTS:
             command.extend(["--require-text", required_text])
@@ -393,6 +395,8 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
 
 def run(args: argparse.Namespace) -> int:
     root = workspace_root()
+    if args.max_runs is not None and args.max_runs < args.runs:
+        raise SystemExit("--max-runs must be at least --runs")
     if args.print_env_template:
         print_env_template(args, root)
         return 0
@@ -498,6 +502,7 @@ def self_test() -> None:
         large_mode="combined",
         large_timeout=10.0,
         max_relative_spread=0.10,
+        max_runs=None,
         path=str(work_dir / "improve-log.csv"),
         runner="scripts/run-proof-timing-batch.py",
         runs=3,
@@ -534,6 +539,7 @@ def main() -> None:
     parser.add_argument("--small-mode", choices=sorted(MODE_ENV), default="combined")
     parser.add_argument("--large-mode", choices=sorted(MODE_ENV), default="combined")
     parser.add_argument("--runs", type=positive_run_count, default=3)
+    parser.add_argument("--max-runs", type=positive_run_count, default=None)
     parser.add_argument("--small-timeout", type=positive_timeout, default=60.0)
     parser.add_argument("--large-timeout", type=positive_timeout, default=180.0)
     parser.add_argument("--small-max-avg-s", type=positive_timeout, default=None)
