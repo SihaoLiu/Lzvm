@@ -2,7 +2,7 @@ use std::process::Command;
 
 #[cfg(unix)]
 #[test]
-fn nsys_and_ncu_summary_scripts_are_directly_executable() {
+fn profiling_helpers_are_directly_executable() {
     use std::os::unix::fs::PermissionsExt;
 
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -16,6 +16,7 @@ fn nsys_and_ncu_summary_scripts_are_directly_executable() {
         "scripts/nsys-cuda-copy-summary.py",
         "scripts/nsys-cuda-kernel-summary.py",
         "scripts/nsys-cuda-sync-summary.py",
+        "scripts/run-proof-timing-batch.py",
     ] {
         let script_path = workspace_root.join(script);
         let mode = std::fs::metadata(&script_path)
