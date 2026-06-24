@@ -688,6 +688,7 @@ CUDA_TRANSFER_HOT_COPY_COUNT_THRESHOLD = 8
 DIRECT_D2H_HOT_WAIT_PCT_THRESHOLD = 50.0
 SEGMENT_COMMIT_MEMORY_PRESSURE_PCT_THRESHOLD = 8.0
 SEGMENT_COMMIT_MEMORY_THIN_MARGIN_PCT_THRESHOLD = 15.0
+SEGMENT_COMMIT_MEMORY_DIAGNOSTIC_MS_THRESHOLD = 1000
 SOURCE_ROW_VALUE_SECONDARY_PCT_THRESHOLD = 5.0
 PROOF_TARGET_MS = 12_000
 PERF_SELF_PERCENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)%\s+(.*)$")
@@ -937,6 +938,7 @@ HEADER = (
     "segment_commit_cuda_allocator_effective_cached_bytes,"
     "segment_commit_cuda_memory_min_free_pct,"
     "segment_commit_memory_pressure_hint,"
+    "segment_commit_memory_diagnostic_hint,"
     "descriptor_retention_attempts,descriptor_retention_retained,"
     "descriptor_retention_rejected,descriptor_retention_retained_bytes,"
     "descriptor_retention_rejected_bytes,descriptor_retention_limit_bytes,"
@@ -2233,6 +2235,17 @@ def segment_commit_memory_pressure_hint_from_values(values: dict[str, int]) -> s
     if min_free_pct <= SEGMENT_COMMIT_MEMORY_THIN_MARGIN_PCT_THRESHOLD:
         return "segment_commit_memory_thin_margin"
     return "segment_commit_memory_margin_ok"
+
+
+def segment_commit_memory_diagnostic_hint(
+    segment_commit_ms: int, memory_pressure_hint: str
+) -> str:
+    if (
+        segment_commit_ms >= SEGMENT_COMMIT_MEMORY_DIAGNOSTIC_MS_THRESHOLD
+        and memory_pressure_hint == "memory_timing_missing"
+    ):
+        return "profile_segment_commit_memory_timing"
+    return "none"
 
 
 def cpu_trace_hotspot_hint(perf_hotspots: dict[str, float]) -> str:
@@ -3855,6 +3868,9 @@ def summarize_profile_values(
         else 0.0
     )
     segment_commit_memory_hint = segment_commit_memory_pressure_hint_from_values(values)
+    segment_commit_memory_diagnostic = segment_commit_memory_diagnostic_hint(
+        segment_commit_ms, segment_commit_memory_hint
+    )
     stream_commit_residual_ms = (
         stream_elapsed_ms - stream_worker_ms - segment_commit_ms
     )
@@ -5320,6 +5336,7 @@ def summarize_profile_values(
         f"{segment_commit_cuda_allocator_effective_cached_bytes},"
         f"{segment_commit_cuda_memory_min_free_pct:.3f},"
         f"{segment_commit_memory_hint},"
+        f"{segment_commit_memory_diagnostic},"
         f"{descriptor_retention_attempts},{descriptor_retention_retained},"
         f"{descriptor_retention_rejected},{descriptor_retention_retained_bytes},"
         f"{descriptor_retention_rejected_bytes},{descriptor_retention_limit_bytes},"

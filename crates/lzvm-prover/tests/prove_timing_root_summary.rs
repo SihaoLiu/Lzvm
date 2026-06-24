@@ -2665,6 +2665,7 @@ fn prove_timing_root_summary_reports_segment_commit_memory_margin() {
             "segment_commit_memory_pressure_hint",
             "segment_commit_memory_pressure",
         ),
+        ("segment_commit_memory_diagnostic_hint", "none"),
     ] {
         let index = headers
             .iter()
@@ -2688,6 +2689,7 @@ fn prove_timing_root_summary_does_not_infer_memory_pressure_from_total_only() {
         "timing_guest_segment_commit_initial_workers=2",
         "timing_guest_segment_commit_effective_workers=2",
         "timing_guest_segment_commit_oom_retries=0",
+        "timing_guest_segment_commit_ms=20463",
         "timing_guest_segment_commit_cuda_memory_total_bytes=34359738368",
         "timing_guest_stage_tree_commit_root_count=120",
         "timing_guest_stage_tree_commit_root_materialization_groups=120",
@@ -2741,6 +2743,10 @@ fn prove_timing_root_summary_does_not_infer_memory_pressure_from_total_only() {
     assert_eq!(
         value("segment_commit_memory_pressure_hint"),
         "memory_timing_missing"
+    );
+    assert_eq!(
+        value("segment_commit_memory_diagnostic_hint"),
+        "profile_segment_commit_memory_timing"
     );
     assert_eq!(value("segment_commit_cuda_memory_min_free_pct"), "0.000");
 }
