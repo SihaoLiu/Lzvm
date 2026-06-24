@@ -16,6 +16,7 @@ fn profiling_helpers_are_directly_executable() {
         "scripts/nsys-cuda-copy-summary.py",
         "scripts/nsys-cuda-kernel-summary.py",
         "scripts/nsys-cuda-sync-summary.py",
+        "scripts/run-proof-profile.py",
         "scripts/run-eth-proof-timing-batch.py",
         "scripts/run-proof-timing-batch.py",
     ] {
