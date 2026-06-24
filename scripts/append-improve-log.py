@@ -2,6 +2,7 @@
 import argparse
 import csv
 import math
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,8 @@ HEADER = [
     "large_proof_time_s",
     "summary",
 ]
+
+TIMING_TOTAL_RE = re.compile(r"^timing_total_ms=(\d+)\s*$")
 
 
 def current_commit() -> str:
@@ -131,14 +134,41 @@ def stable_average_field(
     return f"avg={average:.3f} samples={sample_text} used={len(best)}/{len(samples)}"
 
 
+def timing_total_seconds_from_log(path: Path) -> float:
+    matches = []
+    with path.open() as source:
+        for line in source:
+            match = TIMING_TOTAL_RE.match(line)
+            if match is not None:
+                matches.append(int(match.group(1)) / 1000.0)
+    if len(matches) != 1:
+        raise SystemExit(
+            f"{path}: expected exactly one timing_total_ms line, found {len(matches)}"
+        )
+    return matches[0]
+
+
 def resolve_timing_field(
     explicit: str,
     runs: str | None,
+    log_paths: list[str] | None,
     label: str,
     max_relative_spread: float,
 ) -> str:
-    if explicit and runs is not None:
-        raise SystemExit(f"{label}: provide either explicit value or run samples, not both")
+    provided = sum(
+        [
+            bool(explicit),
+            runs is not None,
+            bool(log_paths),
+        ]
+    )
+    if provided > 1:
+        raise SystemExit(
+            f"{label}: provide only one of explicit value, run samples, or timing logs"
+        )
+    if log_paths:
+        samples = [timing_total_seconds_from_log(Path(path)) for path in log_paths]
+        return stable_average_field(samples, label, max_relative_spread)
     if runs is None:
         return explicit
     return stable_average_field(parse_run_times(runs, label), label, max_relative_spread)
@@ -178,6 +208,8 @@ def main() -> None:
     parser.add_argument("--large", default="")
     parser.add_argument("--small-runs", default=None)
     parser.add_argument("--large-runs", default=None)
+    parser.add_argument("--small-log", action="append", default=None)
+    parser.add_argument("--large-log", action="append", default=None)
     parser.add_argument("--max-relative-spread", type=float, default=0.10)
     parser.add_argument(
         "--check",
@@ -197,12 +229,14 @@ def main() -> None:
         small_proof_time_s = resolve_timing_field(
             args.small,
             args.small_runs,
+            args.small_log,
             "small proof time",
             args.max_relative_spread,
         )
         large_proof_time_s = resolve_timing_field(
             args.large,
             args.large_runs,
+            args.large_log,
             "large proof time",
             args.max_relative_spread,
         )

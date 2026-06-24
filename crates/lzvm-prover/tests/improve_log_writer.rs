@@ -212,3 +212,126 @@ fn improve_log_writer_rejects_unstable_run_samples() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn improve_log_writer_averages_timing_total_logs() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+    let dir = workspace_root.join(format!(
+        "temp/improve-log-timing-logs-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("timing log fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+    let small_logs = write_timing_logs(&dir, "small", &[8550, 8540, 8490]);
+    let large_logs = write_timing_logs(&dir, "large", &[52290, 51610, 51210, 90000]);
+
+    let mut command = Command::new(&script_path);
+    command
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--summary")
+        .arg("timing log samples");
+    for path in &small_logs {
+        command.arg("--small-log").arg(path);
+    }
+    for path in &large_logs {
+        command.arg("--large-log").arg(path);
+    }
+    let output = command
+        .output()
+        .expect("improve-log writer should run with timing logs");
+    assert!(
+        output.status.success(),
+        "improve-log writer should average timing logs: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
+    let rows = contents.lines().collect::<Vec<_>>();
+    assert_eq!(rows.len(), 2);
+    assert!(
+        rows[1].contains("\"avg=8.527 samples=8.490;8.540;8.550 used=3/3\""),
+        "small timing logs should be converted from milliseconds to seconds: {}",
+        rows[1]
+    );
+    assert!(
+        rows[1].contains("\"avg=51.703 samples=51.210;51.610;52.290 used=3/4\""),
+        "large timing logs should exclude the noisy timing log: {}",
+        rows[1]
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn improve_log_writer_rejects_ambiguous_timing_logs() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+    let dir = workspace_root.join(format!(
+        "temp/improve-log-ambiguous-timing-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("timing log fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+    let ambiguous_log = dir.join("ambiguous.log");
+    std::fs::write(
+        &ambiguous_log,
+        "timing_total_ms=8000\ntiming_total_ms=8010\n",
+    )
+    .expect("ambiguous timing log should write");
+
+    let output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--small-log")
+        .arg(&ambiguous_log)
+        .arg("--summary")
+        .arg("ambiguous timing log")
+        .output()
+        .expect("improve-log writer should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !output.status.success(),
+        "improve-log writer should reject ambiguous timing logs"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("expected exactly one timing_total_ms"),
+        "ambiguous timing log rejection should explain the timing_total_ms count: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn write_timing_logs(
+    dir: &std::path::Path,
+    label: &str,
+    timing_total_ms: &[u64],
+) -> Vec<std::path::PathBuf> {
+    timing_total_ms
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let path = dir.join(format!("{label}-{index}.log"));
+            std::fs::write(
+                &path,
+                format!("setup_hash=fixture\ntiming_total_ms={value}\nproof=ok\n"),
+            )
+            .expect("timing log should write");
+            path
+        })
+        .collect()
+}
