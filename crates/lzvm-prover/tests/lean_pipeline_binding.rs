@@ -88,6 +88,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract",
             "runtime_pipeline_binding_evidence_implies_external_source_requirements",
             "runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract",
+            "runtime_pipeline_binding_evidence_implies_trace_semantic_evidence_complete",
             "runtime_pipeline_query_opening_checked_contract_without_assumptions",
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
@@ -110,6 +111,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract",
             "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_trace_conformance_contract",
+            "runtime_pipeline_binding_checked_acceptance_trace_semantic_evidence_complete",
             "runtime_pipeline_compact_digest_merkle_observation_eq_full_state",
             "runtime_pipeline_binding_checked_acceptance_compact_digest_merkle_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_assumptions",
@@ -351,12 +353,41 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         .contains("AssumptionBundle"),
         "pipeline seeded query-plan projection should not require cryptographic assumptions"
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_trace_semantic_evidence_complete",
+        &["RuntimeTraceConstraintSemanticEvidenceComplete"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_trace_semantic_evidence_complete",
+        &["runtime_trace_constraint_evidence_implies_semantic_evidence_complete"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_trace_semantic_evidence_complete",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RuntimeTraceConstraintSemanticEvidenceComplete",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_trace_semantic_evidence_complete",
+        &["runtime_trace_constraint_artifact_binding_checked_acceptance_semantic_evidence_complete"],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_trace_semantic_evidence_complete",
+        &["AssumptionBundle"],
+    );
     for theorem in [
         "runtime_pipeline_binding_evidence_implies_transcript_bound",
         "runtime_pipeline_binding_evidence_implies_public_input_bound",
         "runtime_pipeline_binding_evidence_implies_pcs_and_fri",
         "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract",
         "runtime_pipeline_binding_evidence_implies_external_source_requirements",
+        "runtime_pipeline_binding_evidence_implies_trace_semantic_evidence_complete",
         "runtime_pipeline_binding_evidence_implies_execution_obligations",
         "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
         "runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence",

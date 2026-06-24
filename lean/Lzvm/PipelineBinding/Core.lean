@@ -426,6 +426,50 @@ theorem runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract
       proof
       queryPlanEvidence
 
+theorem runtime_pipeline_binding_evidence_implies_trace_semantic_evidence_complete
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RuntimeTraceConstraintSemanticEvidenceComplete
+        system
+        validation.traceBindingValidation.traceConstraintValidation
+        artifact
+        publicInput
+        proof := by
+  intro evidence
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      traceConstraintEvidence,
+      _queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      _openingEvidence,
+      _transcriptBound,
+      _publicInputBound,
+      _pcsOpeningsValid,
+      _friQueriesValid⟩
+  exact
+    runtime_trace_constraint_evidence_implies_semantic_evidence_complete
+      validation.traceBindingValidation.traceConstraintValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      traceConstraintEvidence
+
 theorem runtime_pipeline_binding_evidence_implies_execution_obligations
     {system : VerifierModel}
     {validation : RuntimePipelineBindingValidation system}
@@ -540,6 +584,38 @@ theorem runtime_pipeline_binding_checked_acceptance_trace
       publicInput
       proof
       accepted
+
+theorem runtime_pipeline_binding_checked_acceptance_trace_semantic_evidence_complete
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintSemanticEvidenceComplete
+          system
+          validation.traceBindingValidation.traceConstraintValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have traceAccepted :=
+    runtime_pipeline_binding_checked_acceptance_trace
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_trace_constraint_artifact_binding_checked_acceptance_semantic_evidence_complete
+      validation.traceBindingValidation
+      artifact
+      publicInput
+      proof
+      traceAccepted
 
 theorem runtime_pipeline_binding_checked_acceptance_query_plan
     {system : VerifierModel}
