@@ -589,7 +589,7 @@ fn prove_timing_root_summary_reads_sibling_nsys_copy_residency_hint() {
         .and_then(|path| path.parent())
         .expect("crate should live under workspace root");
     let script_path = workspace_root.join("scripts/prove-timing-root-summary.py");
-    let dir = std::env::temp_dir().join(format!(
+    let dir = workspace_root.join("temp").join(format!(
         "prove-timing-root-summary-copy-residency-{}",
         std::process::id()
     ));
