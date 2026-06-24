@@ -23,6 +23,14 @@ use lzvm_artifacts::public_values::{
 };
 use lzvm_artifacts::rlp::parse_rlp;
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
+use lzvm_artifacts::trace_constraint_segment::{
+    encode_trace_constraint_segment, TraceConstraintSegment, TraceConstraintUnitSegment,
+    TRACE_CONSTRAINT_SEGMENT_ID,
+};
+use lzvm_artifacts::witness_segment::{
+    encode_witness_commitment_segment, witness_commitment_segment_id, WitnessCommitmentSegment,
+    WitnessCommitmentSegmentIdentity, WitnessCommitmentStageSegment,
+};
 use lzvm_cli::run_cli;
 use lzvm_field::MODULUS;
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
@@ -99,6 +107,26 @@ fn sample_proof(public_values: &PublicValues) -> ProofArtifact {
         segments: vec![ProofSegment {
             id: SAMPLE_AUX_SEGMENT_ID,
             data: vec![1, 2, 3, 4],
+        }],
+    }
+}
+
+fn sample_witness_commitment(
+    unit_index: u32,
+    trace_rows: u64,
+    trace_columns: u64,
+) -> WitnessCommitmentSegment {
+    WitnessCommitmentSegment {
+        unit_index,
+        input_byte_count: 128,
+        trace_rows,
+        trace_columns,
+        stages: vec![WitnessCommitmentStageSegment {
+            stage_index: 1,
+            arity: 4,
+            root: [1, 2, 3, 4],
+            tree_byte_count: 256,
+            tree_digest: [0x5a; 32],
         }],
     }
 }
@@ -678,6 +706,86 @@ fn verifies_proof_artifact_preflight() {
     assert_eq!(report.public_value_field_count, 5);
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn verifies_preflight_reports_trace_constraint_semantic_evidence() {
+    let values = sample_public_values();
+    let public_values_hash = public_values_digest(&values).expect("digest should compute");
+    let trace_segment = encode_trace_constraint_segment(&TraceConstraintSegment {
+        units: vec![TraceConstraintUnitSegment {
+            unit_index: 3,
+            trace_instance_index: 2,
+            trace_row_count: 1024,
+            trace_column_count: 9,
+            regular_constraint_count: 17,
+            trace_extracted: true,
+            regular_constraints_evaluated: true,
+            witness_values_committed: true,
+            constraint_checker_conformant: true,
+        }],
+    })
+    .expect("trace constraint segment should encode");
+    let witness_segment = encode_witness_commitment_segment(&sample_witness_commitment(3, 1024, 9))
+        .expect("witness commitment should encode");
+    let proof = ProofArtifact {
+        setup_hash: values.setup_hash,
+        public_values_hash,
+        segments: vec![
+            ProofSegment {
+                id: witness_commitment_segment_id(
+                    4,
+                    WitnessCommitmentSegmentIdentity {
+                        unit_index: 3,
+                        trace_instance_index: 2,
+                    },
+                )
+                .expect("witness commitment id should encode"),
+                data: witness_segment,
+            },
+            ProofSegment {
+                id: TRACE_CONSTRAINT_SEGMENT_ID,
+                data: trace_segment.clone(),
+            },
+        ],
+    };
+    let (dir, proof_path, public_path) =
+        write_fixture_pair("trace-semantic-evidence", &proof, &values);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_path.to_str().expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert!(stdout.contains("status=ok\n"));
+    assert!(stdout.contains("segments=2\n"));
+    assert!(stdout.contains(&format!(
+        "public_values_hash={}\n",
+        to_hex(&public_values_hash)
+    )));
+    assert!(stdout.contains("trace_constraint_segments=1\n"));
+    assert!(stdout.contains(&format!(
+        "trace_constraint_segment_bytes={}\n",
+        trace_segment.len()
+    )));
+    assert!(stdout.contains("trace_constraint_units=1\n"));
+    assert!(stdout.contains("trace_constraint_semantic_evidence_units=1\n"));
+    assert!(stdout.contains("trace_constraint_semantic_evidence_complete=1\n"));
+    assert!(stdout.contains("trace_constraint_unit=3,2,1024,9,17\n"));
+    assert!(stdout.contains("trace_constraint_unit_flags=1,1,1,1\n"));
+    assert!(stderr.is_empty());
 }
 
 #[test]

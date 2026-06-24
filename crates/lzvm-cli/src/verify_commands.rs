@@ -1104,6 +1104,24 @@ fn write_trace_constraint_summary(
         let _ = writeln!(stdout, "trace_constraint_segment_bytes={byte_count}");
     }
     let _ = writeln!(stdout, "trace_constraint_units={}", units.len());
+    let semantic_evidence_units = units
+        .iter()
+        .filter(|unit| {
+            unit.trace_extracted
+                && unit.regular_constraints_evaluated
+                && unit.witness_values_committed
+                && unit.constraint_checker_conformant
+        })
+        .count();
+    let _ = writeln!(
+        stdout,
+        "trace_constraint_semantic_evidence_units={semantic_evidence_units}"
+    );
+    let _ = writeln!(
+        stdout,
+        "trace_constraint_semantic_evidence_complete={}",
+        u8::from(semantic_evidence_units == units.len())
+    );
     for unit in units {
         let _ = writeln!(
             stdout,

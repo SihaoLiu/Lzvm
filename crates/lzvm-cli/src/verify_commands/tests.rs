@@ -206,8 +206,36 @@ fn writes_trace_constraint_summary() {
     assert!(output.contains("trace_constraint_segments=1\n"));
     assert!(output.contains("trace_constraint_segment_bytes=36\n"));
     assert!(output.contains("trace_constraint_units=1\n"));
+    assert!(output.contains("trace_constraint_semantic_evidence_units=1\n"));
+    assert!(output.contains("trace_constraint_semantic_evidence_complete=1\n"));
     assert!(output.contains("trace_constraint_unit=3,2,1024,9,17\n"));
     assert!(output.contains("trace_constraint_unit_flags=1,1,1,1\n"));
+}
+
+#[test]
+fn trace_constraint_summary_reports_incomplete_semantic_evidence() {
+    let mut output = Vec::new();
+    write_trace_constraint_summary(
+        &mut output,
+        1,
+        &[36],
+        &[TraceConstraintPreflightUnit {
+            unit_index: 0,
+            trace_instance_index: 0,
+            trace_row_count: 16,
+            trace_column_count: 3,
+            regular_constraint_count: 5,
+            trace_extracted: true,
+            regular_constraints_evaluated: true,
+            witness_values_committed: false,
+            constraint_checker_conformant: true,
+        }],
+    );
+
+    let output = String::from_utf8(output).expect("summary should be utf-8");
+    assert!(output.contains("trace_constraint_semantic_evidence_units=0\n"));
+    assert!(output.contains("trace_constraint_semantic_evidence_complete=0\n"));
+    assert!(output.contains("trace_constraint_unit_flags=1,1,0,1\n"));
 }
 
 #[test]
