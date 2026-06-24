@@ -47,6 +47,58 @@ def RuntimeEthBlockPublicInputBindingCheckedAcceptance
     (proof : Proof) : Prop :=
   validation.ethBlockBindingAccepted artifact publicInput proof
 
+def RuntimeEthBlockPublicInputBindingSoundnessContract
+    (system : VerifierModel)
+    (validation : RuntimeEthBlockPublicInputBindingValidation system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  RuntimeEthBlockPublicInputBindingEvidence
+      system
+      validation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeProofArtifactBindingEvidence
+      system
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeArtifactEvidence
+      system
+      validation.proofArtifactBindingValidation.runtimeValidation
+      artifact
+      publicInput
+      proof
+    /\ system.accepts publicInput proof
+    /\ validation.proofArtifactBindingValidation.proofContainerCanonical
+      artifact
+      publicInput
+      proof
+    /\ validation.proofArtifactBindingValidation.proofMetadataCanonical
+      artifact
+      publicInput
+      proof
+    /\ validation.proofArtifactBindingValidation.proofSegmentsPresent
+      artifact
+      publicInput
+      proof
+    /\ validation.proofArtifactBindingValidation.proofSegmentPayloadsNonempty
+      artifact
+      publicInput
+      proof
+    /\ validation.proofArtifactBindingValidation.proofSegmentIdsAllowed
+      artifact
+      publicInput
+      proof
+    /\ validation.proofArtifactBindingValidation.proofSegmentIdsUnique
+      artifact
+      publicInput
+      proof
+    /\ RuntimeVerifierCoreContract system publicInput proof
+    /\ SoundWitness system publicInput proof
+
 theorem runtime_eth_block_public_input_binding_checked_acceptance_evidence
     {system : VerifierModel}
     (validation : RuntimeEthBlockPublicInputBindingValidation system) :
@@ -337,5 +389,81 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_
       publicInput
       proof
       artifactAccepted
+
+theorem runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeEthBlockPublicInputBindingSoundnessContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_eth_block_public_input_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have wellformed :=
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have core :=
+    runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactAccepted :=
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have runtimeAccepted :=
+    runtime_proof_artifact_binding_checked_acceptance_runtime_accepted
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have verifierAccepts :=
+    runtime_artifact_checked_acceptance_implies_verifier_accepts
+      validation.proofArtifactBindingValidation.runtimeValidation
+      artifact
+      publicInput
+      proof
+      runtimeAccepted
+  exact
+    ⟨sound.left,
+      sound.right.left,
+      sound.right.right.left,
+      verifierAccepts,
+      wellformed.left,
+      wellformed.right.left,
+      wellformed.right.right.left,
+      wellformed.right.right.right.left,
+      wellformed.right.right.right.right.left,
+      wellformed.right.right.right.right.right,
+      core,
+      sound.right.right.right⟩
 
 end Lzvm
