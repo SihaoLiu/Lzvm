@@ -356,6 +356,9 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms",
         "timing_finish_witness_opening_path_parent_hash_launches_per_stage",
         "timing_finish_witness_opening_row_values_device_download_batches",
+        "OPENING_STAGE_ROW_VALUE_DEVICE_DOWNLOAD_BATCH_RE",
+        "opening_row_value_device_batch_stage_count",
+        "opening_row_value_device_batch_max_stage",
         "timing_constant_material_validation_elapsed_ms",
         "timing_constant_material_validation_join_wait_ms",
         "constant_material_validation_overlap_hint",
@@ -3817,13 +3820,13 @@ fn prove_timing_root_summary_reports_retained_parent_checkpoint_opening_shape() 
     );
     assert!(
         stdout.contains(
-            "opening_row_value_device_download_batches,opening_row_value_device_single_downloads,opening_row_value_device_single_stage_count,opening_row_value_device_single_max_stage,opening_row_value_device_cross_unit_batch_savings,opening_batching_hint,opening_external_source_boundary_hint"
+            "opening_row_value_device_download_batches,opening_row_value_device_batch_stage_count,opening_row_value_device_batch_max_stage,opening_row_value_device_single_downloads,opening_row_value_device_single_stage_count,opening_row_value_device_single_max_stage,opening_row_value_device_cross_unit_batch_savings,opening_batching_hint,opening_external_source_boundary_hint"
         ),
         "prove timing root summary should expose single-row device row-value download boundaries: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            ",43,0,0,0.000,none,77,77,yes,0,79,79,yes,0,0,79,3,0,0,790,14,869,17,11,858,device_batched_path_secondary,0,0,43,0,0,0,single_query_unit_boundary_blocks_row_value_batch,external_source_unit_boundary_blocks_row_value_batch,"
+            ",43,0,0,0.000,none,77,77,yes,0,79,79,yes,0,0,79,3,0,0,790,14,869,17,11,858,device_batched_path_secondary,0,0,0,0,43,0,0,0,single_query_unit_boundary_blocks_row_value_batch,external_source_unit_boundary_blocks_row_value_batch,"
         ),
         "prove timing root summary should identify external-source unit boundaries behind single-row D2H: stdout={stdout}"
     );
@@ -4031,6 +4034,9 @@ fn prove_timing_root_summary_reports_opening_parent_hash_work_scope() {
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms=170",
         "timing_finish_witness_opening_path_parent_hash_launches_per_stage=5",
         "timing_finish_witness_opening_row_values_device_download_batches=43",
+        "timing_finish_witness_stage_1_opening_row_values_device_download_batches=31",
+        "timing_finish_witness_stage_2_opening_row_values_device_download_batches=12",
+        "timing_finish_witness_stage_3_opening_row_values_device_download_batches=0",
         "timing_finish_witness_opening_row_values_device_single_downloads=0",
     ]
     .join("\n");
@@ -4061,19 +4067,19 @@ fn prove_timing_root_summary_reports_opening_parent_hash_work_scope() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "retained_parent_checkpoint_prefix_rows,retained_parent_checkpoint_prefix_bytes,retained_parent_checkpoint_prefix_launches,retained_parent_checkpoint_prefix_ms,retained_parent_checkpoint_suffix_rows,retained_parent_checkpoint_suffix_bytes,retained_parent_checkpoint_suffix_launches,retained_parent_checkpoint_suffix_ms,retained_parent_checkpoint_path_launches,retained_parent_checkpoint_path_ms,retained_parent_checkpoint_cross_stage_gather_estimated_launches,retained_parent_checkpoint_cross_stage_gather_launch_savings,retained_parent_checkpoint_batching_hint,opening_path_parent_hash_launches_per_stage,opening_row_value_device_download_batches,opening_row_value_device_single_downloads,opening_row_value_device_single_stage_count,opening_row_value_device_single_max_stage,opening_row_value_device_cross_unit_batch_savings"
+            "retained_parent_checkpoint_prefix_rows,retained_parent_checkpoint_prefix_bytes,retained_parent_checkpoint_prefix_launches,retained_parent_checkpoint_prefix_ms,retained_parent_checkpoint_suffix_rows,retained_parent_checkpoint_suffix_bytes,retained_parent_checkpoint_suffix_launches,retained_parent_checkpoint_suffix_ms,retained_parent_checkpoint_path_launches,retained_parent_checkpoint_path_ms,retained_parent_checkpoint_cross_stage_gather_estimated_launches,retained_parent_checkpoint_cross_stage_gather_launch_savings,retained_parent_checkpoint_batching_hint,opening_path_parent_hash_launches_per_stage,opening_row_value_device_download_batches,opening_row_value_device_batch_stage_count,opening_row_value_device_batch_max_stage,opening_row_value_device_single_downloads,opening_row_value_device_single_stage_count,opening_row_value_device_single_max_stage,opening_row_value_device_cross_unit_batch_savings"
         ),
         "prove timing root summary should expose opening parent-hash work scope columns: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            ",79,79,yes,165675008,21206401024,79,3,13808034,1767428352,790,170,869,173,11,858,device_batched_path_secondary,5,43,0,"
+            ",79,79,yes,165675008,21206401024,79,3,13808034,1767428352,790,170,869,173,11,858,device_batched_path_secondary,5,43,2,31,0,"
         ),
         "prove timing root summary should report retained parent checkpoint cross-stage gather launch savings: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            ",device_batched_path_secondary,5,43,0,0,0,0,retained_parent_checkpoint_path_time_secondary,"
+            ",device_batched_path_secondary,5,43,2,31,0,0,0,0,retained_parent_checkpoint_path_time_secondary,"
         ),
         "prove timing root summary should downgrade retained parent checkpoint batching when measured path time is secondary: stdout={stdout}"
     );
@@ -4130,12 +4136,12 @@ fn prove_timing_root_summary_reports_device_row_value_single_download_stage_shap
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "opening_row_value_device_single_stage_count,opening_row_value_device_single_max_stage,opening_row_value_device_cross_unit_batch_savings"
+            "opening_row_value_device_batch_stage_count,opening_row_value_device_batch_max_stage,opening_row_value_device_single_downloads,opening_row_value_device_single_stage_count,opening_row_value_device_single_max_stage,opening_row_value_device_cross_unit_batch_savings"
         ),
         "prove timing root summary should expose stage-level device single-download shape: stdout={stdout}"
     );
     assert!(
-        stdout.contains(",0,43,2,31,41,single_query_unit_boundary_blocks_row_value_batch,"),
+        stdout.contains(",0,0,0,43,2,31,41,single_query_unit_boundary_blocks_row_value_batch,"),
         "prove timing root summary should report the single-query unit boundary instead of a row-value gather estimate: stdout={stdout}"
     );
 }

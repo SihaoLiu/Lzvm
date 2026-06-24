@@ -558,6 +558,9 @@ OPENING_ROW_VALUE_DEVICE_DOWNLOAD_BATCHES_KEY = (
 OPENING_ROW_VALUE_DEVICE_SINGLE_DOWNLOADS_KEY = (
     "timing_finish_witness_opening_row_values_device_single_downloads"
 )
+OPENING_STAGE_ROW_VALUE_DEVICE_DOWNLOAD_BATCH_RE = re.compile(
+    r"^timing_finish_witness_stage_(\d+)_opening_row_values_device_download_batches$"
+)
 OPENING_STAGE_ROW_VALUE_DEVICE_SINGLE_DOWNLOAD_RE = re.compile(
     r"^timing_finish_witness_stage_(\d+)_opening_row_values_device_single_downloads$"
 )
@@ -805,6 +808,8 @@ HEADER = (
     "retained_parent_checkpoint_batching_hint,"
     "opening_path_parent_hash_launches_per_stage,"
     "opening_row_value_device_download_batches,"
+    "opening_row_value_device_batch_stage_count,"
+    "opening_row_value_device_batch_max_stage,"
     "opening_row_value_device_single_downloads,"
     "opening_row_value_device_single_stage_count,"
     "opening_row_value_device_single_max_stage,"
@@ -1544,6 +1549,7 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
         key, value = line.split("=", 1)
         if (
             key not in TIMING_KEYS
+            and OPENING_STAGE_ROW_VALUE_DEVICE_DOWNLOAD_BATCH_RE.match(key) is None
             and OPENING_STAGE_ROW_VALUE_DEVICE_SINGLE_DOWNLOAD_RE.match(key) is None
         ):
             continue
@@ -2608,6 +2614,18 @@ def opening_device_single_stage_shape(values: dict[str, int]) -> tuple[int, int,
     max_stage_count = max(stage_counts)
     batch_savings = sum(count - 1 for count in stage_counts)
     return (stage_count, max_stage_count, batch_savings)
+
+
+def opening_device_batch_stage_shape(values: dict[str, int]) -> tuple[int, int]:
+    stage_counts = [
+        count
+        for key, count in values.items()
+        if OPENING_STAGE_ROW_VALUE_DEVICE_DOWNLOAD_BATCH_RE.match(key) is not None
+        and count > 0
+    ]
+    if not stage_counts:
+        return (0, 0)
+    return (len(stage_counts), max(stage_counts))
 
 
 def retained_parent_checkpoint_cross_stage_gather_launch_shape(
@@ -4670,6 +4688,10 @@ def summarize_profile_values(
     opening_row_value_device_download_batches = values.get(
         OPENING_ROW_VALUE_DEVICE_DOWNLOAD_BATCHES_KEY, 0
     )
+    (
+        opening_row_value_device_batch_stage_count,
+        opening_row_value_device_batch_max_stage,
+    ) = opening_device_batch_stage_shape(values)
     opening_row_value_device_single_downloads = values.get(
         OPENING_ROW_VALUE_DEVICE_SINGLE_DOWNLOADS_KEY, 0
     )
@@ -5152,6 +5174,8 @@ def summarize_profile_values(
         f"{retained_parent_checkpoint_batching_hint_value},"
         f"{opening_path_parent_hash_launches_per_stage},"
         f"{opening_row_value_device_download_batches},"
+        f"{opening_row_value_device_batch_stage_count},"
+        f"{opening_row_value_device_batch_max_stage},"
         f"{opening_row_value_device_single_downloads},"
         f"{opening_row_value_device_single_stage_count},"
         f"{opening_row_value_device_single_max_stage},"
