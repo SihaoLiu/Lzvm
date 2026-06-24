@@ -12,6 +12,15 @@ use lzvm_artifacts::public_values::{encode_public_values, public_values_digest};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 use lzvm_prover::proof_preflight::TraceConstraintPreflightUnit;
 
+fn test_fixture_dir(name: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!("lzvm-verify-{name}-{}", std::process::id()))
+}
+
 #[test]
 fn parses_eth_public_input_option_for_verify_proof_args() {
     let result = parse_verify_proof_args(&[
@@ -239,10 +248,7 @@ fn rejects_missing_eth_public_input_value_during_parse() {
 
 #[test]
 fn verifies_eth_public_input_against_embedded_block_input_segment() {
-    let dir = std::env::temp_dir().join(format!(
-        "lzvm-verify-proof-eth-public-{}",
-        std::process::id()
-    ));
+    let dir = test_fixture_dir("proof-eth-public");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
     let public_input_path = dir.join("public.bin");
@@ -294,10 +300,7 @@ fn verifies_eth_public_input_against_embedded_block_input_segment() {
 
 #[test]
 fn reports_embedded_block_input_segment_hash_for_reordered_input_file() {
-    let dir = std::env::temp_dir().join(format!(
-        "lzvm-verify-proof-eth-block-reordered-{}",
-        std::process::id()
-    ));
+    let dir = test_fixture_dir("proof-eth-block-reordered");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
     let input_path = dir.join("block.input");
@@ -349,10 +352,7 @@ fn reports_embedded_block_input_segment_hash_for_reordered_input_file() {
 
 #[test]
 fn reports_embedded_block_input_segment_hash_for_reordered_proof_segment() {
-    let dir = std::env::temp_dir().join(format!(
-        "lzvm-verify-proof-eth-proof-reordered-{}",
-        std::process::id()
-    ));
+    let dir = test_fixture_dir("proof-eth-proof-reordered");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
     let input_path = dir.join("block.input");
@@ -404,10 +404,7 @@ fn reports_embedded_block_input_segment_hash_for_reordered_proof_segment() {
 
 #[test]
 fn rejects_block_input_binding_when_proof_public_values_hash_differs() {
-    let dir = std::env::temp_dir().join(format!(
-        "lzvm-verify-proof-eth-block-public-hash-{}",
-        std::process::id()
-    ));
+    let dir = test_fixture_dir("proof-eth-block-public-hash");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
     let input_path = dir.join("block.input");
@@ -455,10 +452,7 @@ fn rejects_block_input_binding_when_proof_public_values_hash_differs() {
 
 #[test]
 fn rejects_public_input_binding_when_proof_public_values_hash_differs() {
-    let dir = std::env::temp_dir().join(format!(
-        "lzvm-verify-proof-eth-public-hash-{}",
-        std::process::id()
-    ));
+    let dir = test_fixture_dir("proof-eth-public-hash");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
     let public_input_path = dir.join("public.bin");
@@ -509,10 +503,7 @@ fn rejects_public_input_binding_when_proof_public_values_hash_differs() {
 
 #[test]
 fn rejects_eth_public_input_with_trailing_bytes_for_verify_binding() {
-    let dir = std::env::temp_dir().join(format!(
-        "lzvm-verify-proof-eth-public-trailing-{}",
-        std::process::id()
-    ));
+    let dir = test_fixture_dir("proof-eth-public-trailing");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
     let public_input_path = dir.join("public.bin");
@@ -569,10 +560,7 @@ fn rejects_eth_public_input_with_trailing_bytes_for_verify_binding() {
 
 #[test]
 fn verifies_allowed_trailing_eth_public_input_against_embedded_block_input_segment() {
-    let dir = std::env::temp_dir().join(format!(
-        "lzvm-verify-proof-eth-public-allow-trailing-{}",
-        std::process::id()
-    ));
+    let dir = test_fixture_dir("proof-eth-public-allow-trailing");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
     let public_input_path = dir.join("public.bin");
