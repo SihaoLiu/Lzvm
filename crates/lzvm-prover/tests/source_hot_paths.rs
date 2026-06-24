@@ -7914,6 +7914,13 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
         "query plan derivation should sort witness segment references without cloning payloads"
     );
     assert!(
+        query_plan_source.contains("load_witness_commitment_segment_refs")
+            && query_plan_source.contains("build_pcs_query_plan_segment_with_binding_refs")
+            && query_plan_source.contains("build_pcs_query_plan_segment_from_challenge_refs")
+            && !query_plan_source.contains("load_witness_commitment_segments("),
+        "query plan validation should borrow witness commitment segments without cloning payloads"
+    );
+    assert!(
         prove_witness_tests_source
             .contains("rejects_seeded_fri_unit_proof_with_unbound_opening_in_preflight"),
         "seeded FRI preflight should reject manually attached opening segments that are not transcript-bound"
@@ -7924,8 +7931,15 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
                 .contains("validate_pcs_evaluation_units_match_query_units")
             && transcript_segments_source
                 .contains("validate_pcs_fri_opening_units_match_query_units")
-            && transcript_segments_source.contains("validate_unit_values_units_match_query_units"),
+            && transcript_segments_source.contains("validate_unit_values_units_match_query_units")
+            && transcript_segments_source.contains("load_witness_commitment_segment_refs")
+            && !transcript_segments_source.contains("load_witness_commitment_segments("),
         "transcript segment checks should retain query-unit matching for each opened artifact"
+    );
+    assert!(
+        setup_preflight_source.contains("load_witness_commitment_segment_refs")
+            && !setup_preflight_source.contains("load_witness_commitment_segments("),
+        "setup preflight should reuse borrowed witness commitment segments for trace binding checks"
     );
 }
 

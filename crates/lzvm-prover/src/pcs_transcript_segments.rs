@@ -29,7 +29,7 @@ use crate::unit_values::{
     LoadUnitValuesSegmentError,
 };
 use crate::witness_commitment::{
-    load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
+    load_witness_commitment_segment_refs, LoadWitnessCommitmentSegmentsError,
 };
 use crate::ProveSchedule;
 
@@ -153,7 +153,7 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
         .map_err(PcsTranscriptProofSegmentsError::Material)?;
     let fri = load_pcs_fri_opening_segment_from_segments(segments)
         .map_err(|error| PcsTranscriptProofSegmentsError::Fri(error.into()))?;
-    let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
+    let witness_segments = load_witness_commitment_segment_refs(&schedule.units, segments)
         .map_err(PcsTranscriptProofSegmentsError::Witness)?;
     let binding_segments = checked_proof_binding_segments(segments)
         .map_err(|id| PcsTranscriptProofSegmentsError::DuplicateBindingSegment { id })?;

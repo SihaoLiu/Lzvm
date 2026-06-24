@@ -81,7 +81,7 @@ use crate::proof_values::{
 use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
 use crate::unit_values::{load_unit_values_for_identity_from_segments, LoadUnitValuesSegmentError};
 use crate::witness_commitment::{
-    load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
+    load_witness_commitment_segment_refs, LoadWitnessCommitmentSegmentsError,
 };
 use crate::witness_opening::{
     validate_witness_opening_segments, ValidateWitnessOpeningSegmentsError,
@@ -655,7 +655,7 @@ pub fn validate_setup_preflight(
 
     validate_pcs_material_manifest_segments(&schedule, &proof.segments)
         .map_err(SetupPreflightError::PcsMaterial)?;
-    let witness_segments = load_witness_commitment_segments(&schedule.units, &proof.segments)
+    let witness_segments = load_witness_commitment_segment_refs(&schedule.units, &proof.segments)
         .map_err(SetupPreflightError::WitnessCommitment)?;
     validate_optional_trace_constraint_segment(catalog, &schedule, proof, &witness_segments)?;
     validate_pcs_query_plan_segments(
@@ -935,7 +935,7 @@ fn validate_optional_trace_constraint_segment(
     catalog: &KeyDirectoryCatalog,
     schedule: &crate::ProveSchedule,
     proof: &ProofArtifact,
-    witness_segments: &[ProofSegment],
+    witness_segments: &[&ProofSegment],
 ) -> Result<(), SetupPreflightError> {
     let Some(segment) = proof
         .segments

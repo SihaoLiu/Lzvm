@@ -51,7 +51,7 @@ use crate::unit_values::{
     LoadUnitValuesSegmentError,
 };
 use crate::witness_commitment::{
-    load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
+    load_witness_commitment_segment_refs, LoadWitnessCommitmentSegmentsError,
 };
 use crate::ProveSchedule;
 
@@ -245,11 +245,11 @@ pub fn validate_seeded_pcs_query_plan_segments(
         .ok_or(ValidatePcsQueryPlanSegmentsError::QueryPlan(
             LoadPcsQueryPlanSegmentError::MissingSegment,
         ))?;
-    let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
+    let witness_segments = load_witness_commitment_segment_refs(&schedule.units, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::Witness)?;
     let binding_segments = checked_proof_binding_segments(segments)
         .map_err(|id| ValidatePcsQueryPlanSegmentsError::DuplicateBindingSegment { id })?;
-    let expected_segment = build_pcs_query_plan_segment_with_bindings(
+    let expected_segment = build::build_pcs_query_plan_segment_with_binding_refs(
         schedule,
         public_values_hash,
         material_segment,
@@ -268,7 +268,7 @@ fn validate_transcript_query_plan_unit_inputs(
     query_units: &[PcsQueryPlanUnit],
     material: &PcsMaterialManifestSegment,
     public_values: &[Felt],
-    witness_segments: &[ProofSegment],
+    witness_segments: &[&ProofSegment],
     segments: &[ProofSegment],
 ) -> Result<Vec<Ext3>, ValidatePcsQueryPlanSegmentsError> {
     let binding_segments = checked_proof_binding_segments(segments)
@@ -443,7 +443,7 @@ pub fn validate_transcript_pcs_query_plan_segments(
         .ok_or(ValidatePcsQueryPlanSegmentsError::QueryPlan(
             LoadPcsQueryPlanSegmentError::MissingSegment,
         ))?;
-    let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
+    let witness_segments = load_witness_commitment_segment_refs(&schedule.units, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::Witness)?;
     let material = parse_pcs_material_manifest_segment(&material_segment.data)
         .map_err(ValidatePcsQueryPlanSegmentsError::Material)?;
@@ -466,7 +466,7 @@ pub fn validate_transcript_pcs_query_plan_segments(
             .map_err(ValidatePcsQueryPlanSegmentsError::Build)?
             .nonce,
     );
-    let expected_segment = build_pcs_query_plan_segment_from_challenge(
+    let expected_segment = build::build_pcs_query_plan_segment_from_challenge_refs(
         schedule,
         &witness_segments,
         final_query_challenge,
