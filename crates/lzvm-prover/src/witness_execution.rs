@@ -8735,7 +8735,12 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("system clock should be after epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!("lzvm-witness-execution-{name}-{stamp}"))
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root should resolve")
+            .join("temp")
+            .join(format!("lzvm-witness-execution-{name}-{stamp}"))
     }
 
     fn empty_fixed_columns_material(row_count: u64) -> crate::FixedColumnsMaterial {

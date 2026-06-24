@@ -19,10 +19,12 @@ const ENTRY: u64 = 0x8000_0000;
 const ZISK_ARCHITECTURE_ID: u64 = 0x0fff_eeee;
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-zisk-main-witness-{}-{name}",
-        std::process::id()
-    ))
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!("lzvm-main-witness-{}-{name}", std::process::id()))
 }
 
 fn sample_guest_image_with_words(words: &[u32]) -> Vec<u8> {

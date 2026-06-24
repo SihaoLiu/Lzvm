@@ -688,7 +688,7 @@ mod fixed_digest_tests {
     use sha2::{Digest, Sha256};
     use std::collections::BTreeMap;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -798,7 +798,12 @@ mod fixed_digest_tests {
             .duration_since(UNIX_EPOCH)
             .expect("system clock should be after epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!("lzvm-fri-polynomial-{name}-{stamp}"))
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root should resolve")
+            .join("temp")
+            .join(format!("lzvm-fri-polynomial-{name}-{stamp}"))
     }
 }
 
