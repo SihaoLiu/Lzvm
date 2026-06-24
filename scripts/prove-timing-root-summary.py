@@ -2212,6 +2212,7 @@ def direct_d2h_action_hint(
 
 def segment_commit_memory_pressure_hint_from_values(values: dict[str, int]) -> str:
     total_bytes = values.get(SEGMENT_COMMIT_CUDA_MEMORY_TOTAL_BYTES_KEY, 0)
+    has_min_free_bytes = SEGMENT_COMMIT_CUDA_MEMORY_MIN_FREE_BYTES_KEY in values
     min_free_bytes = values.get(SEGMENT_COMMIT_CUDA_MEMORY_MIN_FREE_BYTES_KEY, 0)
     initial_workers = values.get(SEGMENT_COMMIT_INITIAL_WORKERS_KEY, 0)
     effective_workers = values.get(SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY, 0)
@@ -2223,7 +2224,7 @@ def segment_commit_memory_pressure_hint_from_values(values: dict[str, int]) -> s
         and effective_workers < initial_workers
     ):
         return "segment_commit_oom_fallback"
-    if total_bytes <= 0:
+    if total_bytes <= 0 or not has_min_free_bytes:
         return "memory_timing_missing"
 
     min_free_pct = min_free_bytes * 100.0 / total_bytes
