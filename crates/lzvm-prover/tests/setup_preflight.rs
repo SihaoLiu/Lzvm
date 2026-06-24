@@ -590,6 +590,19 @@ fn tamper_first_witness_tree_digest(proof: &mut ProofArtifact) {
         encode_witness_commitment_segment(&witness).expect("tampered witness should encode");
 }
 
+fn assert_setup_preflight_hashes_reject_proof_artifact(
+    catalog: &KeyDirectoryCatalog,
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+    expected: ProofArtifactError,
+    message: &str,
+) {
+    assert_eq!(
+        validate_setup_preflight_hashes(catalog, proof, public_values).expect_err(message),
+        SetupPreflightError::Proof(ProofPreflightError::ProofArtifact(expected))
+    );
+}
+
 #[test]
 fn validates_setup_preflight_hashes() {
     let catalog = sample_catalog();
@@ -668,48 +681,48 @@ fn rejects_setup_preflight_hashes_with_malformed_proof_artifacts() {
 
     let mut missing_segments = sample_proof(&public_values);
     missing_segments.segments.clear();
-    assert_eq!(
-        validate_setup_preflight_hashes(&catalog, &missing_segments, &public_values)
-            .expect_err("setup preflight hashes should reject proofs without segments"),
-        SetupPreflightError::Proof(ProofPreflightError::ProofArtifact(
-            ProofArtifactError::MissingSegments
-        ))
+    assert_setup_preflight_hashes_reject_proof_artifact(
+        &catalog,
+        &missing_segments,
+        &public_values,
+        ProofArtifactError::MissingSegments,
+        "setup preflight hashes should reject proofs without segments",
     );
 
     let mut reserved_segment_id = sample_proof(&public_values);
     reserved_segment_id.segments[0].id = 1;
-    assert_eq!(
-        validate_setup_preflight_hashes(&catalog, &reserved_segment_id, &public_values)
-            .expect_err("setup preflight hashes should reject reserved segment ids"),
-        SetupPreflightError::Proof(ProofPreflightError::ProofArtifact(
-            ProofArtifactError::ReservedSegmentId { id: 1 }
-        ))
+    assert_setup_preflight_hashes_reject_proof_artifact(
+        &catalog,
+        &reserved_segment_id,
+        &public_values,
+        ProofArtifactError::ReservedSegmentId { id: 1 },
+        "setup preflight hashes should reject reserved segment ids",
     );
 
     let mut duplicate_segment_id = sample_proof(&public_values);
     duplicate_segment_id
         .segments
         .push(duplicate_segment_id.segments[0].clone());
-    assert_eq!(
-        validate_setup_preflight_hashes(&catalog, &duplicate_segment_id, &public_values)
-            .expect_err("setup preflight hashes should reject duplicate segment ids"),
-        SetupPreflightError::Proof(ProofPreflightError::ProofArtifact(
-            ProofArtifactError::DuplicateSegmentId {
-                id: SAMPLE_AUX_SEGMENT_ID
-            }
-        ))
+    assert_setup_preflight_hashes_reject_proof_artifact(
+        &catalog,
+        &duplicate_segment_id,
+        &public_values,
+        ProofArtifactError::DuplicateSegmentId {
+            id: SAMPLE_AUX_SEGMENT_ID,
+        },
+        "setup preflight hashes should reject duplicate segment ids",
     );
 
     let mut empty_segment = sample_proof(&public_values);
     empty_segment.segments[0].data.clear();
-    assert_eq!(
-        validate_setup_preflight_hashes(&catalog, &empty_segment, &public_values)
-            .expect_err("setup preflight hashes should reject empty proof segments"),
-        SetupPreflightError::Proof(ProofPreflightError::ProofArtifact(
-            ProofArtifactError::EmptySegment {
-                id: SAMPLE_AUX_SEGMENT_ID
-            }
-        ))
+    assert_setup_preflight_hashes_reject_proof_artifact(
+        &catalog,
+        &empty_segment,
+        &public_values,
+        ProofArtifactError::EmptySegment {
+            id: SAMPLE_AUX_SEGMENT_ID,
+        },
+        "setup preflight hashes should reject empty proof segments",
     );
 }
 

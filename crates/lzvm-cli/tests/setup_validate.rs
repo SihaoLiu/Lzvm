@@ -756,6 +756,53 @@ fn proof_artifact_metadata(public_values: &PublicValues) -> Vec<u8> {
     metadata
 }
 
+fn assert_verify_setup_command_rejects_proof_artifact(
+    subcommand: &str,
+    dir_name: &str,
+    setup_hash: [u8; 32],
+    proof_bytes: fn(&PublicValues) -> Vec<u8>,
+    expected_error: &str,
+) {
+    let dir = repo_temp_dir(&format!("{dir_name}-{subcommand}"));
+    let _ = fs::remove_dir_all(&dir);
+    let setup_dir = dir.join("setup");
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let public_values = sample_public_values(setup_hash);
+    write_setup_directory_with_public_values(&setup_dir, &public_values);
+
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public-values.bin");
+    write_bytes(&proof_path, proof_bytes(&public_values));
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            subcommand,
+            setup_dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!("verify {subcommand} failed: {expected_error}\n")
+    );
+}
+
 fn sample_pcs_fri_opening_segment(
     schedule: &lzvm_prover::ProveSchedule,
     query_segment: &ProofSegment,
@@ -19084,93 +19131,29 @@ fn reports_usage_for_missing_verify_proof_inputs() {
 }
 
 #[test]
-fn verify_proof_rejects_duplicate_proof_segment_ids() {
-    let dir = repo_temp_dir("verify-proof-duplicate-segment");
-    let _ = fs::remove_dir_all(&dir);
-    let setup_dir = dir.join("setup");
-    fs::create_dir_all(&dir).expect("fixture directory should be created");
-    let public_values = sample_public_values([42; 32]);
-    write_setup_directory_with_public_values(&setup_dir, &public_values);
-
-    let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public-values.bin");
-    write_bytes(
-        &proof_path,
-        duplicate_segment_proof_artifact_bytes(&public_values),
-    );
-    write_bytes(
-        &public_values_path,
-        encode_public_values(&public_values).expect("public values should encode"),
-    );
-
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = run_cli(
-        &[
-            "verify",
-            "proof",
-            setup_dir.to_str().expect("setup path should be utf-8"),
-            proof_path.to_str().expect("proof path should be utf-8"),
-            public_values_path
-                .to_str()
-                .expect("public values path should be utf-8"),
-        ],
-        &mut stdout,
-        &mut stderr,
-    );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
-
-    assert_eq!(code, 1);
-    assert!(stdout.is_empty());
-    assert_eq!(
-        String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "verify proof failed: duplicate proof segment id: 100\n"
-    );
+fn verify_setup_commands_reject_duplicate_proof_segment_ids() {
+    for subcommand in ["proof", "setup-preflight"] {
+        assert_verify_setup_command_rejects_proof_artifact(
+            subcommand,
+            "verify-duplicate-segment",
+            [42; 32],
+            duplicate_segment_proof_artifact_bytes,
+            "duplicate proof segment id: 100",
+        );
+    }
 }
 
 #[test]
-fn verify_proof_rejects_invalid_proof_container_kind() {
-    let dir = repo_temp_dir("verify-proof-invalid-proof-kind");
-    let _ = fs::remove_dir_all(&dir);
-    let setup_dir = dir.join("setup");
-    fs::create_dir_all(&dir).expect("fixture directory should be created");
-    let public_values = sample_public_values([43; 32]);
-    write_setup_directory_with_public_values(&setup_dir, &public_values);
-
-    let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public-values.bin");
-    write_bytes(
-        &proof_path,
-        invalid_kind_proof_artifact_bytes(&public_values),
-    );
-    write_bytes(
-        &public_values_path,
-        encode_public_values(&public_values).expect("public values should encode"),
-    );
-
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = run_cli(
-        &[
-            "verify",
-            "proof",
-            setup_dir.to_str().expect("setup path should be utf-8"),
-            proof_path.to_str().expect("proof path should be utf-8"),
-            public_values_path
-                .to_str()
-                .expect("public values path should be utf-8"),
-        ],
-        &mut stdout,
-        &mut stderr,
-    );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
-
-    assert_eq!(code, 1);
-    assert!(stdout.is_empty());
-    assert_eq!(
-        String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "verify proof failed: proof artifact container error: invalid sectioned file kind: expected prf0, found bad!\n"
-    );
+fn verify_setup_commands_reject_invalid_proof_container_kind() {
+    for subcommand in ["proof", "setup-preflight"] {
+        assert_verify_setup_command_rejects_proof_artifact(
+            subcommand,
+            "verify-invalid-proof-kind",
+            [43; 32],
+            invalid_kind_proof_artifact_bytes,
+            "proof artifact container error: invalid sectioned file kind: expected prf0, found bad!",
+        );
+    }
 }
 
 #[test]
