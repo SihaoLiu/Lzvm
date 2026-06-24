@@ -8,7 +8,12 @@ use lzvm_artifacts::trace_bundle::{
 };
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("lzvm-trace-bundle-{}-{name}", std::process::id()))
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!("lzvm-trace-bundle-{}-{name}", std::process::id()))
 }
 
 fn sample_bundle() -> TraceBundle {

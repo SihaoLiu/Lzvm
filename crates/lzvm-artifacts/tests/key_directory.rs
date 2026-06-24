@@ -192,7 +192,12 @@ fn sample_constant_tree(root: &VerificationKeyRoot) -> Vec<u8> {
 }
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("lzvm-key-directory-{}-{name}", std::process::id()))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!("lzvm-key-directory-{}-{name}", std::process::id()))
 }
 
 fn write_file(path: &Path) {
