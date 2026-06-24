@@ -123,12 +123,20 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         "batch output should report small run count: {stdout}"
     );
     assert!(
+        stdout.contains("small_stable_runs=3"),
+        "batch output should report stable small run count: {stdout}"
+    );
+    assert!(
         stdout.contains("small_timing_summaries=3"),
         "batch output should report small timing summary count: {stdout}"
     );
     assert!(
         stdout.contains("large_runs=3"),
         "batch output should report large run count: {stdout}"
+    );
+    assert!(
+        stdout.contains("large_stable_runs=3"),
+        "batch output should report stable large run count: {stdout}"
     );
     assert!(
         stdout.contains("large_timing_summaries=3"),
@@ -156,6 +164,13 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
     assert!(
         batch_json.contains("\"small_logs\": ["),
         "batch json should record input logs: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("\"small_stable_logs\": [")
+            && batch_json.contains("small-001.log")
+            && batch_json.contains("\"large_stable_logs\": [")
+            && batch_json.contains("large-001.log"),
+        "batch json should record stable timing log paths: {batch_json}"
     );
     assert!(
         batch_json.contains("\"small_statuses\": [") && batch_json.contains("small-001.status"),
@@ -236,6 +251,10 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
         stdout.contains("small_runs=4"),
         "batch output should report the extra run: {stdout}"
     );
+    assert!(
+        stdout.contains("small_stable_runs=3"),
+        "batch output should report the stable subset size: {stdout}"
+    );
     let batch_dir = stdout
         .lines()
         .find_map(|line| line.strip_prefix("batch_dir="))
@@ -259,6 +278,18 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
     assert!(
         batch_json.contains("\"runs\": 3") && batch_json.contains("\"max_runs\": 4"),
         "batch json should record the stable-run target and cap: {batch_json}"
+    );
+    let stable_logs = batch_json
+        .split("\"small_stable_logs\": [")
+        .nth(1)
+        .and_then(|tail| tail.split(']').next())
+        .expect("batch json should contain small stable logs");
+    assert!(
+        !stable_logs.contains("small-001.log")
+            && stable_logs.contains("small-002.log")
+            && stable_logs.contains("small-003.log")
+            && stable_logs.contains("small-004.log"),
+        "batch json should identify the stable timing subset: {batch_json}"
     );
     let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
     assert!(

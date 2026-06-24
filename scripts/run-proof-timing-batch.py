@@ -120,10 +120,23 @@ def stable_sample_values(
         return None
 
     ordered = sorted(samples)
+    window = stable_sample_window(ordered, max_relative_spread, min_stable_count)
+    if window is None:
+        return None
+    start, end = window
+    return ordered[start:end]
+
+
+def stable_sample_window(
+    ordered_samples: list[float],
+    max_relative_spread: float,
+    min_stable_count: int = 3,
+) -> tuple[int, int] | None:
     best: list[float] | None = None
-    for start in range(len(ordered)):
-        for end in range(start + min_stable_count, len(ordered) + 1):
-            candidate = ordered[start:end]
+    best_window: tuple[int, int] | None = None
+    for start in range(len(ordered_samples)):
+        for end in range(start + min_stable_count, len(ordered_samples) + 1):
+            candidate = ordered_samples[start:end]
             median = candidate[len(candidate) // 2]
             if median == 0.0:
                 continue
@@ -131,11 +144,34 @@ def stable_sample_values(
             if relative_spread <= max_relative_spread:
                 if best is None or len(candidate) > len(best):
                     best = candidate
+                    best_window = (start, end)
                 elif best is not None and len(candidate) == len(best):
                     best_spread = (best[-1] - best[0]) / best[len(best) // 2]
                     if relative_spread < best_spread:
                         best = candidate
-    return best
+                        best_window = (start, end)
+    return best_window
+
+
+def stable_timing_group(
+    logs: list[Path],
+    max_relative_spread: float,
+    min_stable_count: int = 3,
+) -> list[Path] | None:
+    if len(logs) < min_stable_count:
+        return None
+    samples = [(timing_total_seconds_from_log(path), path) for path in logs]
+    ordered = sorted(samples, key=lambda sample: sample[0])
+    window = stable_sample_window(
+        [seconds for seconds, _path in ordered],
+        max_relative_spread,
+        min_stable_count,
+    )
+    if window is None:
+        return None
+    start, end = window
+    selected = {path for _seconds, path in ordered[start:end]}
+    return [path for path in logs if path in selected]
 
 
 def has_stable_timing_group(
@@ -143,8 +179,7 @@ def has_stable_timing_group(
     max_relative_spread: float,
     min_stable_count: int = 3,
 ) -> bool:
-    samples = [timing_total_seconds_from_log(path) for path in logs]
-    return stable_sample_values(samples, max_relative_spread, min_stable_count) is not None
+    return stable_timing_group(logs, max_relative_spread, min_stable_count) is not None
 
 
 def require_texts_in_log(text: str, path: Path, required_texts: list[str]) -> None:
@@ -424,6 +459,16 @@ def path_texts(paths: list[Path]) -> list[str]:
     return [str(path) for path in paths]
 
 
+def safe_stable_timing_group(
+    logs: list[Path],
+    max_relative_spread: float,
+) -> list[Path]:
+    try:
+        return stable_timing_group(logs, max_relative_spread) or []
+    except SystemExit:
+        return []
+
+
 def discovered_run_paths(batch_dir: Path, label: str, suffix: str) -> list[Path]:
     run_path_re = re.compile(rf"{re.escape(label)}-(\d+){re.escape(suffix)}\Z")
     matches: list[tuple[int, str, Path]] = []
@@ -445,6 +490,8 @@ def write_batch_json(
     large_logs: list[Path] | None,
     small_statuses: list[Path] | None,
     large_statuses: list[Path] | None,
+    small_stable_logs: list[Path] | None,
+    large_stable_logs: list[Path] | None,
     small_timing_summaries: list[Path] | None,
     large_timing_summaries: list[Path] | None,
     appended: bool,
@@ -474,6 +521,8 @@ def write_batch_json(
         "require_proof_output": args.require_proof_output,
         "small_logs": path_texts(small_logs or []),
         "large_logs": path_texts(large_logs or []),
+        "small_stable_logs": path_texts(small_stable_logs or []),
+        "large_stable_logs": path_texts(large_stable_logs or []),
         "small_statuses": path_texts(small_statuses or []),
         "large_statuses": path_texts(large_statuses or []),
         "small_timing_summaries": path_texts(small_timing_summaries or []),
@@ -540,6 +589,14 @@ def run_batch(args: argparse.Namespace) -> Path:
     ) -> None:
         small_statuses = discovered_run_paths(batch_dir, "small", ".status")
         large_statuses = discovered_run_paths(batch_dir, "large", ".status")
+        small_stable_logs = safe_stable_timing_group(
+            small_logs or [],
+            args.max_relative_spread,
+        )
+        large_stable_logs = safe_stable_timing_group(
+            large_logs or [],
+            args.max_relative_spread,
+        )
         small_timing_summaries = discovered_run_paths(
             batch_dir,
             "small",
@@ -561,6 +618,8 @@ def run_batch(args: argparse.Namespace) -> Path:
             large_logs,
             small_statuses,
             large_statuses,
+            small_stable_logs,
+            large_stable_logs,
             small_timing_summaries,
             large_timing_summaries,
             appended,
@@ -629,11 +688,19 @@ def run_batch(args: argparse.Namespace) -> Path:
     if small_logs:
         print(f"small_runs={len(small_logs)}")
         print(
+            "small_stable_runs="
+            f"{len(safe_stable_timing_group(small_logs, args.max_relative_spread))}"
+        )
+        print(
             "small_timing_summaries="
             f"{len(discovered_run_paths(batch_dir, 'small', '.proof-timing-summary.csv'))}"
         )
     if large_logs:
         print(f"large_runs={len(large_logs)}")
+        print(
+            "large_stable_runs="
+            f"{len(safe_stable_timing_group(large_logs, args.max_relative_spread))}"
+        )
         print(
             "large_timing_summaries="
             f"{len(discovered_run_paths(batch_dir, 'large', '.proof-timing-summary.csv'))}"
