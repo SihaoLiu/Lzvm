@@ -1533,19 +1533,18 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     if let Some(timing) = timing.as_deref_mut() {
         timing.add_constant_opening(constant_opening_start.elapsed());
     }
-    let witness_trace_outputs = request.outputs.iter().collect::<Vec<_>>();
     let witness_opening_start = Instant::now();
     let opening_segment = match timing.as_deref_mut() {
         Some(timing) => build_witness_opening_segment_batch_from_trace_outputs_with_timing(
             request.schedule,
             &query_segment,
-            &witness_trace_outputs,
+            witness_outputs,
             timing,
         ),
         None => build_witness_opening_segment_batch_from_trace_outputs(
             request.schedule,
             &query_segment,
-            &witness_trace_outputs,
+            witness_outputs,
         ),
     }
     .map_err(|error| format!("build transcript witness opening segment failed: {error}"))?;
@@ -1586,7 +1585,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     let unit_values_segment =
         build_unit_values_segment_from_packed_values_batch(proof_inputs.unit_values)
             .map_err(|error| format!("build unit values segment failed: {error}"))?;
-    let trace_constraint_segment = build_trace_constraint_evidence_segment(&witness_trace_outputs)?;
+    let trace_constraint_segment = build_trace_constraint_evidence_segment(witness_outputs)?;
 
     let mut segments = vec![
         material_segment,

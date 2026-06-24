@@ -7557,6 +7557,10 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
         body.contains("build_witness_opening_segment_batch_from_trace_outputs"),
         "all-units transcript proof should build witness openings from trace outputs so CUDA source buffers can be reused"
     );
+    assert!(
+        !body.contains("request.outputs.iter().collect::<Vec<_>>()"),
+        "all-units transcript proof should reuse the pre-collected witness output refs"
+    );
 
     let fri_source_path = crate_root.join("src/prove_fri_opening.rs");
     let fri_source =
