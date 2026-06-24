@@ -420,6 +420,10 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "cuda_transfer_action_hint",
         "dominant_cuda_transfer_action_hint",
         "cuda_transfer_action_consensus",
+        "dominant_segment_commit_memory_pressure_hint",
+        "segment_commit_memory_pressure_consensus",
+        "dominant_segment_commit_memory_diagnostic_hint",
+        "segment_commit_memory_diagnostic_consensus",
         "copy_summary_gpu_residency_hint",
         "copy_summary_small_d2h_batching_hint",
         "kernel_graph_fusion_priority_hint",
@@ -2446,6 +2450,167 @@ fn prove_timing_root_summary_aggregates_cuda_transfer_action() {
         aggregate_fields.get(consensus_index),
         Some(&"yes"),
         "aggregate row should report stable CUDA transfer action consensus: stdout={stdout}"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_aggregates_segment_memory_hints() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join("../../temp/prove-timing-segment-memory-aggregate");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("timing summary fixture directory should be created");
+
+    let sample = |total_ms: u64, min_free_bytes: u64| {
+        [
+            "input_bytes=12447640".to_owned(),
+            format!("timing_total_ms={total_ms}"),
+            "timing_guest_segment_commit_ms=21000".to_owned(),
+            "timing_guest_segment_commit_cuda_memory_total_bytes=1000".to_owned(),
+            "timing_guest_segment_commit_cuda_memory_min_free_bytes=".to_owned()
+                + &min_free_bytes.to_string(),
+            "timing_guest_stage_tree_commit_root_count=120".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_groups=120".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1".to_owned(),
+        ]
+        .join("\n")
+    };
+    let paths = [(60139_u64, 50_u64), (60080, 60), (60200, 70)]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (total_ms, min_free_bytes))| {
+            let path = dir.join(format!("sample-{index}.log"));
+            std::fs::write(&path, sample(total_ms, min_free_bytes))
+                .expect("sample timing log should be written");
+            path
+        })
+        .collect::<Vec<_>>();
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .args(&paths)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert!(
+        lines.len() >= 6,
+        "multi-sample summary should include data and aggregate rows: stdout={stdout}"
+    );
+    let aggregate_headers = lines[4].split(',').collect::<Vec<_>>();
+    let aggregate_fields = lines[5].split(',').collect::<Vec<_>>();
+    let aggregate_value = |name: &str| {
+        let index = aggregate_headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("aggregate summary should expose {name}: stdout={stdout}"));
+        aggregate_fields
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("aggregate row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        aggregate_value("dominant_segment_commit_memory_pressure_hint"),
+        "segment_commit_memory_pressure"
+    );
+    assert_eq!(
+        aggregate_value("segment_commit_memory_pressure_consensus"),
+        "yes"
+    );
+    assert_eq!(
+        aggregate_value("dominant_segment_commit_memory_diagnostic_hint"),
+        "none"
+    );
+    assert_eq!(
+        aggregate_value("segment_commit_memory_diagnostic_consensus"),
+        "yes"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_aggregates_segment_memory_sampling_gaps() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join("../../temp/prove-timing-segment-memory-gap-aggregate");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("timing summary fixture directory should be created");
+
+    let sample = |total_ms: u64| {
+        [
+            "input_bytes=12447640".to_owned(),
+            format!("timing_total_ms={total_ms}"),
+            "timing_guest_segment_commit_ms=21000".to_owned(),
+            "timing_guest_segment_commit_cuda_memory_total_bytes=1000".to_owned(),
+            "timing_guest_stage_tree_commit_root_count=120".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_groups=120".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1".to_owned(),
+        ]
+        .join("\n")
+    };
+    let paths = [60139_u64, 60080, 60200]
+        .into_iter()
+        .enumerate()
+        .map(|(index, total_ms)| {
+            let path = dir.join(format!("sample-{index}.log"));
+            std::fs::write(&path, sample(total_ms)).expect("sample timing log should be written");
+            path
+        })
+        .collect::<Vec<_>>();
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .args(&paths)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert!(
+        lines.len() >= 6,
+        "multi-sample summary should include data and aggregate rows: stdout={stdout}"
+    );
+    let aggregate_headers = lines[4].split(',').collect::<Vec<_>>();
+    let aggregate_fields = lines[5].split(',').collect::<Vec<_>>();
+    let aggregate_value = |name: &str| {
+        let index = aggregate_headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("aggregate summary should expose {name}: stdout={stdout}"));
+        aggregate_fields
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("aggregate row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        aggregate_value("dominant_segment_commit_memory_pressure_hint"),
+        "memory_timing_missing"
+    );
+    assert_eq!(
+        aggregate_value("segment_commit_memory_pressure_consensus"),
+        "yes"
+    );
+    assert_eq!(
+        aggregate_value("dominant_segment_commit_memory_diagnostic_hint"),
+        "profile_segment_commit_memory_timing"
+    );
+    assert_eq!(
+        aggregate_value("segment_commit_memory_diagnostic_consensus"),
+        "yes"
     );
 }
 

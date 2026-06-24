@@ -962,14 +962,22 @@ AGGREGATE_HEADER = (
     "total_median_ms,total_max_ms,sample_spread_pct,close_samples,max_outlier,"
     "dominant_trace_pipeline_action_hint,trace_pipeline_action_consensus,"
     "dominant_trace_structure_hint,trace_structure_consensus,"
-    "dominant_cuda_transfer_action_hint,cuda_transfer_action_consensus"
+    "dominant_cuda_transfer_action_hint,cuda_transfer_action_consensus,"
+    "dominant_segment_commit_memory_pressure_hint,"
+    "segment_commit_memory_pressure_consensus,"
+    "dominant_segment_commit_memory_diagnostic_hint,"
+    "segment_commit_memory_diagnostic_consensus"
 )
 AGGREGATE_BY_INPUT_BYTES_HEADER = (
     "aggregate_by_input_bytes,input_bytes,total_count,valid_total_count,total_min_ms,"
     "total_mean_ms,total_median_ms,total_max_ms,sample_spread_pct,close_samples,"
     "max_outlier,dominant_trace_pipeline_action_hint,trace_pipeline_action_consensus,"
     "dominant_trace_structure_hint,trace_structure_consensus,"
-    "dominant_cuda_transfer_action_hint,cuda_transfer_action_consensus"
+    "dominant_cuda_transfer_action_hint,cuda_transfer_action_consensus,"
+    "dominant_segment_commit_memory_pressure_hint,"
+    "segment_commit_memory_pressure_consensus,"
+    "dominant_segment_commit_memory_diagnostic_hint,"
+    "segment_commit_memory_diagnostic_consensus"
 )
 CLOSE_SAMPLE_SPREAD_PCT = 5.0
 OUTLIER_RATIO_THRESHOLD = 1.5
@@ -5413,7 +5421,7 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
     if not totals:
         return (
             f"aggregate,{total_count},0,0,0.000,0.000,0,0.000,no,no,"
-            "none,no,none,no,none,no"
+            "none,no,none,no,none,no,none,no,none,no"
         )
 
     total_min_ms = min(totals)
@@ -5452,13 +5460,32 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
         for _, values in valid_inputs
     ]
     dominant_transfer_hint, transfer_consensus = dominant_hint_and_consensus(transfer_hints)
+    segment_memory_hints = [
+        segment_commit_memory_pressure_hint_from_values(values)
+        for _, values in valid_inputs
+    ]
+    dominant_segment_memory_hint, segment_memory_consensus = (
+        dominant_hint_and_consensus(segment_memory_hints)
+    )
+    segment_memory_diagnostic_hints = [
+        segment_commit_memory_diagnostic_hint(
+            values.get(SEGMENT_COMMIT_MS_KEY, 0),
+            segment_commit_memory_pressure_hint_from_values(values),
+        )
+        for _, values in valid_inputs
+    ]
+    dominant_segment_memory_diagnostic, segment_memory_diagnostic_consensus = (
+        dominant_hint_and_consensus(segment_memory_diagnostic_hints)
+    )
     return (
         f"aggregate,{total_count},{valid_total_count},{total_min_ms},"
         f"{total_mean_ms:.3f},{total_median_ms:.3f},{total_max_ms},"
         f"{sample_spread_pct:.3f},{close_samples},{max_outlier},"
         f"{dominant_action_hint},{action_consensus},"
         f"{dominant_trace_structure_hint},{trace_structure_consensus},"
-        f"{dominant_transfer_hint},{transfer_consensus}"
+        f"{dominant_transfer_hint},{transfer_consensus},"
+        f"{dominant_segment_memory_hint},{segment_memory_consensus},"
+        f"{dominant_segment_memory_diagnostic},{segment_memory_diagnostic_consensus}"
     )
 
 
