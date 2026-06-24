@@ -92,6 +92,72 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
     );
 }
 
+#[test]
+fn eth_proof_timing_batch_check_env_reports_ready_paths() {
+    let dir = test_dir("eth-proof-timing-batch-check-env");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let fake_bin = dir.join("lzvm");
+    std::fs::write(&fake_bin, b"fixture").expect("fake binary should write");
+    let setup = dir.join("setup");
+    std::fs::create_dir_all(&setup).expect("setup dir should be created");
+    let block_input = write_fixture(&dir, "block.input");
+    let cache = write_fixture(&dir, "program-image.cache");
+    let input_data = write_fixture(&dir, "input-data.bin");
+    let guest = write_fixture(&dir, "guest.elf");
+
+    let output = Command::new(script_path())
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .env("LZVM_REAL_SMALL_PARITY_BIN", &fake_bin)
+        .env("LZVM_REAL_SMALL_PARITY_SETUP", &setup)
+        .env("LZVM_REAL_SMALL_PARITY_BLOCK_INPUT", &block_input)
+        .env("LZVM_REAL_SMALL_PARITY_PROGRAM_IMAGE_CACHE", &cache)
+        .env("LZVM_REAL_SMALL_PARITY_INPUT_DATA", &input_data)
+        .env("LZVM_REAL_SMALL_PARITY_GUEST_IMAGE", &guest)
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "env check should pass for a complete small config: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("status=ok\n"), "{stdout}");
+    assert!(stdout.contains("small=ready\n"), "{stdout}");
+    assert!(stdout.contains("small_mode=combined\n"), "{stdout}");
+    assert!(stdout.contains("small_trace_limit=120000000\n"), "{stdout}");
+    assert!(stdout.contains("small_block_input="), "{stdout}");
+}
+
+#[test]
+fn eth_proof_timing_batch_check_env_rejects_missing_config() {
+    let output = Command::new(script_path())
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .env_remove("LZVM_REAL_SMALL_PARITY_SETUP")
+        .env_remove("LZVM_REAL_SMALL_PARITY_BLOCK_INPUT")
+        .env_remove("LZVM_REAL_SMALL_PARITY_PROGRAM_IMAGE_CACHE")
+        .env_remove("LZVM_REAL_SMALL_PARITY_INPUT_DATA")
+        .env_remove("LZVM_REAL_SMALL_PARITY_GUEST_IMAGE")
+        .output()
+        .expect("ETH proof timing batch env check should run");
+
+    assert!(
+        !output.status.success(),
+        "env check should fail when required config is missing"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("proof environment is incomplete"),
+        "env check should explain missing configuration: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn write_fixture(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, b"fixture").expect("fixture should write");

@@ -110,6 +110,16 @@ def positive_timeout(raw: str) -> float:
     return value
 
 
+def nonnegative_float(raw: str) -> float:
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"invalid float: {raw!r}") from error
+    if value < 0.0:
+        raise argparse.ArgumentTypeError("value must be nonnegative")
+    return value
+
+
 class ProofEnv:
     def __init__(self, prefix: str, label: str, default_trace_limit: str, root: Path):
         self.prefix = prefix
@@ -148,11 +158,20 @@ class ProofEnv:
         return os.environ.get(self.var("TRACE_LIMIT"), self.default_trace_limit)
 
 
-def command_for_env(config: ProofEnv, mode: str) -> str:
+def configured_paths(config: ProofEnv) -> dict[str, Path]:
+    paths = {suffix.lower(): config.path(suffix) for suffix in REQUIRED_SUFFIXES}
     bin_path = config.optional_path("BIN", config.root / "target" / "release" / "lzvm")
     if not bin_path.exists():
         raise SystemExit(f"{config.var('BIN')} path does not exist: {bin_path}")
-    tmp_dir = config.optional_path("TMP_DIR", config.root / "temp" / "tmp")
+    paths["bin"] = bin_path
+    paths["tmp_dir"] = config.optional_path("TMP_DIR", config.root / "temp" / "tmp")
+    return paths
+
+
+def command_for_env(config: ProofEnv, mode: str) -> str:
+    paths = configured_paths(config)
+    bin_path = paths["bin"]
+    tmp_dir = paths["tmp_dir"]
     output_dir = f"{{batch_dir}}/{config.label}-{{run_padded}}.proof"
 
     parts = ["env"]
@@ -170,14 +189,14 @@ def command_for_env(config: ProofEnv, mode: str) -> str:
             shell_arg(config.trace_limit()),
             "--timings",
             "--eth-block-input",
-            shell_arg(config.path("BLOCK_INPUT")),
+            shell_arg(paths["block_input"]),
             "--program-image-cache",
-            shell_arg(config.path("PROGRAM_IMAGE_CACHE")),
+            shell_arg(paths["program_image_cache"]),
             "--input-data",
-            shell_arg(config.path("INPUT_DATA")),
-            shell_arg(config.path("SETUP")),
+            shell_arg(paths["input_data"]),
+            shell_arg(paths["setup"]),
             output_dir,
-            shell_arg(config.path("GUEST_IMAGE")),
+            shell_arg(paths["guest_image"]),
         ]
     )
     return " ".join(parts)
@@ -242,6 +261,9 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
 
 def run(args: argparse.Namespace) -> int:
     root = workspace_root()
+    if args.check_env:
+        check_env(args, root)
+        return 0
     if args.summary is None:
         raise SystemExit("--summary is required")
     command = runner_command(args, root)
@@ -252,6 +274,26 @@ def run(args: argparse.Namespace) -> int:
                 print(f"{part[2:].replace('-', '_')}={command[index + 1]}")
         return 0
     return subprocess.run(command, cwd=root).returncode
+
+
+def check_env(args: argparse.Namespace, root: Path) -> None:
+    selected = selected_envs(args, root)
+    print("status=ok")
+    for config, mode in selected:
+        paths = configured_paths(config)
+        print(f"{config.label}=ready")
+        print(f"{config.label}_mode={mode}")
+        print(f"{config.label}_trace_limit={config.trace_limit()}")
+        for key in [
+            "bin",
+            "setup",
+            "block_input",
+            "program_image_cache",
+            "input_data",
+            "guest_image",
+            "tmp_dir",
+        ]:
+            print(f"{config.label}_{key}={paths[key]}")
 
 
 def self_test() -> None:
@@ -301,6 +343,7 @@ def self_test() -> None:
         suite="both",
         summary="self test",
         work_dir=str(work_dir / "runs"),
+        check_env=False,
     )
     try:
         code = run(args)
@@ -329,9 +372,10 @@ def main() -> None:
     parser.add_argument("--path", default="temp/improve-log.csv")
     parser.add_argument("--summary")
     parser.add_argument("--commit")
-    parser.add_argument("--max-relative-spread", type=float, default=0.10)
+    parser.add_argument("--max-relative-spread", type=nonnegative_float, default=0.10)
     parser.add_argument("--runner", default="scripts/run-proof-timing-batch.py")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--check-env", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
