@@ -152,6 +152,10 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         "runner command should require proof markers: {stdout}"
     );
     assert!(
+        stdout.contains("--require-text verify_proof_status=ok"),
+        "runner command should require the external proof verify marker: {stdout}"
+    );
+    assert!(
         stdout.contains("small_command=env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
         "small command should clear pipeline environment: {stdout}"
     );
@@ -168,6 +172,13 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
             && stdout.contains("--program-image-cache")
             && stdout.contains("--input-data"),
         "small command should pass proof inputs: {stdout}"
+    );
+    assert!(
+        stdout.contains("verify proof --eth-block-input")
+            && stdout.contains("{batch_dir}/small-{run_padded}.proof/proof.bin")
+            && stdout.contains("{batch_dir}/small-{run_padded}.proof/eth-block-public-values.bin")
+            && stdout.contains("verify_proof_status=ok"),
+        "small command should run an external proof verification after proving: {stdout}"
     );
     assert!(
         stdout.contains("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE=1"),
@@ -237,8 +248,46 @@ fn eth_proof_timing_batch_run_does_not_create_configured_tmp_dir() {
         "runner should receive the per-run temp token: {runner_args}"
     );
     assert!(
+        runner_args.contains("verify proof --eth-block-input")
+            && runner_args.contains("verify_proof_status=ok"),
+        "runner should receive a prove-then-verify command: {runner_args}"
+    );
+    assert!(
         !runner_args.contains(&fixture.tmp_dir.display().to_string()),
         "runner command should not use the configured TMPDIR as a shared run dir: {runner_args}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_skip_verify_omits_external_verify() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-skip-verify");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--skip-verify-proof")
+        .arg("--summary")
+        .arg("skip verify");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should allow skipping verify: stderr={stderr}"
+    );
+    assert!(
+        !stdout.contains("verify proof --eth-block-input")
+            && !stdout.contains("verify_proof_status=ok")
+            && !stdout.contains("--require-text verify_proof_status=ok"),
+        "skip mode should omit external proof verification: {stdout}"
     );
 }
 
@@ -266,6 +315,7 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
     assert!(stdout.contains("status=ok\n"), "{stdout}");
     assert!(stdout.contains("small=ready\n"), "{stdout}");
     assert!(stdout.contains("small_mode=combined\n"), "{stdout}");
+    assert!(stdout.contains("small_verify_proof=true\n"), "{stdout}");
     assert!(stdout.contains("small_trace_limit=120000000\n"), "{stdout}");
     assert!(stdout.contains("small_block_input="), "{stdout}");
     assert!(stdout.contains("small_tmp_dir="), "{stdout}");
@@ -388,6 +438,10 @@ fn eth_proof_timing_batch_available_suite_uses_only_configured_large_env() {
     assert!(
         stdout.contains("large_command=env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
         "available suite should include the configured large command: {stdout}"
+    );
+    assert!(
+        stdout.contains("verify proof --eth-block-input"),
+        "available suite should include external verification in the large command: {stdout}"
     );
     assert!(
         stdout.contains("{batch_dir}/large-{run_padded}.proof"),

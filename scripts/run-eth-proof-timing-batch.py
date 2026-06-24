@@ -180,10 +180,12 @@ def configured_paths(config: ProofEnv) -> dict[str, Path]:
     return paths
 
 
-def command_for_env(config: ProofEnv, mode: str) -> str:
+def command_for_env(config: ProofEnv, mode: str, verify_proof: bool) -> str:
     paths = configured_paths(config)
     bin_path = paths["bin"]
     output_dir = f"{{batch_dir}}/{config.label}-{{run_padded}}.proof"
+    proof_path = f"{output_dir}/proof.bin"
+    public_values_path = f"{output_dir}/eth-block-public-values.bin"
 
     parts = ["env"]
     for name in PIPELINE_ENV_TO_CLEAR:
@@ -210,6 +212,25 @@ def command_for_env(config: ProofEnv, mode: str) -> str:
             shell_arg(paths["guest_image"]),
         ]
     )
+    if verify_proof:
+        parts.extend(
+            [
+                "&&",
+                shell_arg(bin_path),
+                "verify",
+                "proof",
+                "--eth-block-input",
+                shell_arg(paths["block_input"]),
+                "--program-image-cache",
+                shell_arg(paths["program_image_cache"]),
+                shell_arg(paths["setup"]),
+                proof_path,
+                public_values_path,
+                "&&",
+                "printf",
+                shell_arg("verify_proof_status=ok\n"),
+            ]
+        )
     return " ".join(parts)
 
 
@@ -272,11 +293,13 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
         "--max-relative-spread",
         str(args.max_relative_spread),
     ]
+    if not args.skip_verify_proof:
+        command.extend(["--require-text", "verify_proof_status=ok"])
     if args.commit is not None:
         command.extend(["--commit", args.commit])
     for config, mode in selected:
         option = "--small-command" if config.label == "small" else "--large-command"
-        command.extend([option, command_for_env(config, mode)])
+        command.extend([option, command_for_env(config, mode, not args.skip_verify_proof)])
     return command
 
 
@@ -304,6 +327,7 @@ def check_env(args: argparse.Namespace, root: Path) -> None:
         paths = configured_paths(config)
         print(f"{config.label}=ready")
         print(f"{config.label}_mode={mode}")
+        print(f"{config.label}_verify_proof={str(not args.skip_verify_proof).lower()}")
         print(f"{config.label}_trace_limit={config.trace_limit()}")
         for key in [
             "bin",
@@ -328,11 +352,25 @@ def self_test() -> None:
             [
                 "#!/usr/bin/env python3",
                 "import os",
+                "import pathlib",
                 "import sys",
+                "args = sys.argv[1:]",
+                "if args[:2] == ['verify', 'proof']:",
+                "    proof = pathlib.Path(args[-2])",
+                "    public_values = pathlib.Path(args[-1])",
+                "    if not proof.exists() or not public_values.exists():",
+                "        sys.stderr.write('missing proof outputs for verify\\n')",
+                "        sys.exit(8)",
+                "    print('status=ok')",
+                "    sys.exit(0)",
                 "tmp = os.environ.get('TMPDIR')",
                 "if not tmp or not os.path.isdir(tmp):",
                 "    sys.stderr.write('missing TMPDIR\\n')",
                 "    sys.exit(9)",
+                "output_dir = pathlib.Path(args[-2])",
+                "output_dir.mkdir(parents=True, exist_ok=True)",
+                "(output_dir / 'proof.bin').write_bytes(b'proof')",
+                "(output_dir / 'eth-block-public-values.bin').write_bytes(b'public')",
                 "label = os.environ.get('LZVM_TIMING_BATCH_LABEL', 'small')",
                 "run = int(os.environ.get('LZVM_TIMING_BATCH_RUN', '1'))",
                 "base = 1000 if label == 'small' else 2000",
@@ -370,6 +408,7 @@ def self_test() -> None:
         summary="self test",
         work_dir=str(work_dir / "runs"),
         check_env=False,
+        skip_verify_proof=False,
     )
     try:
         code = run(args)
@@ -402,6 +441,7 @@ def main() -> None:
     parser.add_argument("--runner", default="scripts/run-proof-timing-batch.py")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--check-env", action="store_true")
+    parser.add_argument("--skip-verify-proof", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
