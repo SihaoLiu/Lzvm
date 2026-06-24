@@ -1590,7 +1590,9 @@ fn temp_dir(name: &str) -> PathBuf {
 
 fn repo_temp_dir(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
         .join("temp")
         .join(format!("lzvm-cli-{}-{name}", std::process::id()))
 }

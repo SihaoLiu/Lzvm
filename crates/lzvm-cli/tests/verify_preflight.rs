@@ -58,12 +58,13 @@ fn format_optional_u256(value: Option<&[u8; 32]>) -> String {
 }
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .and_then(std::path::Path::parent)
+        .and_then(Path::parent)
         .expect("workspace root should resolve")
+        .join("temp")
         .join(format!(
-            "temp/lzvm-cli-verify-preflight-{}-{name}",
+            "lzvm-cli-verify-preflight-{}-{name}",
             std::process::id()
         ))
 }

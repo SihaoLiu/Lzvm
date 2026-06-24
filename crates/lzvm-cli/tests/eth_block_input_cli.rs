@@ -23,8 +23,9 @@ fn temp_dir(name: &str) -> PathBuf {
         .parent()
         .and_then(Path::parent)
         .expect("workspace root should resolve")
+        .join("temp")
         .join(format!(
-            "temp/lzvm-eth-block-input-cli-{}-{name}",
+            "lzvm-eth-block-input-cli-{}-{name}",
             std::process::id()
         ))
 }
