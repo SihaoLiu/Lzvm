@@ -259,6 +259,44 @@ fn eth_proof_timing_batch_check_env_rejects_missing_bin() {
 }
 
 #[test]
+fn eth_proof_timing_batch_rejects_tmp_dir_outside_temp() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-tmp-outside");
+    let outside_tmp = workspace_root().join(format!(
+        "target/eth-proof-timing-batch-tmp-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&outside_tmp);
+    let mut command = Command::new(script_path());
+    command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+    command.env(format!("{SMALL_PREFIX}_TMP_DIR"), &outside_tmp);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let outside_created = outside_tmp.exists();
+    let tmp_dir_created = fixture.tmp_dir.exists();
+    let _ = std::fs::remove_dir_all(&outside_tmp);
+    fixture.cleanup();
+
+    assert!(!success, "env check should reject TMPDIR outside temp");
+    assert!(
+        stderr.contains("_TMP_DIR must be under"),
+        "TMPDIR rejection should explain the temp boundary: stderr={stderr}"
+    );
+    assert!(
+        !outside_created,
+        "rejected TMPDIR should not be created outside temp"
+    );
+    assert!(
+        !tmp_dir_created,
+        "rejected env check should not create the fixture TMPDIR"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_available_suite_uses_only_configured_large_env() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-available-large");
     let mut command = Command::new(script_path());

@@ -26,6 +26,14 @@ def resolve_workspace_path(path: str, root: Path) -> Path:
     return root / candidate
 
 
+def require_workspace_temp_path(path: Path, root: Path, label: str) -> Path:
+    temp_dir = (root / "temp").resolve(strict=False)
+    resolved = path.resolve(strict=False)
+    if resolved != temp_dir and temp_dir not in resolved.parents:
+        raise SystemExit(f"{label} must be under {temp_dir}: {path}")
+    return path
+
+
 def positive_run_count(raw: str) -> int:
     try:
         value = int(raw)
@@ -342,13 +350,21 @@ def run_batch(args: argparse.Namespace) -> Path:
     append_script = resolve_workspace_path(args.append_script, root)
     if not append_script.exists():
         raise SystemExit(f"{append_script}: append script does not exist")
-    work_dir = resolve_workspace_path(args.work_dir, root)
-    batch_dir = work_dir / batch_dir_name()
-    batch_dir.mkdir(parents=True, exist_ok=False)
+    work_dir = require_workspace_temp_path(
+        resolve_workspace_path(args.work_dir, root),
+        root,
+        "--work-dir",
+    )
     cwd = resolve_workspace_path(args.cwd, root)
     if not cwd.exists():
         raise SystemExit(f"{cwd}: command working directory does not exist")
-    improve_log_path = resolve_workspace_path(args.path, root)
+    improve_log_path = require_workspace_temp_path(
+        resolve_workspace_path(args.path, root),
+        root,
+        "--path",
+    )
+    batch_dir = work_dir / batch_dir_name()
+    batch_dir.mkdir(parents=True, exist_ok=False)
     batch_json_path = batch_dir / "batch.json"
 
     def record_batch_json(

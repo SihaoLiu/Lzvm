@@ -82,6 +82,14 @@ def resolve_workspace_path(path: str, root: Path) -> Path:
     return root / candidate
 
 
+def require_workspace_temp_path(path: Path, root: Path, label: str) -> Path:
+    temp_dir = (root / "temp").resolve(strict=False)
+    resolved = path.resolve(strict=False)
+    if resolved != temp_dir and temp_dir not in resolved.parents:
+        raise SystemExit(f"{label} must be under {temp_dir}: {path}")
+    return path
+
+
 def shell_assign(name: str, value: str | Path) -> str:
     return f"{name}={shlex.quote(str(value))}"
 
@@ -164,7 +172,11 @@ def configured_paths(config: ProofEnv) -> dict[str, Path]:
     if not bin_path.exists():
         raise SystemExit(f"{config.var('BIN')} path does not exist: {bin_path}")
     paths["bin"] = bin_path
-    paths["tmp_dir"] = config.optional_path("TMP_DIR", config.root / "temp" / "tmp")
+    paths["tmp_dir"] = require_workspace_temp_path(
+        config.optional_path("TMP_DIR", config.root / "temp" / "tmp"),
+        config.root,
+        config.var("TMP_DIR"),
+    )
     return paths
 
 
@@ -232,6 +244,16 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
     if not runner.exists():
         raise SystemExit(f"runner script does not exist: {runner}")
     selected = selected_envs(args, root)
+    work_dir = require_workspace_temp_path(
+        resolve_workspace_path(args.work_dir, root),
+        root,
+        "--work-dir",
+    )
+    improve_log_path = require_workspace_temp_path(
+        resolve_workspace_path(args.path, root),
+        root,
+        "--path",
+    )
     command = [
         sys.executable,
         str(runner),
@@ -242,9 +264,9 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
         "--large-timeout",
         str(args.large_timeout),
         "--work-dir",
-        str(resolve_workspace_path(args.work_dir, root)),
+        str(work_dir),
         "--path",
-        str(resolve_workspace_path(args.path, root)),
+        str(improve_log_path),
         "--summary",
         args.summary,
         "--require-proof-output",

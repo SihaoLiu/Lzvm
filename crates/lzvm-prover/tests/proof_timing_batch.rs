@@ -93,6 +93,108 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
 }
 
 #[test]
+fn proof_timing_batch_rejects_work_dir_outside_temp() {
+    let script_path = batch_script_path();
+    let outside_dir = workspace_root().join(format!(
+        "target/proof-timing-batch-outside-{}",
+        std::process::id()
+    ));
+    let log_path = workspace_root().join(format!(
+        "temp/proof-timing-batch-outside-log-{}.csv",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&outside_dir);
+    let _ = std::fs::remove_file(&log_path);
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&outside_dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg("printf 'timing_total_ms=1000\n'")
+        .arg("--summary")
+        .arg("path guard")
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let outside_created = outside_dir.exists();
+    let log_created = log_path.exists();
+    let _ = std::fs::remove_dir_all(&outside_dir);
+    let _ = std::fs::remove_file(&log_path);
+
+    assert!(
+        !success,
+        "proof timing batch should reject work dirs outside temp"
+    );
+    assert!(
+        stderr.contains("--work-dir must be under"),
+        "work dir rejection should explain the temp boundary: stderr={stderr}"
+    );
+    assert!(
+        !outside_created,
+        "rejected work dir should not be created outside temp"
+    );
+    assert!(
+        !log_created,
+        "rejected run should not create an improve log"
+    );
+}
+
+#[test]
+fn proof_timing_batch_rejects_log_path_outside_temp() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-log-path");
+    let outside_log = workspace_root().join(format!(
+        "target/proof-timing-batch-log-{}.csv",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_file(&outside_log);
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&outside_log)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg("printf 'timing_total_ms=1000\n'")
+        .arg("--summary")
+        .arg("path guard")
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let work_dir_created = dir.exists();
+    let log_created = outside_log.exists();
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_file(&outside_log);
+
+    assert!(
+        !success,
+        "proof timing batch should reject log paths outside temp"
+    );
+    assert!(
+        stderr.contains("--path must be under"),
+        "log path rejection should explain the temp boundary: stderr={stderr}"
+    );
+    assert!(
+        !work_dir_created,
+        "rejected log path should not create a batch dir"
+    );
+    assert!(!log_created, "rejected run should not create a log");
+}
+
+#[test]
 fn proof_timing_batch_rejects_missing_required_output_text() {
     let script_path = batch_script_path();
     let dir = test_dir("proof-timing-batch-required-text");
