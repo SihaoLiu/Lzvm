@@ -80,6 +80,36 @@ def RuntimeArtifactSoundnessObligations
     /\ system.accepts publicInput proof
     /\ RuntimeVerifierCoreContract system publicInput proof
 
+theorem runtime_conformance_agreement_checked_acceptance_iff
+    {system : VerifierModel}
+    {left right : RuntimeConformanceValidation system}
+    (agreement : RuntimeConformanceValidationAgreement left right) :
+    forall artifact publicInput proof,
+      RuntimeArtifactCheckedAcceptance system left artifact publicInput proof <->
+        RuntimeArtifactCheckedAcceptance system right artifact publicInput proof := by
+  intro artifact publicInput proof
+  exact agreement.left artifact publicInput proof
+
+theorem runtime_conformance_agreement_evidence_iff
+    {system : VerifierModel}
+    {left right : RuntimeConformanceValidation system}
+    (agreement : RuntimeConformanceValidationAgreement left right) :
+    forall artifact publicInput proof,
+      RuntimeArtifactEvidence system left artifact publicInput proof <->
+        RuntimeArtifactEvidence system right artifact publicInput proof := by
+  intro artifact publicInput proof
+  constructor
+  · intro evidence
+    exact
+      And.intro
+        ((agreement.right.left artifact publicInput proof).mp evidence.left)
+        ((agreement.right.right artifact publicInput proof).mp evidence.right)
+  · intro evidence
+    exact
+      And.intro
+        ((agreement.right.left artifact publicInput proof).mpr evidence.left)
+        ((agreement.right.right artifact publicInput proof).mpr evidence.right)
+
 theorem runtime_artifact_checked_acceptance_implies_verifier_accepts
     {system : VerifierModel}
     (validation : RuntimeConformanceValidation system) :
@@ -200,5 +230,36 @@ theorem runtime_artifact_checked_acceptance_verifier_core_contract
       proof
       artifactAccepted
   exact obligations.right.right
+
+theorem runtime_conformance_agreement_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (left right : RuntimeConformanceValidation system)
+    (agreement : RuntimeConformanceValidationAgreement left right) :
+    forall artifact publicInput proof,
+      RuntimeArtifactCheckedAcceptance system left artifact publicInput proof ->
+        RuntimeArtifactSoundnessObligations
+          system
+          right
+          artifact
+          publicInput
+          proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof leftAccepted
+  have rightAccepted :
+      RuntimeArtifactCheckedAcceptance system right artifact publicInput proof :=
+    (runtime_conformance_agreement_checked_acceptance_iff
+      agreement
+      artifact
+      publicInput
+      proof).mp leftAccepted
+  exact
+    runtime_artifact_checked_acceptance_sound
+      assumptions
+      right
+      artifact
+      publicInput
+      proof
+      rightAccepted
 
 end Lzvm
