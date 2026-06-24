@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import csv
 import os
 import re
 import shlex
@@ -416,7 +417,11 @@ def remove_stale_summary(output_path: Path) -> None:
             pass
 
 
-def summarize_proof_timing(root: Path, outputs: dict[str, Path]) -> bool:
+def summarize_proof_timing(
+    root: Path,
+    outputs: dict[str, Path],
+    extra_args: list[str] | None = None,
+) -> bool:
     profile_log = outputs["profile_log"]
     log_text = profile_log.read_text(encoding="utf-8")
     if TIMING_TOTAL_RE.search(log_text) is None:
@@ -428,8 +433,12 @@ def summarize_proof_timing(root: Path, outputs: dict[str, Path]) -> bool:
         remove_stale_summary(outputs["proof_timing_summary"])
         print("proof_timing_summary=skipped_missing_keys=" + ";".join(missing_keys))
         return False
+    command = ["scripts/prove-timing-root-summary.py"]
+    if extra_args:
+        command.extend(extra_args)
+    command.append(str(profile_log))
     run_summary(
-        ["scripts/prove-timing-root-summary.py", str(profile_log)],
+        command,
         root,
         outputs["proof_timing_summary"],
         profile_env(outputs),
@@ -491,9 +500,24 @@ def run_profile(args: argparse.Namespace) -> int:
             )
             print(f"nsys_sync_summary={display_path_for_shell(outputs['sync_summary'], root)}")
             print(f"nsys_copy_summary={display_path_for_shell(outputs['copy_summary'], root)}")
+            summarize_proof_timing(
+                root,
+                outputs,
+                [
+                    "--nsys-kernel-summary",
+                    str(outputs["kernel_summary"]),
+                    "--nsys-copy-summary",
+                    str(outputs["copy_summary"]),
+                ],
+            )
     elif args.tool == "ncu" and args.summarize:
         summarize_ncu(root, outputs)
         print(f"ncu_kernel_summary={display_path_for_shell(outputs['kernel_summary'], root)}")
+        summarize_proof_timing(
+            root,
+            outputs,
+            ["--ncu-kernel-summary", str(outputs["kernel_summary"])],
+        )
     return 0
 
 
@@ -533,6 +557,21 @@ def write_fake_profiler(path: Path, tool: str, log_path: Path) -> None:
         encoding="utf-8",
     )
     path.chmod(0o755)
+
+
+def csv_value(text: str, column: str) -> str:
+    rows = list(csv.reader(text.splitlines()))
+    if len(rows) < 2:
+        raise SystemExit("summary CSV missing data row")
+    header = rows[0]
+    try:
+        index = header.index(column)
+    except ValueError as error:
+        raise SystemExit(f"summary CSV missing column {column}") from error
+    try:
+        return rows[1][index]
+    except IndexError as error:
+        raise SystemExit(f"summary CSV row missing column {column}") from error
 
 
 def self_test() -> None:
@@ -615,8 +654,16 @@ def self_test() -> None:
         proof_summary = work_dir / "profiles" / "self-test-ncu.proof-timing-summary.csv"
         if not proof_summary.exists():
             raise SystemExit("fake ncu proof timing summary missing")
-        if not proof_summary.read_text(encoding="utf-8").startswith("profile,"):
+        proof_summary_text = proof_summary.read_text(encoding="utf-8")
+        if not proof_summary_text.startswith("profile,"):
             raise SystemExit("fake ncu proof timing summary is not CSV")
+        if csv_value(proof_summary_text, "ncu_top_kernel") != "self":
+            raise SystemExit("fake ncu proof timing summary missing top kernel")
+        if (
+            csv_value(proof_summary_text, "ncu_metric_collection_hint")
+            != "duration_only_missing_throughput"
+        ):
+            raise SystemExit("fake ncu proof timing summary missing NCU metric hint")
         ncu_argv = (work_dir / "fake-ncu.argv").read_text(encoding="utf-8")
         if f"tmpdir={work_dir / 'profiles' / 'self-test-ncu.tmp'}" not in ncu_argv:
             raise SystemExit("fake ncu did not receive managed TMPDIR")
