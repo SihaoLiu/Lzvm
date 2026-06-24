@@ -1,17 +1,28 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::proof::{
     encode_proof_artifact, parse_proof_artifact, read_proof_artifact_file, ProofArtifact,
     ProofArtifactError, ProofSegment,
 };
+use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 
 fn sample_hash(byte: u8) -> [u8; 32] {
     [byte; 32]
 }
 
+fn sample_metadata() -> Vec<u8> {
+    let mut metadata = Vec::with_capacity(64);
+    metadata.extend_from_slice(&sample_hash(0x22));
+    metadata.extend_from_slice(&sample_hash(0x33));
+    metadata
+}
+
 fn temp_file_path(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("lzvm-proof-artifact-{}-{name}", std::process::id()))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("temp")
+        .join(format!("lzvm-proof-artifact-{}-{name}", std::process::id()))
 }
 
 fn sample_proof() -> ProofArtifact {
@@ -31,6 +42,27 @@ fn sample_proof() -> ProofArtifact {
     }
 }
 
+fn proof_container_bytes(sections: Vec<SectionedSection>) -> Vec<u8> {
+    proof_container_bytes_with_version(1, sections)
+}
+
+fn proof_container_bytes_with_version(version: u32, sections: Vec<SectionedSection>) -> Vec<u8> {
+    proof_container_bytes_with_header(*b"prf0", version, sections)
+}
+
+fn proof_container_bytes_with_header(
+    kind: [u8; 4],
+    version: u32,
+    sections: Vec<SectionedSection>,
+) -> Vec<u8> {
+    encode_sectioned_file(&SectionedFile {
+        kind,
+        version,
+        sections,
+    })
+    .expect("proof container should encode")
+}
+
 #[test]
 fn encodes_and_parses_proof_artifacts() {
     let encoded = encode_proof_artifact(&sample_proof()).expect("fixture should encode");
@@ -44,6 +76,8 @@ fn encodes_and_parses_proof_artifacts() {
 fn reads_proof_artifacts_from_a_file_path() {
     let path = temp_file_path("proof.bin");
     let encoded = encode_proof_artifact(&sample_proof()).expect("fixture should encode");
+    fs::create_dir_all(path.parent().expect("temp file should have parent"))
+        .expect("fixture directory should be created");
     fs::write(&path, encoded).expect("fixture should be written");
 
     let parsed = read_proof_artifact_file(&path).expect("fixture should parse");
@@ -54,21 +88,121 @@ fn reads_proof_artifacts_from_a_file_path() {
 
 #[test]
 fn rejects_proofs_without_metadata() {
-    let encoded = lzvm_artifacts::sectioned::encode_sectioned_file(
-        &lzvm_artifacts::sectioned::SectionedFile {
-            kind: *b"prf0",
-            version: 1,
-            sections: vec![lzvm_artifacts::sectioned::SectionedSection {
-                id: 100,
-                data: vec![1],
-            }],
-        },
-    )
-    .expect("container should encode");
+    let encoded = proof_container_bytes(vec![SectionedSection {
+        id: 100,
+        data: vec![1],
+    }]);
 
     assert!(matches!(
         parse_proof_artifact(&encoded),
         Err(ProofArtifactError::MissingMetadata)
+    ));
+}
+
+#[test]
+fn rejects_proofs_with_invalid_container_kind() {
+    let encoded = proof_container_bytes_with_header(
+        *b"bad!",
+        1,
+        vec![
+            SectionedSection {
+                id: 1,
+                data: sample_metadata(),
+            },
+            SectionedSection {
+                id: 100,
+                data: vec![1],
+            },
+        ],
+    );
+
+    assert!(matches!(
+        parse_proof_artifact(&encoded),
+        Err(ProofArtifactError::Sectioned(_))
+    ));
+}
+
+#[test]
+fn rejects_proofs_with_duplicate_metadata() {
+    let encoded = proof_container_bytes(vec![
+        SectionedSection {
+            id: 1,
+            data: sample_metadata(),
+        },
+        SectionedSection {
+            id: 100,
+            data: vec![1],
+        },
+        SectionedSection {
+            id: 1,
+            data: sample_metadata(),
+        },
+    ]);
+
+    assert!(matches!(
+        parse_proof_artifact(&encoded),
+        Err(ProofArtifactError::DuplicateMetadata)
+    ));
+}
+
+#[test]
+fn rejects_proofs_with_invalid_metadata_length() {
+    let encoded = proof_container_bytes(vec![
+        SectionedSection {
+            id: 1,
+            data: vec![0; 63],
+        },
+        SectionedSection {
+            id: 100,
+            data: vec![1],
+        },
+    ]);
+
+    assert!(matches!(
+        parse_proof_artifact(&encoded),
+        Err(ProofArtifactError::InvalidMetadataLength {
+            expected: 64,
+            found: 63
+        })
+    ));
+}
+
+#[test]
+fn rejects_proofs_with_unsupported_versions() {
+    let encoded = proof_container_bytes_with_version(
+        0,
+        vec![
+            SectionedSection {
+                id: 1,
+                data: sample_metadata(),
+            },
+            SectionedSection {
+                id: 100,
+                data: vec![1],
+            },
+        ],
+    );
+
+    assert!(matches!(
+        parse_proof_artifact(&encoded),
+        Err(ProofArtifactError::Sectioned(_))
+            | Err(ProofArtifactError::UnsupportedVersion {
+                found: 0,
+                expected: 1
+            })
+    ));
+}
+
+#[test]
+fn rejects_proofs_without_segments() {
+    let encoded = proof_container_bytes(vec![SectionedSection {
+        id: 1,
+        data: sample_metadata(),
+    }]);
+
+    assert!(matches!(
+        parse_proof_artifact(&encoded),
+        Err(ProofArtifactError::MissingSegments)
     ));
 }
 
@@ -102,5 +236,66 @@ fn rejects_empty_proof_segments() {
     assert!(matches!(
         encode_proof_artifact(&proof),
         Err(ProofArtifactError::EmptySegment { id: 100 })
+    ));
+}
+
+#[test]
+fn rejects_parsed_proofs_with_empty_segments() {
+    let encoded = proof_container_bytes(vec![
+        SectionedSection {
+            id: 1,
+            data: sample_metadata(),
+        },
+        SectionedSection {
+            id: 100,
+            data: Vec::new(),
+        },
+    ]);
+
+    assert!(matches!(
+        parse_proof_artifact(&encoded),
+        Err(ProofArtifactError::EmptySegment { id: 100 })
+    ));
+}
+
+#[test]
+fn rejects_parsed_proofs_with_reserved_segment_ids() {
+    let encoded = proof_container_bytes(vec![
+        SectionedSection {
+            id: 1,
+            data: sample_metadata(),
+        },
+        SectionedSection {
+            id: 2,
+            data: vec![1],
+        },
+    ]);
+
+    assert!(matches!(
+        parse_proof_artifact(&encoded),
+        Err(ProofArtifactError::ReservedSegmentId { id: 2 })
+    ));
+}
+
+#[test]
+fn rejects_parsed_proofs_with_duplicate_segment_ids() {
+    let encoded = proof_container_bytes(vec![
+        SectionedSection {
+            id: 1,
+            data: sample_metadata(),
+        },
+        SectionedSection {
+            id: 100,
+            data: vec![1],
+        },
+        SectionedSection {
+            id: 100,
+            data: vec![2],
+        },
+    ]);
+
+    assert!(matches!(
+        parse_proof_artifact(&encoded),
+        Err(ProofArtifactError::DuplicateSegmentId { id: 100 })
     ));
 }
