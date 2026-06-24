@@ -58,10 +58,14 @@ fn format_optional_u256(value: Option<&[u8; 32]>) -> String {
 }
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-cli-verify-preflight-{}-{name}",
-        std::process::id()
-    ))
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve")
+        .join(format!(
+            "temp/lzvm-cli-verify-preflight-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn write_bytes(path: &Path, bytes: impl AsRef<[u8]>) {
