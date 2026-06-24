@@ -65,7 +65,7 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_sound
     (assumptions : AssumptionBundle system)
     (summary : WitnessOpeningRowValueTimingSummary)
     (sourceExtendMilliseconds sourceDownloadMilliseconds deviceDownloadMilliseconds
-      deviceRows sourceRows words bytes : Nat) :
+      deviceRows deviceDownloadBatches deviceSingleDownloads sourceRows words bytes : Nat) :
     forall publicInput proof,
       WitnessOpeningRowValueTimingObservedAcceptance
         system
@@ -75,6 +75,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_sound
             rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds
             rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds
             deviceRowCount := deviceRows
+            deviceDownloadBatchCount := deviceDownloadBatches
+            deviceSingleDownloadCount := deviceSingleDownloads
             sourceRowCount := sourceRows
             wordCount := words
             byteCount := bytes })
@@ -91,6 +93,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_sound
           rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds
           rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds
           deviceRowCount := deviceRows
+          deviceDownloadBatchCount := deviceDownloadBatches
+          deviceSingleDownloadCount := deviceSingleDownloads
           sourceRowCount := sourceRows
           wordCount := words
           byteCount := bytes })
@@ -103,7 +107,7 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_verifier_core_cont
     (assumptions : AssumptionBundle system)
     (summary : WitnessOpeningRowValueTimingSummary)
     (sourceExtendMilliseconds sourceDownloadMilliseconds deviceDownloadMilliseconds
-      deviceRows sourceRows words bytes : Nat) :
+      deviceRows deviceDownloadBatches deviceSingleDownloads sourceRows words bytes : Nat) :
     forall publicInput proof,
       WitnessOpeningRowValueTimingObservedAcceptance
         system
@@ -113,6 +117,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_verifier_core_cont
             rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds
             rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds
             deviceRowCount := deviceRows
+            deviceDownloadBatchCount := deviceDownloadBatches
+            deviceSingleDownloadCount := deviceSingleDownloads
             sourceRowCount := sourceRows
             wordCount := words
             byteCount := bytes })
@@ -129,6 +135,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_verifier_core_cont
           rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds
           rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds
           deviceRowCount := deviceRows
+          deviceDownloadBatchCount := deviceDownloadBatches
+          deviceSingleDownloadCount := deviceSingleDownloads
           sourceRowCount := sourceRows
           wordCount := words
           byteCount := bytes })
@@ -1340,7 +1348,8 @@ theorem proof_artifact_finish_row_values_shape_acceptance_sound
     (assumptions : AssumptionBundle system)
     (summary : ProofArtifactFinishTimingSummary)
     (rowValuesMilliseconds sourceExtendMilliseconds sourceDownloadMilliseconds
-      deviceDownloadMilliseconds deviceRows sourceRows words bytes : Nat) :
+      deviceDownloadMilliseconds deviceRows deviceDownloadBatches deviceSingleDownloads
+      sourceRows words bytes : Nat) :
     forall publicInput proof,
       ProofArtifactFinishTimingObservedAcceptance
         system
@@ -1354,6 +1363,10 @@ theorem proof_artifact_finish_row_values_shape_acceptance_sound
             finishWitnessOpeningRowValueDeviceDownloadMilliseconds :=
               deviceDownloadMilliseconds
             finishWitnessOpeningRowValuesDeviceRowCount := deviceRows
+            finishWitnessOpeningRowValuesDeviceDownloadBatchCount :=
+              deviceDownloadBatches
+            finishWitnessOpeningRowValuesDeviceSingleDownloadCount :=
+              deviceSingleDownloads
             finishWitnessOpeningRowValuesSourceRowCount := sourceRows
             finishWitnessOpeningRowValuesWordCount := words
             finishWitnessOpeningRowValuesByteCount := bytes })
@@ -1373,6 +1386,10 @@ theorem proof_artifact_finish_row_values_shape_acceptance_sound
         finishWitnessOpeningRowValueDeviceDownloadMilliseconds :=
           deviceDownloadMilliseconds
         finishWitnessOpeningRowValuesDeviceRowCount := deviceRows
+        finishWitnessOpeningRowValuesDeviceDownloadBatchCount :=
+          deviceDownloadBatches
+        finishWitnessOpeningRowValuesDeviceSingleDownloadCount :=
+          deviceSingleDownloads
         finishWitnessOpeningRowValuesSourceRowCount := sourceRows
         finishWitnessOpeningRowValuesWordCount := words
         finishWitnessOpeningRowValuesByteCount := bytes }
@@ -1385,7 +1402,8 @@ theorem proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract
     (assumptions : AssumptionBundle system)
     (summary : ProofArtifactFinishTimingSummary)
     (rowValuesMilliseconds sourceExtendMilliseconds sourceDownloadMilliseconds
-      deviceDownloadMilliseconds deviceRows sourceRows words bytes : Nat) :
+      deviceDownloadMilliseconds deviceRows deviceDownloadBatches deviceSingleDownloads
+      sourceRows words bytes : Nat) :
     forall publicInput proof,
       ProofArtifactFinishTimingObservedAcceptance
         system
@@ -1399,6 +1417,10 @@ theorem proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract
             finishWitnessOpeningRowValueDeviceDownloadMilliseconds :=
               deviceDownloadMilliseconds
             finishWitnessOpeningRowValuesDeviceRowCount := deviceRows
+            finishWitnessOpeningRowValuesDeviceDownloadBatchCount :=
+              deviceDownloadBatches
+            finishWitnessOpeningRowValuesDeviceSingleDownloadCount :=
+              deviceSingleDownloads
             finishWitnessOpeningRowValuesSourceRowCount := sourceRows
             finishWitnessOpeningRowValuesWordCount := words
             finishWitnessOpeningRowValuesByteCount := bytes })
@@ -1418,6 +1440,10 @@ theorem proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract
         finishWitnessOpeningRowValueDeviceDownloadMilliseconds :=
           deviceDownloadMilliseconds
         finishWitnessOpeningRowValuesDeviceRowCount := deviceRows
+        finishWitnessOpeningRowValuesDeviceDownloadBatchCount :=
+          deviceDownloadBatches
+        finishWitnessOpeningRowValuesDeviceSingleDownloadCount :=
+          deviceSingleDownloads
         finishWitnessOpeningRowValuesSourceRowCount := sourceRows
         finishWitnessOpeningRowValuesWordCount := words
         finishWitnessOpeningRowValuesByteCount := bytes }

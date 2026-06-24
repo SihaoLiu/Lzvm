@@ -4939,6 +4939,10 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "witness_opening_row_values_device_row_count",
         ),
         (
+            "\"finish_witness_opening_row_values_device_download_batches\"",
+            "witness_opening_row_values_device_download_batch_count",
+        ),
+        (
             "\"finish_witness_opening_row_values_device_single_downloads\"",
             "witness_opening_row_values_device_single_download_count",
         ),
@@ -5097,6 +5101,10 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "finish_witness_stage_{}_opening_row_values_device_rows",
             "row_values_device_row_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_row_values_device_download_batches",
+            "row_values_device_download_batch_count",
         ),
         (
             "finish_witness_stage_{}_opening_row_values_device_single_downloads",

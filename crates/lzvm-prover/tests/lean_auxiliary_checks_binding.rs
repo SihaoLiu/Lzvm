@@ -1289,9 +1289,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "sourceExtendMilliseconds",
         "sourceDownloadMilliseconds",
         "deviceDownloadMilliseconds",
+        "deviceDownloadBatchCount",
+        "deviceSingleDownloadCount",
         "rowValueSourceExtendMilliseconds",
         "rowValueSourceDownloadMilliseconds",
         "rowValueDeviceDownloadMilliseconds",
+        "deviceRowCount",
         "guestTraceStreamElapsedMilliseconds",
         "guestTraceProofValuePrerunMilliseconds",
         "guestTraceRunnerMilliseconds",
@@ -2389,6 +2392,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessOpeningRowValueSourceDownloadMilliseconds",
         "finishWitnessOpeningRowValueDeviceDownloadMilliseconds",
         "finishWitnessOpeningRowValuesDeviceRowCount",
+        "finishWitnessOpeningRowValuesDeviceDownloadBatchCount",
+        "finishWitnessOpeningRowValuesDeviceSingleDownloadCount",
         "finishWitnessOpeningRowValuesSourceRowCount",
         "finishWitnessOpeningRowValuesWordCount",
         "finishWitnessOpeningRowValuesByteCount",
@@ -2507,6 +2512,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"finish_witness_opening_row_values_device_rows\"",
             "witness_opening_row_values_device_row_count",
+        ),
+        (
+            "\"finish_witness_opening_row_values_device_download_batches\"",
+            "witness_opening_row_values_device_download_batch_count",
         ),
         (
             "\"finish_witness_opening_row_values_device_single_downloads\"",

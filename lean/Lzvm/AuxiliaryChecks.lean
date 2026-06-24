@@ -349,6 +349,8 @@ structure WitnessOpeningStageRowValueTimingSummary where
   sourceDownloadMilliseconds : Nat
   deviceDownloadMilliseconds : Nat
   deviceRowCount : Nat
+  deviceDownloadBatchCount : Nat
+  deviceSingleDownloadCount : Nat
   sourceRowCount : Nat
   wordCount : Nat
   byteCount : Nat
@@ -359,6 +361,8 @@ structure WitnessOpeningRowValueTimingSummary where
   rowValueSourceDownloadMilliseconds : Nat
   rowValueDeviceDownloadMilliseconds : Nat
   deviceRowCount : Nat
+  deviceDownloadBatchCount : Nat
+  deviceSingleDownloadCount : Nat
   sourceRowCount : Nat
   wordCount : Nat
   byteCount : Nat
@@ -506,6 +510,8 @@ structure ProofArtifactFinishTimingSummary where
   finishWitnessOpeningRowValueSourceDownloadMilliseconds : Nat
   finishWitnessOpeningRowValueDeviceDownloadMilliseconds : Nat
   finishWitnessOpeningRowValuesDeviceRowCount : Nat
+  finishWitnessOpeningRowValuesDeviceDownloadBatchCount : Nat
+  finishWitnessOpeningRowValuesDeviceSingleDownloadCount : Nat
   finishWitnessOpeningRowValuesSourceRowCount : Nat
   finishWitnessOpeningRowValuesWordCount : Nat
   finishWitnessOpeningRowValuesByteCount : Nat
