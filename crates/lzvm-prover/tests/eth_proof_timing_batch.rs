@@ -322,6 +322,54 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
 }
 
 #[test]
+fn eth_proof_timing_batch_prints_env_template_without_config() {
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--print-env-template");
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env template should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+
+    assert!(
+        success,
+        "env template should not require configured inputs: stderr={stderr}"
+    );
+    assert!(
+        stderr.is_empty(),
+        "env template should not warn about missing inputs: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("export LZVM_REAL_SMALL_PARITY_BIN=target/release/lzvm"),
+        "small template should include the default binary path: {stdout}"
+    );
+    assert!(
+        stdout.contains("export LZVM_REAL_SMALL_PARITY_SETUP=")
+            && stdout.contains("export LZVM_REAL_SMALL_PARITY_BLOCK_INPUT=")
+            && stdout.contains("export LZVM_REAL_SMALL_PARITY_PROGRAM_IMAGE_CACHE=")
+            && stdout.contains("export LZVM_REAL_SMALL_PARITY_INPUT_DATA=")
+            && stdout.contains("export LZVM_REAL_SMALL_PARITY_GUEST_IMAGE="),
+        "small template should include every required input: {stdout}"
+    );
+    assert!(
+        stdout.contains("export LZVM_REAL_SMALL_PARITY_TMP_DIR=temp/tmp")
+            && stdout.contains("export LZVM_REAL_SMALL_PARITY_TRACE_LIMIT=120000000"),
+        "small template should include optional defaults: {stdout}"
+    );
+    assert!(
+        !stdout.contains(LARGE_PREFIX),
+        "small template should not include the large prefix: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_env_rejects_missing_config() {
     let mut command = Command::new(script_path());
     command.arg("--suite").arg("small").arg("--check-env");

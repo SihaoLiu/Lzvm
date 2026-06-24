@@ -98,6 +98,12 @@ def shell_arg(value: str | Path) -> str:
     return shlex.quote(str(value))
 
 
+def shell_export(name: str, value: str | Path) -> str:
+    if str(value) == "":
+        return f"export {name}="
+    return "export " + shell_assign(name, value)
+
+
 def positive_run_count(raw: str) -> int:
     try:
         value = int(raw)
@@ -180,6 +186,37 @@ def configured_paths(config: ProofEnv) -> dict[str, Path]:
     return paths
 
 
+def proof_envs(root: Path) -> tuple[ProofEnv, ProofEnv]:
+    return (
+        ProofEnv(SMALL_PREFIX, "small", "120000000", root),
+        ProofEnv(LARGE_PREFIX, "large", "600000000", root),
+    )
+
+
+def template_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, str]]:
+    small, large = proof_envs(root)
+    requested = {
+        "small": [(small, args.small_mode)],
+        "large": [(large, args.large_mode)],
+        "both": [(small, args.small_mode), (large, args.large_mode)],
+        "available": [(small, args.small_mode), (large, args.large_mode)],
+    }
+    return requested[args.suite]
+
+
+def print_env_template(args: argparse.Namespace, root: Path) -> None:
+    for index, (config, mode) in enumerate(template_envs(args, root)):
+        if index:
+            print()
+        print(f"# {config.label} suite")
+        print(f"# run with --{config.label}-mode {mode}")
+        print(shell_export(config.var("BIN"), "target/release/lzvm"))
+        for suffix in REQUIRED_SUFFIXES:
+            print(shell_export(config.var(suffix), ""))
+        print(shell_export(config.var("TMP_DIR"), "temp/tmp"))
+        print(shell_export(config.var("TRACE_LIMIT"), config.default_trace_limit))
+
+
 def command_for_env(config: ProofEnv, mode: str, verify_proof: bool) -> str:
     paths = configured_paths(config)
     bin_path = paths["bin"]
@@ -235,8 +272,7 @@ def command_for_env(config: ProofEnv, mode: str, verify_proof: bool) -> str:
 
 
 def selected_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, str]]:
-    small = ProofEnv(SMALL_PREFIX, "small", "120000000", root)
-    large = ProofEnv(LARGE_PREFIX, "large", "600000000", root)
+    small, large = proof_envs(root)
     requested = {
         "small": [(small, args.small_mode)],
         "large": [(large, args.large_mode)],
@@ -305,6 +341,9 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
 
 def run(args: argparse.Namespace) -> int:
     root = workspace_root()
+    if args.print_env_template:
+        print_env_template(args, root)
+        return 0
     if args.check_env:
         check_env(args, root)
         return 0
@@ -408,6 +447,7 @@ def self_test() -> None:
         summary="self test",
         work_dir=str(work_dir / "runs"),
         check_env=False,
+        print_env_template=False,
         skip_verify_proof=False,
     )
     try:
@@ -441,6 +481,7 @@ def main() -> None:
     parser.add_argument("--runner", default="scripts/run-proof-timing-batch.py")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--check-env", action="store_true")
+    parser.add_argument("--print-env-template", action="store_true")
     parser.add_argument("--skip-verify-proof", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
