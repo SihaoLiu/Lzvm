@@ -15,10 +15,14 @@ use lzvm_artifacts::rlp::parse_rlp;
 use lzvm_cli::run_cli;
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-eth-public-input-cli-{}-{name}",
-        std::process::id()
-    ))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join(format!(
+            "temp/lzvm-eth-public-input-cli-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn write_bytes(path: &Path, bytes: impl AsRef<[u8]>) {
