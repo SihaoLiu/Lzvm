@@ -166,6 +166,10 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         "batch json should record successful append: {batch_json}"
     );
     assert!(
+        batch_json.contains("\"runs\": 3") && batch_json.contains("\"max_runs\": 3"),
+        "batch json should record the effective stable-run cap: {batch_json}"
+    );
+    assert!(
         batch_json.contains("\"small_command\": \"printf 'status=ok"),
         "batch json should record command templates: {batch_json}"
     );

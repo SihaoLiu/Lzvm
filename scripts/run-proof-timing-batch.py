@@ -511,6 +511,7 @@ def discovered_run_paths(batch_dir: Path, label: str, suffix: str) -> list[Path]
 def write_batch_json(
     path: Path,
     args: argparse.Namespace,
+    max_runs: int,
     root: Path,
     batch_dir: Path,
     cwd: Path,
@@ -535,7 +536,7 @@ def write_batch_json(
         "improve_log": str(improve_log_path),
         "appended": appended,
         "runs": args.runs,
-        "max_runs": args.max_runs,
+        "max_runs": max_runs,
         "small_timeout_s": args.small_timeout,
         "large_timeout_s": args.large_timeout,
         "max_relative_spread": args.max_relative_spread,
@@ -651,6 +652,7 @@ def run_batch(args: argparse.Namespace) -> Path:
         write_batch_json(
             batch_json_path,
             args,
+            max_runs,
             root,
             batch_dir,
             cwd,
@@ -748,10 +750,7 @@ def run_batch(args: argparse.Namespace) -> Path:
     print(f"batch_json={batch_json_path}")
     if small_logs:
         print(f"small_runs={len(small_logs)}")
-        print(
-            "small_stable_runs="
-            f"{len(safe_stable_timing_group(small_logs, args.max_relative_spread))}"
-        )
+        print(f"small_stable_runs={len(small_stable_logs)}")
         print(
             "small_timing_summaries="
             f"{len(discovered_run_paths(batch_dir, 'small', '.proof-timing-summary.csv'))}"
@@ -760,10 +759,7 @@ def run_batch(args: argparse.Namespace) -> Path:
             print(f"small_stable_timing_summary={stable_timing_summary_paths['small']}")
     if large_logs:
         print(f"large_runs={len(large_logs)}")
-        print(
-            "large_stable_runs="
-            f"{len(safe_stable_timing_group(large_logs, args.max_relative_spread))}"
-        )
+        print(f"large_stable_runs={len(large_stable_logs)}")
         print(
             "large_timing_summaries="
             f"{len(discovered_run_paths(batch_dir, 'large', '.proof-timing-summary.csv'))}"
