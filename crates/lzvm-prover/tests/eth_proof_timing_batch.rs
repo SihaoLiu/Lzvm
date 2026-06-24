@@ -25,6 +25,20 @@ fn test_dir(name: &str) -> std::path::PathBuf {
     workspace_root().join(format!("temp/{name}-{}", std::process::id()))
 }
 
+#[cfg(unix)]
+fn make_executable(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut permissions = std::fs::metadata(path)
+        .expect("executable fixture metadata should read")
+        .permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(path, permissions).expect("executable fixture mode should update");
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &std::path::Path) {}
+
 struct ProofFixture {
     dir: PathBuf,
     fake_bin: PathBuf,
@@ -42,6 +56,7 @@ impl ProofFixture {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("fixture dir should be created");
         let fake_bin = write_fixture(&dir, "lzvm");
+        make_executable(&fake_bin);
         let setup = dir.join("setup");
         std::fs::create_dir_all(&setup).expect("setup dir should be created");
         let block_input = write_fixture(&dir, "block.input");
@@ -417,15 +432,21 @@ fn eth_proof_timing_batch_check_env_rejects_missing_config() {
     let output = command
         .output()
         .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
 
     assert!(
-        !output.status.success(),
+        !success,
         "env check should fail when required config is missing"
     );
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("proof environment is incomplete"),
-        "env check should explain missing configuration: stderr={}",
-        String::from_utf8_lossy(&output.stderr)
+        !stdout.contains("status=ok"),
+        "failed env check should not report ok: {stdout}"
+    );
+    assert!(
+        stderr.contains("proof environment is incomplete"),
+        "env check should explain missing configuration: stderr={stderr}"
     );
 }
 
@@ -444,13 +465,70 @@ fn eth_proof_timing_batch_check_env_rejects_missing_bin() {
         .output()
         .expect("ETH proof timing batch env check should run");
     let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     fixture.cleanup();
 
     assert!(!success, "env check should fail when bin is missing");
     assert!(
+        !stdout.contains("status=ok"),
+        "failed env check should not report ok: {stdout}"
+    );
+    assert!(
         stderr.contains("path does not exist"),
         "env check should explain the missing bin: stderr={stderr}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_env_rejects_bad_bin_types() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-bad-bin");
+
+    let mut dir_command = Command::new(script_path());
+    dir_command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut dir_command, SMALL_PREFIX);
+    dir_command.env(format!("{SMALL_PREFIX}_BIN"), &fixture.setup);
+    let dir_output = dir_command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+
+    let plain_bin = write_fixture(&fixture.dir, "plain-lzvm");
+    let mut plain_command = Command::new(script_path());
+    plain_command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut plain_command, SMALL_PREFIX);
+    plain_command.env(format!("{SMALL_PREFIX}_BIN"), &plain_bin);
+    let plain_output = plain_command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+
+    let dir_success = dir_output.status.success();
+    let dir_stdout = String::from_utf8(dir_output.stdout).expect("stdout should be utf-8");
+    let dir_stderr = String::from_utf8_lossy(&dir_output.stderr).into_owned();
+    let plain_success = plain_output.status.success();
+    let plain_stdout = String::from_utf8(plain_output.stdout).expect("stdout should be utf-8");
+    let plain_stderr = String::from_utf8_lossy(&plain_output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(!dir_success, "env check should reject directory bin paths");
+    assert!(
+        !dir_stdout.contains("status=ok"),
+        "failed env check should not report ok: {dir_stdout}"
+    );
+    assert!(
+        dir_stderr.contains("_BIN must be a file"),
+        "env check should explain bin path type: stderr={dir_stderr}"
+    );
+    assert!(
+        !plain_success,
+        "env check should reject non-executable bin paths"
+    );
+    assert!(
+        !plain_stdout.contains("status=ok"),
+        "failed env check should not report ok: {plain_stdout}"
+    );
+    assert!(
+        plain_stderr.contains("_BIN must be executable"),
+        "env check should explain bin executability: stderr={plain_stderr}"
     );
 }
 
@@ -475,12 +553,18 @@ fn eth_proof_timing_batch_check_env_rejects_wrong_input_types() {
         .expect("ETH proof timing batch env check should run");
 
     let setup_success = setup_output.status.success();
+    let setup_stdout = String::from_utf8(setup_output.stdout).expect("stdout should be utf-8");
     let setup_stderr = String::from_utf8_lossy(&setup_output.stderr).into_owned();
     let block_success = block_output.status.success();
+    let block_stdout = String::from_utf8(block_output.stdout).expect("stdout should be utf-8");
     let block_stderr = String::from_utf8_lossy(&block_output.stderr).into_owned();
     fixture.cleanup();
 
     assert!(!setup_success, "env check should reject file setup paths");
+    assert!(
+        !setup_stdout.contains("status=ok"),
+        "failed env check should not report ok: {setup_stdout}"
+    );
     assert!(
         setup_stderr.contains("_SETUP must be a directory"),
         "env check should explain setup path type: stderr={setup_stderr}"
@@ -488,6 +572,10 @@ fn eth_proof_timing_batch_check_env_rejects_wrong_input_types() {
     assert!(
         !block_success,
         "env check should reject directory input paths"
+    );
+    assert!(
+        !block_stdout.contains("status=ok"),
+        "failed env check should not report ok: {block_stdout}"
     );
     assert!(
         block_stderr.contains("_BLOCK_INPUT must be a file"),
@@ -512,6 +600,7 @@ fn eth_proof_timing_batch_rejects_tmp_dir_outside_temp() {
         .output()
         .expect("ETH proof timing batch env check should run");
     let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let outside_created = outside_tmp.exists();
     let tmp_dir_created = fixture.tmp_dir.exists();
@@ -519,6 +608,10 @@ fn eth_proof_timing_batch_rejects_tmp_dir_outside_temp() {
     fixture.cleanup();
 
     assert!(!success, "env check should reject TMPDIR outside temp");
+    assert!(
+        !stdout.contains("status=ok"),
+        "failed env check should not report ok: {stdout}"
+    );
     assert!(
         stderr.contains("_TMP_DIR must be under"),
         "TMPDIR rejection should explain the temp boundary: stderr={stderr}"

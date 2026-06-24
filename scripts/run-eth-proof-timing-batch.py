@@ -12,20 +12,15 @@ LARGE_PREFIX = "LZVM_REAL_LARGE_PARITY"
 DEFAULT_BIN_RELATIVE = Path("target/release/lzvm")
 DEFAULT_BIN_BUILD_COMMAND = "cargo build --release -p lzvm-cli --bin lzvm"
 
-REQUIRED_SUFFIXES = [
-    "SETUP",
-    "BLOCK_INPUT",
-    "PROGRAM_IMAGE_CACHE",
-    "INPUT_DATA",
-    "GUEST_IMAGE",
+REQUIRED_PATHS = [
+    ("SETUP", "dir"),
+    ("BLOCK_INPUT", "file"),
+    ("PROGRAM_IMAGE_CACHE", "file"),
+    ("INPUT_DATA", "file"),
+    ("GUEST_IMAGE", "file"),
 ]
-REQUIRED_PATH_KINDS = {
-    "SETUP": "dir",
-    "BLOCK_INPUT": "file",
-    "PROGRAM_IMAGE_CACHE": "file",
-    "INPUT_DATA": "file",
-    "GUEST_IMAGE": "file",
-}
+REQUIRED_SUFFIXES = [suffix for suffix, _kind in REQUIRED_PATHS]
+REQUIRED_PATH_KINDS = dict(REQUIRED_PATHS)
 
 PIPELINE_ENV_TO_CLEAR = [
     "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER",
@@ -208,6 +203,10 @@ def configured_paths(config: ProofEnv) -> dict[str, Path]:
         if not bin_value:
             message += f"; build default binary with: {DEFAULT_BIN_BUILD_COMMAND}"
         raise SystemExit(message)
+    if not bin_path.is_file():
+        raise SystemExit(f"{config.var('BIN')} must be a file: {bin_path}")
+    if not os.access(bin_path, os.X_OK):
+        raise SystemExit(f"{config.var('BIN')} must be executable: {bin_path}")
     paths["bin"] = bin_path
     paths["tmp_dir"] = require_workspace_temp_path(
         config.optional_path("TMP_DIR", config.root / "temp" / "tmp"),
@@ -404,9 +403,12 @@ def run(args: argparse.Namespace) -> int:
 
 def check_env(args: argparse.Namespace, root: Path) -> None:
     selected = selected_envs(args, root)
+    ready = [
+        (config, mode, configured_paths(config))
+        for config, mode in selected
+    ]
     print("status=ok")
-    for config, mode in selected:
-        paths = configured_paths(config)
+    for config, mode, paths in ready:
         print(f"{config.label}=ready")
         print(f"{config.label}_mode={mode}")
         print(f"{config.label}_verify_proof={str(not args.skip_verify_proof).lower()}")
