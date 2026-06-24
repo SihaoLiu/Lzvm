@@ -4148,6 +4148,73 @@ fn prove_timing_root_summary_reports_device_row_value_batch_stage_coverage_gap()
 }
 
 #[test]
+fn prove_timing_root_summary_clamps_device_row_value_batch_unattributed() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "input_bytes=12447640",
+        "timing_total_ms=58552",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_finish_witness_opening_row_values_device_download_batches=10",
+        "timing_finish_witness_stage_1_opening_row_values_device_download_batches=31",
+        "timing_finish_witness_stage_2_opening_row_values_device_download_batches=12",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines.next().expect("summary should include a header");
+    let row = lines.next().expect("summary should include a data row");
+    let headers = headers.split(',').collect::<Vec<_>>();
+    let row = row.split(',').collect::<Vec<_>>();
+    assert_eq!(
+        headers.len(),
+        row.len(),
+        "summary header and row should have matching column counts: stdout={stdout}"
+    );
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("missing summary header {name}: {headers:?}"));
+        row.get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("missing summary value {name}: {row:?}"))
+    };
+
+    assert_eq!(value("opening_row_value_device_download_batches"), "10");
+    assert_eq!(value("opening_row_value_device_batch_stage_count"), "2");
+    assert_eq!(value("opening_row_value_device_batch_max_stage"), "31");
+    assert_eq!(value("opening_row_value_device_batch_stage_sum"), "43");
+    assert_eq!(value("opening_row_value_device_batch_unattributed"), "0");
+}
+
+#[test]
 fn prove_timing_root_summary_reports_device_row_value_single_download_stage_shape() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
