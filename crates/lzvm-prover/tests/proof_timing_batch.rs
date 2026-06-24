@@ -93,6 +93,67 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
 }
 
 #[test]
+fn proof_timing_batch_sets_run_tmpdir_under_batch_dir() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-tmpdir");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg(concat!(
+            "python3 -c \"import os; ",
+            "tmp=os.environ.get('TMPDIR',''); ",
+            "print('tmpdir=' + tmp); ",
+            "print('tmpdir_ok=' + str(os.path.isdir(tmp)).lower()); ",
+            "print('timing_total_ms=1000')\""
+        ))
+        .arg("--summary")
+        .arg("tmpdir guard")
+        .output()
+        .expect("proof timing batch should run");
+    assert!(
+        output.status.success(),
+        "proof timing batch should run with a managed TMPDIR: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let batch_dir = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("batch_dir="))
+        .map(std::path::PathBuf::from)
+        .expect("batch output should include a batch dir");
+    let expected_tmp = batch_dir.join("small-001.tmp");
+    let log =
+        std::fs::read_to_string(batch_dir.join("small-001.log")).expect("run log should read");
+    assert!(
+        log.contains(&format!("tmpdir={}", expected_tmp.display())),
+        "run command should receive the managed TMPDIR: {log}"
+    );
+    assert!(
+        log.contains("tmpdir_ok=true"),
+        "managed TMPDIR should exist before the command runs: {log}"
+    );
+    let status = std::fs::read_to_string(batch_dir.join("small-001.status"))
+        .expect("status file should read");
+    assert!(
+        status.contains(&format!("tmp_dir={}", expected_tmp.display())),
+        "status should record the managed TMPDIR: {status}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn proof_timing_batch_rejects_work_dir_outside_temp() {
     let script_path = batch_script_path();
     let outside_dir = workspace_root().join(format!(

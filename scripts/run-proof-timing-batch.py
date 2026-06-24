@@ -152,10 +152,13 @@ def run_once(
     stderr_path = batch_dir / f"{stem}.stderr"
     combined_path = batch_dir / f"{stem}.log"
     status_path = batch_dir / f"{stem}.status"
+    tmp_dir = batch_dir / f"{stem}.tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["LZVM_TIMING_BATCH_LABEL"] = label
     env["LZVM_TIMING_BATCH_RUN"] = str(run_index)
     env["LZVM_TIMING_BATCH_RUNS"] = str(run_count)
+    env["TMPDIR"] = str(tmp_dir)
 
     start = time.monotonic()
     timed_out = False
@@ -187,6 +190,7 @@ def run_once(
         f"run={run_index}",
         f"command={command}",
         f"cwd={cwd}",
+        f"tmp_dir={tmp_dir}",
         f"elapsed_s={elapsed_s:.3f}",
         f"timeout_s={timeout:.3f}",
         f"exit_code={exit_code}",
