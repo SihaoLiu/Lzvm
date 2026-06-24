@@ -69,8 +69,8 @@ def write_combined_log(path: Path, stdout: str, stderr: str) -> None:
     path.write_text("".join(combined), encoding="utf-8")
 
 
-def timing_total_ms_from_log(path: Path) -> int:
-    matches = [int(match.group(1)) for match in TIMING_TOTAL_RE.finditer(read_text(path))]
+def timing_total_ms_from_text(text: str, path: Path) -> int:
+    matches = [int(match.group(1)) for match in TIMING_TOTAL_RE.finditer(text)]
     if len(matches) != 1:
         raise SystemExit(
             f"{path}: expected exactly one timing_total_ms line, found {len(matches)}"
@@ -78,6 +78,12 @@ def timing_total_ms_from_log(path: Path) -> int:
     if matches[0] <= 0:
         raise SystemExit(f"{path}: timing_total_ms must be positive")
     return matches[0]
+
+
+def require_texts_in_log(text: str, path: Path, required_texts: list[str]) -> None:
+    for required in required_texts:
+        if required not in text:
+            raise SystemExit(f"{path}: missing required text {required!r}")
 
 
 def stop_process_group(process: subprocess.Popen[str]) -> None:
@@ -92,15 +98,46 @@ def stop_process_group(process: subprocess.Popen[str]) -> None:
         pass
 
 
+def expand_command_template(
+    command: str,
+    label: str,
+    run_index: int,
+    run_count: int,
+    batch_dir: Path,
+    cwd: Path,
+) -> str:
+    replacements = {
+        "{label}": label,
+        "{run}": str(run_index),
+        "{run_padded}": f"{run_index:03d}",
+        "{runs}": str(run_count),
+        "{batch_dir}": shlex.quote(str(batch_dir)),
+        "{cwd}": shlex.quote(str(cwd)),
+    }
+    expanded = command
+    for needle, value in replacements.items():
+        expanded = expanded.replace(needle, value)
+    return expanded
+
+
 def run_once(
     label: str,
-    command: str,
+    command_template: str,
     run_index: int,
     run_count: int,
     timeout: float,
     batch_dir: Path,
     cwd: Path,
+    required_texts: list[str],
 ) -> Path:
+    command = expand_command_template(
+        command_template,
+        label,
+        run_index,
+        run_count,
+        batch_dir,
+        cwd,
+    )
     stem = f"{label}-{run_index:03d}"
     stdout_path = batch_dir / f"{stem}.stdout"
     stderr_path = batch_dir / f"{stem}.stderr"
@@ -158,7 +195,9 @@ def run_once(
             f"{label} run {run_index} exited with status {exit_code}; log: {combined_path}"
         )
 
-    total_ms = timing_total_ms_from_log(combined_path)
+    combined_text = read_text(combined_path)
+    require_texts_in_log(combined_text, combined_path, required_texts)
+    total_ms = timing_total_ms_from_text(combined_text, combined_path)
     status_lines.append(f"timing_total_ms={total_ms}")
     status_path.write_text("\n".join(status_lines) + "\n", encoding="utf-8")
     return combined_path
@@ -171,12 +210,24 @@ def run_group(
     timeout: float,
     batch_dir: Path,
     cwd: Path,
+    required_texts: list[str],
 ) -> list[Path]:
     if command is None:
         return []
     logs = []
     for run_index in range(1, run_count + 1):
-        logs.append(run_once(label, command, run_index, run_count, timeout, batch_dir, cwd))
+        logs.append(
+            run_once(
+                label,
+                command,
+                run_index,
+                run_count,
+                timeout,
+                batch_dir,
+                cwd,
+                required_texts,
+            )
+        )
     return logs
 
 
@@ -229,6 +280,17 @@ def batch_dir_name() -> str:
     return f"{timestamp}-{os.getpid()}"
 
 
+def required_texts_for_label(args: argparse.Namespace, label: str) -> list[str]:
+    required = list(args.require_text or [])
+    if args.require_proof_output:
+        required.extend(["status=ok", "verify_outputs=true"])
+    if label == "small":
+        required.extend(args.small_require_text or [])
+    elif label == "large":
+        required.extend(args.large_require_text or [])
+    return required
+
+
 def run_batch(args: argparse.Namespace) -> Path:
     root = workspace_root()
     if args.small_command is None and args.large_command is None:
@@ -254,6 +316,7 @@ def run_batch(args: argparse.Namespace) -> Path:
         args.small_timeout,
         batch_dir,
         cwd,
+        required_texts_for_label(args, "small"),
     )
     large_logs = run_group(
         "large",
@@ -262,6 +325,7 @@ def run_batch(args: argparse.Namespace) -> Path:
         args.large_timeout,
         batch_dir,
         cwd,
+        required_texts_for_label(args, "large"),
     )
     append_improve_log(
         append_script,
@@ -297,11 +361,15 @@ def self_test() -> None:
         large_timeout=10.0,
         max_relative_spread=0.10,
         path=str(work_dir / "improve-log.csv"),
+        require_proof_output=False,
+        require_text=[],
         runs=3,
         small_command=command,
+        small_require_text=[],
         small_timeout=10.0,
         summary="self test",
         work_dir=str(work_dir / "runs"),
+        large_require_text=[],
     )
     try:
         run_batch(args)
@@ -329,6 +397,10 @@ def main() -> None:
     parser.add_argument("--summary")
     parser.add_argument("--max-relative-spread", type=nonnegative_float, default=0.10)
     parser.add_argument("--append-script", default="scripts/append-improve-log.py")
+    parser.add_argument("--require-text", action="append", default=[])
+    parser.add_argument("--small-require-text", action="append", default=[])
+    parser.add_argument("--large-require-text", action="append", default=[])
+    parser.add_argument("--require-proof-output", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
