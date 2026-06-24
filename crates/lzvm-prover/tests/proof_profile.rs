@@ -28,9 +28,11 @@ fn proof_profile_self_test_runs() {
         stdout.contains("nsys_report=temp/proof-profile-self-test-")
             && stdout.contains("profile_tmp_dir=temp/proof-profile-self-test-")
             && stdout.contains("profile_target_tmp_dir=temp/proof-profile-self-test-")
+            && stdout.contains("profile_log=temp/proof-profile-self-test-")
             && stdout.contains("nsys_exported_sqlite=temp/proof-profile-self-test-")
             && stdout.contains("ncu_csv=temp/proof-profile-self-test-")
-            && stdout.contains("ncu_kernel_summary=temp/proof-profile-self-test-"),
+            && stdout.contains("ncu_kernel_summary=temp/proof-profile-self-test-")
+            && stdout.contains("proof_timing_summary=temp/proof-profile-self-test-"),
         "self-test should report profiler output paths: {stdout}"
     );
 }
@@ -87,6 +89,17 @@ fn proof_profile_nsys_dry_run_prints_summary_commands() {
         stdout.contains("profile_target_tmp_dir=temp/proof-profile-nsys-dry-run-")
             && stdout.contains("small-proof.target.tmp"),
         "dry-run should report the profiled command TMPDIR: {stdout}"
+    );
+    assert!(
+        stdout.contains("profile_stdout=temp/proof-profile-nsys-dry-run-")
+            && stdout.contains("small-proof.profile.stdout")
+            && stdout.contains("profile_stderr=temp/proof-profile-nsys-dry-run-")
+            && stdout.contains("small-proof.profile.stderr")
+            && stdout.contains("profile_log=temp/proof-profile-nsys-dry-run-")
+            && stdout.contains("small-proof.profile.log")
+            && stdout.contains("proof_timing_summary_output=temp/proof-profile-nsys-dry-run-")
+            && stdout.contains("small-proof.proof-timing-summary.csv"),
+        "dry-run should report captured profile output paths: {stdout}"
     );
     assert!(
         stdout.contains("nsys_export_command=")
@@ -159,6 +172,17 @@ fn proof_profile_ncu_dry_run_prints_csv_summary_command() {
         stdout.contains("profile_target_tmp_dir=temp/proof-profile-ncu-dry-run-")
             && stdout.contains("kernel-metrics.target.tmp"),
         "dry-run should report the profiled command TMPDIR: {stdout}"
+    );
+    assert!(
+        stdout.contains("profile_stdout=temp/proof-profile-ncu-dry-run-")
+            && stdout.contains("kernel-metrics.profile.stdout")
+            && stdout.contains("profile_stderr=temp/proof-profile-ncu-dry-run-")
+            && stdout.contains("kernel-metrics.profile.stderr")
+            && stdout.contains("profile_log=temp/proof-profile-ncu-dry-run-")
+            && stdout.contains("kernel-metrics.profile.log")
+            && stdout.contains("proof_timing_summary_output=temp/proof-profile-ncu-dry-run-")
+            && stdout.contains("kernel-metrics.proof-timing-summary.csv"),
+        "dry-run should report captured profile output paths: {stdout}"
     );
     assert!(
         stdout.contains("ncu_cuda_kernel_summary_command=scripts/ncu-cuda-kernel-summary.py"),

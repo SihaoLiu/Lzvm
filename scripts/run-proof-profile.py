@@ -6,11 +6,13 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
 
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+TIMING_TOTAL_RE = re.compile(r"^timing_total_ms=", re.MULTILINE)
 
 
 def workspace_root() -> Path:
@@ -74,8 +76,22 @@ def prefixed_path(output_dir: Path, name: str, suffix: str) -> Path:
     return Path(str(output_dir / name) + suffix)
 
 
+def common_outputs(output_dir: Path, name: str) -> dict[str, Path]:
+    return {
+        "profile_stdout": prefixed_path(output_dir, name, ".profile.stdout"),
+        "profile_stderr": prefixed_path(output_dir, name, ".profile.stderr"),
+        "profile_log": prefixed_path(output_dir, name, ".profile.log"),
+        "proof_timing_summary": prefixed_path(
+            output_dir,
+            name,
+            ".proof-timing-summary.csv",
+        ),
+    }
+
+
 def nsys_outputs(output_dir: Path, name: str) -> dict[str, Path]:
     return {
+        **common_outputs(output_dir, name),
         "prefix": output_dir / name,
         "tmp_dir": prefixed_path(output_dir, name, ".tmp"),
         "target_tmp_dir": prefixed_path(output_dir, name, ".target.tmp"),
@@ -91,6 +107,7 @@ def nsys_outputs(output_dir: Path, name: str) -> dict[str, Path]:
 
 def ncu_outputs(output_dir: Path, name: str) -> dict[str, Path]:
     return {
+        **common_outputs(output_dir, name),
         "tmp_dir": prefixed_path(output_dir, name, ".tmp"),
         "target_tmp_dir": prefixed_path(output_dir, name, ".target.tmp"),
         "report": prefixed_path(output_dir, name, ".ncu-rep"),
@@ -163,6 +180,16 @@ def build_ncu_command(
     return profile, outputs
 
 
+def print_common_outputs(outputs: dict[str, Path], root: Path) -> None:
+    print(f"profile_stdout={display_path_for_shell(outputs['profile_stdout'], root)}")
+    print(f"profile_stderr={display_path_for_shell(outputs['profile_stderr'], root)}")
+    print(f"profile_log={display_path_for_shell(outputs['profile_log'], root)}")
+    print(
+        "proof_timing_summary_output="
+        f"{display_path_for_shell(outputs['proof_timing_summary'], root)}"
+    )
+
+
 def print_nsys_outputs(args: argparse.Namespace, outputs: dict[str, Path], root: Path) -> None:
     tmp_dir = display_path_for_shell(outputs["tmp_dir"], root)
     target_tmp_dir = display_path_for_shell(outputs["target_tmp_dir"], root)
@@ -173,6 +200,7 @@ def print_nsys_outputs(args: argparse.Namespace, outputs: dict[str, Path], root:
     copy_summary = display_path_for_shell(outputs["copy_summary"], root)
     print(f"profile_tmp_dir={tmp_dir}")
     print(f"profile_target_tmp_dir={target_tmp_dir}")
+    print_common_outputs(outputs, root)
     print(f"nsys_report={report}")
     print(f"nsys_sqlite={sqlite}")
     print(
@@ -208,6 +236,7 @@ def print_ncu_outputs(outputs: dict[str, Path], root: Path) -> None:
     kernel_summary = display_path_for_shell(outputs["kernel_summary"], root)
     print(f"profile_tmp_dir={tmp_dir}")
     print(f"profile_target_tmp_dir={target_tmp_dir}")
+    print_common_outputs(outputs, root)
     print(f"ncu_report={report}")
     print(f"ncu_csv={csv_path}")
     print(
@@ -253,6 +282,64 @@ def run_captured(
     stdout_path.write_text(completed.stdout, encoding="utf-8")
     stderr_path.write_text(completed.stderr, encoding="utf-8")
     return completed.returncode
+
+
+def tee_pipe(pipe, output_path: Path, sink) -> None:
+    with output_path.open("w", encoding="utf-8") as output:
+        for chunk in iter(pipe.readline, ""):
+            output.write(chunk)
+            output.flush()
+            sink.write(chunk)
+            sink.flush()
+    pipe.close()
+
+
+def write_combined_profile_log(outputs: dict[str, Path]) -> None:
+    stdout = outputs["profile_stdout"].read_text(encoding="utf-8")
+    stderr = outputs["profile_stderr"].read_text(encoding="utf-8")
+    outputs["profile_log"].write_text(
+        "[stdout]\n"
+        + stdout
+        + ("" if not stdout or stdout.endswith("\n") else "\n")
+        + "[stderr]\n"
+        + stderr
+        + ("" if not stderr or stderr.endswith("\n") else "\n"),
+        encoding="utf-8",
+    )
+
+
+def run_profile_command(
+    command: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    outputs: dict[str, Path],
+) -> int:
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=1,
+    )
+    if process.stdout is None or process.stderr is None:
+        raise SystemExit("failed to capture profile command output")
+    stdout_thread = threading.Thread(
+        target=tee_pipe,
+        args=(process.stdout, outputs["profile_stdout"], sys.stdout),
+    )
+    stderr_thread = threading.Thread(
+        target=tee_pipe,
+        args=(process.stderr, outputs["profile_stderr"], sys.stderr),
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+    code = process.wait()
+    stdout_thread.join()
+    stderr_thread.join()
+    write_combined_profile_log(outputs)
+    return code
 
 
 def run_summary(
@@ -306,6 +393,35 @@ def summarize_ncu(root: Path, outputs: dict[str, Path]) -> None:
     )
 
 
+def remove_stale_summary(output_path: Path) -> None:
+    stderr_path = prefixed_path(output_path.parent, output_path.name, ".stderr")
+    for path in [output_path, stderr_path]:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def summarize_proof_timing(root: Path, outputs: dict[str, Path]) -> bool:
+    profile_log = outputs["profile_log"]
+    log_text = profile_log.read_text(encoding="utf-8")
+    if TIMING_TOTAL_RE.search(log_text) is None:
+        remove_stale_summary(outputs["proof_timing_summary"])
+        print("proof_timing_summary=skipped_no_timing_total")
+        return False
+    run_summary(
+        ["scripts/prove-timing-root-summary.py", str(profile_log)],
+        root,
+        outputs["proof_timing_summary"],
+        profile_env(outputs),
+    )
+    print(
+        "proof_timing_summary="
+        f"{display_path_for_shell(outputs['proof_timing_summary'], root)}"
+    )
+    return True
+
+
 def run_profile(args: argparse.Namespace) -> int:
     root = workspace_root()
     command = strip_separator(args.command)
@@ -336,13 +452,16 @@ def run_profile(args: argparse.Namespace) -> int:
     if args.dry_run:
         return 0
     prepare_output_dirs(output_dir, outputs)
-    profile_code = subprocess.run(
+    profile_code = run_profile_command(
         profile_command,
         cwd=cwd,
         env=profile_env(outputs),
-    ).returncode
+        outputs=outputs,
+    )
     if profile_code != 0:
         return profile_code
+    if args.summarize:
+        summarize_proof_timing(root, outputs)
     if args.tool == "nsys" and not args.skip_nsys_export:
         export_nsys_sqlite(args, root, outputs)
         print(f"nsys_exported_sqlite={display_path_for_shell(outputs['sqlite'], root)}")
@@ -411,7 +530,12 @@ def self_test() -> None:
             "command": [
                 sys.executable,
                 "-c",
-                "print('timing_total_ms=1000')",
+                (
+                    "print('timing_total_ms=1000'); "
+                    "print('timing_guest_stage_tree_commit_root_count=1'); "
+                    "print('timing_guest_stage_tree_commit_root_materialization_groups=1'); "
+                    "print('timing_guest_stage_tree_commit_root_materialization_max_group_size=1')"
+                ),
             ],
             "cwd": ".",
             "dry_run": False,
@@ -436,6 +560,13 @@ def self_test() -> None:
             raise SystemExit("fake nsys report missing")
         if not (work_dir / "profiles" / "self-test.sqlite").exists():
             raise SystemExit("fake nsys sqlite export missing")
+        nsys_profile_log = work_dir / "profiles" / "self-test.profile.log"
+        if not (work_dir / "profiles" / "self-test.profile.stdout").exists():
+            raise SystemExit("fake nsys profile stdout missing")
+        if not (work_dir / "profiles" / "self-test.profile.stderr").exists():
+            raise SystemExit("fake nsys profile stderr missing")
+        if "timing_total_ms=1000" not in nsys_profile_log.read_text(encoding="utf-8"):
+            raise SystemExit("fake nsys profile log missing target output")
         nsys_argv = (work_dir / "fake-nsys.argv").read_text(encoding="utf-8")
         if f"tmpdir={work_dir / 'profiles' / 'self-test.tmp'}" not in nsys_argv:
             raise SystemExit("fake nsys did not receive managed TMPDIR")
@@ -459,6 +590,14 @@ def self_test() -> None:
             raise SystemExit("fake ncu report missing")
         if not (work_dir / "profiles" / "self-test-ncu.ncu-kernel-summary.txt").exists():
             raise SystemExit("fake ncu summary missing")
+        ncu_profile_log = work_dir / "profiles" / "self-test-ncu.profile.log"
+        if "timing_total_ms=1000" not in ncu_profile_log.read_text(encoding="utf-8"):
+            raise SystemExit("fake ncu profile log missing target output")
+        proof_summary = work_dir / "profiles" / "self-test-ncu.proof-timing-summary.csv"
+        if not proof_summary.exists():
+            raise SystemExit("fake ncu proof timing summary missing")
+        if not proof_summary.read_text(encoding="utf-8").startswith("profile,"):
+            raise SystemExit("fake ncu proof timing summary is not CSV")
         ncu_argv = (work_dir / "fake-ncu.argv").read_text(encoding="utf-8")
         if f"tmpdir={work_dir / 'profiles' / 'self-test-ncu.tmp'}" not in ncu_argv:
             raise SystemExit("fake ncu did not receive managed TMPDIR")
