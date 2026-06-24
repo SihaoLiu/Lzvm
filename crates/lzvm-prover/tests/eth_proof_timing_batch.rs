@@ -158,6 +158,20 @@ fn eth_proof_timing_batch_check_env_rejects_missing_config() {
     );
 }
 
+#[test]
+fn eth_proof_timing_batch_self_test_creates_runtime_tmpdir() {
+    let output = Command::new(script_path())
+        .arg("--self-test")
+        .output()
+        .expect("ETH proof timing batch self-test should run");
+
+    assert!(
+        output.status.success(),
+        "self-test should create TMPDIR before running proof commands: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn write_fixture(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, b"fixture").expect("fixture should write");
