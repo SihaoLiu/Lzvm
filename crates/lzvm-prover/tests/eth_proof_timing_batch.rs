@@ -174,8 +174,8 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         "combined mode should set its mode environment: {stdout}"
     );
     assert!(
-        stdout.contains(&format!("TMPDIR='{}'", fixture.tmp_dir.display())),
-        "paths containing spaces should be shell-quoted: {stdout}"
+        stdout.contains("TMPDIR={tmp_dir}"),
+        "small command should use the per-run temp dir token: {stdout}"
     );
     assert!(
         stdout.contains(&format!("'{}'", fixture.fake_bin.display())),

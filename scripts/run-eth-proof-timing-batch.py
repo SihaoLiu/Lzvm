@@ -183,13 +183,12 @@ def configured_paths(config: ProofEnv) -> dict[str, Path]:
 def command_for_env(config: ProofEnv, mode: str) -> str:
     paths = configured_paths(config)
     bin_path = paths["bin"]
-    tmp_dir = paths["tmp_dir"]
     output_dir = f"{{batch_dir}}/{config.label}-{{run_padded}}.proof"
 
     parts = ["env"]
     for name in PIPELINE_ENV_TO_CLEAR:
         parts.extend(["-u", name])
-    parts.append(shell_assign("TMPDIR", tmp_dir))
+    parts.append("TMPDIR={tmp_dir}")
     for name, value in MODE_ENV[mode].items():
         parts.append(shell_assign(name, value))
     parts.extend(
