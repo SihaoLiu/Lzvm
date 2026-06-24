@@ -147,10 +147,15 @@ fn sample_guest_image() -> Vec<u8> {
 }
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-cli-write-base-directory-{}-{name}",
-        std::process::id()
-    ))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-cli-write-base-directory-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn write_bytes(path: &Path, bytes: impl AsRef<[u8]>) {
