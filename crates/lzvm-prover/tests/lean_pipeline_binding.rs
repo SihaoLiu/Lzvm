@@ -113,6 +113,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_compact_digest_merkle_observation_eq_full_state",
             "runtime_pipeline_binding_checked_acceptance_compact_digest_merkle_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_assumptions",
+            "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations",
             "runtime_pipeline_binding_checked_acceptance_verifier_sound_witness",
             "runtime_pipeline_binding_checked_acceptance_verifier_core_contract",
             "runtime_pipeline_binding_checked_acceptance_execution_obligations",
@@ -128,6 +129,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract",
             "runtime_pipeline_binding_evidence_audited_core_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_contract",
@@ -957,6 +959,74 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("RuntimePipelineBindingEvidence"),
         "compact audited pipeline acceptance contract should not force callers to unpack full pipeline evidence"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations"
+            )
+            .contains("RequiredSemanticAssumptionStatements assumptions.semantic")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations"
+            )
+            .contains("RuntimePipelineBindingEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "pipeline checked acceptance should package audited crypto and semantic obligations with pipeline evidence"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations",
+        &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+            "runtime_pipeline_binding_checked_acceptance_sound",
+        ],
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract"
+            )
+            .contains("RequiredSemanticAssumptionStatements assumptions.semantic")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract"
+            )
+            .contains("ProofSystemSound system")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract"
+            )
+            .contains("system.accepts publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "pipeline checked acceptance should expose semantic audited compact acceptance and witness evidence"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
+        &[
+            "abstract_verifier_sound_with_audited_soundness_obligations",
+            "runtime_pipeline_binding_checked_acceptance_verifier_sound_witness",
+        ],
     );
     assert!(
         theorem_prefix(
