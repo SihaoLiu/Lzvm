@@ -867,31 +867,33 @@ theorem runtime_pipeline_binding_checked_acceptance_challenge_query_opening_cont
             cases queryPlanBound with
             | intro _segmentCanonical tail =>
               cases tail with
-              | intro _derivedFromTranscript tail =>
+              | intro _transcriptInputsCanonical tail =>
                 cases tail with
-                | intro _matchesOpenedArtifacts tail =>
+                | intro _derivedFromTranscript tail =>
                   cases tail with
-                  | intro transcriptQueryPlanBound openingQueryPlanBound =>
-                    cases challengeEvidence with
-                    | intro challengePayloadValid tail =>
-                      cases tail with
-                      | intro challengeMatchesTranscript challengeSegmentBound =>
-                        cases obligations with
-                        | intro transcriptBound tail =>
-                          cases tail with
-                          | intro _publicInputBound tail =>
+                  | intro _matchesOpenedArtifacts tail =>
+                    cases tail with
+                    | intro transcriptQueryPlanBound openingQueryPlanBound =>
+                      cases challengeEvidence with
+                      | intro challengePayloadValid tail =>
+                        cases tail with
+                        | intro challengeMatchesTranscript challengeSegmentBound =>
+                          cases obligations with
+                          | intro transcriptBound tail =>
                             cases tail with
-                            | intro pcsOpeningsValid friQueriesValid =>
-                              exact
-                                And.intro challengePayloadValid
-                                  (And.intro challengeMatchesTranscript
-                                    (And.intro challengeSegmentBound
-                                      (And.intro transcriptQueryPlanBound
-                                        (And.intro openingQueryPlanBound
-                                          (And.intro openingEvidence
-                                            (And.intro transcriptBound
-                                              (And.intro pcsOpeningsValid
-                                                (And.intro friQueriesValid soundWitness))))))))
+                            | intro _publicInputBound tail =>
+                              cases tail with
+                              | intro pcsOpeningsValid friQueriesValid =>
+                                exact
+                                  And.intro challengePayloadValid
+                                    (And.intro challengeMatchesTranscript
+                                      (And.intro challengeSegmentBound
+                                        (And.intro transcriptQueryPlanBound
+                                          (And.intro openingQueryPlanBound
+                                            (And.intro openingEvidence
+                                              (And.intro transcriptBound
+                                                (And.intro pcsOpeningsValid
+                                                  (And.intro friQueriesValid soundWitness))))))))
 
 theorem runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract
     {system : VerifierModel}

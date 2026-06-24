@@ -18,6 +18,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let contracts_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts.lean");
     let contracts_source = std::fs::read_to_string(&contracts_path)
         .expect("Lean pipeline binding contracts source should read");
+    let external_contracts_path =
+        crate_root.join("../../lean/Lzvm/PipelineBinding/ExternalSourceContracts.lean");
+    let external_contracts_source = std::fs::read_to_string(&external_contracts_path)
+        .expect("Lean pipeline external-source contracts source should read");
     let segment_ids_path = crate_root.join("../../lean/Lzvm/PipelineBinding/SegmentIds.lean");
     let segment_ids_source = std::fs::read_to_string(&segment_ids_path)
         .expect("Lean pipeline segment IDs binding source should read");
@@ -28,7 +32,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let audited_source =
         std::fs::read_to_string(&audited_path).expect("Lean pipeline audited source should read");
     let lean_source = format!(
-        "{core_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}\n{accepts_source}\n{contracts_source}\n{segment_ids_source}"
+        "{core_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}\n{accepts_source}\n{contracts_source}\n{external_contracts_source}\n{segment_ids_source}"
     );
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
@@ -165,6 +169,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     assert!(
         top_level_source.contains("import Lzvm.PipelineBinding.Contracts"),
         "top-level Lean module should import pipeline binding contracts"
+    );
+    assert!(
+        top_level_source.contains("import Lzvm.PipelineBinding.ExternalSourceContracts"),
+        "top-level Lean module should import pipeline external-source contracts"
     );
     assert!(
         top_level_source.contains("import Lzvm.PipelineBinding.Accepts"),

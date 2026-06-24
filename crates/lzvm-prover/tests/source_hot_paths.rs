@@ -8005,7 +8005,8 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
 #[test]
 fn lean_pipeline_contracts_exports_required_external_source_core_contract() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let contracts_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts.lean");
+    let contracts_path =
+        crate_root.join("../../lean/Lzvm/PipelineBinding/ExternalSourceContracts.lean");
     let contracts_source = std::fs::read_to_string(&contracts_path)
         .expect("Lean pipeline contracts source should read");
 

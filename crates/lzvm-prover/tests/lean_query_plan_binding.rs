@@ -18,6 +18,9 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     let fri_validation_path = crate_root.join("src/pcs_fri/validation.rs");
     let fri_validation_source =
         std::fs::read_to_string(&fri_validation_path).expect("FRI validation source should read");
+    let proof_artifact_path = crate_root.join("src/proof_artifact.rs");
+    let proof_artifact_source =
+        std::fs::read_to_string(&proof_artifact_path).expect("proof artifact source should read");
 
     assert!(
         lean_source
@@ -31,6 +34,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             && lean_source.contains("system.transcriptBound publicInput proof")
             && lean_source.contains("system.pcsOpeningsValid publicInput proof")
             && lean_source.contains("system.friQueriesValid publicInput proof")
+            && lean_source.contains("queryPlanTranscriptInputsCanonical")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof"),
         "Lean query plan binding should expose opening segment and verifier core projections"
     );
@@ -55,11 +59,13 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_evidence_implies_bound_contract",
             "runtime_query_plan_binding_evidence_implies_transcript_query_plan_bound",
             "runtime_query_plan_binding_evidence_implies_opening_query_plan_bound",
+            "runtime_query_plan_binding_evidence_implies_transcript_inputs_canonical",
             "runtime_query_plan_binding_evidence_implies_seeded_contract",
             "runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests",
             "runtime_query_plan_binding_seeded_contract_implies_seeded_fri_opening_requirements_checked",
             "runtime_query_plan_binding_checked_acceptance_bound_contract",
             "runtime_query_plan_binding_checked_acceptance_transcript_query_plan_bound",
+            "runtime_query_plan_binding_checked_acceptance_transcript_inputs_canonical",
             "runtime_query_plan_binding_checked_acceptance_opening_query_plan_bound",
             "runtime_query_plan_binding_checked_acceptance_seeded_contract",
             "runtime_query_plan_binding_checked_acceptance_seed_binds_witness_tree_digests",
@@ -104,6 +110,14 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_query_plan_binding_evidence_implies_transcript_inputs_canonical",
+        &[
+            "RuntimeQueryPlanBindingEvidence",
+            "validation.queryPlanTranscriptInputsCanonical artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_query_plan_binding_checked_acceptance_transcript_query_plan_bound",
         &[
             "RuntimeQueryPlanBindingCheckedAcceptance",
@@ -133,8 +147,21 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
+        "runtime_query_plan_binding_evidence_implies_transcript_query_plan_bound",
+        &["transcriptInputsCanonical"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
         "runtime_query_plan_binding_checked_acceptance_transcript_query_plan_bound",
-        &["validation.queryPlanChecksImplyTranscriptQueryPlanBound"],
+        &[
+            "validation.queryPlanBindingAcceptedImpliesTranscriptInputsCanonical",
+            "validation.queryPlanChecksImplyTranscriptQueryPlanBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_transcript_inputs_canonical",
+        &["validation.queryPlanBindingAcceptedImpliesTranscriptInputsCanonical"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
@@ -486,6 +513,18 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             && fri_validation_source.contains("seeded_query_plan_requires_fri_opening")
             && fri_validation_source.contains("fri_opening_required_units"),
         "runtime seeded query-plan validation should bind witness tree digests and require FRI openings for FRI-bearing seeded units"
+    );
+    let transcript_builder_body = function_body(
+        &proof_artifact_source,
+        "fn build_witness_transcript_proof_artifact_for_all_units",
+        "struct AllUnitsTranscriptProofInputs",
+    );
+    assert!(
+        proof_artifact_source
+            .contains("canonical_witness_trace_output_refs(request.schedule, request.outputs)")
+            && transcript_builder_body.contains("let transcript_inputs = witness_outputs")
+            && !transcript_builder_body.contains("request.outputs"),
+        "runtime all-units transcript query-plan derivation should use canonical output refs"
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
