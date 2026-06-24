@@ -94,6 +94,10 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         batch_json.contains("\"small_logs\": ["),
         "batch json should record input logs: {batch_json}"
     );
+    assert!(
+        batch_json.contains("\"small_statuses\": [") && batch_json.contains("small-001.status"),
+        "batch json should record per-run status paths: {batch_json}"
+    );
 
     let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
     assert!(
@@ -211,6 +215,8 @@ fn proof_timing_batch_records_status_when_command_exits_nonzero() {
         std::fs::read_to_string(batch_dir.join("small-001.log")).expect("run log should read");
     let status = std::fs::read_to_string(batch_dir.join("small-001.status"))
         .expect("status file should read");
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
     let _ = std::fs::remove_dir_all(&dir);
 
     assert!(
@@ -240,6 +246,12 @@ fn proof_timing_batch_records_status_when_command_exits_nonzero() {
     assert!(
         status.contains(&format!("tmp_dir={}", expected_tmp.display())),
         "status should record the managed TMPDIR: {status}"
+    );
+    assert!(
+        batch_json.contains("\"appended\": false")
+            && batch_json.contains("small-001.log")
+            && batch_json.contains("small-001.status"),
+        "failed run should leave log and status paths in batch json: {batch_json}"
     );
 }
 
@@ -278,6 +290,8 @@ fn proof_timing_batch_records_status_when_command_times_out() {
         std::fs::read_to_string(batch_dir.join("small-001.log")).expect("run log should read");
     let status = std::fs::read_to_string(batch_dir.join("small-001.status"))
         .expect("status file should read");
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
     let _ = std::fs::remove_dir_all(&dir);
 
     assert!(!success, "proof timing batch should fail on timeout");
@@ -300,6 +314,12 @@ fn proof_timing_batch_records_status_when_command_times_out() {
     assert!(
         status.contains(&format!("tmp_dir={}", expected_tmp.display())),
         "status should record the managed TMPDIR: {status}"
+    );
+    assert!(
+        batch_json.contains("\"appended\": false")
+            && batch_json.contains("small-001.log")
+            && batch_json.contains("small-001.status"),
+        "timed-out run should leave log and status paths in batch json: {batch_json}"
     );
 }
 
@@ -436,6 +456,8 @@ fn proof_timing_batch_rejects_missing_required_output_text() {
     let expected_tmp = batch_dir.join("small-001.tmp");
     let status = std::fs::read_to_string(batch_dir.join("small-001.status"))
         .expect("status file should read");
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
     let _ = std::fs::remove_dir_all(&dir);
 
     assert!(
@@ -458,6 +480,12 @@ fn proof_timing_batch_rejects_missing_required_output_text() {
     assert!(
         status.contains(&format!("tmp_dir={}", expected_tmp.display())),
         "status should record the managed TMPDIR for validation failures: {status}"
+    );
+    assert!(
+        batch_json.contains("\"appended\": false")
+            && batch_json.contains("small-001.log")
+            && batch_json.contains("small-001.status"),
+        "validation failure should leave log and status paths in batch json: {batch_json}"
     );
 }
 
@@ -559,6 +587,10 @@ fn proof_timing_batch_records_logs_when_append_fails() {
     assert!(
         batch_json.contains("small-001.log"),
         "batch json should retain completed small logs: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("small-001.status"),
+        "batch json should retain completed small statuses: {batch_json}"
     );
     assert!(
         batch_json.contains("\"large_logs\": []"),

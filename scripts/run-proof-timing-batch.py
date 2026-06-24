@@ -304,6 +304,10 @@ def path_texts(paths: list[Path]) -> list[str]:
     return [str(path) for path in paths]
 
 
+def discovered_run_paths(batch_dir: Path, label: str, suffix: str) -> list[Path]:
+    return sorted(batch_dir.glob(f"{label}-[0-9][0-9][0-9]{suffix}"))
+
+
 def write_batch_json(
     path: Path,
     args: argparse.Namespace,
@@ -313,6 +317,8 @@ def write_batch_json(
     improve_log_path: Path,
     small_logs: list[Path] | None,
     large_logs: list[Path] | None,
+    small_statuses: list[Path] | None,
+    large_statuses: list[Path] | None,
     appended: bool,
 ) -> None:
     payload = {
@@ -336,6 +342,8 @@ def write_batch_json(
         "require_proof_output": args.require_proof_output,
         "small_logs": path_texts(small_logs or []),
         "large_logs": path_texts(large_logs or []),
+        "small_statuses": path_texts(small_statuses or []),
+        "large_statuses": path_texts(large_statuses or []),
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -388,6 +396,8 @@ def run_batch(args: argparse.Namespace) -> Path:
         large_logs: list[Path] | None = None,
         appended: bool = False,
     ) -> None:
+        small_statuses = discovered_run_paths(batch_dir, "small", ".status")
+        large_statuses = discovered_run_paths(batch_dir, "large", ".status")
         write_batch_json(
             batch_json_path,
             args,
@@ -397,41 +407,57 @@ def run_batch(args: argparse.Namespace) -> Path:
             improve_log_path,
             small_logs,
             large_logs,
+            small_statuses,
+            large_statuses,
             appended,
         )
 
     record_batch_json()
 
-    small_logs = run_group(
-        "small",
-        args.small_command,
-        args.runs,
-        args.small_timeout,
-        batch_dir,
-        cwd,
-        required_texts_for_label(args, "small"),
-    )
-    large_logs = run_group(
-        "large",
-        args.large_command,
-        args.runs,
-        args.large_timeout,
-        batch_dir,
-        cwd,
-        required_texts_for_label(args, "large"),
-    )
+    small_logs: list[Path] = []
+    large_logs: list[Path] = []
+    try:
+        small_logs = run_group(
+            "small",
+            args.small_command,
+            args.runs,
+            args.small_timeout,
+            batch_dir,
+            cwd,
+            required_texts_for_label(args, "small"),
+        )
+        large_logs = run_group(
+            "large",
+            args.large_command,
+            args.runs,
+            args.large_timeout,
+            batch_dir,
+            cwd,
+            required_texts_for_label(args, "large"),
+        )
+    except SystemExit:
+        record_batch_json(
+            discovered_run_paths(batch_dir, "small", ".log"),
+            discovered_run_paths(batch_dir, "large", ".log"),
+            appended=False,
+        )
+        raise
     record_batch_json(small_logs, large_logs, appended=False)
-    append_improve_log(
-        append_script,
-        improve_log_path,
-        args.commit,
-        args.summary,
-        small_logs,
-        large_logs,
-        args.max_relative_spread,
-        root,
-        batch_dir,
-    )
+    try:
+        append_improve_log(
+            append_script,
+            improve_log_path,
+            args.commit,
+            args.summary,
+            small_logs,
+            large_logs,
+            args.max_relative_spread,
+            root,
+            batch_dir,
+        )
+    except SystemExit:
+        record_batch_json(small_logs, large_logs, appended=False)
+        raise
     record_batch_json(small_logs, large_logs, appended=True)
 
     print(f"batch_dir={batch_dir}")
