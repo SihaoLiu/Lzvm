@@ -138,6 +138,16 @@ def nonnegative_float(raw: str) -> float:
     return value
 
 
+def positive_integer_env(raw: str, name: str) -> str:
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise SystemExit(f"{name} must be a positive integer: {raw!r}") from error
+    if value <= 0:
+        raise SystemExit(f"{name} must be a positive integer: {raw!r}")
+    return str(value)
+
+
 def target_max_avg_s(args: argparse.Namespace, label: str) -> float | None:
     explicit = args.small_max_avg_s if label == "small" else args.large_max_avg_s
     if explicit is not None:
@@ -187,7 +197,10 @@ class ProofEnv:
         return path
 
     def trace_limit(self) -> str:
-        return os.environ.get(self.var("TRACE_LIMIT"), self.default_trace_limit)
+        return positive_integer_env(
+            os.environ.get(self.var("TRACE_LIMIT"), self.default_trace_limit),
+            self.var("TRACE_LIMIT"),
+        )
 
 
 def configured_paths(config: ProofEnv) -> dict[str, Path]:
@@ -404,15 +417,15 @@ def run(args: argparse.Namespace) -> int:
 def check_env(args: argparse.Namespace, root: Path) -> None:
     selected = selected_envs(args, root)
     ready = [
-        (config, mode, configured_paths(config))
+        (config, mode, configured_paths(config), config.trace_limit())
         for config, mode in selected
     ]
     print("status=ok")
-    for config, mode, paths in ready:
+    for config, mode, paths, trace_limit in ready:
         print(f"{config.label}=ready")
         print(f"{config.label}_mode={mode}")
         print(f"{config.label}_verify_proof={str(not args.skip_verify_proof).lower()}")
-        print(f"{config.label}_trace_limit={config.trace_limit()}")
+        print(f"{config.label}_trace_limit={trace_limit}")
         for key in [
             "bin",
             "setup",

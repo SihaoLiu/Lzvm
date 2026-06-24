@@ -533,6 +533,54 @@ fn eth_proof_timing_batch_check_env_rejects_bad_bin_types() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_rejects_bad_trace_limits() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-bad-trace-limit");
+
+    let mut text_command = Command::new(script_path());
+    text_command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut text_command, SMALL_PREFIX);
+    text_command.env(format!("{SMALL_PREFIX}_TRACE_LIMIT"), "not-a-number");
+    let text_output = text_command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+
+    let mut zero_command = Command::new(script_path());
+    zero_command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut zero_command, SMALL_PREFIX);
+    zero_command.env(format!("{SMALL_PREFIX}_TRACE_LIMIT"), "0");
+    let zero_output = zero_command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+
+    let text_success = text_output.status.success();
+    let text_stdout = String::from_utf8(text_output.stdout).expect("stdout should be utf-8");
+    let text_stderr = String::from_utf8_lossy(&text_output.stderr).into_owned();
+    let zero_success = zero_output.status.success();
+    let zero_stdout = String::from_utf8(zero_output.stdout).expect("stdout should be utf-8");
+    let zero_stderr = String::from_utf8_lossy(&zero_output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(!text_success, "env check should reject text trace limits");
+    assert!(
+        !text_stdout.contains("status=ok"),
+        "failed env check should not report ok: {text_stdout}"
+    );
+    assert!(
+        text_stderr.contains("_TRACE_LIMIT must be a positive integer"),
+        "env check should explain text trace limit: stderr={text_stderr}"
+    );
+    assert!(!zero_success, "env check should reject zero trace limits");
+    assert!(
+        !zero_stdout.contains("status=ok"),
+        "failed env check should not report ok: {zero_stdout}"
+    );
+    assert!(
+        zero_stderr.contains("_TRACE_LIMIT must be a positive integer"),
+        "env check should explain zero trace limit: stderr={zero_stderr}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_env_rejects_wrong_input_types() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-input-types");
 
