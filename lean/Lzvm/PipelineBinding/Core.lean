@@ -20,6 +20,10 @@ structure RuntimePipelineBindingValidation (system : VerifierModel) where
   traceBindingValidation : RuntimeTraceConstraintArtifactBindingValidation system
   queryPlanBindingValidation : RuntimeQueryPlanBindingValidation system
   pipelineBindingAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  artifactBindingValidationAgreement :
+    RuntimeProofArtifactBindingValidationAgreement
+      ethBindingValidation.proofArtifactBindingValidation
+      queryPlanBindingValidation.challengeValidation.transcriptValidation.artifactBindingValidation
   pipelineBindingAcceptedImpliesEthBindingAccepted :
     forall artifact publicInput proof,
       pipelineBindingAccepted artifact publicInput proof ->
@@ -740,6 +744,27 @@ theorem runtime_pipeline_binding_checked_acceptance_segments_present
       publicInput
       proof
       queryPlanAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let ethArtifactValidation :=
+          validation.ethBindingValidation.proofArtifactBindingValidation
+        let queryPlanValidation := validation.queryPlanBindingValidation
+        let queryArtifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        RuntimeProofArtifactBindingValidationAgreement
+          ethArtifactValidation
+          queryArtifactValidation := by
+  intro _artifact _publicInput _proof _accepted
+  exact validation.artifactBindingValidationAgreement
 
 theorem runtime_pipeline_binding_checked_acceptance_eth_artifact_wellformed_contract
     {system : VerifierModel}

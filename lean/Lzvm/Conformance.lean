@@ -40,6 +40,19 @@ structure RuntimeConformanceValidation (system : VerifierModel) where
       artifactAccepted artifact publicInput proof ->
         artifactProofMatches artifact publicInput proof
 
+def RuntimeConformanceValidationAgreement
+    {system : VerifierModel}
+    (left right : RuntimeConformanceValidation system) : Prop :=
+  (forall artifact publicInput proof,
+      left.artifactAccepted artifact publicInput proof <->
+        right.artifactAccepted artifact publicInput proof)
+    /\ (forall artifact publicInput proof,
+      left.artifactPublicInputMatches artifact publicInput proof <->
+        right.artifactPublicInputMatches artifact publicInput proof)
+    /\ (forall artifact publicInput proof,
+      left.artifactProofMatches artifact publicInput proof <->
+        right.artifactProofMatches artifact publicInput proof)
+
 def RuntimeArtifactEvidence
     (system : VerifierModel)
     (validation : RuntimeConformanceValidation system)

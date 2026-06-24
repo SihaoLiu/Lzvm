@@ -75,6 +75,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
             "runtime_pipeline_binding_checked_acceptance_segment_ids_allowed",
             "runtime_pipeline_binding_checked_acceptance_segments_present",
+            "runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement",
             "runtime_pipeline_binding_checked_acceptance_eth_artifact_wellformed_contract",
             "runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
@@ -166,6 +167,11 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     assert!(
         top_level_source.contains("import Lzvm.PipelineBinding.SegmentIds"),
         "top-level Lean module should import pipeline segment ID contracts"
+    );
+    assert!(
+        lean_source.contains("artifactBindingValidationAgreement")
+            && lean_source.contains("RuntimeProofArtifactBindingValidationAgreement"),
+        "pipeline binding validation should require agreement between ETH and query-plan artifact bindings"
     );
     assert!(theorem_prefix(
         &lean_source,
@@ -562,6 +568,24 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_query_plan",
             "runtime_query_plan_binding_checked_acceptance_segments_present",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "let ethArtifactValidation :=",
+            "validation.ethBindingValidation.proofArtifactBindingValidation",
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "let queryArtifactValidation :=",
+            "queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation",
+            "RuntimeProofArtifactBindingValidationAgreement",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement",
+        &["validation.artifactBindingValidationAgreement"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -1211,6 +1235,21 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
             )
+            .contains("let ethArtifactValidation :=")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
+            .contains("validation.ethBindingValidation.proofArtifactBindingValidation")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
+            .contains("RuntimeProofArtifactBindingValidationAgreement")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
             .contains("artifactValidation.proofContainerCanonical artifact publicInput proof")
             && theorem_prefix(
                 &lean_source,
@@ -1250,6 +1289,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
             "runtime_pipeline_binding_checked_acceptance_segment_ids_allowed",
             "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
+            "runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -2214,6 +2254,21 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
             )
+            .contains("let ethArtifactValidation :=")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("validation.ethBindingValidation.proofArtifactBindingValidation")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("RuntimeProofArtifactBindingValidationAgreement")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
             .contains("artifactValidation.proofContainerCanonical artifact publicInput proof")
             && theorem_prefix(
                 &lean_source,
@@ -2253,6 +2308,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
             "runtime_pipeline_binding_checked_acceptance_segment_ids_allowed",
             "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
+            "runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement",
         ],
     );
     lean_binding::assert_theorem_body_omits(

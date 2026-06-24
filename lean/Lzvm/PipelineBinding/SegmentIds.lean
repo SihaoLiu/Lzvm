@@ -26,6 +26,8 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract
         let queryPlanValidation := validation.queryPlanBindingValidation
         let artifactValidation :=
           queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        let ethArtifactValidation :=
+          validation.ethBindingValidation.proofArtifactBindingValidation
         RequiredCryptographicAssumptionStatements assumptions.crypto
           /\ ProofSystemSound system
           /\ system.accepts publicInput proof
@@ -43,6 +45,9 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract
             proof
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof
+          /\ RuntimeProofArtifactBindingValidationAgreement
+            ethArtifactValidation
+            artifactValidation
           /\ artifactValidation.proofContainerCanonical artifact publicInput proof
           /\ artifactValidation.proofSegmentsPresent artifact publicInput proof
           /\ artifactValidation.proofMetadataCanonical artifact publicInput proof
@@ -101,6 +106,13 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract
       publicInput
       proof
       accepted
+  have artifactAgreement :=
+    runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   rcases compactContract with
     ⟨auditedAssumptions,
       proofSystemSound,
@@ -125,6 +137,7 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract
       seededFriOpeningChecked,
       coreContract,
       soundWitness,
+      artifactAgreement,
       containerCanonical,
       segmentsPresent,
       metadataCanonical,
@@ -147,6 +160,8 @@ theorem runtime_pipeline_binding_required_external_source_audited_segment_ids_co
           let queryPlanValidation := validation.queryPlanBindingValidation
           let artifactValidation :=
             queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+          let ethArtifactValidation :=
+            validation.ethBindingValidation.proofArtifactBindingValidation
           RequiredCryptographicAssumptionStatements assumptions.crypto
             /\ ProofSystemSound system
             /\ system.accepts publicInput proof
@@ -172,6 +187,9 @@ theorem runtime_pipeline_binding_required_external_source_audited_segment_ids_co
               proof
             /\ RuntimeVerifierCoreContract system publicInput proof
             /\ SoundWitness system publicInput proof
+            /\ RuntimeProofArtifactBindingValidationAgreement
+              ethArtifactValidation
+              artifactValidation
             /\ artifactValidation.proofContainerCanonical artifact publicInput proof
             /\ artifactValidation.proofSegmentsPresent artifact publicInput proof
             /\ artifactValidation.proofMetadataCanonical artifact publicInput proof
@@ -231,6 +249,13 @@ theorem runtime_pipeline_binding_required_external_source_audited_segment_ids_co
       publicInput
       proof
       accepted
+  have artifactAgreement :=
+    runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   rcases compactContract with
     ⟨auditedAssumptions,
       proofSystemSound,
@@ -255,6 +280,7 @@ theorem runtime_pipeline_binding_required_external_source_audited_segment_ids_co
       seededFriOpeningChecked,
       coreContract,
       soundWitness,
+      artifactAgreement,
       containerCanonical,
       segmentsPresent,
       metadataCanonical,

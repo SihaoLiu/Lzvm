@@ -74,6 +74,43 @@ structure RuntimeProofArtifactBindingValidation (system : VerifierModel) where
       proofPayloadMatches artifact publicInput proof ->
         runtimeValidation.artifactProofMatches artifact publicInput proof
 
+def RuntimeProofArtifactBindingValidationAgreement
+    {system : VerifierModel}
+    (left right : RuntimeProofArtifactBindingValidation system) : Prop :=
+  RuntimeConformanceValidationAgreement
+      left.runtimeValidation
+      right.runtimeValidation
+    /\ (forall artifact publicInput proof,
+      left.artifactBindingAccepted artifact publicInput proof <->
+        right.artifactBindingAccepted artifact publicInput proof)
+    /\ (forall artifact publicInput proof,
+      left.setupHashMatches artifact publicInput proof <->
+        right.setupHashMatches artifact publicInput proof)
+    /\ (forall artifact publicInput proof,
+      left.publicValuesHashMatches artifact publicInput proof <->
+        right.publicValuesHashMatches artifact publicInput proof)
+    /\ (forall artifact publicInput proof,
+      left.proofPayloadMatches artifact publicInput proof <->
+        right.proofPayloadMatches artifact publicInput proof)
+    /\ (forall artifact publicInput proof,
+      left.proofContainerCanonical artifact publicInput proof <->
+        right.proofContainerCanonical artifact publicInput proof)
+    /\ (forall artifact publicInput proof,
+      left.proofMetadataCanonical artifact publicInput proof <->
+        right.proofMetadataCanonical artifact publicInput proof)
+    /\ (forall artifact publicInput proof,
+      left.proofSegmentsPresent artifact publicInput proof <->
+        right.proofSegmentsPresent artifact publicInput proof)
+    /\ (forall artifact publicInput proof,
+      left.proofSegmentPayloadsNonempty artifact publicInput proof <->
+        right.proofSegmentPayloadsNonempty artifact publicInput proof)
+    /\ (forall artifact publicInput proof,
+      left.proofSegmentIdsAllowed artifact publicInput proof <->
+        right.proofSegmentIdsAllowed artifact publicInput proof)
+    /\ (forall artifact publicInput proof,
+      left.proofSegmentIdsUnique artifact publicInput proof <->
+        right.proofSegmentIdsUnique artifact publicInput proof)
+
 def RuntimeProofArtifactBindingEvidence
     (_system : VerifierModel)
     (validation : RuntimeProofArtifactBindingValidation _system)

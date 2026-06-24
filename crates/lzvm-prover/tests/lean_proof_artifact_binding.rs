@@ -19,6 +19,8 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
     );
     assert!(
         lean_source.contains("RuntimeProofArtifactBindingValidation")
+            && lean_source.contains("def RuntimeProofArtifactBindingValidationAgreement")
+            && lean_source.contains("RuntimeConformanceValidationAgreement")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("proofContainerCanonical")
             && lean_source.contains("proofMetadataCanonical")
