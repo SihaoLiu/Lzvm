@@ -360,21 +360,24 @@ theorem runtime_trace_constraint_checked_acceptance_semantic_evidence_complete
       publicInput
       proof
       accepted
-  cases traceWitnessEvidence with
-  | intro witness tail =>
-    cases tail with
-    | intro trace tail =>
-      cases tail with
-      | intro constraints evidence =>
-        exact
-          Exists.intro witness
-            (Exists.intro trace
-              (Exists.intro constraints
-                (And.intro evidence.left
-                  (And.intro evidence.right.left
-                    (And.intro
-                      evidence.right.right.left
-                      evidence.right.right.right.left)))))
+  rcases traceWitnessEvidence with
+    ⟨witness,
+      trace,
+      constraints,
+      traceExtracted,
+      constraintsEvaluated,
+      witnessExtracted,
+      backendConformant,
+      _traceConsistent,
+      _constraintsSatisfied,
+      _witnessMatchesTrace⟩
+  exact
+    Exists.intro witness
+      (Exists.intro trace
+        (Exists.intro constraints
+          (And.intro traceExtracted
+            (And.intro constraintsEvaluated
+              (And.intro witnessExtracted backendConformant)))))
 
 theorem runtime_trace_constraint_checked_acceptance_backend_contract
     {system : VerifierModel}
@@ -821,21 +824,24 @@ theorem runtime_trace_constraint_evidence_implies_semantic_evidence_complete
           publicInput
           proof := by
   intro artifact publicInput proof requiresExternalSource evidence
-  cases evidence.right.right with
-  | intro witness tail =>
-    cases tail with
-    | intro trace tail =>
-      cases tail with
-      | intro constraints traceEvidence =>
-        exact
-          Exists.intro witness
-            (Exists.intro trace
-              (Exists.intro constraints
-                (And.intro traceEvidence.left
-                  (And.intro traceEvidence.right.left
-                    (And.intro
-                      traceEvidence.right.right.left
-                      traceEvidence.right.right.right.left)))))
+  rcases evidence.right.right with
+    ⟨witness,
+      trace,
+      constraints,
+      traceExtracted,
+      constraintsEvaluated,
+      witnessExtracted,
+      backendConformant,
+      _traceConsistent,
+      _constraintsSatisfied,
+      _witnessMatchesTrace⟩
+  exact
+    Exists.intro witness
+      (Exists.intro trace
+        (Exists.intro constraints
+          (And.intro traceExtracted
+            (And.intro constraintsEvaluated
+              (And.intro witnessExtracted backendConformant)))))
 
 theorem runtime_trace_constraint_evidence_implies_backend_contract
     {system : VerifierModel}

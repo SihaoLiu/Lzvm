@@ -246,14 +246,18 @@ theorem runtime_trace_constraint_artifact_binding_checked_acceptance_pcs_fri_bac
       publicInput
       proof
       traceConstraintAccepted
+  rcases traceContract with
+    ⟨pcsOpeningsValid,
+      friQueriesValid,
+      traceArtifactBindingEvidence,
+      semanticEvidenceComplete,
+      backendContract⟩
   exact
     And.intro artifactEvidence
-      (And.intro traceContract.left
-        (And.intro traceContract.right.left
-          (And.intro traceContract.right.right.left
-            (And.intro
-              traceContract.right.right.right.left
-              traceContract.right.right.right.right))))
+      (And.intro pcsOpeningsValid
+        (And.intro friQueriesValid
+          (And.intro traceArtifactBindingEvidence
+            (And.intro semanticEvidenceComplete backendContract))))
 
 theorem runtime_trace_constraint_artifact_binding_checked_acceptance_sound
     {system : VerifierModel}
