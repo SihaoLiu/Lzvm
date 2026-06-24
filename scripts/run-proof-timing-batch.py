@@ -305,7 +305,13 @@ def path_texts(paths: list[Path]) -> list[str]:
 
 
 def discovered_run_paths(batch_dir: Path, label: str, suffix: str) -> list[Path]:
-    return sorted(batch_dir.glob(f"{label}-[0-9][0-9][0-9]{suffix}"))
+    run_path_re = re.compile(rf"{re.escape(label)}-(\d+){re.escape(suffix)}\Z")
+    matches: list[tuple[int, str, Path]] = []
+    for path in batch_dir.glob(f"{label}-*{suffix}"):
+        match = run_path_re.fullmatch(path.name)
+        if match:
+            matches.append((int(match.group(1)), path.name, path))
+    return [path for _run, _name, path in sorted(matches)]
 
 
 def write_batch_json(

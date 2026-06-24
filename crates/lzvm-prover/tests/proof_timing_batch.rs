@@ -31,6 +31,51 @@ fn single_batch_dir(dir: &std::path::Path) -> std::path::PathBuf {
 }
 
 #[test]
+fn proof_timing_batch_discovers_wide_run_status_paths() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-wide-status");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    std::fs::write(dir.join("small-999.status"), b"status").expect("status should write");
+    std::fs::write(dir.join("small-1000.status"), b"status").expect("status should write");
+    std::fs::write(dir.join("small-1000.log"), b"log").expect("log should write");
+    std::fs::write(dir.join("small-extra.status"), b"status").expect("status should write");
+    std::fs::write(dir.join("large-1000.status"), b"status").expect("status should write");
+    let python = format!(
+        concat!(
+            "import importlib.util, pathlib\n",
+            "script = pathlib.Path({:?})\n",
+            "fixture = pathlib.Path({:?})\n",
+            "spec = importlib.util.spec_from_file_location('timing_batch', script)\n",
+            "module = importlib.util.module_from_spec(spec)\n",
+            "spec.loader.exec_module(module)\n",
+            "for path in module.discovered_run_paths(fixture, 'small', '.status'):\n",
+            "    print(path.name)\n"
+        ),
+        script_path.display().to_string(),
+        dir.display().to_string()
+    );
+
+    let output = Command::new("python3")
+        .arg("-c")
+        .arg(python)
+        .output()
+        .expect("python helper check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let discovered = stdout.lines().collect::<Vec<_>>();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(success, "python helper check should pass: stderr={stderr}");
+    assert_eq!(
+        discovered,
+        vec!["small-999.status", "small-1000.status"],
+        "only matching numeric status paths should be discovered in run order"
+    );
+}
+
+#[test]
 fn proof_timing_batch_runs_commands_and_appends_stable_log() {
     let script_path = batch_script_path();
     let dir = test_dir("proof-timing-batch-test");
