@@ -67,6 +67,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_verifier_core_contract",
             "runtime_soundness_checked_acceptance_verifier_sound_witness",
             "runtime_soundness_checked_acceptance_execution_obligations",
+            "runtime_soundness_checked_acceptance_audited_soundness_obligations",
             "runtime_soundness_checked_acceptance_audited_core_contract",
             "runtime_soundness_checked_acceptance_verifier_accepts",
             "runtime_soundness_checked_acceptance_accepts_core_sound_witness",
@@ -403,6 +404,38 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("(assumptions : AssumptionBundle system)"),
         "audited runtime core contract should require the audited assumption bundle"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_audited_soundness_obligations"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_soundness_obligations"
+            )
+            .contains("RequiredSemanticAssumptionStatements assumptions.semantic")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_soundness_obligations"
+            )
+            .contains("RuntimeSoundnessEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_audited_soundness_obligations"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "checked runtime soundness should package audited crypto and semantic obligations with runtime evidence"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_soundness_obligations",
+        &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+            "runtime_soundness_checked_acceptance_sound",
+        ],
     );
     assert!(
         theorem_prefix(

@@ -633,6 +633,27 @@ theorem runtime_soundness_checked_acceptance_audited_assumptions
       checked
   exact And.intro audited sound
 
+theorem runtime_soundness_checked_acceptance_audited_soundness_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system validation artifact publicInput proof requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeSoundnessEvidence
+            system validation artifact publicInput proof requiresExternalSource
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (runtime_soundness_checked_acceptance_sound
+          assumptions validation artifact publicInput proof requiresExternalSource checked))
+
 theorem runtime_soundness_checked_acceptance_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
