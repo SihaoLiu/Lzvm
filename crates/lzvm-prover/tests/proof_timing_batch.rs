@@ -157,6 +157,55 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
 }
 
 #[test]
+fn proof_timing_batch_rejects_average_above_max() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-max-average");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-max-avg-s")
+        .arg("1.0")
+        .arg("--small-command")
+        .arg("printf 'timing_total_ms=1500\n'")
+        .arg("--summary")
+        .arg("max average")
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    let log_created = log_path.exists();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should reject averages above the configured max"
+    );
+    assert!(
+        stderr.contains("small proof time: average 1.500s exceeds --small-max-avg-s 1.000s"),
+        "max average rejection should come from append-improve-log: stderr={stderr}"
+    );
+    assert!(
+        batch_json.contains("\"small_max_avg_s\": 1.0")
+            && batch_json.contains("\"appended\": false"),
+        "batch json should record the configured max and failed append state: {batch_json}"
+    );
+    assert!(!log_created, "rejected batch should not append improve log");
+}
+
+#[test]
 fn proof_timing_batch_sets_run_tmpdir_under_batch_dir() {
     let script_path = batch_script_path();
     let dir = test_dir("proof timing batch tmpdir");

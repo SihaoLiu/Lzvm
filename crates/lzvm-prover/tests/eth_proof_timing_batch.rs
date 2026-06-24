@@ -199,6 +199,41 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
 }
 
 #[test]
+fn eth_proof_timing_batch_target_thresholds_follow_selected_suite() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-target-thresholds");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--enforce-targets")
+        .arg("--summary")
+        .arg("target thresholds");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should build target threshold command: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("--small-max-avg-s 10.0"),
+        "small target threshold should be passed to the runner: {stdout}"
+    );
+    assert!(
+        !stdout.contains("--large-max-avg-s"),
+        "large target threshold should not be passed when only small is selected: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_run_does_not_create_configured_tmp_dir() {
     let fixture = ProofFixture::new("eth proof timing batch actual run");
     let runner = fixture.dir.join("fake-runner.py");

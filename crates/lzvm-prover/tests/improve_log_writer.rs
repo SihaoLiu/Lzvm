@@ -176,6 +176,52 @@ fn improve_log_writer_averages_stable_run_samples() {
 }
 
 #[test]
+fn improve_log_writer_rejects_average_above_max() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+    let log_path = workspace_root.join(format!(
+        "temp/improve-log-max-average-{}.csv",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+
+    let output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--small-runs")
+        .arg("8.55,8.54,8.49")
+        .arg("--small-max-avg-s")
+        .arg("8.0")
+        .arg("--summary")
+        .arg("threshold guard")
+        .output()
+        .expect("improve-log writer should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let log_created = log_path.exists();
+    let _ = std::fs::remove_file(&log_path);
+
+    assert!(
+        !success,
+        "improve-log writer should reject averages above the configured max"
+    );
+    assert!(
+        stderr.contains("small proof time: average 8.527s exceeds --small-max-avg-s 8.000s"),
+        "max average rejection should explain the threshold: stderr={stderr}"
+    );
+    assert!(
+        !log_created,
+        "rejected average should not create an improve log"
+    );
+}
+
+#[test]
 fn improve_log_writer_rejects_path_outside_temp() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root

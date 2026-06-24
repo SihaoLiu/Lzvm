@@ -16,6 +16,7 @@ HEADER = [
 ]
 
 TIMING_TOTAL_RE = re.compile(r"^timing_total_ms=(\d+)\s*$")
+AVG_FIELD_RE = re.compile(r"^avg=([0-9]+(?:\.[0-9]+)?)\b")
 
 
 def workspace_root() -> Path:
@@ -115,6 +116,16 @@ def parse_run_times(raw: str, label: str) -> list[float]:
     return values
 
 
+def positive_float(raw: str) -> float:
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"invalid float: {raw!r}") from error
+    if value <= 0.0:
+        raise argparse.ArgumentTypeError("value must be positive")
+    return value
+
+
 def stable_average_field(
     samples: list[float],
     label: str,
@@ -204,6 +215,32 @@ def resolve_timing_field(
     return stable_average_field(parse_run_times(runs, label), label, max_relative_spread)
 
 
+def timing_field_average_seconds(field: str, label: str) -> float:
+    if not field:
+        raise SystemExit(f"{label}: no timing field available for max average check")
+    match = AVG_FIELD_RE.match(field)
+    raw_value = match.group(1) if match is not None else field
+    try:
+        value = float(raw_value)
+    except ValueError as error:
+        raise SystemExit(
+            f"{label}: cannot parse timing average from {field!r}"
+        ) from error
+    if not math.isfinite(value) or value <= 0.0:
+        raise SystemExit(f"{label}: timing average must be positive and finite")
+    return value
+
+
+def enforce_max_average(field: str, label: str, option: str, max_average: float | None) -> None:
+    if max_average is None:
+        return
+    average = timing_field_average_seconds(field, label)
+    if average > max_average:
+        raise SystemExit(
+            f"{label}: average {average:.3f}s exceeds {option} {max_average:.3f}s"
+        )
+
+
 def append_row(
     path: Path,
     commit: str,
@@ -241,6 +278,8 @@ def main() -> None:
     parser.add_argument("--small-log", action="append", default=None)
     parser.add_argument("--large-log", action="append", default=None)
     parser.add_argument("--max-relative-spread", type=float, default=0.10)
+    parser.add_argument("--small-max-avg-s", type=positive_float, default=None)
+    parser.add_argument("--large-max-avg-s", type=positive_float, default=None)
     parser.add_argument(
         "--check",
         action="store_true",
@@ -278,6 +317,18 @@ def main() -> None:
             "--large-log",
             args.max_relative_spread,
             root,
+        )
+        enforce_max_average(
+            small_proof_time_s,
+            "small proof time",
+            "--small-max-avg-s",
+            args.small_max_avg_s,
+        )
+        enforce_max_average(
+            large_proof_time_s,
+            "large proof time",
+            "--large-max-avg-s",
+            args.large_max_avg_s,
         )
         append_row(
             path,

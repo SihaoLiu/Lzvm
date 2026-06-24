@@ -264,6 +264,8 @@ def append_improve_log(
     small_logs: list[Path],
     large_logs: list[Path],
     max_relative_spread: float,
+    small_max_avg_s: float | None,
+    large_max_avg_s: float | None,
     root: Path,
     batch_dir: Path,
 ) -> None:
@@ -279,6 +281,10 @@ def append_improve_log(
     ]
     if commit is not None:
         command.extend(["--commit", commit])
+    if small_max_avg_s is not None:
+        command.extend(["--small-max-avg-s", str(small_max_avg_s)])
+    if large_max_avg_s is not None:
+        command.extend(["--large-max-avg-s", str(large_max_avg_s)])
     for path in small_logs:
         command.extend(["--small-log", str(path)])
     for path in large_logs:
@@ -338,6 +344,8 @@ def write_batch_json(
         "small_timeout_s": args.small_timeout,
         "large_timeout_s": args.large_timeout,
         "max_relative_spread": args.max_relative_spread,
+        "small_max_avg_s": args.small_max_avg_s,
+        "large_max_avg_s": args.large_max_avg_s,
         "commit": args.commit,
         "summary": args.summary,
         "small_command": args.small_command,
@@ -458,6 +466,8 @@ def run_batch(args: argparse.Namespace) -> Path:
             small_logs,
             large_logs,
             args.max_relative_spread,
+            args.small_max_avg_s,
+            args.large_max_avg_s,
             root,
             batch_dir,
         )
@@ -488,6 +498,8 @@ def self_test() -> None:
         large_command=command,
         large_timeout=10.0,
         max_relative_spread=0.10,
+        small_max_avg_s=None,
+        large_max_avg_s=None,
         path=str(work_dir / "improve-log.csv"),
         require_proof_output=False,
         require_text=[],
@@ -524,6 +536,8 @@ def main() -> None:
     parser.add_argument("--commit", default=None)
     parser.add_argument("--summary")
     parser.add_argument("--max-relative-spread", type=nonnegative_float, default=0.10)
+    parser.add_argument("--small-max-avg-s", type=positive_timeout, default=None)
+    parser.add_argument("--large-max-avg-s", type=positive_timeout, default=None)
     parser.add_argument("--append-script", default="scripts/append-improve-log.py")
     parser.add_argument("--require-text", action="append", default=[])
     parser.add_argument("--small-require-text", action="append", default=[])

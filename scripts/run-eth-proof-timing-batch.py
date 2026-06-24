@@ -134,6 +134,15 @@ def nonnegative_float(raw: str) -> float:
     return value
 
 
+def target_max_avg_s(args: argparse.Namespace, label: str) -> float | None:
+    explicit = args.small_max_avg_s if label == "small" else args.large_max_avg_s
+    if explicit is not None:
+        return explicit
+    if not args.enforce_targets:
+        return None
+    return 10.0 if label == "small" else 30.0
+
+
 class ProofEnv:
     def __init__(self, prefix: str, label: str, default_trace_limit: str, root: Path):
         self.prefix = prefix
@@ -333,6 +342,15 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
         command.extend(["--require-text", "verify_proof_status=ok"])
     if args.commit is not None:
         command.extend(["--commit", args.commit])
+    selected_labels = {config.label for config, _mode in selected}
+    if "small" in selected_labels:
+        small_max_avg_s = target_max_avg_s(args, "small")
+        if small_max_avg_s is not None:
+            command.extend(["--small-max-avg-s", str(small_max_avg_s)])
+    if "large" in selected_labels:
+        large_max_avg_s = target_max_avg_s(args, "large")
+        if large_max_avg_s is not None:
+            command.extend(["--large-max-avg-s", str(large_max_avg_s)])
     for config, mode in selected:
         option = "--small-command" if config.label == "small" else "--large-command"
         command.extend([option, command_for_env(config, mode, not args.skip_verify_proof)])
@@ -443,10 +461,13 @@ def self_test() -> None:
         runs=3,
         small_mode="combined",
         small_timeout=10.0,
+        small_max_avg_s=None,
         suite="both",
         summary="self test",
         work_dir=str(work_dir / "runs"),
         check_env=False,
+        enforce_targets=False,
+        large_max_avg_s=None,
         print_env_template=False,
         skip_verify_proof=False,
     )
@@ -473,6 +494,8 @@ def main() -> None:
     parser.add_argument("--runs", type=positive_run_count, default=3)
     parser.add_argument("--small-timeout", type=positive_timeout, default=60.0)
     parser.add_argument("--large-timeout", type=positive_timeout, default=180.0)
+    parser.add_argument("--small-max-avg-s", type=positive_timeout, default=None)
+    parser.add_argument("--large-max-avg-s", type=positive_timeout, default=None)
     parser.add_argument("--work-dir", default="temp/proof-timing-batch")
     parser.add_argument("--path", default="temp/improve-log.csv")
     parser.add_argument("--summary")
@@ -481,6 +504,7 @@ def main() -> None:
     parser.add_argument("--runner", default="scripts/run-proof-timing-batch.py")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--check-env", action="store_true")
+    parser.add_argument("--enforce-targets", action="store_true")
     parser.add_argument("--print-env-template", action="store_true")
     parser.add_argument("--skip-verify-proof", action="store_true")
     parser.add_argument("--self-test", action="store_true")
