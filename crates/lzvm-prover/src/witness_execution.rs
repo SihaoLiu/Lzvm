@@ -1,6 +1,6 @@
 #[cfg(feature = "cuda")]
 use std::collections::HashSet;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{btree_map::Entry, BTreeMap, VecDeque};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -5504,23 +5504,32 @@ fn pack_backend_proof_values(
     global_info: &GlobalInfo,
     backend_proof_values: &[WitnessTraceProofValue],
 ) -> Result<Vec<Felt>, ProveWitnessCommitmentError> {
+    let mut backend_values_by_name = BTreeMap::new();
+    for value in backend_proof_values {
+        match backend_values_by_name.entry(value.name()) {
+            Entry::Vacant(entry) => {
+                entry.insert(Some(value));
+            }
+            Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+    }
+
     let mut packed_values = Vec::new();
     for entry in &global_info.proof_values_map {
-        let mut matches = backend_proof_values
-            .iter()
-            .filter(|value| value.name() == entry.name);
-        let Some(value) = matches.next() else {
+        let Some(matched) = backend_values_by_name.get(entry.name.as_str()) else {
             return Err(ProveWitnessCommitmentError::BackendProofValue {
                 unit_index,
                 message: format!("missing {}", entry.name),
             });
         };
-        if matches.next().is_some() {
+        let Some(value) = matched else {
             return Err(ProveWitnessCommitmentError::BackendProofValue {
                 unit_index,
                 message: format!("duplicate {}", entry.name),
             });
-        }
+        };
         let expected = named_stage_value_packed_field_count(entry).map_err(|message| {
             ProveWitnessCommitmentError::BackendProofValue {
                 unit_index,
@@ -5538,6 +5547,7 @@ fn pack_backend_proof_values(
                 ),
             });
         }
+        packed_values.reserve(expected);
         packed_values.extend_from_slice(value.values());
     }
     Ok(packed_values)
@@ -5548,23 +5558,32 @@ fn pack_backend_unit_values(
     unit_value_map: &[StageValue],
     backend_unit_values: &[WitnessTraceUnitValue],
 ) -> Result<Vec<Felt>, ProveWitnessCommitmentError> {
+    let mut backend_values_by_name = BTreeMap::new();
+    for value in backend_unit_values {
+        match backend_values_by_name.entry(value.name()) {
+            Entry::Vacant(entry) => {
+                entry.insert(Some(value));
+            }
+            Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+    }
+
     let mut packed_values = Vec::new();
     for entry in unit_value_map {
-        let mut matches = backend_unit_values
-            .iter()
-            .filter(|value| value.name() == entry.name);
-        let Some(value) = matches.next() else {
+        let Some(matched) = backend_values_by_name.get(entry.name.as_str()) else {
             return Err(ProveWitnessCommitmentError::BackendUnitValue {
                 unit_index,
                 message: format!("missing {}", entry.name),
             });
         };
-        if matches.next().is_some() {
+        let Some(value) = matched else {
             return Err(ProveWitnessCommitmentError::BackendUnitValue {
                 unit_index,
                 message: format!("duplicate {}", entry.name),
             });
-        }
+        };
         let expected = stage_value_packed_field_count(entry).map_err(|message| {
             ProveWitnessCommitmentError::BackendUnitValue {
                 unit_index,
@@ -5582,6 +5601,7 @@ fn pack_backend_unit_values(
                 ),
             });
         }
+        packed_values.reserve(expected);
         packed_values.extend_from_slice(value.values());
     }
     Ok(packed_values)
@@ -7092,6 +7112,112 @@ mod tests {
     struct TestEnvVarUnlockedGuard {
         name: &'static str,
         previous: Option<OsString>,
+    }
+
+    #[test]
+    fn indexed_backend_value_packing_ignores_duplicate_unmapped_names() {
+        let global_info = packing_global_info(vec![named_value("proof.alpha", 1, &[2])]);
+        let proof_values = vec![
+            WitnessTraceProofValue::new("unused", field_values(&[91])),
+            WitnessTraceProofValue::new("proof.alpha", field_values(&[11, 12])),
+            WitnessTraceProofValue::new("unused", field_values(&[92])),
+        ];
+        assert_eq!(
+            pack_backend_proof_values(4, &global_info, &proof_values)
+                .expect("mapped proof value should pack"),
+            field_values(&[11, 12])
+        );
+
+        let unit_value_map = vec![unit_value("unit.alpha", 1, &[2])];
+        let unit_values = vec![
+            WitnessTraceUnitValue::new("unused", field_values(&[93])),
+            WitnessTraceUnitValue::new("unit.alpha", field_values(&[21, 22])),
+            WitnessTraceUnitValue::new("unused", field_values(&[94])),
+        ];
+        assert_eq!(
+            pack_backend_unit_values(5, &unit_value_map, &unit_values)
+                .expect("mapped unit value should pack"),
+            field_values(&[21, 22])
+        );
+    }
+
+    #[test]
+    fn indexed_backend_value_packing_rejects_duplicate_mapped_names() {
+        let global_info = packing_global_info(vec![named_value("proof.alpha", 1, &[2])]);
+        let proof_values = vec![
+            WitnessTraceProofValue::new("proof.alpha", field_values(&[11, 12])),
+            WitnessTraceProofValue::new("proof.alpha", field_values(&[13, 14])),
+        ];
+        let proof_error = pack_backend_proof_values(6, &global_info, &proof_values)
+            .expect_err("duplicate mapped proof value should fail");
+        assert!(matches!(
+            proof_error,
+            ProveWitnessCommitmentError::BackendProofValue {
+                unit_index: 6,
+                message
+            } if message == "duplicate proof.alpha"
+        ));
+
+        let unit_value_map = vec![unit_value("unit.alpha", 1, &[2])];
+        let unit_values = vec![
+            WitnessTraceUnitValue::new("unit.alpha", field_values(&[21, 22])),
+            WitnessTraceUnitValue::new("unit.alpha", field_values(&[23, 24])),
+        ];
+        let unit_error = pack_backend_unit_values(7, &unit_value_map, &unit_values)
+            .expect_err("duplicate mapped unit value should fail");
+        assert!(matches!(
+            unit_error,
+            ProveWitnessCommitmentError::BackendUnitValue {
+                unit_index: 7,
+                message
+            } if message == "duplicate unit.alpha"
+        ));
+    }
+
+    fn packing_global_info(proof_values_map: Vec<NamedStageValue>) -> GlobalInfo {
+        let num_proof_values = if proof_values_map.is_empty() {
+            Vec::new()
+        } else {
+            vec![proof_values_map.len() as u64]
+        };
+        GlobalInfo {
+            name: "program".to_owned(),
+            air_groups: Vec::new(),
+            airs: Vec::new(),
+            curve: CurveKind::None,
+            lattice_size: None,
+            aggregation_types: Vec::new(),
+            n_publics: 0,
+            num_challenges: Vec::new(),
+            num_proof_values,
+            proof_values_map,
+            publics_map: Vec::new(),
+            transcript_arity: 4,
+        }
+    }
+
+    fn named_value(name: &str, stage: u64, lengths: &[u64]) -> NamedStageValue {
+        NamedStageValue {
+            name: name.to_owned(),
+            stage,
+            id: None,
+            lengths: lengths.to_vec(),
+        }
+    }
+
+    fn unit_value(name: &str, stage: u32, lengths: &[u32]) -> StageValue {
+        StageValue {
+            name: name.to_owned(),
+            stage,
+            lengths: lengths.to_vec(),
+        }
+    }
+
+    fn field_values(values: &[u64]) -> Vec<Felt> {
+        values
+            .iter()
+            .map(|value| Felt::from_canonical(*value).expect("value should be canonical"))
+            .collect()
     }
 
     #[cfg(feature = "cuda")]
