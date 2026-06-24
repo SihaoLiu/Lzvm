@@ -350,17 +350,25 @@ def run_batch(args: argparse.Namespace) -> Path:
         raise SystemExit(f"{cwd}: command working directory does not exist")
     improve_log_path = resolve_workspace_path(args.path, root)
     batch_json_path = batch_dir / "batch.json"
-    write_batch_json(
-        batch_json_path,
-        args,
-        root,
-        batch_dir,
-        cwd,
-        improve_log_path,
-        None,
-        None,
-        False,
-    )
+
+    def record_batch_json(
+        small_logs: list[Path] | None = None,
+        large_logs: list[Path] | None = None,
+        appended: bool = False,
+    ) -> None:
+        write_batch_json(
+            batch_json_path,
+            args,
+            root,
+            batch_dir,
+            cwd,
+            improve_log_path,
+            small_logs,
+            large_logs,
+            appended,
+        )
+
+    record_batch_json()
 
     small_logs = run_group(
         "small",
@@ -380,6 +388,7 @@ def run_batch(args: argparse.Namespace) -> Path:
         cwd,
         required_texts_for_label(args, "large"),
     )
+    record_batch_json(small_logs, large_logs, appended=False)
     append_improve_log(
         append_script,
         improve_log_path,
@@ -391,17 +400,7 @@ def run_batch(args: argparse.Namespace) -> Path:
         root,
         batch_dir,
     )
-    write_batch_json(
-        batch_json_path,
-        args,
-        root,
-        batch_dir,
-        cwd,
-        improve_log_path,
-        small_logs,
-        large_logs,
-        True,
-    )
+    record_batch_json(small_logs, large_logs, appended=True)
 
     print(f"batch_dir={batch_dir}")
     print(f"batch_json={batch_json_path}")
