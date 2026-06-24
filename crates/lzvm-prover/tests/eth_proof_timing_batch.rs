@@ -101,6 +101,13 @@ fn clear_env(command: &mut Command, prefix: &str) {
     }
 }
 
+fn verify_command_tail(command_text: &str) -> &str {
+    command_text
+        .find("verify proof --eth-block-input")
+        .map(|index| &command_text[index..])
+        .unwrap_or("")
+}
+
 #[test]
 fn eth_proof_timing_batch_self_test_runs() {
     let output = Command::new(script_path())
@@ -178,6 +185,11 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         "runner command should require artifact binding markers: {stdout}"
     );
     assert!(
+        stdout.contains("--require-text eth_block_input_match=ok")
+            && stdout.contains("--require-text program_image_cache_match=ok"),
+        "runner command should require ETH binding markers: {stdout}"
+    );
+    assert!(
         stdout.contains("small_command=env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
         "small command should clear pipeline environment: {stdout}"
     );
@@ -195,11 +207,15 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
             && stdout.contains("--input-data"),
         "small command should pass proof inputs: {stdout}"
     );
+    let verify_command = verify_command_tail(&stdout);
     assert!(
-        stdout.contains("verify proof --eth-block-input")
+        verify_command.contains("verify proof --eth-block-input")
+            && verify_command.contains("--program-image-cache")
             && stdout.contains("{batch_dir}/small-{run_padded}.proof/proof.bin")
             && stdout.contains("{batch_dir}/small-{run_padded}.proof/eth-block-public-values.bin")
-            && stdout.contains("verify_proof_status=ok"),
+            && stdout.contains("verify_proof_status=ok")
+            && stdout.contains("eth_block_input_match=ok")
+            && stdout.contains("program_image_cache_match=ok"),
         "small command should run an external proof verification after proving: {stdout}"
     );
     assert!(
@@ -304,9 +320,13 @@ fn eth_proof_timing_batch_run_uses_runner_tmpdir_token() {
         runner_args.contains("TMPDIR={tmp_dir}"),
         "runner should receive the per-run temp token: {runner_args}"
     );
+    let verify_command = verify_command_tail(&runner_args);
     assert!(
-        runner_args.contains("verify proof --eth-block-input")
-            && runner_args.contains("verify_proof_status=ok"),
+        verify_command.contains("verify proof --eth-block-input")
+            && verify_command.contains("--program-image-cache")
+            && runner_args.contains("verify_proof_status=ok")
+            && runner_args.contains("eth_block_input_match=ok")
+            && runner_args.contains("program_image_cache_match=ok"),
         "runner should receive a prove-then-verify command: {runner_args}"
     );
     assert!(
@@ -345,7 +365,9 @@ fn eth_proof_timing_batch_skip_verify_omits_external_verify() {
             && !stdout.contains("verify_proof_status=ok")
             && !stdout.contains("--require-text verify_proof_status=ok")
             && !stdout.contains("artifact_public_input_match=ok")
-            && !stdout.contains("artifact_proof_match=ok"),
+            && !stdout.contains("artifact_proof_match=ok")
+            && !stdout.contains("eth_block_input_match=ok")
+            && !stdout.contains("program_image_cache_match=ok"),
         "skip mode should omit external proof verification: {stdout}"
     );
 }
@@ -722,8 +744,12 @@ fn eth_proof_timing_batch_available_suite_uses_only_configured_large_env() {
         stdout.contains("large_command=env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
         "available suite should include the configured large command: {stdout}"
     );
+    let verify_command = verify_command_tail(&stdout);
     assert!(
-        stdout.contains("verify proof --eth-block-input"),
+        verify_command.contains("verify proof --eth-block-input")
+            && verify_command.contains("--program-image-cache")
+            && stdout.contains("eth_block_input_match=ok")
+            && stdout.contains("program_image_cache_match=ok"),
         "available suite should include external verification in the large command: {stdout}"
     );
     assert!(

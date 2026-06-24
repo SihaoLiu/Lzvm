@@ -368,6 +368,8 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
         command.extend(["--require-text", "verify_proof_status=ok"])
         command.extend(["--require-text", "artifact_public_input_match=ok"])
         command.extend(["--require-text", "artifact_proof_match=ok"])
+        command.extend(["--require-text", "eth_block_input_match=ok"])
+        command.extend(["--require-text", "program_image_cache_match=ok"])
     if args.commit is not None:
         command.extend(["--commit", args.commit])
     selected_labels = {config.label for config, _mode in selected}
@@ -451,6 +453,8 @@ def self_test() -> None:
                 "    print('status=ok')",
                 "    print('artifact_public_input_match=ok')",
                 "    print('artifact_proof_match=ok')",
+                "    print('eth_block_input_match=ok')",
+                "    print('program_image_cache_match=ok')",
                 "    sys.exit(0)",
                 "tmp = os.environ.get('TMPDIR')",
                 "if not tmp or not os.path.isdir(tmp):",
