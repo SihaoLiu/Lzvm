@@ -15,15 +15,20 @@ fn expected_top_level_usage() -> &'static str {
 
 #[test]
 fn top_level_help_prints_command_groups_to_stdout() {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    for args in [["--help"], ["-h"], ["help"]] {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
 
-    let code = run_cli(&["--help"], &mut stdout, &mut stderr);
+        let code = run_cli(&args, &mut stdout, &mut stderr);
 
-    assert_eq!(code, 0);
-    assert!(stderr.is_empty());
-    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
-    assert_eq!(stdout, expected_top_level_usage());
+        assert_eq!(code, 0, "help args should succeed: {args:?}");
+        assert!(
+            stderr.is_empty(),
+            "help args should not write stderr: {args:?}"
+        );
+        let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+        assert_eq!(stdout, expected_top_level_usage(), "help args: {args:?}");
+    }
 }
 
 #[test]

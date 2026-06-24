@@ -364,20 +364,3 @@ fn parse_usize(value: Option<&&str>, option: &str) -> Result<usize, ParseError> 
         .parse::<usize>()
         .map_err(|_| ParseError::Invalid(format!("{option} value must be an unsigned integer")))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_zero_guest_pc_trace_for_witness_args() {
-        let result =
-            parse_witness_args(&["--guest-pc-trace", "0", "setup-dir", "out-dir", "guest.elf"]);
-
-        assert!(matches!(
-            result,
-            Err(ParseError::Invalid(message))
-                if message == "--guest-pc-trace value must be a positive integer"
-        ));
-    }
-}

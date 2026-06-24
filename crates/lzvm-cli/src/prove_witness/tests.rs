@@ -60,6 +60,18 @@ fn parses_guest_pc_trace_option_for_witness_args() {
 }
 
 #[test]
+fn rejects_zero_guest_pc_trace_for_witness_args() {
+    let result =
+        parse_witness_args(&["--guest-pc-trace", "0", "setup-dir", "out-dir", "guest.elf"]);
+
+    assert!(matches!(
+        result,
+        Err(ParseError::Invalid(message))
+            if message == "--guest-pc-trace value must be a positive integer"
+    ));
+}
+
+#[test]
 fn parses_timings_option_for_witness_args() {
     let result = parse_witness_args(&[
         "--timings",
