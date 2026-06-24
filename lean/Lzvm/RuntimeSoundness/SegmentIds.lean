@@ -1,0 +1,159 @@
+/-
+Copyright (c) 2026 Sihao Liu. All rights reserved.
+Released under MIT OR Apache-2.0 license.
+Authors: Sihao Liu
+-/
+
+import Lzvm.RuntimeSoundness
+
+/-!
+Runtime soundness projections for proof segment identifiers.
+-/
+
+namespace Lzvm
+
+theorem runtime_soundness_checked_acceptance_segments_present
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        validation.transcriptValidation.artifactBindingValidation.proofSegmentsPresent
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    runtime_transcript_binding_checked_acceptance_segments_present
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      checked.left
+
+theorem runtime_soundness_checked_acceptance_container_canonical
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        validation.transcriptValidation.artifactBindingValidation.proofContainerCanonical
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    runtime_transcript_binding_checked_acceptance_container_canonical
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      checked.left
+
+theorem runtime_soundness_checked_acceptance_metadata_canonical
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        validation.transcriptValidation.artifactBindingValidation.proofMetadataCanonical
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    runtime_transcript_binding_checked_acceptance_metadata_canonical
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      checked.left
+
+theorem runtime_soundness_checked_acceptance_segment_ids_unique
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsUnique
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    runtime_transcript_binding_checked_acceptance_segment_ids_unique
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      checked.left
+
+theorem runtime_soundness_checked_acceptance_segment_payloads_nonempty
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        validation.transcriptValidation.artifactBindingValidation.proofSegmentPayloadsNonempty
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    runtime_transcript_binding_checked_acceptance_segment_payloads_nonempty
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      checked.left
+
+theorem runtime_soundness_checked_acceptance_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsAllowed
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    runtime_transcript_binding_checked_acceptance_segment_ids_allowed
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      checked.left
+
+end Lzvm

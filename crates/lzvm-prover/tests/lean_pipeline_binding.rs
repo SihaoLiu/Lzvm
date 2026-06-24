@@ -18,6 +18,9 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let contracts_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts.lean");
     let contracts_source = std::fs::read_to_string(&contracts_path)
         .expect("Lean pipeline binding contracts source should read");
+    let segment_ids_path = crate_root.join("../../lean/Lzvm/PipelineBinding/SegmentIds.lean");
+    let segment_ids_source = std::fs::read_to_string(&segment_ids_path)
+        .expect("Lean pipeline segment IDs binding source should read");
     let obligations_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Obligations.lean");
     let obligations_source = std::fs::read_to_string(&obligations_path)
         .expect("Lean pipeline obligations source should read");
@@ -25,7 +28,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let audited_source =
         std::fs::read_to_string(&audited_path).expect("Lean pipeline audited source should read");
     let lean_source = format!(
-        "{core_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}\n{accepts_source}\n{contracts_source}"
+        "{core_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}\n{accepts_source}\n{contracts_source}\n{segment_ids_source}"
     );
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
@@ -66,6 +69,13 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_public_input_bound",
             "runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions",
             "runtime_pipeline_binding_evidence_implies_pcs_and_fri",
+            "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
+            "runtime_pipeline_binding_checked_acceptance_container_canonical",
+            "runtime_pipeline_binding_checked_acceptance_metadata_canonical",
+            "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
+            "runtime_pipeline_binding_checked_acceptance_segment_ids_allowed",
+            "runtime_pipeline_binding_checked_acceptance_segments_present",
+            "runtime_pipeline_binding_checked_acceptance_eth_artifact_wellformed_contract",
             "runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri",
@@ -118,6 +128,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_audited_core_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_contract",
             "runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contract",
             "runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_contract",
@@ -131,6 +142,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract",
+            "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_seeded_query_requirements_contract",
         ],
     );
@@ -150,6 +162,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     assert!(
         top_level_source.contains("import Lzvm.PipelineBinding.Accepts"),
         "top-level Lean module should import pipeline binding accepts contracts"
+    );
+    assert!(
+        top_level_source.contains("import Lzvm.PipelineBinding.SegmentIds"),
+        "top-level Lean module should import pipeline segment ID contracts"
     );
     assert!(theorem_prefix(
         &lean_source,
@@ -431,6 +447,143 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_binding_checked_acceptance_core_obligations_from_semantic_assumptions",
             "assumptions.semantic",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "let artifactValidation :=",
+            "queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation",
+            "artifactValidation.proofSegmentIdsUnique artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_query_plan_binding_checked_acceptance_segment_ids_unique",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_container_canonical",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "let artifactValidation :=",
+            "queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation",
+            "artifactValidation.proofContainerCanonical artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_container_canonical",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_query_plan_binding_checked_acceptance_container_canonical",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_metadata_canonical",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "let artifactValidation :=",
+            "queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation",
+            "artifactValidation.proofMetadataCanonical artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_metadata_canonical",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_query_plan_binding_checked_acceptance_metadata_canonical",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "let artifactValidation :=",
+            "queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation",
+            "artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_query_plan_binding_checked_acceptance_segment_payloads_nonempty",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_segment_ids_allowed",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "let artifactValidation :=",
+            "queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation",
+            "artifactValidation.proofSegmentIdsAllowed artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_segment_ids_allowed",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_query_plan_binding_checked_acceptance_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_segments_present",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "let artifactValidation :=",
+            "queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation",
+            "artifactValidation.proofSegmentsPresent artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_segments_present",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_query_plan_binding_checked_acceptance_segments_present",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_artifact_wellformed_contract",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "let artifactValidation :=",
+            "validation.ethBindingValidation.proofArtifactBindingValidation",
+            "artifactValidation.proofContainerCanonical artifact publicInput proof",
+            "artifactValidation.proofMetadataCanonical",
+            "artifactValidation.proofSegmentsPresent",
+            "artifactValidation.proofSegmentPayloadsNonempty",
+            "artifactValidation.proofSegmentIdsAllowed",
+            "artifactValidation.proofSegmentIdsUnique",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_artifact_wellformed_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_eth",
+            "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -1032,6 +1185,80 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("RuntimePipelineBindingEvidence"),
         "compact audited pipeline binding contract should not force callers to unpack full pipeline evidence"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
+            .contains("ProofSystemSound system")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
+            .contains("SoundWitness system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofContainerCanonical artifact publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofSegmentsPresent artifact publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofMetadataCanonical artifact publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofSegmentIdsAllowed artifact publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofSegmentIdsUnique artifact publicInput proof"),
+        "audited pipeline segment contract should include audited core, witness, container canonicality, metadata canonicality, segment presence, nonempty payloads, allowed segment IDs, and segment-id uniqueness"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
+            "runtime_pipeline_binding_checked_acceptance_container_canonical",
+            "runtime_pipeline_binding_checked_acceptance_segments_present",
+            "runtime_pipeline_binding_checked_acceptance_metadata_canonical",
+            "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
+            "runtime_pipeline_binding_checked_acceptance_segment_ids_allowed",
+            "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "runtime_pipeline_binding_checked_acceptance_sound",
+        ],
     );
     assert!(
         theorem_prefix(
@@ -1951,6 +2178,90 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("RuntimePipelineBindingEvidence"),
         "compact required external-source pipeline PCS/FRI core contract should not force callers to unpack full pipeline evidence"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("ExternalSourceOpeningEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("runtime_pipeline_trace_source_validation validation")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("runtime_pipeline_opening_source_validation validation")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("SoundWitness system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofContainerCanonical artifact publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofSegmentsPresent artifact publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofMetadataCanonical artifact publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofSegmentIdsAllowed artifact publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofSegmentIdsUnique artifact publicInput proof"),
+        "required external-source audited segment contract should keep source evidence, container canonicality, metadata canonicality, segment presence, nonempty payloads, allowed segment IDs, and segment-id uniqueness together"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract",
+            "runtime_pipeline_binding_checked_acceptance_container_canonical",
+            "runtime_pipeline_binding_checked_acceptance_segments_present",
+            "runtime_pipeline_binding_checked_acceptance_metadata_canonical",
+            "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
+            "runtime_pipeline_binding_checked_acceptance_segment_ids_allowed",
+            "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "runtime_pipeline_binding_required_external_source_sound",
+        ],
     );
     assert!(
         lean_source.contains("runtime_trace_constraint_required_external_source_pcs_sound")

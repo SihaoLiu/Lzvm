@@ -561,6 +561,235 @@ theorem runtime_pipeline_binding_checked_acceptance_query_plan
       proof
       accepted
 
+theorem runtime_pipeline_binding_checked_acceptance_segment_ids_unique
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let queryPlanValidation := validation.queryPlanBindingValidation
+        let artifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        artifactValidation.proofSegmentIdsUnique artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_checked_acceptance_segment_ids_unique
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_container_canonical
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let queryPlanValidation := validation.queryPlanBindingValidation
+        let artifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        artifactValidation.proofContainerCanonical artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_checked_acceptance_container_canonical
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_metadata_canonical
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let queryPlanValidation := validation.queryPlanBindingValidation
+        let artifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        artifactValidation.proofMetadataCanonical artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_checked_acceptance_metadata_canonical
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let queryPlanValidation := validation.queryPlanBindingValidation
+        let artifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_checked_acceptance_segment_payloads_nonempty
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let queryPlanValidation := validation.queryPlanBindingValidation
+        let artifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        artifactValidation.proofSegmentIdsAllowed artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_checked_acceptance_segment_ids_allowed
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_segments_present
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let queryPlanValidation := validation.queryPlanBindingValidation
+        let artifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        artifactValidation.proofSegmentsPresent artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_checked_acceptance_segments_present
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_eth_artifact_wellformed_contract
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let artifactValidation :=
+          validation.ethBindingValidation.proofArtifactBindingValidation
+        artifactValidation.proofContainerCanonical artifact publicInput proof
+          /\ artifactValidation.proofMetadataCanonical
+            artifact
+            publicInput
+            proof
+          /\ artifactValidation.proofSegmentsPresent
+            artifact
+            publicInput
+            proof
+          /\ artifactValidation.proofSegmentPayloadsNonempty
+            artifact
+            publicInput
+            proof
+          /\ artifactValidation.proofSegmentIdsAllowed
+            artifact
+            publicInput
+            proof
+          /\ artifactValidation.proofSegmentIdsUnique
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have ethAccepted :=
+    runtime_pipeline_binding_checked_acceptance_eth
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract
+      validation.ethBindingValidation
+      artifact
+      publicInput
+      proof
+      ethAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :

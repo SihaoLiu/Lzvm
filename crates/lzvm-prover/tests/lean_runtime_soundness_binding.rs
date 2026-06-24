@@ -12,7 +12,11 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
     let contracts_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness/Contracts.lean");
     let contracts_source = std::fs::read_to_string(&contracts_path)
         .expect("Lean runtime soundness contracts source should read");
-    let lean_source = format!("{runtime_soundness_source}\n{contracts_source}");
+    let segment_ids_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness/SegmentIds.lean");
+    let segment_ids_source = std::fs::read_to_string(&segment_ids_path)
+        .expect("Lean runtime soundness segment-id source should read");
+    let lean_source =
+        format!("{runtime_soundness_source}\n{segment_ids_source}\n{contracts_source}");
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
@@ -24,6 +28,10 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
     assert!(
         top_level_source.contains("import Lzvm.RuntimeSoundness.Contracts"),
         "top-level Lean module should import runtime soundness contracts"
+    );
+    assert!(
+        top_level_source.contains("import Lzvm.RuntimeSoundness.SegmentIds"),
+        "top-level Lean module should import runtime soundness segment-id projections"
     );
     assert!(
         lean_source.contains("RuntimeSoundnessValidation")
@@ -50,6 +58,12 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_external_source_requirement",
             "runtime_soundness_checked_acceptance_core_obligations",
             "runtime_soundness_checked_acceptance_runtime_artifact_core_contract",
+            "runtime_soundness_checked_acceptance_segments_present",
+            "runtime_soundness_checked_acceptance_container_canonical",
+            "runtime_soundness_checked_acceptance_metadata_canonical",
+            "runtime_soundness_checked_acceptance_segment_payloads_nonempty",
+            "runtime_soundness_checked_acceptance_segment_ids_allowed",
+            "runtime_soundness_checked_acceptance_segment_ids_unique",
             "runtime_soundness_checked_acceptance_verifier_core_contract",
             "runtime_soundness_checked_acceptance_verifier_sound_witness",
             "runtime_soundness_checked_acceptance_execution_obligations",
@@ -74,6 +88,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_required_external_source_audited_pcs_fri_witness_contract",
             "runtime_soundness_required_external_source_audited_pcs_fri_core_witness_contract",
             "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
+            "runtime_soundness_checked_acceptance_artifact_segment_ids_contract",
             "runtime_soundness_checked_acceptance_contracts_core_contract",
             "runtime_soundness_checked_acceptance_artifact_contracts_core_contract",
             "runtime_soundness_required_external_source_contracts_core_contract",
@@ -91,6 +106,170 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("AssumptionBundle"),
         "runtime artifact evidence projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_segments_present"
+        )
+        .contains("validation.transcriptValidation.artifactBindingValidation.proofSegmentsPresent"),
+        "runtime soundness should expose proof segment presence from artifact validation"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_segments_present"
+        )
+        .contains("AssumptionBundle"),
+        "proof segment presence projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_container_canonical"
+        )
+        .contains(
+            "validation.transcriptValidation.artifactBindingValidation.proofContainerCanonical"
+        ),
+        "runtime soundness should expose proof container canonicality from artifact validation"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_container_canonical"
+        )
+        .contains("AssumptionBundle"),
+        "proof container canonicality projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_metadata_canonical"
+        )
+        .contains(
+            "validation.transcriptValidation.artifactBindingValidation.proofMetadataCanonical"
+        ),
+        "runtime soundness should expose proof metadata canonicality from artifact validation"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_metadata_canonical"
+        )
+        .contains("AssumptionBundle"),
+        "proof metadata canonicality projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_segment_payloads_nonempty"
+        )
+        .contains(
+            "validation.transcriptValidation.artifactBindingValidation.proofSegmentPayloadsNonempty"
+        ),
+        "runtime soundness should expose nonempty proof segment payloads from artifact validation"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_segment_payloads_nonempty"
+        )
+        .contains("AssumptionBundle"),
+        "proof segment payload nonempty projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_segment_ids_allowed"
+        )
+        .contains(
+            "validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsAllowed"
+        ),
+        "runtime soundness should expose allowed proof segment IDs from artifact validation"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_segment_ids_allowed"
+        )
+        .contains("AssumptionBundle"),
+        "allowed proof segment-id projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_segment_ids_unique"
+        )
+        .contains(
+            "validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsUnique"
+        ),
+        "runtime soundness should expose proof segment-id uniqueness from artifact validation"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_segment_ids_unique"
+        )
+        .contains("AssumptionBundle"),
+        "proof segment-id uniqueness projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_artifact_segment_ids_contract"
+        )
+        .contains("RuntimeArtifactEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_artifact_segment_ids_contract"
+            )
+            .contains(
+                "validation.transcriptValidation.artifactBindingValidation.proofContainerCanonical"
+            )
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_artifact_segment_ids_contract"
+            )
+            .contains(
+                "validation.transcriptValidation.artifactBindingValidation.proofSegmentsPresent"
+            )
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_artifact_segment_ids_contract"
+            )
+            .contains(
+                "validation.transcriptValidation.artifactBindingValidation.proofMetadataCanonical"
+            )
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_artifact_segment_ids_contract"
+            )
+            .contains(
+                "validation.transcriptValidation.artifactBindingValidation.proofSegmentPayloadsNonempty"
+            )
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_artifact_segment_ids_contract"
+            )
+            .contains(
+                "validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsAllowed"
+            )
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_artifact_segment_ids_contract"
+            )
+            .contains(
+                "validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsUnique"
+            ),
+        "artifact segment contract should expose artifact evidence, proof container canonicality, proof metadata canonicality, proof segment presence, nonempty proof segment payloads, allowed proof segment IDs, and proof segment-id uniqueness"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_artifact_segment_ids_contract"
+        )
+        .contains("AssumptionBundle"),
+        "artifact segment-id contract should not require cryptographic assumptions"
     );
     assert!(
         theorem_prefix(
@@ -1200,6 +1379,49 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             )
             .contains("RuntimeArtifactSoundnessObligations"),
         "checked runtime artifact contracts wrapper should keep the compact artifact-core surface"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_segments_present",
+        &["runtime_transcript_binding_checked_acceptance_segments_present"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_container_canonical",
+        &["runtime_transcript_binding_checked_acceptance_container_canonical"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_metadata_canonical",
+        &["runtime_transcript_binding_checked_acceptance_metadata_canonical"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_segment_payloads_nonempty",
+        &["runtime_transcript_binding_checked_acceptance_segment_payloads_nonempty"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_segment_ids_allowed",
+        &["runtime_transcript_binding_checked_acceptance_segment_ids_allowed"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_segment_ids_unique",
+        &["runtime_transcript_binding_checked_acceptance_segment_ids_unique"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_artifact_segment_ids_contract",
+        &[
+            "runtime_soundness_checked_acceptance_runtime_artifact_evidence",
+            "runtime_soundness_checked_acceptance_segments_present",
+            "runtime_soundness_checked_acceptance_container_canonical",
+            "runtime_soundness_checked_acceptance_metadata_canonical",
+            "runtime_soundness_checked_acceptance_segment_payloads_nonempty",
+            "runtime_soundness_checked_acceptance_segment_ids_allowed",
+            "runtime_soundness_checked_acceptance_segment_ids_unique",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

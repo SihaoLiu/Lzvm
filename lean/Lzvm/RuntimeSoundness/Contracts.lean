@@ -4,13 +4,122 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
-import Lzvm.RuntimeSoundness
+import Lzvm.RuntimeSoundness.SegmentIds
 
 /-!
 Compact runtime soundness contracts.
 -/
 
 namespace Lzvm
+
+theorem runtime_soundness_checked_acceptance_artifact_segment_ids_contract
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeArtifactEvidence
+          system
+          validation.transcriptValidation.artifactBindingValidation.runtimeValidation
+          artifact
+          publicInput
+          proof
+          /\ validation.transcriptValidation.artifactBindingValidation.proofContainerCanonical
+            artifact
+            publicInput
+            proof
+          /\ validation.transcriptValidation.artifactBindingValidation.proofSegmentsPresent
+            artifact
+            publicInput
+            proof
+          /\ validation.transcriptValidation.artifactBindingValidation.proofMetadataCanonical
+            artifact
+            publicInput
+            proof
+          /\ validation.transcriptValidation.artifactBindingValidation.proofSegmentPayloadsNonempty
+            artifact
+            publicInput
+            proof
+          /\ validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsAllowed
+            artifact
+            publicInput
+            proof
+          /\ validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsUnique
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have artifactEvidence :=
+    runtime_soundness_checked_acceptance_runtime_artifact_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have containerCanonical :=
+    runtime_soundness_checked_acceptance_container_canonical
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have segmentsPresent :=
+    runtime_soundness_checked_acceptance_segments_present
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have metadataCanonical :=
+    runtime_soundness_checked_acceptance_metadata_canonical
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have segmentIdsUnique :=
+    runtime_soundness_checked_acceptance_segment_ids_unique
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have segmentPayloadsNonempty :=
+    runtime_soundness_checked_acceptance_segment_payloads_nonempty
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have segmentIdsAllowed :=
+    runtime_soundness_checked_acceptance_segment_ids_allowed
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact
+    And.intro
+      artifactEvidence
+      (And.intro
+        containerCanonical
+        (And.intro
+          segmentsPresent
+          (And.intro
+            metadataCanonical
+            (And.intro segmentPayloadsNonempty (And.intro segmentIdsAllowed segmentIdsUnique)))))
 
 theorem runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract
     {system : VerifierModel}

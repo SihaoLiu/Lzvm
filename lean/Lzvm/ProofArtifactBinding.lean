@@ -18,6 +18,12 @@ structure RuntimeProofArtifactBindingValidation (system : VerifierModel) where
   setupHashMatches : RuntimeArtifact -> PublicInput -> Proof -> Prop
   publicValuesHashMatches : RuntimeArtifact -> PublicInput -> Proof -> Prop
   proofPayloadMatches : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  proofContainerCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  proofMetadataCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  proofSegmentsPresent : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  proofSegmentPayloadsNonempty : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  proofSegmentIdsAllowed : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  proofSegmentIdsUnique : RuntimeArtifact -> PublicInput -> Proof -> Prop
   bindingAcceptedImpliesRuntimeAccepted :
     forall artifact publicInput proof,
       artifactBindingAccepted artifact publicInput proof ->
@@ -34,6 +40,30 @@ structure RuntimeProofArtifactBindingValidation (system : VerifierModel) where
     forall artifact publicInput proof,
       artifactBindingAccepted artifact publicInput proof ->
         proofPayloadMatches artifact publicInput proof
+  bindingAcceptedImpliesProofContainerCanonical :
+    forall artifact publicInput proof,
+      artifactBindingAccepted artifact publicInput proof ->
+        proofContainerCanonical artifact publicInput proof
+  bindingAcceptedImpliesProofMetadataCanonical :
+    forall artifact publicInput proof,
+      artifactBindingAccepted artifact publicInput proof ->
+        proofMetadataCanonical artifact publicInput proof
+  bindingAcceptedImpliesProofSegmentsPresent :
+    forall artifact publicInput proof,
+      artifactBindingAccepted artifact publicInput proof ->
+        proofSegmentsPresent artifact publicInput proof
+  bindingAcceptedImpliesProofSegmentPayloadsNonempty :
+    forall artifact publicInput proof,
+      artifactBindingAccepted artifact publicInput proof ->
+        proofSegmentPayloadsNonempty artifact publicInput proof
+  bindingAcceptedImpliesProofSegmentIdsAllowed :
+    forall artifact publicInput proof,
+      artifactBindingAccepted artifact publicInput proof ->
+        proofSegmentIdsAllowed artifact publicInput proof
+  bindingAcceptedImpliesProofSegmentIdsUnique :
+    forall artifact publicInput proof,
+      artifactBindingAccepted artifact publicInput proof ->
+        proofSegmentIdsUnique artifact publicInput proof
   hashesMatchImpliesPublicInputMatches :
     forall artifact publicInput proof,
       setupHashMatches artifact publicInput proof ->
@@ -173,6 +203,120 @@ theorem runtime_proof_artifact_binding_checked_acceptance_runtime_accepted
   intro artifact publicInput proof accepted
   exact
     validation.bindingAcceptedImpliesRuntimeAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_proof_artifact_binding_checked_acceptance_container_canonical
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.proofContainerCanonical artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.bindingAcceptedImpliesProofContainerCanonical
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_proof_artifact_binding_checked_acceptance_metadata_canonical
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.proofMetadataCanonical artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.bindingAcceptedImpliesProofMetadataCanonical
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_proof_artifact_binding_checked_acceptance_segments_present
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.proofSegmentsPresent artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.bindingAcceptedImpliesProofSegmentsPresent
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_proof_artifact_binding_checked_acceptance_segment_payloads_nonempty
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.proofSegmentPayloadsNonempty artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.bindingAcceptedImpliesProofSegmentPayloadsNonempty
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.proofSegmentIdsUnique artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.bindingAcceptedImpliesProofSegmentIdsUnique
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.proofSegmentIdsAllowed artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.bindingAcceptedImpliesProofSegmentIdsAllowed
       artifact
       publicInput
       proof

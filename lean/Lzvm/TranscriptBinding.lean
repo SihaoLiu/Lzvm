@@ -238,6 +238,180 @@ theorem runtime_transcript_binding_checked_acceptance_payload_contract
         proof
         accepted)
 
+theorem runtime_transcript_binding_checked_acceptance_segment_ids_unique
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.artifactBindingValidation.proofSegmentIdsUnique
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique
+      validation.artifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+
+theorem runtime_transcript_binding_checked_acceptance_container_canonical
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.artifactBindingValidation.proofContainerCanonical
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_container_canonical
+      validation.artifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+
+theorem runtime_transcript_binding_checked_acceptance_metadata_canonical
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.artifactBindingValidation.proofMetadataCanonical
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_metadata_canonical
+      validation.artifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+
+theorem runtime_transcript_binding_checked_acceptance_segment_payloads_nonempty
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.artifactBindingValidation.proofSegmentPayloadsNonempty
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_segment_payloads_nonempty
+      validation.artifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+
+theorem runtime_transcript_binding_checked_acceptance_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.artifactBindingValidation.proofSegmentIdsAllowed
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed
+      validation.artifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+
+theorem runtime_transcript_binding_checked_acceptance_segments_present
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.artifactBindingValidation.proofSegmentsPresent
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_segments_present
+      validation.artifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+
 theorem runtime_transcript_binding_checked_acceptance_artifact_payload_contract
     {system : VerifierModel}
     (validation : RuntimeTranscriptBindingValidation system) :

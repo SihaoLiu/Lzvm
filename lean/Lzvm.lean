@@ -21,6 +21,7 @@ import Lzvm.OpeningSegmentBinding
 import Lzvm.PipelineBinding
 import Lzvm.PipelineBinding.Accepts
 import Lzvm.PipelineBinding.Contracts
+import Lzvm.PipelineBinding.SegmentIds
 import Lzvm.QueryPlanBinding
 import Lzvm.RetainedLeafDigestOpening
 import Lzvm.RetainedLeafDigestOpening.Arity
@@ -30,6 +31,7 @@ import Lzvm.RetainedParentCheckpointOpening.Arity
 import Lzvm.RequiredExternalSource
 import Lzvm.RuntimeExternalSource
 import Lzvm.RuntimeSoundness
+import Lzvm.RuntimeSoundness.SegmentIds
 import Lzvm.RuntimeSoundness.Contracts
 import Lzvm.Soundness
 import Lzvm.TranscriptBinding

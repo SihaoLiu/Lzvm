@@ -162,6 +162,95 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_artifact_evide
     And.intro ethEvidence
       (And.intro artifactEvidence runtimeEvidence)
 
+theorem runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract
+    {system : VerifierModel}
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.proofArtifactBindingValidation.proofContainerCanonical artifact publicInput proof
+          /\ validation.proofArtifactBindingValidation.proofMetadataCanonical
+            artifact
+            publicInput
+            proof
+          /\ validation.proofArtifactBindingValidation.proofSegmentsPresent
+            artifact
+            publicInput
+            proof
+          /\ validation.proofArtifactBindingValidation.proofSegmentPayloadsNonempty
+            artifact
+            publicInput
+            proof
+          /\ validation.proofArtifactBindingValidation.proofSegmentIdsAllowed
+            artifact
+            publicInput
+            proof
+          /\ validation.proofArtifactBindingValidation.proofSegmentIdsUnique
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have containerCanonical :=
+    runtime_proof_artifact_binding_checked_acceptance_container_canonical
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have metadataCanonical :=
+    runtime_proof_artifact_binding_checked_acceptance_metadata_canonical
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have segmentsPresent :=
+    runtime_proof_artifact_binding_checked_acceptance_segments_present
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have segmentPayloadsNonempty :=
+    runtime_proof_artifact_binding_checked_acceptance_segment_payloads_nonempty
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have segmentIdsAllowed :=
+    runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have segmentIdsUnique :=
+    runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  exact
+    ⟨containerCanonical,
+      metadataCanonical,
+      segmentsPresent,
+      segmentPayloadsNonempty,
+      segmentIdsAllowed,
+      segmentIdsUnique⟩
+
 theorem runtime_eth_block_public_input_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

@@ -22,6 +22,11 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             && lean_source.contains("RuntimeEthBlockPublicInputBindingEvidence")
             && lean_source.contains("RuntimeProofArtifactBindingEvidence")
             && lean_source.contains("RuntimeArtifactEvidence")
+            && lean_source.contains("proofContainerCanonical")
+            && lean_source.contains("proofMetadataCanonical")
+            && lean_source.contains("proofSegmentPayloadsNonempty")
+            && lean_source.contains("proofSegmentIdsAllowed")
+            && lean_source.contains("proofSegmentIdsUnique")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean ETH block public-input binding should expose checked evidence and verifier core clauses"
@@ -30,6 +35,7 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
         &lean_source,
         &[
             "runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract",
+            "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
             "runtime_eth_block_public_input_binding_checked_acceptance_sound",
             "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
         ],
@@ -52,6 +58,45 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract",
         &["abstract_verifier_sound"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
+        &[
+            "RuntimeEthBlockPublicInputBindingCheckedAcceptance",
+            "validation.proofArtifactBindingValidation.proofContainerCanonical",
+            "validation.proofArtifactBindingValidation.proofMetadataCanonical",
+            "validation.proofArtifactBindingValidation.proofSegmentsPresent",
+            "validation.proofArtifactBindingValidation.proofSegmentPayloadsNonempty",
+            "validation.proofArtifactBindingValidation.proofSegmentIdsAllowed",
+            "validation.proofArtifactBindingValidation.proofSegmentIdsUnique",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
+        &[
+            "runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding",
+            "runtime_proof_artifact_binding_checked_acceptance_container_canonical",
+            "runtime_proof_artifact_binding_checked_acceptance_metadata_canonical",
+            "runtime_proof_artifact_binding_checked_acceptance_segments_present",
+            "runtime_proof_artifact_binding_checked_acceptance_segment_payloads_nonempty",
+            "runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed",
+            "runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
+        &[
+            "abstract_verifier_sound",
+            "RuntimeProofArtifactBindingEvidence",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

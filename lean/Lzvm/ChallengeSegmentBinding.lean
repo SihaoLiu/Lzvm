@@ -229,6 +229,186 @@ theorem runtime_challenge_segment_binding_checked_acceptance_challenge_segment_b
       payloadValid
       segmentMatchesTranscript
 
+theorem runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsUnique
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_transcript_binding_checked_acceptance_segment_ids_unique
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+
+theorem runtime_challenge_segment_binding_checked_acceptance_container_canonical
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.transcriptValidation.artifactBindingValidation.proofContainerCanonical
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_transcript_binding_checked_acceptance_container_canonical
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+
+theorem runtime_challenge_segment_binding_checked_acceptance_metadata_canonical
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.transcriptValidation.artifactBindingValidation.proofMetadataCanonical
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_transcript_binding_checked_acceptance_metadata_canonical
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+
+theorem runtime_challenge_segment_binding_checked_acceptance_segment_payloads_nonempty
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.transcriptValidation.artifactBindingValidation.proofSegmentPayloadsNonempty
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_transcript_binding_checked_acceptance_segment_payloads_nonempty
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+
+theorem runtime_challenge_segment_binding_checked_acceptance_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsAllowed
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_transcript_binding_checked_acceptance_segment_ids_allowed
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+
+theorem runtime_challenge_segment_binding_checked_acceptance_segments_present
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.transcriptValidation.artifactBindingValidation.proofSegmentsPresent
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_transcript_binding_checked_acceptance_segments_present
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+
 theorem runtime_challenge_segment_binding_checked_acceptance_transcript_payload_contract
     {system : VerifierModel}
     (validation : RuntimeChallengeSegmentBindingValidation system) :

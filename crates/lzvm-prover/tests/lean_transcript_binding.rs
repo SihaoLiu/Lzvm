@@ -35,6 +35,12 @@ fn lean_transcript_binding_exports_core_contract_projection() {
             "runtime_transcript_binding_checked_acceptance_transcript_and_core_contract",
             "runtime_transcript_binding_evidence_implies_payload_contract",
             "runtime_transcript_binding_checked_acceptance_payload_contract",
+            "runtime_transcript_binding_checked_acceptance_segment_ids_unique",
+            "runtime_transcript_binding_checked_acceptance_container_canonical",
+            "runtime_transcript_binding_checked_acceptance_metadata_canonical",
+            "runtime_transcript_binding_checked_acceptance_segment_payloads_nonempty",
+            "runtime_transcript_binding_checked_acceptance_segment_ids_allowed",
+            "runtime_transcript_binding_checked_acceptance_segments_present",
             "runtime_transcript_binding_checked_acceptance_artifact_payload_contract",
         ],
     );
@@ -98,6 +104,102 @@ fn lean_transcript_binding_exports_core_contract_projection() {
         &[
             "runtime_transcript_binding_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_segment_ids_unique",
+        &[
+            "RuntimeTranscriptBindingCheckedAcceptance",
+            "validation.artifactBindingValidation.proofSegmentIdsUnique",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_segment_ids_unique",
+        &[
+            "validation.transcriptAcceptedImpliesArtifactBindingAccepted",
+            "runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_container_canonical",
+        &[
+            "RuntimeTranscriptBindingCheckedAcceptance",
+            "validation.artifactBindingValidation.proofContainerCanonical",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_container_canonical",
+        &[
+            "validation.transcriptAcceptedImpliesArtifactBindingAccepted",
+            "runtime_proof_artifact_binding_checked_acceptance_container_canonical",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_metadata_canonical",
+        &[
+            "RuntimeTranscriptBindingCheckedAcceptance",
+            "validation.artifactBindingValidation.proofMetadataCanonical",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_metadata_canonical",
+        &[
+            "validation.transcriptAcceptedImpliesArtifactBindingAccepted",
+            "runtime_proof_artifact_binding_checked_acceptance_metadata_canonical",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_segment_payloads_nonempty",
+        &[
+            "RuntimeTranscriptBindingCheckedAcceptance",
+            "validation.artifactBindingValidation.proofSegmentPayloadsNonempty",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_segment_payloads_nonempty",
+        &[
+            "validation.transcriptAcceptedImpliesArtifactBindingAccepted",
+            "runtime_proof_artifact_binding_checked_acceptance_segment_payloads_nonempty",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_segment_ids_allowed",
+        &[
+            "RuntimeTranscriptBindingCheckedAcceptance",
+            "validation.artifactBindingValidation.proofSegmentIdsAllowed",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_segment_ids_allowed",
+        &[
+            "validation.transcriptAcceptedImpliesArtifactBindingAccepted",
+            "runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_segments_present",
+        &[
+            "RuntimeTranscriptBindingCheckedAcceptance",
+            "validation.artifactBindingValidation.proofSegmentsPresent",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_segments_present",
+        &[
+            "validation.transcriptAcceptedImpliesArtifactBindingAccepted",
+            "runtime_proof_artifact_binding_checked_acceptance_segments_present",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
