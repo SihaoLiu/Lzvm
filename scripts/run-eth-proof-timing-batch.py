@@ -19,6 +19,13 @@ REQUIRED_SUFFIXES = [
     "INPUT_DATA",
     "GUEST_IMAGE",
 ]
+REQUIRED_PATH_KINDS = {
+    "SETUP": "dir",
+    "BLOCK_INPUT": "file",
+    "PROGRAM_IMAGE_CACHE": "file",
+    "INPUT_DATA": "file",
+    "GUEST_IMAGE": "file",
+}
 
 PIPELINE_ENV_TO_CLEAR = [
     "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER",
@@ -172,6 +179,11 @@ class ProofEnv:
         path = resolve_workspace_path(value, self.root)
         if not path.exists():
             raise SystemExit(f"{self.var(suffix)} path does not exist: {path}")
+        kind = REQUIRED_PATH_KINDS[suffix]
+        if kind == "dir" and not path.is_dir():
+            raise SystemExit(f"{self.var(suffix)} must be a directory: {path}")
+        if kind == "file" and not path.is_file():
+            raise SystemExit(f"{self.var(suffix)} must be a file: {path}")
         return path
 
     def optional_path(self, suffix: str, default: Path) -> Path:

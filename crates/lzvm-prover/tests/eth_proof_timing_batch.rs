@@ -455,6 +455,47 @@ fn eth_proof_timing_batch_check_env_rejects_missing_bin() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_rejects_wrong_input_types() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-input-types");
+
+    let mut setup_command = Command::new(script_path());
+    setup_command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut setup_command, SMALL_PREFIX);
+    setup_command.env(format!("{SMALL_PREFIX}_SETUP"), &fixture.block_input);
+    let setup_output = setup_command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+
+    let mut block_command = Command::new(script_path());
+    block_command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut block_command, SMALL_PREFIX);
+    block_command.env(format!("{SMALL_PREFIX}_BLOCK_INPUT"), &fixture.setup);
+    let block_output = block_command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+
+    let setup_success = setup_output.status.success();
+    let setup_stderr = String::from_utf8_lossy(&setup_output.stderr).into_owned();
+    let block_success = block_output.status.success();
+    let block_stderr = String::from_utf8_lossy(&block_output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(!setup_success, "env check should reject file setup paths");
+    assert!(
+        setup_stderr.contains("_SETUP must be a directory"),
+        "env check should explain setup path type: stderr={setup_stderr}"
+    );
+    assert!(
+        !block_success,
+        "env check should reject directory input paths"
+    );
+    assert!(
+        block_stderr.contains("_BLOCK_INPUT must be a file"),
+        "env check should explain input path type: stderr={block_stderr}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_rejects_tmp_dir_outside_temp() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-tmp-outside");
     let outside_tmp = workspace_root().join(format!(
