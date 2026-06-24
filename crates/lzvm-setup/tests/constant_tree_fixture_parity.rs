@@ -18,10 +18,15 @@ use lzvm_field::{poseidon2_hash_8, Felt};
 use lzvm_setup::{build_constant_tree_from_fixed_columns, extend_fixed_columns_for_constant_tree};
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-setup-constant-tree-fixture-{}-{name}",
-        std::process::id()
-    ))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-setup-constant-tree-fixture-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn write_bytes(path: &Path, bytes: impl AsRef<[u8]>) {

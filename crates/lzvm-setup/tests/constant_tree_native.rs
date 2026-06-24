@@ -76,10 +76,15 @@ fn wide_setup_info(column_count: u32, arity: u32) -> lzvm_artifacts::setup_info:
 }
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-setup-native-tree-{}-{name}",
-        std::process::id()
-    ))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-setup-native-tree-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn staging_entries(parent: &Path) -> Vec<PathBuf> {

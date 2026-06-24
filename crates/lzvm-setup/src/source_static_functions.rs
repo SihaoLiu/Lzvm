@@ -1128,6 +1128,7 @@ fn parse_i128(value: &str) -> Option<i128> {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
 
     use lzvm_pil::{lex_source, parse_expression_tokens, SourceLoaderConfig, SourceProgramLoader};
 
@@ -1135,10 +1136,15 @@ mod tests {
 
     #[test]
     fn evaluates_static_return_functions_after_assert_calls() {
-        let dir = std::env::temp_dir().join(format!(
-            "lzvm-setup-static-functions-{}",
-            std::process::id()
-        ));
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root should resolve")
+            .join("temp")
+            .join(format!(
+                "lzvm-setup-static-functions-{}",
+                std::process::id()
+            ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("fixture directory should be created");
         fs::write(

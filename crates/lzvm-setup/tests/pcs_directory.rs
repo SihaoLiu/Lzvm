@@ -39,10 +39,15 @@ fn sample_columns() -> FixedColumns {
 }
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-setup-pcs-directory-{}-{name}",
-        std::process::id()
-    ))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-setup-pcs-directory-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn one_unit_layout(root: &Path) -> KeyDirectoryLayout {

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::program_image::{
     read_program_image_commitment_cache_file, ProgramImageGpuMode,
@@ -25,10 +25,15 @@ fn sample_guest_image() -> Vec<u8> {
 }
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-setup-program-image-cache-{}-{name}",
-        std::process::id()
-    ))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-setup-program-image-cache-{}-{name}",
+            std::process::id()
+        ))
 }
 
 #[test]
