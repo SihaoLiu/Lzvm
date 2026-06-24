@@ -7,10 +7,15 @@ use lzvm_pil::{
 };
 
 fn case_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "lzvm-pil-source-program-{}-{name}",
-        std::process::id()
-    ));
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-pil-source-program-{}-{name}",
+            std::process::id()
+        ));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("case directory should be created");
     dir

@@ -12,10 +12,18 @@ use lzvm_pil::{
 };
 
 fn temp_file(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-pil-source-program-archive-{}-{name}",
-        std::process::id()
-    ))
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-pil-source-program-archive-{}-{name}",
+            std::process::id()
+        ));
+    fs::create_dir_all(path.parent().expect("temp file should have a parent"))
+        .expect("fixture directory should be created");
+    path
 }
 
 fn write_file(path: &Path, contents: &str) {
