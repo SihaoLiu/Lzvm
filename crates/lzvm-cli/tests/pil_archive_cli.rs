@@ -25,7 +25,9 @@ fn write_file(path: &Path, contents: &str) {
 fn target_temp_dir(name: &str) -> PathBuf {
     std::env::current_dir()
         .expect("current directory should be available")
-        .join("target")
+        .join("..")
+        .join("..")
+        .join("temp")
         .join(format!(
             "lzvm-cli-pil-archive-{}-{name}",
             std::process::id()
