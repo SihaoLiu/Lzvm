@@ -7,10 +7,15 @@ use lzvm_artifacts::trace_bundle::{
 use lzvm_cli::run_cli;
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-trace-bundle-cli-{}-{name}",
-        std::process::id()
-    ))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-trace-bundle-cli-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn write_bytes(path: &Path, bytes: impl AsRef<[u8]>) {
@@ -80,17 +85,20 @@ fn writes_trace_bundle_from_unit_trace_files() {
 
 #[test]
 fn rejects_trace_bundle_write_without_units() {
+    let dir = temp_dir("without-units");
+    let out = dir.join("unused-trace-bundle.bin");
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let code = run_cli(
         &[
             "prove",
             "write-trace-bundle",
-            "/tmp/unused-trace-bundle.bin",
+            out.to_str().expect("output path should be utf-8"),
         ],
         &mut stdout,
         &mut stderr,
     );
+    let _ = fs::remove_dir_all(&dir);
 
     assert_eq!(code, 2);
     assert!(stdout.is_empty());
