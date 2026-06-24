@@ -84,7 +84,7 @@ pub(super) fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, Par
             }
             "--guest-pc-trace" => {
                 index += 1;
-                let value = parse_u64(args.get(index), "--guest-pc-trace")?;
+                let value = parse_positive_u64(args.get(index), "--guest-pc-trace")?;
                 if guest_pc_trace_instruction_limit.replace(value).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --guest-pc-trace option".to_owned(),
@@ -347,14 +347,37 @@ pub(super) fn parsed_inputs(parsed: &ParsedWitnessArgs) -> ProveExecutionInputAr
     }
 }
 
-fn parse_u64(value: Option<&&str>, option: &str) -> Result<u64, ParseError> {
-    required_option_value(value, option)?
+fn parse_positive_u64(value: Option<&&str>, option: &str) -> Result<u64, ParseError> {
+    let value = required_option_value(value, option)?
         .parse::<u64>()
-        .map_err(|_| ParseError::Invalid(format!("{option} value must be an unsigned integer")))
+        .map_err(|_| ParseError::Invalid(format!("{option} value must be a positive integer")))?;
+    if value == 0 {
+        return Err(ParseError::Invalid(format!(
+            "{option} value must be a positive integer"
+        )));
+    }
+    Ok(value)
 }
 
 fn parse_usize(value: Option<&&str>, option: &str) -> Result<usize, ParseError> {
     required_option_value(value, option)?
         .parse::<usize>()
         .map_err(|_| ParseError::Invalid(format!("{option} value must be an unsigned integer")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_zero_guest_pc_trace_for_witness_args() {
+        let result =
+            parse_witness_args(&["--guest-pc-trace", "0", "setup-dir", "out-dir", "guest.elf"]);
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message == "--guest-pc-trace value must be a positive integer"
+        ));
+    }
 }

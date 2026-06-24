@@ -322,7 +322,7 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
             }
             "--guest-pc-trace" => {
                 index += 1;
-                let value = parse_u64(args.get(index), "--guest-pc-trace")?;
+                let value = parse_positive_u64(args.get(index), "--guest-pc-trace")?;
                 if guest_pc_trace_instruction_limit.replace(value).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --guest-pc-trace option".to_owned(),
@@ -470,10 +470,16 @@ fn parsed_inputs(parsed: &ParsedInputsArgs) -> ProveExecutionInputArtifacts {
     }
 }
 
-fn parse_u64(value: Option<&&str>, option: &str) -> Result<u64, ParseError> {
-    required_option_value(value, option)?
+fn parse_positive_u64(value: Option<&&str>, option: &str) -> Result<u64, ParseError> {
+    let value = required_option_value(value, option)?
         .parse::<u64>()
-        .map_err(|_| ParseError::Invalid(format!("{option} value must be an unsigned integer")))
+        .map_err(|_| ParseError::Invalid(format!("{option} value must be a positive integer")))?;
+    if value == 0 {
+        return Err(ParseError::Invalid(format!(
+            "{option} value must be a positive integer"
+        )));
+    }
+    Ok(value)
 }
 
 fn prepare_public_inputs(
@@ -679,6 +685,18 @@ mod tests {
         assert_eq!(result.guest_pc_trace_instruction_limit, Some(64));
         assert_eq!(inputs.witness_library, None);
         assert_eq!(inputs.guest_image, PathBuf::from("guest.elf"));
+    }
+
+    #[test]
+    fn rejects_zero_guest_pc_trace_for_input_args() {
+        let result =
+            parse_inputs_args(&["--guest-pc-trace", "0", "setup-dir", "out-dir", "guest.elf"]);
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message == "--guest-pc-trace value must be a positive integer"
+        ));
     }
 
     #[test]
