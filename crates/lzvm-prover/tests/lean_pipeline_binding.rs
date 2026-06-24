@@ -129,6 +129,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_proof_system_sound",
             "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_assumption_full_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract",
             "runtime_pipeline_binding_evidence_audited_core_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",

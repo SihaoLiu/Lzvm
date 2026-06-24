@@ -858,6 +858,56 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_contrac
       accepted
   exact And.intro auditedAssumptions fullContract
 
+theorem runtime_pipeline_binding_checked_acceptance_audited_assumption_full_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ RuntimePipelineBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeArtifactSoundnessObligations
+            system
+            validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have auditedContract :=
+    runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    And.intro auditedContract.left
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        auditedContract.right)
+
 theorem runtime_pipeline_binding_evidence_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
