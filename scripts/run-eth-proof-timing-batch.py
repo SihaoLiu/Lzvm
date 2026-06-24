@@ -12,6 +12,8 @@ LARGE_PREFIX = "LZVM_REAL_LARGE_PARITY"
 DEFAULT_BIN_RELATIVE = Path("target/release/lzvm")
 DEFAULT_BIN_BUILD_COMMAND = "cargo build --release -p lzvm-cli --bin lzvm"
 DEFAULT_RUNNER = "scripts/run-proof-timing-batch.py"
+DEFAULT_PROFILE_OUTPUT_DIR = "temp/proof-profiles"
+DEFAULT_PROFILE_TOOL = "nsys"
 
 REQUIRED_PATHS = [
     ("SETUP", "dir"),
@@ -320,6 +322,15 @@ def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
     if args.runner != DEFAULT_RUNNER:
         runner = display_path_for_shell(resolve_workspace_path(args.runner, root), root)
         parts.extend(["--runner", runner])
+    if args.profile_output_dir != DEFAULT_PROFILE_OUTPUT_DIR:
+        profile_output_dir = require_workspace_temp_path(
+            resolve_workspace_path(args.profile_output_dir, root),
+            root,
+            "--profile-output-dir",
+        )
+        parts.extend(["--profile-output-dir", display_path_for_shell(profile_output_dir, root)])
+    if args.profile_tool != DEFAULT_PROFILE_TOOL:
+        parts.extend(["--profile-tool", args.profile_tool])
     if args.enforce_targets:
         parts.append("--enforce-targets")
     if args.small_max_avg_s is not None:
@@ -358,11 +369,15 @@ def write_env_template(args: argparse.Namespace, root: Path) -> None:
 
     env_path = display_path_for_shell(path, root)
     check_command = shell_join([".", env_path, SHELL_AND, *base_parts, "--check-env"])
+    profile_command = shell_join(
+        [".", env_path, SHELL_AND, *base_parts, "--print-profile-commands"]
+    )
     run_command = shell_join(
         [".", env_path, SHELL_AND, *base_parts, "--summary", "real proof timing"]
     )
     print(f"env_template={env_path}")
     print(f"next_check_command={check_command}")
+    print(f"next_profile_command={profile_command}")
     print(f"next_run_command={run_command}")
 
 
@@ -418,6 +433,85 @@ def command_for_env(config: ProofEnv, mode: str, verify_proof: bool) -> str:
             ]
         )
     return " ".join(parts)
+
+
+def expand_profile_command_template(
+    command: str,
+    label: str,
+    batch_dir: Path,
+    tmp_dir: Path,
+    cwd: Path,
+) -> str:
+    replacements = {
+        "{label}": label,
+        "{run}": "1",
+        "{run_padded}": "profile",
+        "{runs}": "1",
+        "{max_runs}": "1",
+        "{batch_dir}": shell_arg(batch_dir),
+        "{tmp_dir}": shell_arg(tmp_dir),
+        "{cwd}": shell_arg(cwd),
+    }
+    expanded = command
+    for needle, value in replacements.items():
+        expanded = expanded.replace(needle, value)
+    return expanded
+
+
+def selected_profile_tools(args: argparse.Namespace) -> list[str]:
+    if args.profile_tool == "both":
+        return ["nsys", "ncu"]
+    return [args.profile_tool]
+
+
+def profile_command_for_env(
+    args: argparse.Namespace,
+    root: Path,
+    config: ProofEnv,
+    mode: str,
+    tool: str,
+) -> list[str]:
+    profile_root = require_workspace_temp_path(
+        resolve_workspace_path(args.profile_output_dir, root),
+        root,
+        "--profile-output-dir",
+    )
+    profile_name = f"{config.label}-{mode}"
+    profile_dir = profile_root / profile_name
+    batch_dir = profile_dir / "run"
+    tmp_dir = profile_dir / "tmp"
+    profile_output_dir = profile_dir / tool
+    proof_command = expand_profile_command_template(
+        command_for_env(config, mode, not args.skip_verify_proof),
+        config.label,
+        batch_dir,
+        tmp_dir,
+        root,
+    )
+    return [
+        "scripts/run-proof-profile.py",
+        "--tool",
+        tool,
+        "--output-dir",
+        display_path_for_shell(profile_output_dir, root),
+        "--name",
+        profile_name,
+        "--cwd",
+        ".",
+        "--",
+        "sh",
+        "-lc",
+        proof_command,
+    ]
+
+
+def print_profile_commands(args: argparse.Namespace, root: Path) -> None:
+    selected = selected_envs(args, root)
+    for config, mode in selected:
+        for tool in selected_profile_tools(args):
+            key = f"{config.label}_{tool}_profile_command"
+            command = profile_command_for_env(args, root, config, mode, tool)
+            print(f"{key}={shell_join(command)}")
 
 
 def selected_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, str]]:
@@ -512,6 +606,9 @@ def run(args: argparse.Namespace) -> int:
         return 0
     if args.check_env:
         check_env(args, root)
+        return 0
+    if args.print_profile_commands:
+        print_profile_commands(args, root)
         return 0
     if args.summary is None:
         raise SystemExit("--summary is required")
@@ -626,6 +723,9 @@ def self_test() -> None:
         enforce_targets=False,
         large_max_avg_s=None,
         print_env_template=False,
+        print_profile_commands=False,
+        profile_output_dir=DEFAULT_PROFILE_OUTPUT_DIR,
+        profile_tool=DEFAULT_PROFILE_TOOL,
         write_env_template=None,
         skip_verify_proof=False,
     )
@@ -666,6 +766,13 @@ def main() -> None:
     parser.add_argument("--enforce-targets", action="store_true")
     parser.add_argument("--print-env-template", action="store_true")
     parser.add_argument("--write-env-template")
+    parser.add_argument("--print-profile-commands", action="store_true")
+    parser.add_argument("--profile-output-dir", default=DEFAULT_PROFILE_OUTPUT_DIR)
+    parser.add_argument(
+        "--profile-tool",
+        choices=["nsys", "ncu", "both"],
+        default=DEFAULT_PROFILE_TOOL,
+    )
     parser.add_argument("--skip-verify-proof", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()

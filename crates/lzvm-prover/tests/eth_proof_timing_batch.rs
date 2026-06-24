@@ -571,6 +571,10 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         "env template should report a check command: {stdout}"
     );
     assert!(
+        stdout.contains(&format!("next_profile_command=. {template_rel} && scripts/run-eth-proof-timing-batch.py --suite both")),
+        "env template should report a profile command: {stdout}"
+    );
+    assert!(
         stdout.contains(&format!("next_run_command=. {template_rel} && scripts/run-eth-proof-timing-batch.py --suite both")),
         "env template should report a run command: {stdout}"
     );
@@ -599,6 +603,148 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
     assert!(
         !template.contains("TMP_DIR"),
         "template should not expose a shared TMPDIR: {template}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_prints_profile_commands_from_env() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-profile-commands");
+    let profile_dir = fixture.dir.join("profiles");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--small-mode")
+        .arg("stream-pipeline")
+        .arg("--profile-tool")
+        .arg("both")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir)
+        .arg("--print-profile-commands");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch profile command should print");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let profile_created = profile_dir.exists();
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "profile command output should use configured env: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("small_nsys_profile_command=scripts/run-proof-profile.py --tool nsys")
+            && stdout.contains("small_ncu_profile_command=scripts/run-proof-profile.py --tool ncu"),
+        "profile command output should include both selected tools: {stdout}"
+    );
+    assert!(
+        stdout.contains("--output-dir")
+            && stdout.contains("profiles/small-stream-pipeline/nsys")
+            && stdout.contains("profiles/small-stream-pipeline/ncu")
+            && stdout.contains("--name small-stream-pipeline"),
+        "profile command output should isolate profile artifacts by suite, mode, and tool: {stdout}"
+    );
+    assert!(
+        stdout.contains("sh -lc")
+            && stdout.contains("prove witness --guest-pc-trace 120000000 --timings")
+            && stdout.contains("verify proof --eth-block-input")
+            && stdout.contains("verify_proof_status=ok"),
+        "profile command should wrap the same prove-then-verify shell command: {stdout}"
+    );
+    assert!(
+        stdout.contains("small-profile.proof")
+            && stdout.contains("TMPDIR=")
+            && !stdout.contains("{batch_dir}")
+            && !stdout.contains("{tmp_dir}")
+            && !stdout.contains("{run_padded}"),
+        "profile command should expand timing batch tokens to concrete temp paths: {stdout}"
+    );
+    assert!(
+        !profile_created,
+        "printing profile commands should not create profile output directories"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_profile_commands_skip_verify_when_requested() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-profile-skip-verify");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--skip-verify-proof")
+        .arg("--print-profile-commands");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch profile command should print");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "profile command output should support skip verify: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("small_nsys_profile_command="),
+        "profile command should still be printed: {stdout}"
+    );
+    assert!(
+        !stdout.contains("verify proof --eth-block-input")
+            && !stdout.contains("verify_proof_status=ok"),
+        "skip verify profile command should omit external verification: {stdout}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_rejects_profile_output_dir_outside_temp() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-profile-outside");
+    let outside_profile_dir = workspace_root().join(format!(
+        "eth-proof-timing-batch-profile-outside-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&outside_profile_dir);
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--profile-output-dir")
+        .arg(&outside_profile_dir)
+        .arg("--print-profile-commands");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch profile command should reject outside temp");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let outside_created = outside_profile_dir.exists();
+    let _ = std::fs::remove_dir_all(&outside_profile_dir);
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "profile commands should reject output dirs outside temp"
+    );
+    assert!(
+        stdout.is_empty(),
+        "failed profile command output should not print commands: {stdout}"
+    );
+    assert!(
+        stderr.contains("--profile-output-dir must be under"),
+        "profile output dir rejection should explain the temp boundary: stderr={stderr}"
+    );
+    assert!(
+        !outside_created,
+        "rejected profile output dir should not be created outside temp"
     );
 }
 
