@@ -1585,7 +1585,7 @@ fn sample_witness_library() -> Vec<u8> {
 }
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("lzvm-cli-{}-{name}", std::process::id()))
+    repo_temp_dir(name)
 }
 
 fn repo_temp_dir(name: &str) -> PathBuf {
