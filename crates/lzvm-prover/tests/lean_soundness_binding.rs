@@ -19,14 +19,25 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
     );
     assert!(
         lean_source.contains("ProofSystemSound system")
-            && lean_source.contains("RequiredCryptographicAssumptionStatements assumptions.crypto"),
-        "Lean abstract soundness should expose proof-system soundness and audited assumptions"
+            && lean_source.contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && lean_source.contains("RequiredSemanticAssumptionStatements assumptions.semantic"),
+        "Lean abstract soundness should expose proof-system soundness and audited crypto/semantic assumptions"
     );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
             "abstract_verifier_sound",
             "abstract_verifier_sound_with_audited_assumptions",
+            "abstract_verifier_sound_with_audited_soundness_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "abstract_verifier_sound_with_audited_soundness_obligations",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
         ],
     );
 }

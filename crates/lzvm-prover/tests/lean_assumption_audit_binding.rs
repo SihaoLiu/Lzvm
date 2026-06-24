@@ -53,7 +53,21 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "required_crypto_assumptions_pcs_opening_soundness",
             "required_crypto_assumptions_fri_low_degree_soundness",
             "required_crypto_assumptions_fri_query_soundness",
+            "required_semantic_assumptions_public_input_binding",
+            "required_semantic_assumptions_trace_extraction",
+            "required_semantic_assumptions_constraint_satisfaction",
+            "required_semantic_assumptions_witness_extraction",
+            "semantic_assumptions_carry_required_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
+    );
+    assert!(
+        audit_source.contains("RequiredSemanticAssumptionStatements")
+            && audit_source.contains("system.publicInputBound publicInput proof")
+            && audit_source.contains("exists trace, system.traceConsistent publicInput proof trace")
+            && audit_source.contains("exists constraints, system.constraintsSatisfied constraints trace")
+            && audit_source.contains("exists witness, system.witnessMatchesTrace witness trace"),
+        "assumption audit should expose semantic soundness obligations alongside crypto assumptions"
     );
     lean_binding::assert_theorem_prefix_contains(
         &audit_source,
@@ -162,6 +176,27 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
     );
     lean_binding::assert_theorem_declarations(
         &soundness_source,
-        &["abstract_verifier_sound_with_audited_assumptions"],
+        &[
+            "abstract_verifier_sound_with_audited_assumptions",
+            "abstract_verifier_sound_with_audited_soundness_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &soundness_source,
+        "abstract_verifier_sound_with_audited_soundness_obligations",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &soundness_source,
+        "abstract_verifier_sound_with_audited_soundness_obligations",
+        &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+            "abstract_verifier_sound assumptions",
+        ],
     );
 }
