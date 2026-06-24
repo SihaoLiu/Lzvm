@@ -5,10 +5,15 @@ use lzvm_artifacts::source_program::read_source_program_archive_file;
 use lzvm_cli::run_cli;
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-cli-setup-source-program-{}-{name}",
-        std::process::id()
-    ))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-cli-setup-source-program-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn write_file(path: &Path, contents: &str) {
