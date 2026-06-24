@@ -7550,6 +7550,10 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
         "all-units transcript proof should assemble borrowed auxiliary slices"
     );
     assert!(
+        !body.contains("request.outputs"),
+        "all-units transcript proof should build transcript inputs from canonical output refs"
+    );
+    assert!(
         body.contains("build_pcs_fri_transcript_values_from_trace_segment_refs"),
         "all-units transcript proof should use the borrowed transcript builder"
     );
@@ -7565,6 +7569,15 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
         body.contains("aggregate_pcs_final_query_challenges_iter")
             && !body.contains("let final_query_challenges = transcript_values"),
         "all-units transcript proof should aggregate final query challenges without a temporary vector"
+    );
+    let inner_body = function_body(
+        &source,
+        "fn build_witness_proof_artifact_for_all_units_inner",
+        "fn build_program_image_cache_proof_segment",
+    );
+    assert!(
+        inner_body.contains("canonical_witness_trace_output_refs(request.schedule, request.outputs)"),
+        "all-units proof construction should canonicalize output refs before transcript construction"
     );
 
     let fri_source_path = crate_root.join("src/prove_fri_opening.rs");
@@ -7816,6 +7829,16 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
             && fri_opening_source.contains("verify_fri_query_path")
             && fri_opening_source.contains("validate_pcs_fri_opening_folds_from_units"),
         "opening validators should keep Merkle path and FRI fold checks"
+    );
+    let witness_opening_validation = function_body(
+        &witness_opening_source,
+        "pub fn validate_witness_opening_segments",
+        "fn expected_merkle_level_count",
+    );
+    assert!(
+        witness_opening_validation.contains("load_witness_commitment_segment_refs")
+            && !witness_opening_validation.contains("load_witness_commitment_segments("),
+        "witness opening validation should borrow witness commitment segments without cloning payloads"
     );
 }
 

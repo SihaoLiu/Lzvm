@@ -13,6 +13,16 @@ pub fn load_witness_commitment_segments(
     units: &[ProveUnitSchedule],
     segments: &[ProofSegment],
 ) -> Result<Vec<ProofSegment>, LoadWitnessCommitmentSegmentsError> {
+    Ok(load_witness_commitment_segment_refs(units, segments)?
+        .into_iter()
+        .cloned()
+        .collect())
+}
+
+pub fn load_witness_commitment_segment_refs<'a>(
+    units: &[ProveUnitSchedule],
+    segments: &'a [ProofSegment],
+) -> Result<Vec<&'a ProofSegment>, LoadWitnessCommitmentSegmentsError> {
     let unit_count = u32::try_from(units.len())
         .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitCountOverflow)?;
     let Some(end_id) = WITNESS_COMMITMENT_SEGMENT_BASE_ID.checked_add(unit_count) else {
@@ -42,7 +52,7 @@ pub fn load_witness_commitment_segments(
             return Err(LoadWitnessCommitmentSegmentsError::DuplicateSegment { unit_index });
         }
         validate_witness_commitment_segment(units, segment)?;
-        out.push(segment.clone());
+        out.push(segment);
     }
 
     if out.is_empty() {

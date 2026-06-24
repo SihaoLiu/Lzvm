@@ -982,7 +982,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
         collect_all_units_evaluation_values(request.outputs, &request.auxiliary_inputs.evaluations);
     let proof_unit_values =
         collect_proof_unit_values(request.schedule, request.outputs, request.unit_values)?;
-    let witness_outputs = request.outputs.iter().collect::<Vec<_>>();
+    let witness_outputs = canonical_witness_trace_output_refs(request.schedule, request.outputs)?;
     let needs_transcript = all_units_transcript_required(
         request.execution_units,
         request.outputs,
@@ -1367,6 +1367,38 @@ fn all_units_transcript_required(
     Ok(has_fri_unit || !evaluation_values.is_empty() || has_evaluation_segment)
 }
 
+fn canonical_witness_trace_output_refs<'a>(
+    schedule: &ProveSchedule,
+    outputs: &'a [ProveWitnessTraceCommitments],
+) -> Result<Vec<&'a ProveWitnessTraceCommitments>, String> {
+    let unit_count = u32::try_from(schedule.units.len())
+        .map_err(|_| "witness segment unit count overflow".to_owned())?;
+    let mut sorted_outputs = outputs
+        .iter()
+        .map(|output| {
+            let commitments = output.commitments();
+            let unit_index = commitments.unit_index();
+            let unit_index_u32 = u32::try_from(unit_index).map_err(|_| {
+                format!("witness segment unit index does not fit u32: {unit_index}")
+            })?;
+            let segment_id = witness_commitment_segment_id(
+                unit_count,
+                WitnessCommitmentSegmentIdentity {
+                    unit_index: unit_index_u32,
+                    trace_instance_index: commitments.trace_instance_index(),
+                },
+            )
+            .map_err(|error| format!("witness segment id failed: {error}"))?;
+            Ok((segment_id, output))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    sorted_outputs.sort_by_key(|(segment_id, _)| *segment_id);
+    Ok(sorted_outputs
+        .into_iter()
+        .map(|(_, output)| output)
+        .collect())
+}
+
 fn build_witness_transcript_proof_artifact_for_all_units(
     request: &WitnessAllUnitsProofRequest<'_>,
     public_values_hash: [u8; 32],
@@ -1401,8 +1433,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
         ),
     };
     let transcript_evaluation_values = transcript_evaluation_values.as_slice();
-    let transcript_inputs = request
-        .outputs
+    let transcript_inputs = witness_outputs
         .iter()
         .map(|output| {
             let commitments = output.commitments();

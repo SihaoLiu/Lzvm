@@ -181,14 +181,14 @@ where
     I: IntoIterator<Item = Ext3>,
     I::IntoIter: ExactSizeIterator,
 {
-    let challenges = challenges.into_iter();
+    let mut challenges = challenges.into_iter();
     let count = challenges.len();
     if count == 0 {
         return Err(PcsTranscriptError::EmptyFinalPolynomial);
     }
     if count == 1 {
         return challenges
-            .last()
+            .next()
             .ok_or(PcsTranscriptError::EmptyFinalPolynomial);
     }
 

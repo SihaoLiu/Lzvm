@@ -27,7 +27,7 @@ use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanS
 use crate::proof_artifact_timing::WitnessOpeningSourceKind;
 use crate::proof_artifact_timing::WitnessProofArtifactTiming;
 use crate::witness_commitment::{
-    load_witness_commitment_segments, open_witness_stage_commitments,
+    load_witness_commitment_segment_refs, open_witness_stage_commitments,
     verify_witness_stage_opening_root, LoadWitnessCommitmentSegmentsError, WitnessStageOpening,
     WitnessStageOpeningError,
 };
@@ -395,7 +395,7 @@ pub fn validate_witness_opening_segments(
         return Err(ValidateWitnessOpeningSegmentsError::UnitCountMismatch);
     }
 
-    let witness_segments = load_witness_commitment_segments(units, segments)
+    let witness_segments = load_witness_commitment_segment_refs(units, segments)
         .map_err(ValidateWitnessOpeningSegmentsError::Commitments)?;
     for query_unit in &query_plan.units {
         let unit_index = usize::try_from(query_unit.unit_index)

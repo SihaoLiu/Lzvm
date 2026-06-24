@@ -5711,6 +5711,43 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
     .expect("proof artifact should exist");
     let proof = parse_proof_artifact(&encode_proof_artifact(&proof).expect("proof should encode"))
         .expect("proof should parse");
+    let mut reversed_outputs = outputs.clone();
+    reversed_outputs.reverse();
+    let reversed_proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &reversed_outputs,
+            auxiliary_inputs: &request_auxiliary_inputs,
+            unit_values: &[],
+            evaluation_values_segment: None,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            challenge_values_segment: Some(&challenge_segment),
+            include_contribution_segment: false,
+        },
+    )
+    .expect("reversed outputs should build a valid proof artifact")
+    .expect("reversed outputs proof artifact should exist");
+    let reversed_proof =
+        parse_proof_artifact(&encode_proof_artifact(&reversed_proof).expect("proof should encode"))
+            .expect("proof should parse");
+    let proof_query = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+        .expect("query plan segment should exist");
+    let reversed_query = reversed_proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+        .expect("reversed query plan segment should exist");
+    assert_eq!(reversed_query.data, proof_query.data);
 
     let evaluation_values_segment = build_pcs_evaluation_segment(
         &plan.run_plan.schedule,

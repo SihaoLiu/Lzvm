@@ -20,7 +20,8 @@ use lzvm_prover::witness_commitment::{
 };
 use lzvm_prover::witness_commitment::{extend_witness_stage_leaves, WitnessStageLeafError};
 use lzvm_prover::witness_commitment::{
-    load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
+    load_witness_commitment_segment_refs, load_witness_commitment_segments,
+    LoadWitnessCommitmentSegmentsError,
 };
 use lzvm_prover::witness_layout::{derive_witness_trace_layout, WitnessTraceLayoutError};
 use lzvm_prover::witness_trace::parse_witness_trace;
@@ -263,6 +264,22 @@ fn loads_later_trace_instance_witness_commitment_segments() {
     assert_eq!(loaded.len(), 2);
     assert_eq!(loaded[0].id, WITNESS_COMMITMENT_SEGMENT_BASE_ID);
     assert_eq!(loaded[1].id, later_id);
+}
+
+#[test]
+fn loads_witness_commitment_segment_refs_without_payload_copies() {
+    let units = vec![sample_unit(2, vec![1]), sample_unit(2, vec![2])];
+    let segments = vec![
+        witness_commitment_proof_segment(1, &units[1]),
+        witness_commitment_proof_segment(0, &units[0]),
+    ];
+
+    let loaded =
+        load_witness_commitment_segment_refs(&units, &segments).expect("segments should load");
+
+    assert_eq!(loaded.len(), 2);
+    assert!(std::ptr::eq(loaded[0], &segments[1]));
+    assert!(std::ptr::eq(loaded[1], &segments[0]));
 }
 
 #[test]
