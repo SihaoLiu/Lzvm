@@ -9,6 +9,8 @@ from pathlib import Path
 
 SMALL_PREFIX = "LZVM_REAL_SMALL_PARITY"
 LARGE_PREFIX = "LZVM_REAL_LARGE_PARITY"
+DEFAULT_BIN_RELATIVE = Path("target/release/lzvm")
+DEFAULT_BIN_BUILD_COMMAND = "cargo build --release -p lzvm-cli --bin lzvm"
 
 REQUIRED_SUFFIXES = [
     "SETUP",
@@ -183,9 +185,17 @@ class ProofEnv:
 
 def configured_paths(config: ProofEnv) -> dict[str, Path]:
     paths = {suffix.lower(): config.path(suffix) for suffix in REQUIRED_SUFFIXES}
-    bin_path = config.optional_path("BIN", config.root / "target" / "release" / "lzvm")
+    bin_value = os.environ.get(config.var("BIN"))
+    bin_path = (
+        resolve_workspace_path(bin_value, config.root)
+        if bin_value
+        else config.root / DEFAULT_BIN_RELATIVE
+    )
     if not bin_path.exists():
-        raise SystemExit(f"{config.var('BIN')} path does not exist: {bin_path}")
+        message = f"{config.var('BIN')} path does not exist: {bin_path}"
+        if not bin_value:
+            message += f"; build default binary with: {DEFAULT_BIN_BUILD_COMMAND}"
+        raise SystemExit(message)
     paths["bin"] = bin_path
     paths["tmp_dir"] = require_workspace_temp_path(
         config.optional_path("TMP_DIR", config.root / "temp" / "tmp"),
@@ -214,12 +224,15 @@ def template_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, 
 
 
 def print_env_template(args: argparse.Namespace, root: Path) -> None:
+    print("# build default binary first:")
+    print(f"# {DEFAULT_BIN_BUILD_COMMAND}")
+    print()
     for index, (config, mode) in enumerate(template_envs(args, root)):
         if index:
             print()
         print(f"# {config.label} suite")
         print(f"# run with --{config.label}-mode {mode}")
-        print(shell_export(config.var("BIN"), "target/release/lzvm"))
+        print(shell_export(config.var("BIN"), DEFAULT_BIN_RELATIVE))
         for suffix in REQUIRED_SUFFIXES:
             print(shell_export(config.var(suffix), ""))
         print(shell_export(config.var("TMP_DIR"), "temp/tmp"))
