@@ -21,6 +21,13 @@ REQUIRED_PATHS = [
 ]
 REQUIRED_SUFFIXES = [suffix for suffix, _kind in REQUIRED_PATHS]
 REQUIRED_PATH_KINDS = dict(REQUIRED_PATHS)
+VERIFY_REQUIRED_TEXTS = [
+    "verify_proof_status=ok",
+    "artifact_public_input_match=ok",
+    "artifact_proof_match=ok",
+    "eth_block_input_match=ok",
+    "program_image_cache_match=ok",
+]
 
 PIPELINE_ENV_TO_CLEAR = [
     "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER",
@@ -365,11 +372,8 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
         str(args.max_relative_spread),
     ]
     if not args.skip_verify_proof:
-        command.extend(["--require-text", "verify_proof_status=ok"])
-        command.extend(["--require-text", "artifact_public_input_match=ok"])
-        command.extend(["--require-text", "artifact_proof_match=ok"])
-        command.extend(["--require-text", "eth_block_input_match=ok"])
-        command.extend(["--require-text", "program_image_cache_match=ok"])
+        for required_text in VERIFY_REQUIRED_TEXTS:
+            command.extend(["--require-text", required_text])
     if args.commit is not None:
         command.extend(["--commit", args.commit])
     selected_labels = {config.label for config, _mode in selected}
@@ -418,6 +422,9 @@ def check_env(args: argparse.Namespace, root: Path) -> None:
         print(f"{config.label}=ready")
         print(f"{config.label}_mode={mode}")
         print(f"{config.label}_verify_proof={str(not args.skip_verify_proof).lower()}")
+        if not args.skip_verify_proof:
+            for required_text in VERIFY_REQUIRED_TEXTS:
+                print(f"{config.label}_verify_required_text={required_text}")
         print(f"{config.label}_trace_limit={trace_limit}")
         for key in [
             "bin",

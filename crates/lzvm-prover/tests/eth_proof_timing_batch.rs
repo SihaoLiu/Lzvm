@@ -395,9 +395,47 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
     assert!(stdout.contains("small=ready\n"), "{stdout}");
     assert!(stdout.contains("small_mode=combined\n"), "{stdout}");
     assert!(stdout.contains("small_verify_proof=true\n"), "{stdout}");
+    assert!(
+        stdout.contains("small_verify_required_text=verify_proof_status=ok\n")
+            && stdout.contains("small_verify_required_text=artifact_public_input_match=ok\n")
+            && stdout.contains("small_verify_required_text=artifact_proof_match=ok\n")
+            && stdout.contains("small_verify_required_text=eth_block_input_match=ok\n")
+            && stdout.contains("small_verify_required_text=program_image_cache_match=ok\n"),
+        "env check should report required proof verification markers: {stdout}"
+    );
     assert!(stdout.contains("small_trace_limit=120000000\n"), "{stdout}");
     assert!(stdout.contains("small_block_input="), "{stdout}");
     assert!(!stdout.contains("small_tmp_dir="), "{stdout}");
+}
+
+#[test]
+fn eth_proof_timing_batch_check_env_skip_verify_omits_required_markers() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-check-env-skip-verify");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--skip-verify-proof");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "env check should pass for skip verify mode: stderr={stderr}"
+    );
+    assert!(stdout.contains("small_verify_proof=false\n"), "{stdout}");
+    assert!(
+        !stdout.contains("small_verify_required_text="),
+        "skip verify env check should not report required markers: {stdout}"
+    );
 }
 
 #[test]
