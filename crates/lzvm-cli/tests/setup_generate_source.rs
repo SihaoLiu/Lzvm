@@ -16,16 +16,23 @@ use lzvm_field::{Ext3, Felt};
 use lzvm_prover::global_constraints::{evaluate_global_constraints, GlobalConstraintInputs};
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-cli-setup-generate-source-{}-{name}",
-        std::process::id()
-    ))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-cli-setup-generate-source-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn target_temp_dir(name: &str) -> PathBuf {
     std::env::current_dir()
         .expect("current directory should be available")
-        .join("target")
+        .join("..")
+        .join("..")
+        .join("temp")
         .join(format!(
             "lzvm-cli-setup-generate-source-{}-{name}",
             std::process::id()
