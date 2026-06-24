@@ -172,7 +172,9 @@ def resolve_timing_field(
     runs: str | None,
     log_paths: list[str] | None,
     label: str,
+    log_option: str,
     max_relative_spread: float,
+    root: Path,
 ) -> str:
     provided = sum(
         [
@@ -186,7 +188,16 @@ def resolve_timing_field(
             f"{label}: provide only one of explicit value, run samples, or timing logs"
         )
     if log_paths:
-        samples = [timing_total_seconds_from_log(Path(path)) for path in log_paths]
+        samples = [
+            timing_total_seconds_from_log(
+                require_workspace_temp_path(
+                    resolve_workspace_path(path, root),
+                    root,
+                    log_option,
+                )
+            )
+            for path in log_paths
+        ]
         return stable_average_field(samples, label, max_relative_spread)
     if runs is None:
         return explicit
@@ -255,14 +266,18 @@ def main() -> None:
             args.small_runs,
             args.small_log,
             "small proof time",
+            "--small-log",
             args.max_relative_spread,
+            root,
         )
         large_proof_time_s = resolve_timing_field(
             args.large,
             args.large_runs,
             args.large_log,
             "large proof time",
+            "--large-log",
             args.max_relative_spread,
+            root,
         )
         append_row(
             path,

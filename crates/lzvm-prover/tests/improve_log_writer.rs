@@ -219,6 +219,60 @@ fn improve_log_writer_rejects_path_outside_temp() {
 }
 
 #[test]
+fn improve_log_writer_rejects_timing_log_outside_temp() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+    let log_path = workspace_root.join(format!(
+        "temp/improve-log-input-path-{}.csv",
+        std::process::id()
+    ));
+    let outside_log = workspace_root.join(format!(
+        "target/improve-log-input-outside-{}.log",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&outside_log);
+    std::fs::write(&outside_log, "timing_total_ms=8550\n")
+        .expect("outside timing log should write");
+
+    let output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--small-log")
+        .arg(&outside_log)
+        .arg("--large-runs")
+        .arg("52.29,51.61,51.21")
+        .arg("--summary")
+        .arg("input path guard")
+        .output()
+        .expect("improve-log writer should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let log_created = log_path.exists();
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&outside_log);
+
+    assert!(
+        !success,
+        "improve-log writer should reject timing logs outside temp"
+    );
+    assert!(
+        stderr.contains("--small-log must be under"),
+        "timing log rejection should explain the temp boundary: stderr={stderr}"
+    );
+    assert!(
+        !log_created,
+        "rejected timing log should not create an improve log"
+    );
+}
+
+#[test]
 fn improve_log_writer_rejects_unstable_run_samples() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root
