@@ -191,11 +191,6 @@ class ProofEnv:
             raise SystemExit(f"{self.var(suffix)} must be a file: {path}")
         return path
 
-    def optional_path(self, suffix: str, default: Path) -> Path:
-        value = os.environ.get(self.var(suffix))
-        path = resolve_workspace_path(value, self.root) if value else default
-        return path
-
     def trace_limit(self) -> str:
         return positive_integer_env(
             os.environ.get(self.var("TRACE_LIMIT"), self.default_trace_limit),
@@ -221,11 +216,6 @@ def configured_paths(config: ProofEnv) -> dict[str, Path]:
     if not os.access(bin_path, os.X_OK):
         raise SystemExit(f"{config.var('BIN')} must be executable: {bin_path}")
     paths["bin"] = bin_path
-    paths["tmp_dir"] = require_workspace_temp_path(
-        config.optional_path("TMP_DIR", config.root / "temp" / "tmp"),
-        config.root,
-        config.var("TMP_DIR"),
-    )
     return paths
 
 
@@ -259,7 +249,6 @@ def print_env_template(args: argparse.Namespace, root: Path) -> None:
         print(shell_export(config.var("BIN"), DEFAULT_BIN_RELATIVE))
         for suffix in REQUIRED_SUFFIXES:
             print(shell_export(config.var(suffix), ""))
-        print(shell_export(config.var("TMP_DIR"), "temp/tmp"))
         print(shell_export(config.var("TRACE_LIMIT"), config.default_trace_limit))
 
 
@@ -433,7 +422,6 @@ def check_env(args: argparse.Namespace, root: Path) -> None:
             "program_image_cache",
             "input_data",
             "guest_image",
-            "tmp_dir",
         ]:
             print(f"{config.label}_{key}={paths[key]}")
 
@@ -489,7 +477,6 @@ def self_test() -> None:
                 path.write_bytes(b"fixture")
             os.environ[f"{prefix}_{suffix}"] = str(path)
         os.environ[f"{prefix}_BIN"] = str(fake_bin)
-        os.environ[f"{prefix}_TMP_DIR"] = str(work_dir / "tmp")
     args = argparse.Namespace(
         commit="selftest",
         dry_run=False,

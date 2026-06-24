@@ -47,7 +47,7 @@ struct ProofFixture {
     cache: PathBuf,
     input_data: PathBuf,
     guest: PathBuf,
-    tmp_dir: PathBuf,
+    shared_tmp_dir: PathBuf,
 }
 
 impl ProofFixture {
@@ -63,7 +63,7 @@ impl ProofFixture {
         let cache = write_fixture(&dir, "program-image.cache");
         let input_data = write_fixture(&dir, "input-data.bin");
         let guest = write_fixture(&dir, "guest.elf");
-        let tmp_dir = dir.join("tmp");
+        let shared_tmp_dir = dir.join("tmp");
 
         Self {
             dir,
@@ -73,7 +73,7 @@ impl ProofFixture {
             cache,
             input_data,
             guest,
-            tmp_dir,
+            shared_tmp_dir,
         }
     }
 
@@ -84,8 +84,7 @@ impl ProofFixture {
             .env(format!("{prefix}_BLOCK_INPUT"), &self.block_input)
             .env(format!("{prefix}_PROGRAM_IMAGE_CACHE"), &self.cache)
             .env(format!("{prefix}_INPUT_DATA"), &self.input_data)
-            .env(format!("{prefix}_GUEST_IMAGE"), &self.guest)
-            .env(format!("{prefix}_TMP_DIR"), &self.tmp_dir);
+            .env(format!("{prefix}_GUEST_IMAGE"), &self.guest);
     }
 
     fn cleanup(&self) {
@@ -144,7 +143,7 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
     let output = command
         .output()
         .expect("ETH proof timing batch dry-run should run");
-    let tmp_dir_created = fixture.tmp_dir.exists();
+    let tmp_dir_created = fixture.shared_tmp_dir.exists();
     let work_dir_created = fixture.dir.join("runs").exists();
     let improve_log_created = fixture.dir.join("improve-log.csv").exists();
     let success = output.status.success();
@@ -156,7 +155,10 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         success,
         "dry-run should build a small command: stderr={stderr}"
     );
-    assert!(!tmp_dir_created, "dry-run should not create TMPDIR");
+    assert!(
+        !tmp_dir_created,
+        "dry-run should not create a shared TMPDIR"
+    );
     assert!(!work_dir_created, "dry-run should not create a work dir");
     assert!(
         !improve_log_created,
@@ -204,8 +206,8 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         "small command should use the per-run temp dir token: {stdout}"
     );
     assert!(
-        !stdout.contains(&fixture.tmp_dir.display().to_string()),
-        "dry-run command should not use the configured TMPDIR as a shared run dir: {stdout}"
+        !stdout.contains(&fixture.shared_tmp_dir.display().to_string()),
+        "dry-run command should not use a shared TMPDIR: {stdout}"
     );
     assert!(
         stdout.contains(&format!("'{}'", fixture.fake_bin.display())),
@@ -249,7 +251,7 @@ fn eth_proof_timing_batch_target_thresholds_follow_selected_suite() {
 }
 
 #[test]
-fn eth_proof_timing_batch_run_does_not_create_configured_tmp_dir() {
+fn eth_proof_timing_batch_run_uses_runner_tmpdir_token() {
     let fixture = ProofFixture::new("eth proof timing batch actual run");
     let runner = fixture.dir.join("fake-runner.py");
     let runner_args_path = fixture.dir.join("runner-args.txt");
@@ -278,7 +280,7 @@ fn eth_proof_timing_batch_run_does_not_create_configured_tmp_dir() {
     let output = command
         .output()
         .expect("ETH proof timing batch run should invoke the runner");
-    let tmp_dir_created = fixture.tmp_dir.exists();
+    let tmp_dir_created = fixture.shared_tmp_dir.exists();
     let runner_args =
         std::fs::read_to_string(&runner_args_path).expect("fake runner args should read");
     let success = output.status.success();
@@ -291,7 +293,7 @@ fn eth_proof_timing_batch_run_does_not_create_configured_tmp_dir() {
     );
     assert!(
         !tmp_dir_created,
-        "actual run should not create the configured TMPDIR"
+        "actual run should not create a shared TMPDIR"
     );
     assert!(
         runner_args.contains("TMPDIR={tmp_dir}"),
@@ -303,8 +305,8 @@ fn eth_proof_timing_batch_run_does_not_create_configured_tmp_dir() {
         "runner should receive a prove-then-verify command: {runner_args}"
     );
     assert!(
-        !runner_args.contains(&fixture.tmp_dir.display().to_string()),
-        "runner command should not use the configured TMPDIR as a shared run dir: {runner_args}"
+        !runner_args.contains(&fixture.shared_tmp_dir.display().to_string()),
+        "runner command should not use a shared TMPDIR: {runner_args}"
     );
 }
 
@@ -351,7 +353,6 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
     let output = command
         .output()
         .expect("ETH proof timing batch env check should run");
-    let tmp_dir_created = fixture.tmp_dir.exists();
     let success = output.status.success();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
@@ -361,14 +362,13 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
         success,
         "env check should pass for a complete small config: stderr={stderr}"
     );
-    assert!(!tmp_dir_created, "env check should not create TMPDIR");
     assert!(stdout.contains("status=ok\n"), "{stdout}");
     assert!(stdout.contains("small=ready\n"), "{stdout}");
     assert!(stdout.contains("small_mode=combined\n"), "{stdout}");
     assert!(stdout.contains("small_verify_proof=true\n"), "{stdout}");
     assert!(stdout.contains("small_trace_limit=120000000\n"), "{stdout}");
     assert!(stdout.contains("small_block_input="), "{stdout}");
-    assert!(stdout.contains("small_tmp_dir="), "{stdout}");
+    assert!(!stdout.contains("small_tmp_dir="), "{stdout}");
 }
 
 #[test]
@@ -413,9 +413,12 @@ fn eth_proof_timing_batch_prints_env_template_without_config() {
         "small template should include every required input: {stdout}"
     );
     assert!(
-        stdout.contains("export LZVM_REAL_SMALL_PARITY_TMP_DIR=temp/tmp")
-            && stdout.contains("export LZVM_REAL_SMALL_PARITY_TRACE_LIMIT=120000000"),
-        "small template should include optional defaults: {stdout}"
+        stdout.contains("export LZVM_REAL_SMALL_PARITY_TRACE_LIMIT=120000000"),
+        "small template should include optional trace limit default: {stdout}"
+    );
+    assert!(
+        !stdout.contains("LZVM_REAL_SMALL_PARITY_TMP_DIR"),
+        "small template should not expose a shared TMPDIR: {stdout}"
     );
     assert!(
         !stdout.contains(LARGE_PREFIX),
@@ -632,17 +635,17 @@ fn eth_proof_timing_batch_check_env_rejects_wrong_input_types() {
 }
 
 #[test]
-fn eth_proof_timing_batch_rejects_tmp_dir_outside_temp() {
-    let fixture = ProofFixture::new("eth-proof-timing-batch-tmp-outside");
-    let outside_tmp = workspace_root().join(format!(
-        "target/eth-proof-timing-batch-tmp-{}",
+fn eth_proof_timing_batch_ignores_legacy_tmp_dir_env() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-legacy-tmp-env");
+    let legacy_tmp = workspace_root().join(format!(
+        "target/eth-proof-timing-batch-legacy-tmp-{}",
         std::process::id()
     ));
-    let _ = std::fs::remove_dir_all(&outside_tmp);
+    let _ = std::fs::remove_dir_all(&legacy_tmp);
     let mut command = Command::new(script_path());
     command.arg("--suite").arg("small").arg("--check-env");
     fixture.apply_env(&mut command, SMALL_PREFIX);
-    command.env(format!("{SMALL_PREFIX}_TMP_DIR"), &outside_tmp);
+    command.env(format!("{SMALL_PREFIX}_TMP_DIR"), &legacy_tmp);
 
     let output = command
         .output()
@@ -650,27 +653,31 @@ fn eth_proof_timing_batch_rejects_tmp_dir_outside_temp() {
     let success = output.status.success();
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let outside_created = outside_tmp.exists();
-    let tmp_dir_created = fixture.tmp_dir.exists();
-    let _ = std::fs::remove_dir_all(&outside_tmp);
+    let legacy_created = legacy_tmp.exists();
+    let tmp_dir_created = fixture.shared_tmp_dir.exists();
+    let _ = std::fs::remove_dir_all(&legacy_tmp);
     fixture.cleanup();
 
-    assert!(!success, "env check should reject TMPDIR outside temp");
     assert!(
-        !stdout.contains("status=ok"),
-        "failed env check should not report ok: {stdout}"
+        success,
+        "legacy TMPDIR env should not affect env check: stderr={stderr}"
     );
     assert!(
-        stderr.contains("_TMP_DIR must be under"),
-        "TMPDIR rejection should explain the temp boundary: stderr={stderr}"
+        stdout.contains("status=ok\n"),
+        "env check should report ready status: {stdout}"
     );
     assert!(
-        !outside_created,
-        "rejected TMPDIR should not be created outside temp"
+        !stdout.contains("small_tmp_dir="),
+        "env check should not expose a shared TMPDIR: {stdout}"
+    );
+    assert!(stderr.is_empty(), "env check should not warn: {stderr}");
+    assert!(
+        !legacy_created,
+        "ignored legacy TMPDIR should not be created outside temp"
     );
     assert!(
         !tmp_dir_created,
-        "rejected env check should not create the fixture TMPDIR"
+        "env check should not create a shared TMPDIR"
     );
 }
 
@@ -690,7 +697,7 @@ fn eth_proof_timing_batch_available_suite_uses_only_configured_large_env() {
     let output = command
         .output()
         .expect("ETH proof timing batch available dry-run should run");
-    let tmp_dir_created = fixture.tmp_dir.exists();
+    let tmp_dir_created = fixture.shared_tmp_dir.exists();
     let success = output.status.success();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
@@ -702,7 +709,7 @@ fn eth_proof_timing_batch_available_suite_uses_only_configured_large_env() {
     );
     assert!(
         !tmp_dir_created,
-        "available dry-run should not create TMPDIR"
+        "available dry-run should not create a shared TMPDIR"
     );
     assert!(
         stdout.contains("large_command=env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
