@@ -35,20 +35,21 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_field::{Ext3, Felt};
 
 use crate::pcs_evaluation::{
-    load_pcs_evaluation_unit_for_identity_from_segments,
-    validate_pcs_evaluation_units_match_query_units, LoadPcsEvaluationUnitError,
+    load_pcs_evaluation_segment_from_segments,
+    load_pcs_evaluation_unit_for_identity_from_parsed_segment,
+    validate_pcs_evaluation_units_match_query_units_from_segment, LoadPcsEvaluationUnitError,
 };
 use crate::pcs_fri::{
-    load_pcs_fri_opening_segment_from_segments, validate_pcs_fri_opening_units_match_query_units,
-    LoadPcsFriOpeningUnitError,
+    load_pcs_fri_opening_segment_from_segments,
+    validate_pcs_fri_opening_units_match_query_units_from_segment, LoadPcsFriOpeningUnitError,
 };
 use crate::pcs_transcript::{
     aggregate_pcs_final_query_challenges, derive_pcs_final_query_challenge_from_segments,
     PcsTranscriptError, PcsTranscriptSegmentInputs,
 };
 use crate::unit_values::{
-    load_unit_values_for_identity_from_segments, validate_unit_values_units_match_query_units,
-    LoadUnitValuesSegmentError,
+    load_unit_values_for_identity_from_parsed_segment, load_unit_values_segment_from_segments,
+    validate_unit_values_units_match_query_units_from_segment, LoadUnitValuesSegmentError,
 };
 use crate::witness_commitment::{
     load_witness_commitment_segment_refs, LoadWitnessCommitmentSegmentsError,
@@ -273,6 +274,12 @@ fn validate_transcript_query_plan_unit_inputs(
 ) -> Result<Vec<Ext3>, ValidatePcsQueryPlanSegmentsError> {
     let binding_segments = checked_proof_binding_segments(segments)
         .map_err(|id| ValidatePcsQueryPlanSegmentsError::DuplicateBindingSegment { id })?;
+    let evaluation_segment = load_pcs_evaluation_segment_from_segments(segments)
+        .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
+    let fri_segment = load_pcs_fri_opening_segment_from_segments(segments)
+        .map_err(|error| ValidatePcsQueryPlanSegmentsError::Fri(error.into()))?;
+    let unit_values_segment = load_unit_values_segment_from_segments(segments)
+        .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
     let mut final_query_challenges = Vec::with_capacity(query_units.len());
     for query_unit in query_units {
         let unit_index_u32 = query_unit.unit_index;
@@ -305,27 +312,26 @@ fn validate_transcript_query_plan_unit_inputs(
             parse_witness_commitment_segment(&witness_segment.data).map_err(|source| {
                 ValidatePcsQueryPlanSegmentsError::WitnessSegment { unit_index, source }
             })?;
-        let evaluations = load_pcs_evaluation_unit_for_identity_from_segments(
+        let evaluations = load_pcs_evaluation_unit_for_identity_from_parsed_segment(
             unit_index,
             query_unit.trace_instance_index,
             unit,
-            segments,
+            &evaluation_segment,
         )
         .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
-        let fri = load_pcs_fri_opening_segment_from_segments(segments)
-            .map_err(|error| ValidatePcsQueryPlanSegmentsError::Fri(error.into()))?
+        let fri = fri_segment
             .units
-            .into_iter()
+            .iter()
             .find(|unit| {
                 unit.unit_index == query_unit.unit_index
                     && unit.trace_instance_index == query_unit.trace_instance_index
             })
             .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
-        let unit_values = load_unit_values_for_identity_from_segments(
+        let unit_values = load_unit_values_for_identity_from_parsed_segment(
             unit_index,
             query_unit.trace_instance_index,
             &unit.unit_value_map,
-            segments,
+            unit_values_segment.as_ref(),
         )
         .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
         let final_query_challenge =
@@ -345,12 +351,15 @@ fn validate_transcript_query_plan_unit_inputs(
             .map_err(ValidatePcsQueryPlanSegmentsError::Transcript)?;
         final_query_challenges.push(final_query_challenge);
     }
-    validate_pcs_evaluation_units_match_query_units(query_units, segments)
+    validate_pcs_evaluation_units_match_query_units_from_segment(query_units, &evaluation_segment)
         .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
-    validate_pcs_fri_opening_units_match_query_units(query_units, segments)
+    validate_pcs_fri_opening_units_match_query_units_from_segment(query_units, &fri_segment)
         .map_err(ValidatePcsQueryPlanSegmentsError::Fri)?;
-    validate_unit_values_units_match_query_units(query_units, segments)
-        .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
+    validate_unit_values_units_match_query_units_from_segment(
+        query_units,
+        unit_values_segment.as_ref(),
+    )
+    .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
     Ok(final_query_challenges)
 }
 

@@ -264,8 +264,18 @@ pub fn load_unit_values_for_identity_from_segments(
     unit_value_map: &[StageValue],
     segments: &[ProofSegment],
 ) -> Result<Vec<Felt>, LoadUnitValuesSegmentError> {
-    let expected_count = expected_packed_unit_value_count(unit_value_map)
-        .map_err(|_| LoadUnitValuesSegmentError::LengthOverflow)?;
+    let parsed = load_unit_values_segment_from_segments(segments)?;
+    load_unit_values_for_identity_from_parsed_segment(
+        unit_index,
+        trace_instance_index,
+        unit_value_map,
+        parsed.as_ref(),
+    )
+}
+
+pub(crate) fn load_unit_values_segment_from_segments(
+    segments: &[ProofSegment],
+) -> Result<Option<UnitValuesSegment>, LoadUnitValuesSegmentError> {
     let mut matching_segments = segments
         .iter()
         .filter(|segment| segment.id == UNIT_VALUES_SEGMENT_ID);
@@ -273,16 +283,24 @@ pub fn load_unit_values_for_identity_from_segments(
     if matching_segments.next().is_some() {
         return Err(LoadUnitValuesSegmentError::DuplicateSegment);
     }
-    let parsed = match segment {
-        Some(segment) => Some(
-            parse_unit_values_segment(&segment.data)
-                .map_err(LoadUnitValuesSegmentError::Segment)?,
-        ),
-        None => None,
-    };
+    segment
+        .map(|segment| {
+            parse_unit_values_segment(&segment.data).map_err(LoadUnitValuesSegmentError::Segment)
+        })
+        .transpose()
+}
+
+pub(crate) fn load_unit_values_for_identity_from_parsed_segment(
+    unit_index: usize,
+    trace_instance_index: u32,
+    unit_value_map: &[StageValue],
+    parsed: Option<&UnitValuesSegment>,
+) -> Result<Vec<Felt>, LoadUnitValuesSegmentError> {
+    let expected_count = expected_packed_unit_value_count(unit_value_map)
+        .map_err(|_| LoadUnitValuesSegmentError::LengthOverflow)?;
     let unit_index_u32 = u32::try_from(unit_index)
         .map_err(|_| LoadUnitValuesSegmentError::UnitIndexOverflow { unit_index })?;
-    let unit_values = parsed.as_ref().and_then(|parsed| {
+    let unit_values = parsed.and_then(|parsed| {
         parsed.units.iter().find(|unit| {
             unit.unit_index == unit_index_u32 && unit.trace_instance_index == trace_instance_index
         })
@@ -295,7 +313,7 @@ pub fn load_unit_values_for_identity_from_segments(
         return Ok(Vec::new());
     }
 
-    let unit_values = match (segment, unit_values) {
+    let unit_values = match (parsed, unit_values) {
         (None, _) => return Err(LoadUnitValuesSegmentError::MissingSegment),
         (Some(_), None) => return Err(LoadUnitValuesSegmentError::MissingUnit { unit_index }),
         (Some(_), Some(values)) => values,
@@ -325,23 +343,14 @@ pub fn load_unit_values_for_identity_from_segments(
         .collect()
 }
 
-pub(crate) fn validate_unit_values_units_match_query_units(
+pub(crate) fn validate_unit_values_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
-    segments: &[ProofSegment],
+    parsed: Option<&UnitValuesSegment>,
 ) -> Result<(), LoadUnitValuesSegmentError> {
-    let mut matching_segments = segments
-        .iter()
-        .filter(|segment| segment.id == UNIT_VALUES_SEGMENT_ID);
-    let segment = matching_segments.next();
-    if matching_segments.next().is_some() {
-        return Err(LoadUnitValuesSegmentError::DuplicateSegment);
-    }
-    let Some(segment) = segment else {
+    let Some(parsed) = parsed else {
         return Ok(());
     };
-    let parsed =
-        parse_unit_values_segment(&segment.data).map_err(LoadUnitValuesSegmentError::Segment)?;
-    for unit in parsed.units {
+    for unit in &parsed.units {
         if !query_units.iter().any(|query_unit| {
             query_unit.unit_index == unit.unit_index
                 && query_unit.trace_instance_index == unit.trace_instance_index

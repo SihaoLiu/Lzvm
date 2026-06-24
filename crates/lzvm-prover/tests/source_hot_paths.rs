@@ -7897,10 +7897,21 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && query_plan_source.contains("derive_pcs_final_query_challenge_from_segments")
             && query_plan_source.contains("build_pcs_query_plan_segment_from_challenge")
             && query_plan_source.contains("build_pcs_query_plan_segment_with_bindings")
-            && query_plan_source.contains("validate_pcs_evaluation_units_match_query_units")
-            && query_plan_source.contains("validate_pcs_fri_opening_units_match_query_units")
-            && query_plan_source.contains("validate_unit_values_units_match_query_units"),
+            && query_plan_source
+                .contains("validate_pcs_evaluation_units_match_query_units_from_segment")
+            && query_plan_source
+                .contains("validate_pcs_fri_opening_units_match_query_units_from_segment")
+            && query_plan_source.contains("validate_unit_values_units_match_query_units_from_segment"),
         "query plan validation should bind transcript-derived challenges and all query-indexed artifacts"
+    );
+    assert!(
+        query_plan_source.contains("load_pcs_evaluation_segment_from_segments")
+            && query_plan_source.contains("load_unit_values_segment_from_segments")
+            && query_plan_source.contains("load_pcs_evaluation_unit_for_identity_from_parsed_segment")
+            && query_plan_source.contains("load_unit_values_for_identity_from_parsed_segment")
+            && !query_plan_source.contains("load_pcs_evaluation_unit_for_identity_from_segments")
+            && !query_plan_source.contains("load_unit_values_for_identity_from_segments"),
+        "query plan validation should parse transcript payload segments once and reuse parsed units"
     );
     assert!(
         query_plan_build_source.contains("hash_witness_commitment_segment_for_query_seed")
@@ -7928,10 +7939,20 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     assert!(
         transcript_segments_source.contains("derive_pcs_transcript_challenges_from_segments")
             && transcript_segments_source
-                .contains("validate_pcs_evaluation_units_match_query_units")
+                .contains("validate_pcs_evaluation_units_match_query_units_from_segment")
             && transcript_segments_source
-                .contains("validate_pcs_fri_opening_units_match_query_units")
-            && transcript_segments_source.contains("validate_unit_values_units_match_query_units")
+                .contains("validate_pcs_fri_opening_units_match_query_units_from_segment")
+            && transcript_segments_source
+                .contains("validate_unit_values_units_match_query_units_from_segment")
+            && transcript_segments_source.contains("load_pcs_evaluation_segment_from_segments")
+            && transcript_segments_source.contains("load_unit_values_segment_from_segments")
+            && transcript_segments_source
+                .contains("load_pcs_evaluation_unit_for_identity_from_parsed_segment")
+            && transcript_segments_source
+                .contains("load_unit_values_for_identity_from_parsed_segment")
+            && !transcript_segments_source
+                .contains("load_pcs_evaluation_unit_for_identity_from_segments")
+            && !transcript_segments_source.contains("load_unit_values_for_identity_from_segments")
             && transcript_segments_source.contains("load_witness_commitment_segment_refs")
             && !transcript_segments_source.contains("load_witness_commitment_segments("),
         "transcript segment checks should retain query-unit matching for each opened artifact"

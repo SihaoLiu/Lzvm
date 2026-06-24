@@ -12,12 +12,13 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_field::{Ext3, Felt};
 
 use crate::pcs_evaluation::{
-    load_pcs_evaluation_unit_for_identity_from_segments,
-    validate_pcs_evaluation_units_match_query_units, LoadPcsEvaluationUnitError,
+    load_pcs_evaluation_segment_from_segments,
+    load_pcs_evaluation_unit_for_identity_from_parsed_segment,
+    validate_pcs_evaluation_units_match_query_units_from_segment, LoadPcsEvaluationUnitError,
 };
 use crate::pcs_fri::{
-    load_pcs_fri_opening_segment_from_segments, validate_pcs_fri_opening_units_match_query_units,
-    LoadPcsFriOpeningUnitError,
+    load_pcs_fri_opening_segment_from_segments,
+    validate_pcs_fri_opening_units_match_query_units_from_segment, LoadPcsFriOpeningUnitError,
 };
 use crate::pcs_query_plan::checked_proof_binding_segments;
 use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
@@ -25,8 +26,8 @@ use crate::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptError, PcsTranscriptSegmentInputs,
 };
 use crate::unit_values::{
-    load_unit_values_for_identity_from_segments, validate_unit_values_units_match_query_units,
-    LoadUnitValuesSegmentError,
+    load_unit_values_for_identity_from_parsed_segment, load_unit_values_segment_from_segments,
+    validate_unit_values_units_match_query_units_from_segment, LoadUnitValuesSegmentError,
 };
 use crate::witness_commitment::{
     load_witness_commitment_segment_refs, LoadWitnessCommitmentSegmentsError,
@@ -153,6 +154,10 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
         .map_err(PcsTranscriptProofSegmentsError::Material)?;
     let fri = load_pcs_fri_opening_segment_from_segments(segments)
         .map_err(|error| PcsTranscriptProofSegmentsError::Fri(error.into()))?;
+    let evaluation_segment = load_pcs_evaluation_segment_from_segments(segments)
+        .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
+    let unit_values_segment = load_unit_values_segment_from_segments(segments)
+        .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
     let witness_segments = load_witness_commitment_segment_refs(&schedule.units, segments)
         .map_err(PcsTranscriptProofSegmentsError::Witness)?;
     let binding_segments = checked_proof_binding_segments(segments)
@@ -189,11 +194,11 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
             parse_witness_commitment_segment(&witness_segment.data).map_err(|source| {
                 PcsTranscriptProofSegmentsError::WitnessSegment { unit_index, source }
             })?;
-        let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_segments(
+        let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_parsed_segment(
             unit_index,
             query_unit.trace_instance_index,
             unit,
-            segments,
+            &evaluation_segment,
         )
         .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
         let fri_unit = fri
@@ -204,11 +209,11 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
                     && unit.trace_instance_index == query_unit.trace_instance_index
             })
             .ok_or(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index })?;
-        let unit_values = load_unit_values_for_identity_from_segments(
+        let unit_values = load_unit_values_for_identity_from_parsed_segment(
             unit_index,
             query_unit.trace_instance_index,
             &unit.unit_value_map,
-            segments,
+            unit_values_segment.as_ref(),
         )
         .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
         let mut unit_challenges =
@@ -233,12 +238,18 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
             challenges: unit_challenges,
         });
     }
-    validate_pcs_evaluation_units_match_query_units(&query_plan.units, segments)
-        .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
-    validate_pcs_fri_opening_units_match_query_units(&query_plan.units, segments)
+    validate_pcs_evaluation_units_match_query_units_from_segment(
+        &query_plan.units,
+        &evaluation_segment,
+    )
+    .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
+    validate_pcs_fri_opening_units_match_query_units_from_segment(&query_plan.units, &fri)
         .map_err(PcsTranscriptProofSegmentsError::Fri)?;
-    validate_unit_values_units_match_query_units(&query_plan.units, segments)
-        .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
+    validate_unit_values_units_match_query_units_from_segment(
+        &query_plan.units,
+        unit_values_segment.as_ref(),
+    )
+    .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
 
     Ok(units)
 }

@@ -165,6 +165,19 @@ pub fn load_pcs_evaluation_unit_for_identity_from_segments(
     unit: &ProveUnitSchedule,
     segments: &[ProofSegment],
 ) -> Result<PcsEvaluationUnitSegment, LoadPcsEvaluationUnitError> {
+    let evaluations = load_pcs_evaluation_segment_from_segments(segments)?;
+    load_pcs_evaluation_unit_for_identity_from_parsed_segment(
+        unit_index,
+        trace_instance_index,
+        unit,
+        &evaluations,
+    )
+    .cloned()
+}
+
+pub(crate) fn load_pcs_evaluation_segment_from_segments(
+    segments: &[ProofSegment],
+) -> Result<PcsEvaluationSegment, LoadPcsEvaluationUnitError> {
     let mut matching_segments = segments
         .iter()
         .filter(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID);
@@ -174,13 +187,20 @@ pub fn load_pcs_evaluation_unit_for_identity_from_segments(
     if matching_segments.next().is_some() {
         return Err(LoadPcsEvaluationUnitError::DuplicateSegment);
     }
-    let evaluations =
-        parse_pcs_evaluation_segment(&segment.data).map_err(LoadPcsEvaluationUnitError::Segment)?;
+    parse_pcs_evaluation_segment(&segment.data).map_err(LoadPcsEvaluationUnitError::Segment)
+}
+
+pub(crate) fn load_pcs_evaluation_unit_for_identity_from_parsed_segment<'a>(
+    unit_index: usize,
+    trace_instance_index: u32,
+    unit: &ProveUnitSchedule,
+    evaluations: &'a PcsEvaluationSegment,
+) -> Result<&'a PcsEvaluationUnitSegment, LoadPcsEvaluationUnitError> {
     let unit_index_u32 =
         u32::try_from(unit_index).map_err(|_| LoadPcsEvaluationUnitError::UnitIndexOverflow)?;
     let evaluation_unit = evaluations
         .units
-        .into_iter()
+        .iter()
         .find(|unit| {
             unit.unit_index == unit_index_u32 && unit.trace_instance_index == trace_instance_index
         })
@@ -217,22 +237,11 @@ fn validate_pcs_evaluation_values(
     Ok(())
 }
 
-pub(crate) fn validate_pcs_evaluation_units_match_query_units(
+pub(crate) fn validate_pcs_evaluation_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
-    segments: &[ProofSegment],
+    evaluations: &PcsEvaluationSegment,
 ) -> Result<(), LoadPcsEvaluationUnitError> {
-    let mut matching_segments = segments
-        .iter()
-        .filter(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID);
-    let segment = matching_segments
-        .next()
-        .ok_or(LoadPcsEvaluationUnitError::MissingSegment)?;
-    if matching_segments.next().is_some() {
-        return Err(LoadPcsEvaluationUnitError::DuplicateSegment);
-    }
-    let evaluations =
-        parse_pcs_evaluation_segment(&segment.data).map_err(LoadPcsEvaluationUnitError::Segment)?;
-    for unit in evaluations.units {
+    for unit in &evaluations.units {
         if !query_units.iter().any(|query_unit| {
             query_unit.unit_index == unit.unit_index
                 && query_unit.trace_instance_index == unit.trace_instance_index
