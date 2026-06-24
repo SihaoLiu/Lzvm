@@ -9,10 +9,18 @@ use lzvm_artifacts::source_fixed_file_manifest::{
 };
 
 fn temp_file(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-artifacts-source-fixed-file-manifest-{}-{name}",
-        std::process::id()
-    ))
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-artifacts-source-fixed-file-manifest-{}-{name}",
+            std::process::id()
+        ));
+    fs::create_dir_all(path.parent().expect("fixture path should have parent"))
+        .expect("fixture directory should be created");
+    path
 }
 
 fn sample_manifest() -> SourceFixedFileManifest {

@@ -129,7 +129,15 @@ fn sample_regular_hint_program() -> HintProgram {
 }
 
 fn temp_file_path(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("lzvm-hint-program-{}-{name}", std::process::id()))
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!("lzvm-hint-program-{}-{name}", std::process::id()));
+    fs::create_dir_all(path.parent().expect("fixture path should have parent"))
+        .expect("fixture directory should be created");
+    path
 }
 
 fn push_u32(out: &mut Vec<u8>, value: u32) {

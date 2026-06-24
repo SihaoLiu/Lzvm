@@ -21,10 +21,18 @@ fn sample_witness_library() -> Vec<u8> {
 }
 
 fn temp_file(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-witness-library-{}-{name}",
-        std::process::id()
-    ))
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-witness-library-{}-{name}",
+            std::process::id()
+        ));
+    fs::create_dir_all(path.parent().expect("fixture path should have parent"))
+        .expect("fixture directory should be created");
+    path
 }
 
 fn write_bytes(path: &Path, bytes: impl AsRef<[u8]>) {
