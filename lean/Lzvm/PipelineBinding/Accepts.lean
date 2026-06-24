@@ -134,19 +134,19 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_co
           /\ system.accepts publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof _requiresExternalSource accepted
-  have auditedSound :=
-    abstract_verifier_sound_with_audited_soundness_obligations assumptions
-  have acceptedSound :=
-    runtime_pipeline_binding_checked_acceptance_verifier_sound_witness
+  have audited :=
+    runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract
       assumptions
       validation
       artifact
       publicInput
       proof
+      _requiresExternalSource
       accepted
   exact
-    And.intro auditedSound.left
-      (And.intro auditedSound.right.left
-        (And.intro auditedSound.right.right acceptedSound))
+    And.intro audited.left
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        audited.right)
 
 end Lzvm

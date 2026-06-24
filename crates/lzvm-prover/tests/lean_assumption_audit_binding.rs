@@ -63,11 +63,33 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
     );
     assert!(
         audit_source.contains("RequiredSemanticAssumptionStatements")
+            && audit_source.contains("(_assumptions : SemanticAssumptions system) : Prop :=")
+            && audit_source.contains("SemanticAssumptions system")
             && audit_source.contains("system.publicInputBound publicInput proof")
             && audit_source.contains("exists trace, system.traceConsistent publicInput proof trace")
             && audit_source.contains("exists constraints, system.constraintsSatisfied constraints trace")
             && audit_source.contains("exists witness, system.witnessMatchesTrace witness trace"),
-        "assumption audit should expose semantic soundness obligations alongside crypto assumptions"
+        "assumption audit should expose semantic soundness obligations through the semantic assumption bundle contract"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "required_semantic_assumptions_public_input_binding",
+        &["required.public_input_binding"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "required_semantic_assumptions_trace_extraction",
+        &["required.trace_extraction"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "required_semantic_assumptions_constraint_satisfaction",
+        &["required.constraint_satisfaction"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "required_semantic_assumptions_witness_extraction",
+        &["required.witness_extraction"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &audit_source,
@@ -194,9 +216,8 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         &soundness_source,
         "abstract_verifier_sound_with_audited_soundness_obligations",
         &[
-            "assumption_bundle_carries_required_crypto_evidence",
+            "abstract_verifier_sound_with_audited_assumptions",
             "assumption_bundle_carries_required_semantic_evidence",
-            "abstract_verifier_sound assumptions",
         ],
     );
 }

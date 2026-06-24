@@ -1105,13 +1105,14 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_soundness_obligation
             system validation artifact publicInput proof requiresExternalSource
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
+  have audited :=
+    runtime_pipeline_binding_checked_acceptance_audited_assumptions
+      assumptions validation artifact publicInput proof requiresExternalSource accepted
   exact
-    And.intro
-      (assumption_bundle_carries_required_crypto_evidence assumptions)
+    And.intro audited.left
       (And.intro
         (assumption_bundle_carries_required_semantic_evidence assumptions)
-        (runtime_pipeline_binding_checked_acceptance_sound
-          assumptions validation artifact publicInput proof requiresExternalSource accepted))
+        audited.right)
 
 theorem runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions
     {system : VerifierModel}

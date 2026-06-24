@@ -295,22 +295,7 @@ theorem assumption_bundle_nary_merkle_compression_collision_free
 def RequiredSemanticAssumptionStatements
     {system : VerifierModel}
     (_assumptions : SemanticAssumptions system) : Prop :=
-  (forall publicInput proof,
-      system.accepts publicInput proof ->
-        system.publicInputBound publicInput proof)
-    /\ (forall publicInput proof,
-      system.accepts publicInput proof ->
-        exists trace, system.traceConsistent publicInput proof trace)
-    /\ (forall publicInput proof trace,
-      system.accepts publicInput proof ->
-        system.traceConsistent publicInput proof trace ->
-          exists constraints, system.constraintsSatisfied constraints trace)
-    /\ (forall publicInput proof trace constraints,
-      system.accepts publicInput proof ->
-        system.publicInputBound publicInput proof ->
-          system.traceConsistent publicInput proof trace ->
-            system.constraintsSatisfied constraints trace ->
-              exists witness, system.witnessMatchesTrace witness trace)
+  SemanticAssumptions system
 
 theorem required_semantic_assumptions_public_input_binding
     {system : VerifierModel}
@@ -319,10 +304,7 @@ theorem required_semantic_assumptions_public_input_binding
     forall publicInput proof,
       system.accepts publicInput proof ->
         system.publicInputBound publicInput proof := by
-  rcases required with
-    ⟨publicInputBinding, _traceExtraction, _constraintSatisfaction,
-      _witnessExtraction⟩
-  exact publicInputBinding
+  exact required.public_input_binding
 
 theorem required_semantic_assumptions_trace_extraction
     {system : VerifierModel}
@@ -331,10 +313,7 @@ theorem required_semantic_assumptions_trace_extraction
     forall publicInput proof,
       system.accepts publicInput proof ->
         exists trace, system.traceConsistent publicInput proof trace := by
-  rcases required with
-    ⟨_publicInputBinding, traceExtraction, _constraintSatisfaction,
-      _witnessExtraction⟩
-  exact traceExtraction
+  exact required.trace_extraction
 
 theorem required_semantic_assumptions_constraint_satisfaction
     {system : VerifierModel}
@@ -344,10 +323,7 @@ theorem required_semantic_assumptions_constraint_satisfaction
       system.accepts publicInput proof ->
         system.traceConsistent publicInput proof trace ->
           exists constraints, system.constraintsSatisfied constraints trace := by
-  rcases required with
-    ⟨_publicInputBinding, _traceExtraction, constraintSatisfaction,
-      _witnessExtraction⟩
-  exact constraintSatisfaction
+  exact required.constraint_satisfaction
 
 theorem required_semantic_assumptions_witness_extraction
     {system : VerifierModel}
@@ -359,25 +335,18 @@ theorem required_semantic_assumptions_witness_extraction
           system.traceConsistent publicInput proof trace ->
             system.constraintsSatisfied constraints trace ->
               exists witness, system.witnessMatchesTrace witness trace := by
-  rcases required with
-    ⟨_publicInputBinding, _traceExtraction, _constraintSatisfaction,
-      witnessExtraction⟩
-  exact witnessExtraction
+  exact required.witness_extraction
 
 theorem semantic_assumptions_carry_required_evidence
     {system : VerifierModel}
     (assumptions : SemanticAssumptions system) :
     RequiredSemanticAssumptionStatements assumptions := by
-  exact
-    And.intro assumptions.public_input_binding
-      (And.intro assumptions.trace_extraction
-        (And.intro assumptions.constraint_satisfaction
-          assumptions.witness_extraction))
+  exact assumptions
 
 theorem assumption_bundle_carries_required_semantic_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system) :
     RequiredSemanticAssumptionStatements assumptions.semantic := by
-  exact semantic_assumptions_carry_required_evidence assumptions.semantic
+  exact assumptions.semantic
 
 end Lzvm

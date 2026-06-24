@@ -987,9 +987,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations",
         &[
-            "assumption_bundle_carries_required_crypto_evidence",
+            "runtime_pipeline_binding_checked_acceptance_audited_assumptions",
             "assumption_bundle_carries_required_semantic_evidence",
-            "runtime_pipeline_binding_checked_acceptance_sound",
         ],
     );
     assert!(
@@ -1024,8 +1023,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
         &[
-            "abstract_verifier_sound_with_audited_soundness_obligations",
-            "runtime_pipeline_binding_checked_acceptance_verifier_sound_witness",
+            "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     assert!(

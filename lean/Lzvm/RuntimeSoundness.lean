@@ -646,13 +646,14 @@ theorem runtime_soundness_checked_acceptance_audited_soundness_obligations
             system validation artifact publicInput proof requiresExternalSource
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked
+  have audited :=
+    runtime_soundness_checked_acceptance_audited_assumptions
+      assumptions validation artifact publicInput proof requiresExternalSource checked
   exact
-    And.intro
-      (assumption_bundle_carries_required_crypto_evidence assumptions)
+    And.intro audited.left
       (And.intro
         (assumption_bundle_carries_required_semantic_evidence assumptions)
-        (runtime_soundness_checked_acceptance_sound
-          assumptions validation artifact publicInput proof requiresExternalSource checked))
+        audited.right)
 
 theorem runtime_soundness_checked_acceptance_audited_core_contract
     {system : VerifierModel}

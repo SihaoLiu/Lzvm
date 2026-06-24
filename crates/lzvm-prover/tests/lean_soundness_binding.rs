@@ -40,4 +40,12 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
             "ProofSystemSound system",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "abstract_verifier_sound_with_audited_soundness_obligations",
+        &[
+            "abstract_verifier_sound_with_audited_assumptions",
+            "assumption_bundle_carries_required_semantic_evidence",
+        ],
+    );
 }

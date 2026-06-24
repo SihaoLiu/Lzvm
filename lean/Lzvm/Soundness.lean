@@ -67,11 +67,12 @@ theorem abstract_verifier_sound_with_audited_soundness_obligations
     RequiredCryptographicAssumptionStatements assumptions.crypto
       /\ RequiredSemanticAssumptionStatements assumptions.semantic
       /\ ProofSystemSound system := by
+  have audited :=
+    abstract_verifier_sound_with_audited_assumptions assumptions
   exact
-    And.intro
-      (assumption_bundle_carries_required_crypto_evidence assumptions)
+    And.intro audited.left
       (And.intro
         (assumption_bundle_carries_required_semantic_evidence assumptions)
-        (abstract_verifier_sound assumptions))
+        audited.right)
 
 end Lzvm

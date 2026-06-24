@@ -432,9 +432,8 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_soundness_checked_acceptance_audited_soundness_obligations",
         &[
-            "assumption_bundle_carries_required_crypto_evidence",
+            "runtime_soundness_checked_acceptance_audited_assumptions",
             "assumption_bundle_carries_required_semantic_evidence",
-            "runtime_soundness_checked_acceptance_sound",
         ],
     );
     assert!(
