@@ -1,0 +1,490 @@
+/-
+Copyright (c) 2026 Sihao Liu. All rights reserved.
+Released under MIT OR Apache-2.0 license.
+Authors: Sihao Liu
+-/
+
+import Lzvm.ProofArtifactBinding
+
+/-!
+Runtime program image cache binding obligations.
+-/
+
+namespace Lzvm
+
+structure RuntimeProgramImageCacheBindingValidation (system : VerifierModel) where
+  proofArtifactBindingValidation : RuntimeProofArtifactBindingValidation system
+  programImageCacheBindingAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  programImageCacheSegmentMatches : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  programImageCachePublicValueMatches : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  programImageCacheSetupHashMatches : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  programImageCacheTreeRootCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  cacheBindingAcceptedImpliesProofArtifactBindingAccepted :
+    forall artifact publicInput proof,
+      programImageCacheBindingAccepted artifact publicInput proof ->
+        proofArtifactBindingValidation.artifactBindingAccepted artifact publicInput proof
+  cacheBindingAcceptedImpliesSegmentMatches :
+    forall artifact publicInput proof,
+      programImageCacheBindingAccepted artifact publicInput proof ->
+        programImageCacheSegmentMatches artifact publicInput proof
+  cacheBindingAcceptedImpliesPublicValueMatches :
+    forall artifact publicInput proof,
+      programImageCacheBindingAccepted artifact publicInput proof ->
+        programImageCachePublicValueMatches artifact publicInput proof
+  cacheBindingAcceptedImpliesSetupHashMatches :
+    forall artifact publicInput proof,
+      programImageCacheBindingAccepted artifact publicInput proof ->
+        programImageCacheSetupHashMatches artifact publicInput proof
+  cacheBindingAcceptedImpliesTreeRootCanonical :
+    forall artifact publicInput proof,
+      programImageCacheBindingAccepted artifact publicInput proof ->
+        programImageCacheTreeRootCanonical artifact publicInput proof
+
+def RuntimeProgramImageCacheBindingEvidence
+    (_system : VerifierModel)
+    (validation : RuntimeProgramImageCacheBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.programImageCacheSegmentMatches artifact publicInput proof
+    /\ validation.programImageCachePublicValueMatches artifact publicInput proof
+    /\ validation.programImageCacheSetupHashMatches artifact publicInput proof
+    /\ validation.programImageCacheTreeRootCanonical artifact publicInput proof
+
+def RuntimeProgramImageCacheBindingCheckedAcceptance
+    (_system : VerifierModel)
+    (validation : RuntimeProgramImageCacheBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.programImageCacheBindingAccepted artifact publicInput proof
+
+def RuntimeProgramImageCacheBindingSoundnessContract
+    (system : VerifierModel)
+    (validation : RuntimeProgramImageCacheBindingValidation system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  RuntimeProgramImageCacheBindingEvidence
+      system
+      validation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeProofArtifactBindingEvidence
+      system
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeArtifactEvidence
+      system
+      validation.proofArtifactBindingValidation.runtimeValidation
+      artifact
+      publicInput
+      proof
+    /\ system.accepts publicInput proof
+    /\ validation.proofArtifactBindingValidation.proofContainerCanonical
+      artifact
+      publicInput
+      proof
+    /\ validation.proofArtifactBindingValidation.proofMetadataCanonical
+      artifact
+      publicInput
+      proof
+    /\ validation.proofArtifactBindingValidation.proofSegmentsPresent
+      artifact
+      publicInput
+      proof
+    /\ validation.proofArtifactBindingValidation.proofSegmentPayloadsNonempty
+      artifact
+      publicInput
+      proof
+    /\ validation.proofArtifactBindingValidation.proofSegmentIdsAllowed
+      artifact
+      publicInput
+      proof
+    /\ validation.proofArtifactBindingValidation.proofSegmentIdsUnique
+      artifact
+      publicInput
+      proof
+    /\ RuntimeVerifierCoreContract system publicInput proof
+    /\ SoundWitness system publicInput proof
+
+theorem runtime_program_image_cache_binding_checked_acceptance_evidence
+    {system : VerifierModel}
+    (validation : RuntimeProgramImageCacheBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProgramImageCacheBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    ⟨validation.cacheBindingAcceptedImpliesSegmentMatches
+        artifact
+        publicInput
+        proof
+        accepted,
+      validation.cacheBindingAcceptedImpliesPublicValueMatches
+        artifact
+        publicInput
+        proof
+        accepted,
+      validation.cacheBindingAcceptedImpliesSetupHashMatches
+        artifact
+        publicInput
+        proof
+        accepted,
+      validation.cacheBindingAcceptedImpliesTreeRootCanonical
+        artifact
+        publicInput
+        proof
+        accepted⟩
+
+theorem runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+    {system : VerifierModel}
+    (validation : RuntimeProgramImageCacheBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation.proofArtifactBindingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.cacheBindingAcceptedImpliesProofArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_program_image_cache_binding_checked_acceptance_artifact_evidence_contract
+    {system : VerifierModel}
+    (validation : RuntimeProgramImageCacheBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProgramImageCacheBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingEvidence
+            system
+            validation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have cacheEvidence :=
+    runtime_program_image_cache_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactAccepted :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactEvidence :=
+    runtime_proof_artifact_binding_checked_acceptance_evidence
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have runtimeEvidence :=
+    runtime_proof_artifact_binding_evidence_implies_runtime_evidence
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactEvidence
+  exact
+    And.intro cacheEvidence
+      (And.intro artifactEvidence runtimeEvidence)
+
+theorem runtime_program_image_cache_binding_checked_acceptance_artifact_wellformed_contract
+    {system : VerifierModel}
+    (validation : RuntimeProgramImageCacheBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.proofArtifactBindingValidation.proofContainerCanonical artifact publicInput proof
+          /\ validation.proofArtifactBindingValidation.proofMetadataCanonical
+            artifact
+            publicInput
+            proof
+          /\ validation.proofArtifactBindingValidation.proofSegmentsPresent
+            artifact
+            publicInput
+            proof
+          /\ validation.proofArtifactBindingValidation.proofSegmentPayloadsNonempty
+            artifact
+            publicInput
+            proof
+          /\ validation.proofArtifactBindingValidation.proofSegmentIdsAllowed
+            artifact
+            publicInput
+            proof
+          /\ validation.proofArtifactBindingValidation.proofSegmentIdsUnique
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have containerCanonical :=
+    runtime_proof_artifact_binding_checked_acceptance_container_canonical
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have metadataCanonical :=
+    runtime_proof_artifact_binding_checked_acceptance_metadata_canonical
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have segmentsPresent :=
+    runtime_proof_artifact_binding_checked_acceptance_segments_present
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have segmentPayloadsNonempty :=
+    runtime_proof_artifact_binding_checked_acceptance_segment_payloads_nonempty
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have segmentIdsAllowed :=
+    runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have segmentIdsUnique :=
+    runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  exact
+    ⟨containerCanonical,
+      metadataCanonical,
+      segmentsPresent,
+      segmentPayloadsNonempty,
+      segmentIdsAllowed,
+      segmentIdsUnique⟩
+
+theorem runtime_program_image_cache_binding_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProgramImageCacheBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProgramImageCacheBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingEvidence
+            system
+            validation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have evidenceContract :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_evidence_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactAccepted :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactSound :=
+    runtime_proof_artifact_binding_checked_acceptance_sound
+      assumptions
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  exact
+    And.intro evidenceContract.left
+      (And.intro evidenceContract.right.left
+        (And.intro evidenceContract.right.right artifactSound.right.right))
+
+theorem runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProgramImageCacheBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+
+theorem runtime_program_image_cache_binding_checked_acceptance_soundness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProgramImageCacheBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProgramImageCacheBindingSoundnessContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_program_image_cache_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have wellformed :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_wellformed_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have core :=
+    runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactAccepted :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have runtimeAccepted :=
+    runtime_proof_artifact_binding_checked_acceptance_runtime_accepted
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have verifierAccepts :=
+    runtime_artifact_checked_acceptance_implies_verifier_accepts
+      validation.proofArtifactBindingValidation.runtimeValidation
+      artifact
+      publicInput
+      proof
+      runtimeAccepted
+  exact
+    ⟨sound.left,
+      sound.right.left,
+      sound.right.right.left,
+      verifierAccepts,
+      wellformed.left,
+      wellformed.right.left,
+      wellformed.right.right.left,
+      wellformed.right.right.right.left,
+      wellformed.right.right.right.right.left,
+      wellformed.right.right.right.right.right,
+      core,
+      sound.right.right.right⟩
+
+end Lzvm

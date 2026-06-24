@@ -16,6 +16,7 @@ import Lzvm.ExternalSource
 import Lzvm.MerklePathSoundness
 import Lzvm.Model
 import Lzvm.ProofArtifactBinding
+import Lzvm.ProgramImageCacheBinding
 import Lzvm.OpeningValidation
 import Lzvm.OpeningSegmentBinding
 import Lzvm.PipelineBinding
