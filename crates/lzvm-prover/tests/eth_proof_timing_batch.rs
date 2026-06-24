@@ -295,8 +295,22 @@ fn eth_proof_timing_batch_target_thresholds_follow_selected_suite() {
         "rerun cap should be passed to the runner: {stdout}"
     );
     assert!(
+        stdout.contains("suite=small\n")
+            && stdout.contains("selected=small\n")
+            && stdout.contains("runs=3\n")
+            && stdout.contains("max_runs=5\n")
+            && stdout.contains("verify_proof=true\n")
+            && stdout.contains("small_mode=combined\n")
+            && stdout.contains("small_target_max_avg_s=10.0\n"),
+        "dry-run metadata should report the effective target configuration: {stdout}"
+    );
+    assert!(
         !stdout.contains("--large-max-avg-s"),
         "large target threshold should not be passed when only small is selected: {stdout}"
+    );
+    assert!(
+        !stdout.contains("large_target_max_avg_s="),
+        "dry-run metadata should only report selected suites: {stdout}"
     );
 }
 

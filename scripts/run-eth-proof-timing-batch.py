@@ -598,6 +598,25 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
     return command
 
 
+def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
+    selected = selected_envs(args, root)
+    selected_labels = [config.label for config, _mode in selected]
+    lines = [
+        f"suite={args.suite}",
+        f"selected={','.join(selected_labels)}",
+        f"runs={args.runs}",
+        f"max_runs={args.max_runs if args.max_runs is not None else args.runs}",
+        f"verify_proof={str(not args.skip_verify_proof).lower()}",
+    ]
+    for config, mode in selected:
+        max_avg_s = target_max_avg_s(args, config.label)
+        lines.append(f"{config.label}_mode={mode}")
+        lines.append(
+            f"{config.label}_target_max_avg_s={max_avg_s if max_avg_s is not None else ''}"
+        )
+    return lines
+
+
 def run(args: argparse.Namespace) -> int:
     root = workspace_root()
     if args.max_runs is not None and args.max_runs < args.runs:
@@ -619,6 +638,8 @@ def run(args: argparse.Namespace) -> int:
     command = runner_command(args, root)
     if args.dry_run:
         print("runner_command=" + shlex.join(command))
+        for line in dry_run_summary_lines(args, root):
+            print(line)
         for index, part in enumerate(command):
             if part in ("--small-command", "--large-command") and index + 1 < len(command):
                 print(f"{part[2:].replace('-', '_')}={command[index + 1]}")
