@@ -1080,6 +1080,24 @@ impl ProveWitnessGuestPcTraceTiming {
         }
     }
 
+    fn replace_segment_commit_memory_timing(
+        &mut self,
+        memory_timing: GuestPcTraceSegmentCommitMemoryTiming,
+    ) {
+        self.guest_segment_commit_cuda_memory_total_byte_count =
+            memory_timing.cuda_memory_total_byte_count;
+        self.guest_segment_commit_cuda_memory_initial_free_byte_count =
+            memory_timing.cuda_memory_initial_free_byte_count;
+        self.guest_segment_commit_cuda_memory_effective_free_byte_count =
+            memory_timing.cuda_memory_effective_free_byte_count;
+        self.guest_segment_commit_cuda_memory_min_free_byte_count =
+            memory_timing.cuda_memory_min_free_byte_count;
+        self.guest_segment_commit_cuda_allocator_initial_cached_byte_count =
+            memory_timing.cuda_allocator_initial_cached_byte_count;
+        self.guest_segment_commit_cuda_allocator_effective_cached_byte_count =
+            memory_timing.cuda_allocator_effective_cached_byte_count;
+    }
+
     pub fn segment_count(&self) -> usize {
         self.segment_count
     }
@@ -3863,6 +3881,10 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
         };
         let segment_commit_attempt_elapsed = segment_commit_attempt_started.elapsed();
         segment_commit_attempt_duration += segment_commit_attempt_elapsed;
+        if collect_segment_commit_memory_timing {
+            segment_commit_memory_timing
+                .observe_attempt_end(sample_guest_pc_segment_commit_cuda_memory());
+        }
         match result {
             Ok(outputs) => {
                 if let (Some(observer), Some(mut timing)) =
@@ -3871,6 +3893,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
                     timing.guest_segment_commit_attempt_duration = segment_commit_attempt_duration;
                     timing.guest_segment_commit_oom_retry_duration =
                         segment_commit_oom_retry_duration;
+                    timing.replace_segment_commit_memory_timing(segment_commit_memory_timing);
                     observer(timing);
                 }
                 return Ok(outputs);
@@ -4742,27 +4765,41 @@ struct GuestPcTraceSegmentCommitMemoryTiming {
     cuda_memory_min_free_byte_count: usize,
     cuda_allocator_initial_cached_byte_count: usize,
     cuda_allocator_effective_cached_byte_count: usize,
+    cuda_memory_initial_observed: bool,
+    cuda_memory_min_observed: bool,
 }
 
 impl GuestPcTraceSegmentCommitMemoryTiming {
     fn observe_attempt_start(&mut self, sample: GuestPcTraceSegmentCommitCudaMemorySample) {
+        if sample.cuda_memory_total_byte_count > 0 && !self.cuda_memory_initial_observed {
+            self.cuda_memory_initial_free_byte_count = sample.cuda_memory_free_byte_count;
+            self.cuda_allocator_initial_cached_byte_count = sample.cuda_allocator_cached_byte_count;
+            self.cuda_memory_initial_observed = true;
+        }
+        self.observe_sample(sample);
+    }
+
+    fn observe_attempt_end(&mut self, sample: GuestPcTraceSegmentCommitCudaMemorySample) {
+        self.observe_sample(sample);
+    }
+
+    fn observe_sample(&mut self, sample: GuestPcTraceSegmentCommitCudaMemorySample) {
+        if sample.cuda_memory_total_byte_count == 0 {
+            return;
+        }
         if sample.cuda_memory_total_byte_count > 0 {
             self.cuda_memory_total_byte_count = sample.cuda_memory_total_byte_count;
         }
-        if self.cuda_memory_initial_free_byte_count == 0 {
-            self.cuda_memory_initial_free_byte_count = sample.cuda_memory_free_byte_count;
-            self.cuda_allocator_initial_cached_byte_count = sample.cuda_allocator_cached_byte_count;
-        }
         self.cuda_memory_effective_free_byte_count = sample.cuda_memory_free_byte_count;
         self.cuda_allocator_effective_cached_byte_count = sample.cuda_allocator_cached_byte_count;
-        self.cuda_memory_min_free_byte_count = match (
-            self.cuda_memory_min_free_byte_count,
-            sample.cuda_memory_free_byte_count,
-        ) {
-            (0, free) => free,
-            (min_free, 0) => min_free,
-            (min_free, free) => min_free.min(free),
-        };
+        if self.cuda_memory_min_observed {
+            self.cuda_memory_min_free_byte_count = self
+                .cuda_memory_min_free_byte_count
+                .min(sample.cuda_memory_free_byte_count);
+        } else {
+            self.cuda_memory_min_free_byte_count = sample.cuda_memory_free_byte_count;
+            self.cuda_memory_min_observed = true;
+        }
     }
 }
 
@@ -7690,28 +7727,68 @@ mod tests {
     fn segment_commit_memory_timing_tracks_retry_attempt_headroom() {
         let mut timing = GuestPcTraceSegmentCommitMemoryTiming::default();
 
+        timing.observe_attempt_start(GuestPcTraceSegmentCommitCudaMemorySample::default());
+        timing.observe_attempt_end(GuestPcTraceSegmentCommitCudaMemorySample::default());
         timing.observe_attempt_start(GuestPcTraceSegmentCommitCudaMemorySample {
             cuda_memory_total_byte_count: 1000,
             cuda_memory_free_byte_count: 700,
             cuda_allocator_cached_byte_count: 120,
+        });
+        timing.observe_attempt_end(GuestPcTraceSegmentCommitCudaMemorySample {
+            cuda_memory_total_byte_count: 1000,
+            cuda_memory_free_byte_count: 450,
+            cuda_allocator_cached_byte_count: 80,
         });
         timing.observe_attempt_start(GuestPcTraceSegmentCommitCudaMemorySample {
             cuda_memory_total_byte_count: 1000,
             cuda_memory_free_byte_count: 500,
             cuda_allocator_cached_byte_count: 40,
         });
+        timing.observe_attempt_end(GuestPcTraceSegmentCommitCudaMemorySample {
+            cuda_memory_total_byte_count: 1000,
+            cuda_memory_free_byte_count: 300,
+            cuda_allocator_cached_byte_count: 24,
+        });
         timing.observe_attempt_start(GuestPcTraceSegmentCommitCudaMemorySample {
             cuda_memory_total_byte_count: 1000,
             cuda_memory_free_byte_count: 650,
             cuda_allocator_cached_byte_count: 16,
         });
+        timing.observe_attempt_end(GuestPcTraceSegmentCommitCudaMemorySample {
+            cuda_memory_total_byte_count: 1000,
+            cuda_memory_free_byte_count: 600,
+            cuda_allocator_cached_byte_count: 8,
+        });
 
         assert_eq!(timing.cuda_memory_total_byte_count, 1000);
         assert_eq!(timing.cuda_memory_initial_free_byte_count, 700);
-        assert_eq!(timing.cuda_memory_effective_free_byte_count, 650);
-        assert_eq!(timing.cuda_memory_min_free_byte_count, 500);
+        assert_eq!(timing.cuda_memory_effective_free_byte_count, 600);
+        assert_eq!(timing.cuda_memory_min_free_byte_count, 300);
         assert_eq!(timing.cuda_allocator_initial_cached_byte_count, 120);
-        assert_eq!(timing.cuda_allocator_effective_cached_byte_count, 16);
+        assert_eq!(timing.cuda_allocator_effective_cached_byte_count, 8);
+    }
+
+    #[test]
+    fn segment_commit_memory_timing_keeps_zero_initial_headroom() {
+        let mut timing = GuestPcTraceSegmentCommitMemoryTiming::default();
+
+        timing.observe_attempt_start(GuestPcTraceSegmentCommitCudaMemorySample {
+            cuda_memory_total_byte_count: 1000,
+            cuda_memory_free_byte_count: 0,
+            cuda_allocator_cached_byte_count: 0,
+        });
+        timing.observe_attempt_end(GuestPcTraceSegmentCommitCudaMemorySample {
+            cuda_memory_total_byte_count: 1000,
+            cuda_memory_free_byte_count: 200,
+            cuda_allocator_cached_byte_count: 24,
+        });
+
+        assert_eq!(timing.cuda_memory_total_byte_count, 1000);
+        assert_eq!(timing.cuda_memory_initial_free_byte_count, 0);
+        assert_eq!(timing.cuda_memory_effective_free_byte_count, 200);
+        assert_eq!(timing.cuda_memory_min_free_byte_count, 0);
+        assert_eq!(timing.cuda_allocator_initial_cached_byte_count, 0);
+        assert_eq!(timing.cuda_allocator_effective_cached_byte_count, 24);
     }
 
     #[test]

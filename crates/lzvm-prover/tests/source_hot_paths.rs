@@ -4297,6 +4297,7 @@ fn guest_pc_trace_timing_reports_segment_commit_cuda_memory_headroom() {
     assert!(
         run_body.contains("sample_guest_pc_segment_commit_cuda_memory()")
             && run_body.contains("observe_attempt_start")
+            && run_body.contains("observe_attempt_end")
             && run_body.contains("segment_commit_attempt_duration")
             && run_body.contains("segment_commit_oom_retry_duration")
             && run_body.contains("segment_commit_memory_timing"),
