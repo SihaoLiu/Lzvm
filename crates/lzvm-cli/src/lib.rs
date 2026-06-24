@@ -40,6 +40,8 @@ pub use prove_witness::{build_witness_proof_artifact, build_witness_proof_core_a
 
 pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
+        ["--help"] | ["-h"] | ["help"] => write_top_level_usage(stdout, 0),
+        [] => write_top_level_usage(stderr, 1),
         ["eth", "block-summary", rest @ ..] => eth_block_summary::run(rest, stdout, stderr),
         ["eth", "block-input-summary", rest @ ..] => {
             eth_block_input::run_summary(rest, stdout, stderr)
@@ -423,7 +425,7 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             )
         }
         ["setup", "write-const-native", ..] => write_const_native_usage(stderr),
-        _ => write_validate_usage(stderr),
+        _ => write_top_level_usage(stderr, 1),
     }
 }
 
@@ -558,6 +560,27 @@ fn write_setup_source_companion_status(
         "source_program_archive_bytes={}",
         report.source_program_archive_bytes
     );
+}
+
+fn write_top_level_usage(writer: &mut dyn Write, code: i32) -> i32 {
+    let _ = writeln!(writer, "usage: lzvm <group> <command> [args]");
+    let _ = writeln!(writer);
+    let _ = writeln!(writer, "groups:");
+    let _ = writeln!(writer, "  eth     block input and public input helpers");
+    let _ = writeln!(writer, "  pil     PIL archive, summary, and graph helpers");
+    let _ = writeln!(
+        writer,
+        "  prove   plan, inputs, witness, and schedule commands"
+    );
+    let _ = writeln!(
+        writer,
+        "  setup   validate, fingerprint, and setup artifact writers"
+    );
+    let _ = writeln!(
+        writer,
+        "  verify  setup preflight, proof, and contribution checks"
+    );
+    code
 }
 
 fn write_pcs_setup_plan(
