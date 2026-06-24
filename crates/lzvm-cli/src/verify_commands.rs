@@ -707,6 +707,12 @@ fn verify_setup_validation(
         &public_report.challenge_values_segment_byte_counts,
         &public_report.challenge_values_value_counts,
     );
+    write_trace_constraint_summary(
+        stdout,
+        public_report.trace_constraint_segment_count,
+        &public_report.trace_constraint_segment_byte_counts,
+        &public_report.trace_constraint_units,
+    );
     if public_report.eth_block_input_count > 0 {
         let _ = writeln!(
             stdout,

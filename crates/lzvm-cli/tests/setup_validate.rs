@@ -12291,7 +12291,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(12, &public_values_path)
+        expected_setup_verify_stdout_with_trace_units(12, &public_values_path, 4)
     );
     assert!(verify_stderr.is_empty());
 
@@ -12318,7 +12318,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     );
     assert_eq!(
         String::from_utf8(proof_verify_stdout).expect("stdout should be utf-8"),
-        expected_proof_verify_stdout(12, &public_values_path)
+        expected_proof_verify_stdout_with_trace_units(12, &public_values_path, 4)
     );
     assert!(proof_verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -12450,7 +12450,7 @@ fn runs_prove_witness_for_aggregate_with_evaluation_values_segment() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(12, &public_values_path)
+        expected_setup_verify_stdout_with_trace_units(12, &public_values_path, 4)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -12616,7 +12616,7 @@ fn runs_prove_witness_for_aggregate_fri_with_unit_values_segment() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(13, &public_values_path)
+        expected_setup_verify_stdout_with_trace_units(13, &public_values_path, 4)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -13968,8 +13968,9 @@ fn runs_setup_aware_verify_preflight() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits=4\nsegments=6\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\n",
-            format_hash(&public_values_hash)
+            "status=ok\nunits=4\nsegments=6\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\n{}",
+            format_hash(&public_values_hash),
+            setup_trace_constraint_summary()
         )
     );
     assert!(stderr.is_empty());
@@ -14039,8 +14040,9 @@ fn runs_setup_aware_verify_preflight_with_source_generated_key_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits=4\nsegments=6\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=0\nsource_program_archive=present\nsource_program_archive_sources=1\nsource_program_archive_edges=0\n",
-            format_hash(&public_values_hash)
+            "status=ok\nunits=4\nsegments=6\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=0\nsource_program_archive=present\nsource_program_archive_sources=1\nsource_program_archive_edges=0\n{}",
+            format_hash(&public_values_hash),
+            setup_trace_constraint_summary()
         )
     );
 }
@@ -19395,7 +19397,29 @@ fn format_optional_u256(value: Option<&[u8; 32]>) -> String {
     }
 }
 
-fn expected_setup_verify_stdout(segment_count: usize, public_values_path: &Path) -> String {
+fn setup_trace_constraint_summary() -> String {
+    setup_trace_constraint_summary_with_units(1)
+}
+
+fn setup_trace_constraint_summary_with_units(unit_count: usize) -> String {
+    let mut summary = format!(
+        "trace_constraint_segments=1\n\
+         trace_constraint_segment_bytes={}\n\
+         trace_constraint_units={unit_count}\n\
+         trace_constraint_semantic_evidence_units={unit_count}\n\
+         trace_constraint_semantic_evidence_complete=1\n",
+        12 + unit_count * 28
+    );
+    for unit_index in 0..unit_count {
+        summary.push_str(&format!(
+            "trace_constraint_unit={unit_index},0,2,2,0\n\
+             trace_constraint_unit_flags=1,1,1,1\n"
+        ));
+    }
+    summary
+}
+
+fn expected_setup_verify_base_stdout(segment_count: usize, public_values_path: &Path) -> String {
     let bytes = fs::read(public_values_path).expect("public values should read");
     let public_values = parse_public_values(&bytes).expect("public values should parse");
     let public_values_hash = public_values_digest(&public_values).expect("digest should compute");
@@ -19411,10 +19435,33 @@ fn expected_setup_verify_stdout(segment_count: usize, public_values_path: &Path)
     )
 }
 
+fn expected_setup_verify_stdout(segment_count: usize, public_values_path: &Path) -> String {
+    expected_setup_verify_stdout_with_trace_units(segment_count, public_values_path, 1)
+}
+
+fn expected_setup_verify_stdout_with_trace_units(
+    segment_count: usize,
+    public_values_path: &Path,
+    trace_unit_count: usize,
+) -> String {
+    let mut stdout = expected_setup_verify_base_stdout(segment_count, public_values_path);
+    stdout.push_str(&setup_trace_constraint_summary_with_units(trace_unit_count));
+    stdout
+}
+
 fn expected_proof_verify_stdout(segment_count: usize, public_values_path: &Path) -> String {
-    let mut stdout = expected_setup_verify_stdout(segment_count, public_values_path);
+    expected_proof_verify_stdout_with_trace_units(segment_count, public_values_path, 1)
+}
+
+fn expected_proof_verify_stdout_with_trace_units(
+    segment_count: usize,
+    public_values_path: &Path,
+    trace_unit_count: usize,
+) -> String {
+    let mut stdout = expected_setup_verify_base_stdout(segment_count, public_values_path);
     stdout.push_str("artifact_public_input_match=ok\n");
     stdout.push_str("artifact_proof_match=ok\n");
     stdout.push_str("proof_artifact_match=ok\n");
+    stdout.push_str(&setup_trace_constraint_summary_with_units(trace_unit_count));
     stdout
 }
