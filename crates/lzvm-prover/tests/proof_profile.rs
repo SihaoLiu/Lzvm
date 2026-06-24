@@ -29,6 +29,7 @@ fn proof_profile_self_test_runs() {
             && stdout.contains("profile_tmp_dir=temp/proof-profile-self-test-")
             && stdout.contains("profile_target_tmp_dir=temp/proof-profile-self-test-")
             && stdout.contains("profile_log=temp/proof-profile-self-test-")
+            && stdout.contains("profile_json_output=temp/proof-profile-self-test-")
             && stdout.contains("nsys_exported_sqlite=temp/proof-profile-self-test-")
             && stdout.contains("ncu_csv=temp/proof-profile-self-test-")
             && stdout.contains("ncu_kernel_summary=temp/proof-profile-self-test-")
@@ -105,6 +106,8 @@ fn proof_profile_nsys_dry_run_prints_summary_commands() {
             && stdout.contains("small-proof.profile.stderr")
             && stdout.contains("profile_log=temp/proof-profile-nsys-dry-run-")
             && stdout.contains("small-proof.profile.log")
+            && stdout.contains("profile_json_output=temp/proof-profile-nsys-dry-run-")
+            && stdout.contains("small-proof.profile.json")
             && stdout.contains("proof_timing_summary_output=temp/proof-profile-nsys-dry-run-")
             && stdout.contains("small-proof.proof-timing-summary.csv"),
         "dry-run should report captured profile output paths: {stdout}"
@@ -188,6 +191,8 @@ fn proof_profile_ncu_dry_run_prints_csv_summary_command() {
             && stdout.contains("kernel-metrics.profile.stderr")
             && stdout.contains("profile_log=temp/proof-profile-ncu-dry-run-")
             && stdout.contains("kernel-metrics.profile.log")
+            && stdout.contains("profile_json_output=temp/proof-profile-ncu-dry-run-")
+            && stdout.contains("kernel-metrics.profile.json")
             && stdout.contains("proof_timing_summary_output=temp/proof-profile-ncu-dry-run-")
             && stdout.contains("kernel-metrics.proof-timing-summary.csv"),
         "dry-run should report captured profile output paths: {stdout}"

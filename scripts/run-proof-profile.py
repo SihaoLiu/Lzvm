@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+import json
 import os
 import re
 import shlex
@@ -96,6 +97,7 @@ def common_outputs(output_dir: Path, name: str) -> dict[str, Path]:
         "profile_stdout": prefixed_path(output_dir, name, ".profile.stdout"),
         "profile_stderr": prefixed_path(output_dir, name, ".profile.stderr"),
         "profile_log": prefixed_path(output_dir, name, ".profile.log"),
+        "profile_json": prefixed_path(output_dir, name, ".profile.json"),
         "proof_timing_summary": prefixed_path(
             output_dir,
             name,
@@ -199,6 +201,7 @@ def print_common_outputs(outputs: dict[str, Path], root: Path) -> None:
     print(f"profile_stdout={display_path_for_shell(outputs['profile_stdout'], root)}")
     print(f"profile_stderr={display_path_for_shell(outputs['profile_stderr'], root)}")
     print(f"profile_log={display_path_for_shell(outputs['profile_log'], root)}")
+    print(f"profile_json_output={display_path_for_shell(outputs['profile_json'], root)}")
     print(
         "proof_timing_summary_output="
         f"{display_path_for_shell(outputs['proof_timing_summary'], root)}"
@@ -372,6 +375,51 @@ def run_summary(
         )
 
 
+def profile_json_outputs(outputs: dict[str, Path], root: Path) -> dict[str, str]:
+    return {
+        key: display_path_for_shell(path, root)
+        for key, path in sorted(outputs.items())
+        if isinstance(path, Path)
+    }
+
+
+def write_profile_json(
+    args: argparse.Namespace,
+    root: Path,
+    cwd: Path,
+    profile_command: list[str],
+    command: list[str],
+    outputs: dict[str, Path],
+    status: str,
+    profile_exit_code: int | None = None,
+    proof_timing_summary_written: bool = False,
+    tool_summary_paths: list[Path] | None = None,
+    error: str | None = None,
+) -> None:
+    payload = {
+        "created_at": datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "tool": args.tool,
+        "name": args.name,
+        "status": status,
+        "profile_exit_code": profile_exit_code,
+        "cwd": display_path_for_shell(cwd, root),
+        "command": command,
+        "profile_command": profile_command,
+        "summarize": args.summarize,
+        "outputs": profile_json_outputs(outputs, root),
+        "proof_timing_summary_written": proof_timing_summary_written,
+        "tool_summaries": [
+            display_path_for_shell(path, root) for path in (tool_summary_paths or [])
+        ],
+    }
+    if error is not None:
+        payload["error"] = error
+    outputs["profile_json"].write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def export_nsys_sqlite(args: argparse.Namespace, root: Path, outputs: dict[str, Path]) -> None:
     command = build_nsys_export_command(args, outputs)
     code = run_captured(
@@ -480,6 +528,15 @@ def run_profile(args: argparse.Namespace) -> int:
     if args.dry_run:
         return 0
     prepare_output_dirs(output_dir, outputs)
+    write_profile_json(
+        args,
+        root,
+        cwd,
+        profile_command,
+        command,
+        outputs,
+        "running",
+    )
     profile_code = run_profile_command(
         profile_command,
         cwd=cwd,
@@ -487,15 +544,34 @@ def run_profile(args: argparse.Namespace) -> int:
         outputs=outputs,
     )
     if profile_code != 0:
+        write_profile_json(
+            args,
+            root,
+            cwd,
+            profile_command,
+            command,
+            outputs,
+            "profile_failed",
+            profile_exit_code=profile_code,
+        )
         return profile_code
+    proof_timing_summary_written = False
+    tool_summary_paths: list[Path] = []
     if args.summarize:
-        summarize_proof_timing(root, outputs)
+        proof_timing_summary_written = summarize_proof_timing(root, outputs)
     if args.tool == "nsys" and not args.skip_nsys_export:
         try:
             export_nsys_sqlite(args, root, outputs)
             print(f"nsys_exported_sqlite={display_path_for_shell(outputs['sqlite'], root)}")
             if args.summarize:
                 summarize_nsys(root, outputs)
+                tool_summary_paths.extend(
+                    [
+                        outputs["kernel_summary"],
+                        outputs["sync_summary"],
+                        outputs["copy_summary"],
+                    ]
+                )
                 print(
                     "nsys_kernel_summary="
                     f"{display_path_for_shell(outputs['kernel_summary'], root)}"
@@ -506,34 +582,79 @@ def run_profile(args: argparse.Namespace) -> int:
                 print(
                     f"nsys_copy_summary={display_path_for_shell(outputs['copy_summary'], root)}"
                 )
-                summarize_proof_timing(
-                    root,
-                    outputs,
-                    [
-                        "--nsys-kernel-summary",
-                        str(outputs["kernel_summary"]),
-                        "--nsys-copy-summary",
-                        str(outputs["copy_summary"]),
-                    ],
+                proof_timing_summary_written = (
+                    summarize_proof_timing(
+                        root,
+                        outputs,
+                        [
+                            "--nsys-kernel-summary",
+                            str(outputs["kernel_summary"]),
+                            "--nsys-copy-summary",
+                            str(outputs["copy_summary"]),
+                        ],
+                    )
+                    or proof_timing_summary_written
                 )
-        except SystemExit:
+        except SystemExit as error:
             if args.summarize:
                 remove_stale_summary(outputs["proof_timing_summary"])
+            write_profile_json(
+                args,
+                root,
+                cwd,
+                profile_command,
+                command,
+                outputs,
+                "summary_failed",
+                profile_exit_code=profile_code,
+                proof_timing_summary_written=False,
+                tool_summary_paths=tool_summary_paths,
+                error=str(error),
+            )
             raise
     elif args.tool == "ncu" and args.summarize:
         try:
             summarize_ncu(root, outputs)
+            tool_summary_paths.append(outputs["kernel_summary"])
             print(
                 f"ncu_kernel_summary={display_path_for_shell(outputs['kernel_summary'], root)}"
             )
-            summarize_proof_timing(
-                root,
-                outputs,
-                ["--ncu-kernel-summary", str(outputs["kernel_summary"])],
+            proof_timing_summary_written = (
+                summarize_proof_timing(
+                    root,
+                    outputs,
+                    ["--ncu-kernel-summary", str(outputs["kernel_summary"])],
+                )
+                or proof_timing_summary_written
             )
-        except SystemExit:
+        except SystemExit as error:
             remove_stale_summary(outputs["proof_timing_summary"])
+            write_profile_json(
+                args,
+                root,
+                cwd,
+                profile_command,
+                command,
+                outputs,
+                "summary_failed",
+                profile_exit_code=profile_code,
+                proof_timing_summary_written=False,
+                tool_summary_paths=tool_summary_paths,
+                error=str(error),
+            )
             raise
+    write_profile_json(
+        args,
+        root,
+        cwd,
+        profile_command,
+        command,
+        outputs,
+        "ok",
+        profile_exit_code=profile_code,
+        proof_timing_summary_written=proof_timing_summary_written,
+        tool_summary_paths=tool_summary_paths,
+    )
     return 0
 
 
@@ -660,6 +781,23 @@ def self_test() -> None:
             raise SystemExit("fake nsys did not receive managed TMPDIR")
         if f"TMPDIR={work_dir / 'profiles' / 'self-test.target.tmp'}" not in nsys_argv:
             raise SystemExit("fake nsys did not wrap target TMPDIR")
+        nsys_json = json.loads(
+            (work_dir / "profiles" / "self-test.profile.json").read_text(
+                encoding="utf-8",
+            )
+        )
+        if nsys_json.get("status") != "ok" or nsys_json.get("profile_exit_code") != 0:
+            raise SystemExit("fake nsys profile json did not record success")
+        if nsys_json.get("tool") != "nsys" or nsys_json.get("name") != "self-test":
+            raise SystemExit("fake nsys profile json did not record identity")
+        if nsys_json.get("proof_timing_summary_written") is not False:
+            raise SystemExit("fake nsys profile json recorded an unexpected timing summary")
+        if nsys_json.get("tool_summaries") != []:
+            raise SystemExit("fake nsys profile json recorded unexpected tool summaries")
+        if not nsys_json.get("outputs", {}).get("profile_json", "").endswith(
+            "self-test.profile.json"
+        ):
+            raise SystemExit("fake nsys profile json did not record its own path")
 
         ncu_base = dict(base)
         ncu_base["name"] = "self-test-ncu"
@@ -694,6 +832,22 @@ def self_test() -> None:
             != "duration_only_missing_throughput"
         ):
             raise SystemExit("fake ncu proof timing summary missing NCU metric hint")
+        ncu_json = json.loads(
+            (work_dir / "profiles" / "self-test-ncu.profile.json").read_text(
+                encoding="utf-8",
+            )
+        )
+        if ncu_json.get("status") != "ok" or ncu_json.get("profile_exit_code") != 0:
+            raise SystemExit("fake ncu profile json did not record success")
+        if ncu_json.get("tool") != "ncu" or ncu_json.get("name") != "self-test-ncu":
+            raise SystemExit("fake ncu profile json did not record identity")
+        if ncu_json.get("proof_timing_summary_written") is not True:
+            raise SystemExit("fake ncu profile json did not record the timing summary")
+        if not any(
+            path.endswith("self-test-ncu.ncu-kernel-summary.txt")
+            for path in ncu_json.get("tool_summaries", [])
+        ):
+            raise SystemExit("fake ncu profile json missing kernel summary path")
         ncu_argv = (work_dir / "fake-ncu.argv").read_text(encoding="utf-8")
         if f"tmpdir={work_dir / 'profiles' / 'self-test-ncu.tmp'}" not in ncu_argv:
             raise SystemExit("fake ncu did not receive managed TMPDIR")
@@ -726,6 +880,17 @@ def self_test() -> None:
             raise SystemExit("fake ncu missing-key profile failed")
         if stale_summary.exists() or stale_stderr.exists():
             raise SystemExit("fake ncu missing-key proof timing summary was not removed")
+        missing_json = json.loads(
+            (
+                work_dir
+                / "profiles"
+                / "self-test-ncu-missing-keys.profile.json"
+            ).read_text(encoding="utf-8")
+        )
+        if missing_json.get("status") != "ok":
+            raise SystemExit("fake ncu missing-key profile json did not record success")
+        if missing_json.get("proof_timing_summary_written") is not False:
+            raise SystemExit("fake ncu missing-key profile json recorded a summary")
 
         failed_summary_base = dict(base)
         failed_summary_base["name"] = "self-test-ncu-summary-failure"
@@ -752,6 +917,41 @@ def self_test() -> None:
             raise SystemExit("fake ncu summary failure unexpectedly passed")
         if failed_summary.exists() or failed_summary_stderr.exists():
             raise SystemExit("fake ncu failed proof timing summary was not removed")
+        failed_json = json.loads(
+            (
+                work_dir
+                / "profiles"
+                / "self-test-ncu-summary-failure.profile.json"
+            ).read_text(encoding="utf-8")
+        )
+        if failed_json.get("status") != "summary_failed":
+            raise SystemExit("fake ncu failure profile json did not record failure")
+        if "summary command failed" not in failed_json.get("error", ""):
+            raise SystemExit("fake ncu failure profile json did not record the error")
+
+        failed_profile_base = dict(base)
+        failed_profile_base["command"] = [sys.executable, "-c", "raise SystemExit(7)"]
+        failed_profile_base["name"] = "self-test-profile-failure"
+        failed_profile_args = argparse.Namespace(
+            **failed_profile_base,
+            tool="ncu",
+            nsys_command=None,
+            ncu_command=str(fake_ncu),
+        )
+        if run_profile(failed_profile_args) != 7:
+            raise SystemExit("fake profile failure did not return the target status")
+        failed_profile_json = json.loads(
+            (
+                work_dir
+                / "profiles"
+                / "self-test-profile-failure.profile.json"
+            ).read_text(encoding="utf-8")
+        )
+        if (
+            failed_profile_json.get("status") != "profile_failed"
+            or failed_profile_json.get("profile_exit_code") != 7
+        ):
+            raise SystemExit("fake profile failure json did not record the exit status")
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
