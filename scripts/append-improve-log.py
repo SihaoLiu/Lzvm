@@ -18,6 +18,25 @@ HEADER = [
 TIMING_TOTAL_RE = re.compile(r"^timing_total_ms=(\d+)\s*$")
 
 
+def workspace_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def resolve_workspace_path(path: str, root: Path) -> Path:
+    candidate = Path(path)
+    if candidate.is_absolute():
+        return candidate
+    return root / candidate
+
+
+def require_workspace_temp_path(path: Path, root: Path, label: str) -> Path:
+    temp_dir = (root / "temp").resolve(strict=False)
+    resolved = path.resolve(strict=False)
+    if resolved != temp_dir and temp_dir not in resolved.parents:
+        raise SystemExit(f"{label} must be under {temp_dir}: {path}")
+    return path
+
+
 def current_commit() -> str:
     return subprocess.check_output(
         ["git", "rev-parse", "--short=8", "HEAD"],
@@ -218,7 +237,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    path = Path(args.path)
+    root = workspace_root()
+    path = require_workspace_temp_path(
+        resolve_workspace_path(args.path, root),
+        root,
+        "--path",
+    )
     validate_improve_log(path)
     if not args.check:
         if args.summary is not None and args.summary_flag is not None:

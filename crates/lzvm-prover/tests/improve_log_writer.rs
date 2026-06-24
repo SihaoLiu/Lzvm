@@ -176,6 +176,49 @@ fn improve_log_writer_averages_stable_run_samples() {
 }
 
 #[test]
+fn improve_log_writer_rejects_path_outside_temp() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+    let log_path = workspace_root.join(format!(
+        "target/improve-log-outside-{}.csv",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+
+    let output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--small-runs")
+        .arg("8.55,8.54,8.49")
+        .arg("--large-runs")
+        .arg("52.29,51.61,51.21")
+        .arg("--summary")
+        .arg("path guard")
+        .output()
+        .expect("improve-log writer should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let log_created = log_path.exists();
+    let _ = std::fs::remove_file(&log_path);
+
+    assert!(
+        !success,
+        "improve-log writer should reject paths outside temp"
+    );
+    assert!(
+        stderr.contains("--path must be under"),
+        "path rejection should explain the temp boundary: stderr={stderr}"
+    );
+    assert!(!log_created, "rejected path should not create a log");
+}
+
+#[test]
 fn improve_log_writer_rejects_unstable_run_samples() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root
