@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+import math
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -76,6 +77,73 @@ def validate_improve_log(path: Path) -> None:
                 raise SystemExit(f"{path}:{index}: summary field must be double-quoted")
 
 
+def parse_run_times(raw: str, label: str) -> list[float]:
+    values = []
+    for index, part in enumerate(raw.split(","), start=1):
+        value = part.strip()
+        if not value:
+            raise SystemExit(f"{label}: empty run time at position {index}")
+        try:
+            parsed = float(value)
+        except ValueError as error:
+            raise SystemExit(f"{label}: invalid run time {value!r}") from error
+        if not math.isfinite(parsed) or parsed <= 0.0:
+            raise SystemExit(f"{label}: run time must be a positive finite value: {value!r}")
+        values.append(parsed)
+    return values
+
+
+def stable_average_field(
+    samples: list[float],
+    label: str,
+    max_relative_spread: float,
+) -> str:
+    if len(samples) < 3:
+        raise SystemExit(f"{label}: at least three runs are required")
+    if max_relative_spread < 0.0:
+        raise SystemExit("--max-relative-spread must be nonnegative")
+
+    ordered = sorted(samples)
+    best: list[float] | None = None
+    for start in range(len(ordered)):
+        for end in range(start + 3, len(ordered) + 1):
+            candidate = ordered[start:end]
+            median = candidate[len(candidate) // 2]
+            if median == 0.0:
+                continue
+            relative_spread = (candidate[-1] - candidate[0]) / median
+            if relative_spread <= max_relative_spread:
+                if best is None or len(candidate) > len(best):
+                    best = candidate
+                elif best is not None and len(candidate) == len(best):
+                    best_spread = (best[-1] - best[0]) / best[len(best) // 2]
+                    if relative_spread < best_spread:
+                        best = candidate
+
+    if best is None:
+        percent = max_relative_spread * 100.0
+        raise SystemExit(
+            f"{label}: no group of at least three runs is within {percent:.1f}% spread"
+        )
+
+    average = sum(best) / len(best)
+    sample_text = ";".join(f"{value:.3f}" for value in best)
+    return f"avg={average:.3f} samples={sample_text} used={len(best)}/{len(samples)}"
+
+
+def resolve_timing_field(
+    explicit: str,
+    runs: str | None,
+    label: str,
+    max_relative_spread: float,
+) -> str:
+    if explicit and runs is not None:
+        raise SystemExit(f"{label}: provide either explicit value or run samples, not both")
+    if runs is None:
+        return explicit
+    return stable_average_field(parse_run_times(runs, label), label, max_relative_spread)
+
+
 def append_row(
     path: Path,
     commit: str,
@@ -108,6 +176,9 @@ def main() -> None:
     parser.add_argument("--commit", default=None)
     parser.add_argument("--small", default="")
     parser.add_argument("--large", default="")
+    parser.add_argument("--small-runs", default=None)
+    parser.add_argument("--large-runs", default=None)
+    parser.add_argument("--max-relative-spread", type=float, default=0.10)
     parser.add_argument(
         "--check",
         action="store_true",
@@ -123,11 +194,23 @@ def main() -> None:
         summary = args.summary_flag if args.summary_flag is not None else args.summary
         if summary is None:
             parser.error("summary is required unless --check is used")
+        small_proof_time_s = resolve_timing_field(
+            args.small,
+            args.small_runs,
+            "small proof time",
+            args.max_relative_spread,
+        )
+        large_proof_time_s = resolve_timing_field(
+            args.large,
+            args.large_runs,
+            "large proof time",
+            args.max_relative_spread,
+        )
         append_row(
             path,
             args.commit or current_commit(),
-            args.small,
-            args.large,
+            small_proof_time_s,
+            large_proof_time_s,
             summary,
         )
         validate_improve_log(path)

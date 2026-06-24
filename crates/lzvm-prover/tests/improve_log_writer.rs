@@ -125,3 +125,90 @@ fn improve_log_check_accepts_quoted_timing_fields_with_commas() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn improve_log_writer_averages_stable_run_samples() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+    let log_path = workspace_root.join(format!(
+        "temp/improve-log-stable-runs-{}.csv",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+
+    let output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--small-runs")
+        .arg("8.55,8.54,8.49")
+        .arg("--large-runs")
+        .arg("52.29,51.61,51.21,90.00")
+        .arg("--summary")
+        .arg("stable run samples")
+        .output()
+        .expect("improve-log writer should run");
+    assert!(
+        output.status.success(),
+        "improve-log writer should average stable samples: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
+    let rows = contents.lines().collect::<Vec<_>>();
+    assert_eq!(rows.len(), 2);
+    assert!(
+        rows[1].contains("\"avg=8.527 samples=8.490;8.540;8.550 used=3/3\""),
+        "small run average should be recorded with all stable samples: {}",
+        rows[1]
+    );
+    assert!(
+        rows[1].contains("\"avg=51.703 samples=51.210;51.610;52.290 used=3/4\""),
+        "large run average should exclude the noisy sample: {}",
+        rows[1]
+    );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn improve_log_writer_rejects_unstable_run_samples() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+    let log_path = workspace_root.join(format!(
+        "temp/improve-log-unstable-runs-{}.csv",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+
+    let output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--small-runs")
+        .arg("8.0,11.0,14.0")
+        .arg("--summary")
+        .arg("unstable run samples")
+        .output()
+        .expect("improve-log writer should run");
+    let _ = std::fs::remove_file(&log_path);
+
+    assert!(
+        !output.status.success(),
+        "improve-log writer should reject unstable samples"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("no group of at least three runs"),
+        "unstable sample rejection should explain the missing stable group: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
