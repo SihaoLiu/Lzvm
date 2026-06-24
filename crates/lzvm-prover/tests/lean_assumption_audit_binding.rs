@@ -64,32 +64,42 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
     assert!(
         audit_source.contains("RequiredSemanticAssumptionStatements")
             && audit_source.contains("(_assumptions : SemanticAssumptions system) : Prop :=")
-            && audit_source.contains("SemanticAssumptions system")
             && audit_source.contains("system.publicInputBound publicInput proof")
             && audit_source.contains("exists trace, system.traceConsistent publicInput proof trace")
             && audit_source.contains("exists constraints, system.constraintsSatisfied constraints trace")
-            && audit_source.contains("exists witness, system.witnessMatchesTrace witness trace"),
-        "assumption audit should expose semantic soundness obligations through the semantic assumption bundle contract"
+            && audit_source.contains("exists witness, system.witnessMatchesTrace witness trace")
+            && !audit_source.contains("_assumptions : SemanticAssumptions system) : Prop :=\n  SemanticAssumptions system"),
+        "assumption audit should expose semantic soundness obligations as explicit public input, trace, constraint, and witness statements"
     );
     lean_binding::assert_theorem_body_contains(
         &audit_source,
         "required_semantic_assumptions_public_input_binding",
-        &["required.public_input_binding"],
+        &["rcases required", "publicInputBinding"],
     );
     lean_binding::assert_theorem_body_contains(
         &audit_source,
         "required_semantic_assumptions_trace_extraction",
-        &["required.trace_extraction"],
+        &["rcases required", "traceExtraction"],
     );
     lean_binding::assert_theorem_body_contains(
         &audit_source,
         "required_semantic_assumptions_constraint_satisfaction",
-        &["required.constraint_satisfaction"],
+        &["rcases required", "constraintSatisfaction"],
     );
     lean_binding::assert_theorem_body_contains(
         &audit_source,
         "required_semantic_assumptions_witness_extraction",
-        &["required.witness_extraction"],
+        &["rcases required", "witnessExtraction"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "semantic_assumptions_carry_required_evidence",
+        &[
+            "assumptions.public_input_binding",
+            "assumptions.trace_extraction",
+            "assumptions.constraint_satisfaction",
+            "assumptions.witness_extraction",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &audit_source,
