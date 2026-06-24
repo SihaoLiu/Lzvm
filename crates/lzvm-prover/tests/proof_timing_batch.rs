@@ -520,6 +520,52 @@ fn proof_timing_batch_rejects_log_path_outside_temp() {
 }
 
 #[test]
+fn proof_timing_batch_rejects_file_cwd_before_creating_batch_dir() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-file-cwd");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let cwd_file = dir.join("cwd-file");
+    std::fs::write(&cwd_file, b"not a directory").expect("cwd fixture should write");
+    let work_dir = dir.join("runs");
+    let log_path = dir.join("improve-log.csv");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&work_dir)
+        .arg("--cwd")
+        .arg(&cwd_file)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg("printf 'timing_total_ms=1000\n'")
+        .arg("--summary")
+        .arg("cwd guard")
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let work_dir_created = work_dir.exists();
+    let log_created = log_path.exists();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(!success, "proof timing batch should reject file cwd");
+    assert!(
+        stderr.contains("command working directory is not a directory"),
+        "cwd rejection should explain the path type: stderr={stderr}"
+    );
+    assert!(
+        !work_dir_created,
+        "rejected cwd should not create a batch dir"
+    );
+    assert!(!log_created, "rejected run should not create a log");
+}
+
+#[test]
 fn proof_timing_batch_rejects_missing_required_output_text() {
     let script_path = batch_script_path();
     let dir = test_dir("proof-timing-batch-required-text");

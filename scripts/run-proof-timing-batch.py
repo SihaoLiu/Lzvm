@@ -396,6 +396,8 @@ def run_batch(args: argparse.Namespace) -> Path:
     cwd = resolve_workspace_path(args.cwd, root)
     if not cwd.exists():
         raise SystemExit(f"{cwd}: command working directory does not exist")
+    if not cwd.is_dir():
+        raise SystemExit(f"{cwd}: command working directory is not a directory")
     improve_log_path = require_workspace_temp_path(
         resolve_workspace_path(args.path, root),
         root,
