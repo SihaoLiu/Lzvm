@@ -8905,6 +8905,8 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
         "program_image_cache_program_digest={}\n",
         format_hash(&expected_cache.program_digest)
     )));
+    assert!(proof_verify_stdout_text.contains("artifact_public_input_match=ok\n"));
+    assert!(proof_verify_stdout_text.contains("artifact_proof_match=ok\n"));
     assert!(proof_verify_stdout_text.contains("proof_artifact_match=ok\n"));
     assert!(proof_verify_stdout_text.contains("program_image_cache_match=ok\n"));
     assert_eq!(mismatch_code, 1);
@@ -19411,6 +19413,8 @@ fn expected_setup_verify_stdout(segment_count: usize, public_values_path: &Path)
 
 fn expected_proof_verify_stdout(segment_count: usize, public_values_path: &Path) -> String {
     let mut stdout = expected_setup_verify_stdout(segment_count, public_values_path);
+    stdout.push_str("artifact_public_input_match=ok\n");
+    stdout.push_str("artifact_proof_match=ok\n");
     stdout.push_str("proof_artifact_match=ok\n");
     stdout
 }

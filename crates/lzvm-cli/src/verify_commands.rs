@@ -644,6 +644,8 @@ fn verify_setup_validation(
         public_report.public_value_field_count
     );
     if command.proof_artifact_match_summary {
+        let _ = writeln!(stdout, "artifact_public_input_match=ok");
+        let _ = writeln!(stdout, "artifact_proof_match=ok");
         let _ = writeln!(stdout, "proof_artifact_match=ok");
     }
     if public_report.source_fixed_file_manifest_present
