@@ -7,10 +7,15 @@ use lzvm_artifacts::source_fixed_file_manifest::{
 use lzvm_setup::{write_source_fixed_file_manifest, SourceFixedFileManifestWriteRequest};
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-setup-source-fixed-file-manifest-{}-{name}",
-        std::process::id()
-    ))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-setup-source-fixed-file-manifest-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn write_file(path: &Path, contents: &str) {

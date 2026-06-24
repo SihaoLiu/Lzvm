@@ -9,10 +9,15 @@ use lzvm_field::MODULUS;
 use lzvm_setup::{write_fixed_columns_from_source_file, SourceFixedColumnsWriteRequest};
 
 fn temp_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lzvm-setup-source-fixed-sequence-progressions-{}-{name}",
-        std::process::id()
-    ))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-setup-source-fixed-sequence-progressions-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn write_file(path: &Path, contents: impl AsRef<[u8]>) {
