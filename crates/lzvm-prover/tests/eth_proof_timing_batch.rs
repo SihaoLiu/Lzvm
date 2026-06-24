@@ -509,9 +509,15 @@ fn eth_proof_timing_batch_prints_env_template_without_config() {
 fn eth_proof_timing_batch_writes_env_template_under_temp() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-write-env-template");
     let template_path = fixture.dir.join("real-proof.env");
+    let runner_path = fixture.dir.join("custom runner.py");
     let template_rel = template_path
         .strip_prefix(workspace_root())
         .expect("template path should be under workspace")
+        .display()
+        .to_string();
+    let runner_rel = runner_path
+        .strip_prefix(workspace_root())
+        .expect("runner path should be under workspace")
         .display()
         .to_string();
     let mut command = Command::new(script_path());
@@ -530,6 +536,10 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         .arg(fixture.dir.join("runs"))
         .arg("--path")
         .arg(fixture.dir.join("improve-log.csv"))
+        .arg("--runner")
+        .arg(&runner_path)
+        .arg("--commit")
+        .arg("&&")
         .arg("--write-env-template")
         .arg(&template_path);
     clear_env(&mut command, SMALL_PREFIX);
@@ -569,6 +579,14 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         "run command should preserve the retry cap and summary placeholder: {stdout}"
     );
     assert!(
+        stdout.contains(&format!("--runner '{runner_rel}'")),
+        "env template command should preserve custom runner paths: {stdout}"
+    );
+    assert!(
+        stdout.contains("--commit '&&'"),
+        "env template command should quote commit values that look like shell syntax: {stdout}"
+    );
+    assert!(
         template.contains("# run with --small-mode pipeline")
             && template.contains("# run with --large-mode work-units"),
         "template should record selected modes: {template}"
@@ -581,6 +599,100 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
     assert!(
         !template.contains("TMP_DIR"),
         "template should not expose a shared TMPDIR: {template}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_rejects_env_template_command_paths_outside_temp() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-env-template-command-paths");
+    let work_template_path = fixture.dir.join("bad-work.env");
+    let log_template_path = fixture.dir.join("bad-log.env");
+    let outside_work_dir = workspace_root().join(format!(
+        "eth-proof-timing-batch-work-outside-{}",
+        std::process::id()
+    ));
+    let outside_log_path = workspace_root().join(format!(
+        "eth-proof-timing-batch-log-outside-{}.csv",
+        std::process::id()
+    ));
+
+    let mut work_command = Command::new(script_path());
+    work_command
+        .arg("--suite")
+        .arg("small")
+        .arg("--work-dir")
+        .arg(&outside_work_dir)
+        .arg("--write-env-template")
+        .arg(&work_template_path);
+    let work_output = work_command
+        .output()
+        .expect("ETH proof timing batch env template should reject outside work dir");
+
+    let mut log_command = Command::new(script_path());
+    log_command
+        .arg("--suite")
+        .arg("small")
+        .arg("--path")
+        .arg(&outside_log_path)
+        .arg("--write-env-template")
+        .arg(&log_template_path);
+    let log_output = log_command
+        .output()
+        .expect("ETH proof timing batch env template should reject outside log path");
+
+    let work_success = work_output.status.success();
+    let work_stdout = String::from_utf8(work_output.stdout).expect("stdout should be utf-8");
+    let work_stderr = String::from_utf8_lossy(&work_output.stderr).into_owned();
+    let log_success = log_output.status.success();
+    let log_stdout = String::from_utf8(log_output.stdout).expect("stdout should be utf-8");
+    let log_stderr = String::from_utf8_lossy(&log_output.stderr).into_owned();
+    let work_template_created = work_template_path.exists();
+    let log_template_created = log_template_path.exists();
+    let outside_work_created = outside_work_dir.exists();
+    let outside_log_created = outside_log_path.exists();
+    let _ = std::fs::remove_dir_all(&outside_work_dir);
+    let _ = std::fs::remove_file(&outside_log_path);
+    fixture.cleanup();
+
+    assert!(
+        !work_success,
+        "env template should reject work dirs outside temp"
+    );
+    assert!(
+        work_stdout.is_empty(),
+        "failed work-dir template write should not report commands: {work_stdout}"
+    );
+    assert!(
+        work_stderr.contains("--work-dir must be under"),
+        "env template should explain the work-dir constraint: stderr={work_stderr}"
+    );
+    assert!(
+        !work_template_created,
+        "rejected work-dir template should not be created"
+    );
+    assert!(
+        !outside_work_created,
+        "rejected work dir should not be created outside temp"
+    );
+    assert!(
+        !log_success,
+        "env template should reject improve log paths outside temp"
+    );
+    assert!(
+        log_stdout.is_empty(),
+        "failed log-path template write should not report commands: {log_stdout}"
+    );
+    assert!(
+        log_stderr.contains("--path must be under"),
+        "env template should explain the log path constraint: stderr={log_stderr}"
+    );
+    assert!(
+        !log_template_created,
+        "rejected log-path template should not be created"
+    );
+    assert!(
+        !outside_log_created,
+        "rejected log path should not be created outside temp"
     );
 }
 

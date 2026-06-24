@@ -11,6 +11,7 @@ SMALL_PREFIX = "LZVM_REAL_SMALL_PARITY"
 LARGE_PREFIX = "LZVM_REAL_LARGE_PARITY"
 DEFAULT_BIN_RELATIVE = Path("target/release/lzvm")
 DEFAULT_BIN_BUILD_COMMAND = "cargo build --release -p lzvm-cli --bin lzvm"
+DEFAULT_RUNNER = "scripts/run-proof-timing-batch.py"
 
 REQUIRED_PATHS = [
     ("SETUP", "dir"),
@@ -282,6 +283,16 @@ def mode_args(args: argparse.Namespace) -> list[str]:
 
 
 def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
+    work_dir = require_workspace_temp_path(
+        resolve_workspace_path(args.work_dir, root),
+        root,
+        "--work-dir",
+    )
+    improve_log_path = require_workspace_temp_path(
+        resolve_workspace_path(args.path, root),
+        root,
+        "--path",
+    )
     parts = [
         "scripts/run-eth-proof-timing-batch.py",
         "--suite",
@@ -301,11 +312,14 @@ def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
             "--max-relative-spread",
             str(args.max_relative_spread),
             "--work-dir",
-            display_path_for_shell(resolve_workspace_path(args.work_dir, root), root),
+            display_path_for_shell(work_dir, root),
             "--path",
-            display_path_for_shell(resolve_workspace_path(args.path, root), root),
+            display_path_for_shell(improve_log_path, root),
         ]
     )
+    if args.runner != DEFAULT_RUNNER:
+        runner = display_path_for_shell(resolve_workspace_path(args.runner, root), root)
+        parts.extend(["--runner", runner])
     if args.enforce_targets:
         parts.append("--enforce-targets")
     if args.small_max_avg_s is not None:
@@ -317,10 +331,17 @@ def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
     return parts
 
 
-def shell_join(parts: list[str | Path]) -> str:
-    control_operators = {"&&", "||", ";", "|"}
+class ShellControl:
+    def __init__(self, text: str):
+        self.text = text
+
+
+SHELL_AND = ShellControl("&&")
+
+
+def shell_join(parts: list[str | Path | ShellControl]) -> str:
     return " ".join(
-        str(part) if str(part) in control_operators else shell_arg(part)
+        part.text if isinstance(part, ShellControl) else shell_arg(part)
         for part in parts
     )
 
@@ -331,14 +352,14 @@ def write_env_template(args: argparse.Namespace, root: Path) -> None:
         root,
         "--write-env-template",
     )
+    base_parts = next_command_parts(args, root)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(env_template_text(args, root), encoding="utf-8")
 
     env_path = display_path_for_shell(path, root)
-    base_parts = next_command_parts(args, root)
-    check_command = shell_join([".", env_path, "&&", *base_parts, "--check-env"])
+    check_command = shell_join([".", env_path, SHELL_AND, *base_parts, "--check-env"])
     run_command = shell_join(
-        [".", env_path, "&&", *base_parts, "--summary", "real proof timing"]
+        [".", env_path, SHELL_AND, *base_parts, "--summary", "real proof timing"]
     )
     print(f"env_template={env_path}")
     print(f"next_check_command={check_command}")
@@ -639,7 +660,7 @@ def main() -> None:
     parser.add_argument("--summary")
     parser.add_argument("--commit")
     parser.add_argument("--max-relative-spread", type=nonnegative_float, default=0.10)
-    parser.add_argument("--runner", default="scripts/run-proof-timing-batch.py")
+    parser.add_argument("--runner", default=DEFAULT_RUNNER)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--check-env", action="store_true")
     parser.add_argument("--enforce-targets", action="store_true")
