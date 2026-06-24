@@ -706,18 +706,22 @@ def run_batch(args: argparse.Namespace) -> Path:
             appended=False,
         )
         raise
-    stable_timing_summary_paths["small"] = write_group_timing_summary(
-        timing_summary_script,
-        safe_stable_timing_group(small_logs, args.max_relative_spread),
-        batch_dir / "small-stable.proof-timing-summary.csv",
-        root,
-    )
-    stable_timing_summary_paths["large"] = write_group_timing_summary(
-        timing_summary_script,
-        safe_stable_timing_group(large_logs, args.max_relative_spread),
-        batch_dir / "large-stable.proof-timing-summary.csv",
-        root,
-    )
+    try:
+        stable_timing_summary_paths["small"] = write_group_timing_summary(
+            timing_summary_script,
+            safe_stable_timing_group(small_logs, args.max_relative_spread),
+            batch_dir / "small-stable.proof-timing-summary.csv",
+            root,
+        )
+        stable_timing_summary_paths["large"] = write_group_timing_summary(
+            timing_summary_script,
+            safe_stable_timing_group(large_logs, args.max_relative_spread),
+            batch_dir / "large-stable.proof-timing-summary.csv",
+            root,
+        )
+    except SystemExit:
+        record_batch_json(small_logs, large_logs, appended=False)
+        raise
     record_batch_json(small_logs, large_logs, appended=False)
     try:
         append_improve_log(

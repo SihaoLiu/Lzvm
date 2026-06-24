@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import shlex
 import shutil
@@ -744,6 +745,24 @@ def self_test() -> None:
             raise SystemExit("self-test small average missing")
         if '"avg=2.002 samples=2.001;2.002;2.003 used=3/3"' not in contents:
             raise SystemExit("self-test large average missing")
+        batch_root = work_dir / "runs"
+        batch_dirs = [path for path in batch_root.iterdir() if path.is_dir()]
+        if len(batch_dirs) != 1:
+            raise SystemExit("self-test batch directory missing")
+        batch_dir = batch_dirs[0]
+        batch_json = json.loads((batch_dir / "batch.json").read_text(encoding="utf-8"))
+        for key, name in [
+            ("small_stable_timing_summary", "small-stable.proof-timing-summary.csv"),
+            ("large_stable_timing_summary", "large-stable.proof-timing-summary.csv"),
+        ]:
+            if batch_json.get(key) is None:
+                raise SystemExit(f"self-test {key} missing from batch json")
+            summary = Path(batch_json[key])
+            if summary.name != name or not summary.exists():
+                raise SystemExit(f"self-test {key} artifact missing")
+            summary_text = summary.read_text(encoding="utf-8")
+            if "aggregate,total_count,valid_total_count" not in summary_text:
+                raise SystemExit(f"self-test {key} aggregate row missing")
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 

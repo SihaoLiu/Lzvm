@@ -386,6 +386,83 @@ fn proof_timing_batch_rejects_average_above_max() {
 }
 
 #[test]
+fn proof_timing_batch_records_batch_json_when_stable_summary_fails() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-stable-summary-fails");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+    let summary_script = dir.join("summary-helper.py");
+    std::fs::write(
+        &summary_script,
+        concat!(
+            "import sys\n",
+            "if len(sys.argv) > 2:\n",
+            "    sys.stderr.write('group summary failed\\n')\n",
+            "    sys.exit(7)\n",
+            "print('profile,total_count')\n",
+            "print('run,1')\n",
+        ),
+    )
+    .expect("summary helper should write");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--timing-summary-script")
+        .arg(&summary_script)
+        .arg("--small-command")
+        .arg(concat!(
+            "printf 'timing_total_ms=100{run}\\n",
+            "timing_guest_stage_tree_commit_root_count=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_groups=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n'"
+        ))
+        .arg("--summary")
+        .arg("stable summary failure")
+        .output()
+        .expect("proof timing batch should run");
+
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    let log_created = log_path.exists();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should fail when stable summary generation fails"
+    );
+    assert!(
+        stderr.contains("group timing summary failed with status 7"),
+        "stable summary failure should report the helper status: stderr={stderr}"
+    );
+    assert!(
+        batch_json.contains("\"appended\": false")
+            && batch_json.contains("small-001.log")
+            && batch_json.contains("small-003.log")
+            && batch_json.contains("small-001.status")
+            && batch_json.contains("small-003.status")
+            && batch_json.contains("small-001.proof-timing-summary.csv")
+            && batch_json.contains("small-003.proof-timing-summary.csv")
+            && batch_json.contains("\"small_stable_timing_summary\": null"),
+        "batch json should retain completed run artifacts after stable summary failure: {batch_json}"
+    );
+    assert!(
+        !log_created,
+        "stable summary failure should not append improve log"
+    );
+}
+
+#[test]
 fn proof_timing_batch_sets_run_tmpdir_under_batch_dir() {
     let script_path = batch_script_path();
     let dir = test_dir("proof timing batch tmpdir");
