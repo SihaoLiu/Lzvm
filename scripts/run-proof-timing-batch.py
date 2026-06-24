@@ -706,16 +706,18 @@ def run_batch(args: argparse.Namespace) -> Path:
             appended=False,
         )
         raise
+    small_stable_logs = safe_stable_timing_group(small_logs, args.max_relative_spread)
+    large_stable_logs = safe_stable_timing_group(large_logs, args.max_relative_spread)
     try:
         stable_timing_summary_paths["small"] = write_group_timing_summary(
             timing_summary_script,
-            safe_stable_timing_group(small_logs, args.max_relative_spread),
+            small_stable_logs,
             batch_dir / "small-stable.proof-timing-summary.csv",
             root,
         )
         stable_timing_summary_paths["large"] = write_group_timing_summary(
             timing_summary_script,
-            safe_stable_timing_group(large_logs, args.max_relative_spread),
+            large_stable_logs,
             batch_dir / "large-stable.proof-timing-summary.csv",
             root,
         )
