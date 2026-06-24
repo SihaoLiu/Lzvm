@@ -58,7 +58,7 @@ pub fn build_pcs_query_plan_segment_with_bindings(
     hash_proof_segment(&mut hasher, material_segment)?;
     let unit_count = u32::try_from(schedule.units.len())
         .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?;
-    for segment in &witness_segments {
+    for segment in witness_segments.iter().copied() {
         hash_witness_commitment_segment_for_query_seed(&mut hasher, unit_count, segment)?;
     }
     for segment in binding_segments {
@@ -164,7 +164,12 @@ pub fn build_pcs_query_plan_segment_from_transcript_segments(
 
     let challenge = derive_pcs_final_query_challenge_from_segments(input)?;
     let nonce = Felt::from_u64(parse_pcs_query_nonce_segment(&nonce_segment.data)?.nonce);
-    build_pcs_query_plan_segment_from_challenge(schedule, &witness_segments, challenge, nonce)
+    build_pcs_query_plan_segment_from_sorted_challenge(
+        schedule,
+        &witness_segments,
+        challenge,
+        nonce,
+    )
 }
 
 #[cfg(feature = "cuda")]
@@ -196,7 +201,21 @@ pub fn build_pcs_query_plan_segment_from_challenge(
     nonce: Felt,
 ) -> Result<ProofSegment, ProvePcsQueryPlanSegmentError> {
     let witness_segments = sorted_witness_commitment_segments(witness_segments)?;
-    let query_units = collect_witness_query_units(schedule, &witness_segments)?;
+    build_pcs_query_plan_segment_from_sorted_challenge(
+        schedule,
+        &witness_segments,
+        challenge,
+        nonce,
+    )
+}
+
+fn build_pcs_query_plan_segment_from_sorted_challenge(
+    schedule: &ProveSchedule,
+    witness_segments: &[&ProofSegment],
+    challenge: Ext3,
+    nonce: Felt,
+) -> Result<ProofSegment, ProvePcsQueryPlanSegmentError> {
+    let query_units = collect_witness_query_units(schedule, witness_segments)?;
     let mut units = Vec::with_capacity(query_units.len());
     for (identity, unit) in query_units {
         let unit_index = usize::try_from(identity.unit_index)
@@ -233,18 +252,18 @@ pub fn build_pcs_query_plan_segment_from_challenge(
 
 fn sorted_witness_commitment_segments(
     witness_segments: &[ProofSegment],
-) -> Result<Vec<ProofSegment>, ProvePcsQueryPlanSegmentError> {
+) -> Result<Vec<&ProofSegment>, ProvePcsQueryPlanSegmentError> {
     if witness_segments.is_empty() {
         return Err(ProvePcsQueryPlanSegmentError::MissingWitnessSegments);
     }
-    let mut out = witness_segments.to_vec();
+    let mut out = witness_segments.iter().collect::<Vec<_>>();
     out.sort_by_key(|segment| segment.id);
     Ok(out)
 }
 
 fn collect_witness_query_units<'a>(
     schedule: &'a ProveSchedule,
-    witness_segments: &[ProofSegment],
+    witness_segments: &[&ProofSegment],
 ) -> Result<
     Vec<(
         lzvm_artifacts::witness_segment::WitnessCommitmentSegmentIdentity,

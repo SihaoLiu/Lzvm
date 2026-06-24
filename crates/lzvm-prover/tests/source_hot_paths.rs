@@ -7871,6 +7871,12 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
         "seeded query plan derivation should bind witness tree digests"
     );
     assert!(
+        query_plan_build_source.contains("fn build_pcs_query_plan_segment_from_sorted_challenge")
+            && query_plan_build_source.contains("witness_segments.iter().collect::<Vec<_>>()")
+            && !query_plan_build_source.contains("witness_segments.to_vec()"),
+        "query plan derivation should sort witness segment references without cloning payloads"
+    );
+    assert!(
         prove_witness_tests_source
             .contains("rejects_seeded_fri_unit_proof_with_unbound_opening_in_preflight"),
         "seeded FRI preflight should reject manually attached opening segments that are not transcript-bound"
