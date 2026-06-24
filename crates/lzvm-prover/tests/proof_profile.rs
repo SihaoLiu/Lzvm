@@ -26,6 +26,8 @@ fn proof_profile_self_test_runs() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains("nsys_report=temp/proof-profile-self-test-")
+            && stdout.contains("profile_tmp_dir=temp/proof-profile-self-test-")
+            && stdout.contains("profile_target_tmp_dir=temp/proof-profile-self-test-")
             && stdout.contains("nsys_exported_sqlite=temp/proof-profile-self-test-")
             && stdout.contains("ncu_csv=temp/proof-profile-self-test-")
             && stdout.contains("ncu_kernel_summary=temp/proof-profile-self-test-"),
@@ -77,7 +79,18 @@ fn proof_profile_nsys_dry_run_prints_summary_commands() {
         "dry-run should report the nsys output path: {stdout}"
     );
     assert!(
-        stdout.contains("nsys_export_command=nsys export --type sqlite")
+        stdout.contains("profile_tmp_dir=temp/proof-profile-nsys-dry-run-")
+            && stdout.contains("small-proof.tmp"),
+        "dry-run should report the managed profiler TMPDIR: {stdout}"
+    );
+    assert!(
+        stdout.contains("profile_target_tmp_dir=temp/proof-profile-nsys-dry-run-")
+            && stdout.contains("small-proof.target.tmp"),
+        "dry-run should report the profiled command TMPDIR: {stdout}"
+    );
+    assert!(
+        stdout.contains("nsys_export_command=")
+            && stdout.contains(" export --type sqlite")
             && stdout.contains("nsys_cuda_kernel_summary_command=")
             && stdout.contains("nsys_cuda_kernel_summary_output=")
             && stdout.contains("nsys_cuda_sync_summary_command=")
@@ -86,8 +99,8 @@ fn proof_profile_nsys_dry_run_prints_summary_commands() {
         "dry-run should print follow-up summary commands: {stdout}"
     );
     assert!(
-        output_dir_created,
-        "dry-run should create the temp output directory for path validation"
+        !output_dir_created,
+        "dry-run should not create the temp output directory"
     );
 }
 
@@ -117,6 +130,7 @@ fn proof_profile_ncu_dry_run_prints_csv_summary_command() {
     let success = output.status.success();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let output_dir_created = output_dir.exists();
     let _ = std::fs::remove_dir_all(&output_dir);
 
     assert!(
@@ -137,12 +151,69 @@ fn proof_profile_ncu_dry_run_prints_csv_summary_command() {
         "dry-run should report ncu report and CSV paths: {stdout}"
     );
     assert!(
+        stdout.contains("profile_tmp_dir=temp/proof-profile-ncu-dry-run-")
+            && stdout.contains("kernel-metrics.tmp"),
+        "dry-run should report the managed profiler TMPDIR: {stdout}"
+    );
+    assert!(
+        stdout.contains("profile_target_tmp_dir=temp/proof-profile-ncu-dry-run-")
+            && stdout.contains("kernel-metrics.target.tmp"),
+        "dry-run should report the profiled command TMPDIR: {stdout}"
+    );
+    assert!(
         stdout.contains("ncu_cuda_kernel_summary_command=scripts/ncu-cuda-kernel-summary.py"),
         "dry-run should print the ncu summary command: {stdout}"
     );
     assert!(
         stdout.contains("ncu_cuda_kernel_summary_output=temp/proof-profile-ncu-dry-run-"),
         "dry-run should print where the ncu summary will be written: {stdout}"
+    );
+    assert!(
+        !output_dir_created,
+        "dry-run should not create the temp output directory"
+    );
+}
+
+#[test]
+fn proof_profile_nsys_dry_run_uses_custom_export_command() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-custom-nsys-{}",
+        std::process::id()
+    ));
+    let nsys_command = output_dir.join("custom nsys");
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("nsys")
+        .arg("--nsys-command")
+        .arg(&nsys_command)
+        .arg("--output-dir")
+        .arg(&output_dir)
+        .arg("--name")
+        .arg("custom-export")
+        .arg("--dry-run")
+        .arg("--")
+        .arg("python3")
+        .arg("-c")
+        .arg("print('timing_total_ms=1000')")
+        .output()
+        .expect("proof profile dry-run should run with custom nsys");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(success, "custom nsys dry-run should pass: stderr={stderr}");
+    assert!(
+        stdout.contains(&format!(
+            "profile_command='{}' profile",
+            nsys_command.display()
+        )) && stdout.contains(&format!(
+            "nsys_export_command='{}' export --type sqlite",
+            nsys_command.display()
+        )),
+        "custom nsys command should be used for profile and export commands: {stdout}"
     );
 }
 

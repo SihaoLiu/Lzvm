@@ -417,6 +417,8 @@ def command_for_env(config: ProofEnv, mode: str, verify_proof: bool) -> str:
         parts.extend(
             [
                 "&&",
+                "env",
+                "TMPDIR={tmp_dir}",
                 shell_arg(bin_path),
                 "verify",
                 "proof",
@@ -496,6 +498,7 @@ def profile_command_for_env(
         display_path_for_shell(profile_output_dir, root),
         "--name",
         profile_name,
+        "--summarize",
         "--cwd",
         ".",
         "--",

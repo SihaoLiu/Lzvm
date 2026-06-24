@@ -642,6 +642,10 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         "profile command output should include both selected tools: {stdout}"
     );
     assert!(
+        stdout.contains("--summarize"),
+        "profile command output should request summary files: {stdout}"
+    );
+    assert!(
         stdout.contains("--output-dir")
             && stdout.contains("profiles/small-stream-pipeline/nsys")
             && stdout.contains("profiles/small-stream-pipeline/ncu")
@@ -652,8 +656,9 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         stdout.contains("sh -lc")
             && stdout.contains("prove witness --guest-pc-trace 120000000 --timings")
             && stdout.contains("verify proof --eth-block-input")
+            && stdout.contains("&& env TMPDIR=")
             && stdout.contains("verify_proof_status=ok"),
-        "profile command should wrap the same prove-then-verify shell command: {stdout}"
+        "profile command should wrap the same prove-then-verify shell command with managed TMPDIR: {stdout}"
     );
     assert!(
         stdout.contains("small-profile.proof")

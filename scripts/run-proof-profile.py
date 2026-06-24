@@ -77,6 +77,8 @@ def prefixed_path(output_dir: Path, name: str, suffix: str) -> Path:
 def nsys_outputs(output_dir: Path, name: str) -> dict[str, Path]:
     return {
         "prefix": output_dir / name,
+        "tmp_dir": prefixed_path(output_dir, name, ".tmp"),
+        "target_tmp_dir": prefixed_path(output_dir, name, ".target.tmp"),
         "report": prefixed_path(output_dir, name, ".nsys-rep"),
         "sqlite": prefixed_path(output_dir, name, ".sqlite"),
         "export_stdout": prefixed_path(output_dir, name, ".nsys-export.stdout"),
@@ -89,6 +91,8 @@ def nsys_outputs(output_dir: Path, name: str) -> dict[str, Path]:
 
 def ncu_outputs(output_dir: Path, name: str) -> dict[str, Path]:
     return {
+        "tmp_dir": prefixed_path(output_dir, name, ".tmp"),
+        "target_tmp_dir": prefixed_path(output_dir, name, ".target.tmp"),
         "report": prefixed_path(output_dir, name, ".ncu-rep"),
         "csv": prefixed_path(output_dir, name, ".ncu.csv"),
         "kernel_summary": prefixed_path(output_dir, name, ".ncu-kernel-summary.txt"),
@@ -111,7 +115,7 @@ def build_nsys_command(
         str(outputs["prefix"]),
         *args.profile_arg,
         "--",
-        *command,
+        *target_command(outputs, command),
     ]
     return profile, outputs
 
@@ -154,24 +158,28 @@ def build_ncu_command(
         "--force-overwrite",
         *args.profile_arg,
         "--",
-        *command,
+        *target_command(outputs, command),
     ]
     return profile, outputs
 
 
-def print_nsys_outputs(outputs: dict[str, Path], root: Path) -> None:
+def print_nsys_outputs(args: argparse.Namespace, outputs: dict[str, Path], root: Path) -> None:
+    tmp_dir = display_path_for_shell(outputs["tmp_dir"], root)
+    target_tmp_dir = display_path_for_shell(outputs["target_tmp_dir"], root)
     report = display_path_for_shell(outputs["report"], root)
     sqlite = display_path_for_shell(outputs["sqlite"], root)
     kernel_summary = display_path_for_shell(outputs["kernel_summary"], root)
     sync_summary = display_path_for_shell(outputs["sync_summary"], root)
     copy_summary = display_path_for_shell(outputs["copy_summary"], root)
+    print(f"profile_tmp_dir={tmp_dir}")
+    print(f"profile_target_tmp_dir={target_tmp_dir}")
     print(f"nsys_report={report}")
     print(f"nsys_sqlite={sqlite}")
     print(
         "nsys_export_command="
         + shell_join(
             [
-                "nsys",
+                resolve_tool(args.nsys_command, "LZVM_NSYS_COMMAND", "nsys"),
                 "export",
                 "--type",
                 "sqlite",
@@ -193,9 +201,13 @@ def print_nsys_outputs(outputs: dict[str, Path], root: Path) -> None:
 
 
 def print_ncu_outputs(outputs: dict[str, Path], root: Path) -> None:
+    tmp_dir = display_path_for_shell(outputs["tmp_dir"], root)
+    target_tmp_dir = display_path_for_shell(outputs["target_tmp_dir"], root)
     report = display_path_for_shell(outputs["report"], root)
     csv_path = display_path_for_shell(outputs["csv"], root)
     kernel_summary = display_path_for_shell(outputs["kernel_summary"], root)
+    print(f"profile_tmp_dir={tmp_dir}")
+    print(f"profile_target_tmp_dir={target_tmp_dir}")
     print(f"ncu_report={report}")
     print(f"ncu_csv={csv_path}")
     print(
@@ -205,10 +217,35 @@ def print_ncu_outputs(outputs: dict[str, Path], root: Path) -> None:
     print(f"ncu_cuda_kernel_summary_output={kernel_summary}")
 
 
-def run_captured(command: list[str], cwd: Path, stdout_path: Path, stderr_path: Path) -> int:
+def profile_env(outputs: dict[str, Path]) -> dict[str, str]:
+    tmp_dir = outputs["tmp_dir"]
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env["TMPDIR"] = str(tmp_dir)
+    return env
+
+
+def target_command(outputs: dict[str, Path], command: list[str]) -> list[str]:
+    return ["env", f"TMPDIR={outputs['target_tmp_dir']}", *command]
+
+
+def prepare_output_dirs(output_dir: Path, outputs: dict[str, Path]) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    outputs["tmp_dir"].mkdir(parents=True, exist_ok=True)
+    outputs["target_tmp_dir"].mkdir(parents=True, exist_ok=True)
+
+
+def run_captured(
+    command: list[str],
+    cwd: Path,
+    stdout_path: Path,
+    stderr_path: Path,
+    env: dict[str, str],
+) -> int:
     completed = subprocess.run(
         command,
         cwd=cwd,
+        env=env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -218,9 +255,14 @@ def run_captured(command: list[str], cwd: Path, stdout_path: Path, stderr_path: 
     return completed.returncode
 
 
-def run_summary(command: list[str], cwd: Path, output_path: Path) -> None:
+def run_summary(
+    command: list[str],
+    cwd: Path,
+    output_path: Path,
+    env: dict[str, str],
+) -> None:
     stderr_path = prefixed_path(output_path.parent, output_path.name, ".stderr")
-    code = run_captured(command, cwd, output_path, stderr_path)
+    code = run_captured(command, cwd, output_path, stderr_path, env)
     if code != 0:
         raise SystemExit(
             f"summary command failed with status {code}: "
@@ -230,7 +272,13 @@ def run_summary(command: list[str], cwd: Path, output_path: Path) -> None:
 
 def export_nsys_sqlite(args: argparse.Namespace, root: Path, outputs: dict[str, Path]) -> None:
     command = build_nsys_export_command(args, outputs)
-    code = run_captured(command, root, outputs["export_stdout"], outputs["export_stderr"])
+    code = run_captured(
+        command,
+        root,
+        outputs["export_stdout"],
+        outputs["export_stderr"],
+        profile_env(outputs),
+    )
     if code != 0:
         raise SystemExit(
             "nsys export failed with status "
@@ -239,19 +287,22 @@ def export_nsys_sqlite(args: argparse.Namespace, root: Path, outputs: dict[str, 
 
 
 def summarize_nsys(root: Path, outputs: dict[str, Path]) -> None:
+    env = profile_env(outputs)
     for script, output in [
         ("scripts/nsys-cuda-kernel-summary.py", outputs["kernel_summary"]),
         ("scripts/nsys-cuda-sync-summary.py", outputs["sync_summary"]),
         ("scripts/nsys-cuda-copy-summary.py", outputs["copy_summary"]),
     ]:
-        run_summary([script, str(outputs["sqlite"])], root, output)
+        run_summary([script, str(outputs["sqlite"])], root, output, env)
 
 
 def summarize_ncu(root: Path, outputs: dict[str, Path]) -> None:
+    env = profile_env(outputs)
     run_summary(
         ["scripts/ncu-cuda-kernel-summary.py", str(outputs["csv"])],
         root,
         outputs["kernel_summary"],
+        env,
     )
 
 
@@ -272,12 +323,11 @@ def run_profile(args: argparse.Namespace) -> int:
         raise SystemExit(f"{cwd}: command working directory does not exist")
     if not cwd.is_dir():
         raise SystemExit(f"{cwd}: command working directory is not a directory")
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.tool == "nsys":
         profile_command, outputs = build_nsys_command(args, output_dir, command)
         print("profile_command=" + shell_join(profile_command))
-        print_nsys_outputs(outputs, root)
+        print_nsys_outputs(args, outputs, root)
     else:
         profile_command, outputs = build_ncu_command(args, output_dir, command)
         print("profile_command=" + shell_join(profile_command))
@@ -285,7 +335,12 @@ def run_profile(args: argparse.Namespace) -> int:
 
     if args.dry_run:
         return 0
-    profile_code = subprocess.run(profile_command, cwd=cwd).returncode
+    prepare_output_dirs(output_dir, outputs)
+    profile_code = subprocess.run(
+        profile_command,
+        cwd=cwd,
+        env=profile_env(outputs),
+    ).returncode
     if profile_code != 0:
         return profile_code
     if args.tool == "nsys" and not args.skip_nsys_export:
@@ -309,12 +364,17 @@ def write_fake_profiler(path: Path, tool: str, log_path: Path) -> None:
         "\n".join(
             [
                 "#!/usr/bin/env python3",
+                "import os",
                 "import pathlib",
                 "import subprocess",
                 "import sys",
                 f"log = pathlib.Path({str(log_path)!r})",
                 "log.parent.mkdir(parents=True, exist_ok=True)",
-                f"log.write_text({tool!r} + '\\n' + '\\n'.join(sys.argv[1:]) + '\\n', encoding='utf-8')",
+                "lines = ["
+                + repr(tool)
+                + ", 'tmpdir=' + os.environ.get('TMPDIR', ''), *sys.argv[1:]]",
+                "with log.open('a', encoding='utf-8') as output:",
+                "    output.write('\\n'.join(lines) + '\\n')",
                 "args = sys.argv[1:]",
                 "if 'profile' in args and '--output' in args:",
                 "    prefix = pathlib.Path(args[args.index('--output') + 1])",
@@ -376,6 +436,11 @@ def self_test() -> None:
             raise SystemExit("fake nsys report missing")
         if not (work_dir / "profiles" / "self-test.sqlite").exists():
             raise SystemExit("fake nsys sqlite export missing")
+        nsys_argv = (work_dir / "fake-nsys.argv").read_text(encoding="utf-8")
+        if f"tmpdir={work_dir / 'profiles' / 'self-test.tmp'}" not in nsys_argv:
+            raise SystemExit("fake nsys did not receive managed TMPDIR")
+        if f"TMPDIR={work_dir / 'profiles' / 'self-test.target.tmp'}" not in nsys_argv:
+            raise SystemExit("fake nsys did not wrap target TMPDIR")
 
         ncu_base = dict(base)
         ncu_base["name"] = "self-test-ncu"
@@ -394,6 +459,11 @@ def self_test() -> None:
             raise SystemExit("fake ncu report missing")
         if not (work_dir / "profiles" / "self-test-ncu.ncu-kernel-summary.txt").exists():
             raise SystemExit("fake ncu summary missing")
+        ncu_argv = (work_dir / "fake-ncu.argv").read_text(encoding="utf-8")
+        if f"tmpdir={work_dir / 'profiles' / 'self-test-ncu.tmp'}" not in ncu_argv:
+            raise SystemExit("fake ncu did not receive managed TMPDIR")
+        if f"TMPDIR={work_dir / 'profiles' / 'self-test-ncu.target.tmp'}" not in ncu_argv:
+            raise SystemExit("fake ncu did not wrap target TMPDIR")
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
