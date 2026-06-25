@@ -8116,6 +8116,8 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
         setup_preflight_source.contains("validate_setup_preflight_hashes")
             && setup_preflight_source.contains("validate_proof_public_values_for_setup_preflight")
             && setup_preflight_source.contains("validate_optional_trace_constraint_segment")
+            && setup_preflight_source.contains("report.trace_constraint_units")
+            && !setup_preflight_source.contains("parse_trace_constraint_segment")
             && setup_preflight_source.contains("validate_pcs_query_plan_segments")
             && setup_preflight_source.contains("validate_constant_opening_segments")
             && setup_preflight_source.contains("validate_witness_opening_segments")

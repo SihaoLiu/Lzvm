@@ -31,7 +31,7 @@ use lzvm_artifacts::setup_manifest::{
     SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
 };
 use lzvm_artifacts::trace_constraint_segment::{
-    parse_trace_constraint_segment, TraceConstraintSegmentError, TRACE_CONSTRAINT_SEGMENT_ID,
+    TraceConstraintSegmentError, TRACE_CONSTRAINT_SEGMENT_ID,
 };
 use lzvm_artifacts::unit_values_segment::UNIT_VALUES_SEGMENT_ID;
 use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
@@ -763,7 +763,12 @@ pub fn validate_setup_preflight(
         .map_err(SetupPreflightError::PcsMaterial)?;
     let witness_segments = load_witness_commitment_segment_refs(&schedule.units, &proof.segments)
         .map_err(SetupPreflightError::WitnessCommitment)?;
-    validate_optional_trace_constraint_segment(catalog, &schedule, proof, &witness_segments)?;
+    validate_optional_trace_constraint_segment(
+        catalog,
+        &schedule,
+        &report.trace_constraint_units,
+        &witness_segments,
+    )?;
     validate_pcs_query_plan_segments(
         &schedule,
         proof.public_values_hash,
@@ -1093,23 +1098,17 @@ fn validate_setup_proof_segment_ids(segments: &[ProofSegment]) -> Result<(), Set
 fn validate_optional_trace_constraint_segment(
     catalog: &KeyDirectoryCatalog,
     schedule: &crate::ProveSchedule,
-    proof: &ProofArtifact,
+    trace_constraint_units: &[TraceConstraintPreflightUnit],
     witness_segments: &[&ProofSegment],
 ) -> Result<(), SetupPreflightError> {
-    let Some(segment) = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == TRACE_CONSTRAINT_SEGMENT_ID)
-    else {
+    if trace_constraint_units.is_empty() {
         if witness_segments.is_empty() {
             return Ok(());
         }
         return Err(SetupPreflightError::TraceConstraintBinding {
             message: "missing trace constraint evidence segment".to_owned(),
         });
-    };
-    let evidence = parse_trace_constraint_segment(&segment.data)
-        .map_err(SetupPreflightError::TraceConstraint)?;
+    }
 
     let unit_count = u32::try_from(schedule.units.len()).map_err(|_| {
         SetupPreflightError::TraceConstraintBinding {
@@ -1140,7 +1139,7 @@ fn validate_optional_trace_constraint_segment(
     }
 
     let mut evidence_units = BTreeMap::new();
-    for unit in evidence.units {
+    for unit in trace_constraint_units {
         evidence_units.insert(
             (unit.unit_index, unit.trace_instance_index),
             (
