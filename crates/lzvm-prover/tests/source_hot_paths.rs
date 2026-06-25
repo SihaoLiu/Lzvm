@@ -7963,8 +7963,9 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && setup_preflight_source.contains("load_unit_values_for_identity_from_parsed_segment")
             && setup_preflight_source
                 .contains("validate_unit_values_units_match_query_units_from_segment")
-            && setup_preflight_source.contains("cached_setup_preflight_transcript_challenges")
-            && setup_preflight_source.contains("cached_setup_preflight_transcript_unit_challenges")
+            && setup_preflight_source.contains("struct SetupPreflightTranscriptChallengeCache")
+            && setup_preflight_source.contains("fn unit_challenges(")
+            && setup_preflight_source.contains("fn flat_challenges(")
             && setup_preflight_source.contains(
                 "validate_optional_pcs_fri_opening_proof_segments_with_transcript_challenges"
             )
