@@ -82,7 +82,15 @@ theorem runtime_soundness_evidence_implies_pcs_and_fri
         system.pcsOpeningsValid publicInput proof
           /\ system.friQueriesValid publicInput proof := by
   intro artifact publicInput proof requiresExternalSource evidence
-  exact evidence.right.right.right.right.right
+  rcases evidence with
+    ⟨_transcriptEvidence,
+      _artifactEvidence,
+      _transcriptBound,
+      _publicInputBound,
+      _sourceRequirement,
+      pcsOpenings,
+      friQueries⟩
+  exact ⟨pcsOpenings, friQueries⟩
 
 theorem runtime_soundness_evidence_implies_runtime_artifact_evidence
     {system : VerifierModel}
@@ -102,7 +110,10 @@ theorem runtime_soundness_evidence_implies_runtime_artifact_evidence
           publicInput
           proof := by
   intro artifact publicInput proof requiresExternalSource evidence
-  exact evidence.right.left
+  rcases evidence with
+    ⟨_transcriptEvidence, artifactEvidence, _transcriptBound,
+      _publicInputBound, _sourceRequirement, _pcsOpenings, _friQueries⟩
+  exact artifactEvidence
 
 theorem runtime_soundness_evidence_implies_transcript_bound
     {system : VerifierModel}
@@ -117,7 +128,10 @@ theorem runtime_soundness_evidence_implies_transcript_bound
           requiresExternalSource ->
         system.transcriptBound publicInput proof := by
   intro artifact publicInput proof requiresExternalSource evidence
-  exact evidence.right.right.left
+  rcases evidence with
+    ⟨_transcriptEvidence, _artifactEvidence, transcriptBound,
+      _publicInputBound, _sourceRequirement, _pcsOpenings, _friQueries⟩
+  exact transcriptBound
 
 theorem runtime_soundness_evidence_implies_public_input_bound
     {system : VerifierModel}
@@ -132,7 +146,10 @@ theorem runtime_soundness_evidence_implies_public_input_bound
           requiresExternalSource ->
         system.publicInputBound publicInput proof := by
   intro artifact publicInput proof requiresExternalSource evidence
-  exact evidence.right.right.right.left
+  rcases evidence with
+    ⟨_transcriptEvidence, _artifactEvidence, _transcriptBound,
+      publicInputBound, _sourceRequirement, _pcsOpenings, _friQueries⟩
+  exact publicInputBound
 
 theorem runtime_soundness_evidence_implies_external_source_requirement
     {system : VerifierModel}
@@ -152,7 +169,10 @@ theorem runtime_soundness_evidence_implies_external_source_requirement
           proof
           requiresExternalSource := by
   intro artifact publicInput proof requiresExternalSource evidence
-  exact evidence.right.right.right.right.left
+  rcases evidence with
+    ⟨_transcriptEvidence, _artifactEvidence, _transcriptBound,
+      _publicInputBound, sourceRequirement, _pcsOpenings, _friQueries⟩
+  exact sourceRequirement
 
 theorem runtime_soundness_evidence_implies_binding_pcs_fri_contract
     {system : VerifierModel}
@@ -170,10 +190,15 @@ theorem runtime_soundness_evidence_implies_binding_pcs_fri_contract
           /\ system.pcsOpeningsValid publicInput proof
           /\ system.friQueriesValid publicInput proof := by
   intro artifact publicInput proof requiresExternalSource evidence
-  exact
-    And.intro evidence.right.right.left
-      (And.intro evidence.right.right.right.left
-        evidence.right.right.right.right.right)
+  rcases evidence with
+    ⟨_transcriptEvidence,
+      _artifactEvidence,
+      transcriptBound,
+      publicInputBound,
+      _sourceRequirement,
+      pcsOpenings,
+      friQueries⟩
+  exact ⟨transcriptBound, publicInputBound, pcsOpenings, friQueries⟩
 
 theorem runtime_soundness_evidence_implies_core_obligations
     {system : VerifierModel}
@@ -188,12 +213,15 @@ theorem runtime_soundness_evidence_implies_core_obligations
           requiresExternalSource ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource evidence
-  exact
-    And.intro evidence.right.right.left
-      (And.intro evidence.right.right.right.left
-        (And.intro
-          evidence.right.right.right.right.right.left
-          evidence.right.right.right.right.right.right))
+  rcases evidence with
+    ⟨_transcriptEvidence,
+      _artifactEvidence,
+      transcriptBound,
+      publicInputBound,
+      _sourceRequirement,
+      pcsOpenings,
+      friQueries⟩
+  exact ⟨transcriptBound, publicInputBound, pcsOpenings, friQueries⟩
 
 theorem runtime_soundness_evidence_implies_runtime_artifact_core_contract
     {system : VerifierModel}

@@ -81,16 +81,17 @@ theorem runtime_pipeline_binding_required_external_source_full_soundness_contrac
       proof
       requiresExternalSource
       accepted
-  cases requiredSound with
-  | intro _pipelineEvidence tail =>
-    cases tail with
-    | intro traceExternalEvidence tail =>
-      cases tail with
-      | intro openingExternalEvidence _tail =>
-        exact
-          And.intro verifierAccepts
-            (And.intro traceExternalEvidence
-              (And.intro openingExternalEvidence fullContract))
+  rcases requiredSound with
+    ⟨_pipelineEvidence,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      _pcsOpenings,
+      _soundWitness⟩
+  exact
+    ⟨verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      fullContract⟩
 
 theorem runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract
     {system : VerifierModel}
@@ -317,13 +318,19 @@ theorem runtime_pipeline_binding_required_external_source_audited_accepts_sound_
       requiresExternalSource
       accepted
       required
+  rcases requiredSound with
+    ⟨_pipelineEvidence,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      _pcsOpenings,
+      soundWitness⟩
   exact
-    And.intro auditedAssumptions
-      (And.intro proofSystemSound
-        (And.intro verifierAccepts
-          (And.intro requiredSound.right.left
-            (And.intro requiredSound.right.right.left
-              requiredSound.right.right.right.right))))
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      soundWitness⟩
 
 theorem runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract
     {system : VerifierModel}
@@ -373,14 +380,20 @@ theorem runtime_pipeline_binding_required_external_source_audited_pcs_accepts_so
       requiresExternalSource
       accepted
       required
+  rcases requiredSound with
+    ⟨_pipelineEvidence,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      pcsOpenings,
+      soundWitness⟩
   exact
-    And.intro auditedAssumptions
-      (And.intro proofSystemSound
-        (And.intro verifierAccepts
-          (And.intro requiredSound.right.left
-            (And.intro requiredSound.right.right.left
-              (And.intro requiredSound.right.right.right.left
-                requiredSound.right.right.right.right)))))
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      pcsOpenings,
+      soundWitness⟩
 
 theorem runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract
     {system : VerifierModel}
@@ -439,15 +452,22 @@ theorem runtime_pipeline_binding_required_external_source_audited_pcs_fri_witnes
       publicInput
       proof
       accepted
+  rcases requiredSound with
+    ⟨_pipelineEvidence,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      pcsOpenings,
+      soundWitness⟩
+  rcases pcsAndFri with ⟨_pcsOpeningsFromChecked, friQueries⟩
   exact
-    And.intro auditedAssumptions
-      (And.intro proofSystemSound
-        (And.intro verifierAccepts
-          (And.intro requiredSound.right.left
-            (And.intro requiredSound.right.right.left
-              (And.intro requiredSound.right.right.right.left
-                (And.intro pcsAndFri.right
-                  requiredSound.right.right.right.right))))))
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      pcsOpenings,
+      friQueries,
+      soundWitness⟩
 
 theorem runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract
     {system : VerifierModel}
@@ -521,18 +541,29 @@ theorem runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_w
       publicInput
       proof
       accepted
+  rcases compactContract with
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      pcsOpenings,
+      friQueries,
+      soundWitness⟩
+  rcases coreContract with
+    ⟨_traceExternalCore, _openingExternalCore, verifierCore⟩
   exact
-    And.intro compactContract.left
-      (And.intro compactContract.right.left
-        (And.intro compactContract.right.right.left
-          (And.intro compactContract.right.right.right.left
-            (And.intro compactContract.right.right.right.right.left
-              (And.intro compactContract.right.right.right.right.right.left
-                (And.intro compactContract.right.right.right.right.right.right.left
-                  (And.intro seedBinds
-                      (And.intro seededFriOpeningChecked
-                        (And.intro coreContract.right.right
-                          compactContract.right.right.right.right.right.right.right)))))))))
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      pcsOpenings,
+      friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      soundWitness⟩
 
 theorem runtime_pipeline_binding_required_external_source_audited_seeded_query_requirements_contract
     {system : VerifierModel}
@@ -565,10 +596,18 @@ theorem runtime_pipeline_binding_required_external_source_audited_seeded_query_r
       requiresExternalSource
       accepted
       required
-  have seedBinds :=
-    auditedCore.right.right.right.right.right.right.right.left
-  have seededFriOpeningChecked :=
-    auditedCore.right.right.right.right.right.right.right.right.left
+  rcases auditedCore with
+    ⟨_auditedAssumptions,
+      _proofSystemSound,
+      _verifierAccepts,
+      _traceExternalEvidence,
+      _openingExternalEvidence,
+      _pcsOpenings,
+      _friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      _verifierCore,
+      _soundWitness⟩
   exact And.intro seedBinds seededFriOpeningChecked
 
 theorem runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract
@@ -649,28 +688,33 @@ theorem runtime_pipeline_binding_required_external_source_audited_proof_system_c
       publicInput
       proof
       accepted
-  have seedBinds :=
-    compactContract.right.right.right.right.right.right.right.left
-  have seededFriOpeningChecked :=
-    compactContract.right.right.right.right.right.right.right.right.left
-  have verifierCore :=
-    compactContract.right.right.right.right.right.right.right.right.right.left
-  have soundWitness :=
-    compactContract.right.right.right.right.right.right.right.right.right.right
+  rcases compactContract with
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      pcsOpenings,
+      friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      soundWitness⟩
   exact
-    And.intro compactContract.left
-      (And.intro compactContract.right.left
-        (And.intro compactContract.right.right.left
-          (And.intro compactContract.right.right.right.left
-            (And.intro compactContract.right.right.right.right.left
-              (And.intro transcriptBound
-                  (And.intro publicInputBound
-                    (And.intro compactContract.right.right.right.right.right.left
-                      (And.intro compactContract.right.right.right.right.right.right.left
-                        (And.intro seedBinds
-                          (And.intro seededFriOpeningChecked
-                            (And.intro verifierCore
-                              (And.intro executionObligations soundWitness))))))))))))
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      executionObligations,
+      soundWitness⟩
 
 
 end Lzvm
