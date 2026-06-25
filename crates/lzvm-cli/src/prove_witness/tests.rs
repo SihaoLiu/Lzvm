@@ -1,4 +1,8 @@
 use super::args::parsed_inputs;
+use super::gpu_preflight::{validate_large_guest_pc_gpu, validate_large_guest_pc_gpu_memory};
+use super::guest_pc_trace::{
+    record_guest_stage_root_materialization_shape, record_guest_trace_sampled_duration_counts,
+};
 use super::timing::{
     prover_gpu_mode, write_timing_entries, write_timing_summary, TimingCountEntry, TimingEntry,
 };
@@ -685,6 +689,84 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
     ] {
         assert!(stdout.contains(expected), "missing {expected} in {stdout}");
     }
+}
+
+#[test]
+fn guest_root_materialization_shape_flags_cross_segment_pipeline_need() {
+    let mut timings = TimingRecorder::new(true);
+
+    record_guest_stage_root_materialization_shape(&mut timings, 23, 23, 1);
+
+    let mut stdout = Vec::new();
+    write_timing_summary(&mut stdout, &timings);
+    let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+    for expected in [
+        "timing_guest_stage_tree_commit_root_materialization_avg_group_size_milli=1000\n",
+        "timing_guest_stage_tree_commit_root_materialization_needs_cross_segment_pipeline=1\n",
+    ] {
+        assert!(stdout.contains(expected), "missing {expected} in {stdout}");
+    }
+}
+
+#[test]
+fn guest_root_materialization_shape_keeps_batched_groups_clear() {
+    let mut timings = TimingRecorder::new(true);
+
+    record_guest_stage_root_materialization_shape(&mut timings, 24, 6, 4);
+
+    let mut stdout = Vec::new();
+    write_timing_summary(&mut stdout, &timings);
+    let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+    for expected in [
+        "timing_guest_stage_tree_commit_root_materialization_avg_group_size_milli=4000\n",
+        "timing_guest_stage_tree_commit_root_materialization_needs_cross_segment_pipeline=0\n",
+    ] {
+        assert!(stdout.contains(expected), "missing {expected} in {stdout}");
+    }
+}
+
+#[test]
+fn guest_trace_sampled_detail_counts_keep_submillisecond_resolution() {
+    let mut timings = TimingRecorder::new(true);
+
+    record_guest_trace_sampled_duration_counts(
+        &mut timings,
+        "guest_trace_report",
+        std::time::Duration::from_nanos(750),
+        3,
+    );
+
+    let mut stdout = Vec::new();
+    write_timing_summary(&mut stdout, &timings);
+    let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+    for expected in [
+        "timing_guest_trace_report_sampled_ns=750\n",
+        "timing_guest_trace_report_avg_sample_ns=250\n",
+    ] {
+        assert!(stdout.contains(expected), "missing {expected} in {stdout}");
+    }
+}
+
+#[test]
+fn guest_trace_sampled_detail_counts_skip_without_samples() {
+    let mut timings = TimingRecorder::new(true);
+
+    record_guest_trace_sampled_duration_counts(
+        &mut timings,
+        "guest_trace_report",
+        std::time::Duration::from_nanos(750),
+        0,
+    );
+
+    let mut stdout = Vec::new();
+    write_timing_summary(&mut stdout, &timings);
+    let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
+
+    assert!(!stdout.contains("guest_trace_report_sampled_ns"));
+    assert!(!stdout.contains("guest_trace_report_avg_sample_ns"));
 }
 
 #[test]

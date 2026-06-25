@@ -11946,6 +11946,16 @@ fn runs_prove_witness_for_aggregate_with_unit_values_segment() {
                     trace_instance_index: 0,
                     values: vec![111, 211, 212, 213],
                 },
+                UnitValuesUnitSegment {
+                    unit_index: 2,
+                    trace_instance_index: 0,
+                    values: vec![121, 221, 222, 223],
+                },
+                UnitValuesUnitSegment {
+                    unit_index: 3,
+                    trace_instance_index: 0,
+                    values: vec![131, 231, 232, 233],
+                },
             ],
         })
         .expect("unit values segment should encode"),
@@ -12007,13 +12017,19 @@ fn runs_prove_witness_for_aggregate_with_unit_values_segment() {
         .expect("unit values segment should exist");
     let unit_values =
         parse_unit_values_segment(&unit_values_segment.data).expect("unit values should parse");
-    assert_eq!(unit_values.units.len(), 2);
+    assert_eq!(unit_values.units.len(), 4);
     assert_eq!(unit_values.units[0].unit_index, 0);
     assert_eq!(unit_values.units[1].unit_index, 1);
+    assert_eq!(unit_values.units[2].unit_index, 2);
+    assert_eq!(unit_values.units[3].unit_index, 3);
     assert_eq!(unit_values.units[0].values, vec![101, 201, 202, 203]);
     assert_eq!(unit_values.units[1].values, vec![111, 211, 212, 213]);
+    assert_eq!(unit_values.units[2].values, vec![121, 221, 222, 223]);
+    assert_eq!(unit_values.units[3].values, vec![131, 231, 232, 233]);
     assert!(output_dir.join("unit-0.witness-segment").exists());
     assert!(output_dir.join("unit-1.witness-segment").exists());
+    assert!(output_dir.join("unit-2.witness-segment").exists());
+    assert!(output_dir.join("unit-3.witness-segment").exists());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
@@ -12046,6 +12062,16 @@ fn runs_prove_witness_for_aggregate_with_proof_and_group_segments() {
                     unit_index: 1,
                     trace_instance_index: 0,
                     values: vec![111, 211, 212, 213],
+                },
+                UnitValuesUnitSegment {
+                    unit_index: 2,
+                    trace_instance_index: 0,
+                    values: vec![121, 221, 222, 223],
+                },
+                UnitValuesUnitSegment {
+                    unit_index: 3,
+                    trace_instance_index: 0,
+                    values: vec![131, 231, 232, 233],
                 },
             ],
         })
@@ -12139,9 +12165,11 @@ fn runs_prove_witness_for_aggregate_with_proof_and_group_segments() {
         .expect("unit values segment should exist");
     let unit_values =
         parse_unit_values_segment(&unit_values_segment.data).expect("unit values should parse");
-    assert_eq!(unit_values.units.len(), 2);
+    assert_eq!(unit_values.units.len(), 4);
     assert_eq!(unit_values.units[0].values, vec![101, 201, 202, 203]);
     assert_eq!(unit_values.units[1].values, vec![111, 211, 212, 213]);
+    assert_eq!(unit_values.units[2].values, vec![121, 221, 222, 223]);
+    assert_eq!(unit_values.units[3].values, vec![131, 231, 232, 233]);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
@@ -12785,6 +12813,7 @@ fn saves_prove_witness_transcript_fri_outputs_when_requested() {
         &schedule.units[0],
         VerifierFriComparisonRequest {
             unit_index: 0,
+            trace_instance_index: evaluations.units[0].trace_instance_index,
             query_rows: &query_plan.units[0].queries,
             query_outputs: &query_outputs,
             fri: &fri.units[0],

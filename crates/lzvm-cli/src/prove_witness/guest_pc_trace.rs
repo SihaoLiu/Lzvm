@@ -77,230 +77,163 @@ pub(super) fn record_guest_pc_trace_timing(
     timings: &mut TimingRecorder,
     timing: ProveWitnessGuestPcTraceTiming,
 ) {
+    macro_rules! record_duration {
+        ($method:ident) => {
+            timings.record(
+                stringify!($method).trim_end_matches("_duration"),
+                timing.$method(),
+            );
+        };
+        ($name:literal, $method:ident) => {
+            timings.record($name, timing.$method());
+        };
+    }
+    macro_rules! record_count {
+        ($name:literal, $method:ident) => {
+            timings.record_count($name, timing.$method());
+        };
+    }
+
     timings.record_count("guest_segment_count", timing.segment_count());
-    timings.record(
-        "guest_trace_stream_elapsed",
-        timing.guest_trace_stream_elapsed_duration(),
-    );
-    timings.record("guest_trace_stream", timing.guest_trace_stream_duration());
-    timings.record(
-        "guest_trace_proof_value_prerun",
-        timing.guest_trace_proof_value_prerun_duration(),
-    );
-    timings.record(
-        "guest_segment_commit",
-        timing.guest_segment_commit_duration(),
-    );
-    timings.record(
-        "guest_segment_commit_attempt",
-        timing.guest_segment_commit_attempt_duration(),
-    );
-    timings.record(
-        "guest_segment_commit_oom_retry",
-        timing.guest_segment_commit_oom_retry_duration(),
-    );
-    timings.record_count(
-        "guest_segment_commit_initial_workers",
-        timing.guest_segment_commit_initial_worker_count(),
-    );
-    timings.record_count(
-        "guest_segment_commit_effective_workers",
-        timing.guest_segment_commit_effective_worker_count(),
-    );
-    timings.record_count(
-        "guest_segment_commit_worker_submits",
-        timing.guest_segment_commit_worker_submit_count(),
-    );
-    timings.record_count(
-        "guest_segment_commit_worker_joins",
-        timing.guest_segment_commit_worker_join_count(),
-    );
-    timings.record_count(
-        "guest_segment_commit_worker_backpressure_joins",
-        timing.guest_segment_commit_worker_backpressure_join_count(),
-    );
-    timings.record(
-        "guest_segment_commit_worker_backpressure_join",
-        timing.guest_segment_commit_worker_backpressure_join_duration(),
-    );
-    timings.record_count(
-        "guest_segment_commit_worker_finish_joins",
-        timing.guest_segment_commit_worker_finish_join_count(),
-    );
-    timings.record(
-        "guest_segment_commit_worker_finish_join",
-        timing.guest_segment_commit_worker_finish_join_duration(),
-    );
-    timings.record_count(
-        "guest_segment_commit_worker_max_in_flight",
-        timing.guest_segment_commit_worker_max_in_flight_count(),
-    );
-    timings.record_count(
-        "guest_segment_commit_oom_retries",
-        timing.guest_segment_commit_oom_retry_count(),
-    );
-    timings.record_count(
-        "guest_segment_commit_cuda_memory_total_bytes",
-        timing.guest_segment_commit_cuda_memory_total_byte_count(),
-    );
-    timings.record_count(
-        "guest_segment_commit_cuda_memory_initial_free_bytes",
-        timing.guest_segment_commit_cuda_memory_initial_free_byte_count(),
-    );
-    timings.record_count(
-        "guest_segment_commit_cuda_memory_effective_free_bytes",
-        timing.guest_segment_commit_cuda_memory_effective_free_byte_count(),
-    );
-    timings.record_count(
-        "guest_segment_commit_cuda_memory_min_free_bytes",
-        timing.guest_segment_commit_cuda_memory_min_free_byte_count(),
-    );
-    timings.record_count(
-        "guest_segment_commit_cuda_allocator_initial_cached_bytes",
-        timing.guest_segment_commit_cuda_allocator_initial_cached_byte_count(),
-    );
-    timings.record_count(
-        "guest_segment_commit_cuda_allocator_effective_cached_bytes",
-        timing.guest_segment_commit_cuda_allocator_effective_cached_byte_count(),
-    );
-    timings.record("guest_trace_runner", timing.guest_trace_runner_duration());
-    timings.record("guest_trace_lowerer", timing.guest_trace_lowerer_duration());
-    timings.record("guest_trace_lower", timing.guest_trace_lower_duration());
-    timings.record("guest_trace_report", timing.guest_trace_report_duration());
-    timings.record(
-        "guest_trace_report_validation",
-        timing.guest_trace_report_validation_duration(),
-    );
-    timings.record(
-        "guest_trace_report_apply",
-        timing.guest_trace_report_apply_duration(),
-    );
-    timings.record(
-        "guest_trace_unit_summary",
-        timing.guest_trace_unit_summary_duration(),
-    );
-    timings.record(
+    record_duration!(guest_trace_stream_elapsed_duration);
+    record_duration!(guest_trace_stream_duration);
+    record_duration!(guest_trace_proof_value_prerun_duration);
+    record_duration!(guest_segment_commit_duration);
+    record_duration!(guest_segment_commit_attempt_duration);
+    record_duration!(guest_segment_commit_oom_retry_duration);
+    record_duration!(guest_segment_commit_worker_backpressure_join_duration);
+    record_duration!(guest_segment_commit_worker_finish_join_duration);
+    record_duration!(guest_trace_runner_duration);
+    record_duration!(guest_trace_lowerer_duration);
+    record_duration!(guest_trace_lower_duration);
+    record_duration!(guest_trace_report_duration);
+    record_duration!(guest_trace_report_validation_duration);
+    record_duration!(guest_trace_report_apply_duration);
+    record_duration!(guest_trace_unit_summary_duration);
+    record_duration!(
         "guest_trace_single_row_report_lower",
-        timing.guest_trace_single_row_report_duration(),
+        guest_trace_single_row_report_duration
     );
-    timings.record(
+    record_duration!(
         "guest_trace_multi_row_report_lower",
-        timing.guest_trace_multi_row_report_duration(),
+        guest_trace_multi_row_report_duration
     );
-    timings.record(
+    record_duration!(
         "guest_trace_pending_dma_report_lower",
-        timing.guest_trace_pending_dma_report_duration(),
+        guest_trace_pending_dma_report_duration
     );
-    timings.record(
+    record_duration!(
         "guest_trace_amo_report_lower",
-        timing.guest_trace_amo_report_duration(),
+        guest_trace_amo_report_duration
     );
-    timings.record(
+    record_duration!(
         "guest_trace_store_conditional_report_lower",
-        timing.guest_trace_store_conditional_report_duration(),
+        guest_trace_store_conditional_report_duration
     );
-    timings.record(
+    record_duration!(
         "guest_trace_external_op_row_lower",
-        timing.guest_trace_external_op_row_duration(),
+        guest_trace_external_op_row_duration
     );
-    timings.record(
-        "guest_trace_copy_row_lower",
-        timing.guest_trace_copy_row_duration(),
+    record_duration!("guest_trace_copy_row_lower", guest_trace_copy_row_duration);
+    record_duration!(guest_trace_report_lowering_duration);
+    record_duration!(guest_trace_report_row_validation_duration);
+    record_duration!(guest_trace_report_row_validation_timer_bookkeeping_duration);
+    record_duration!(guest_trace_report_memory_columns_duration);
+    record_duration!(guest_trace_report_source_values_duration);
+    record_duration!(guest_trace_report_source_a_value_duration);
+    record_duration!(guest_trace_report_source_b_value_duration);
+    record_duration!(guest_trace_report_source_value_record_duration);
+    record_duration!(guest_trace_report_source_immediate_read_duration);
+    record_duration!(guest_trace_report_source_register_read_duration);
+    record_duration!(guest_trace_report_source_memory_read_duration);
+    record_duration!(guest_trace_report_source_indirect_read_duration);
+    record_duration!(guest_trace_report_source_last_c_read_duration);
+    record_duration!(guest_trace_copy_source_memory_read_duration);
+    record_duration!(guest_trace_copy_source_indirect_read_duration);
+    record_duration!(guest_trace_report_precompile_memory_duration);
+    record_duration!(guest_trace_report_instruction_result_duration);
+    record_duration!(guest_trace_report_next_pc_duration);
+    record_duration!(guest_trace_report_register_access_duration);
+    record_duration!(guest_trace_report_memory_access_duration);
+    record_duration!(guest_trace_report_store_apply_duration);
+    record_duration!(guest_trace_report_visit_duration);
+    record_duration!(guest_trace_emit_duration);
+    record_duration!(guest_trace_descriptor_duration);
+    record_count!(
+        "guest_segment_commit_initial_workers",
+        guest_segment_commit_initial_worker_count
     );
-    timings.record(
-        "guest_trace_report_lowering",
-        timing.guest_trace_report_lowering_duration(),
+    record_count!(
+        "guest_segment_commit_effective_workers",
+        guest_segment_commit_effective_worker_count
     );
-    timings.record(
-        "guest_trace_report_row_validation",
-        timing.guest_trace_report_row_validation_duration(),
+    record_count!(
+        "guest_segment_commit_worker_submits",
+        guest_segment_commit_worker_submit_count
     );
-    timings.record(
-        "guest_trace_report_row_validation_timer_bookkeeping",
-        timing.guest_trace_report_row_validation_timer_bookkeeping_duration(),
+    record_count!(
+        "guest_segment_commit_worker_joins",
+        guest_segment_commit_worker_join_count
     );
-    timings.record(
-        "guest_trace_report_memory_columns",
-        timing.guest_trace_report_memory_columns_duration(),
+    record_count!(
+        "guest_segment_commit_worker_backpressure_joins",
+        guest_segment_commit_worker_backpressure_join_count
     );
-    timings.record(
-        "guest_trace_report_source_values",
-        timing.guest_trace_report_source_values_duration(),
+    record_count!(
+        "guest_segment_commit_worker_finish_joins",
+        guest_segment_commit_worker_finish_join_count
     );
-    timings.record(
-        "guest_trace_report_source_a_value",
-        timing.guest_trace_report_source_a_value_duration(),
+    record_count!(
+        "guest_segment_commit_worker_max_in_flight",
+        guest_segment_commit_worker_max_in_flight_count
     );
-    timings.record(
-        "guest_trace_report_source_b_value",
-        timing.guest_trace_report_source_b_value_duration(),
+    record_count!(
+        "guest_segment_commit_oom_retries",
+        guest_segment_commit_oom_retry_count
     );
-    timings.record(
-        "guest_trace_report_source_value_record",
-        timing.guest_trace_report_source_value_record_duration(),
+    record_count!(
+        "guest_segment_commit_cuda_memory_total_bytes",
+        guest_segment_commit_cuda_memory_total_byte_count
     );
-    timings.record(
-        "guest_trace_report_source_immediate_read",
-        timing.guest_trace_report_source_immediate_read_duration(),
+    record_count!(
+        "guest_segment_commit_cuda_memory_initial_free_bytes",
+        guest_segment_commit_cuda_memory_initial_free_byte_count
     );
-    timings.record(
-        "guest_trace_report_source_register_read",
-        timing.guest_trace_report_source_register_read_duration(),
+    record_count!(
+        "guest_segment_commit_cuda_memory_effective_free_bytes",
+        guest_segment_commit_cuda_memory_effective_free_byte_count
     );
-    timings.record(
-        "guest_trace_report_source_memory_read",
-        timing.guest_trace_report_source_memory_read_duration(),
+    record_count!(
+        "guest_segment_commit_cuda_memory_min_free_bytes",
+        guest_segment_commit_cuda_memory_min_free_byte_count
     );
-    timings.record(
-        "guest_trace_report_source_indirect_read",
-        timing.guest_trace_report_source_indirect_read_duration(),
+    record_count!(
+        "guest_segment_commit_cuda_allocator_initial_cached_bytes",
+        guest_segment_commit_cuda_allocator_initial_cached_byte_count
     );
-    timings.record(
-        "guest_trace_report_source_last_c_read",
-        timing.guest_trace_report_source_last_c_read_duration(),
-    );
-    timings.record(
-        "guest_trace_copy_source_memory_read",
-        timing.guest_trace_copy_source_memory_read_duration(),
-    );
-    timings.record(
-        "guest_trace_copy_source_indirect_read",
-        timing.guest_trace_copy_source_indirect_read_duration(),
-    );
-    timings.record(
-        "guest_trace_report_precompile_memory",
-        timing.guest_trace_report_precompile_memory_duration(),
-    );
-    timings.record(
-        "guest_trace_report_instruction_result",
-        timing.guest_trace_report_instruction_result_duration(),
-    );
-    timings.record(
-        "guest_trace_report_next_pc",
-        timing.guest_trace_report_next_pc_duration(),
-    );
-    timings.record(
-        "guest_trace_report_register_access",
-        timing.guest_trace_report_register_access_duration(),
-    );
-    timings.record(
-        "guest_trace_report_memory_access",
-        timing.guest_trace_report_memory_access_duration(),
-    );
-    timings.record(
-        "guest_trace_report_store_apply",
-        timing.guest_trace_report_store_apply_duration(),
-    );
-    timings.record(
-        "guest_trace_report_visit",
-        timing.guest_trace_report_visit_duration(),
-    );
-    timings.record("guest_trace_emit", timing.guest_trace_emit_duration());
-    timings.record(
-        "guest_trace_descriptor",
-        timing.guest_trace_descriptor_duration(),
+    record_count!(
+        "guest_segment_commit_cuda_allocator_effective_cached_bytes",
+        guest_segment_commit_cuda_allocator_effective_cached_byte_count
     );
     let detail_sample_count = timing.guest_trace_report_detail_sample_count();
+    macro_rules! record_sampled_duration_count {
+        ($method:ident) => {
+            record_guest_trace_sampled_duration_counts(
+                timings,
+                stringify!($method).trim_end_matches("_duration"),
+                timing.$method(),
+                detail_sample_count,
+            );
+        };
+        ($name:literal, $method:ident) => {
+            record_guest_trace_sampled_duration_counts(
+                timings,
+                $name,
+                timing.$method(),
+                detail_sample_count,
+            );
+        };
+    }
     timings.record_count("guest_trace_report_detail_samples", detail_sample_count);
     timings.record_count(
         "guest_trace_report_source_immediate_reads",
@@ -322,150 +255,30 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_report_source_last_c_reads",
         timing.guest_trace_report_source_last_c_read_count(),
     );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report",
-        timing.guest_trace_report_sample_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_lowering",
-        timing.guest_trace_report_lowering_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_row_validation",
-        timing.guest_trace_report_row_validation_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_row_validation_timer_bookkeeping",
-        timing.guest_trace_report_row_validation_timer_bookkeeping_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_memory_columns",
-        timing.guest_trace_report_memory_columns_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_source_values",
-        timing.guest_trace_report_source_values_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_source_a_value",
-        timing.guest_trace_report_source_a_value_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_source_b_value",
-        timing.guest_trace_report_source_b_value_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_source_value_record",
-        timing.guest_trace_report_source_value_record_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_source_immediate_read",
-        timing.guest_trace_report_source_immediate_read_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_source_register_read",
-        timing.guest_trace_report_source_register_read_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_source_memory_read",
-        timing.guest_trace_report_source_memory_read_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_source_indirect_read",
-        timing.guest_trace_report_source_indirect_read_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_source_last_c_read",
-        timing.guest_trace_report_source_last_c_read_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_copy_source_memory_read",
-        timing.guest_trace_copy_source_memory_read_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_copy_source_indirect_read",
-        timing.guest_trace_copy_source_indirect_read_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_precompile_memory",
-        timing.guest_trace_report_precompile_memory_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_instruction_result",
-        timing.guest_trace_report_instruction_result_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_next_pc",
-        timing.guest_trace_report_next_pc_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_register_access",
-        timing.guest_trace_report_register_access_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_memory_access",
-        timing.guest_trace_report_memory_access_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_store_apply",
-        timing.guest_trace_report_store_apply_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_report_visit",
-        timing.guest_trace_report_visit_duration(),
-        detail_sample_count,
-    );
-    record_guest_trace_sampled_duration_counts(
-        timings,
-        "guest_trace_descriptor",
-        timing.guest_trace_descriptor_duration(),
-        detail_sample_count,
-    );
+    record_sampled_duration_count!("guest_trace_report", guest_trace_report_sample_duration);
+    record_sampled_duration_count!(guest_trace_report_lowering_duration);
+    record_sampled_duration_count!(guest_trace_report_row_validation_duration);
+    record_sampled_duration_count!(guest_trace_report_row_validation_timer_bookkeeping_duration);
+    record_sampled_duration_count!(guest_trace_report_memory_columns_duration);
+    record_sampled_duration_count!(guest_trace_report_source_values_duration);
+    record_sampled_duration_count!(guest_trace_report_source_a_value_duration);
+    record_sampled_duration_count!(guest_trace_report_source_b_value_duration);
+    record_sampled_duration_count!(guest_trace_report_source_value_record_duration);
+    record_sampled_duration_count!(guest_trace_report_source_immediate_read_duration);
+    record_sampled_duration_count!(guest_trace_report_source_register_read_duration);
+    record_sampled_duration_count!(guest_trace_report_source_memory_read_duration);
+    record_sampled_duration_count!(guest_trace_report_source_indirect_read_duration);
+    record_sampled_duration_count!(guest_trace_report_source_last_c_read_duration);
+    record_sampled_duration_count!(guest_trace_copy_source_memory_read_duration);
+    record_sampled_duration_count!(guest_trace_copy_source_indirect_read_duration);
+    record_sampled_duration_count!(guest_trace_report_precompile_memory_duration);
+    record_sampled_duration_count!(guest_trace_report_instruction_result_duration);
+    record_sampled_duration_count!(guest_trace_report_next_pc_duration);
+    record_sampled_duration_count!(guest_trace_report_register_access_duration);
+    record_sampled_duration_count!(guest_trace_report_memory_access_duration);
+    record_sampled_duration_count!(guest_trace_report_store_apply_duration);
+    record_sampled_duration_count!(guest_trace_report_visit_duration);
+    record_sampled_duration_count!(guest_trace_descriptor_duration);
     timings.record(
         "guest_trace_seed_direct_lift",
         timing.guest_trace_seed_direct_lift_duration(),
@@ -633,68 +446,76 @@ pub(super) fn record_guest_pc_trace_timing(
     );
     let [descriptor_high32_a_values, descriptor_high32_b_values, descriptor_high32_c_values, descriptor_high32_a_payload_values, descriptor_high32_b_payload_values, descriptor_high32_store_payload_values, descriptor_high32_store_prev_value_values] =
         timing.guest_trace_descriptor_high32_field_counts();
-    timings.record_count(
-        "guest_trace_descriptor_high32_a_values",
-        descriptor_high32_a_values,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_b_values",
-        descriptor_high32_b_values,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_c_values",
-        descriptor_high32_c_values,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_a_payload_values",
-        descriptor_high32_a_payload_values,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_b_payload_values",
-        descriptor_high32_b_payload_values,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_store_payload_values",
-        descriptor_high32_store_payload_values,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_store_prev_value_values",
-        descriptor_high32_store_prev_value_values,
-    );
+    for (name, count) in [
+        (
+            "guest_trace_descriptor_high32_a_values",
+            descriptor_high32_a_values,
+        ),
+        (
+            "guest_trace_descriptor_high32_b_values",
+            descriptor_high32_b_values,
+        ),
+        (
+            "guest_trace_descriptor_high32_c_values",
+            descriptor_high32_c_values,
+        ),
+        (
+            "guest_trace_descriptor_high32_a_payload_values",
+            descriptor_high32_a_payload_values,
+        ),
+        (
+            "guest_trace_descriptor_high32_b_payload_values",
+            descriptor_high32_b_payload_values,
+        ),
+        (
+            "guest_trace_descriptor_high32_store_payload_values",
+            descriptor_high32_store_payload_values,
+        ),
+        (
+            "guest_trace_descriptor_high32_store_prev_value_values",
+            descriptor_high32_store_prev_value_values,
+        ),
+    ] {
+        timings.record_count(name, count);
+    }
     let [descriptor_high32_rows_with_0_fields, descriptor_high32_rows_with_1_fields, descriptor_high32_rows_with_2_fields, descriptor_high32_rows_with_3_fields, descriptor_high32_rows_with_4_fields, descriptor_high32_rows_with_5_fields, descriptor_high32_rows_with_6_fields, descriptor_high32_rows_with_7_fields] =
         timing.guest_trace_descriptor_high32_row_field_histogram();
-    timings.record_count(
-        "guest_trace_descriptor_high32_rows_with_0_fields",
-        descriptor_high32_rows_with_0_fields,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_rows_with_1_fields",
-        descriptor_high32_rows_with_1_fields,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_rows_with_2_fields",
-        descriptor_high32_rows_with_2_fields,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_rows_with_3_fields",
-        descriptor_high32_rows_with_3_fields,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_rows_with_4_fields",
-        descriptor_high32_rows_with_4_fields,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_rows_with_5_fields",
-        descriptor_high32_rows_with_5_fields,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_rows_with_6_fields",
-        descriptor_high32_rows_with_6_fields,
-    );
-    timings.record_count(
-        "guest_trace_descriptor_high32_rows_with_7_fields",
-        descriptor_high32_rows_with_7_fields,
-    );
+    for (name, count) in [
+        (
+            "guest_trace_descriptor_high32_rows_with_0_fields",
+            descriptor_high32_rows_with_0_fields,
+        ),
+        (
+            "guest_trace_descriptor_high32_rows_with_1_fields",
+            descriptor_high32_rows_with_1_fields,
+        ),
+        (
+            "guest_trace_descriptor_high32_rows_with_2_fields",
+            descriptor_high32_rows_with_2_fields,
+        ),
+        (
+            "guest_trace_descriptor_high32_rows_with_3_fields",
+            descriptor_high32_rows_with_3_fields,
+        ),
+        (
+            "guest_trace_descriptor_high32_rows_with_4_fields",
+            descriptor_high32_rows_with_4_fields,
+        ),
+        (
+            "guest_trace_descriptor_high32_rows_with_5_fields",
+            descriptor_high32_rows_with_5_fields,
+        ),
+        (
+            "guest_trace_descriptor_high32_rows_with_6_fields",
+            descriptor_high32_rows_with_6_fields,
+        ),
+        (
+            "guest_trace_descriptor_high32_rows_with_7_fields",
+            descriptor_high32_rows_with_7_fields,
+        ),
+    ] {
+        timings.record_count(name, count);
+    }
     timings.record_count(
         "guest_trace_single_row_reports",
         timing.guest_trace_single_row_report_count(),
@@ -1334,7 +1155,7 @@ pub(super) fn record_guest_pc_trace_timing(
     }
 }
 
-fn record_guest_stage_root_materialization_shape(
+pub(super) fn record_guest_stage_root_materialization_shape(
     timings: &mut TimingRecorder,
     root_count: usize,
     group_count: usize,
@@ -1357,7 +1178,7 @@ fn record_guest_stage_root_materialization_shape(
     );
 }
 
-fn record_guest_trace_sampled_duration_counts(
+pub(super) fn record_guest_trace_sampled_duration_counts(
     timings: &mut TimingRecorder,
     name: &'static str,
     duration: Duration,
@@ -1373,91 +1194,4 @@ fn record_guest_trace_sampled_duration_counts(
 
 fn duration_ns(duration: Duration) -> usize {
     usize::try_from(duration.as_nanos()).unwrap_or(usize::MAX)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::super::timing::{write_timing_summary, TimingRecorder};
-    use super::{
-        record_guest_stage_root_materialization_shape, record_guest_trace_sampled_duration_counts,
-    };
-    use std::time::Duration;
-
-    #[test]
-    fn guest_root_materialization_shape_flags_cross_segment_pipeline_need() {
-        let mut timings = TimingRecorder::new(true);
-
-        record_guest_stage_root_materialization_shape(&mut timings, 23, 23, 1);
-
-        let mut stdout = Vec::new();
-        write_timing_summary(&mut stdout, &timings);
-        let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
-
-        for expected in [
-            "timing_guest_stage_tree_commit_root_materialization_avg_group_size_milli=1000\n",
-            "timing_guest_stage_tree_commit_root_materialization_needs_cross_segment_pipeline=1\n",
-        ] {
-            assert!(stdout.contains(expected), "missing {expected} in {stdout}");
-        }
-    }
-
-    #[test]
-    fn guest_root_materialization_shape_keeps_batched_groups_clear() {
-        let mut timings = TimingRecorder::new(true);
-
-        record_guest_stage_root_materialization_shape(&mut timings, 24, 6, 4);
-
-        let mut stdout = Vec::new();
-        write_timing_summary(&mut stdout, &timings);
-        let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
-
-        for expected in [
-            "timing_guest_stage_tree_commit_root_materialization_avg_group_size_milli=4000\n",
-            "timing_guest_stage_tree_commit_root_materialization_needs_cross_segment_pipeline=0\n",
-        ] {
-            assert!(stdout.contains(expected), "missing {expected} in {stdout}");
-        }
-    }
-
-    #[test]
-    fn guest_trace_sampled_detail_counts_keep_submillisecond_resolution() {
-        let mut timings = TimingRecorder::new(true);
-
-        record_guest_trace_sampled_duration_counts(
-            &mut timings,
-            "guest_trace_report",
-            Duration::from_nanos(750),
-            3,
-        );
-
-        let mut stdout = Vec::new();
-        write_timing_summary(&mut stdout, &timings);
-        let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
-
-        for expected in [
-            "timing_guest_trace_report_sampled_ns=750\n",
-            "timing_guest_trace_report_avg_sample_ns=250\n",
-        ] {
-            assert!(stdout.contains(expected), "missing {expected} in {stdout}");
-        }
-    }
-
-    #[test]
-    fn guest_trace_sampled_detail_counts_skip_without_samples() {
-        let mut timings = TimingRecorder::new(true);
-
-        record_guest_trace_sampled_duration_counts(
-            &mut timings,
-            "guest_trace_report",
-            Duration::from_nanos(750),
-            0,
-        );
-
-        let mut stdout = Vec::new();
-        write_timing_summary(&mut stdout, &timings);
-        let stdout = String::from_utf8(stdout).expect("timing output should be utf-8");
-
-        assert!(!stdout.contains("guest_trace_report_sampled_ns"));
-        assert!(!stdout.contains("guest_trace_report_avg_sample_ns"));
-    }
 }

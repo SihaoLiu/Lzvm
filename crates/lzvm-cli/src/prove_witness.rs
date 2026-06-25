@@ -43,6 +43,7 @@ use crate::trace_input_shape::validate_trace_input_shapes;
 mod args;
 mod constant_material;
 mod eth_inputs;
+mod gpu_preflight;
 mod guest_pc_trace;
 mod output_file;
 mod proof_timing;
@@ -63,6 +64,7 @@ use eth_inputs::{
     prepare_eth_block_input, prepare_eth_block_public_inputs, public_values_field_count,
     summarize_public_inputs,
 };
+use gpu_preflight::{validate_large_guest_pc_gpu, validate_large_guest_pc_runtime_gpu};
 use guest_pc_trace::{record_guest_pc_trace_timing, run_guest_pc_trace_witness};
 use output_file::{write_output_file, write_proof_output};
 use proof_timing::record_proof_artifact_timing;
@@ -74,10 +76,6 @@ use value_inputs::{
     read_group_values_segment_input, read_packed_extension_values,
     read_packed_proof_values_segment, read_packed_unit_values_segment_for_unit, read_packed_values,
 };
-
-#[cfg(feature = "cuda")]
-const LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES: usize = 1024 * 1024 * 1024;
-const GUEST_PC_TRACE_GPU_SIZE_THRESHOLD: u64 = 1_000_000;
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     let mut parsed = match parse_witness_args(args) {
@@ -713,66 +711,6 @@ fn validate_guest_pc_trace_eth_input_binding(parsed: &ParsedWitnessArgs) -> Resu
         return Err("--eth-block-input/--eth-public-input with --guest-pc-trace requires --input-data with framed guest stdin".to_owned());
     }
     Ok(())
-}
-
-fn validate_large_guest_pc_gpu(instruction_limit: Option<u64>) -> Result<(), &'static str> {
-    match is_large_guest_pc_trace(instruction_limit) && !lzvm_prover::gpu_setup_available() {
-        true => Err("large --guest-pc-trace runs require a CUDA-enabled lzvm-cli build"),
-        false => Ok(()),
-    }
-}
-
-fn validate_large_guest_pc_runtime_gpu(instruction_limit: Option<u64>) -> Result<(), String> {
-    if !is_large_guest_pc_trace(instruction_limit) || !lzvm_prover::gpu_setup_available() {
-        return Ok(());
-    }
-    #[cfg(feature = "cuda")]
-    {
-        let info = lzvm_prover::gpu_memory_info().map_err(large_guest_pc_gpu_memory_query_error)?;
-        validate_large_guest_pc_gpu_memory(info, LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES)
-    }
-    #[cfg(not(feature = "cuda"))]
-    {
-        Ok(())
-    }
-}
-
-fn is_large_guest_pc_trace(instruction_limit: Option<u64>) -> bool {
-    instruction_limit.unwrap_or(0) >= GUEST_PC_TRACE_GPU_SIZE_THRESHOLD
-}
-
-#[cfg(feature = "cuda")]
-fn large_guest_pc_gpu_memory_query_error(error: lzvm_prover::GpuSetupError) -> String {
-    if error.is_cuda_out_of_memory() {
-        return "large --guest-pc-trace GPU memory preflight failed: CUDA reported out of memory while querying free memory; free GPU memory and retry".to_owned();
-    }
-    format!("large --guest-pc-trace GPU memory preflight failed: {error}")
-}
-
-#[cfg(any(test, feature = "cuda"))]
-fn validate_large_guest_pc_gpu_memory(
-    info: lzvm_prover::GpuMemoryInfo,
-    min_free_bytes: usize,
-) -> Result<(), String> {
-    if info.free_bytes >= min_free_bytes {
-        return Ok(());
-    }
-    Err(format!(
-        "large --guest-pc-trace requires at least {} MiB free CUDA memory: free {} MiB of {} MiB",
-        bytes_to_mib_ceil(min_free_bytes),
-        bytes_to_mib_floor(info.free_bytes),
-        bytes_to_mib_floor(info.total_bytes)
-    ))
-}
-
-#[cfg(any(test, feature = "cuda"))]
-fn bytes_to_mib_floor(bytes: usize) -> usize {
-    bytes / (1024 * 1024)
-}
-
-#[cfg(any(test, feature = "cuda"))]
-fn bytes_to_mib_ceil(bytes: usize) -> usize {
-    bytes.saturating_add(1024 * 1024 - 1) / (1024 * 1024)
 }
 
 fn selected_single_unit_index(
