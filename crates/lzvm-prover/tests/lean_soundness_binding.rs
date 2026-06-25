@@ -31,6 +31,24 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
             "abstract_verifier_sound_with_audited_soundness_obligations",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "abstract_verifier_sound",
+        &[
+            "assumption_bundle_fiat_shamir_transcript_binding",
+            "assumption_bundle_pcs_opening_soundness",
+            "assumption_bundle_fri_query_soundness",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "abstract_verifier_sound",
+        &[
+            "assumptions.crypto.transcript_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
+        ],
+    );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "abstract_verifier_sound_with_audited_soundness_obligations",
