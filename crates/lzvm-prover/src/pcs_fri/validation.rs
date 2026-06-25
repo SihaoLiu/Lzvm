@@ -205,6 +205,20 @@ pub fn validate_pcs_fri_opening_folds_from_units(
 pub fn validate_optional_pcs_fri_opening_proof_segments(
     request: ValidateOptionalPcsFriOpeningProofSegmentsRequest<'_>,
 ) -> Result<(), ValidateOptionalPcsFriOpeningProofSegmentsError> {
+    validate_optional_pcs_fri_opening_proof_segments_inner(request, None)
+}
+
+pub(crate) fn validate_optional_pcs_fri_opening_proof_segments_with_transcript_challenges(
+    request: ValidateOptionalPcsFriOpeningProofSegmentsRequest<'_>,
+    transcript_challenges: &[PcsTranscriptUnitChallenges],
+) -> Result<(), ValidateOptionalPcsFriOpeningProofSegmentsError> {
+    validate_optional_pcs_fri_opening_proof_segments_inner(request, Some(transcript_challenges))
+}
+
+fn validate_optional_pcs_fri_opening_proof_segments_inner(
+    request: ValidateOptionalPcsFriOpeningProofSegmentsRequest<'_>,
+    precomputed_transcript_challenges: Option<&[PcsTranscriptUnitChallenges]>,
+) -> Result<(), ValidateOptionalPcsFriOpeningProofSegmentsError> {
     if request.fri_opening_required_units.len() != request.schedule.units.len() {
         return Err(
             ValidateOptionalPcsFriOpeningProofSegmentsError::RequiredUnitCountMismatch {
@@ -247,12 +261,20 @@ pub fn validate_optional_pcs_fri_opening_proof_segments(
         .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::QueryPlan)?;
     let opening = load_pcs_fri_opening_segment_from_segments(request.segments)
         .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::OpeningSegment)?;
-    let transcript_challenges = derive_pcs_transcript_unit_challenges_from_proof_segments(
-        request.schedule,
-        request.public_values,
-        request.segments,
-    )
-    .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Transcript)?;
+    let owned_transcript_challenges;
+    let transcript_challenges = match precomputed_transcript_challenges {
+        Some(transcript_challenges) => transcript_challenges,
+        None => {
+            owned_transcript_challenges =
+                derive_pcs_transcript_unit_challenges_from_proof_segments(
+                    request.schedule,
+                    request.public_values,
+                    request.segments,
+                )
+                .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Transcript)?;
+            &owned_transcript_challenges
+        }
+    };
     validate_pcs_fri_opening_folds_from_units(
         &request.schedule.units,
         &query_plan.units,

@@ -39,7 +39,7 @@ use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, witness_commitment_segment_identity,
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_field::{Felt, FieldError};
+use lzvm_field::{Ext3, Felt, FieldError};
 
 use crate::constant_opening::{
     validate_constant_opening_segments, ValidateConstantOpeningSegmentsError,
@@ -49,16 +49,16 @@ use crate::contribution::{
     load_contribution_segment_from_segments, ContributionChallengeError,
 };
 use crate::global_constraints::{
-    validate_global_constraints_from_proof_segments, ValidateGlobalConstraintProofSegmentsError,
-    ValidateGlobalConstraintProofSegmentsRequest,
+    validate_global_constraints, GlobalConstraintInputs, ValidateGlobalConstraintProofSegmentsError,
 };
 use crate::group_values::{load_group_values_from_segments, LoadGroupValuesSegmentError};
 use crate::hint_eval::{
-    resolve_global_hint_program_from_proof_segments, ResolveGlobalHintProofSegmentsError,
-    ResolveGlobalHintProofSegmentsRequest, ResolvedHint,
+    global_hint_input_requirements, resolve_global_hint_program,
+    ResolveGlobalHintProofSegmentsError, ResolvedHint,
 };
 use crate::pcs_fri::{
     validate_optional_pcs_fri_opening_proof_segments,
+    validate_optional_pcs_fri_opening_proof_segments_with_transcript_challenges,
     ValidateOptionalPcsFriOpeningProofSegmentsError,
     ValidateOptionalPcsFriOpeningProofSegmentsRequest,
 };
@@ -69,6 +69,10 @@ use crate::pcs_query_plan::{
     load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
     validate_pcs_query_plan_segments, LoadPcsQueryPlanSegmentError,
     ValidatePcsQueryPlanSegmentsError,
+};
+use crate::pcs_transcript_segments::{
+    derive_pcs_transcript_unit_challenges_from_proof_segments, PcsTranscriptProofSegmentsError,
+    PcsTranscriptUnitChallenges,
 };
 use crate::proof_preflight::{
     public_values_as_fields, validate_proof_public_values_for_setup_preflight, ProofPreflightError,
@@ -674,29 +678,98 @@ pub fn validate_setup_preflight(
     validate_witness_opening_segments(&schedule.units, &proof.segments)
         .map_err(SetupPreflightError::WitnessOpening)?;
 
+    let mut transcript_unit_challenges = None;
+    let mut transcript_challenges = None;
     if !catalog.global_constraints.entries.is_empty() {
-        validate_global_constraints_from_proof_segments(
-            ValidateGlobalConstraintProofSegmentsRequest {
-                program: &catalog.global_constraints,
-                global_info: &catalog.layout.global_info,
-                schedule: &schedule,
-                public_values: public_fields.as_deref().unwrap_or(&[]),
-                segments: &proof.segments,
+        let public_values = public_fields.as_deref().unwrap_or(&[]);
+        let proof_values =
+            load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
+                .map_err(ValidateGlobalConstraintProofSegmentsError::ProofValues)
+                .map_err(SetupPreflightError::GlobalConstraints)?;
+        let packed_proof_values =
+            flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
+                .map_err(ValidateGlobalConstraintProofSegmentsError::PackedProofValues)
+                .map_err(SetupPreflightError::GlobalConstraints)?;
+        let challenges = if uses_transcript_inputs {
+            cached_setup_preflight_transcript_challenges(
+                &mut transcript_unit_challenges,
+                &mut transcript_challenges,
+                &schedule,
+                public_values,
+                &proof.segments,
+            )
+            .map_err(ValidateGlobalConstraintProofSegmentsError::Transcript)
+            .map_err(SetupPreflightError::GlobalConstraints)?
+        } else {
+            &[]
+        };
+        let group_values =
+            load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
+                .map_err(ValidateGlobalConstraintProofSegmentsError::GroupValues)
+                .map_err(SetupPreflightError::GlobalConstraints)?;
+        validate_global_constraints(
+            &catalog.global_constraints,
+            GlobalConstraintInputs {
+                publics: public_values,
+                proof_values: &packed_proof_values,
+                challenges,
+                group_values: &group_values,
             },
         )
+        .map_err(ValidateGlobalConstraintProofSegmentsError::Validation)
         .map_err(SetupPreflightError::GlobalConstraints)?;
     }
 
     if !catalog.global_hints.hints.is_empty() {
-        let resolved = resolve_global_hint_program_from_proof_segments(
-            ResolveGlobalHintProofSegmentsRequest {
-                global_info: &catalog.layout.global_info,
-                program: &catalog.global_hints,
-                schedule: &schedule,
-                public_values: public_fields.as_deref().unwrap_or(&[]),
-                segments: &proof.segments,
+        let full_public_values = public_fields.as_deref().unwrap_or(&[]);
+        let requirements = global_hint_input_requirements(&catalog.global_hints);
+        let public_values = if requirements.publics {
+            full_public_values
+        } else {
+            &[]
+        };
+        let packed_proof_values = if requirements.proof_values {
+            let proof_values =
+                load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
+                    .map_err(ResolveGlobalHintProofSegmentsError::ProofValues)
+                    .map_err(SetupPreflightError::GlobalHints)?;
+            flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
+                .map_err(ResolveGlobalHintProofSegmentsError::PackedProofValues)
+                .map_err(SetupPreflightError::GlobalHints)?
+        } else {
+            Vec::new()
+        };
+        let challenges = if uses_transcript_inputs && requirements.challenges {
+            cached_setup_preflight_transcript_challenges(
+                &mut transcript_unit_challenges,
+                &mut transcript_challenges,
+                &schedule,
+                full_public_values,
+                &proof.segments,
+            )
+            .map_err(ResolveGlobalHintProofSegmentsError::Transcript)
+            .map_err(SetupPreflightError::GlobalHints)?
+        } else {
+            &[]
+        };
+        let group_values = if requirements.group_values {
+            load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
+                .map_err(ResolveGlobalHintProofSegmentsError::GroupValues)
+                .map_err(SetupPreflightError::GlobalHints)?
+        } else {
+            Vec::new()
+        };
+        let resolved = resolve_global_hint_program(
+            &catalog.layout.global_info,
+            &catalog.global_hints,
+            GlobalConstraintInputs {
+                publics: public_values,
+                proof_values: &packed_proof_values,
+                challenges,
+                group_values: &group_values,
             },
         )
+        .map_err(ResolveGlobalHintProofSegmentsError::Eval)
         .map_err(SetupPreflightError::GlobalHints)?;
         validate_global_source_lookup_hints(&resolved)?;
     }
@@ -711,19 +784,74 @@ pub fn validate_setup_preflight(
         .iter()
         .map(|unit| unit.metadata.verifier.quotient.expression_id.is_some())
         .collect::<Vec<_>>();
-    validate_optional_pcs_fri_opening_proof_segments(
-        ValidateOptionalPcsFriOpeningProofSegmentsRequest {
-            schedule: &schedule,
-            verifier_codes: &verifier_codes,
-            fri_opening_required_units: &fri_opening_required_units,
-            global_info: &catalog.layout.global_info,
-            public_values: transcript_public_fields,
-            segments: &proof.segments,
-        },
-    )
-    .map_err(SetupPreflightError::PcsFri)?;
+    let fri_request = ValidateOptionalPcsFriOpeningProofSegmentsRequest {
+        schedule: &schedule,
+        verifier_codes: &verifier_codes,
+        fri_opening_required_units: &fri_opening_required_units,
+        global_info: &catalog.layout.global_info,
+        public_values: transcript_public_fields,
+        segments: &proof.segments,
+    };
+    if transcript_unit_challenges.is_some() {
+        let unit_challenges = cached_setup_preflight_transcript_unit_challenges(
+            &mut transcript_unit_challenges,
+            &schedule,
+            transcript_public_fields,
+            &proof.segments,
+        )
+        .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Transcript)
+        .map_err(SetupPreflightError::PcsFri)?;
+        validate_optional_pcs_fri_opening_proof_segments_with_transcript_challenges(
+            fri_request,
+            unit_challenges,
+        )
+        .map_err(SetupPreflightError::PcsFri)?;
+    } else {
+        validate_optional_pcs_fri_opening_proof_segments(fri_request)
+            .map_err(SetupPreflightError::PcsFri)?;
+    }
 
     Ok(report)
+}
+
+fn cached_setup_preflight_transcript_unit_challenges<'a>(
+    cache: &'a mut Option<Vec<PcsTranscriptUnitChallenges>>,
+    schedule: &crate::ProveSchedule,
+    public_values: &[Felt],
+    segments: &[ProofSegment],
+) -> Result<&'a [PcsTranscriptUnitChallenges], PcsTranscriptProofSegmentsError> {
+    if cache.is_none() {
+        *cache = Some(derive_pcs_transcript_unit_challenges_from_proof_segments(
+            schedule,
+            public_values,
+            segments,
+        )?);
+    }
+    Ok(cache.as_deref().unwrap_or(&[]))
+}
+
+fn cached_setup_preflight_transcript_challenges<'a>(
+    unit_cache: &mut Option<Vec<PcsTranscriptUnitChallenges>>,
+    challenge_cache: &'a mut Option<Vec<Ext3>>,
+    schedule: &crate::ProveSchedule,
+    public_values: &[Felt],
+    segments: &[ProofSegment],
+) -> Result<&'a [Ext3], PcsTranscriptProofSegmentsError> {
+    if challenge_cache.is_none() {
+        let unit_challenges = cached_setup_preflight_transcript_unit_challenges(
+            unit_cache,
+            schedule,
+            public_values,
+            segments,
+        )?;
+        *challenge_cache = Some(
+            unit_challenges
+                .iter()
+                .flat_map(|unit| unit.challenges.iter().copied())
+                .collect(),
+        );
+    }
+    Ok(challenge_cache.as_deref().unwrap_or(&[]))
 }
 
 fn validate_global_source_lookup_hints(hints: &[ResolvedHint]) -> Result<(), SetupPreflightError> {
