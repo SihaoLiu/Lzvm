@@ -45,8 +45,8 @@ use crate::constant_opening::{
     validate_constant_opening_segments, ValidateConstantOpeningSegmentsError,
 };
 use crate::contribution::{
-    aggregate_contribution_values, derive_global_challenge_from_proof_segments,
-    load_contribution_segment_from_segments, ContributionChallengeError,
+    aggregate_contribution_values, derive_global_challenge_from_loaded_contributions,
+    load_contribution_segment_from_segments, ContributionChallengeError, ProveContributionEntry,
 };
 use crate::global_constraints::{
     validate_global_constraints, GlobalConstraintInputs, ValidateGlobalConstraintProofSegmentsError,
@@ -724,10 +724,14 @@ pub fn validate_setup_preflight(
     let report = validate_setup_preflight_hashes(catalog, proof, public_values)?;
     let schedule = derive_prove_schedule(catalog).map_err(SetupPreflightError::Schedule)?;
     validate_setup_proof_segment_ids(&proof.segments)?;
-    validate_optional_contribution_segment(catalog, proof)?;
+    let contribution_entries = validate_optional_contribution_segment(catalog, proof)?;
     validate_optional_challenge_values_segment(proof)?;
-    let contribution_proof_values =
-        validate_optional_contribution_challenge_values(catalog, proof, public_values)?;
+    let contribution_proof_values = validate_optional_contribution_challenge_values(
+        catalog,
+        proof,
+        public_values,
+        contribution_entries.as_deref(),
+    )?;
     let global_values = validate_global_value_segments(catalog, proof, contribution_proof_values)?;
     let uses_transcript_inputs = uses_transcript_pcs_query_plan_inputs(&proof.segments);
     let needs_public_fields = uses_transcript_inputs
@@ -968,21 +972,21 @@ fn validate_global_value_segments(
 fn validate_optional_contribution_segment(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
-) -> Result<(), SetupPreflightError> {
+) -> Result<Option<Vec<ProveContributionEntry>>, SetupPreflightError> {
     if !proof
         .segments
         .iter()
         .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID)
     {
-        return Ok(());
+        return Ok(None);
     }
 
     let entries = load_contribution_segment_from_segments(&proof.segments)
         .map_err(ContributionChallengeError::from)
         .map_err(SetupPreflightError::Contribution)?;
     aggregate_contribution_values(&catalog.layout.global_info, &entries)
-        .map(|_| ())
-        .map_err(SetupPreflightError::Contribution)
+        .map_err(SetupPreflightError::Contribution)?;
+    Ok(Some(entries))
 }
 
 fn validate_optional_challenge_values_segment(
@@ -1023,24 +1027,21 @@ fn validate_optional_contribution_challenge_values(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
     public_values: &PublicValues,
+    contribution_entries: Option<&[ProveContributionEntry]>,
 ) -> Result<Option<Vec<Ext3>>, SetupPreflightError> {
-    let has_contribution = proof
-        .segments
-        .iter()
-        .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID);
     let Some(challenge_segment) = proof
         .segments
         .iter()
         .find(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
     else {
-        if has_contribution {
+        if contribution_entries.is_some() {
             return Err(SetupPreflightError::MissingContributionChallengeValues);
         }
         return Ok(None);
     };
-    if !has_contribution {
+    let Some(contribution_entries) = contribution_entries else {
         return Ok(None);
-    }
+    };
 
     let challenge_values = parse_challenge_values_segment(&challenge_segment.data)
         .map_err(SetupPreflightError::ChallengeValues)?
@@ -1052,11 +1053,12 @@ fn validate_optional_contribution_challenge_values(
             .map_err(SetupPreflightError::ProofValues)?;
     let packed_proof_values = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
         .map_err(SetupPreflightError::ProofValuePacking)?;
-    let expected = derive_global_challenge_from_proof_segments(
+    let expected = derive_global_challenge_from_loaded_contributions(
         &catalog.layout.global_info,
         &public_fields,
         &packed_proof_values,
         &proof.segments,
+        contribution_entries,
     )
     .map_err(SetupPreflightError::Contribution)?;
     if challenge_values.as_slice() != [expected.to_u64s()] {

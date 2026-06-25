@@ -619,6 +619,22 @@ pub fn derive_global_challenge_from_proof_segments(
     segments: &[ProofSegment],
 ) -> Result<Ext3, ContributionChallengeError> {
     let entries = load_contribution_segment_from_segments(segments)?;
+    derive_global_challenge_from_loaded_contributions(
+        global_info,
+        public_values,
+        packed_proof_values,
+        segments,
+        &entries,
+    )
+}
+
+pub(crate) fn derive_global_challenge_from_loaded_contributions(
+    global_info: &GlobalInfo,
+    public_values: &[Felt],
+    packed_proof_values: &[Felt],
+    segments: &[ProofSegment],
+    entries: &[ProveContributionEntry],
+) -> Result<Ext3, ContributionChallengeError> {
     let bound_segments = contribution_bound_segments(segments);
     derive_global_challenge_with_bound_segments(
         global_info,
