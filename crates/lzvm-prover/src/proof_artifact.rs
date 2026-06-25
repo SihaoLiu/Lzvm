@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::time::Instant;
 
 use lzvm_artifacts::challenge_values_segment::{
@@ -1921,7 +1921,21 @@ fn collect_proof_unit_values(
     explicit_values: &[ProveUnitValues],
 ) -> Result<Vec<ProveUnitValues>, String> {
     if !explicit_values.is_empty() {
-        validate_explicit_unit_values_trace_coverage(outputs, explicit_values)?;
+        let mut required_identities = Vec::new();
+        for output in outputs {
+            let unit_index = output.commitments().unit_index();
+            let unit = schedule.units.get(unit_index).ok_or_else(|| {
+                format!("unit values segment unit index out of range: {unit_index}")
+            })?;
+            if !output.auxiliary_inputs().unit_values.is_empty() || !unit.unit_value_map.is_empty()
+            {
+                required_identities.push((unit_index, output.commitments().trace_instance_index()));
+            }
+        }
+        validate_explicit_unit_values_trace_identity_coverage(
+            required_identities,
+            explicit_values,
+        )?;
         return Ok(explicit_values.to_vec());
     }
 
@@ -1945,54 +1959,31 @@ fn collect_proof_unit_values(
     Ok(values)
 }
 
-fn validate_explicit_unit_values_trace_coverage(
-    outputs: &[ProveWitnessTraceCommitments],
-    explicit_values: &[ProveUnitValues],
-) -> Result<(), String> {
-    validate_explicit_unit_values_trace_identity_coverage(
-        outputs.iter().map(|output| {
-            (
-                output.commitments().unit_index(),
-                output.commitments().trace_instance_index(),
-            )
-        }),
-        explicit_values,
-    )
-}
-
 fn validate_explicit_unit_values_trace_identity_coverage(
     output_identities: impl IntoIterator<Item = (usize, u32)>,
     explicit_values: &[ProveUnitValues],
 ) -> Result<(), String> {
-    let mut output_traces = BTreeMap::<usize, BTreeSet<u32>>::new();
-    for (unit_index, trace_instance_index) in output_identities {
-        output_traces
-            .entry(unit_index)
-            .or_default()
-            .insert(trace_instance_index);
-    }
+    let output_identities = output_identities
+        .into_iter()
+        .collect::<BTreeSet<(usize, u32)>>();
 
-    let mut explicit_traces = BTreeMap::<usize, BTreeSet<u32>>::new();
+    let mut explicit_identities = BTreeSet::new();
     for values in explicit_values {
-        explicit_traces
-            .entry(values.unit_index)
-            .or_default()
-            .insert(values.trace_instance_index);
+        let identity = (values.unit_index, values.trace_instance_index);
+        if !output_identities.contains(&identity) {
+            let (unit_index, trace_instance_index) = identity;
+            return Err(format!(
+                "unexpected explicit unit values for unit {unit_index} trace instance {trace_instance_index}"
+            ));
+        }
+        explicit_identities.insert(identity);
     }
 
-    for (unit_index, traces) in output_traces {
-        if traces.len() <= 1 {
-            continue;
-        }
-        for trace_instance_index in traces {
-            if !explicit_traces
-                .get(&unit_index)
-                .is_some_and(|explicit| explicit.contains(&trace_instance_index))
-            {
-                return Err(format!(
-                    "missing explicit unit values for unit {unit_index} trace instance {trace_instance_index}"
-                ));
-            }
+    for (unit_index, trace_instance_index) in output_identities {
+        if !explicit_identities.contains(&(unit_index, trace_instance_index)) {
+            return Err(format!(
+                "missing explicit unit values for unit {unit_index} trace instance {trace_instance_index}"
+            ));
         }
     }
     Ok(())
@@ -2117,6 +2108,25 @@ mod tests {
 
         validate_explicit_unit_values_trace_identity_coverage([(0, 0), (0, 1)], &explicit_values)
             .expect("complete explicit values should validate");
+    }
+
+    #[test]
+    fn rejects_unexpected_explicit_unit_values_identity() {
+        let explicit_values = [ProveUnitValues {
+            unit_index: 1,
+            trace_instance_index: 0,
+            unit_value_map: Vec::new(),
+            packed_values: vec![Felt::from_u64(17)],
+        }];
+
+        let error =
+            validate_explicit_unit_values_trace_identity_coverage([(0, 0)], &explicit_values)
+                .expect_err("unexpected explicit values should reject");
+
+        assert_eq!(
+            error,
+            "unexpected explicit unit values for unit 1 trace instance 0"
+        );
     }
 
     #[test]
