@@ -74,6 +74,17 @@ def RuntimeTranscriptBindingPayloadContract
     /\ validation.transcriptPayloadMatchesProof artifact publicInput proof
     /\ system.transcriptBound publicInput proof
 
+def RuntimeTranscriptBindingStructuralObligations
+    (system : VerifierModel)
+    (validation : RuntimeTranscriptBindingValidation system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.challengeSegmentBound artifact publicInput proof
+    /\ validation.queryPlanBound artifact publicInput proof
+    /\ validation.transcriptPayloadMatchesProof artifact publicInput proof
+    /\ system.transcriptBound publicInput proof
+
 def RuntimeTranscriptBindingCheckedAcceptance
     (_system : VerifierModel)
     (validation : RuntimeTranscriptBindingValidation _system)
@@ -219,6 +230,36 @@ theorem runtime_transcript_binding_checked_acceptance_payload_contract
           publicInput
           proof ->
         RuntimeTranscriptBindingPayloadContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_transcript_binding_evidence_implies_payload_contract
+      validation
+      artifact
+      publicInput
+      proof
+      (runtime_transcript_binding_checked_acceptance_evidence
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+
+theorem runtime_transcript_binding_checked_acceptance_structural_obligations
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTranscriptBindingStructuralObligations
           system
           validation
           artifact
@@ -570,6 +611,57 @@ theorem runtime_transcript_binding_checked_acceptance_sound
       (And.intro artifactRuntimeEvidence
         (And.intro transcriptBound
           (abstract_verifier_sound assumptions publicInput proof verifierAccepts)))
+
+theorem runtime_transcript_binding_checked_acceptance_full_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTranscriptBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTranscriptBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.artifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_transcript_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have structural :=
+    runtime_transcript_binding_checked_acceptance_structural_obligations
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro sound.left
+      (And.intro structural
+        (And.intro sound.right.left sound.right.right.right))
 
 theorem runtime_transcript_binding_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
