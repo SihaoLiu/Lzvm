@@ -46,6 +46,14 @@ fn make_executable(path: &std::path::Path) {
 #[cfg(not(unix))]
 fn make_executable(_path: &std::path::Path) {}
 
+fn prepend_path(command: &mut Command, path: &std::path::Path) {
+    let old_path = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths = std::env::split_paths(&old_path).collect::<Vec<_>>();
+    paths.insert(0, path.to_path_buf());
+    let joined = std::env::join_paths(paths).expect("fixture PATH should join");
+    command.env("PATH", joined);
+}
+
 struct ProofFixture {
     dir: PathBuf,
     fake_bin: PathBuf,
@@ -642,6 +650,97 @@ fn eth_proof_timing_batch_check_profile_tools_runs_without_proof_env() {
     assert!(
         !profile_created,
         "profile tool check should not create profile output directories"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_profile_tools_uses_env_profiler_command() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-profile-tools-env");
+    let profile_dir = fixture.dir.join("profiles");
+    let tool_path = write_fixture(&fixture.dir, "env-nsys");
+    make_executable(&tool_path);
+    let mut command = Command::new(script_path());
+    command
+        .arg("--check-profile-tools")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir)
+        .env("LZVM_NSYS_COMMAND", &tool_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env profile tool check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let profile_created = profile_dir.exists();
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "env profile tool check should not require proof envs: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("profile_tool=nsys\n")
+            && stdout.contains("nsys_profiler_source=env\n")
+            && stdout.contains(&format!("nsys_profiler_command={}\n", tool_path.display()))
+            && stdout.contains("nsys_profiler_status=ready\n")
+            && stdout
+                .contains("nsys_profiler_resolved=temp/eth-proof-timing-batch-profile-tools-env-"),
+        "profile tool check should report the env-selected profiler: {stdout}"
+    );
+    assert!(
+        !profile_created,
+        "env profile tool check should not create profile output directories"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_profile_tools_resolves_bare_command_from_path() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-profile-tools-path");
+    let profile_dir = fixture.dir.join("profiles");
+    let bin_dir = fixture.dir.join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("fixture bin dir should be created");
+    let tool_path = write_fixture(&bin_dir, "nsys");
+    make_executable(&tool_path);
+    let mut command = Command::new(script_path());
+    command
+        .arg("--check-profile-tools")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+    command
+        .env_remove("LZVM_NSYS_COMMAND")
+        .env_remove("LZVM_NCU_COMMAND");
+    prepend_path(&mut command, &bin_dir);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch PATH profile tool check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let profile_created = profile_dir.exists();
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "PATH profile tool check should not require proof envs: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("profile_tool=nsys\n")
+            && stdout.contains("nsys_profiler_source=path\n")
+            && stdout.contains("nsys_profiler_command=nsys\n")
+            && stdout.contains("nsys_profiler_status=ready\n")
+            && stdout
+                .contains("nsys_profiler_resolved=temp/eth-proof-timing-batch-profile-tools-path-"),
+        "profile tool check should resolve bare profiler commands from PATH: {stdout}"
+    );
+    assert!(
+        !profile_created,
+        "PATH profile tool check should not create profile output directories"
     );
 }
 

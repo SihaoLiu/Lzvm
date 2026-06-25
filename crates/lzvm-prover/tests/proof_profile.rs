@@ -307,6 +307,14 @@ fn write_executable(path: &std::path::Path) {
     std::fs::set_permissions(path, permissions).expect("fixture executable mode should update");
 }
 
+fn prepend_path(command: &mut Command, path: &std::path::Path) {
+    let old_path = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths = std::env::split_paths(&old_path).collect::<Vec<_>>();
+    paths.insert(0, path.to_path_buf());
+    let joined = std::env::join_paths(paths).expect("fixture PATH should join");
+    command.env("PATH", joined);
+}
+
 #[cfg(unix)]
 #[test]
 fn proof_profile_check_tool_reports_ready_custom_profiler() {
@@ -350,6 +358,96 @@ fn proof_profile_check_tool_reports_ready_custom_profiler() {
     assert!(
         !profile_dir_created,
         "tool check should not create profile output directories"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn proof_profile_check_tool_uses_env_profiler_command() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-check-tool-env-{}",
+        std::process::id()
+    ));
+    let tool_path = output_dir.join("env-ncu");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    write_executable(&tool_path);
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("ncu")
+        .arg("--output-dir")
+        .arg(output_dir.join("profiles"))
+        .arg("--check-tool")
+        .env("LZVM_NCU_COMMAND", &tool_path)
+        .output()
+        .expect("proof profile env tool check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let profile_dir_created = output_dir.join("profiles").exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(success, "env tool check should pass: stderr={stderr}");
+    assert!(
+        stdout.contains("tool=ncu\n")
+            && stdout.contains("tool_source=env\n")
+            && stdout.contains(&format!("tool_command={}\n", tool_path.display()))
+            && stdout.contains("tool_status=ready\n")
+            && stdout.contains("tool_resolved=temp/proof-profile-check-tool-env-"),
+        "tool check should report the env-selected profiler: {stdout}"
+    );
+    assert!(
+        !profile_dir_created,
+        "env tool check should not create profile output directories"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn proof_profile_check_tool_resolves_bare_command_from_path() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-check-tool-path-{}",
+        std::process::id()
+    ));
+    let bin_dir = output_dir.join("bin");
+    let tool_path = bin_dir.join("profile-tool");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&bin_dir).expect("fixture bin dir should be created");
+    write_executable(&tool_path);
+
+    let mut command = Command::new(script_path());
+    command
+        .arg("--tool")
+        .arg("nsys")
+        .arg("--nsys-command")
+        .arg("profile-tool")
+        .arg("--output-dir")
+        .arg(output_dir.join("profiles"))
+        .arg("--check-tool");
+    prepend_path(&mut command, &bin_dir);
+
+    let output = command
+        .output()
+        .expect("proof profile PATH tool check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let profile_dir_created = output_dir.join("profiles").exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(success, "PATH tool check should pass: stderr={stderr}");
+    assert!(
+        stdout.contains("tool=nsys\n")
+            && stdout.contains("tool_source=arg\n")
+            && stdout.contains("tool_command=profile-tool\n")
+            && stdout.contains("tool_status=ready\n")
+            && stdout.contains("tool_resolved=temp/proof-profile-check-tool-path-"),
+        "tool check should resolve bare profiler commands from PATH: {stdout}"
+    );
+    assert!(
+        !profile_dir_created,
+        "PATH tool check should not create profile output directories"
     );
 }
 
