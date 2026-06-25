@@ -28,6 +28,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             && lean_source.contains("proofSegmentPayloadsNonempty")
             && lean_source.contains("proofSegmentIdsAllowed")
             && lean_source.contains("proofSegmentIdsUnique")
+            && lean_source.contains("proofUnitValuesTraceIdentityCoverage")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean proof artifact binding should expose checked soundness and verifier core projection"
     );
@@ -41,6 +42,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_binding_checked_acceptance_segment_payloads_nonempty",
             "runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed",
             "runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique",
+            "runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_proof_artifact_binding_checked_acceptance_sound",
             "runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract",
         ],
@@ -74,6 +76,11 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique",
         &["bindingAcceptedImpliesProofSegmentIdsUnique"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        &["bindingAcceptedImpliesProofUnitValuesTraceIdentityCoverage"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

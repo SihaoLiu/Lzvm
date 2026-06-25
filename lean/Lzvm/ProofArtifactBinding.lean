@@ -24,6 +24,8 @@ structure RuntimeProofArtifactBindingValidation (system : VerifierModel) where
   proofSegmentPayloadsNonempty : RuntimeArtifact -> PublicInput -> Proof -> Prop
   proofSegmentIdsAllowed : RuntimeArtifact -> PublicInput -> Proof -> Prop
   proofSegmentIdsUnique : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  proofUnitValuesTraceIdentityCoverage :
+    RuntimeArtifact -> PublicInput -> Proof -> Prop
   bindingAcceptedImpliesRuntimeAccepted :
     forall artifact publicInput proof,
       artifactBindingAccepted artifact publicInput proof ->
@@ -64,6 +66,10 @@ structure RuntimeProofArtifactBindingValidation (system : VerifierModel) where
     forall artifact publicInput proof,
       artifactBindingAccepted artifact publicInput proof ->
         proofSegmentIdsUnique artifact publicInput proof
+  bindingAcceptedImpliesProofUnitValuesTraceIdentityCoverage :
+    forall artifact publicInput proof,
+      artifactBindingAccepted artifact publicInput proof ->
+        proofUnitValuesTraceIdentityCoverage artifact publicInput proof
   hashesMatchImpliesPublicInputMatches :
     forall artifact publicInput proof,
       setupHashMatches artifact publicInput proof ->
@@ -110,6 +116,9 @@ def RuntimeProofArtifactBindingValidationAgreement
     /\ (forall artifact publicInput proof,
       left.proofSegmentIdsUnique artifact publicInput proof <->
         right.proofSegmentIdsUnique artifact publicInput proof)
+    /\ (forall artifact publicInput proof,
+      left.proofUnitValuesTraceIdentityCoverage artifact publicInput proof <->
+        right.proofUnitValuesTraceIdentityCoverage artifact publicInput proof)
 
 def RuntimeProofArtifactBindingEvidence
     (_system : VerifierModel)
@@ -335,6 +344,28 @@ theorem runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique
   intro artifact publicInput proof accepted
   exact
     validation.bindingAcceptedImpliesProofSegmentIdsUnique
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.proofUnitValuesTraceIdentityCoverage
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.bindingAcceptedImpliesProofUnitValuesTraceIdentityCoverage
       artifact
       publicInput
       proof

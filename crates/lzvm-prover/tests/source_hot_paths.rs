@@ -7716,6 +7716,55 @@ fn public_proof_artifact_builders_require_trace_evidence_outputs() {
 }
 
 #[test]
+fn proof_artifact_unit_values_coverage_matches_lean_binding_contract() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/proof_artifact.rs");
+    let source = std::fs::read_to_string(&source_path).expect("proof artifact source should read");
+    let lean_path = crate_root.join("../../lean/Lzvm/ProofArtifactBinding.lean");
+    let lean_source = std::fs::read_to_string(&lean_path)
+        .expect("Lean proof artifact binding source should read");
+
+    let collect_body = function_body(
+        &source,
+        "fn collect_proof_unit_values",
+        "fn validate_explicit_unit_values_trace_identity_coverage",
+    );
+    assert!(
+        collect_body.contains("let mut required_identities = Vec::new()")
+            && collect_body.contains("output.commitments().trace_instance_index()")
+            && collect_body.contains("!output.auxiliary_inputs().unit_values.is_empty()")
+            && collect_body.contains("!unit.unit_value_map.is_empty()")
+            && collect_body.contains("required_identities.push((unit_index, output.commitments().trace_instance_index()))")
+            && collect_body.contains("validate_explicit_unit_values_trace_identity_coverage("),
+        "proof artifact explicit unit values should require exact trace-identity coverage"
+    );
+
+    let coverage_body = function_body(
+        &source,
+        "fn validate_explicit_unit_values_trace_identity_coverage",
+        "#[cfg(test)]",
+    );
+    assert!(
+        coverage_body.contains("collect::<BTreeSet<(usize, u32)>>()")
+            && coverage_body.contains("let mut explicit_identities = BTreeSet::new()")
+            && coverage_body.contains("!output_identities.contains(&identity)")
+            && coverage_body
+                .contains("!explicit_identities.contains(&(unit_index, trace_instance_index))")
+            && coverage_body.contains("unexpected explicit unit values")
+            && coverage_body.contains("missing explicit unit values"),
+        "explicit unit values coverage should reject missing and unexpected trace identities"
+    );
+
+    assert!(
+        lean_source.contains("proofUnitValuesTraceIdentityCoverage")
+            && lean_source.contains(
+                "runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage"
+            ),
+        "Lean proof artifact binding should expose explicit unit values trace-identity coverage"
+    );
+}
+
+#[test]
 fn trace_constraint_segment_uses_runtime_evidence_flags() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/proof_artifact.rs");
