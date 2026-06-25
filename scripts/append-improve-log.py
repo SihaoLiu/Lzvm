@@ -2,6 +2,7 @@
 import argparse
 import csv
 import math
+import os
 import re
 import subprocess
 from datetime import datetime
@@ -36,6 +37,24 @@ def require_workspace_temp_path(path: Path, root: Path, label: str) -> Path:
     if resolved != temp_dir and temp_dir not in resolved.parents:
         raise SystemExit(f"{label} must be under {temp_dir}: {path}")
     return path
+
+
+def reject_symlinked_output_path(path: Path, label: str) -> None:
+    if path.is_symlink():
+        raise SystemExit(f"{label} must not be a symlink: {path}")
+
+
+def open_append_text_no_follow(path: Path, mode: int = 0o600):
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags, mode)
+    except OSError as error:
+        if path.is_symlink():
+            raise SystemExit(f"output path must not be a symlink: {path}") from error
+        raise
+    return os.fdopen(descriptor, "a", encoding="utf-8", newline="")
 
 
 def current_commit() -> str:
@@ -262,8 +281,8 @@ def append_row(
     summary: str,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    needs_header = not path.exists() or path.stat().st_size == 0
-    with path.open("a", newline="") as output:
+    with open_append_text_no_follow(path) as output:
+        needs_header = os.fstat(output.fileno()).st_size == 0
         writer = csv.writer(output, quoting=csv.QUOTE_ALL, lineterminator="\n")
         if needs_header:
             writer.writerow(HEADER)
@@ -306,6 +325,7 @@ def main() -> None:
         root,
         "--path",
     )
+    reject_symlinked_output_path(path, "--path")
     validate_improve_log(path, require_existing=args.check)
     if not args.check:
         if args.summary is not None and args.summary_flag is not None:

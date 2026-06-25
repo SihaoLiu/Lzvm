@@ -264,6 +264,58 @@ fn improve_log_writer_rejects_path_outside_temp() {
     assert!(!log_created, "rejected path should not create a log");
 }
 
+#[cfg(unix)]
+#[test]
+fn improve_log_writer_rejects_symlinked_log_path() {
+    use std::os::unix::fs::symlink;
+
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+    let dir = workspace_root.join(format!("temp/improve-log-symlink-{}", std::process::id()));
+    let log_path = dir.join("improve-log.csv");
+    let redirected = dir.join("redirected.csv");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    std::fs::write(&redirected, "sentinel\n").expect("redirect target should write");
+    symlink(&redirected, &log_path).expect("improve log symlink fixture should be created");
+
+    let output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--small")
+        .arg("1.0")
+        .arg("--large")
+        .arg("2.0")
+        .arg("--summary")
+        .arg("link guard")
+        .output()
+        .expect("improve-log writer should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let redirected_text =
+        std::fs::read_to_string(&redirected).expect("redirect target should remain readable");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "improve-log writer should reject symlinked log paths"
+    );
+    assert!(
+        stderr.contains("--path must not be a symlink"),
+        "symlink rejection should explain the path constraint: stderr={stderr}"
+    );
+    assert_eq!(
+        redirected_text, "sentinel\n",
+        "rejected improve-log append should not overwrite a symlink target"
+    );
+}
+
 #[test]
 fn improve_log_check_rejects_missing_log() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
