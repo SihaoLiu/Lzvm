@@ -775,6 +775,7 @@ fn build_witness_proof_artifact_for_unit_inner(
             &proof,
             public_values,
             binding_segments.challenge_values.as_deref(),
+            Some(&request.output.auxiliary_inputs().proof_values),
             timing.as_deref_mut(),
         );
         if let Some(timing) = timing {
@@ -850,6 +851,7 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
             &proof,
             public_values,
             binding_segments.challenge_values.as_deref(),
+            Some(&request.output.auxiliary_inputs().proof_values),
             None,
         )?;
     }
@@ -945,6 +947,7 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
             &proof,
             public_values,
             binding_segments.challenge_values.as_deref(),
+            Some(&proof_values),
             None,
         )?;
     }
@@ -1084,6 +1087,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
             &proof,
             public_values,
             binding_segments.challenge_values.as_deref(),
+            Some(&proof_values),
             timing.as_deref_mut(),
         );
         if let Some(timing) = timing {
@@ -1178,6 +1182,7 @@ fn validate_contribution_proof_output(
     proof: &ProofArtifact,
     public_values: &PublicValues,
     preloaded_challenge_values: Option<&[[u64; 3]]>,
+    preloaded_packed_proof_values: Option<&[Felt]>,
     timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<(), String> {
     validate_setup_preflight_hashes(catalog, proof, public_values)
@@ -1192,6 +1197,7 @@ fn validate_contribution_proof_output(
             proof,
             public_values,
             preloaded_challenge_values,
+            preloaded_packed_proof_values,
             timing,
         )?;
     }
@@ -1203,6 +1209,7 @@ fn validate_contribution_proof_challenge_values(
     proof: &ProofArtifact,
     public_values: &PublicValues,
     preloaded_challenge_values: Option<&[[u64; 3]]>,
+    preloaded_packed_proof_values: Option<&[Felt]>,
     timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<(), String> {
     let owned_challenge_values;
@@ -1225,11 +1232,19 @@ fn validate_contribution_proof_challenge_values(
     };
     let public_fields = public_values_as_fields(public_values)
         .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
-    let proof_values =
-        load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
-            .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
-    let packed_proof_values = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
-        .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+    let owned_packed_proof_values;
+    let packed_proof_values = match preloaded_packed_proof_values {
+        Some(packed_proof_values) => packed_proof_values,
+        None => {
+            let proof_values =
+                load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
+                    .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+            owned_packed_proof_values =
+                flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
+                    .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+            &owned_packed_proof_values
+        }
+    };
     let challenge_start = Instant::now();
     let expected = derive_global_challenge_from_proof_segments(
         &catalog.layout.global_info,
