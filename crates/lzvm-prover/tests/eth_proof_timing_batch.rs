@@ -540,6 +540,8 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-write-env-template");
     let template_path = fixture.dir.join("real-proof.env");
     let runner_path = fixture.dir.join("custom runner.py");
+    let nsys_path = fixture.dir.join("custom nsys");
+    let ncu_path = fixture.dir.join("custom ncu");
     let template_rel = template_path
         .strip_prefix(workspace_root())
         .expect("template path should be under workspace")
@@ -548,6 +550,16 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
     let runner_rel = runner_path
         .strip_prefix(workspace_root())
         .expect("runner path should be under workspace")
+        .display()
+        .to_string();
+    let nsys_rel = nsys_path
+        .strip_prefix(workspace_root())
+        .expect("nsys path should be under workspace")
+        .display()
+        .to_string();
+    let ncu_rel = ncu_path
+        .strip_prefix(workspace_root())
+        .expect("ncu path should be under workspace")
         .display()
         .to_string();
     let mut command = Command::new(script_path());
@@ -568,6 +580,10 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         .arg(fixture.dir.join("improve-log.csv"))
         .arg("--runner")
         .arg(&runner_path)
+        .arg("--nsys-command")
+        .arg(&nsys_path)
+        .arg("--ncu-command")
+        .arg(&ncu_path)
         .arg("--profile-arg=--kernel-name-base=demangled")
         .arg("--commit")
         .arg("&&")
@@ -618,6 +634,11 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         "env template command should preserve custom runner paths: {stdout}"
     );
     assert!(
+        stdout.contains(&format!("--nsys-command '{nsys_rel}'"))
+            && stdout.contains(&format!("--ncu-command '{ncu_rel}'")),
+        "env template command should preserve profiler executable paths: {stdout}"
+    );
+    assert!(
         stdout.contains("--profile-arg --kernel-name-base=demangled"),
         "env template command should preserve profiler passthrough args: {stdout}"
     );
@@ -645,6 +666,18 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
 fn eth_proof_timing_batch_prints_profile_commands_from_env() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-profile-commands");
     let profile_dir = fixture.dir.join("profiles");
+    let nsys_path = fixture.dir.join("custom nsys");
+    let ncu_path = fixture.dir.join("custom ncu");
+    let nsys_rel = nsys_path
+        .strip_prefix(workspace_root())
+        .expect("nsys path should be under workspace")
+        .display()
+        .to_string();
+    let ncu_rel = ncu_path
+        .strip_prefix(workspace_root())
+        .expect("ncu path should be under workspace")
+        .display()
+        .to_string();
     let mut command = Command::new(script_path());
     command
         .arg("--suite")
@@ -655,6 +688,10 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         .arg("both")
         .arg("--profile-output-dir")
         .arg(&profile_dir)
+        .arg("--nsys-command")
+        .arg(&nsys_path)
+        .arg("--ncu-command")
+        .arg(&ncu_path)
         .arg("--profile-arg=--kernel-name-base=demangled")
         .arg("--profile-arg=--launch-skip=1")
         .arg("--print-profile-commands");
@@ -677,6 +714,11 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         stdout.contains("small_nsys_profile_command=scripts/run-proof-profile.py --tool nsys")
             && stdout.contains("small_ncu_profile_command=scripts/run-proof-profile.py --tool ncu"),
         "profile command output should include both selected tools: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("--nsys-command '{nsys_rel}'"))
+            && stdout.contains(&format!("--ncu-command '{ncu_rel}'")),
+        "profile command output should route custom profiler executables through the matching tool: {stdout}"
     );
     assert!(
         stdout.contains("--summarize"),

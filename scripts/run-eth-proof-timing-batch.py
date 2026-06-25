@@ -323,6 +323,12 @@ def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
     if args.runner != DEFAULT_RUNNER:
         runner = display_path_for_shell(resolve_workspace_path(args.runner, root), root)
         parts.extend(["--runner", runner])
+    if args.nsys_command is not None:
+        nsys_command = display_path_for_shell(resolve_workspace_path(args.nsys_command, root), root)
+        parts.extend(["--nsys-command", nsys_command])
+    if args.ncu_command is not None:
+        ncu_command = display_path_for_shell(resolve_workspace_path(args.ncu_command, root), root)
+        parts.extend(["--ncu-command", ncu_command])
     if args.profile_output_dir != DEFAULT_PROFILE_OUTPUT_DIR:
         profile_output_dir = require_workspace_temp_path(
             resolve_workspace_path(args.profile_output_dir, root),
@@ -493,6 +499,21 @@ def profile_command_for_env(
         tmp_dir,
         root,
     )
+    profiler_command: list[str] = []
+    if tool == "nsys" and args.nsys_command is not None:
+        profiler_command.extend(
+            [
+                "--nsys-command",
+                display_path_for_shell(resolve_workspace_path(args.nsys_command, root), root),
+            ]
+        )
+    if tool == "ncu" and args.ncu_command is not None:
+        profiler_command.extend(
+            [
+                "--ncu-command",
+                display_path_for_shell(resolve_workspace_path(args.ncu_command, root), root),
+            ]
+        )
     return [
         "scripts/run-proof-profile.py",
         "--tool",
@@ -504,6 +525,7 @@ def profile_command_for_env(
         "--summarize",
         "--cwd",
         ".",
+        *profiler_command,
         *[part for value in args.profile_arg for part in ["--profile-arg", value]],
         "--",
         "sh",
@@ -755,6 +777,8 @@ def self_test() -> None:
         large_max_avg_s=None,
         print_env_template=False,
         print_profile_commands=False,
+        ncu_command=None,
+        nsys_command=None,
         profile_output_dir=DEFAULT_PROFILE_OUTPUT_DIR,
         profile_arg=[],
         profile_tool=DEFAULT_PROFILE_TOOL,
@@ -818,6 +842,8 @@ def main() -> None:
     parser.add_argument("--write-env-template")
     parser.add_argument("--print-profile-commands", action="store_true")
     parser.add_argument("--profile-output-dir", default=DEFAULT_PROFILE_OUTPUT_DIR)
+    parser.add_argument("--nsys-command")
+    parser.add_argument("--ncu-command")
     parser.add_argument("--profile-arg", action="append", default=[])
     parser.add_argument(
         "--profile-tool",
