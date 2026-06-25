@@ -860,25 +860,22 @@ pub fn validate_setup_preflight(
         public_values: transcript_public_fields,
         segments: &proof.segments,
     };
-    if transcript_challenges.has_unit_challenges() {
-        let unit_challenges = transcript_challenges
-            .unit_challenges()
-            .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Transcript)
-            .map_err(SetupPreflightError::PcsFri)?;
-        validate_optional_pcs_fri_opening_proof_segments_with_preflight_values(
-            fri_request,
-            Some(unit_challenges),
-            &global_values.proof_values,
+    let unit_challenges = if transcript_challenges.has_unit_challenges() {
+        Some(
+            transcript_challenges
+                .unit_challenges()
+                .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Transcript)
+                .map_err(SetupPreflightError::PcsFri)?,
         )
-        .map_err(SetupPreflightError::PcsFri)?;
     } else {
-        validate_optional_pcs_fri_opening_proof_segments_with_preflight_values(
-            fri_request,
-            None,
-            &global_values.proof_values,
-        )
-        .map_err(SetupPreflightError::PcsFri)?;
-    }
+        None
+    };
+    validate_optional_pcs_fri_opening_proof_segments_with_preflight_values(
+        fri_request,
+        unit_challenges,
+        &global_values.proof_values,
+    )
+    .map_err(SetupPreflightError::PcsFri)?;
 
     Ok(report)
 }
