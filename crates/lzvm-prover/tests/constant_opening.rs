@@ -153,6 +153,20 @@ fn validates_trace_instance_constant_opening_queries() {
         .expect("trace instance opening should validate");
 }
 
+#[test]
+fn rejects_constant_opening_unit_trace_instance_mismatch() {
+    let (unit, mut segments) = valid_constant_opening_segments(2);
+    replace_opening_trace_instance(&mut segments, 1);
+
+    let error = validate_constant_opening_segments(&[unit], &segments)
+        .expect_err("opening should match the query trace instance");
+
+    assert_eq!(
+        error,
+        ValidateConstantOpeningSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
 fn replace_query_plan_trace_instance(segments: &mut [ProofSegment], trace_instance_index: u32) {
     let query_segment = segments
         .iter_mut()

@@ -605,6 +605,20 @@ fn validates_trace_instance_pcs_fri_opening_queries() {
 }
 
 #[test]
+fn rejects_pcs_fri_opening_unit_trace_instance_mismatch() {
+    let (unit, mut segments) = valid_pcs_fri_opening_segments();
+    replace_fri_opening_trace_instance(&mut segments, 1);
+
+    let error = validate_pcs_fri_opening_segments(&[unit], &segments)
+        .expect_err("opening should match the query trace instance");
+
+    assert_eq!(
+        error,
+        ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+#[test]
 fn validates_optional_pcs_fri_opening_when_segment_is_absent() {
     let unit = sample_validation_unit();
     let schedule = sample_prove_schedule(unit);
