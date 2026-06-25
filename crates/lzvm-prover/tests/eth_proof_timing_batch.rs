@@ -955,6 +955,48 @@ fn eth_proof_timing_batch_check_gpu_memory_fails_when_free_memory_is_low() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_fails_when_gpu_memory_is_low() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-check-env-gpu-memory-low");
+    let smi_path = write_executable_script(
+        &fixture.dir,
+        "nvidia-smi-low",
+        "#!/usr/bin/env python3\nprint('0, 24576, 24288, 288')\n",
+    );
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path);
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env GPU memory check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "env check should fail when GPU memory is below the configured floor"
+    );
+    assert!(
+        stdout.contains("gpu_memory_status=low\n") && !stdout.contains("status=ok\n"),
+        "env check should report low GPU memory without reporting ready status: {stdout}"
+    );
+    assert!(
+        stderr.contains("GPU memory preflight failed"),
+        "env check should explain the preflight failure: stderr={stderr}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_prints_env_template_without_config() {
     let mut command = Command::new(script_path());
     command
