@@ -597,18 +597,25 @@ theorem runtime_challenge_segment_binding_checked_acceptance_sound
       publicInput
       proof
       accepted
-  have transcriptSound :=
-    runtime_transcript_binding_checked_acceptance_sound
+  have transcriptFull :=
+    runtime_transcript_binding_checked_acceptance_full_contract
       assumptions
       validation.transcriptValidation
       artifact
       publicInput
       proof
       transcriptAccepted
+  have transcriptBound :=
+    runtime_transcript_binding_evidence_implies_transcript_bound
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptFull.left
   exact
     And.intro challengeEvidence
-      (And.intro transcriptSound.left
-        (And.intro transcriptSound.right.right.left transcriptSound.right.right.right))
+      (And.intro transcriptFull.left
+        (And.intro transcriptBound transcriptFull.right.right.right))
 
 theorem runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract
     {system : VerifierModel}

@@ -235,6 +235,21 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_sound",
+        &[
+            "runtime_transcript_binding_checked_acceptance_full_contract",
+            "runtime_transcript_binding_evidence_implies_transcript_bound",
+            "transcriptFull.left",
+            "transcriptFull.right.right.right",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_sound",
+        &["runtime_transcript_binding_checked_acceptance_sound"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract",
         &["runtime_transcript_binding_checked_acceptance_verifier_core_contract"],
     );
