@@ -45,6 +45,20 @@ def RuntimeChallengeSegmentBindingEvidence
     /\ validation.challengeSegmentMatchesTranscript artifact publicInput proof
     /\ validation.transcriptValidation.challengeSegmentBound artifact publicInput proof
 
+def RuntimeChallengeSegmentPayloadReuseContract
+    (_system : VerifierModel)
+    (validation : RuntimeChallengeSegmentBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.challengeSegmentPayloadValid artifact publicInput proof
+    /\ validation.challengeSegmentMatchesTranscript artifact publicInput proof
+    /\ validation.transcriptValidation.challengeSegmentBound artifact publicInput proof
+    /\ validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsUnique
+      artifact
+      publicInput
+      proof
+
 def RuntimeChallengeSegmentBindingCheckedAcceptance
     (_system : VerifierModel)
     (validation : RuntimeChallengeSegmentBindingValidation _system)
@@ -258,6 +272,42 @@ theorem runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique
       publicInput
       proof
       transcriptAccepted
+
+theorem runtime_challenge_segment_binding_checked_acceptance_payload_reuse_contract
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeChallengeSegmentPayloadReuseContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have challengeEvidence :=
+    runtime_challenge_segment_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have segmentIdsUnique :=
+    runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro challengeEvidence.left
+      (And.intro challengeEvidence.right.left
+        (And.intro challengeEvidence.right.right segmentIdsUnique))
 
 theorem runtime_challenge_segment_binding_checked_acceptance_container_canonical
     {system : VerifierModel}

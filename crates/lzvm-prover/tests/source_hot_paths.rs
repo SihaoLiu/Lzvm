@@ -2093,6 +2093,10 @@ fn lean_challenge_segment_binding_tracks_runtime_transcript_checks() {
     );
     assert!(
         lean_source.contains("structure RuntimeChallengeSegmentBindingValidation")
+            && lean_source.contains("def RuntimeChallengeSegmentPayloadReuseContract")
+            && lean_source.contains(
+                "runtime_challenge_segment_binding_checked_acceptance_payload_reuse_contract"
+            )
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof"),
         "Lean should expose the challenge segment binding model and verifier core contract"
     );
