@@ -172,13 +172,25 @@ theorem runtime_artifact_checked_acceptance_obligations
       proof
       artifactAccepted
   have transcriptBound :=
-    assumptions.crypto.transcript_binding publicInput proof verifierAccepts
+    assumption_bundle_fiat_shamir_transcript_binding
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
   have publicInputBound :=
     assumptions.semantic.public_input_binding publicInput proof verifierAccepts
   have pcsOpenings :=
-    assumptions.crypto.pcs_opening_sound publicInput proof verifierAccepts
+    assumption_bundle_pcs_opening_soundness
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
   have friQueries :=
-    assumptions.crypto.fri_query_sound publicInput proof verifierAccepts
+    assumption_bundle_fri_query_soundness
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
   exact
     And.intro evidence
       (And.intro verifierAccepts

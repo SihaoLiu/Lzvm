@@ -33,6 +33,24 @@ fn lean_conformance_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
+        "runtime_artifact_checked_acceptance_obligations",
+        &[
+            "assumption_bundle_fiat_shamir_transcript_binding",
+            "assumption_bundle_pcs_opening_soundness",
+            "assumption_bundle_fri_query_soundness",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_artifact_checked_acceptance_obligations",
+        &[
+            "assumptions.crypto.transcript_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
         "runtime_artifact_checked_acceptance_sound",
         &[
             "runtime_artifact_checked_acceptance_obligations",
