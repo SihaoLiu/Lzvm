@@ -1377,6 +1377,110 @@ fn eth_proof_timing_batch_env_file_configures_dry_run() {
 }
 
 #[test]
+fn eth_proof_timing_batch_env_file_configures_profile_and_gpu_tools() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-env-file-tools");
+    let env_path = fixture.dir.join("tools.env");
+    let nsys_path = write_fixture(&fixture.dir, "env-nsys");
+    let ncu_path = write_fixture(&fixture.dir, "env-ncu");
+    let smi_path = write_executable_script(
+        &fixture.dir,
+        "env-nvidia-smi",
+        "#!/usr/bin/env python3\nprint('0, GPU-low, 24576, 24288, 288')\nprint('1, GPU-free, 24576, 4096, 20480')\n",
+    );
+    make_executable(&nsys_path);
+    make_executable(&ncu_path);
+    std::fs::write(
+        &env_path,
+        format!(
+            concat!(
+                "export LZVM_NSYS_COMMAND='{nsys}'\n",
+                "export LZVM_NCU_COMMAND='{ncu}'\n",
+                "export LZVM_NVIDIA_SMI_COMMAND='{smi}'\n",
+                "export CUDA_VISIBLE_DEVICES=1,0\n",
+            ),
+            nsys = nsys_path.display(),
+            ncu = ncu_path.display(),
+            smi = smi_path.display(),
+        ),
+    )
+    .expect("env file should write");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--check-profile-tools")
+        .arg("--profile-tool")
+        .arg("both")
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--env-file")
+        .arg(&env_path)
+        .env_remove("LZVM_NSYS_COMMAND")
+        .env_remove("LZVM_NCU_COMMAND")
+        .env_remove("LZVM_NVIDIA_SMI_COMMAND")
+        .env_remove("CUDA_VISIBLE_DEVICES");
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env-file tool check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "env-file tool check should load allowed tool vars: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("profile_tool=both\n")
+            && stdout.contains("nsys_profiler_source=env\n")
+            && stdout.contains(&format!("nsys_profiler_command={}\n", nsys_path.display()))
+            && stdout.contains("ncu_profiler_source=env\n")
+            && stdout.contains(&format!("ncu_profiler_command={}\n", ncu_path.display()))
+            && stdout.contains("gpu_memory_source=env\n")
+            && stdout.contains(&format!("gpu_memory_command={}\n", smi_path.display()))
+            && stdout.contains("gpu_memory_cuda_visible_devices=1,0\n")
+            && stdout.contains("gpu_memory_selected_index=1\n")
+            && stdout.contains("gpu_memory_status=ready\n"),
+        "env-file tool check should use allowed tool vars: {stdout}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_env_file_rejects_unapproved_env_names() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-env-file-unapproved");
+    let env_path = fixture.dir.join("unapproved.env");
+    std::fs::write(&env_path, "PATH=/shadow\n").expect("env file should write");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--check-profile-tools")
+        .arg("--env-file")
+        .arg(&env_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env-file rejection should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(!success, "unapproved env name should be rejected");
+    assert!(
+        stdout.is_empty(),
+        "env-file rejection should happen before partial diagnostics: {stdout}"
+    );
+    assert!(
+        stderr.contains("env name is not allowed in --env-file: PATH"),
+        "env-file rejection should explain the rejected name: stderr={stderr}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_rejects_env_file_outside_temp() {
     let env_path = workspace_root().join(format!(
         "target/eth-proof-timing-batch-env-file-outside-{}.env",

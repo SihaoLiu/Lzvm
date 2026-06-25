@@ -34,6 +34,17 @@ REQUIRED_PATHS = [
 ]
 REQUIRED_SUFFIXES = [suffix for suffix, _kind in REQUIRED_PATHS]
 REQUIRED_PATH_KINDS = dict(REQUIRED_PATHS)
+ALLOWED_ENV_FILE_NAMES = {
+    *(
+        f"{prefix}_{suffix}"
+        for prefix in (SMALL_PREFIX, LARGE_PREFIX)
+        for suffix in (*REQUIRED_SUFFIXES, "BIN", "TRACE_LIMIT")
+    ),
+    "LZVM_NSYS_COMMAND",
+    "LZVM_NCU_COMMAND",
+    "LZVM_NVIDIA_SMI_COMMAND",
+    "CUDA_VISIBLE_DEVICES",
+}
 VERIFY_REQUIRED_TEXTS = [
     "verify_proof_status=ok",
     "artifact_public_input_match=ok",
@@ -128,6 +139,8 @@ def parse_env_file_assignment(line: str, path: Path, line_number: int) -> tuple[
     name, value = parts[0].split("=", 1)
     if not ENV_NAME_RE.match(name):
         raise SystemExit(f"{path}:{line_number}: invalid env name: {name!r}")
+    if name not in ALLOWED_ENV_FILE_NAMES:
+        raise SystemExit(f"{path}:{line_number}: env name is not allowed in --env-file: {name}")
     return (name, value)
 
 
