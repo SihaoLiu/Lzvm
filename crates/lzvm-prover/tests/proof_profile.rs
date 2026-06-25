@@ -419,6 +419,59 @@ fn proof_profile_check_gpu_memory_fails_when_free_memory_is_low() {
 
 #[cfg(unix)]
 #[test]
+fn proof_profile_check_gpu_memory_uses_first_visible_cuda_device() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-gpu-memory-visible-device-{}",
+        std::process::id()
+    ));
+    let smi_path = output_dir.join("nvidia-smi-visible");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    write_executable_script(
+        &smi_path,
+        "#!/usr/bin/env python3\nprint('0, GPU-low, 24576, 24288, 288')\nprint('1, GPU-free, 24576, 4096, 20480')\n",
+    );
+
+    let output = Command::new(script_path())
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path)
+        .env("CUDA_VISIBLE_DEVICES", "1,0")
+        .output()
+        .expect("proof profile visible GPU memory check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let profile_dir_created = output_dir.join("profiles").exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(
+        success,
+        "GPU memory check should use the first CUDA-visible device: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("gpu_memory_cuda_visible_devices=1,0\n")
+            && stdout.contains("gpu_memory_device_count=2\n")
+            && stdout.contains("gpu_memory_selected_index=1\n")
+            && stdout.contains("gpu_memory_selected_uuid=GPU-free\n")
+            && stdout.contains("gpu_memory_free_mib=20480\n")
+            && stdout.contains("gpu_memory_status=ready\n"),
+        "GPU memory check should inspect the first CUDA-visible GPU: {stdout}"
+    );
+    assert!(
+        !stdout.contains("profile_command="),
+        "standalone GPU memory check should not require a profiled command: {stdout}"
+    );
+    assert!(
+        !profile_dir_created,
+        "GPU memory check should not create profile output directories"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn proof_profile_check_tool_can_include_gpu_memory_preflight() {
     let output_dir = workspace_root().join(format!(
         "temp/proof-profile-check-tool-gpu-memory-{}",
