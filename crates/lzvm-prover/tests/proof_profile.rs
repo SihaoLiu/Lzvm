@@ -297,9 +297,14 @@ fn proof_profile_ncu_dry_run_uses_custom_profile_command() {
 
 #[cfg(unix)]
 fn write_executable(path: &std::path::Path) {
+    write_executable_script(path, "#!/bin/sh\nexit 0\n");
+}
+
+#[cfg(unix)]
+fn write_executable_script(path: &std::path::Path, contents: &str) {
     use std::os::unix::fs::PermissionsExt;
 
-    std::fs::write(path, b"#!/bin/sh\nexit 0\n").expect("fixture executable should write");
+    std::fs::write(path, contents).expect("fixture executable should write");
     let mut permissions = std::fs::metadata(path)
         .expect("fixture executable metadata should read")
         .permissions();
@@ -313,6 +318,151 @@ fn prepend_path(command: &mut Command, path: &std::path::Path) {
     paths.insert(0, path.to_path_buf());
     let joined = std::env::join_paths(paths).expect("fixture PATH should join");
     command.env("PATH", joined);
+}
+
+#[cfg(unix)]
+#[test]
+fn proof_profile_check_gpu_memory_reports_ready_status() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-gpu-memory-ready-{}",
+        std::process::id()
+    ));
+    let smi_path = output_dir.join("nvidia-smi-ready");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    write_executable_script(
+        &smi_path,
+        "#!/usr/bin/env python3\nprint('0, GPU-free, 24576, 4096, 20480')\n",
+    );
+
+    let output = Command::new(script_path())
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path)
+        .env_remove("CUDA_VISIBLE_DEVICES")
+        .output()
+        .expect("proof profile GPU memory check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let profile_dir_created = output_dir.join("profiles").exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(success, "GPU memory check should pass: stderr={stderr}");
+    assert!(
+        stdout.contains("gpu_memory_source=arg\n")
+            && stdout.contains(&format!("gpu_memory_command={}\n", smi_path.display()))
+            && stdout.contains("gpu_memory_min_free_mib=1024\n")
+            && stdout.contains("gpu_memory_device_count=1\n")
+            && stdout.contains("gpu_memory_selected_index=0\n")
+            && stdout.contains("gpu_memory_selected_uuid=GPU-free\n")
+            && stdout.contains("gpu_memory_free_mib=20480\n")
+            && stdout.contains("gpu_memory_status=ready\n"),
+        "GPU memory check should report ready capacity: {stdout}"
+    );
+    assert!(
+        !stdout.contains("profile_command="),
+        "standalone GPU memory check should not require a profiled command: {stdout}"
+    );
+    assert!(
+        !profile_dir_created,
+        "GPU memory check should not create profile output directories"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn proof_profile_check_gpu_memory_fails_when_free_memory_is_low() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-gpu-memory-low-{}",
+        std::process::id()
+    ));
+    let smi_path = output_dir.join("nvidia-smi-low");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    write_executable_script(
+        &smi_path,
+        "#!/usr/bin/env python3\nprint('0, GPU-low, 24576, 24288, 288')\n",
+    );
+
+    let output = Command::new(script_path())
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path)
+        .env_remove("CUDA_VISIBLE_DEVICES")
+        .output()
+        .expect("proof profile low GPU memory check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(
+        !success,
+        "GPU memory check should fail when free memory is below the configured floor"
+    );
+    assert!(
+        stderr.is_empty(),
+        "low GPU memory should report status on stdout only: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("gpu_memory_free_mib=288\n")
+            && stdout.contains("gpu_memory_min_free_mib=1024\n")
+            && stdout.contains("gpu_memory_status=low\n"),
+        "GPU memory check should explain low free memory: {stdout}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn proof_profile_check_tool_can_include_gpu_memory_preflight() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-check-tool-gpu-memory-{}",
+        std::process::id()
+    ));
+    let tool_path = output_dir.join("custom-nsys");
+    let smi_path = output_dir.join("nvidia-smi-ready");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    write_executable(&tool_path);
+    write_executable_script(
+        &smi_path,
+        "#!/usr/bin/env python3\nprint('0, GPU-free, 24576, 4096, 20480')\n",
+    );
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("nsys")
+        .arg("--nsys-command")
+        .arg(&tool_path)
+        .arg("--output-dir")
+        .arg(output_dir.join("profiles"))
+        .arg("--check-tool")
+        .arg("--check-gpu-memory")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path)
+        .env_remove("CUDA_VISIBLE_DEVICES")
+        .output()
+        .expect("proof profile tool and GPU memory check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let profile_dir_created = output_dir.join("profiles").exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(success, "combined check should pass: stderr={stderr}");
+    assert!(
+        stdout.contains("tool_status=ready\n") && stdout.contains("gpu_memory_status=ready\n"),
+        "combined check should report both tool and GPU readiness: {stdout}"
+    );
+    assert!(
+        !profile_dir_created,
+        "combined check should not create profile output directories"
+    );
 }
 
 #[cfg(unix)]
