@@ -151,6 +151,11 @@ pub struct SetupPreflightReport {
     pub eth_block_input_withdrawal_preimage_counts: Vec<Option<usize>>,
 }
 
+struct SetupPreflightGlobalValues {
+    proof_values: Vec<Ext3>,
+    group_values: Vec<Ext3>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetupPreflightError {
     Catalog(KeyDirectoryError),
@@ -644,7 +649,7 @@ pub fn validate_setup_preflight(
     validate_optional_contribution_segment(catalog, proof)?;
     validate_optional_challenge_values_segment(proof)?;
     validate_optional_contribution_challenge_values(catalog, proof, public_values)?;
-    validate_global_value_segments(catalog, proof)?;
+    let global_values = validate_global_value_segments(catalog, proof)?;
     let uses_transcript_inputs = uses_transcript_pcs_query_plan_inputs(&proof.segments);
     let needs_public_fields = uses_transcript_inputs
         || !catalog.global_constraints.entries.is_empty()
@@ -682,12 +687,8 @@ pub fn validate_setup_preflight(
     let mut transcript_challenges = None;
     if !catalog.global_constraints.entries.is_empty() {
         let public_values = public_fields.as_deref().unwrap_or(&[]);
-        let proof_values =
-            load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
-                .map_err(ValidateGlobalConstraintProofSegmentsError::ProofValues)
-                .map_err(SetupPreflightError::GlobalConstraints)?;
         let packed_proof_values =
-            flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
+            flatten_pcs_proof_values(&catalog.layout.global_info, &global_values.proof_values)
                 .map_err(ValidateGlobalConstraintProofSegmentsError::PackedProofValues)
                 .map_err(SetupPreflightError::GlobalConstraints)?;
         let challenges = if uses_transcript_inputs {
@@ -703,17 +704,13 @@ pub fn validate_setup_preflight(
         } else {
             &[]
         };
-        let group_values =
-            load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
-                .map_err(ValidateGlobalConstraintProofSegmentsError::GroupValues)
-                .map_err(SetupPreflightError::GlobalConstraints)?;
         validate_global_constraints(
             &catalog.global_constraints,
             GlobalConstraintInputs {
                 publics: public_values,
                 proof_values: &packed_proof_values,
                 challenges,
-                group_values: &group_values,
+                group_values: &global_values.group_values,
             },
         )
         .map_err(ValidateGlobalConstraintProofSegmentsError::Validation)
@@ -729,11 +726,7 @@ pub fn validate_setup_preflight(
             &[]
         };
         let packed_proof_values = if requirements.proof_values {
-            let proof_values =
-                load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
-                    .map_err(ResolveGlobalHintProofSegmentsError::ProofValues)
-                    .map_err(SetupPreflightError::GlobalHints)?;
-            flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
+            flatten_pcs_proof_values(&catalog.layout.global_info, &global_values.proof_values)
                 .map_err(ResolveGlobalHintProofSegmentsError::PackedProofValues)
                 .map_err(SetupPreflightError::GlobalHints)?
         } else {
@@ -753,11 +746,9 @@ pub fn validate_setup_preflight(
             &[]
         };
         let group_values = if requirements.group_values {
-            load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
-                .map_err(ResolveGlobalHintProofSegmentsError::GroupValues)
-                .map_err(SetupPreflightError::GlobalHints)?
+            global_values.group_values.as_slice()
         } else {
-            Vec::new()
+            &[]
         };
         let resolved = resolve_global_hint_program(
             &catalog.layout.global_info,
@@ -766,7 +757,7 @@ pub fn validate_setup_preflight(
                 publics: public_values,
                 proof_values: &packed_proof_values,
                 challenges,
-                group_values: &group_values,
+                group_values,
             },
         )
         .map_err(ResolveGlobalHintProofSegmentsError::Eval)
@@ -922,15 +913,18 @@ fn validate_optional_unit_value_segments(
 fn validate_global_value_segments(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
-) -> Result<(), SetupPreflightError> {
-    load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
-        .map(|_| ())
-        .map_err(SetupPreflightError::ProofValues)?;
-    load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
-        .map(|_| ())
-        .map_err(SetupPreflightError::GroupValues)?;
+) -> Result<SetupPreflightGlobalValues, SetupPreflightError> {
+    let proof_values =
+        load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
+            .map_err(SetupPreflightError::ProofValues)?;
+    let group_values =
+        load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
+            .map_err(SetupPreflightError::GroupValues)?;
 
-    Ok(())
+    Ok(SetupPreflightGlobalValues {
+        proof_values,
+        group_values,
+    })
 }
 
 fn validate_optional_contribution_segment(

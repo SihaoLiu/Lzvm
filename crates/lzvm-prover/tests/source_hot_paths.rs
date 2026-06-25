@@ -7968,6 +7968,9 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && setup_preflight_source.contains(
                 "validate_optional_pcs_fri_opening_proof_segments_with_transcript_challenges"
             )
+            && setup_preflight_source.contains("struct SetupPreflightGlobalValues")
+            && setup_preflight_source.matches("load_group_values_from_segments(").count() == 1
+            && setup_preflight_source.matches("load_pcs_proof_values_from_segments(").count() == 2
             && !setup_preflight_source.contains("load_unit_values_for_identity_from_segments")
             && !setup_preflight_source.contains("parse_unit_values_segment")
             && !setup_preflight_source.contains("load_witness_commitment_segments("),
