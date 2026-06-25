@@ -384,10 +384,36 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         "runtime_soundness_checked_acceptance_evidence",
         &["runtime_soundness_checked_acceptance_core_obligations"],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_evidence",
+        &[
+            "runtime_transcript_binding_checked_acceptance_full_contract",
+            "runtime_transcript_binding_evidence_implies_transcript_bound",
+            "transcriptFull.left",
+            "transcriptFull.right.right.left",
+        ],
+    );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_soundness_checked_acceptance_evidence",
-        &["sound_witness_implies_verifier_core_contract"],
+        &[
+            "runtime_transcript_binding_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_sound",
+        &[
+            "runtime_transcript_binding_checked_acceptance_full_contract",
+            "transcriptFull.right.right.right",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_sound",
+        &["runtime_transcript_binding_checked_acceptance_sound"],
     );
     assert!(
         theorem_prefix(

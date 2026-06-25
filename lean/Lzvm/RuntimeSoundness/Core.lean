@@ -306,14 +306,21 @@ theorem runtime_soundness_checked_acceptance_evidence
     assumption_bundle_carries_required_crypto_evidence assumptions
   have transcriptAccepted := checked.left
   have sourceRequirement := checked.right
-  have transcriptSound :=
-    runtime_transcript_binding_checked_acceptance_sound
+  have transcriptFull :=
+    runtime_transcript_binding_checked_acceptance_full_contract
       assumptions
       validation.transcriptValidation
       artifact
       publicInput
       proof
       transcriptAccepted
+  have transcriptBound :=
+    runtime_transcript_binding_evidence_implies_transcript_bound
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptFull.left
   have artifactAccepted :=
     validation.transcriptValidation.transcriptAcceptedImpliesArtifactBindingAccepted
       artifact
@@ -353,9 +360,9 @@ theorem runtime_soundness_checked_acceptance_evidence
   have publicInputBound :=
     coreContract.right.left
   exact
-    And.intro transcriptSound.left
-      (And.intro transcriptSound.right.left
-        (And.intro transcriptSound.right.right.left
+    And.intro transcriptFull.left
+      (And.intro transcriptFull.right.right.left
+        (And.intro transcriptBound
           (And.intro publicInputBound
             (And.intro sourceRequirement
               (And.intro pcsOpenings friQueries)))))
@@ -578,15 +585,15 @@ theorem runtime_soundness_checked_acceptance_sound
       proof
       requiresExternalSource
       checked
-  have transcriptSound :=
-    runtime_transcript_binding_checked_acceptance_sound
+  have transcriptFull :=
+    runtime_transcript_binding_checked_acceptance_full_contract
       assumptions
       validation.transcriptValidation
       artifact
       publicInput
       proof
       checked.left
-  exact And.intro evidence transcriptSound.right.right.right
+  exact And.intro evidence transcriptFull.right.right.right
 
 theorem runtime_soundness_checked_acceptance_runtime_artifact_core_contract
     {system : VerifierModel}
