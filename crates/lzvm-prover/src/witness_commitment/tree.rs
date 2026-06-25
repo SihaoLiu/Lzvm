@@ -20,7 +20,7 @@ use crate::witness_layout::WitnessTraceStageValues;
 
 #[cfg(feature = "cuda")]
 use super::{
-    copy_extended_row_values_batch_from_devices, DeviceRowValueBatchSource,
+    copy_extended_row_values_batch_from_devices_timing, DeviceRowValueBatchSource,
     WitnessStageOpeningWorkTiming,
 };
 #[cfg(feature = "cuda")]
@@ -1323,12 +1323,18 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
     for column_count in column_counts {
         let mut sources = Vec::new();
         let mut positions = Vec::new();
+        let mut timing_index = None;
+        let mut timing_row_count = 0usize;
         for (group_index, group) in pending_groups.iter().enumerate() {
             let PendingWitnessStageOpeningGroup::DeviceRows { row_values, .. } = group else {
                 continue;
             };
             if row_values.column_count != column_count {
                 continue;
+            }
+            if row_values.row_indices.len() > timing_row_count {
+                timing_row_count = row_values.row_indices.len();
+                timing_index = Some(group_index);
             }
             for row_position in 0..row_values.row_indices.len() {
                 sources.push(DeviceRowValueBatchSource {
@@ -1342,17 +1348,34 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
         if sources.is_empty() {
             continue;
         }
-        let timing_index = positions
-            .first()
-            .map(|(group_index, _)| *group_index)
-            .ok_or(WitnessStageOpeningError::LengthOverflow)?;
-        let values = copy_extended_row_values_batch_from_devices(
+        let timing_index = timing_index.ok_or(WitnessStageOpeningError::LengthOverflow)?;
+        let values = copy_extended_row_values_batch_from_devices_timing(
             column_count,
             &sources,
             timings.get_mut(timing_index),
         )?;
         if values.len() != positions.len() {
             return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        for (group_index, group) in pending_groups.iter().enumerate() {
+            let PendingWitnessStageOpeningGroup::DeviceRows { row_values, .. } = group else {
+                continue;
+            };
+            if row_values.column_count != column_count {
+                continue;
+            }
+            let timing = timings
+                .get_mut(group_index)
+                .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+            timing.record_device_row_values(row_values.row_indices.len(), column_count);
+        }
+        let timing = timings
+            .get_mut(timing_index)
+            .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+        if sources.len() == 1 {
+            timing.record_device_row_value_single_download();
+        } else {
+            timing.record_device_row_value_download_batch();
         }
         for ((group_index, row_position), values) in positions.into_iter().zip(values) {
             let output = &mut decoded_device_rows[group_index];
@@ -3144,7 +3167,7 @@ mod tests {
         assert!(device.drop_retained_leaf_digest_level_for_test());
 
         let rows_a = [0_u64];
-        let rows_b = [3891_u64];
+        let rows_b = [3891_u64, 4095_u64];
         let mut expected_timing_a = WitnessStageOpeningWorkTiming::default();
         let expected_a = open_witness_stage_commitments_with_source_device_timing(
             &device,
@@ -3190,20 +3213,25 @@ mod tests {
         .expect("opening groups should build");
 
         assert_eq!(actual, vec![expected_a, expected_b]);
+        assert_eq!(timings[0].row_values_device_row_count, rows_a.len());
+        assert_eq!(timings[1].row_values_device_row_count, rows_b.len());
         assert_eq!(
-            timings
-                .iter()
-                .map(|timing| timing.row_values_device_row_count)
-                .sum::<usize>(),
-            rows_a.len() + rows_b.len()
+            timings[0].row_values_word_count,
+            rows_a.len() * column_count
         );
+        assert_eq!(
+            timings[1].row_values_word_count,
+            rows_b.len() * column_count
+        );
+        assert_eq!(timings[0].row_values_device_download_batch_count, 0);
+        assert_eq!(timings[1].row_values_device_download_batch_count, 1);
         assert_eq!(
             timings
                 .iter()
                 .map(|timing| timing.row_values_device_download_batch_count)
                 .sum::<usize>(),
             1,
-            "single-row retained parent checkpoint values from multiple requests should use one device row-value gather"
+            "cross-request retained parent checkpoint values should use one device row-value gather"
         );
         assert_eq!(
             timings

@@ -2961,7 +2961,16 @@ impl WitnessStageCompactTreeStorage {
                 row,
             })
             .collect::<Vec<_>>();
-        copy_extended_row_values_batch_from_devices(self.columns, &sources, timing)
+        let values = copy_extended_row_values_batch_from_devices_timing(
+            self.columns,
+            &sources,
+            timing.as_deref_mut(),
+        )?;
+        if let Some(timing) = timing {
+            timing.record_device_row_values(rows.len(), self.columns);
+            timing.record_device_row_value_download_batch();
+        }
+        Ok(values)
     }
 
     #[cfg(feature = "cuda")]
@@ -3054,7 +3063,30 @@ impl WitnessStageCompactTreeStorage {
 }
 
 #[cfg(feature = "cuda")]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn copy_extended_row_values_batch_from_devices(
+    column_count: usize,
+    sources: &[DeviceRowValueBatchSource<'_>],
+    mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+) -> Result<Vec<Vec<Felt>>, WitnessStageOpeningError> {
+    let values = copy_extended_row_values_batch_from_devices_timing(
+        column_count,
+        sources,
+        timing.as_deref_mut(),
+    )?;
+    if let Some(timing) = timing {
+        timing.record_device_row_values(sources.len(), column_count);
+        if sources.len() == 1 {
+            timing.record_device_row_value_single_download();
+        } else {
+            timing.record_device_row_value_download_batch();
+        }
+    }
+    Ok(values)
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn copy_extended_row_values_batch_from_devices_timing(
     column_count: usize,
     sources: &[DeviceRowValueBatchSource<'_>],
     mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
@@ -3098,14 +3130,6 @@ pub(crate) fn copy_extended_row_values_batch_from_devices(
                 .collect()
         },
     )?;
-    if let Some(timing) = timing {
-        timing.record_device_row_values(sources.len(), column_count);
-        if sources.len() == 1 {
-            timing.record_device_row_value_single_download();
-        } else {
-            timing.record_device_row_value_download_batch();
-        }
-    }
     Ok(values)
 }
 
