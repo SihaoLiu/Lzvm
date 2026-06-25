@@ -541,7 +541,7 @@ def profile_command_for_env(
         display_path_for_shell(profile_output_dir, root),
         "--name",
         profile_name,
-        "--summarize",
+        *([] if tool == "nsys" and args.skip_nsys_export else ["--summarize"]),
         "--cwd",
         ".",
         *profiler_command,

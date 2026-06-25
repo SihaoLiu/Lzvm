@@ -730,6 +730,14 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
     let success = output.status.success();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let nsys_command = stdout
+        .lines()
+        .find(|line| line.starts_with("small_nsys_profile_command="))
+        .expect("nsys profile command should be printed");
+    let ncu_command = stdout
+        .lines()
+        .find(|line| line.starts_with("small_ncu_profile_command="))
+        .expect("ncu profile command should be printed");
     let profile_created = profile_dir.exists();
     fixture.cleanup();
 
@@ -755,8 +763,12 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         "profile command output should route profiler tuning flags through the matching tool: {stdout}"
     );
     assert!(
-        stdout.contains("--summarize"),
-        "profile command output should request summary files: {stdout}"
+        nsys_command.contains("--skip-nsys-export") && !nsys_command.contains("--summarize"),
+        "nsys command should avoid the downstream-rejected summarize plus skip-export combination: {stdout}"
+    );
+    assert!(
+        ncu_command.contains("--summarize") && !ncu_command.contains("--skip-nsys-export"),
+        "ncu command should still request summary files without nsys-only flags: {stdout}"
     );
     assert!(
         stdout.contains("--profile-arg --kernel-name-base=demangled")
