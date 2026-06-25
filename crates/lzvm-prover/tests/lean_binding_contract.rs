@@ -2,6 +2,7 @@
 mod lean_binding;
 
 use std::path::Path;
+use std::process::Command;
 
 #[test]
 fn lean_theorem_declaration_matching_ignores_comments_and_similar_names() {
@@ -325,6 +326,33 @@ fn top_level_lean_module_reaches_all_soundness_sources() {
     let lean_root = crate_root.join("../../lean/Lzvm");
 
     lean_binding::assert_all_lean_modules_reachable_from_entrypoint(&lean_entrypoint, &lean_root);
+}
+
+#[test]
+fn lean_project_builds_with_lake() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root should resolve");
+    let lean_root = workspace_root.join("lean");
+    let temp_root = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_root).expect("workspace temp directory should create");
+
+    let output = Command::new("lake")
+        .arg("build")
+        .current_dir(&lean_root)
+        .env("TMPDIR", &temp_root)
+        .output()
+        .expect("lake build should run");
+
+    assert!(
+        output.status.success(),
+        "lake build should verify the Lean proof project: status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn collect_oversized_lean_sources(path: &Path, oversized: &mut Vec<(String, usize)>) {
