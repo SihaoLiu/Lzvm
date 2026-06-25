@@ -735,12 +735,13 @@ pub fn validate_setup_preflight(
     let schedule = derive_prove_schedule(catalog).map_err(SetupPreflightError::Schedule)?;
     validate_setup_proof_segment_ids(&proof.segments)?;
     let contribution_entries = validate_optional_contribution_segment(catalog, proof)?;
-    validate_optional_challenge_values_segment(proof)?;
+    let challenge_values = validate_optional_challenge_values_segment(proof)?;
     let contribution_proof_values = validate_optional_contribution_challenge_values(
         catalog,
         proof,
         public_values,
         contribution_entries.as_deref(),
+        challenge_values.as_deref(),
     )?;
     let global_values = validate_global_value_segments(catalog, proof, contribution_proof_values)?;
     let uses_transcript_inputs = uses_transcript_pcs_query_plan_inputs(&proof.segments);
@@ -1006,13 +1007,13 @@ fn validate_optional_contribution_segment(
 
 fn validate_optional_challenge_values_segment(
     proof: &ProofArtifact,
-) -> Result<(), SetupPreflightError> {
+) -> Result<Option<Vec<[u64; 3]>>, SetupPreflightError> {
     let mut segments = proof
         .segments
         .iter()
         .filter(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID);
     let Some(segment) = segments.next() else {
-        return Ok(());
+        return Ok(None);
     };
     if segments.next().is_some() {
         return Err(SetupPreflightError::DuplicateChallengeValuesSegment);
@@ -1020,7 +1021,7 @@ fn validate_optional_challenge_values_segment(
     let segment = parse_challenge_values_segment(&segment.data)
         .map_err(SetupPreflightError::ChallengeValues)?;
     validate_challenge_values_canonical(&segment.values)?;
-    Ok(())
+    Ok(Some(segment.values))
 }
 
 fn validate_challenge_values_canonical(values: &[[u64; 3]]) -> Result<(), SetupPreflightError> {
@@ -1043,12 +1044,9 @@ fn validate_optional_contribution_challenge_values(
     proof: &ProofArtifact,
     public_values: &PublicValues,
     contribution_entries: Option<&[ProveContributionEntry]>,
+    challenge_values: Option<&[[u64; 3]]>,
 ) -> Result<Option<SetupPreflightContributionProofValues>, SetupPreflightError> {
-    let Some(challenge_segment) = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
-    else {
+    let Some(challenge_values) = challenge_values else {
         if contribution_entries.is_some() {
             return Err(SetupPreflightError::MissingContributionChallengeValues);
         }
@@ -1058,9 +1056,6 @@ fn validate_optional_contribution_challenge_values(
         return Ok(None);
     };
 
-    let challenge_values = parse_challenge_values_segment(&challenge_segment.data)
-        .map_err(SetupPreflightError::ChallengeValues)?
-        .values;
     let public_fields =
         public_values_as_fields(public_values).map_err(SetupPreflightError::PublicValues)?;
     let proof_values =
@@ -1076,7 +1071,7 @@ fn validate_optional_contribution_challenge_values(
         contribution_entries,
     )
     .map_err(SetupPreflightError::Contribution)?;
-    if challenge_values.as_slice() != [expected.to_u64s()] {
+    if challenge_values.len() != 1 || challenge_values[0] != expected.to_u64s() {
         return Err(SetupPreflightError::ContributionChallengeValuesMismatch);
     }
     Ok(Some(SetupPreflightContributionProofValues {

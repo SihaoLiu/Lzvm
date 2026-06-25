@@ -8026,10 +8026,15 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && setup_preflight_source.contains("struct SetupPreflightContributionProofValues")
             && setup_preflight_source.contains("preloaded_packed_proof_values")
             && setup_preflight_source.contains("preloaded_proof_values")
+            && setup_preflight_source.contains("challenge_values.as_deref()")
             && setup_preflight_source.contains("derive_global_challenge_from_loaded_contributions")
             && setup_preflight_source.matches("load_group_values_from_segments(").count() == 1
             && setup_preflight_source.matches("load_pcs_proof_values_from_segments(").count() == 2
             && setup_preflight_source.matches("flatten_pcs_proof_values(").count() == 2
+            && setup_preflight_source
+                .matches("parse_challenge_values_segment(")
+                .count()
+                == 1
             && setup_preflight_source
                 .matches("load_contribution_segment_from_segments(")
                 .count()
