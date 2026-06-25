@@ -55,8 +55,19 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let trace_constraint_source = std::fs::read_to_string(&trace_constraint_path)
         .expect("Lean trace constraint source should read");
     let runtime_soundness_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness.lean");
-    let runtime_soundness_source = std::fs::read_to_string(&runtime_soundness_path)
+    let runtime_soundness_entrypoint_source = std::fs::read_to_string(&runtime_soundness_path)
         .expect("Lean runtime soundness source should read");
+    let runtime_soundness_core_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness/Core.lean");
+    let runtime_soundness_core_source = std::fs::read_to_string(&runtime_soundness_core_path)
+        .expect("Lean runtime soundness core source should read");
+    let runtime_soundness_external_source_path =
+        crate_root.join("../../lean/Lzvm/RuntimeSoundness/ExternalSource.lean");
+    let runtime_soundness_external_source =
+        std::fs::read_to_string(&runtime_soundness_external_source_path)
+            .expect("Lean runtime soundness external-source source should read");
+    let runtime_soundness_source = format!(
+        "{runtime_soundness_entrypoint_source}\n{runtime_soundness_core_source}\n{runtime_soundness_external_source}"
+    );
 
     lean_binding::assert_theorem_declarations(
         &lean_source,

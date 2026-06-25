@@ -10,8 +10,17 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
     let audit_source =
         std::fs::read_to_string(&audit_path).expect("Lean assumption audit source should read");
     let runtime_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness.lean");
-    let runtime_source =
+    let runtime_entrypoint_source =
         std::fs::read_to_string(&runtime_path).expect("Lean runtime soundness source should read");
+    let runtime_core_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness/Core.lean");
+    let runtime_core_source = std::fs::read_to_string(&runtime_core_path)
+        .expect("Lean runtime soundness core source should read");
+    let runtime_external_source_path =
+        crate_root.join("../../lean/Lzvm/RuntimeSoundness/ExternalSource.lean");
+    let runtime_external_source = std::fs::read_to_string(&runtime_external_source_path)
+        .expect("Lean runtime soundness external-source source should read");
+    let runtime_source =
+        format!("{runtime_entrypoint_source}\n{runtime_core_source}\n{runtime_external_source}");
     let soundness_path = crate_root.join("../../lean/Lzvm/Soundness.lean");
     let soundness_source =
         std::fs::read_to_string(&soundness_path).expect("Lean soundness source should read");
