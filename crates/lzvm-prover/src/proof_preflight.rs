@@ -101,6 +101,11 @@ pub struct ProofPreflightReport {
     pub eth_block_input_withdrawal_preimage_counts: Vec<Option<usize>>,
 }
 
+pub(crate) struct ProofPreflightValidation {
+    pub report: ProofPreflightReport,
+    pub public_value_fields: Vec<Felt>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProofPreflightError {
     SetupHashMismatch,
@@ -360,13 +365,13 @@ pub fn validate_proof_public_values(
     proof: &ProofArtifact,
     public_values: &PublicValues,
 ) -> Result<ProofPreflightReport, ProofPreflightError> {
-    validate_proof_public_values_inner(proof, public_values, true)
+    Ok(validate_proof_public_values_inner(proof, public_values, true)?.report)
 }
 
-pub(crate) fn validate_proof_public_values_for_setup_preflight(
+pub(crate) fn validate_proof_public_values_for_setup_preflight_with_fields(
     proof: &ProofArtifact,
     public_values: &PublicValues,
-) -> Result<ProofPreflightReport, ProofPreflightError> {
+) -> Result<ProofPreflightValidation, ProofPreflightError> {
     validate_proof_public_values_inner(proof, public_values, false)
 }
 
@@ -374,7 +379,7 @@ fn validate_proof_public_values_inner(
     proof: &ProofArtifact,
     public_values: &PublicValues,
     require_trace_constraint_evidence: bool,
-) -> Result<ProofPreflightReport, ProofPreflightError> {
+) -> Result<ProofPreflightValidation, ProofPreflightError> {
     validate_proof_artifact(proof).map_err(ProofPreflightError::ProofArtifact)?;
 
     if proof.setup_hash != public_values.setup_hash {
@@ -562,53 +567,57 @@ fn validate_proof_public_values_inner(
             .map_err(ProofPreflightError::EthBlockPublicValues)?;
     }
 
-    Ok(ProofPreflightReport {
-        segment_count: proof.segments.len(),
-        public_value_count: public_values.values.len(),
-        public_values_hash: digest,
-        public_value_field_count: public_value_fields.len(),
-        program_image_cache_count,
-        program_image_caches,
-        program_image_cache_hashes,
-        challenge_values_segment_count,
-        challenge_values_segment_byte_counts,
-        challenge_values_value_counts,
-        trace_constraint_segment_count,
-        trace_constraint_segment_byte_counts,
-        trace_constraint_units,
-        eth_block_input_count,
-        eth_block_input_hashes,
-        eth_block_input_byte_counts,
-        eth_block_input_block_rlp_byte_counts,
-        eth_block_input_extra_header_field_counts,
-        eth_block_input_extra_body_field_counts,
-        eth_block_input_block_hashes,
-        eth_block_input_parent_hashes,
-        eth_block_input_ommers_hashes,
-        eth_block_input_beneficiaries,
-        eth_block_input_state_roots,
-        eth_block_input_receipt_roots,
-        eth_block_input_logs_blooms,
-        eth_block_input_difficulties,
-        eth_block_input_block_numbers,
-        eth_block_input_timestamps,
-        eth_block_input_extra_data,
-        eth_block_input_gas_limits,
-        eth_block_input_gas_used_values,
-        eth_block_input_base_fees_per_gas,
-        eth_block_input_mix_hashes,
-        eth_block_input_nonces,
-        eth_block_input_transaction_roots,
-        eth_block_input_transaction_preimage_counts,
-        eth_block_input_legacy_transaction_counts,
-        eth_block_input_typed_transaction_counts,
-        eth_block_input_receipts_rlp_byte_counts,
-        eth_block_input_receipt_preimage_counts,
-        eth_block_input_legacy_receipt_counts,
-        eth_block_input_typed_receipt_counts,
-        eth_block_input_withdrawal_roots,
-        eth_block_input_withdrawal_counts,
-        eth_block_input_withdrawal_preimage_counts,
+    let public_value_field_count = public_value_fields.len();
+    Ok(ProofPreflightValidation {
+        report: ProofPreflightReport {
+            segment_count: proof.segments.len(),
+            public_value_count: public_values.values.len(),
+            public_values_hash: digest,
+            public_value_field_count,
+            program_image_cache_count,
+            program_image_caches,
+            program_image_cache_hashes,
+            challenge_values_segment_count,
+            challenge_values_segment_byte_counts,
+            challenge_values_value_counts,
+            trace_constraint_segment_count,
+            trace_constraint_segment_byte_counts,
+            trace_constraint_units,
+            eth_block_input_count,
+            eth_block_input_hashes,
+            eth_block_input_byte_counts,
+            eth_block_input_block_rlp_byte_counts,
+            eth_block_input_extra_header_field_counts,
+            eth_block_input_extra_body_field_counts,
+            eth_block_input_block_hashes,
+            eth_block_input_parent_hashes,
+            eth_block_input_ommers_hashes,
+            eth_block_input_beneficiaries,
+            eth_block_input_state_roots,
+            eth_block_input_receipt_roots,
+            eth_block_input_logs_blooms,
+            eth_block_input_difficulties,
+            eth_block_input_block_numbers,
+            eth_block_input_timestamps,
+            eth_block_input_extra_data,
+            eth_block_input_gas_limits,
+            eth_block_input_gas_used_values,
+            eth_block_input_base_fees_per_gas,
+            eth_block_input_mix_hashes,
+            eth_block_input_nonces,
+            eth_block_input_transaction_roots,
+            eth_block_input_transaction_preimage_counts,
+            eth_block_input_legacy_transaction_counts,
+            eth_block_input_typed_transaction_counts,
+            eth_block_input_receipts_rlp_byte_counts,
+            eth_block_input_receipt_preimage_counts,
+            eth_block_input_legacy_receipt_counts,
+            eth_block_input_typed_receipt_counts,
+            eth_block_input_withdrawal_roots,
+            eth_block_input_withdrawal_counts,
+            eth_block_input_withdrawal_preimage_counts,
+        },
+        public_value_fields,
     })
 }
 

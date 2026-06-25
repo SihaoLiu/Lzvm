@@ -8022,6 +8022,8 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     );
     assert!(
         setup_preflight_source.contains("load_witness_commitment_segment_refs_with_shapes")
+            && setup_preflight_source.contains("validate_setup_preflight_hashes_with_fields")
+            && setup_preflight_source.contains("validation.public_value_fields")
             && setup_preflight_source.contains("load_unit_values_segment_from_segments")
             && setup_preflight_source.contains("load_unit_values_for_identity_from_parsed_segment")
             && setup_preflight_source
@@ -8052,6 +8054,7 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
                 .count()
                 == 1
             && !setup_preflight_source.contains("load_unit_values_for_identity_from_segments")
+            && !setup_preflight_source.contains("public_values_as_fields")
             && !setup_preflight_source.contains("parse_unit_values_segment")
             && !setup_preflight_source.contains("parse_witness_commitment_segment")
             && !setup_preflight_source.contains("load_witness_commitment_segments("),
@@ -8115,10 +8118,12 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
     );
     assert!(
         setup_preflight_source.contains("validate_setup_preflight_hashes")
+            && setup_preflight_source.contains("validate_setup_preflight_hashes_with_fields")
             && setup_preflight_source.contains("validate_proof_public_values_for_setup_preflight")
             && setup_preflight_source.contains("validate_optional_trace_constraint_segment")
             && setup_preflight_source.contains("report.trace_constraint_units")
             && !setup_preflight_source.contains("parse_trace_constraint_segment")
+            && !setup_preflight_source.contains("public_values_as_fields")
             && !setup_preflight_source.contains("parse_witness_commitment_segment")
             && setup_preflight_source.contains("validate_pcs_query_plan_segments")
             && setup_preflight_source.contains("validate_constant_opening_segments")

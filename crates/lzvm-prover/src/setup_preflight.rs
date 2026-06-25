@@ -71,7 +71,7 @@ use crate::pcs_transcript_segments::{
     PcsTranscriptUnitChallenges,
 };
 use crate::proof_preflight::{
-    public_values_as_fields, validate_proof_public_values_for_setup_preflight, ProofPreflightError,
+    validate_proof_public_values_for_setup_preflight_with_fields, ProofPreflightError,
     ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
 };
 use crate::proof_values::{
@@ -146,6 +146,11 @@ pub struct SetupPreflightReport {
     pub eth_block_input_withdrawal_roots: Vec<Option<[u8; 32]>>,
     pub eth_block_input_withdrawal_counts: Vec<Option<usize>>,
     pub eth_block_input_withdrawal_preimage_counts: Vec<Option<usize>>,
+}
+
+struct SetupPreflightValidation {
+    report: SetupPreflightReport,
+    public_value_fields: Vec<Felt>,
 }
 
 struct SetupPreflightGlobalValues {
@@ -494,6 +499,14 @@ pub fn validate_setup_preflight_hashes(
     proof: &ProofArtifact,
     public_values: &PublicValues,
 ) -> Result<SetupPreflightReport, SetupPreflightError> {
+    Ok(validate_setup_preflight_hashes_with_fields(catalog, proof, public_values)?.report)
+}
+
+fn validate_setup_preflight_hashes_with_fields(
+    catalog: &KeyDirectoryCatalog,
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+) -> Result<SetupPreflightValidation, SetupPreflightError> {
     if proof.setup_hash != public_values.setup_hash {
         return Err(SetupPreflightError::Proof(
             ProofPreflightError::SetupHashMismatch,
@@ -506,6 +519,10 @@ pub fn validate_setup_preflight_hashes(
         return Err(SetupPreflightError::CatalogHashMismatch);
     }
 
+    let proof_validation =
+        validate_proof_public_values_for_setup_preflight_with_fields(proof, public_values)
+            .map_err(SetupPreflightError::Proof)?;
+    let public_value_fields = proof_validation.public_value_fields;
     let ProofPreflightReport {
         segment_count,
         public_value_count,
@@ -553,8 +570,7 @@ pub fn validate_setup_preflight_hashes(
         eth_block_input_withdrawal_roots,
         eth_block_input_withdrawal_counts,
         eth_block_input_withdrawal_preimage_counts,
-    } = validate_proof_public_values_for_setup_preflight(proof, public_values)
-        .map_err(SetupPreflightError::Proof)?;
+    } = proof_validation.report;
 
     validate_public_values_metadata_with_field_count(
         &catalog.layout.global_info,
@@ -569,71 +585,74 @@ pub fn validate_setup_preflight_hashes(
         return Err(SetupPreflightError::ProgramImageCacheSetupHashMismatch);
     }
 
-    Ok(SetupPreflightReport {
-        unit_count: catalog.units.len(),
-        segment_count,
-        public_value_count,
-        public_values_hash,
-        public_value_field_count,
-        source_fixed_file_manifest_present: catalog.source_fixed_file_manifest.is_some(),
-        source_fixed_file_manifest_entry_count: catalog
-            .source_fixed_file_manifest
-            .as_ref()
-            .map(|manifest| manifest.entries.len())
-            .unwrap_or(0),
-        source_program_archive_present: catalog.source_program_archive.is_some(),
-        source_program_archive_source_count: catalog
-            .source_program_archive
-            .as_ref()
-            .map(|archive| archive.sources.len())
-            .unwrap_or(0),
-        source_program_archive_edge_count: catalog
-            .source_program_archive
-            .as_ref()
-            .map(|archive| archive.edges.len())
-            .unwrap_or(0),
-        program_image_cache_count,
-        program_image_caches,
-        program_image_cache_hashes,
-        challenge_values_segment_count,
-        challenge_values_segment_byte_counts,
-        challenge_values_value_counts,
-        trace_constraint_segment_count,
-        trace_constraint_segment_byte_counts,
-        trace_constraint_units,
-        eth_block_input_count,
-        eth_block_input_hashes,
-        eth_block_input_byte_counts,
-        eth_block_input_block_rlp_byte_counts,
-        eth_block_input_extra_header_field_counts,
-        eth_block_input_extra_body_field_counts,
-        eth_block_input_block_hashes,
-        eth_block_input_parent_hashes,
-        eth_block_input_ommers_hashes,
-        eth_block_input_beneficiaries,
-        eth_block_input_state_roots,
-        eth_block_input_receipt_roots,
-        eth_block_input_logs_blooms,
-        eth_block_input_difficulties,
-        eth_block_input_block_numbers,
-        eth_block_input_timestamps,
-        eth_block_input_extra_data,
-        eth_block_input_gas_limits,
-        eth_block_input_gas_used_values,
-        eth_block_input_base_fees_per_gas,
-        eth_block_input_mix_hashes,
-        eth_block_input_nonces,
-        eth_block_input_transaction_roots,
-        eth_block_input_transaction_preimage_counts,
-        eth_block_input_legacy_transaction_counts,
-        eth_block_input_typed_transaction_counts,
-        eth_block_input_receipts_rlp_byte_counts,
-        eth_block_input_receipt_preimage_counts,
-        eth_block_input_legacy_receipt_counts,
-        eth_block_input_typed_receipt_counts,
-        eth_block_input_withdrawal_roots,
-        eth_block_input_withdrawal_counts,
-        eth_block_input_withdrawal_preimage_counts,
+    Ok(SetupPreflightValidation {
+        report: SetupPreflightReport {
+            unit_count: catalog.units.len(),
+            segment_count,
+            public_value_count,
+            public_values_hash,
+            public_value_field_count,
+            source_fixed_file_manifest_present: catalog.source_fixed_file_manifest.is_some(),
+            source_fixed_file_manifest_entry_count: catalog
+                .source_fixed_file_manifest
+                .as_ref()
+                .map(|manifest| manifest.entries.len())
+                .unwrap_or(0),
+            source_program_archive_present: catalog.source_program_archive.is_some(),
+            source_program_archive_source_count: catalog
+                .source_program_archive
+                .as_ref()
+                .map(|archive| archive.sources.len())
+                .unwrap_or(0),
+            source_program_archive_edge_count: catalog
+                .source_program_archive
+                .as_ref()
+                .map(|archive| archive.edges.len())
+                .unwrap_or(0),
+            program_image_cache_count,
+            program_image_caches,
+            program_image_cache_hashes,
+            challenge_values_segment_count,
+            challenge_values_segment_byte_counts,
+            challenge_values_value_counts,
+            trace_constraint_segment_count,
+            trace_constraint_segment_byte_counts,
+            trace_constraint_units,
+            eth_block_input_count,
+            eth_block_input_hashes,
+            eth_block_input_byte_counts,
+            eth_block_input_block_rlp_byte_counts,
+            eth_block_input_extra_header_field_counts,
+            eth_block_input_extra_body_field_counts,
+            eth_block_input_block_hashes,
+            eth_block_input_parent_hashes,
+            eth_block_input_ommers_hashes,
+            eth_block_input_beneficiaries,
+            eth_block_input_state_roots,
+            eth_block_input_receipt_roots,
+            eth_block_input_logs_blooms,
+            eth_block_input_difficulties,
+            eth_block_input_block_numbers,
+            eth_block_input_timestamps,
+            eth_block_input_extra_data,
+            eth_block_input_gas_limits,
+            eth_block_input_gas_used_values,
+            eth_block_input_base_fees_per_gas,
+            eth_block_input_mix_hashes,
+            eth_block_input_nonces,
+            eth_block_input_transaction_roots,
+            eth_block_input_transaction_preimage_counts,
+            eth_block_input_legacy_transaction_counts,
+            eth_block_input_typed_transaction_counts,
+            eth_block_input_receipts_rlp_byte_counts,
+            eth_block_input_receipt_preimage_counts,
+            eth_block_input_legacy_receipt_counts,
+            eth_block_input_typed_receipt_counts,
+            eth_block_input_withdrawal_roots,
+            eth_block_input_withdrawal_counts,
+            eth_block_input_withdrawal_preimage_counts,
+        },
+        public_value_fields,
     })
 }
 
@@ -729,7 +748,9 @@ pub fn validate_setup_preflight(
     proof: &ProofArtifact,
     public_values: &PublicValues,
 ) -> Result<SetupPreflightReport, SetupPreflightError> {
-    let report = validate_setup_preflight_hashes(catalog, proof, public_values)?;
+    let validation = validate_setup_preflight_hashes_with_fields(catalog, proof, public_values)?;
+    let public_fields = validation.public_value_fields;
+    let report = validation.report;
     let schedule = derive_prove_schedule(catalog).map_err(SetupPreflightError::Schedule)?;
     validate_setup_proof_segment_ids(&proof.segments)?;
     let contribution_entries = validate_optional_contribution_segment(catalog, proof)?;
@@ -737,22 +758,14 @@ pub fn validate_setup_preflight(
     let contribution_proof_values = validate_optional_contribution_challenge_values(
         catalog,
         proof,
-        public_values,
+        &public_fields,
         contribution_entries.as_deref(),
         challenge_values.as_deref(),
     )?;
     let global_values = validate_global_value_segments(catalog, proof, contribution_proof_values)?;
     let uses_transcript_inputs = uses_transcript_pcs_query_plan_inputs(&proof.segments);
-    let needs_public_fields = uses_transcript_inputs
-        || !catalog.global_constraints.entries.is_empty()
-        || !catalog.global_hints.hints.is_empty();
-    let public_fields = if needs_public_fields {
-        Some(public_values_as_fields(public_values).map_err(SetupPreflightError::PublicValues)?)
-    } else {
-        None
-    };
     let transcript_public_fields = if uses_transcript_inputs {
-        public_fields.as_deref().unwrap_or(&[])
+        public_fields.as_slice()
     } else {
         &[]
     };
@@ -791,7 +804,7 @@ pub fn validate_setup_preflight(
         global_values.packed_proof_values,
     );
     if !catalog.global_constraints.entries.is_empty() {
-        let public_values = public_fields.as_deref().unwrap_or(&[]);
+        let public_values = public_fields.as_slice();
         let packed_proof_values = packed_proof_values_cache
             .packed_values()
             .map_err(ValidateGlobalConstraintProofSegmentsError::PackedProofValues)
@@ -818,7 +831,7 @@ pub fn validate_setup_preflight(
     }
 
     if !catalog.global_hints.hints.is_empty() {
-        let full_public_values = public_fields.as_deref().unwrap_or(&[]);
+        let full_public_values = public_fields.as_slice();
         let requirements = global_hint_input_requirements(&catalog.global_hints);
         let public_values = if requirements.publics {
             full_public_values
@@ -1045,7 +1058,7 @@ fn validate_challenge_values_canonical(values: &[[u64; 3]]) -> Result<(), SetupP
 fn validate_optional_contribution_challenge_values(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
-    public_values: &PublicValues,
+    public_fields: &[Felt],
     contribution_entries: Option<&[ProveContributionEntry]>,
     challenge_values: Option<&[[u64; 3]]>,
 ) -> Result<Option<SetupPreflightContributionProofValues>, SetupPreflightError> {
@@ -1059,8 +1072,6 @@ fn validate_optional_contribution_challenge_values(
         return Ok(None);
     };
 
-    let public_fields =
-        public_values_as_fields(public_values).map_err(SetupPreflightError::PublicValues)?;
     let proof_values =
         load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
             .map_err(SetupPreflightError::ProofValues)?;
@@ -1068,7 +1079,7 @@ fn validate_optional_contribution_challenge_values(
         .map_err(SetupPreflightError::ProofValuePacking)?;
     let expected = derive_global_challenge_from_loaded_contributions(
         &catalog.layout.global_info,
-        &public_fields,
+        public_fields,
         &packed_proof_values,
         &proof.segments,
         contribution_entries,
