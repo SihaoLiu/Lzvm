@@ -319,12 +319,11 @@ pub fn load_constant_opening_unit_from_segments(
         .ok_or(LoadConstantOpeningUnitError::MissingUnit { unit_index })
 }
 
-pub(crate) fn validate_constant_opening_units_match_query_units(
+pub(crate) fn validate_constant_opening_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
-    segments: &[ProofSegment],
+    opening: &ConstantOpeningSegment,
 ) -> Result<(), LoadConstantOpeningUnitError> {
-    let opening = load_constant_opening_segment_from_segments(segments)?;
-    for unit in opening.units {
+    for unit in &opening.units {
         if !query_units.iter().any(|query_unit| {
             query_unit.unit_index == unit.unit_index
                 && query_unit.trace_instance_index == unit.trace_instance_index

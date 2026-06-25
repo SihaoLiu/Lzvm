@@ -7860,13 +7860,21 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
         verifier_query_validation.contains("load_pcs_evaluation_segment_from_segments")
             && verifier_query_validation
                 .contains("load_pcs_evaluation_unit_for_identity_from_parsed_segment")
+            && verifier_query_validation
+                .contains("validate_constant_opening_units_match_query_units_from_segment")
+            && verifier_query_validation
+                .contains("validate_witness_opening_units_match_query_units_from_segment")
             && verifier_query_validation.contains("let mut proof_value_offsets = None")
             && verifier_query_validation.contains("proof_value_offsets.is_none()")
             && !verifier_query_validation
                 .contains("verifier_code_with_proof_value_offsets(code, request.global_info)")
             && !verifier_query_validation
+                .contains("validate_constant_opening_units_match_query_units(request.query_units")
+            && !verifier_query_validation
+                .contains("validate_witness_opening_units_match_query_units(request.query_units")
+            && !verifier_query_validation
                 .contains("load_pcs_evaluation_unit_for_identity_from_segments("),
-        "verifier query output validation should reuse parsed evaluation segments and proof-value offsets"
+        "verifier query output validation should reuse parsed opening/evaluation segments and proof-value offsets"
     );
     let witness_opening_validation = function_body(
         &witness_opening_source,

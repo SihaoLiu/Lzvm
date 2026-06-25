@@ -365,12 +365,11 @@ pub fn load_witness_opening_unit_from_segments(
         .ok_or(LoadWitnessOpeningUnitError::MissingUnit { unit_index })
 }
 
-pub(crate) fn validate_witness_opening_units_match_query_units(
+pub(crate) fn validate_witness_opening_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
-    segments: &[ProofSegment],
+    opening: &WitnessOpeningSegment,
 ) -> Result<(), LoadWitnessOpeningUnitError> {
-    let opening = load_witness_opening_segment_from_segments(segments)?;
-    for unit in opening.units {
+    for unit in &opening.units {
         if !query_units.iter().any(|query_unit| {
             query_unit.unit_index == unit.unit_index
                 && query_unit.trace_instance_index == unit.trace_instance_index

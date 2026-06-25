@@ -11,7 +11,8 @@ use lzvm_artifacts::witness_opening_segment::WitnessOpeningUnitSegment;
 use lzvm_field::{Ext3, Felt, FieldError, SHIFT};
 
 use crate::constant_opening::{
-    load_constant_opening_segment_from_segments, validate_constant_opening_units_match_query_units,
+    load_constant_opening_segment_from_segments,
+    validate_constant_opening_units_match_query_units_from_segment,
     LoadConstantOpeningSegmentError, LoadConstantOpeningUnitError,
 };
 use crate::pcs_evaluation::{
@@ -25,8 +26,9 @@ use crate::verifier_eval::{
     VerifierOpenedStage,
 };
 use crate::witness_opening::{
-    load_witness_opening_segment_from_segments, validate_witness_opening_units_match_query_units,
-    LoadWitnessOpeningSegmentError, LoadWitnessOpeningUnitError,
+    load_witness_opening_segment_from_segments,
+    validate_witness_opening_units_match_query_units_from_segment, LoadWitnessOpeningSegmentError,
+    LoadWitnessOpeningUnitError,
 };
 use crate::ProveUnitSchedule;
 
@@ -643,10 +645,16 @@ pub fn validate_verifier_query_outputs_from_segments(
         .map_err(VerifierFriQueryOutputSegmentsError::Evaluation)?;
     let proof_values = load_pcs_proof_values_from_segments(request.global_info, request.segments)
         .map_err(VerifierFriQueryOutputSegmentsError::ProofValues)?;
-    validate_constant_opening_units_match_query_units(request.query_units, request.segments)
-        .map_err(VerifierFriQueryOutputSegmentsError::ConstantOpeningUnit)?;
-    validate_witness_opening_units_match_query_units(request.query_units, request.segments)
-        .map_err(VerifierFriQueryOutputSegmentsError::WitnessOpeningUnit)?;
+    validate_constant_opening_units_match_query_units_from_segment(
+        request.query_units,
+        &constant_opening,
+    )
+    .map_err(VerifierFriQueryOutputSegmentsError::ConstantOpeningUnit)?;
+    validate_witness_opening_units_match_query_units_from_segment(
+        request.query_units,
+        &witness_opening,
+    )
+    .map_err(VerifierFriQueryOutputSegmentsError::WitnessOpeningUnit)?;
 
     let mut proof_value_offsets = None;
     for query_unit in request.query_units {
