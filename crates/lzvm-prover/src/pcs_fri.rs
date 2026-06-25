@@ -20,7 +20,7 @@ use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
 pub use merkle::{verify_fri_last_level_root, verify_fri_query_path, PcsFriMerkleError};
 pub use requests::*;
-pub(crate) use validation::validate_optional_pcs_fri_opening_proof_segments_with_transcript_challenges;
+pub(crate) use validation::validate_optional_pcs_fri_opening_proof_segments_with_preflight_values;
 pub use validation::{
     validate_optional_pcs_fri_opening_proof_segments, validate_pcs_fri_opening_folds_from_units,
     validate_pcs_fri_opening_segments,

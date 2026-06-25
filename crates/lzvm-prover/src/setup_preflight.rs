@@ -57,8 +57,7 @@ use crate::hint_eval::{
     ResolveGlobalHintProofSegmentsError, ResolvedHint,
 };
 use crate::pcs_fri::{
-    validate_optional_pcs_fri_opening_proof_segments,
-    validate_optional_pcs_fri_opening_proof_segments_with_transcript_challenges,
+    validate_optional_pcs_fri_opening_proof_segments_with_preflight_values,
     ValidateOptionalPcsFriOpeningProofSegmentsError,
     ValidateOptionalPcsFriOpeningProofSegmentsRequest,
 };
@@ -835,14 +834,19 @@ pub fn validate_setup_preflight(
             .unit_challenges()
             .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Transcript)
             .map_err(SetupPreflightError::PcsFri)?;
-        validate_optional_pcs_fri_opening_proof_segments_with_transcript_challenges(
+        validate_optional_pcs_fri_opening_proof_segments_with_preflight_values(
             fri_request,
-            unit_challenges,
+            Some(unit_challenges),
+            &global_values.proof_values,
         )
         .map_err(SetupPreflightError::PcsFri)?;
     } else {
-        validate_optional_pcs_fri_opening_proof_segments(fri_request)
-            .map_err(SetupPreflightError::PcsFri)?;
+        validate_optional_pcs_fri_opening_proof_segments_with_preflight_values(
+            fri_request,
+            None,
+            &global_values.proof_values,
+        )
+        .map_err(SetupPreflightError::PcsFri)?;
     }
 
     Ok(report)

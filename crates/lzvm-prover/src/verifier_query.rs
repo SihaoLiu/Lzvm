@@ -637,14 +637,36 @@ pub fn validate_verifier_query_outputs_against_fri_opening(
 pub fn validate_verifier_query_outputs_from_segments(
     request: VerifierFriQueryOutputSegmentsRequest<'_>,
 ) -> Result<(), VerifierFriQueryOutputSegmentsError> {
+    validate_verifier_query_outputs_from_segments_inner(request, None)
+}
+
+pub(crate) fn validate_verifier_query_outputs_from_segments_with_proof_values(
+    request: VerifierFriQueryOutputSegmentsRequest<'_>,
+    proof_values: &[Ext3],
+) -> Result<(), VerifierFriQueryOutputSegmentsError> {
+    validate_verifier_query_outputs_from_segments_inner(request, Some(proof_values))
+}
+
+fn validate_verifier_query_outputs_from_segments_inner(
+    request: VerifierFriQueryOutputSegmentsRequest<'_>,
+    preloaded_proof_values: Option<&[Ext3]>,
+) -> Result<(), VerifierFriQueryOutputSegmentsError> {
     let constant_opening = load_constant_opening_segment_from_segments(request.segments)
         .map_err(VerifierFriQueryOutputSegmentsError::ConstantOpening)?;
     let witness_opening = load_witness_opening_segment_from_segments(request.segments)
         .map_err(VerifierFriQueryOutputSegmentsError::WitnessOpening)?;
     let evaluations = load_pcs_evaluation_segment_from_segments(request.segments)
         .map_err(VerifierFriQueryOutputSegmentsError::Evaluation)?;
-    let proof_values = load_pcs_proof_values_from_segments(request.global_info, request.segments)
-        .map_err(VerifierFriQueryOutputSegmentsError::ProofValues)?;
+    let owned_proof_values;
+    let proof_values = match preloaded_proof_values {
+        Some(proof_values) => proof_values,
+        None => {
+            owned_proof_values =
+                load_pcs_proof_values_from_segments(request.global_info, request.segments)
+                    .map_err(VerifierFriQueryOutputSegmentsError::ProofValues)?;
+            &owned_proof_values
+        }
+    };
     validate_constant_opening_units_match_query_units_from_segment(
         request.query_units,
         &constant_opening,

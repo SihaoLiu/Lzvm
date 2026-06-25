@@ -7840,6 +7840,9 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
     );
     assert!(
         optional_fri_validation.contains("validate_pcs_fri_opening_units(")
+            && optional_fri_validation.contains("preloaded_proof_values")
+            && optional_fri_validation
+                .contains("validate_verifier_query_outputs_from_segments_with_proof_values")
             && optional_fri_validation
                 .matches("load_pcs_query_plan_from_segments(")
                 .count()
@@ -7860,6 +7863,8 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
         verifier_query_validation.contains("load_pcs_evaluation_segment_from_segments")
             && verifier_query_validation
                 .contains("load_pcs_evaluation_unit_for_identity_from_parsed_segment")
+            && verifier_query_validation.contains("preloaded_proof_values")
+            && verifier_query_validation.contains("owned_proof_values")
             && verifier_query_validation
                 .contains("validate_constant_opening_units_match_query_units_from_segment")
             && verifier_query_validation
@@ -8013,7 +8018,7 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && setup_preflight_source.contains("fn unit_challenges(")
             && setup_preflight_source.contains("fn flat_challenges(")
             && setup_preflight_source.contains(
-                "validate_optional_pcs_fri_opening_proof_segments_with_transcript_challenges"
+                "validate_optional_pcs_fri_opening_proof_segments_with_preflight_values"
             )
             && setup_preflight_source.contains("struct SetupPreflightGlobalValues")
             && setup_preflight_source.contains("preloaded_proof_values")

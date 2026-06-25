@@ -21,7 +21,9 @@ use crate::pcs_transcript_segments::{
     derive_pcs_transcript_unit_challenges_from_proof_segments, PcsTranscriptUnitChallenges,
 };
 use crate::verifier_query::{
-    validate_verifier_query_outputs_from_segments, VerifierFriQueryOutputSegmentsRequest,
+    validate_verifier_query_outputs_from_segments,
+    validate_verifier_query_outputs_from_segments_with_proof_values,
+    VerifierFriQueryOutputSegmentsRequest,
 };
 use crate::ProveUnitSchedule;
 
@@ -212,19 +214,25 @@ pub fn validate_pcs_fri_opening_folds_from_units(
 pub fn validate_optional_pcs_fri_opening_proof_segments(
     request: ValidateOptionalPcsFriOpeningProofSegmentsRequest<'_>,
 ) -> Result<(), ValidateOptionalPcsFriOpeningProofSegmentsError> {
-    validate_optional_pcs_fri_opening_proof_segments_inner(request, None)
+    validate_optional_pcs_fri_opening_proof_segments_inner(request, None, None)
 }
 
-pub(crate) fn validate_optional_pcs_fri_opening_proof_segments_with_transcript_challenges(
+pub(crate) fn validate_optional_pcs_fri_opening_proof_segments_with_preflight_values(
     request: ValidateOptionalPcsFriOpeningProofSegmentsRequest<'_>,
-    transcript_challenges: &[PcsTranscriptUnitChallenges],
+    precomputed_transcript_challenges: Option<&[PcsTranscriptUnitChallenges]>,
+    proof_values: &[Ext3],
 ) -> Result<(), ValidateOptionalPcsFriOpeningProofSegmentsError> {
-    validate_optional_pcs_fri_opening_proof_segments_inner(request, Some(transcript_challenges))
+    validate_optional_pcs_fri_opening_proof_segments_inner(
+        request,
+        precomputed_transcript_challenges,
+        Some(proof_values),
+    )
 }
 
 fn validate_optional_pcs_fri_opening_proof_segments_inner(
     request: ValidateOptionalPcsFriOpeningProofSegmentsRequest<'_>,
     precomputed_transcript_challenges: Option<&[PcsTranscriptUnitChallenges]>,
+    preloaded_proof_values: Option<&[Ext3]>,
 ) -> Result<(), ValidateOptionalPcsFriOpeningProofSegmentsError> {
     if request.fri_opening_required_units.len() != request.schedule.units.len() {
         return Err(
@@ -296,7 +304,7 @@ fn validate_optional_pcs_fri_opening_proof_segments_inner(
         &transcript_challenges,
     )
     .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Fold)?;
-    validate_verifier_query_outputs_from_segments(VerifierFriQueryOutputSegmentsRequest {
+    let verifier_request = VerifierFriQueryOutputSegmentsRequest {
         units: &request.schedule.units,
         verifier_codes: request.verifier_codes,
         global_info: request.global_info,
@@ -305,7 +313,14 @@ fn validate_optional_pcs_fri_opening_proof_segments_inner(
         opening_units: &opening.units,
         transcript_challenges: &transcript_challenges,
         segments: request.segments,
-    })
+    };
+    match preloaded_proof_values {
+        Some(proof_values) => validate_verifier_query_outputs_from_segments_with_proof_values(
+            verifier_request,
+            proof_values,
+        ),
+        None => validate_verifier_query_outputs_from_segments(verifier_request),
+    }
     .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::VerifierQuery)
 }
 
