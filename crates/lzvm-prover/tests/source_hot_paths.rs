@@ -7830,6 +7830,24 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
             && fri_opening_source.contains("validate_pcs_fri_opening_folds_from_units"),
         "opening validators should keep Merkle path and FRI fold checks"
     );
+    let optional_fri_validation = function_body(
+        &fri_opening_source,
+        "fn validate_optional_pcs_fri_opening_proof_segments_inner",
+        "fn seeded_query_plan_requires_fri_opening",
+    );
+    assert!(
+        optional_fri_validation.contains("validate_pcs_fri_opening_units(")
+            && optional_fri_validation
+                .matches("load_pcs_query_plan_from_segments(")
+                .count()
+                == 1
+            && optional_fri_validation
+                .matches("load_pcs_fri_opening_segment_from_segments(")
+                .count()
+                == 1
+            && !optional_fri_validation.contains("validate_pcs_fri_opening_segments("),
+        "optional FRI opening validation should reuse parsed query and opening segments"
+    );
     let witness_opening_validation = function_body(
         &witness_opening_source,
         "pub fn validate_witness_opening_segments",

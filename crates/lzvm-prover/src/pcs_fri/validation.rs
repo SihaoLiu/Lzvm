@@ -33,18 +33,25 @@ pub fn validate_pcs_fri_opening_segments(
         .map_err(ValidatePcsFriOpeningSegmentsError::QueryPlan)?;
     let opening = load_pcs_fri_opening_segment_from_segments(segments)
         .map_err(ValidatePcsFriOpeningSegmentsError::Opening)?;
-    if opening.units.len() != query_plan.units.len() {
+    validate_pcs_fri_opening_units(units, &query_plan.units, &opening.units)
+}
+
+fn validate_pcs_fri_opening_units(
+    units: &[ProveUnitSchedule],
+    query_units: &[PcsQueryPlanUnit],
+    opening_units: &[PcsFriOpeningUnitSegment],
+) -> Result<(), ValidatePcsFriOpeningSegmentsError> {
+    if opening_units.len() != query_units.len() {
         return Err(ValidatePcsFriOpeningSegmentsError::UnitCountMismatch);
     }
 
-    for query_unit in &query_plan.units {
+    for query_unit in query_units {
         let unit_index = usize::try_from(query_unit.unit_index)
             .map_err(|_| ValidatePcsFriOpeningSegmentsError::UnitIndexOverflow)?;
         let unit = units
             .get(unit_index)
             .ok_or(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index })?;
-        let opening_unit = opening
-            .units
+        let opening_unit = opening_units
             .iter()
             .find(|unit| {
                 unit.unit_index == query_unit.unit_index
@@ -254,13 +261,15 @@ fn validate_optional_pcs_fri_opening_proof_segments_inner(
         return Err(ValidateOptionalPcsFriOpeningProofSegmentsError::UnboundOpeningSegment);
     }
 
-    validate_pcs_fri_opening_segments(&request.schedule.units, request.segments)
+    let query_plan = load_pcs_query_plan_from_segments(request.segments)
+        .map_err(ValidatePcsFriOpeningSegmentsError::QueryPlan)
+        .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Opening)?;
+    let opening = load_pcs_fri_opening_segment_from_segments(request.segments)
+        .map_err(ValidatePcsFriOpeningSegmentsError::Opening)
+        .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Opening)?;
+    validate_pcs_fri_opening_units(&request.schedule.units, &query_plan.units, &opening.units)
         .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Opening)?;
 
-    let query_plan = load_pcs_query_plan_from_segments(request.segments)
-        .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::QueryPlan)?;
-    let opening = load_pcs_fri_opening_segment_from_segments(request.segments)
-        .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::OpeningSegment)?;
     let owned_transcript_challenges;
     let transcript_challenges = match precomputed_transcript_challenges {
         Some(transcript_challenges) => transcript_challenges,
