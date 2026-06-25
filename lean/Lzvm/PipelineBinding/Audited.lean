@@ -208,6 +208,68 @@ theorem runtime_pipeline_binding_required_external_source_audited_proof_system_c
       required
   exact And.intro auditedAssumptions fullContract
 
+theorem runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ ProofSystemSound system
+            /\ system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ RuntimePipelineBindingEvidence
+              system
+              validation
+              artifact
+              publicInput
+              proof
+              requiresExternalSource
+            /\ RuntimeArtifactSoundnessObligations
+              system
+              validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+              artifact
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ (exists witness trace constraints,
+              system.traceConsistent publicInput proof trace
+                /\ system.constraintsSatisfied constraints trace
+                /\ system.witnessMatchesTrace witness trace)
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have auditedContract :=
+    runtime_pipeline_binding_required_external_source_audited_proof_system_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  exact
+    And.intro auditedContract.left
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        auditedContract.right)
+
 theorem runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

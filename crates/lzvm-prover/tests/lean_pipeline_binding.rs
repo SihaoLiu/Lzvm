@@ -147,6 +147,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_required_external_source_full_soundness_contract",
             "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract",
             "runtime_pipeline_binding_required_external_source_audited_proof_system_contract",
+            "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract",
             "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract",
             "runtime_pipeline_required_external_source_concrete_opening_core_contract",
             "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract",
@@ -1932,6 +1933,52 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             )
             .contains("SoundWitness system publicInput proof"),
         "pipeline required external-source projection should package audited crypto assumptions with proof-system soundness"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
+            )
+            .contains("RequiredSemanticAssumptionStatements assumptions.semantic")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
+            )
+            .contains("ProofSystemSound system")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
+            )
+            .contains("ExternalSourceOpeningEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
+            )
+            .contains("RuntimePipelineBindingEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "pipeline required external-source projection should package audited crypto and semantic assumptions with proof-system soundness"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_proof_system_contract",
+            "assumption_bundle_carries_required_semantic_evidence",
+        ],
     );
     assert!(
         theorem_prefix(
