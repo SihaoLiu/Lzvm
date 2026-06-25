@@ -20,7 +20,9 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
     assert!(
         lean_source.contains("RuntimeEthBlockPublicInputBindingValidation")
             && lean_source.contains("RuntimeEthBlockPublicInputBindingEvidence")
+            && lean_source.contains("RuntimeEthBlockPublicInputBindingStructuralObligations")
             && lean_source.contains("RuntimeProofArtifactBindingEvidence")
+            && lean_source.contains("RuntimeProofArtifactBindingStructuralObligations")
             && lean_source.contains("RuntimeArtifactEvidence")
             && lean_source.contains("proofContainerCanonical")
             && lean_source.contains("proofMetadataCanonical")
@@ -39,6 +41,25 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
             "runtime_eth_block_public_input_binding_checked_acceptance_sound",
             "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
+            "runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations",
+            "runtime_eth_block_public_input_binding_checked_acceptance_full_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations",
+        &[
+            "RuntimeEthBlockPublicInputBindingCheckedAcceptance",
+            "RuntimeEthBlockPublicInputBindingStructuralObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations",
+        &[
+            "runtime_eth_block_public_input_binding_checked_acceptance_evidence",
+            "runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding",
+            "runtime_proof_artifact_binding_checked_acceptance_structural_obligations",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -105,6 +126,14 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
         &["runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_full_contract",
+        &[
+            "runtime_eth_block_public_input_binding_checked_acceptance_sound",
+            "runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations",
+        ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,

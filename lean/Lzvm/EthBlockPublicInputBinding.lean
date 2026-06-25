@@ -39,6 +39,25 @@ def RuntimeEthBlockPublicInputBindingEvidence
   validation.ethBlockInputMatches artifact publicInput proof
     /\ validation.ethPublicValuesMatch artifact publicInput proof
 
+def RuntimeEthBlockPublicInputBindingStructuralObligations
+    (system : VerifierModel)
+    (validation : RuntimeEthBlockPublicInputBindingValidation system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  RuntimeEthBlockPublicInputBindingEvidence
+      system
+      validation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeProofArtifactBindingStructuralObligations
+      system
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+
 def RuntimeEthBlockPublicInputBindingCheckedAcceptance
     (_system : VerifierModel)
     (validation : RuntimeEthBlockPublicInputBindingValidation _system)
@@ -319,6 +338,47 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellf
       segmentIdsUnique,
       unitValuesTraceIdentityCoverage⟩
 
+theorem runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations
+    {system : VerifierModel}
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeEthBlockPublicInputBindingStructuralObligations
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have inputEvidence :=
+    runtime_eth_block_public_input_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactAccepted :=
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactStructural :=
+    runtime_proof_artifact_binding_checked_acceptance_structural_obligations
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  exact
+    And.intro inputEvidence artifactStructural
+
 theorem runtime_eth_block_public_input_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -482,5 +542,55 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_soundness_cont
       wellformed.right.right.right.right.right.right,
       core,
       sound.right.right.right⟩
+
+theorem runtime_eth_block_public_input_binding_checked_acceptance_full_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeEthBlockPublicInputBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeEthBlockPublicInputBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_eth_block_public_input_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have structural :=
+    runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro sound.left
+      (And.intro structural sound.right.right)
 
 end Lzvm
