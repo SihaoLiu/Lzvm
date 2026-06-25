@@ -571,6 +571,35 @@ fn segment_challenge_derivation_rejects_unit_mismatches() {
     );
 }
 
+#[test]
+fn segment_challenge_derivation_rejects_trace_instance_mismatches() {
+    let unit = sample_unit(Some(4), true);
+    let evaluations = sample_evaluations(0, &[20]);
+    let mut fri = sample_fri(0, &[], &[30]);
+    fri.trace_instance_index = 1;
+
+    assert_eq!(
+        derive_pcs_final_query_challenge_from_segments(PcsTranscriptSegmentInputs {
+            unit_index: 0,
+            unit: &unit,
+            material: &sample_material(0, 1),
+            public_values: &[],
+            unit_values: &[],
+            witness: &sample_witness(0, &[10]),
+            evaluations: &evaluations,
+            fri: &fri,
+            root_challenge_draws: &[1],
+            evaluation_challenge_draws: 1,
+            binding_segments: &[],
+        }),
+        Err(PcsTranscriptError::SegmentTraceInstanceMismatch {
+            segment: "fri",
+            expected: 0,
+            found: 1,
+        })
+    );
+}
+
 fn root(seed: u64) -> [Felt; 4] {
     [
         Felt::from_u64(seed),

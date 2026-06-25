@@ -7770,6 +7770,11 @@ fn lean_trace_constraint_artifact_binding_tracks_runtime_preflight_checks() {
     let preflight_path = crate_root.join("src/proof_preflight.rs");
     let preflight_source =
         std::fs::read_to_string(&preflight_path).expect("proof preflight source should read");
+    let witness_binding_body = function_body(
+        &preflight_source,
+        "fn validate_trace_constraint_witness_commitments",
+        "fn trace_constraint_witness_unit_count_candidates",
+    );
 
     assert!(
         lean_root_source.contains("import Lzvm.TraceConstraintArtifactBinding"),
@@ -7795,6 +7800,12 @@ fn lean_trace_constraint_artifact_binding_tracks_runtime_preflight_checks() {
             && preflight_source
                 .contains("validate_trace_constraint_witness_commitments_for_unit_count"),
         "Rust proof preflight should keep trace constraint witness commitment binding checks"
+    );
+    assert!(
+        witness_binding_body
+            .contains("expected.insert((unit.unit_index, unit.trace_instance_index), unit)")
+            && !witness_binding_body.contains("unit.clone()"),
+        "trace constraint witness binding should borrow expected evidence units"
     );
 }
 

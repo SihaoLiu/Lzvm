@@ -918,6 +918,56 @@ fn rejects_transcript_query_plan_builder_with_mismatched_witness_unit() {
 }
 
 #[test]
+fn rejects_transcript_query_plan_builder_with_mismatched_witness_trace_instance() {
+    let schedule = sample_schedule();
+    let material = material_unit(0);
+    let witness = witness_commitment(0);
+    let witness_segment = witness_segment_with_trace_instance(0, 1, schedule.units.len());
+    let evaluations = PcsEvaluationUnitSegment {
+        unit_index: 0,
+        trace_instance_index: 0,
+        values: Vec::new(),
+    };
+    let fri = PcsFriOpeningUnitSegment {
+        unit_index: 0,
+        trace_instance_index: 0,
+        layers: Vec::new(),
+        final_polynomial: vec![[12, 13, 14]],
+    };
+    let input = PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &schedule.units[0],
+        material: &material,
+        public_values: &[],
+        unit_values: &[],
+        witness: &witness,
+        evaluations: &evaluations,
+        fri: &fri,
+        root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
+        evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
+    };
+    let nonce_segment = build_pcs_query_nonce_segment_from_transcript_segments(&schedule, input)
+        .expect("query nonce should build");
+    let result = build_pcs_query_plan_segment_from_transcript_segments(
+        &schedule,
+        std::slice::from_ref(&witness_segment),
+        input,
+        &nonce_segment,
+    );
+
+    assert!(matches!(
+        result,
+        Err(
+            ProvePcsQueryPlanSegmentError::TranscriptWitnessTraceInstanceMismatch {
+                input_trace_instance_index: 0,
+                witness_trace_instance_index: 1
+            }
+        )
+    ));
+}
+
+#[test]
 fn detects_transcript_pcs_query_plan_inputs() {
     assert!(!uses_transcript_pcs_query_plan_inputs(&[]));
     assert!(uses_transcript_pcs_query_plan_inputs(&[ProofSegment {

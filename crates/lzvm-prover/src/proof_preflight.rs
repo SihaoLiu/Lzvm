@@ -678,7 +678,7 @@ fn validate_trace_constraint_witness_commitments(
             unit_index: unit.unit_index,
             trace_instance_index: unit.trace_instance_index,
         })?;
-        expected.insert((unit.unit_index, unit.trace_instance_index), unit.clone());
+        expected.insert((unit.unit_index, unit.trace_instance_index), unit);
     }
 
     let mut actual = Vec::new();
@@ -724,7 +724,7 @@ struct ActualWitnessCommitment {
 
 fn trace_constraint_witness_unit_count_candidates(
     actual: &[ActualWitnessCommitment],
-    expected: &BTreeMap<(u32, u32), TraceConstraintPreflightUnit>,
+    expected: &BTreeMap<(u32, u32), &TraceConstraintPreflightUnit>,
     max_unit_index: u32,
 ) -> Result<BTreeSet<u32>, ProofPreflightError> {
     let min_unit_count = max_unit_index.checked_add(1).ok_or(
@@ -769,7 +769,7 @@ fn trace_constraint_witness_unit_count_candidates(
 fn validate_trace_constraint_witness_commitments_for_unit_count(
     unit_count: u32,
     actual: &[ActualWitnessCommitment],
-    expected: &BTreeMap<(u32, u32), TraceConstraintPreflightUnit>,
+    expected: &BTreeMap<(u32, u32), &TraceConstraintPreflightUnit>,
 ) -> Result<(), ProofPreflightError> {
     let mut expected_by_segment_id = BTreeMap::new();
     for expected_unit in expected.values() {

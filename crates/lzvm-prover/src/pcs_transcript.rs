@@ -77,6 +77,11 @@ pub enum PcsTranscriptError {
         expected: u32,
         found: u32,
     },
+    SegmentTraceInstanceMismatch {
+        segment: &'static str,
+        expected: u32,
+        found: u32,
+    },
     UnitValueOutOfRange {
         value_index: usize,
         offset: usize,
@@ -112,6 +117,14 @@ impl fmt::Display for PcsTranscriptError {
             } => write!(
                 f,
                 "PCS transcript {segment} unit index mismatch: expected {expected}, found {found}"
+            ),
+            Self::SegmentTraceInstanceMismatch {
+                segment,
+                expected,
+                found,
+            } => write!(
+                f,
+                "PCS transcript {segment} trace instance mismatch: expected {expected}, found {found}"
             ),
             Self::UnitValueOutOfRange {
                 value_index,
@@ -331,6 +344,11 @@ pub fn derive_pcs_transcript_challenges_from_segments(
     check_unit_index("witness", expected, input.witness.unit_index)?;
     check_unit_index("evaluations", expected, input.evaluations.unit_index)?;
     check_unit_index("fri", expected, input.fri.unit_index)?;
+    check_trace_instance(
+        "fri",
+        input.evaluations.trace_instance_index,
+        input.fri.trace_instance_index,
+    )?;
 
     let arity = input
         .unit
@@ -454,6 +472,22 @@ fn check_unit_index(
         Ok(())
     } else {
         Err(PcsTranscriptError::SegmentUnitIndexMismatch {
+            segment,
+            expected,
+            found,
+        })
+    }
+}
+
+fn check_trace_instance(
+    segment: &'static str,
+    expected: u32,
+    found: u32,
+) -> Result<(), PcsTranscriptError> {
+    if found == expected {
+        Ok(())
+    } else {
+        Err(PcsTranscriptError::SegmentTraceInstanceMismatch {
             segment,
             expected,
             found,

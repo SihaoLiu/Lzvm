@@ -182,6 +182,16 @@ pub fn build_pcs_query_plan_segment_from_transcript_segments(
             },
         );
     }
+    let input_trace_instance_index = input.evaluations.trace_instance_index;
+    let witness_trace_instance_index = query_units[0].0.trace_instance_index;
+    if witness_trace_instance_index != input_trace_instance_index {
+        return Err(
+            ProvePcsQueryPlanSegmentError::TranscriptWitnessTraceInstanceMismatch {
+                input_trace_instance_index,
+                witness_trace_instance_index,
+            },
+        );
+    }
 
     let challenge = derive_pcs_final_query_challenge_from_segments(input)?;
     let nonce = Felt::from_u64(parse_pcs_query_nonce_segment(&nonce_segment.data)?.nonce);
