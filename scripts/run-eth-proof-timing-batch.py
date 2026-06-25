@@ -486,6 +486,60 @@ def selected_profile_tools(args: argparse.Namespace) -> list[str]:
     return [args.profile_tool]
 
 
+def profile_tool_spec(args: argparse.Namespace, tool: str) -> tuple[str, str]:
+    if tool == "nsys":
+        if args.nsys_command is not None:
+            return ("arg", args.nsys_command)
+        env_value = os.environ.get("LZVM_NSYS_COMMAND")
+        if env_value:
+            return ("env", env_value)
+        return ("path", "nsys")
+    if args.ncu_command is not None:
+        return ("arg", args.ncu_command)
+    env_value = os.environ.get("LZVM_NCU_COMMAND")
+    if env_value:
+        return ("env", env_value)
+    return ("path", "ncu")
+
+
+def resolve_profile_tool(raw: str, root: Path) -> Path | None:
+    path = Path(raw)
+    candidates: list[Path] = []
+    if path.is_absolute():
+        candidates.append(path)
+    elif len(path.parts) > 1:
+        candidates.extend([root / path, path])
+    else:
+        workspace_candidate = root / path
+        if workspace_candidate.exists():
+            candidates.append(workspace_candidate)
+        found = shutil.which(raw)
+        if found is not None:
+            candidates.append(Path(found))
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def print_profile_tool_checks(args: argparse.Namespace, root: Path) -> None:
+    profile_output_dir = require_workspace_temp_path(
+        resolve_workspace_path(args.profile_output_dir, root),
+        root,
+        "--profile-output-dir",
+    )
+    print(f"profile_output_dir={display_path_for_shell(profile_output_dir, root)}")
+    print(f"profile_tool={args.profile_tool}")
+    for tool in selected_profile_tools(args):
+        source, raw = profile_tool_spec(args, tool)
+        resolved = resolve_profile_tool(raw, root)
+        print(f"{tool}_profiler_source={source}")
+        print(f"{tool}_profiler_command={raw}")
+        print(f"{tool}_profiler_status={'ready' if resolved is not None else 'missing'}")
+        if resolved is not None:
+            print(f"{tool}_profiler_resolved={display_path_for_shell(resolved, root)}")
+
+
 def profile_command_for_env(
     args: argparse.Namespace,
     root: Path,
@@ -692,6 +746,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 def check_env(args: argparse.Namespace, root: Path) -> None:
+    print_profile_tool_checks(args, root)
     selected = selected_envs(args, root)
     ready = [
         (config, mode, configured_paths(config), config.trace_limit())

@@ -481,6 +481,80 @@ fn eth_proof_timing_batch_check_env_skip_verify_omits_required_markers() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_reports_profile_tool_status() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-check-env-profile-tools");
+    let profile_dir = fixture.dir.join("profiles");
+    let nsys_path = write_fixture(&fixture.dir, "custom-nsys");
+    make_executable(&nsys_path);
+    let ncu_path = fixture.dir.join("missing-ncu");
+    let profile_rel = profile_dir
+        .strip_prefix(workspace_root())
+        .expect("profile path should be under workspace")
+        .display()
+        .to_string();
+    let nsys_rel = nsys_path
+        .strip_prefix(workspace_root())
+        .expect("nsys path should be under workspace")
+        .display()
+        .to_string();
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--profile-tool")
+        .arg("both")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir)
+        .arg("--nsys-command")
+        .arg(&nsys_path)
+        .arg("--ncu-command")
+        .arg(&ncu_path);
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let profile_created = profile_dir.exists();
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "env check should report profiler diagnostics without requiring every tool: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("status=ok\n") && stdout.contains("small=ready\n"),
+        "env check should still report proof readiness: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("profile_output_dir={profile_rel}\n"))
+            && stdout.contains("profile_tool=both\n"),
+        "env check should report the selected profile target: {stdout}"
+    );
+    assert!(
+        stdout.contains("nsys_profiler_source=arg\n")
+            && stdout.contains(&format!("nsys_profiler_command={}\n", nsys_path.display()))
+            && stdout.contains("nsys_profiler_status=ready\n")
+            && stdout.contains(&format!("nsys_profiler_resolved={nsys_rel}\n")),
+        "env check should report the ready profiler path: {stdout}"
+    );
+    assert!(
+        stdout.contains("ncu_profiler_source=arg\n")
+            && stdout.contains(&format!("ncu_profiler_command={}\n", ncu_path.display()))
+            && stdout.contains("ncu_profiler_status=missing\n")
+            && !stdout.contains("ncu_profiler_resolved="),
+        "env check should report missing optional profiler tools without a false resolved path: {stdout}"
+    );
+    assert!(
+        !profile_created,
+        "env check should not create profile output directories"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_prints_env_template_without_config() {
     let mut command = Command::new(script_path());
     command
@@ -872,6 +946,48 @@ fn eth_proof_timing_batch_rejects_profile_output_dir_outside_temp() {
     assert!(
         stdout.is_empty(),
         "failed profile command output should not print commands: {stdout}"
+    );
+    assert!(
+        stderr.contains("--profile-output-dir must be under"),
+        "profile output dir rejection should explain the temp boundary: stderr={stderr}"
+    );
+    assert!(
+        !outside_created,
+        "rejected profile output dir should not be created outside temp"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_env_rejects_profile_output_dir_outside_temp() {
+    let outside_profile_dir = workspace_root().join(format!(
+        "eth-proof-timing-batch-check-env-profile-outside-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&outside_profile_dir);
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--profile-output-dir")
+        .arg(&outside_profile_dir);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should reject outside profile dir");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let outside_created = outside_profile_dir.exists();
+    let _ = std::fs::remove_dir_all(&outside_profile_dir);
+
+    assert!(
+        !success,
+        "env check should reject profile dirs outside temp"
+    );
+    assert!(
+        stdout.is_empty(),
+        "failed profile env check should not print partial diagnostics: {stdout}"
     );
     assert!(
         stderr.contains("--profile-output-dir must be under"),
