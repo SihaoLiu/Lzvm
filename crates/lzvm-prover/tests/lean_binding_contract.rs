@@ -93,6 +93,26 @@ structure next_example where
 }
 
 #[test]
+fn lean_structure_field_name_matching_ignores_string_literals() {
+    let source = r#"
+structure stringy_example where
+  marker : String := "where def theorem"
+  payload : Nat
+
+def after_stringy_example := 0
+"#;
+
+    assert_eq!(
+        lean_binding::structure_field_names(
+            source,
+            "structure stringy_example",
+            "def after_stringy_example"
+        ),
+        vec!["marker".to_owned(), "payload".to_owned()]
+    );
+}
+
+#[test]
 fn source_hot_paths_does_not_own_lean_binding_theorem_exports() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_hot_paths = std::fs::read_to_string(crate_root.join("tests/source_hot_paths.rs"))
