@@ -45,7 +45,8 @@ theorem runtime_retained_leaf_digest_nary_opening_position_bound_from_hash_assum
       binding
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
+          hashAssumptions))
       artifact
       publicInput
       proof

@@ -230,7 +230,9 @@ theorem cryptographic_assumptions_carry_required_evidence
     (assumptions : CryptographicAssumptions system) :
     RequiredCryptographicAssumptionStatements assumptions := by
   exact
-    And.intro assumptions.hashCollisionResistance.merkleHashCollisionResistance.evidence
+    And.intro
+      (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
+        assumptions.hashCollisionResistance)
       (And.intro assumptions.hashCollisionResistance.transcriptHashCollisionResistance.evidence
         (And.intro assumptions.randomOracleFiatShamir.randomOracleModel.evidence
           (And.intro assumptions.randomOracleFiatShamir.fiatShamirTranscriptBinding.evidence

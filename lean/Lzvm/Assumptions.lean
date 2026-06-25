@@ -30,6 +30,15 @@ structure HashCollisionResistanceAssumption where
   transcriptHashCollisionResistance :
     NamedCryptographicAssumption transcriptHashCollisionResistanceStatement
 
+namespace HashCollisionResistanceAssumption
+
+theorem merkle_hash_collision_resistance
+    (assumptions : HashCollisionResistanceAssumption) :
+    assumptions.merkleHashCollisionResistanceStatement :=
+  assumptions.merkleHashCollisionResistance.evidence
+
+end HashCollisionResistanceAssumption
+
 structure FiatShamirRandomOracleAssumption (system : VerifierModel) where
   randomOracleModelStatement : Prop
   randomOracleModel :

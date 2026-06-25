@@ -585,7 +585,8 @@ theorem runtime_retained_parent_checkpoint_nary_opening_position_bound_from_hash
       binding
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
+          hashAssumptions))
       artifact
       publicInput
       proof
