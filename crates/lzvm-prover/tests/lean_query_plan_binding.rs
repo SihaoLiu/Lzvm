@@ -224,9 +224,14 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         "runtime_query_plan_binding_checked_acceptance_full_soundness_contract",
         &[
             "runtime_query_plan_binding_checked_acceptance_sound",
-            "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
+            "runtime_opening_evidence_implies_bound_contract",
             "runtime_query_plan_binding_checked_acceptance_verifier_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_full_soundness_contract",
+        &["runtime_opening_segment_binding_checked_acceptance_full_soundness_contract"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

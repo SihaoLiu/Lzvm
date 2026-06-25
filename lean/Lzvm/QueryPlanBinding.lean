@@ -1394,30 +1394,14 @@ theorem runtime_query_plan_binding_checked_acceptance_full_soundness_contract
       publicInput
       proof
       openingSegmentEvidence
-  have openingAccepted :=
-    runtime_query_plan_binding_checked_acceptance_opening
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  have openingFull :=
-    runtime_opening_segment_binding_checked_acceptance_full_soundness_contract
-      assumptions
-      validation.openingValidation
+  have openingBound :=
+    runtime_opening_evidence_implies_bound_contract
+      validation.openingValidation.openingValidation
       artifact
       publicInput
       proof
       requiresExternalSource
-      openingAccepted
-  rcases openingFull with
-    ⟨_openingSegmentBoundFromFull,
-      _openingEvidenceFromFull,
-      openingBound,
-      _pcsOpeningsFromFull,
-      _friQueriesFromFull,
-      _openingCoreFromFull,
-      _soundWitnessFromFull⟩
+      openingEvidence
   have coreContract :=
     runtime_query_plan_binding_checked_acceptance_verifier_core_contract
       assumptions
