@@ -14,12 +14,13 @@ use lzvm_field::{poseidon2_hash_8, Ext3, Felt, SHIFT};
 use lzvm_prover::pcs_fri::{
     build_pcs_fri_opening_unit, build_pcs_fri_opening_unit_with_timing,
     build_pcs_fri_transcript_commitments, load_pcs_fri_opening_segment_from_segments,
-    load_pcs_fri_opening_unit_from_segments, validate_optional_pcs_fri_opening_proof_segments,
-    validate_pcs_fri_opening_folds_from_units, validate_pcs_fri_opening_segments, verify_fri_fold,
-    verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
-    LoadPcsFriOpeningSegmentError, LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError,
-    PcsFriOpeningBuildRequest, PcsFriOpeningBuildTiming, PcsFriOpeningFoldRequest,
-    PcsFriTranscriptCommitmentRequest, ValidateOptionalPcsFriOpeningProofSegmentsError,
+    load_pcs_fri_opening_unit_for_identity_from_segments, load_pcs_fri_opening_unit_from_segments,
+    validate_optional_pcs_fri_opening_proof_segments, validate_pcs_fri_opening_folds_from_units,
+    validate_pcs_fri_opening_segments, verify_fri_fold, verify_fri_last_level_root,
+    verify_fri_opening_folds, verify_fri_query_path, LoadPcsFriOpeningSegmentError,
+    LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError, PcsFriOpeningBuildRequest,
+    PcsFriOpeningBuildTiming, PcsFriOpeningFoldRequest, PcsFriTranscriptCommitmentRequest,
+    ValidateOptionalPcsFriOpeningProofSegmentsError,
     ValidateOptionalPcsFriOpeningProofSegmentsRequest, ValidatePcsFriOpeningFoldUnitsError,
     ValidatePcsFriOpeningSegmentsError,
 };
@@ -476,6 +477,33 @@ fn loads_pcs_fri_opening_unit_from_segments() {
     let loaded = load_pcs_fri_opening_unit_from_segments(0, &[segment]).expect("unit should load");
 
     assert_eq!(loaded, unit);
+}
+
+#[test]
+fn loads_pcs_fri_opening_unit_for_identity_from_segments() {
+    let mut unit = sample_fri_opening_unit(0);
+    unit.trace_instance_index = 2;
+    let segment = pcs_fri_opening_proof_segment(vec![unit.clone()]);
+
+    let loaded = load_pcs_fri_opening_unit_for_identity_from_segments(0, 2, &[segment])
+        .expect("unit should load");
+
+    assert_eq!(loaded, unit);
+}
+
+#[test]
+fn rejects_pcs_fri_opening_unit_trace_identity_mismatch() {
+    let mut unit = sample_fri_opening_unit(0);
+    unit.trace_instance_index = 2;
+    let segment = pcs_fri_opening_proof_segment(vec![unit]);
+
+    let error = load_pcs_fri_opening_unit_for_identity_from_segments(0, 1, &[segment])
+        .expect_err("unit should require matching trace identity");
+
+    assert_eq!(
+        error,
+        LoadPcsFriOpeningUnitError::MissingUnit { unit_index: 0 }
+    );
 }
 
 #[test]

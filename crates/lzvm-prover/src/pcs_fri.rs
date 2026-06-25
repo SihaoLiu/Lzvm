@@ -45,13 +45,23 @@ pub fn load_pcs_fri_opening_unit_from_segments(
     unit_index: usize,
     segments: &[ProofSegment],
 ) -> Result<PcsFriOpeningUnitSegment, LoadPcsFriOpeningUnitError> {
+    load_pcs_fri_opening_unit_for_identity_from_segments(unit_index, 0, segments)
+}
+
+pub fn load_pcs_fri_opening_unit_for_identity_from_segments(
+    unit_index: usize,
+    trace_instance_index: u32,
+    segments: &[ProofSegment],
+) -> Result<PcsFriOpeningUnitSegment, LoadPcsFriOpeningUnitError> {
     let opening = load_pcs_fri_opening_segment_from_segments(segments)?;
     let unit_index_u32 =
         u32::try_from(unit_index).map_err(|_| LoadPcsFriOpeningUnitError::UnitIndexOverflow)?;
     opening
         .units
         .into_iter()
-        .find(|unit| unit.unit_index == unit_index_u32 && unit.trace_instance_index == 0)
+        .find(|unit| {
+            unit.unit_index == unit_index_u32 && unit.trace_instance_index == trace_instance_index
+        })
         .ok_or(LoadPcsFriOpeningUnitError::MissingUnit { unit_index })
 }
 
