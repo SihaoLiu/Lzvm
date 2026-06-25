@@ -4,6 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
+import Lzvm.AssumptionAudit
 import Lzvm.BatchOpeningBinding
 import Lzvm.MerklePathSoundness
 
@@ -288,9 +289,7 @@ theorem runtime_retained_parent_checkpoint_concrete_path_bound_from_bundle
     runtime_retained_parent_checkpoint_concrete_path_bound_from_no_collision
       validation
       binding
-      (Eq.mp
-        centralized
-        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      (assumption_bundle_merkle_compression_no_collision assumptions centralized)
       artifact
       publicInput
       proof
@@ -388,9 +387,7 @@ theorem runtime_retained_parent_checkpoint_concrete_path_position_bound_from_bun
     runtime_retained_parent_checkpoint_concrete_path_position_bound_from_no_collision
       validation
       binding
-      (Eq.mp
-        centralized
-        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      (assumption_bundle_merkle_compression_no_collision assumptions centralized)
       artifact
       publicInput
       proof
@@ -469,9 +466,7 @@ theorem runtime_retained_parent_checkpoint_nary_path_position_bound_from_bundle
     runtime_retained_parent_checkpoint_nary_path_position_bound_from_no_collision
       validation
       binding
-      (Eq.mp
-        centralized
-        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      (assumption_bundle_nary_merkle_compression_no_collision assumptions centralized)
       artifact
       publicInput
       proof
@@ -550,9 +545,7 @@ theorem runtime_retained_parent_checkpoint_nary_opening_position_bound_from_bund
     runtime_retained_parent_checkpoint_nary_opening_position_bound_from_no_collision
       validation
       binding
-      (Eq.mp
-        centralized
-        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      (assumption_bundle_nary_merkle_compression_no_collision assumptions centralized)
       artifact
       publicInput
       proof

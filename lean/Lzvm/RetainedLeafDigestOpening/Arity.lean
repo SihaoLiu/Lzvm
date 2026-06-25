@@ -126,9 +126,7 @@ theorem runtime_retained_leaf_digest_nary_path_arity_four_position_bound_from_bu
       validation
       binding
       pathArity
-      (Eq.mp
-        centralized
-        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      (assumption_bundle_nary_merkle_compression_no_collision assumptions centralized)
       artifact
       publicInput
       proof
@@ -247,9 +245,7 @@ theorem runtime_retained_leaf_digest_nary_opening_arity_four_position_bound_from
       validation
       binding
       openingArity
-      (Eq.mp
-        centralized
-        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+      (assumption_bundle_nary_merkle_compression_no_collision assumptions centralized)
       artifact
       publicInput
       proof

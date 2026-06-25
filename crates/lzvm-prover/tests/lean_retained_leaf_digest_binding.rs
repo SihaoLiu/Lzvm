@@ -162,6 +162,38 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
         "runtime_retained_leaf_digest_nary_path_arity_four_position_bound_from_bundle",
         &["runtime_retained_leaf_digest_nary_path_arity_four_position_bound_from_no_collision"],
     );
+    for theorem_name in [
+        "runtime_retained_leaf_digest_nary_path_position_bound_from_bundle",
+        "runtime_retained_leaf_digest_nary_opening_position_bound_from_bundle",
+        "runtime_retained_leaf_digest_nary_path_arity_four_position_bound_from_bundle",
+        "runtime_retained_leaf_digest_nary_opening_arity_four_position_bound_from_bundle",
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &lean_source,
+            theorem_name,
+            &["assumption_bundle_nary_merkle_compression_no_collision"],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &lean_source,
+            theorem_name,
+            &["hashCollisionResistance.merkleHashCollisionResistance.evidence"],
+        );
+    }
+    for theorem_name in [
+        "runtime_retained_leaf_digest_concrete_path_bound_from_bundle",
+        "runtime_retained_leaf_digest_concrete_path_position_bound_from_bundle",
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &lean_source,
+            theorem_name,
+            &["assumption_bundle_merkle_compression_no_collision"],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &lean_source,
+            theorem_name,
+            &["hashCollisionResistance.merkleHashCollisionResistance.evidence"],
+        );
+    }
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_retained_leaf_digest_nary_path_position_bound_from_no_collision",
