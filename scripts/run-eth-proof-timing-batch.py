@@ -803,6 +803,11 @@ def profile_command_for_env(
         profiler_command.extend(["--ncu-set", args.ncu_set])
     if tool == "ncu" and args.ncu_target_processes != DEFAULT_NCU_TARGET_PROCESSES:
         profiler_command.extend(["--ncu-target-processes", args.ncu_target_processes])
+    if args.check_gpu_memory:
+        profiler_command.append("--check-gpu-memory")
+    if args.min_gpu_free_mib != DEFAULT_MIN_GPU_FREE_MIB:
+        profiler_command.extend(["--min-gpu-free-mib", str(args.min_gpu_free_mib)])
+    profiler_command.extend(gpu_memory_cli_parts(args, root))
     return [
         "scripts/run-proof-profile.py",
         "--tool",

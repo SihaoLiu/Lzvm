@@ -1581,9 +1581,15 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
     let profile_dir = fixture.dir.join("profiles");
     let nsys_path = fixture.dir.join("custom nsys");
     let ncu_path = fixture.dir.join("custom ncu");
+    let smi_path = write_executable_script(
+        &fixture.dir,
+        "nvidia-smi-ready",
+        "#!/usr/bin/env python3\nprint('0, GPU-free, 24576, 4096, 20480')\n",
+    );
     let nsys_trace = "cpu,nvtx";
     let ncu_set = "full";
     let ncu_target_processes = "application";
+    let min_gpu_free_mib = "4096";
     let nsys_rel = nsys_path
         .strip_prefix(workspace_root())
         .expect("nsys path should be under workspace")
@@ -1615,9 +1621,15 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         .arg("--ncu-target-processes")
         .arg(ncu_target_processes)
         .arg("--skip-nsys-export")
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg(min_gpu_free_mib)
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path)
         .arg("--profile-arg=--kernel-name-base=demangled")
         .arg("--profile-arg=--launch-skip=1")
-        .arg("--print-profile-commands");
+        .arg("--print-profile-commands")
+        .env_remove("CUDA_VISIBLE_DEVICES");
     fixture.apply_env(&mut command, SMALL_PREFIX);
 
     let output = command
@@ -1657,6 +1669,16 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
             && stdout.contains(&format!("--ncu-target-processes {ncu_target_processes}"))
             && stdout.contains("--skip-nsys-export"),
         "profile command output should route profiler tuning flags through the matching tool: {stdout}"
+    );
+    assert!(
+        stdout.contains("gpu_memory_status=ready\n")
+            && nsys_command.contains("--check-gpu-memory")
+            && nsys_command.contains(&format!("--min-gpu-free-mib {min_gpu_free_mib}"))
+            && nsys_command.contains("--nvidia-smi-command")
+            && ncu_command.contains("--check-gpu-memory")
+            && ncu_command.contains(&format!("--min-gpu-free-mib {min_gpu_free_mib}"))
+            && ncu_command.contains("--nvidia-smi-command"),
+        "profile command output should preserve GPU memory preflight in downstream commands: {stdout}"
     );
     assert!(
         nsys_command.contains("--skip-nsys-export") && !nsys_command.contains("--summarize"),
