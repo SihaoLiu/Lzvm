@@ -78,6 +78,27 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "assumption_bundle_witness_extraction",
         ],
     );
+    assert!(
+        audit_source
+            .contains("HashCollisionResistanceAssumption.transcript_hash_collision_resistance")
+            && audit_source.contains("FiatShamirRandomOracleAssumption.random_oracle_model")
+            && audit_source.contains("CryptographicAssumptions.transcript_binding")
+            && audit_source.contains("PcsOpeningSoundnessAssumption.pcs_binding")
+            && audit_source.contains("CryptographicAssumptions.pcs_opening_sound")
+            && audit_source.contains("FriQuerySoundnessAssumption.fri_low_degree_soundness")
+            && audit_source.contains("CryptographicAssumptions.fri_query_sound"),
+        "assumption audit should route cryptographic evidence through named accessors"
+    );
+    assert!(
+        !audit_source.contains("transcriptHashCollisionResistance.evidence")
+            && !audit_source.contains("randomOracleFiatShamir.randomOracleModel.evidence")
+            && !audit_source.contains("fiatShamirTranscriptBinding.evidence")
+            && !audit_source.contains("pcsBinding.evidence")
+            && !audit_source.contains("pcsOpeningSoundness.evidence")
+            && !audit_source.contains("friLowDegreeSoundness.evidence")
+            && !audit_source.contains("friQuerySoundness.evidence"),
+        "assumption audit should not expose raw cryptographic evidence fields"
+    );
     lean_binding::assert_theorem_prefix_contains(
         &audit_source,
         "cryptographic_assumptions_required_groups_fields",

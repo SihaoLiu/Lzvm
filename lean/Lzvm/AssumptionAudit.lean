@@ -233,13 +233,22 @@ theorem cryptographic_assumptions_carry_required_evidence
     And.intro
       (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
         assumptions.hashCollisionResistance)
-      (And.intro assumptions.hashCollisionResistance.transcriptHashCollisionResistance.evidence
-        (And.intro assumptions.randomOracleFiatShamir.randomOracleModel.evidence
-          (And.intro assumptions.randomOracleFiatShamir.fiatShamirTranscriptBinding.evidence
-            (And.intro assumptions.pcsSoundness.pcsBinding.evidence
-              (And.intro assumptions.pcsSoundness.pcsOpeningSoundness.evidence
-                (And.intro assumptions.friSoundness.friLowDegreeSoundness.evidence
-                  assumptions.friSoundness.friQuerySoundness.evidence))))))
+      (And.intro
+        (HashCollisionResistanceAssumption.transcript_hash_collision_resistance
+          assumptions.hashCollisionResistance)
+        (And.intro
+          (FiatShamirRandomOracleAssumption.random_oracle_model
+            assumptions.randomOracleFiatShamir)
+          (And.intro
+            (CryptographicAssumptions.transcript_binding assumptions)
+            (And.intro
+              (PcsOpeningSoundnessAssumption.pcs_binding assumptions.pcsSoundness)
+              (And.intro
+                (CryptographicAssumptions.pcs_opening_sound assumptions)
+                (And.intro
+                  (FriQuerySoundnessAssumption.fri_low_degree_soundness
+                    assumptions.friSoundness)
+                  (CryptographicAssumptions.fri_query_sound assumptions)))))))
 
 theorem assumption_bundle_carries_required_crypto_evidence
     {system : VerifierModel}

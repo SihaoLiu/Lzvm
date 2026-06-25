@@ -37,6 +37,11 @@ theorem merkle_hash_collision_resistance
     assumptions.merkleHashCollisionResistanceStatement :=
   assumptions.merkleHashCollisionResistance.evidence
 
+theorem transcript_hash_collision_resistance
+    (assumptions : HashCollisionResistanceAssumption) :
+    assumptions.transcriptHashCollisionResistanceStatement :=
+  assumptions.transcriptHashCollisionResistance.evidence
+
 end HashCollisionResistanceAssumption
 
 structure FiatShamirRandomOracleAssumption (system : VerifierModel) where
@@ -49,6 +54,16 @@ structure FiatShamirRandomOracleAssumption (system : VerifierModel) where
         system.accepts publicInput proof ->
           system.transcriptBound publicInput proof)
 
+namespace FiatShamirRandomOracleAssumption
+
+theorem random_oracle_model
+    {system : VerifierModel}
+    (assumptions : FiatShamirRandomOracleAssumption system) :
+    assumptions.randomOracleModelStatement :=
+  assumptions.randomOracleModel.evidence
+
+end FiatShamirRandomOracleAssumption
+
 structure PcsOpeningSoundnessAssumption (system : VerifierModel) where
   pcsBindingStatement : Prop
   pcsBinding : NamedCryptographicAssumption pcsBindingStatement
@@ -57,6 +72,16 @@ structure PcsOpeningSoundnessAssumption (system : VerifierModel) where
       (forall publicInput proof,
         system.accepts publicInput proof ->
           system.pcsOpeningsValid publicInput proof)
+
+namespace PcsOpeningSoundnessAssumption
+
+theorem pcs_binding
+    {system : VerifierModel}
+    (assumptions : PcsOpeningSoundnessAssumption system) :
+    assumptions.pcsBindingStatement :=
+  assumptions.pcsBinding.evidence
+
+end PcsOpeningSoundnessAssumption
 
 structure FriQuerySoundnessAssumption (system : VerifierModel) where
   friLowDegreeSoundnessStatement : Prop
@@ -67,6 +92,16 @@ structure FriQuerySoundnessAssumption (system : VerifierModel) where
       (forall publicInput proof,
         system.accepts publicInput proof ->
           system.friQueriesValid publicInput proof)
+
+namespace FriQuerySoundnessAssumption
+
+theorem fri_low_degree_soundness
+    {system : VerifierModel}
+    (assumptions : FriQuerySoundnessAssumption system) :
+    assumptions.friLowDegreeSoundnessStatement :=
+  assumptions.friLowDegreeSoundness.evidence
+
+end FriQuerySoundnessAssumption
 
 structure CryptographicAssumptions (system : VerifierModel) where
   hashCollisionResistance : HashCollisionResistanceAssumption
