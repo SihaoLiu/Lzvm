@@ -1135,8 +1135,8 @@ theorem runtime_pipeline_binding_checked_acceptance_sound
       proof
       requiresExternalSource
       traceAccepted
-  have queryPlanSound :=
-    runtime_query_plan_binding_checked_acceptance_sound
+  have queryPlanFull :=
+    runtime_query_plan_binding_checked_acceptance_full_soundness_contract
       assumptions
       validation.queryPlanBindingValidation
       artifact
@@ -1144,19 +1144,24 @@ theorem runtime_pipeline_binding_checked_acceptance_sound
       proof
       requiresExternalSource
       queryPlanAccepted
+  rcases queryPlanFull with
+    ⟨queryPlanEvidence,
+      _queryPlanBound,
+      challengeEvidence,
+      openingSegmentEvidence,
+      _openingSegmentBound,
+      openingEvidence,
+      _openingBound,
+      transcriptBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      _queryPlanCoreContract,
+      soundWitness⟩
   have ethEvidence := ethFull.left
   have artifactEvidence := ethFull.right.left
   have runtimeArtifactEvidence := ethFull.right.right.right.left
   have tracePreflightEvidence := traceSound.left
   have traceConstraintEvidence := traceSound.right.left
-  have queryPlanEvidence := queryPlanSound.left
-  have challengeEvidence := queryPlanSound.right.left
-  have openingSegmentEvidence := queryPlanSound.right.right.left
-  have openingEvidence := queryPlanSound.right.right.right.left
-  have transcriptBound := queryPlanSound.right.right.right.right.left
-  have pcsOpeningsValid := queryPlanSound.right.right.right.right.right.left
-  have friQueriesValid := queryPlanSound.right.right.right.right.right.right.left
-  have soundWitness := queryPlanSound.right.right.right.right.right.right.right
   have verifierAccepted :=
     runtime_pipeline_binding_checked_acceptance_verifier_accepts
       validation
