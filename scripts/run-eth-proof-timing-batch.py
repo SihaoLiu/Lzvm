@@ -389,6 +389,9 @@ def write_env_template(args: argparse.Namespace, root: Path) -> None:
 
     env_path = display_path_for_shell(path, root)
     check_command = shell_join([".", env_path, SHELL_AND, *base_parts, "--check-env"])
+    profile_tool_check_command = shell_join(
+        [".", env_path, SHELL_AND, *base_parts, "--check-profile-tools"]
+    )
     profile_command = shell_join(
         [".", env_path, SHELL_AND, *base_parts, "--print-profile-commands"]
     )
@@ -397,6 +400,7 @@ def write_env_template(args: argparse.Namespace, root: Path) -> None:
     )
     print(f"env_template={env_path}")
     print(f"next_check_command={check_command}")
+    print(f"next_profile_tool_check_command={profile_tool_check_command}")
     print(f"next_profile_command={profile_command}")
     print(f"next_run_command={run_command}")
 

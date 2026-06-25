@@ -842,6 +842,11 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         "env template should report a check command: {stdout}"
     );
     assert!(
+        stdout.contains(&format!("next_profile_tool_check_command=. {template_rel} && scripts/run-eth-proof-timing-batch.py --suite both"))
+            && stdout.contains("--check-profile-tools"),
+        "env template should report a proof-independent profile tool check command: {stdout}"
+    );
+    assert!(
         stdout.contains(&format!("next_profile_command=. {template_rel} && scripts/run-eth-proof-timing-batch.py --suite both")),
         "env template should report a profile command: {stdout}"
     );
