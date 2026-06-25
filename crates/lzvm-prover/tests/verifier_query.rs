@@ -32,9 +32,10 @@ use lzvm_prover::verifier_query::{
     assemble_verifier_query_eval_input, evaluate_verifier_unit_queries,
     validate_verifier_query_outputs_against_fri_opening,
     validate_verifier_query_outputs_from_segments, verify_query_outputs_against_fri_opening,
-    VerifierFriComparisonRequest, VerifierFriQueryOutputSegmentsError,
-    VerifierFriQueryOutputSegmentsRequest, VerifierFriQueryOutputValidationRequest,
-    VerifierQueryEvalInputRequest, VerifierUnitQueryEvalRequest,
+    VerifierFriComparisonError, VerifierFriComparisonRequest, VerifierFriQueryOutputSegmentsError,
+    VerifierFriQueryOutputSegmentsRequest, VerifierFriQueryOutputValidationError,
+    VerifierFriQueryOutputValidationRequest, VerifierQueryEvalError, VerifierQueryEvalInputRequest,
+    VerifierUnitQueryEvalRequest,
 };
 use lzvm_prover::ProveUnitSchedule;
 
@@ -248,6 +249,60 @@ fn assembles_single_query_verifier_inputs_from_opening_segments() {
 }
 
 #[test]
+fn rejects_verifier_query_eval_trace_instance_mismatches() {
+    let schedule = schedule();
+    let constants = ConstantOpeningUnitSegment {
+        unit_index: 7,
+        trace_instance_index: 0,
+        queries: vec![ConstantOpeningQuerySegment {
+            row_index: 9,
+            values: vec![31, 37, 41],
+            siblings: Vec::new(),
+        }],
+    };
+    let witness = WitnessOpeningUnitSegment {
+        unit_index: 7,
+        trace_instance_index: 1,
+        queries: vec![WitnessOpeningQuerySegment {
+            row_index: 9,
+            stages: vec![WitnessOpeningStageSegment {
+                stage_index: 1,
+                values: vec![101, 103],
+                siblings: Vec::new(),
+            }],
+        }],
+    };
+    let evaluations = PcsEvaluationUnitSegment {
+        unit_index: 7,
+        trace_instance_index: 0,
+        values: Vec::new(),
+    };
+
+    let error = assemble_verifier_query_eval_input(
+        &schedule,
+        VerifierQueryEvalInputRequest {
+            unit_index: 7,
+            query_index: 0,
+            challenges: &[e([2, 0, 0]), e([3, 0, 0]), e([4, 0, 0])],
+            proof_values: &[],
+            constant_unit: &constants,
+            witness_unit: &witness,
+            evaluations: &evaluations,
+        },
+    )
+    .expect_err("trace identity mismatch should reject");
+
+    assert_eq!(
+        error,
+        VerifierQueryEvalError::TraceInstanceMismatch {
+            expected: 0,
+            found: 1,
+            source: "witness opening",
+        }
+    );
+}
+
+#[test]
 fn evaluates_all_unit_query_verifier_outputs() {
     let mut schedule = schedule();
     schedule.query_count = 2;
@@ -403,6 +458,7 @@ fn compares_query_verifier_outputs_to_first_fri_layer_values() {
         &schedule,
         VerifierFriComparisonRequest {
             unit_index: 7,
+            trace_instance_index: 0,
             query_rows: &[9, 17],
             query_outputs: &[expected_first, expected_second],
             fri: &fri,
@@ -416,6 +472,7 @@ fn compares_query_verifier_outputs_to_first_fri_layer_values() {
         &schedule,
         VerifierFriComparisonRequest {
             unit_index: 7,
+            trace_instance_index: 0,
             query_rows: &[9, 17],
             query_outputs: &[expected_first, e([999, 0, 0])],
             fri: &fri,
@@ -424,6 +481,25 @@ fn compares_query_verifier_outputs_to_first_fri_layer_values() {
     .expect("FRI comparison should evaluate mismatches");
 
     assert!(!invalid);
+
+    let mut wrong_trace_fri = fri.clone();
+    wrong_trace_fri.trace_instance_index = 1;
+    assert_eq!(
+        verify_query_outputs_against_fri_opening(
+            &schedule,
+            VerifierFriComparisonRequest {
+                unit_index: 7,
+                trace_instance_index: 0,
+                query_rows: &[9, 17],
+                query_outputs: &[expected_first, expected_second],
+                fri: &wrong_trace_fri,
+            },
+        ),
+        Err(VerifierFriComparisonError::TraceInstanceMismatch {
+            expected: 0,
+            found: 1,
+        })
+    );
 }
 
 #[test]
@@ -587,6 +663,33 @@ fn validates_verifier_query_outputs_against_fri_opening() {
     .expect("query output validation should evaluate mismatches");
 
     assert!(!invalid);
+
+    fri.trace_instance_index = 1;
+    let error = validate_verifier_query_outputs_against_fri_opening(
+        &schedule,
+        VerifierFriQueryOutputValidationRequest {
+            unit_index: 7,
+            query_rows: &[9, 17],
+            challenges: &challenges,
+            proof_values: &[],
+            constant_unit: &constants,
+            witness_unit: &witness,
+            evaluations: &evaluations,
+            code: &code,
+            publics: &[],
+            fri: &fri,
+        },
+    )
+    .expect_err("FRI trace identity mismatch should reject");
+    assert_eq!(
+        error,
+        VerifierFriQueryOutputValidationError::Comparison(
+            VerifierFriComparisonError::TraceInstanceMismatch {
+                expected: 0,
+                found: 1,
+            }
+        )
+    );
 }
 
 #[test]

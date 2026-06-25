@@ -76,6 +76,7 @@ pub struct VerifierUnitQueryEvalRequest<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct VerifierFriComparisonRequest<'a> {
     pub unit_index: u32,
+    pub trace_instance_index: u32,
     pub query_rows: &'a [u64],
     pub query_outputs: &'a [Ext3],
     pub fri: &'a PcsFriOpeningUnitSegment,
@@ -110,6 +111,11 @@ pub struct VerifierFriQueryOutputSegmentsRequest<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifierQueryEvalError {
     UnitIndexMismatch {
+        expected: u32,
+        found: u32,
+        source: &'static str,
+    },
+    TraceInstanceMismatch {
         expected: u32,
         found: u32,
         source: &'static str,
@@ -157,6 +163,10 @@ pub enum VerifierQueryEvalError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifierFriComparisonError {
     UnitIndexMismatch {
+        expected: u32,
+        found: u32,
+    },
+    TraceInstanceMismatch {
         expected: u32,
         found: u32,
     },
@@ -227,6 +237,14 @@ impl fmt::Display for VerifierQueryEvalError {
                 f,
                 "verifier query {source} unit index {found} does not match expected {expected}"
             ),
+            Self::TraceInstanceMismatch {
+                expected,
+                found,
+                source,
+            } => write!(
+                f,
+                "verifier query {source} trace instance {found} does not match expected {expected}"
+            ),
             Self::QueryIndexOutOfRange {
                 query_index,
                 len,
@@ -287,6 +305,10 @@ impl fmt::Display for VerifierFriComparisonError {
             Self::UnitIndexMismatch { expected, found } => write!(
                 f,
                 "verifier FRI comparison unit index {found} does not match expected {expected}"
+            ),
+            Self::TraceInstanceMismatch { expected, found } => write!(
+                f,
+                "verifier FRI comparison trace instance {found} does not match expected {expected}"
             ),
             Self::MissingFriLayer => write!(f, "verifier FRI comparison has no FRI layers"),
             Self::QueryOutputCountMismatch { expected, found } => write!(
@@ -421,6 +443,17 @@ pub fn assemble_verifier_query_eval_input(
         request.evaluations.unit_index,
         "evaluation",
     )?;
+    let trace_instance_index = request.constant_unit.trace_instance_index;
+    expect_trace_instance(
+        trace_instance_index,
+        request.witness_unit.trace_instance_index,
+        "witness opening",
+    )?;
+    expect_trace_instance(
+        trace_instance_index,
+        request.evaluations.trace_instance_index,
+        "evaluation",
+    )?;
 
     let constant_query = request
         .constant_unit
@@ -533,6 +566,12 @@ pub fn verify_query_outputs_against_fri_opening(
             found: request.fri.unit_index,
         });
     }
+    if request.trace_instance_index != request.fri.trace_instance_index {
+        return Err(VerifierFriComparisonError::TraceInstanceMismatch {
+            expected: request.trace_instance_index,
+            found: request.fri.trace_instance_index,
+        });
+    }
     let query_count = usize::try_from(schedule.query_count)
         .map_err(|_| VerifierFriComparisonError::LengthOverflow)?;
     if request.query_outputs.len() != query_count {
@@ -627,6 +666,7 @@ pub fn validate_verifier_query_outputs_against_fri_opening(
         schedule,
         VerifierFriComparisonRequest {
             unit_index: request.unit_index,
+            trace_instance_index: request.evaluations.trace_instance_index,
             query_rows: request.query_rows,
             query_outputs: &query_outputs,
             fri: request.fri,
@@ -856,6 +896,22 @@ fn expect_unit_index(
         Ok(())
     } else {
         Err(VerifierQueryEvalError::UnitIndexMismatch {
+            expected,
+            found,
+            source,
+        })
+    }
+}
+
+fn expect_trace_instance(
+    expected: u32,
+    found: u32,
+    source: &'static str,
+) -> Result<(), VerifierQueryEvalError> {
+    if found == expected {
+        Ok(())
+    } else {
+        Err(VerifierQueryEvalError::TraceInstanceMismatch {
             expected,
             found,
             source,
