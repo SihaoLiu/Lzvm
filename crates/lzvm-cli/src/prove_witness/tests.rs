@@ -127,6 +127,33 @@ fn rejects_large_guest_pc_trace_without_gpu_backend() {
 }
 
 #[test]
+fn rejects_large_guest_pc_trace_when_free_gpu_memory_is_too_low() {
+    let info = lzvm_prover::GpuMemoryInfo {
+        free_bytes: 230 * 1024 * 1024,
+        total_bytes: 32_607 * 1024 * 1024,
+    };
+
+    let error = validate_large_guest_pc_gpu_memory(info, 1024 * 1024 * 1024)
+        .expect_err("low free GPU memory should fail the preflight");
+
+    assert_eq!(
+        error,
+        "large --guest-pc-trace requires at least 1024 MiB free CUDA memory: free 230 MiB of 32607 MiB"
+    );
+}
+
+#[test]
+fn accepts_large_guest_pc_trace_when_free_gpu_memory_meets_floor() {
+    let info = lzvm_prover::GpuMemoryInfo {
+        free_bytes: 1024 * 1024 * 1024,
+        total_bytes: 32_607 * 1024 * 1024,
+    };
+
+    validate_large_guest_pc_gpu_memory(info, 1024 * 1024 * 1024)
+        .expect("GPU memory at the floor should pass");
+}
+
+#[test]
 fn writes_timing_summary_lines() {
     let mut stdout = Vec::new();
     write_timing_entries(

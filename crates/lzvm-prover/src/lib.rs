@@ -92,7 +92,9 @@ pub use fixed_material::{
     load_fixed_columns_material, load_fixed_columns_material_with_digest, FixedColumnsMaterial,
     FixedColumnsMaterialError,
 };
-pub use gpu_setup::{gpu_setup_available, prepare_gpu_setup, GpuSetupError};
+pub use gpu_setup::{
+    gpu_memory_info, gpu_setup_available, prepare_gpu_setup, GpuMemoryInfo, GpuSetupError,
+};
 pub use proof_artifact::{
     build_witness_contribution_proof_artifact_for_all_units,
     build_witness_contribution_proof_artifact_for_unit, build_witness_proof_artifact,
