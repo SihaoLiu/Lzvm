@@ -18,7 +18,7 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
         "top-level Lean module should import centralized assumptions"
     );
     assert!(
-        assumptions_source.contains("structure NamedCryptographicAssumption")
+        assumptions_source.contains("abbrev NamedCryptographicAssumption")
             && assumptions_source.contains("structure HashCollisionResistanceAssumption")
             && assumptions_source.contains("structure FiatShamirRandomOracleAssumption")
             && assumptions_source.contains("structure PcsOpeningSoundnessAssumption")
