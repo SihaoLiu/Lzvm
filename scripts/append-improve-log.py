@@ -16,7 +16,7 @@ HEADER = [
 ]
 
 TIMING_TOTAL_RE = re.compile(r"^timing_total_ms=(\d+)\s*$")
-AVG_FIELD_RE = re.compile(r"^avg=([0-9]+(?:\.[0-9]+)?)\b")
+AVG_FIELD_RE = re.compile(r"(?:^|\s)avg=([0-9]+(?:\.[0-9]+)?)\b")
 
 
 def workspace_root() -> Path:
@@ -82,8 +82,10 @@ def validate_timing_log_field(field: str, path: Path, line_number: int, column: 
         timing_field_average_seconds(field, f"{path}:{line_number}: {column}")
 
 
-def validate_improve_log(path: Path) -> None:
+def validate_improve_log(path: Path, require_existing: bool = False) -> None:
     if not path.exists():
+        if require_existing:
+            raise SystemExit(f"{path}: improve log path does not exist")
         return
     with path.open(newline="") as source:
         lines = source.readlines()
@@ -229,7 +231,7 @@ def resolve_timing_field(
 def timing_field_average_seconds(field: str, label: str) -> float:
     if not field:
         raise SystemExit(f"{label}: no timing field available for max average check")
-    match = AVG_FIELD_RE.match(field)
+    match = AVG_FIELD_RE.search(field)
     raw_value = match.group(1) if match is not None else field
     try:
         value = float(raw_value)
@@ -304,7 +306,7 @@ def main() -> None:
         root,
         "--path",
     )
-    validate_improve_log(path)
+    validate_improve_log(path, require_existing=args.check)
     if not args.check:
         if args.summary is not None and args.summary_flag is not None:
             parser.error("summary must be provided either positionally or with --summary")
@@ -348,7 +350,7 @@ def main() -> None:
             large_proof_time_s,
             summary,
         )
-        validate_improve_log(path)
+        validate_improve_log(path, require_existing=True)
 
 
 if __name__ == "__main__":

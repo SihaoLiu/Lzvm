@@ -265,6 +265,38 @@ fn improve_log_writer_rejects_path_outside_temp() {
 }
 
 #[test]
+fn improve_log_check_rejects_missing_log() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+    let log_path = workspace_root.join(format!(
+        "temp/improve-log-missing-check-{}.csv",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+
+    let output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--check")
+        .output()
+        .expect("improve-log writer check should run");
+
+    assert!(
+        !output.status.success(),
+        "improve-log check should reject a missing target log"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("improve log path does not exist"),
+        "missing log rejection should explain the absent path: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn improve_log_writer_rejects_timing_log_outside_temp() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root
