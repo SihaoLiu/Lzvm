@@ -1949,12 +1949,27 @@ fn validate_explicit_unit_values_trace_coverage(
     outputs: &[ProveWitnessTraceCommitments],
     explicit_values: &[ProveUnitValues],
 ) -> Result<(), String> {
+    validate_explicit_unit_values_trace_identity_coverage(
+        outputs.iter().map(|output| {
+            (
+                output.commitments().unit_index(),
+                output.commitments().trace_instance_index(),
+            )
+        }),
+        explicit_values,
+    )
+}
+
+fn validate_explicit_unit_values_trace_identity_coverage(
+    output_identities: impl IntoIterator<Item = (usize, u32)>,
+    explicit_values: &[ProveUnitValues],
+) -> Result<(), String> {
     let mut output_traces = BTreeMap::<usize, BTreeSet<u32>>::new();
-    for output in outputs {
+    for (unit_index, trace_instance_index) in output_identities {
         output_traces
-            .entry(output.commitments().unit_index())
+            .entry(unit_index)
             .or_default()
-            .insert(output.commitments().trace_instance_index());
+            .insert(trace_instance_index);
     }
 
     let mut explicit_traces = BTreeMap::<usize, BTreeSet<u32>>::new();
@@ -1969,11 +1984,11 @@ fn validate_explicit_unit_values_trace_coverage(
         if traces.len() <= 1 {
             continue;
         }
-        let Some(explicit) = explicit_traces.get(&unit_index) else {
-            continue;
-        };
         for trace_instance_index in traces {
-            if !explicit.contains(&trace_instance_index) {
+            if !explicit_traces
+                .get(&unit_index)
+                .is_some_and(|explicit| explicit.contains(&trace_instance_index))
+            {
                 return Err(format!(
                     "missing explicit unit values for unit {unit_index} trace instance {trace_instance_index}"
                 ));
@@ -2060,6 +2075,48 @@ mod tests {
                 .expect("implicit missing values should allow fallback")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn rejects_missing_explicit_unit_values_for_multi_trace_unit() {
+        let explicit_values = [ProveUnitValues {
+            unit_index: 1,
+            trace_instance_index: 0,
+            unit_value_map: Vec::new(),
+            packed_values: vec![Felt::from_u64(17)],
+        }];
+
+        let error = validate_explicit_unit_values_trace_identity_coverage(
+            [(0, 0), (0, 1), (1, 0)],
+            &explicit_values,
+        )
+        .expect_err("multi-trace unit should require explicit values for each trace");
+
+        assert_eq!(
+            error,
+            "missing explicit unit values for unit 0 trace instance 0"
+        );
+    }
+
+    #[test]
+    fn accepts_complete_explicit_unit_values_for_multi_trace_unit() {
+        let explicit_values = [
+            ProveUnitValues {
+                unit_index: 0,
+                trace_instance_index: 0,
+                unit_value_map: Vec::new(),
+                packed_values: vec![Felt::from_u64(11)],
+            },
+            ProveUnitValues {
+                unit_index: 0,
+                trace_instance_index: 1,
+                unit_value_map: Vec::new(),
+                packed_values: vec![Felt::from_u64(13)],
+            },
+        ];
+
+        validate_explicit_unit_values_trace_identity_coverage([(0, 0), (0, 1)], &explicit_values)
+            .expect("complete explicit values should validate");
     }
 
     #[test]
