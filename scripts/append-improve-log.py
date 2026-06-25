@@ -77,6 +77,11 @@ def summary_field_is_double_quoted(record: str) -> bool:
     return len(summary) >= 2 and summary[0] == '"' and summary[-1] == '"'
 
 
+def validate_timing_log_field(field: str, path: Path, line_number: int, column: str) -> None:
+    if field:
+        timing_field_average_seconds(field, f"{path}:{line_number}: {column}")
+
+
 def validate_improve_log(path: Path) -> None:
     if not path.exists():
         return
@@ -96,6 +101,12 @@ def validate_improve_log(path: Path) -> None:
                 raise SystemExit(
                     f"{path}:{index}: expected 5 CSV fields, found {len(row)}"
                 )
+            if not row[2] and not row[3]:
+                raise SystemExit(
+                    f"{path}:{index}: at least one proof time field is required"
+                )
+            validate_timing_log_field(row[2], path, index, "small_proof_time_s")
+            validate_timing_log_field(row[3], path, index, "large_proof_time_s")
             if not summary_field_is_double_quoted(record):
                 raise SystemExit(f"{path}:{index}: summary field must be double-quoted")
 

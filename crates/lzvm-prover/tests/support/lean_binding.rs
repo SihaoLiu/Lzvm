@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 #[allow(dead_code)]
 pub fn contains_theorem_declaration(source: &str, name: &str) -> bool {
-    find_theorem_declaration(&visible_source(source), name).is_some()
+    find_theorem_declaration(&searchable_source(source), name).is_some()
 }
 
 #[allow(dead_code)]
@@ -19,7 +19,8 @@ pub fn assert_theorem_declarations(source: &str, names: &[&str]) {
 #[allow(dead_code)]
 pub fn theorem_prefix(source: &str, name: &str) -> String {
     let visible_source = visible_source(source);
-    let theorem_start = find_theorem_declaration(&visible_source, name)
+    let searchable_source = strip_string_literals(&visible_source);
+    let theorem_start = find_theorem_declaration(&searchable_source, name)
         .unwrap_or_else(|| panic!("Lean source should contain theorem {name}"));
     let proof_start = visible_source[theorem_start..]
         .find(" := by")
@@ -52,22 +53,21 @@ pub fn assert_theorem_prefix_omits(source: &str, name: &str, snippets: &[&str]) 
 #[allow(dead_code)]
 pub fn theorem_body(source: &str, name: &str) -> String {
     let visible_source = visible_source(source);
-    let theorem_start = find_theorem_declaration(&visible_source, name)
+    let searchable_source = strip_string_literals(&visible_source);
+    let theorem_start = find_theorem_declaration(&searchable_source, name)
         .unwrap_or_else(|| panic!("Lean source should contain theorem {name}"));
     let proof_start = visible_source[theorem_start..]
         .find(" := by")
         .unwrap_or_else(|| panic!("Lean theorem {name} should have a proof body"));
     let body_start = theorem_start + proof_start + " := by".len();
-    let body_end =
-        find_next_theorem_declaration(&visible_source, body_start).unwrap_or(visible_source.len());
+    let body_end = find_next_theorem_declaration(&searchable_source, body_start)
+        .unwrap_or(visible_source.len());
     visible_source[body_start..body_end].to_owned()
 }
 
 #[allow(dead_code)]
 pub fn visible_occurrence_count(source: &str, snippet: &str) -> usize {
-    strip_string_literals(&visible_source(source))
-        .matches(snippet)
-        .count()
+    searchable_source(source).matches(snippet).count()
 }
 
 #[allow(dead_code)]
@@ -76,7 +76,7 @@ pub fn visible_identifier_occurrence_count(source: &str, identifier: &str) -> us
         !identifier.is_empty(),
         "Lean identifier should not be empty"
     );
-    let visible = strip_string_literals(&visible_source(source));
+    let visible = searchable_source(source);
     visible
         .match_indices(identifier)
         .filter(|(start, _)| {
@@ -107,6 +107,10 @@ pub fn assert_theorem_body_omits_identifier(source: &str, name: &str, identifier
 
 fn visible_source(source: &str) -> String {
     strip_lean_comments(source)
+}
+
+fn searchable_source(source: &str) -> String {
+    strip_string_literals(&visible_source(source))
 }
 
 fn find_theorem_declaration(source: &str, name: &str) -> Option<usize> {

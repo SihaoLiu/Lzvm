@@ -2032,7 +2032,7 @@ fn improve_log_check_rejects_unquoted_summary_field() {
     std::fs::write(
         &log_path,
         "timestamp,commit,small_proof_time_s,large_proof_time_s,summary\n\
-2026-06-09T00:10:13-0700,badrow,,,Unquoted summary without commas\n",
+2026-06-09T00:10:13-0700,badrow,1.234,2.345,Unquoted summary without commas\n",
     )
     .expect("temporary improve log should write");
 
@@ -2052,6 +2052,42 @@ fn improve_log_check_rejects_unquoted_summary_field() {
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("summary field must be double-quoted"),
         "improve-log check should report the unquoted summary field"
+    );
+}
+
+#[test]
+fn improve_log_check_rejects_empty_proof_time_fields() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/append-improve-log.py");
+    let log_path = crate_root.join("../..").join("temp").join(format!(
+        "improve-log-missing-time-check-{}.csv",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+    std::fs::write(
+        &log_path,
+        "timestamp,commit,small_proof_time_s,large_proof_time_s,summary\n\
+2026-06-09T00:10:13-0700,badrow,,,\"Missing proof times\"\n",
+    )
+    .expect("temporary improve log should write");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--check")
+        .output()
+        .expect("improve-log writer check should run");
+    let _ = std::fs::remove_file(&log_path);
+
+    assert!(
+        !output.status.success(),
+        "improve-log check should reject empty proof time fields"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("at least one proof time field is required"),
+        "improve-log check should report the missing proof time fields"
     );
 }
 

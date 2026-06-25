@@ -66,6 +66,28 @@ def uses_exact_symbol := ("-- not a comment", abstract_verifier_sound assumption
 }
 
 #[test]
+fn lean_theorem_matching_ignores_string_literal_boundaries() {
+    let source = r#"
+def string_literal := "theorem string_literal_verifier_core_contract : True := by"
+theorem guarded_body :
+    True := by
+  let label := "theorem fake_boundary : True := by"
+  exact True.intro
+theorem real_next :
+    True := by
+  exact True.intro
+"#;
+
+    assert!(!lean_binding::contains_theorem_declaration(
+        source,
+        "string_literal_verifier_core_contract"
+    ));
+    let body = lean_binding::theorem_body(source, "guarded_body");
+    assert!(body.contains("exact True.intro"));
+    assert!(!body.contains("theorem real_next"));
+}
+
+#[test]
 fn lean_structure_field_name_matching_ignores_comments_and_header_parameters() {
     let source = r#"
 /- structure commented_out_example (α : Type) where
