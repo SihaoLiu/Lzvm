@@ -527,7 +527,7 @@ conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", 
 conn.execute("""
 insert into CUPTI_ACTIVITY_KIND_RUNTIME
     (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
-values (0, 50_000_000, 0, 7, 44, 1, 0, 300)
+values (0, 50000000, 0, 7, 44, 1, 0, 300)
 """)
 conn.execute("""
 insert into CUPTI_ACTIVITY_KIND_MEMCPY
@@ -535,7 +535,7 @@ insert into CUPTI_ACTIVITY_KIND_MEMCPY
      globalPid, bytes, copyKind, deprecatedSrcId, srcKind, dstKind, srcDeviceId,
      srcContextId, dstDeviceId, dstContextId, migrationCause, graphNodeId,
      virtualAddress, copyCount)
-values (1000, 45_000_000, 0, 0, null, 3, 44, 1, 369098752, 1, null, null, null,
+values (1000, 45000000, 0, 0, null, 3, 44, 1, 369098752, 1, null, null, null,
         null, null, null, null, null, null, null, 1)
 """)
 conn.executemany("""
@@ -666,7 +666,7 @@ conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", 
 conn.execute("""
 insert into CUPTI_ACTIVITY_KIND_RUNTIME
     (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
-values (0, 80_000_000, 0, 7, 44, 1, 0, 300)
+values (0, 80000000, 0, 7, 44, 1, 0, 300)
 """)
 conn.execute("""
 insert into CUPTI_ACTIVITY_KIND_MEMCPY
@@ -674,7 +674,7 @@ insert into CUPTI_ACTIVITY_KIND_MEMCPY
      globalPid, bytes, copyKind, deprecatedSrcId, srcKind, dstKind, srcDeviceId,
      srcContextId, dstDeviceId, dstContextId, migrationCause, graphNodeId,
      virtualAddress, copyCount)
-values (1000, 70_000_000, 0, 0, null, 3, 44, 1, 369098752, 1, null, null, null,
+values (1000, 70000000, 0, 0, null, 3, 44, 1, 369098752, 1, null, null, null,
         null, null, null, null, null, null, null, 1)
 """)
 conn.executemany("""
@@ -947,7 +947,7 @@ conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", 
 conn.execute("""
 insert into CUPTI_ACTIVITY_KIND_RUNTIME
     (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
-values (0, 12_000_000, 0, 7, 45, 1, 0, 301)
+values (0, 12000000, 0, 7, 45, 1, 0, 301)
 """)
 conn.execute("""
 insert into CUPTI_ACTIVITY_KIND_MEMCPY
@@ -1400,7 +1400,7 @@ conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", 
 conn.execute("""
 insert into CUPTI_ACTIVITY_KIND_RUNTIME
     (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
-values (0, 50_000_000, 0, 7, 55, 1, 0, 400)
+values (0, 50000000, 0, 7, 55, 1, 0, 400)
 """)
 conn.execute("""
 insert into CUPTI_ACTIVITY_KIND_MEMCPY
@@ -1408,7 +1408,7 @@ insert into CUPTI_ACTIVITY_KIND_MEMCPY
      globalPid, bytes, copyKind, deprecatedSrcId, srcKind, dstKind, srcDeviceId,
      srcContextId, dstDeviceId, dstContextId, migrationCause, graphNodeId,
      virtualAddress, copyCount)
-values (1000, 45_000_000, 0, 0, null, 3, 55, 1, 369098752, 1, null, null, null,
+values (1000, 45000000, 0, 0, null, 3, 55, 1, 369098752, 1, null, null, null,
         null, null, null, null, null, null, null, 1)
 """)
 conn.executemany("""
@@ -1548,7 +1548,7 @@ conn.executemany("insert into ENUM_CUDA_MEMCPY_OPER (id, label) values (?, ?)", 
 conn.execute("""
 insert into CUPTI_ACTIVITY_KIND_RUNTIME
     (start, end, eventClass, globalTid, correlationId, nameId, returnValue, callchainId)
-values (0, 18_000_000, 0, 7, 30, 1, 0, 200)
+values (0, 18000000, 0, 7, 30, 1, 0, 200)
 """)
 conn.execute("""
 insert into CUPTI_ACTIVITY_KIND_MEMCPY
@@ -1556,7 +1556,7 @@ insert into CUPTI_ACTIVITY_KIND_MEMCPY
      globalPid, bytes, copyKind, deprecatedSrcId, srcKind, dstKind, srcDeviceId,
      srcContextId, dstDeviceId, dstContextId, migrationCause, graphNodeId,
      virtualAddress, copyCount)
-values (1000, 17_000_000, 0, 0, null, 3, 30, 1, 2097152, 1, null, null, null,
+values (1000, 17000000, 0, 0, null, 3, 30, 1, 2097152, 1, null, null, null,
         null, null, null, null, null, null, null, 1)
 """)
 conn.executemany("""

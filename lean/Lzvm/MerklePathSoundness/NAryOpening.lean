@@ -291,13 +291,23 @@ theorem
             opening.layers := by
   intro root opening openingArity verified
   exact
-    verified_concrete_nary_merkle_path_arity_two_implies_root_commits_to_leaf_at_index_from_no_collision
-      noCollision
-      root
-      opening.leaf
-      opening.layers
-      openingArity
-      verified
+    And.intro openingArity
+      (by
+        intro otherLeaf otherPath otherPathArity sameIndex sameDepth otherVerified
+        exact
+          nary_merkle_path_arity_two_index_binding_from_no_collision
+            noCollision
+            root
+            opening.leaf
+            opening.layers
+            openingArity
+            verified
+            otherLeaf
+            otherPath
+            otherPathArity
+            sameIndex
+            sameDepth
+            otherVerified)
 
 set_option linter.style.longLine false in
 theorem
@@ -316,13 +326,23 @@ theorem
             opening.layers := by
   intro root opening openingArity verified
   exact
-    verified_concrete_nary_merkle_path_arity_four_implies_root_commits_to_leaf_at_index_from_no_collision
-      noCollision
-      root
-      opening.leaf
-      opening.layers
-      openingArity
-      verified
+    And.intro openingArity
+      (by
+        intro otherLeaf otherPath otherPathArity sameIndex sameDepth otherVerified
+        exact
+          nary_merkle_path_arity_four_index_binding_from_no_collision
+            noCollision
+            root
+            opening.leaf
+            opening.layers
+            openingArity
+            verified
+            otherLeaf
+            otherPath
+            otherPathArity
+            sameIndex
+            sameDepth
+            otherVerified)
 
 set_option linter.style.longLine false in
 theorem

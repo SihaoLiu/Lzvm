@@ -3,6 +3,62 @@ use std::process::Command;
 
 use lzvm_prover::guest_machine::GuestMachineReport;
 
+fn compact_source(source: &str) -> String {
+    source.chars().filter(|ch| !ch.is_whitespace()).collect()
+}
+
+fn unquoted_timing_name(timing_name: &str) -> &str {
+    timing_name
+        .strip_prefix('"')
+        .and_then(|name| name.strip_suffix('"'))
+        .unwrap_or(timing_name)
+}
+
+fn timing_accessor_method(accessor: &str) -> &str {
+    accessor.strip_suffix("()").unwrap_or(accessor)
+}
+
+fn cli_source_records_timing_accessor(source: &str, timing_name: &str, accessor: &str) -> bool {
+    if source.contains(timing_name) && source.contains(accessor) {
+        return true;
+    }
+
+    let name = unquoted_timing_name(timing_name);
+    let method = timing_accessor_method(accessor);
+    let compact = compact_source(source);
+    let default_duration_macro = method
+        .strip_suffix("_duration")
+        .map(|default_name| {
+            default_name == name && compact.contains(&format!("record_duration!({method})"))
+        })
+        .unwrap_or(false);
+    default_duration_macro
+        || compact.contains(&format!("record_duration!(\"{name}\",{method})"))
+        || compact.contains(&format!("record_count!(\"{name}\",{method})"))
+}
+
+fn cli_source_records_timing_name(source: &str, timing_name: &str) -> bool {
+    if source.contains(timing_name) {
+        return true;
+    }
+
+    let name = unquoted_timing_name(timing_name);
+    compact_source(source).contains(&format!("record_duration!({name}_duration)"))
+}
+
+fn cli_source_records_sampled_duration(source: &str, timing_name: &str, method: &str) -> bool {
+    if source.contains(&format!("timing.{method}()")) {
+        return true;
+    }
+
+    let name = unquoted_timing_name(timing_name);
+    let compact = compact_source(source);
+    compact.contains(&format!("record_sampled_duration_count!({method})"))
+        || compact.contains(&format!(
+            "record_sampled_duration_count!(\"{name}\",{method})"
+        ))
+}
+
 #[test]
 fn cuda_row_major_hashing_copies_validated_bytes_without_host_word_repacking() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -3223,7 +3279,11 @@ fn guest_trace_detail_timing_keeps_aggregate_report_and_sampled_fields_separate(
         "fn record_guest_stage_root_materialization_shape",
     );
     assert!(
-        cli_body.contains("timing.guest_trace_report_sample_duration()"),
+        cli_source_records_sampled_duration(
+            cli_body,
+            "\"guest_trace_report\"",
+            "guest_trace_report_sample_duration"
+        ),
         "CLI sampled report nanos should use the sampled report counter, not the aggregate report duration"
     );
     assert!(
@@ -4379,7 +4439,7 @@ fn guest_pc_trace_timing_reports_segment_commit_cuda_memory_headroom() {
         ),
     ] {
         assert!(
-            cli_source.contains(timing_name) && cli_source.contains(accessor),
+            cli_source_records_timing_accessor(&cli_source, timing_name, accessor),
             "CLI guest PC timing should emit {timing_name} from {accessor}"
         );
     }
@@ -4447,7 +4507,7 @@ fn guest_pc_trace_timing_splits_device_source_upload_and_expand_work() {
         ),
     ] {
         assert!(
-            cli_source.contains(line_name) && cli_source.contains(accessor),
+            cli_source_records_timing_accessor(&cli_source, line_name, accessor),
             "CLI timing output should include {line_name}"
         );
     }
@@ -4741,7 +4801,7 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         ),
     ] {
         assert!(
-            cli_source.contains(line_name) && cli_source.contains(accessor),
+            cli_source_records_timing_accessor(&cli_source, line_name, accessor),
             "CLI timing output should include {line_name}"
         );
     }
@@ -4789,7 +4849,7 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         ),
     ] {
         assert!(
-            cli_source.contains(line_name) && cli_source.contains(accessor),
+            cli_source_records_timing_accessor(&cli_source, line_name, accessor),
             "CLI timing output should include dynamic {line_name}"
         );
     }
@@ -5336,7 +5396,7 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         ),
     ] {
         assert!(
-            cli_source.contains(line_name) && cli_source.contains(accessor),
+            cli_source_records_timing_accessor(&cli_source, line_name, accessor),
             "CLI timing output should include {line_name}"
         );
     }
@@ -5444,7 +5504,7 @@ fn guest_pc_trace_timing_reports_stage_source_retention_budget() {
         ),
     ] {
         assert!(
-            cli_source.contains(line_name) && cli_source.contains(accessor),
+            cli_source_records_timing_accessor(&cli_source, line_name, accessor),
             "CLI timing output should include {line_name}"
         );
     }
@@ -5518,7 +5578,7 @@ fn guest_pc_trace_timing_reports_descriptor_buffer_retention_budget() {
         ),
     ] {
         assert!(
-            cli_source.contains(line_name) && cli_source.contains(accessor),
+            cli_source_records_timing_accessor(&cli_source, line_name, accessor),
             "CLI timing output should include {line_name}"
         );
     }
@@ -6063,7 +6123,7 @@ fn guest_pc_trace_stream_reports_runner_lowerer_and_queue_wait_timing() {
         "\"guest_trace_parallel_lower_dispatch_blocked_count\"",
     ] {
         assert!(
-            cli_source.contains(line_name),
+            cli_source_records_timing_name(&cli_source, line_name),
             "guest PC trace CLI timing should record {line_name}"
         );
     }
@@ -6148,7 +6208,7 @@ fn guest_pc_trace_timing_reports_seed_advance_work() {
         "\"guest_trace_seed_full_advances\"",
     ] {
         assert!(
-            cli_source.contains(line_name),
+            cli_source_records_timing_name(&cli_source, line_name),
             "guest PC CLI timing should record {line_name}"
         );
     }
@@ -6456,7 +6516,7 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "\"cuda_allocator_no_wait_bypass_bytes\"",
     ] {
         assert!(
-            cli_source.contains(line_name),
+            cli_source_records_timing_name(&cli_source, line_name),
             "CLI timing output should include {line_name}"
         );
     }
@@ -6795,7 +6855,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_row_shape_top_4_count\"",
     ] {
         assert!(
-            cli_source.contains(line_name),
+            cli_source_records_timing_name(&cli_source, line_name),
             "guest PC trace CLI timing should record {line_name}"
         );
     }
