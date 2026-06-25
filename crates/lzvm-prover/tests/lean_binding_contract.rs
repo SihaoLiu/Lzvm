@@ -66,6 +66,33 @@ def uses_exact_symbol := ("-- not a comment", abstract_verifier_sound assumption
 }
 
 #[test]
+fn lean_structure_field_name_matching_ignores_comments_and_header_parameters() {
+    let source = r#"
+/- structure commented_out_example (α : Type) where
+  bogus : Nat
+-/
+-- structure line_commented_example where
+structure real_example (α : Type) (β : Type) where
+  first : α
+  second : β
+
+def after_real_example := 0
+
+structure next_example where
+  third : Nat
+"#;
+
+    assert_eq!(
+        lean_binding::structure_field_names(
+            source,
+            "structure real_example",
+            "def after_real_example"
+        ),
+        vec!["first".to_owned(), "second".to_owned()]
+    );
+}
+
+#[test]
 fn source_hot_paths_does_not_own_lean_binding_theorem_exports() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_hot_paths = std::fs::read_to_string(crate_root.join("tests/source_hot_paths.rs"))

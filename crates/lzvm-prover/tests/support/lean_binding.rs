@@ -182,6 +182,7 @@ pub fn assert_theorem_body_contains(source: &str, name: &str, snippets: &[&str])
 
 #[allow(dead_code)]
 pub fn structure_field_names(source: &str, start: &str, end: &str) -> Vec<String> {
+    let source = visible_source(source);
     let start_index = source
         .find(start)
         .unwrap_or_else(|| panic!("source should contain {start}"));
