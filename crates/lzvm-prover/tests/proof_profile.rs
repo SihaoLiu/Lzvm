@@ -295,6 +295,146 @@ fn proof_profile_ncu_dry_run_uses_custom_profile_command() {
     );
 }
 
+#[cfg(unix)]
+fn write_executable(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::write(path, b"#!/bin/sh\nexit 0\n").expect("fixture executable should write");
+    let mut permissions = std::fs::metadata(path)
+        .expect("fixture executable metadata should read")
+        .permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(path, permissions).expect("fixture executable mode should update");
+}
+
+#[cfg(unix)]
+#[test]
+fn proof_profile_check_tool_reports_ready_custom_profiler() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-check-tool-ready-{}",
+        std::process::id()
+    ));
+    let tool_path = output_dir.join("custom-nsys");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    write_executable(&tool_path);
+    let _ = std::fs::remove_dir_all(output_dir.join("profiles"));
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("nsys")
+        .arg("--nsys-command")
+        .arg(&tool_path)
+        .arg("--output-dir")
+        .arg(output_dir.join("profiles"))
+        .arg("--check-tool")
+        .output()
+        .expect("proof profile tool check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let profile_dir_created = output_dir.join("profiles").exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(success, "tool check should pass: stderr={stderr}");
+    assert!(
+        stdout.contains("tool=nsys\n")
+            && stdout.contains("tool_source=arg\n")
+            && stdout.contains(&format!("tool_command={}\n", tool_path.display()))
+            && stdout.contains("tool_status=ready\n")
+            && stdout.contains("tool_resolved=temp/proof-profile-check-tool-ready-")
+            && stdout.contains("output_dir=temp/proof-profile-check-tool-ready-")
+            && stdout.contains("cwd=.\n"),
+        "tool check should report the selected profiler and output target: {stdout}"
+    );
+    assert!(
+        !profile_dir_created,
+        "tool check should not create profile output directories"
+    );
+}
+
+#[test]
+fn proof_profile_check_tool_reports_missing_profiler() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-check-tool-missing-{}",
+        std::process::id()
+    ));
+    let tool_path = output_dir.join("missing-ncu");
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("ncu")
+        .arg("--ncu-command")
+        .arg(&tool_path)
+        .arg("--output-dir")
+        .arg(&output_dir)
+        .arg("--check-tool")
+        .output()
+        .expect("proof profile missing tool check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let output_dir_created = output_dir.exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(!success, "missing tool check should fail");
+    assert!(
+        stderr.is_empty(),
+        "missing tool check should report status on stdout only: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("tool=ncu\n")
+            && stdout.contains("tool_source=arg\n")
+            && stdout.contains(&format!("tool_command={}\n", tool_path.display()))
+            && stdout.contains("tool_status=missing\n")
+            && !stdout.contains("tool_resolved="),
+        "missing tool check should report the unresolved profiler: {stdout}"
+    );
+    assert!(
+        !output_dir_created,
+        "missing tool check should not create profile output directories"
+    );
+}
+
+#[test]
+fn proof_profile_check_tool_rejects_output_dir_outside_temp() {
+    let output_dir = workspace_root().join(format!(
+        "target/proof-profile-check-tool-outside-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    let output = Command::new(script_path())
+        .arg("--output-dir")
+        .arg(&output_dir)
+        .arg("--check-tool")
+        .output()
+        .expect("proof profile tool check should reject outside output dir");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let created = output_dir.exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(
+        !success,
+        "tool check should reject output dirs outside temp"
+    );
+    assert!(
+        stdout.is_empty(),
+        "rejected tool check should not print partial diagnostics: {stdout}"
+    );
+    assert!(
+        stderr.contains("--output-dir must be under"),
+        "output-dir rejection should explain the temp boundary: stderr={stderr}"
+    );
+    assert!(
+        !created,
+        "rejected output dir should not be created outside temp"
+    );
+}
+
 #[test]
 fn proof_profile_rejects_output_dir_outside_temp() {
     let output_dir = workspace_root().join(format!(

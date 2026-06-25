@@ -80,6 +80,36 @@ def resolve_tool(explicit: str | None, env_name: str, default: str) -> str:
     return shutil.which(default) or default
 
 
+def tool_config(args: argparse.Namespace) -> tuple[str | None, str, str]:
+    if args.tool == "nsys":
+        return args.nsys_command, "LZVM_NSYS_COMMAND", "nsys"
+    return args.ncu_command, "LZVM_NCU_COMMAND", "ncu"
+
+
+def tool_source(args: argparse.Namespace) -> str:
+    explicit, env_name, _default = tool_config(args)
+    if explicit:
+        return "arg"
+    if os.environ.get(env_name):
+        return "env"
+    return "path"
+
+
+def executable_path(command: str, cwd: Path) -> Path | None:
+    path = Path(command)
+    if path.is_absolute():
+        candidates = [path]
+    elif len(path.parts) > 1:
+        candidates = [cwd / path, path]
+    else:
+        found = shutil.which(command)
+        candidates = [Path(found)] if found is not None else []
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
 def prefixed_path(output_dir: Path, name: str, suffix: str) -> Path:
     return Path(str(output_dir / name) + suffix)
 
@@ -498,11 +528,7 @@ def summarize_proof_timing(
     return True
 
 
-def run_profile(args: argparse.Namespace) -> int:
-    root = workspace_root()
-    command = strip_separator(args.command)
-    if not command:
-        raise SystemExit("profiled command is required after --")
+def validate_static_profile_args(args: argparse.Namespace, root: Path) -> tuple[Path, Path]:
     if args.tool == "nsys" and args.summarize and args.skip_nsys_export:
         raise SystemExit("--summarize requires nsys SQLite export; remove --skip-nsys-export")
     output_dir = require_workspace_temp_path(
@@ -515,6 +541,32 @@ def run_profile(args: argparse.Namespace) -> int:
         raise SystemExit(f"{cwd}: command working directory does not exist")
     if not cwd.is_dir():
         raise SystemExit(f"{cwd}: command working directory is not a directory")
+    return output_dir, cwd
+
+
+def check_profile_tool(args: argparse.Namespace) -> int:
+    root = workspace_root()
+    output_dir, cwd = validate_static_profile_args(args, root)
+    explicit, env_name, default = tool_config(args)
+    command = resolve_tool(explicit, env_name, default)
+    resolved = executable_path(command, cwd)
+    print(f"tool={args.tool}")
+    print(f"tool_source={tool_source(args)}")
+    print(f"tool_command={command}")
+    print(f"tool_status={'ready' if resolved is not None else 'missing'}")
+    if resolved is not None:
+        print(f"tool_resolved={display_path_for_shell(resolved, root)}")
+    print(f"output_dir={display_path_for_shell(output_dir, root)}")
+    print(f"cwd={display_path_for_shell(cwd, root)}")
+    return 0 if resolved is not None else 1
+
+
+def run_profile(args: argparse.Namespace) -> int:
+    root = workspace_root()
+    command = strip_separator(args.command)
+    if not command:
+        raise SystemExit("profiled command is required after --")
+    output_dir, cwd = validate_static_profile_args(args, root)
 
     if args.tool == "nsys":
         profile_command, outputs = build_nsys_command(args, output_dir, command)
@@ -973,6 +1025,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-nsys-export", action="store_true")
     parser.add_argument("--summarize", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--check-tool", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -985,6 +1038,8 @@ def main() -> int:
     if args.self_test:
         self_test()
         return 0
+    if args.check_tool:
+        return check_profile_tool(args)
     return run_profile(args)
 
 
