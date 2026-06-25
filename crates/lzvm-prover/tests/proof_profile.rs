@@ -982,6 +982,57 @@ fn proof_profile_rejects_output_dir_outside_temp() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn proof_profile_rejects_symlinked_output_path() {
+    use std::os::unix::fs::symlink;
+
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-symlink-output-{}",
+        std::process::id()
+    ));
+    let profile_dir = output_dir.join("profiles");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&profile_dir).expect("profile fixture dir should be created");
+    let redirected = output_dir.join("redirected.profile.json");
+    std::fs::write(&redirected, "sentinel\n").expect("redirect target should write");
+    symlink(
+        &redirected,
+        profile_dir.join("symlinked-profile.profile.json"),
+    )
+    .expect("profile JSON symlink fixture should be created");
+
+    let output = Command::new(script_path())
+        .arg("--output-dir")
+        .arg(&profile_dir)
+        .arg("--name")
+        .arg("symlinked-profile")
+        .arg("--")
+        .arg("python3")
+        .arg("-c")
+        .arg("print('timing_total_ms=1000')")
+        .output()
+        .expect("proof profile should reject symlinked output path");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let redirected_text =
+        std::fs::read_to_string(&redirected).expect("redirect target should remain readable");
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(
+        !success,
+        "proof profile should reject symlinked output paths"
+    );
+    assert!(
+        stderr.contains("profile_json output path must not be a symlink"),
+        "symlink rejection should explain the output path: stderr={stderr}"
+    );
+    assert_eq!(
+        redirected_text, "sentinel\n",
+        "rejected profile output should not overwrite a symlink target"
+    );
+}
+
 #[test]
 fn proof_profile_rejects_nsys_summary_without_sqlite_export() {
     let output = Command::new(script_path())

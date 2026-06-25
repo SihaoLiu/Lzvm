@@ -329,10 +329,18 @@ def target_command(outputs: dict[str, Path], command: list[str]) -> list[str]:
     return ["env", f"TMPDIR={outputs['target_tmp_dir']}", *command]
 
 
+def reject_symlinked_output_paths(outputs: dict[str, Path]) -> None:
+    for key, path in sorted(outputs.items()):
+        if isinstance(path, Path) and path.is_symlink():
+            raise SystemExit(f"{key} output path must not be a symlink: {path}")
+
+
 def prepare_output_dirs(output_dir: Path, outputs: dict[str, Path]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
+    reject_symlinked_output_paths(outputs)
     outputs["tmp_dir"].mkdir(parents=True, exist_ok=True)
     outputs["target_tmp_dir"].mkdir(parents=True, exist_ok=True)
+    reject_symlinked_output_paths(outputs)
 
 
 def run_captured(
@@ -775,6 +783,7 @@ def run_profile(args: argparse.Namespace) -> int:
         if not gpu_ready:
             if not args.dry_run:
                 output_dir.mkdir(parents=True, exist_ok=True)
+                reject_symlinked_output_paths(outputs)
                 write_profile_json(
                     args,
                     root,
