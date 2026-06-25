@@ -67,8 +67,8 @@ use crate::pcs_query_plan::{
     ValidatePcsQueryPlanSegmentsError,
 };
 use crate::pcs_transcript_segments::{
-    derive_pcs_transcript_unit_challenges_from_proof_segments, PcsTranscriptProofSegmentsError,
-    PcsTranscriptUnitChallenges,
+    derive_pcs_transcript_unit_challenges_from_loaded_witness_segments,
+    PcsTranscriptProofSegmentsError, PcsTranscriptUnitChallenges,
 };
 use crate::proof_preflight::{
     validate_proof_public_values_for_setup_preflight_with_fields, ProofPreflightError,
@@ -168,6 +168,7 @@ struct SetupPreflightTranscriptChallengeCache<'a> {
     schedule: &'a ProveSchedule,
     public_values: &'a [Felt],
     segments: &'a [ProofSegment],
+    witness_segments: &'a [LoadedWitnessCommitmentSegmentRef<'a>],
     unit_challenges: Option<Vec<PcsTranscriptUnitChallenges>>,
     flat_challenges: Option<Vec<Ext3>>,
 }
@@ -177,11 +178,13 @@ impl<'a> SetupPreflightTranscriptChallengeCache<'a> {
         schedule: &'a ProveSchedule,
         public_values: &'a [Felt],
         segments: &'a [ProofSegment],
+        witness_segments: &'a [LoadedWitnessCommitmentSegmentRef<'a>],
     ) -> Self {
         Self {
             schedule,
             public_values,
             segments,
+            witness_segments,
             unit_challenges: None,
             flat_challenges: None,
         }
@@ -195,11 +198,14 @@ impl<'a> SetupPreflightTranscriptChallengeCache<'a> {
         &mut self,
     ) -> Result<&[PcsTranscriptUnitChallenges], PcsTranscriptProofSegmentsError> {
         if self.unit_challenges.is_none() {
-            self.unit_challenges = Some(derive_pcs_transcript_unit_challenges_from_proof_segments(
-                self.schedule,
-                self.public_values,
-                self.segments,
-            )?);
+            self.unit_challenges = Some(
+                derive_pcs_transcript_unit_challenges_from_loaded_witness_segments(
+                    self.schedule,
+                    self.public_values,
+                    self.segments,
+                    self.witness_segments,
+                )?,
+            );
         }
         Ok(self.unit_challenges.as_deref().unwrap_or(&[]))
     }
@@ -797,6 +803,7 @@ pub fn validate_setup_preflight(
         &schedule,
         transcript_public_fields,
         &proof.segments,
+        &witness_segments,
     );
     let mut packed_proof_values_cache = SetupPreflightPackedProofValueCache::new(
         &catalog.layout.global_info,
@@ -1125,7 +1132,10 @@ fn validate_optional_trace_constraint_segment(
                 witness_segment.identity.unit_index,
                 witness_segment.identity.trace_instance_index,
             ),
-            (witness_segment.trace_rows, witness_segment.trace_columns),
+            (
+                witness_segment.witness.trace_rows,
+                witness_segment.witness.trace_columns,
+            ),
         );
     }
 

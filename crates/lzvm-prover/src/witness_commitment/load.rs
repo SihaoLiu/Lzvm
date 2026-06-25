@@ -2,19 +2,18 @@ use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, witness_commitment_segment_identity,
-    WitnessCommitmentSegmentIdentity, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    WitnessCommitmentSegment, WitnessCommitmentSegmentIdentity, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 
 use crate::ProveUnitSchedule;
 
 use super::LoadWitnessCommitmentSegmentsError;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct LoadedWitnessCommitmentSegmentRef<'a> {
     pub segment: &'a ProofSegment,
     pub identity: WitnessCommitmentSegmentIdentity,
-    pub trace_rows: u64,
-    pub trace_columns: u64,
+    pub witness: WitnessCommitmentSegment,
 }
 
 pub fn load_witness_commitment_segments(
@@ -89,15 +88,15 @@ fn validate_witness_commitment_segment<'a>(
     identity: WitnessCommitmentSegmentIdentity,
     unit_index: usize,
 ) -> Result<LoadedWitnessCommitmentSegmentRef<'a>, LoadWitnessCommitmentSegmentsError> {
-    let parsed = parse_witness_commitment_segment(&segment.data)
+    let witness = parse_witness_commitment_segment(&segment.data)
         .map_err(|source| LoadWitnessCommitmentSegmentsError::Segment { unit_index, source })?;
-    if parsed.unit_index != identity.unit_index {
+    if witness.unit_index != identity.unit_index {
         return Err(LoadWitnessCommitmentSegmentsError::UnitMismatch { unit_index });
     }
     let unit = units
         .get(unit_index)
         .ok_or(LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
-    if parsed.trace_rows != unit.base_domain_size {
+    if witness.trace_rows != unit.base_domain_size {
         return Err(LoadWitnessCommitmentSegmentsError::RowCountMismatch { unit_index });
     }
     let trace_columns = unit
@@ -105,13 +104,13 @@ fn validate_witness_commitment_segment<'a>(
         .iter()
         .try_fold(0_u64, |acc, width| acc.checked_add(u64::from(*width)))
         .ok_or(LoadWitnessCommitmentSegmentsError::ColumnCountOverflow)?;
-    if parsed.trace_columns != trace_columns {
+    if witness.trace_columns != trace_columns {
         return Err(LoadWitnessCommitmentSegmentsError::ColumnCountMismatch { unit_index });
     }
-    if parsed.stages.len() != unit.stage_commit_widths.len() {
+    if witness.stages.len() != unit.stage_commit_widths.len() {
         return Err(LoadWitnessCommitmentSegmentsError::StageCountMismatch { unit_index });
     }
-    for (stage_index, stage) in parsed.stages.iter().enumerate() {
+    for (stage_index, stage) in witness.stages.iter().enumerate() {
         let expected_stage_index = u32::try_from(stage_index + 1)
             .map_err(|_| LoadWitnessCommitmentSegmentsError::StageIndexOverflow)?;
         if stage.stage_index != expected_stage_index {
@@ -127,7 +126,6 @@ fn validate_witness_commitment_segment<'a>(
     Ok(LoadedWitnessCommitmentSegmentRef {
         segment,
         identity,
-        trace_rows: parsed.trace_rows,
-        trace_columns: parsed.trace_columns,
+        witness,
     })
 }

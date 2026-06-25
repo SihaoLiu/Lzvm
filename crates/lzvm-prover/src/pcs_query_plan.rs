@@ -28,10 +28,7 @@ use lzvm_artifacts::pcs_query_segment::{
 };
 use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, witness_commitment_segment_id, WitnessCommitmentSegmentError,
-    WitnessCommitmentSegmentIdentity,
-};
+use lzvm_artifacts::witness_segment::WitnessCommitmentSegmentError;
 use lzvm_field::{Ext3, Felt};
 
 use crate::pcs_evaluation::{
@@ -52,7 +49,8 @@ use crate::unit_values::{
     validate_unit_values_units_match_query_units_from_segment, LoadUnitValuesSegmentError,
 };
 use crate::witness_commitment::{
-    load_witness_commitment_segment_refs, LoadWitnessCommitmentSegmentsError,
+    load_witness_commitment_segment_refs_with_shapes, LoadWitnessCommitmentSegmentsError,
+    LoadedWitnessCommitmentSegmentRef,
 };
 use crate::ProveSchedule;
 
@@ -246,11 +244,12 @@ pub fn validate_seeded_pcs_query_plan_segments(
         .ok_or(ValidatePcsQueryPlanSegmentsError::QueryPlan(
             LoadPcsQueryPlanSegmentError::MissingSegment,
         ))?;
-    let witness_segments = load_witness_commitment_segment_refs(&schedule.units, segments)
-        .map_err(ValidatePcsQueryPlanSegmentsError::Witness)?;
+    let witness_segments =
+        load_witness_commitment_segment_refs_with_shapes(&schedule.units, segments)
+            .map_err(ValidatePcsQueryPlanSegmentsError::Witness)?;
     let binding_segments = checked_proof_binding_segments(segments)
         .map_err(|id| ValidatePcsQueryPlanSegmentsError::DuplicateBindingSegment { id })?;
-    let expected_segment = build::build_pcs_query_plan_segment_with_binding_refs(
+    let expected_segment = build::build_pcs_query_plan_segment_with_loaded_binding_refs(
         schedule,
         public_values_hash,
         material_segment,
@@ -269,7 +268,7 @@ fn validate_transcript_query_plan_unit_inputs(
     query_units: &[PcsQueryPlanUnit],
     material: &PcsMaterialManifestSegment,
     public_values: &[Felt],
-    witness_segments: &[&ProofSegment],
+    witness_segments: &[LoadedWitnessCommitmentSegmentRef<'_>],
     segments: &[ProofSegment],
 ) -> Result<Vec<Ext3>, ValidatePcsQueryPlanSegmentsError> {
     let binding_segments = checked_proof_binding_segments(segments)
@@ -294,24 +293,13 @@ fn validate_transcript_query_plan_unit_inputs(
             .iter()
             .find(|unit| unit.unit_index == unit_index_u32)
             .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
-        let unit_count = u32::try_from(schedule.units.len())
-            .map_err(|_| ValidatePcsQueryPlanSegmentsError::WitnessSegmentIdOverflow)?;
-        let witness_segment_id = witness_commitment_segment_id(
-            unit_count,
-            WitnessCommitmentSegmentIdentity {
-                unit_index: unit_index_u32,
-                trace_instance_index: query_unit.trace_instance_index,
-            },
-        )
-        .map_err(|_| ValidatePcsQueryPlanSegmentsError::WitnessSegmentIdOverflow)?;
         let witness_segment = witness_segments
             .iter()
-            .find(|segment| segment.id == witness_segment_id)
+            .find(|segment| {
+                segment.identity.unit_index == unit_index_u32
+                    && segment.identity.trace_instance_index == query_unit.trace_instance_index
+            })
             .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
-        let witness =
-            parse_witness_commitment_segment(&witness_segment.data).map_err(|source| {
-                ValidatePcsQueryPlanSegmentsError::WitnessSegment { unit_index, source }
-            })?;
         let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_parsed_segment(
             unit_index,
             query_unit.trace_instance_index,
@@ -341,7 +329,7 @@ fn validate_transcript_query_plan_unit_inputs(
                 material: material_unit,
                 public_values,
                 unit_values: &unit_values,
-                witness: &witness,
+                witness: &witness_segment.witness,
                 evaluations: evaluation_unit,
                 fri: fri_unit,
                 root_challenge_draws: &unit.transcript_root_challenge_draws,
@@ -452,8 +440,9 @@ pub fn validate_transcript_pcs_query_plan_segments(
         .ok_or(ValidatePcsQueryPlanSegmentsError::QueryPlan(
             LoadPcsQueryPlanSegmentError::MissingSegment,
         ))?;
-    let witness_segments = load_witness_commitment_segment_refs(&schedule.units, segments)
-        .map_err(ValidatePcsQueryPlanSegmentsError::Witness)?;
+    let witness_segments =
+        load_witness_commitment_segment_refs_with_shapes(&schedule.units, segments)
+            .map_err(ValidatePcsQueryPlanSegmentsError::Witness)?;
     let material = parse_pcs_material_manifest_segment(&material_segment.data)
         .map_err(ValidatePcsQueryPlanSegmentsError::Material)?;
     if query_plan.units.is_empty() {
@@ -475,7 +464,7 @@ pub fn validate_transcript_pcs_query_plan_segments(
             .map_err(ValidatePcsQueryPlanSegmentsError::Build)?
             .nonce,
     );
-    let expected_segment = build::build_pcs_query_plan_segment_from_challenge_refs(
+    let expected_segment = build::build_pcs_query_plan_segment_from_loaded_challenge_refs(
         schedule,
         &witness_segments,
         final_query_challenge,

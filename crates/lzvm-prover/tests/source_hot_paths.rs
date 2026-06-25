@@ -7853,10 +7853,17 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
     assert!(
         optional_fri_validation.contains("validate_pcs_fri_opening_units(")
             && optional_fri_validation.contains("preloaded_proof_values")
+            && optional_fri_validation.contains("load_witness_commitment_segment_refs_with_shapes")
+            && optional_fri_validation
+                .contains("derive_pcs_transcript_unit_challenges_from_loaded_witness_segments")
             && optional_fri_validation
                 .contains("validate_verifier_query_outputs_from_segments_with_proof_values")
             && optional_fri_validation
                 .matches("load_pcs_query_plan_from_segments(")
+                .count()
+                == 1
+            && optional_fri_validation
+                .matches("load_witness_commitment_segment_refs_with_shapes(")
                 .count()
                 == 1
             && optional_fri_validation
@@ -7977,7 +7984,7 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
         "query plan validation should parse transcript payload segments once and reuse parsed units"
     );
     assert!(
-        query_plan_build_source.contains("hash_witness_commitment_segment_for_query_seed")
+        query_plan_build_source.contains("hash_loaded_witness_commitment_segment_for_query_seed")
             && query_plan_build_source.contains("stage.tree_digest"),
         "seeded query plan derivation should bind witness tree digests"
     );
@@ -7989,10 +7996,12 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     );
     assert!(
         query_plan_source.contains("load_witness_commitment_segment_refs")
-            && query_plan_source.contains("build_pcs_query_plan_segment_with_binding_refs")
-            && query_plan_source.contains("build_pcs_query_plan_segment_from_challenge_refs")
+            && query_plan_source.contains("load_witness_commitment_segment_refs_with_shapes")
+            && query_plan_source.contains("build_pcs_query_plan_segment_with_loaded_binding_refs")
+            && query_plan_source.contains("build_pcs_query_plan_segment_from_loaded_challenge_refs")
+            && !query_plan_source.contains("load_witness_commitment_segment_refs(")
             && !query_plan_source.contains("load_witness_commitment_segments("),
-        "query plan validation should borrow witness commitment segments without cloning payloads"
+        "query plan validation should borrow loaded witness commitment segments without cloning payloads"
     );
     assert!(
         prove_witness_tests_source
@@ -8001,6 +8010,8 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     );
     assert!(
         transcript_segments_source.contains("derive_pcs_transcript_challenges_from_segments")
+            && transcript_segments_source
+                .contains("derive_pcs_transcript_unit_challenges_from_loaded_witness_segments")
             && transcript_segments_source
                 .contains("validate_pcs_evaluation_units_match_query_units_from_segment")
             && transcript_segments_source
@@ -8016,7 +8027,8 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && !transcript_segments_source
                 .contains("load_pcs_evaluation_unit_for_identity_from_segments")
             && !transcript_segments_source.contains("load_unit_values_for_identity_from_segments")
-            && transcript_segments_source.contains("load_witness_commitment_segment_refs")
+            && transcript_segments_source
+                .contains("load_witness_commitment_segment_refs_with_shapes")
             && !transcript_segments_source.contains("load_witness_commitment_segments("),
         "transcript segment checks should retain query-unit matching for each opened artifact"
     );
@@ -8031,6 +8043,9 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && setup_preflight_source.contains("struct SetupPreflightTranscriptChallengeCache")
             && setup_preflight_source.contains("fn unit_challenges(")
             && setup_preflight_source.contains("fn flat_challenges(")
+            && setup_preflight_source.contains(
+                "derive_pcs_transcript_unit_challenges_from_loaded_witness_segments"
+            )
             && setup_preflight_source.contains("struct SetupPreflightPackedProofValueCache")
             && setup_preflight_source.contains("fn packed_values(")
             && setup_preflight_source.contains(

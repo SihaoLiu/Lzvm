@@ -6,10 +6,12 @@ use lzvm_artifacts::witness_segment::WitnessCommitmentSegmentError;
 
 use crate::pcs_challenge::PcsChallengeError;
 use crate::pcs_transcript::PcsTranscriptError;
+use crate::witness_commitment::LoadWitnessCommitmentSegmentsError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProvePcsQueryPlanSegmentError {
     MissingWitnessSegments,
+    WitnessSegments(LoadWitnessCommitmentSegmentsError),
     InvalidWitnessSegment {
         unit_index: usize,
         source: WitnessCommitmentSegmentError,
@@ -57,6 +59,9 @@ impl fmt::Display for ProvePcsQueryPlanSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingWitnessSegments => write!(f, "prove PCS query plan has no witness segments"),
+            Self::WitnessSegments(error) => {
+                write!(f, "prove PCS query plan witness segments are invalid: {error}")
+            }
             Self::InvalidWitnessSegment { unit_index, source } => write!(
                 f,
                 "prove PCS query plan witness segment for unit {unit_index} is invalid: {source}"
@@ -125,6 +130,7 @@ impl fmt::Display for ProvePcsQueryPlanSegmentError {
 impl std::error::Error for ProvePcsQueryPlanSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::WitnessSegments(error) => Some(error),
             Self::InvalidWitnessSegment { source, .. } => Some(source),
             Self::Challenge(error) => Some(error),
             Self::Transcript(error) => Some(error),
@@ -154,6 +160,12 @@ impl From<PcsQueryPlanSegmentEncodeError> for ProvePcsQueryPlanSegmentError {
 impl From<PcsChallengeError> for ProvePcsQueryPlanSegmentError {
     fn from(error: PcsChallengeError) -> Self {
         Self::Challenge(error)
+    }
+}
+
+impl From<LoadWitnessCommitmentSegmentsError> for ProvePcsQueryPlanSegmentError {
+    fn from(error: LoadWitnessCommitmentSegmentsError) -> Self {
+        Self::WitnessSegments(error)
     }
 }
 

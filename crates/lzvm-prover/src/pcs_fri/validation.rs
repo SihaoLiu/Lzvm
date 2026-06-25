@@ -1,4 +1,5 @@
 use lzvm_artifacts::pcs_fri_segment::{PcsFriOpeningUnitSegment, PCS_FRI_OPENING_SEGMENT_ID};
+use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{Ext3, Felt};
@@ -18,13 +19,15 @@ use crate::pcs_query_plan::{
     load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
 };
 use crate::pcs_transcript_segments::{
-    derive_pcs_transcript_unit_challenges_from_proof_segments, PcsTranscriptUnitChallenges,
+    derive_pcs_transcript_unit_challenges_from_loaded_witness_segments,
+    PcsTranscriptProofSegmentsError, PcsTranscriptUnitChallenges,
 };
 use crate::verifier_query::{
     validate_verifier_query_outputs_from_segments,
     validate_verifier_query_outputs_from_segments_with_proof_values,
     VerifierFriQueryOutputSegmentsRequest,
 };
+use crate::witness_commitment::load_witness_commitment_segment_refs_with_shapes;
 use crate::ProveUnitSchedule;
 
 pub fn validate_pcs_fri_opening_segments(
@@ -287,11 +290,30 @@ fn validate_optional_pcs_fri_opening_proof_segments_inner(
     let transcript_challenges = match precomputed_transcript_challenges {
         Some(transcript_challenges) => transcript_challenges,
         None => {
+            if !request
+                .segments
+                .iter()
+                .any(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+            {
+                return Err(ValidateOptionalPcsFriOpeningProofSegmentsError::Transcript(
+                    PcsTranscriptProofSegmentsError::MissingMaterialSegment,
+                ));
+            }
+            let witness_segments = load_witness_commitment_segment_refs_with_shapes(
+                &request.schedule.units,
+                request.segments,
+            )
+            .map_err(|error| {
+                ValidateOptionalPcsFriOpeningProofSegmentsError::Transcript(
+                    PcsTranscriptProofSegmentsError::Witness(error),
+                )
+            })?;
             owned_transcript_challenges =
-                derive_pcs_transcript_unit_challenges_from_proof_segments(
+                derive_pcs_transcript_unit_challenges_from_loaded_witness_segments(
                     request.schedule,
                     request.public_values,
                     request.segments,
+                    &witness_segments,
                 )
                 .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Transcript)?;
             &owned_transcript_challenges

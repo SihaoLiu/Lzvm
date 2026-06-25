@@ -5,10 +5,7 @@ use lzvm_artifacts::pcs_material_segment::{
     PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, witness_commitment_segment_id, WitnessCommitmentSegmentError,
-    WitnessCommitmentSegmentIdentity,
-};
+use lzvm_artifacts::witness_segment::WitnessCommitmentSegmentError;
 use lzvm_field::{Ext3, Felt};
 
 use crate::pcs_evaluation::{
@@ -30,7 +27,8 @@ use crate::unit_values::{
     validate_unit_values_units_match_query_units_from_segment, LoadUnitValuesSegmentError,
 };
 use crate::witness_commitment::{
-    load_witness_commitment_segment_refs, LoadWitnessCommitmentSegmentsError,
+    load_witness_commitment_segment_refs_with_shapes, LoadWitnessCommitmentSegmentsError,
+    LoadedWitnessCommitmentSegmentRef,
 };
 use crate::ProveSchedule;
 
@@ -154,8 +152,9 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
         .map_err(PcsTranscriptProofSegmentsError::Material)?;
     let fri = load_pcs_fri_opening_segment_from_segments(segments)
         .map_err(|error| PcsTranscriptProofSegmentsError::Fri(error.into()))?;
-    let witness_segments = load_witness_commitment_segment_refs(&schedule.units, segments)
-        .map_err(PcsTranscriptProofSegmentsError::Witness)?;
+    let witness_segments =
+        load_witness_commitment_segment_refs_with_shapes(&schedule.units, segments)
+            .map_err(PcsTranscriptProofSegmentsError::Witness)?;
     let binding_segments = checked_proof_binding_segments(segments)
         .map_err(|id| PcsTranscriptProofSegmentsError::DuplicateBindingSegment { id })?;
     let evaluation_segment = load_pcs_evaluation_segment_from_segments(segments)
@@ -176,24 +175,13 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
             .iter()
             .find(|unit| unit.unit_index == query_unit.unit_index)
             .ok_or(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index })?;
-        let unit_count = u32::try_from(schedule.units.len())
-            .map_err(|_| PcsTranscriptProofSegmentsError::WitnessSegmentIdOverflow)?;
-        let witness_segment_id = witness_commitment_segment_id(
-            unit_count,
-            WitnessCommitmentSegmentIdentity {
-                unit_index: query_unit.unit_index,
-                trace_instance_index: query_unit.trace_instance_index,
-            },
-        )
-        .map_err(|_| PcsTranscriptProofSegmentsError::WitnessSegmentIdOverflow)?;
         let witness_segment = witness_segments
             .iter()
-            .find(|segment| segment.id == witness_segment_id)
+            .find(|segment| {
+                segment.identity.unit_index == query_unit.unit_index
+                    && segment.identity.trace_instance_index == query_unit.trace_instance_index
+            })
             .ok_or(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index })?;
-        let witness =
-            parse_witness_commitment_segment(&witness_segment.data).map_err(|source| {
-                PcsTranscriptProofSegmentsError::WitnessSegment { unit_index, source }
-            })?;
         let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_parsed_segment(
             unit_index,
             query_unit.trace_instance_index,
@@ -223,7 +211,115 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
                 material: material_unit,
                 public_values,
                 unit_values: &unit_values,
-                witness: &witness,
+                witness: &witness_segment.witness,
+                evaluations: evaluation_unit,
+                fri: fri_unit,
+                root_challenge_draws: &unit.transcript_root_challenge_draws,
+                evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+                binding_segments: &binding_segments,
+            })
+            .map_err(PcsTranscriptProofSegmentsError::Transcript)?;
+        unit_challenges.shrink_to_fit();
+        units.push(PcsTranscriptUnitChallenges {
+            unit_index: query_unit.unit_index,
+            trace_instance_index: query_unit.trace_instance_index,
+            challenges: unit_challenges,
+        });
+    }
+    validate_pcs_evaluation_units_match_query_units_from_segment(
+        &query_plan.units,
+        &evaluation_segment,
+    )
+    .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
+    validate_pcs_fri_opening_units_match_query_units_from_segment(&query_plan.units, &fri)
+        .map_err(PcsTranscriptProofSegmentsError::Fri)?;
+    validate_unit_values_units_match_query_units_from_segment(
+        &query_plan.units,
+        unit_values_segment.as_ref(),
+    )
+    .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
+
+    Ok(units)
+}
+
+pub fn derive_pcs_transcript_unit_challenges_from_loaded_witness_segments<'a>(
+    schedule: &ProveSchedule,
+    public_values: &[Felt],
+    segments: &[ProofSegment],
+    witness_segments: &[LoadedWitnessCommitmentSegmentRef<'a>],
+) -> Result<Vec<PcsTranscriptUnitChallenges>, PcsTranscriptProofSegmentsError> {
+    let mut material_segments = segments
+        .iter()
+        .filter(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID);
+    let material_segment = material_segments
+        .next()
+        .ok_or(PcsTranscriptProofSegmentsError::MissingMaterialSegment)?;
+    if material_segments.next().is_some() {
+        return Err(PcsTranscriptProofSegmentsError::DuplicateMaterialSegment);
+    }
+    let query_plan = load_pcs_query_plan_from_segments(segments)
+        .map_err(PcsTranscriptProofSegmentsError::QueryPlan)?;
+    let material = parse_pcs_material_manifest_segment(&material_segment.data)
+        .map_err(PcsTranscriptProofSegmentsError::Material)?;
+    let fri = load_pcs_fri_opening_segment_from_segments(segments)
+        .map_err(|error| PcsTranscriptProofSegmentsError::Fri(error.into()))?;
+    let binding_segments = checked_proof_binding_segments(segments)
+        .map_err(|id| PcsTranscriptProofSegmentsError::DuplicateBindingSegment { id })?;
+    let evaluation_segment = load_pcs_evaluation_segment_from_segments(segments)
+        .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
+    let unit_values_segment = load_unit_values_segment_from_segments(segments)
+        .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
+    let mut units = Vec::new();
+
+    for query_unit in &query_plan.units {
+        let unit_index = usize::try_from(query_unit.unit_index)
+            .map_err(|_| PcsTranscriptProofSegmentsError::UnitIndexOverflow)?;
+        let unit = schedule
+            .units
+            .get(unit_index)
+            .ok_or(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index })?;
+        let material_unit = material
+            .units
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index })?;
+        let witness_segment = witness_segments
+            .iter()
+            .find(|segment| {
+                segment.identity.unit_index == query_unit.unit_index
+                    && segment.identity.trace_instance_index == query_unit.trace_instance_index
+            })
+            .ok_or(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index })?;
+        let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_parsed_segment(
+            unit_index,
+            query_unit.trace_instance_index,
+            unit,
+            &evaluation_segment,
+        )
+        .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
+        let fri_unit = fri
+            .units
+            .iter()
+            .find(|unit| {
+                unit.unit_index == query_unit.unit_index
+                    && unit.trace_instance_index == query_unit.trace_instance_index
+            })
+            .ok_or(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index })?;
+        let unit_values = load_unit_values_for_identity_from_parsed_segment(
+            unit_index,
+            query_unit.trace_instance_index,
+            &unit.unit_value_map,
+            unit_values_segment.as_ref(),
+        )
+        .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
+        let mut unit_challenges =
+            derive_pcs_transcript_challenges_from_segments(PcsTranscriptSegmentInputs {
+                unit_index,
+                unit,
+                material: material_unit,
+                public_values,
+                unit_values: &unit_values,
+                witness: &witness_segment.witness,
                 evaluations: evaluation_unit,
                 fri: fri_unit,
                 root_challenge_draws: &unit.transcript_root_challenge_draws,
