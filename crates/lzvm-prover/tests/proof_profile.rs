@@ -467,6 +467,155 @@ fn proof_profile_check_tool_can_include_gpu_memory_preflight() {
 
 #[cfg(unix)]
 #[test]
+fn proof_profile_records_gpu_memory_preflight_in_json() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-json-gpu-memory-{}",
+        std::process::id()
+    ));
+    let profiler_path = output_dir.join("fake-nsys");
+    let smi_path = output_dir.join("nvidia-smi-ready");
+    let profile_dir = output_dir.join("profiles");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    write_executable_script(
+        &profiler_path,
+        concat!(
+            "#!/usr/bin/env python3\n",
+            "import pathlib, subprocess, sys\n",
+            "args = sys.argv[1:]\n",
+            "if 'profile' in args and '--output' in args:\n",
+            "    prefix = pathlib.Path(args[args.index('--output') + 1])\n",
+            "    pathlib.Path(str(prefix) + '.nsys-rep').write_text('report\\n', encoding='utf-8')\n",
+            "if '--' in args:\n",
+            "    command = args[args.index('--') + 1:]\n",
+            "    if command:\n",
+            "        raise SystemExit(subprocess.run(command).returncode)\n",
+        ),
+    );
+    write_executable_script(
+        &smi_path,
+        "#!/usr/bin/env python3\nprint('0, GPU-free, 24576, 4096, 20480')\n",
+    );
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("nsys")
+        .arg("--nsys-command")
+        .arg(&profiler_path)
+        .arg("--skip-nsys-export")
+        .arg("--check-gpu-memory")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path)
+        .arg("--output-dir")
+        .arg(&profile_dir)
+        .arg("--name")
+        .arg("json-gpu")
+        .arg("--")
+        .arg("python3")
+        .arg("-c")
+        .arg("print('timing_total_ms=1000')")
+        .env_remove("CUDA_VISIBLE_DEVICES")
+        .output()
+        .expect("proof profile should run with GPU memory preflight");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let json_path = profile_dir.join("json-gpu.profile.json");
+    let json_text = std::fs::read_to_string(&json_path).unwrap_or_default();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(
+        success,
+        "profile should pass: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("gpu_memory_status=ready\n"),
+        "profile stdout should report the GPU memory preflight: {stdout}"
+    );
+    assert!(
+        json_text.contains("\"gpu_memory_check\"")
+            && json_text.contains("\"status\": \"ready\"")
+            && json_text.contains("\"free_mib\": 20480")
+            && json_text.contains("\"selected_uuid\": \"GPU-free\""),
+        "profile JSON should record GPU memory preflight details: {json_text}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn proof_profile_records_low_gpu_memory_preflight_in_json() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-json-low-gpu-memory-{}",
+        std::process::id()
+    ));
+    let profiler_path = output_dir.join("fake-nsys");
+    let profiler_marker = output_dir.join("profiler-ran");
+    let smi_path = output_dir.join("nvidia-smi-low");
+    let profile_dir = output_dir.join("profiles");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    write_executable_script(
+        &profiler_path,
+        &format!(
+            "#!/usr/bin/env python3\nimport pathlib\npathlib.Path({:?}).write_text('ran\\n', encoding='utf-8')\n",
+            profiler_marker.to_string_lossy()
+        ),
+    );
+    write_executable_script(
+        &smi_path,
+        "#!/usr/bin/env python3\nprint('0, GPU-busy, 24576, 24288, 288')\n",
+    );
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("nsys")
+        .arg("--nsys-command")
+        .arg(&profiler_path)
+        .arg("--skip-nsys-export")
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path)
+        .arg("--output-dir")
+        .arg(&profile_dir)
+        .arg("--name")
+        .arg("json-low-gpu")
+        .arg("--")
+        .arg("python3")
+        .arg("-c")
+        .arg("print('timing_total_ms=1000')")
+        .env_remove("CUDA_VISIBLE_DEVICES")
+        .output()
+        .expect("proof profile should run GPU memory preflight");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let json_path = profile_dir.join("json-low-gpu.profile.json");
+    let json_text = std::fs::read_to_string(&json_path).unwrap_or_default();
+    let profiler_ran = profiler_marker.exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(!success, "low GPU memory should fail the preflight");
+    assert!(
+        stdout.contains("gpu_memory_status=low\n"),
+        "profile stdout should report low GPU memory: {stdout}"
+    );
+    assert!(
+        !profiler_ran,
+        "profile command should not run after a failed GPU memory preflight"
+    );
+    assert!(
+        json_text.contains("\"status\": \"gpu_memory_failed\"")
+            && json_text.contains("\"profile_exit_code\": 1")
+            && json_text.contains("\"gpu_memory_check\"")
+            && json_text.contains("\"status\": \"low\"")
+            && json_text.contains("\"free_mib\": 288"),
+        "profile JSON should record failed GPU memory preflight details: {json_text}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn proof_profile_check_tool_reports_ready_custom_profiler() {
     let output_dir = workspace_root().join(format!(
         "temp/proof-profile-check-tool-ready-{}",

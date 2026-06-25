@@ -447,6 +447,7 @@ def write_profile_json(
     profile_exit_code: int | None = None,
     proof_timing_summary_written: bool = False,
     tool_summary_paths: list[Path] | None = None,
+    gpu_memory_check: dict[str, object] | None = None,
     error: str | None = None,
 ) -> None:
     payload = {
@@ -465,6 +466,8 @@ def write_profile_json(
             display_path_for_shell(path, root) for path in (tool_summary_paths or [])
         ],
     }
+    if gpu_memory_check is not None:
+        payload["gpu_memory_check"] = gpu_memory_check
     if error is not None:
         payload["error"] = error
     outputs["profile_json"].write_text(
@@ -654,19 +657,24 @@ def first_diagnostic_line(text: str) -> str:
     return lines[0][:200] if lines else ""
 
 
-def print_gpu_memory_check(args: argparse.Namespace, root: Path) -> bool:
+def gpu_memory_check_payload(
+    args: argparse.Namespace,
+    root: Path,
+) -> tuple[bool, dict[str, object]]:
     source, raw = gpu_memory_tool_spec(args)
     resolved = executable_path(raw, root)
-    print(f"gpu_memory_source={source}")
-    print(f"gpu_memory_command={raw}")
-    print(f"gpu_memory_min_free_mib={args.min_gpu_free_mib}")
+    payload: dict[str, object] = {
+        "source": source,
+        "command": raw,
+        "min_free_mib": args.min_gpu_free_mib,
+    }
     visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
     if visible_devices is not None:
-        print(f"gpu_memory_cuda_visible_devices={visible_devices}")
+        payload["cuda_visible_devices"] = visible_devices
     if resolved is None:
-        print("gpu_memory_status=missing")
-        return False
-    print(f"gpu_memory_resolved={display_path_for_shell(resolved, root)}")
+        payload["status"] = "missing"
+        return False, payload
+    payload["resolved"] = display_path_for_shell(resolved, root)
     query = [
         str(resolved),
         "--query-gpu=index,uuid,memory.total,memory.used,memory.free",
@@ -683,37 +691,64 @@ def print_gpu_memory_check(args: argparse.Namespace, root: Path) -> bool:
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
-        print("gpu_memory_status=query_failed")
-        print(f"gpu_memory_error={error}")
-        return False
+        payload["status"] = "query_failed"
+        payload["error"] = str(error)
+        return False, payload
     if result.returncode != 0:
-        print("gpu_memory_status=query_failed")
-        print(f"gpu_memory_exit_code={result.returncode}")
+        payload["status"] = "query_failed"
+        payload["exit_code"] = result.returncode
         diagnostic = first_diagnostic_line(result.stderr)
         if diagnostic:
-            print(f"gpu_memory_error={diagnostic}")
-        return False
+            payload["error"] = diagnostic
+        return False, payload
     try:
         rows = parse_gpu_memory_rows(result.stdout)
     except ValueError as error:
-        print("gpu_memory_status=parse_failed")
-        print(f"gpu_memory_error={error}")
-        return False
+        payload["status"] = "parse_failed"
+        payload["error"] = str(error)
+        return False, payload
     try:
         selected = select_default_cuda_gpu_memory_row(rows)
     except ValueError as error:
-        print("gpu_memory_status=device_unavailable")
-        print(f"gpu_memory_error={error}")
-        return False
-    print(f"gpu_memory_device_count={len(rows)}")
-    print(f"gpu_memory_selected_index={selected.index}")
+        payload["status"] = "device_unavailable"
+        payload["error"] = str(error)
+        return False, payload
+    payload["device_count"] = len(rows)
+    payload["selected_index"] = selected.index
     if selected.uuid is not None:
-        print(f"gpu_memory_selected_uuid={selected.uuid}")
-    print(f"gpu_memory_total_mib={selected.total}")
-    print(f"gpu_memory_used_mib={selected.used}")
-    print(f"gpu_memory_free_mib={selected.free}")
+        payload["selected_uuid"] = selected.uuid
+    payload["total_mib"] = selected.total
+    payload["used_mib"] = selected.used
+    payload["free_mib"] = selected.free
     ready = selected.free >= args.min_gpu_free_mib
-    print(f"gpu_memory_status={'ready' if ready else 'low'}")
+    payload["status"] = "ready" if ready else "low"
+    return ready, payload
+
+
+def print_gpu_memory_payload(payload: dict[str, object]) -> None:
+    for key, output_name in [
+        ("source", "gpu_memory_source"),
+        ("command", "gpu_memory_command"),
+        ("min_free_mib", "gpu_memory_min_free_mib"),
+        ("cuda_visible_devices", "gpu_memory_cuda_visible_devices"),
+        ("resolved", "gpu_memory_resolved"),
+        ("device_count", "gpu_memory_device_count"),
+        ("selected_index", "gpu_memory_selected_index"),
+        ("selected_uuid", "gpu_memory_selected_uuid"),
+        ("total_mib", "gpu_memory_total_mib"),
+        ("used_mib", "gpu_memory_used_mib"),
+        ("free_mib", "gpu_memory_free_mib"),
+        ("status", "gpu_memory_status"),
+        ("exit_code", "gpu_memory_exit_code"),
+        ("error", "gpu_memory_error"),
+    ]:
+        if key in payload:
+            print(f"{output_name}={payload[key]}")
+
+
+def print_gpu_memory_check(args: argparse.Namespace, root: Path) -> bool:
+    ready, payload = gpu_memory_check_payload(args, root)
+    print_gpu_memory_payload(payload)
     return ready
 
 
@@ -723,8 +758,6 @@ def run_profile(args: argparse.Namespace) -> int:
     if not command:
         raise SystemExit("profiled command is required after --")
     output_dir, cwd = validate_static_profile_args(args, root)
-    if args.check_gpu_memory and not print_gpu_memory_check(args, root):
-        return 1
 
     if args.tool == "nsys":
         profile_command, outputs = build_nsys_command(args, output_dir, command)
@@ -734,6 +767,26 @@ def run_profile(args: argparse.Namespace) -> int:
         profile_command, outputs = build_ncu_command(args, output_dir, command)
         print("profile_command=" + shell_join(profile_command))
         print_ncu_outputs(outputs, root)
+
+    gpu_memory_payload = None
+    if args.check_gpu_memory:
+        gpu_ready, gpu_memory_payload = gpu_memory_check_payload(args, root)
+        print_gpu_memory_payload(gpu_memory_payload)
+        if not gpu_ready:
+            if not args.dry_run:
+                prepare_output_dirs(output_dir, outputs)
+                write_profile_json(
+                    args,
+                    root,
+                    cwd,
+                    profile_command,
+                    command,
+                    outputs,
+                    "gpu_memory_failed",
+                    profile_exit_code=1,
+                    gpu_memory_check=gpu_memory_payload,
+                )
+            return 1
 
     if args.dry_run:
         return 0
@@ -746,6 +799,7 @@ def run_profile(args: argparse.Namespace) -> int:
         command,
         outputs,
         "running",
+        gpu_memory_check=gpu_memory_payload,
     )
     profile_code = run_profile_command(
         profile_command,
@@ -763,6 +817,7 @@ def run_profile(args: argparse.Namespace) -> int:
             outputs,
             "profile_failed",
             profile_exit_code=profile_code,
+            gpu_memory_check=gpu_memory_payload,
         )
         return profile_code
     proof_timing_summary_written = False
@@ -819,6 +874,7 @@ def run_profile(args: argparse.Namespace) -> int:
                 profile_exit_code=profile_code,
                 proof_timing_summary_written=False,
                 tool_summary_paths=tool_summary_paths,
+                gpu_memory_check=gpu_memory_payload,
                 error=str(error),
             )
             raise
@@ -850,6 +906,7 @@ def run_profile(args: argparse.Namespace) -> int:
                 profile_exit_code=profile_code,
                 proof_timing_summary_written=False,
                 tool_summary_paths=tool_summary_paths,
+                gpu_memory_check=gpu_memory_payload,
                 error=str(error),
             )
             raise
@@ -864,6 +921,7 @@ def run_profile(args: argparse.Namespace) -> int:
         profile_exit_code=profile_code,
         proof_timing_summary_written=proof_timing_summary_written,
         tool_summary_paths=tool_summary_paths,
+        gpu_memory_check=gpu_memory_payload,
     )
     return 0
 
