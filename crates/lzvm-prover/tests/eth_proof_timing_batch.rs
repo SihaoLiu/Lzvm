@@ -2069,6 +2069,48 @@ fn eth_proof_timing_batch_rejects_env_template_outside_temp() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn eth_proof_timing_batch_rejects_symlinked_env_template() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = ProofFixture::new("eth-proof-timing-batch-env-template-symlink");
+    let template_path = fixture.dir.join("template.env");
+    let redirected = fixture.dir.join("redirected.env");
+    std::fs::write(&redirected, "sentinel\n").expect("redirect target should write");
+    symlink(&redirected, &template_path).expect("template symlink fixture should be created");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--write-env-template")
+        .arg(&template_path);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env template should reject symlink");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let redirected_text =
+        std::fs::read_to_string(&redirected).expect("redirect target should remain readable");
+    fixture.cleanup();
+
+    assert!(!success, "env template should reject symlinked paths");
+    assert!(
+        stdout.is_empty(),
+        "failed env template write should not report commands: {stdout}"
+    );
+    assert!(
+        stderr.contains("--write-env-template must not be a symlink"),
+        "env template symlink rejection should explain the path constraint: stderr={stderr}"
+    );
+    assert_eq!(
+        redirected_text, "sentinel\n",
+        "rejected env template should not overwrite a symlink target"
+    );
+}
+
 #[test]
 fn eth_proof_timing_batch_check_env_rejects_missing_config() {
     let mut command = Command::new(script_path());

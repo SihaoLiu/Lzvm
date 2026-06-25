@@ -125,6 +125,11 @@ def require_workspace_temp_path(path: Path, root: Path, label: str) -> Path:
     return path
 
 
+def reject_symlinked_output_path(path: Path, label: str) -> None:
+    if path.is_symlink():
+        raise SystemExit(f"{label} must not be a symlink: {path}")
+
+
 def parse_env_file_assignment(line: str, path: Path, line_number: int) -> tuple[str, str] | None:
     try:
         parts = shlex.split(line, comments=True, posix=True)
@@ -459,6 +464,7 @@ def write_env_template(args: argparse.Namespace, root: Path) -> None:
     profile_command = shell_join([*base_parts, "--print-profile-commands"])
     run_command = shell_join([*base_parts, "--summary", "real proof timing"])
     path.parent.mkdir(parents=True, exist_ok=True)
+    reject_symlinked_output_path(path, "--write-env-template")
     path.write_text(env_template_text(args, root), encoding="utf-8")
 
     print(f"env_template={env_path}")
