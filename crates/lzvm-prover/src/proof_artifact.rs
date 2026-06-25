@@ -749,8 +749,8 @@ fn build_witness_proof_artifact_for_unit_inner(
             timing.add_contribution_segment(contribution_start.elapsed());
         }
         if let Some(contribution_segment) = contribution_segment {
-            let entries = contribution_segment.entries;
-            segments.push(contribution_segment.segment);
+            let BuiltWitnessContributionSegment { segment, entries } = contribution_segment;
+            segments.push(segment);
             Some(entries)
         } else {
             None
@@ -776,9 +776,11 @@ fn build_witness_proof_artifact_for_unit_inner(
             request.catalog,
             &proof,
             public_values,
-            binding_segments.challenge_values.as_deref(),
-            Some(&request.output.auxiliary_inputs().proof_values),
-            Some(contribution_entries),
+            preloaded_contribution_proof_data(
+                &binding_segments,
+                Some(&request.output.auxiliary_inputs().proof_values),
+                Some(contribution_entries),
+            ),
             timing.as_deref_mut(),
         );
         if let Some(timing) = timing {
@@ -841,8 +843,11 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
     if let Some(proof_values_segment) = proof_values_segment {
         segments.push(proof_values_segment);
     }
-    let contribution_entries = contribution_segment.entries;
-    segments.push(contribution_segment.segment);
+    let BuiltWitnessContributionSegment {
+        segment,
+        entries: contribution_entries,
+    } = contribution_segment;
+    segments.push(segment);
     append_binding_segments(&mut segments, &binding_segments.segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
@@ -854,9 +859,11 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
             request.catalog,
             &proof,
             public_values,
-            binding_segments.challenge_values.as_deref(),
-            Some(&request.output.auxiliary_inputs().proof_values),
-            Some(&contribution_entries),
+            preloaded_contribution_proof_data(
+                &binding_segments,
+                Some(&request.output.auxiliary_inputs().proof_values),
+                Some(&contribution_entries),
+            ),
             None,
         )?;
     }
@@ -939,8 +946,11 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
     if let Some(proof_values_segment) = proof_values_segment {
         segments.push(proof_values_segment);
     }
-    let contribution_entries = contribution_segment.entries;
-    segments.push(contribution_segment.segment);
+    let BuiltWitnessContributionSegment {
+        segment,
+        entries: contribution_entries,
+    } = contribution_segment;
+    segments.push(segment);
     append_binding_segments(&mut segments, &binding_segments.segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
@@ -952,9 +962,11 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
             request.catalog,
             &proof,
             public_values,
-            binding_segments.challenge_values.as_deref(),
-            Some(&proof_values),
-            Some(&contribution_entries),
+            preloaded_contribution_proof_data(
+                &binding_segments,
+                Some(&proof_values),
+                Some(&contribution_entries),
+            ),
             None,
         )?;
     }
@@ -1070,8 +1082,8 @@ fn build_witness_proof_artifact_for_all_units_inner(
             timing.add_contribution_segment(contribution_start.elapsed());
         }
         if let Some(contribution_segment) = contribution_segment {
-            let entries = contribution_segment.entries;
-            proof.segments.push(contribution_segment.segment);
+            let BuiltWitnessContributionSegment { segment, entries } = contribution_segment;
+            proof.segments.push(segment);
             Some(entries)
         } else {
             None
@@ -1094,9 +1106,11 @@ fn build_witness_proof_artifact_for_all_units_inner(
             request.catalog,
             &proof,
             public_values,
-            binding_segments.challenge_values.as_deref(),
-            Some(&proof_values),
-            Some(contribution_entries),
+            preloaded_contribution_proof_data(
+                &binding_segments,
+                Some(&proof_values),
+                Some(contribution_entries),
+            ),
             timing.as_deref_mut(),
         );
         if let Some(timing) = timing {
@@ -1190,9 +1204,7 @@ fn validate_contribution_proof_output(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
     public_values: &PublicValues,
-    preloaded_challenge_values: Option<&[[u64; 3]]>,
-    preloaded_packed_proof_values: Option<&[Felt]>,
-    preloaded_contribution_entries: Option<&[ProveContributionEntry]>,
+    preloaded: PreloadedContributionProofData<'_>,
     timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<(), String> {
     validate_setup_preflight_hashes(catalog, proof, public_values)
@@ -1206,9 +1218,7 @@ fn validate_contribution_proof_output(
             catalog,
             proof,
             public_values,
-            preloaded_challenge_values,
-            preloaded_packed_proof_values,
-            preloaded_contribution_entries,
+            preloaded,
             timing,
         )?;
     }
@@ -1219,13 +1229,11 @@ fn validate_contribution_proof_challenge_values(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
     public_values: &PublicValues,
-    preloaded_challenge_values: Option<&[[u64; 3]]>,
-    preloaded_packed_proof_values: Option<&[Felt]>,
-    preloaded_contribution_entries: Option<&[ProveContributionEntry]>,
+    preloaded: PreloadedContributionProofData<'_>,
     timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<(), String> {
     let owned_challenge_values;
-    let challenge_values = match preloaded_challenge_values {
+    let challenge_values = match preloaded.challenge_values {
         Some(challenge_values) => challenge_values,
         None => {
             let segment = proof
@@ -1245,7 +1253,7 @@ fn validate_contribution_proof_challenge_values(
     let public_fields = public_values_as_fields(public_values)
         .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
     let owned_packed_proof_values;
-    let packed_proof_values = match preloaded_packed_proof_values {
+    let packed_proof_values = match preloaded.packed_proof_values {
         Some(packed_proof_values) => packed_proof_values,
         None => {
             let proof_values =
@@ -1258,7 +1266,7 @@ fn validate_contribution_proof_challenge_values(
         }
     };
     let challenge_start = Instant::now();
-    let expected = match preloaded_contribution_entries {
+    let expected = match preloaded.contribution_entries {
         Some(entries) => derive_global_challenge_from_loaded_contributions(
             &catalog.layout.global_info,
             &public_fields,
@@ -1293,6 +1301,13 @@ struct ProofBindingSegments {
     challenge_values: Option<Vec<[u64; 3]>>,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct PreloadedContributionProofData<'a> {
+    challenge_values: Option<&'a [[u64; 3]]>,
+    packed_proof_values: Option<&'a [Felt]>,
+    contribution_entries: Option<&'a [ProveContributionEntry]>,
+}
+
 fn build_proof_binding_segments(
     cache: Option<&ProgramImageCommitmentCache>,
     eth_block_input: Option<&EthBlockInput>,
@@ -1322,6 +1337,18 @@ fn build_proof_binding_segments(
         segments,
         challenge_values,
     })
+}
+
+fn preloaded_contribution_proof_data<'a>(
+    binding_segments: &'a ProofBindingSegments,
+    packed_proof_values: Option<&'a [Felt]>,
+    contribution_entries: Option<&'a [ProveContributionEntry]>,
+) -> PreloadedContributionProofData<'a> {
+    PreloadedContributionProofData {
+        challenge_values: binding_segments.challenge_values.as_deref(),
+        packed_proof_values,
+        contribution_entries,
+    }
 }
 
 fn append_binding_segments(segments: &mut Vec<ProofSegment>, binding_segments: &[ProofSegment]) {
