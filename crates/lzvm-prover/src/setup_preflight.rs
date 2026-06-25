@@ -960,8 +960,8 @@ fn validate_optional_unit_value_segments(
         Some(&unit_values),
     )
     .map_err(SetupPreflightError::UnitValues)?;
-    for unit_value in &unit_values.units {
-        let unit_index = usize::try_from(unit_value.unit_index).map_err(|_| {
+    for query_unit in &query_plan.units {
+        let unit_index = usize::try_from(query_unit.unit_index).map_err(|_| {
             SetupPreflightError::UnitValues(LoadUnitValuesSegmentError::UnitIndexOverflow {
                 unit_index: usize::MAX,
             })
@@ -974,7 +974,7 @@ fn validate_optional_unit_value_segments(
             ))?;
         load_unit_values_for_identity_from_parsed_segment(
             unit_index,
-            unit_value.trace_instance_index,
+            query_unit.trace_instance_index,
             &unit.unit_value_map,
             Some(&unit_values),
         )

@@ -20,10 +20,13 @@ use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
 use lzvm_artifacts::pcs_query_segment::parse_pcs_query_plan_segment;
 use lzvm_artifacts::proof::{ProofArtifact, ProofArtifactError, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, PublicValueEntry, PublicValues};
-use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
+use lzvm_artifacts::setup_info::{FriStep, StageValue, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::trace_constraint_segment::{
     encode_trace_constraint_segment, TraceConstraintSegment, TraceConstraintUnitSegment,
     TRACE_CONSTRAINT_SEGMENT_ID,
+};
+use lzvm_artifacts::unit_values_segment::{
+    encode_unit_values_segment, UnitValuesSegment, UnitValuesUnitSegment, UNIT_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
@@ -49,6 +52,7 @@ use lzvm_prover::setup_preflight::{
     validate_setup_preflight, validate_setup_preflight_hashes, SetupPreflightError,
     SetupPreflightReport,
 };
+use lzvm_prover::unit_values::LoadUnitValuesSegmentError;
 use lzvm_prover::witness_commitment::{
     commit_witness_stage_leaves, extend_witness_stage_leaves, open_witness_stage_commitment,
     WitnessStageOpening,
@@ -154,6 +158,18 @@ fn sample_catalog_with_fri_unit() -> KeyDirectoryCatalog {
     catalog
 }
 
+fn sample_catalog_with_unit_value_units() -> KeyDirectoryCatalog {
+    let mut catalog = sample_catalog();
+    catalog.layout.global_info.air_groups = vec!["group-a".to_owned()];
+    catalog.layout.global_info.n_publics = 0;
+    catalog.layout.global_info.publics_map.clear();
+    catalog.units = vec![
+        sample_fri_unit_with_unit_values(0, "unit-value-a"),
+        sample_fri_unit_with_unit_values(1, "unit-value-b"),
+    ];
+    catalog
+}
+
 fn sample_fri_unit() -> KeyUnitCatalogEntry {
     let setup = sample_fri_setup();
     let pcs_plan = derive_pcs_setup_plan(&setup).expect("PCS setup plan should derive");
@@ -211,6 +227,28 @@ fn sample_fri_unit() -> KeyUnitCatalogEntry {
             leaf_byte_count: 64,
             node_byte_count: 160,
         }),
+    }
+}
+
+fn sample_fri_unit_with_unit_values(unit_id: usize, unit_name: &str) -> KeyUnitCatalogEntry {
+    let mut unit = sample_fri_unit();
+    unit.paths.unit_id = Some(unit_id);
+    unit.paths.unit_name = Some(unit_name.to_owned());
+    unit.paths.prefix = unit_name.into();
+    unit.paths.metadata_prefix = Some(unit_name.into());
+    unit.paths.program_prefix = Some(unit_name.into());
+    unit.paths.verification_key_prefix = unit_name.into();
+    unit.paths.fixed_columns = format!("{unit_name}.const").into();
+    unit.paths.constant_tree = format!("{unit_name}.consttree").into();
+    unit.metadata.setup.unit_value_map = vec![stage_value(&format!("{unit_name}.value"), 1)];
+    unit
+}
+
+fn stage_value(name: &str, stage: u32) -> StageValue {
+    StageValue {
+        name: name.to_owned(),
+        stage,
+        lengths: Vec::new(),
     }
 }
 
@@ -345,18 +383,24 @@ fn append_digest(out: &mut Vec<u8>, digest: [Felt; 4]) {
 }
 
 fn constant_opening_segment(query_row: u64) -> ProofSegment {
-    let (tree, _root) = sample_constant_tree();
-    let opening = open_constant_tree_row(&tree, query_row, 4).expect("constant row should open");
+    constant_opening_segment_for_units(vec![constant_opening_unit_segment(0, query_row)])
+}
+
+fn constant_opening_segment_for_units(units: Vec<ConstantOpeningUnitSegment>) -> ProofSegment {
     ProofSegment {
         id: CONSTANT_OPENING_SEGMENT_ID,
-        data: encode_constant_opening_segment(&ConstantOpeningSegment {
-            units: vec![ConstantOpeningUnitSegment {
-                unit_index: 0,
-                trace_instance_index: 0,
-                queries: vec![constant_opening_query(&opening)],
-            }],
-        })
-        .expect("constant opening should encode"),
+        data: encode_constant_opening_segment(&ConstantOpeningSegment { units })
+            .expect("constant opening should encode"),
+    }
+}
+
+fn constant_opening_unit_segment(unit_index: u32, query_row: u64) -> ConstantOpeningUnitSegment {
+    let (tree, _root) = sample_constant_tree();
+    let opening = open_constant_tree_row(&tree, query_row, 4).expect("constant row should open");
+    ConstantOpeningUnitSegment {
+        unit_index,
+        trace_instance_index: 0,
+        queries: vec![constant_opening_query(&opening)],
     }
 }
 
@@ -422,6 +466,13 @@ fn witness_stage_commitment(
 }
 
 fn witness_commitment_segment(unit: &lzvm_prover::ProveUnitSchedule) -> ProofSegment {
+    witness_commitment_segment_for_unit(unit, 0)
+}
+
+fn witness_commitment_segment_for_unit(
+    unit: &lzvm_prover::ProveUnitSchedule,
+    unit_index: u32,
+) -> ProofSegment {
     let stages = unit
         .stage_commit_widths
         .iter()
@@ -439,9 +490,9 @@ fn witness_commitment_segment(unit: &lzvm_prover::ProveUnitSchedule) -> ProofSeg
         })
         .collect();
     ProofSegment {
-        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID + unit_index,
         data: encode_witness_commitment_segment(&WitnessCommitmentSegment {
-            unit_index: 0,
+            unit_index,
             input_byte_count: 0,
             trace_rows: unit.base_domain_size,
             trace_columns: trace_column_count(unit),
@@ -452,6 +503,22 @@ fn witness_commitment_segment(unit: &lzvm_prover::ProveUnitSchedule) -> ProofSeg
 }
 
 fn witness_opening_segment(unit: &lzvm_prover::ProveUnitSchedule, query_row: u64) -> ProofSegment {
+    witness_opening_segment_for_units(vec![witness_opening_unit_segment(unit, 0, query_row)])
+}
+
+fn witness_opening_segment_for_units(units: Vec<WitnessOpeningUnitSegment>) -> ProofSegment {
+    ProofSegment {
+        id: WITNESS_OPENING_SEGMENT_ID,
+        data: encode_witness_opening_segment(&WitnessOpeningSegment { units })
+            .expect("witness opening should encode"),
+    }
+}
+
+fn witness_opening_unit_segment(
+    unit: &lzvm_prover::ProveUnitSchedule,
+    unit_index: u32,
+    query_row: u64,
+) -> WitnessOpeningUnitSegment {
     let stages = unit
         .stage_commit_widths
         .iter()
@@ -470,19 +537,13 @@ fn witness_opening_segment(unit: &lzvm_prover::ProveUnitSchedule, query_row: u64
             witness_opening_stage(stage_index, &opening)
         })
         .collect();
-    ProofSegment {
-        id: WITNESS_OPENING_SEGMENT_ID,
-        data: encode_witness_opening_segment(&WitnessOpeningSegment {
-            units: vec![WitnessOpeningUnitSegment {
-                unit_index: 0,
-                trace_instance_index: 0,
-                queries: vec![WitnessOpeningQuerySegment {
-                    row_index: query_row,
-                    stages,
-                }],
-            }],
-        })
-        .expect("witness opening should encode"),
+    WitnessOpeningUnitSegment {
+        unit_index,
+        trace_instance_index: 0,
+        queries: vec![WitnessOpeningQuerySegment {
+            row_index: query_row,
+            stages,
+        }],
     }
 }
 
@@ -511,23 +572,32 @@ fn witness_opening_stage(
 }
 
 fn trace_constraint_segment(unit: &lzvm_prover::ProveUnitSchedule) -> ProofSegment {
+    trace_constraint_segment_for_units(vec![trace_constraint_unit_segment(unit, 0)])
+}
+
+fn trace_constraint_segment_for_units(units: Vec<TraceConstraintUnitSegment>) -> ProofSegment {
     ProofSegment {
         id: TRACE_CONSTRAINT_SEGMENT_ID,
-        data: encode_trace_constraint_segment(&TraceConstraintSegment {
-            units: vec![TraceConstraintUnitSegment {
-                unit_index: 0,
-                trace_instance_index: 0,
-                trace_row_count: unit.base_domain_size,
-                trace_column_count: u32::try_from(trace_column_count(unit))
-                    .expect("trace column count should fit"),
-                regular_constraint_count: 0,
-                trace_extracted: true,
-                regular_constraints_evaluated: true,
-                witness_values_committed: true,
-                constraint_checker_conformant: true,
-            }],
-        })
-        .expect("trace constraint evidence should encode"),
+        data: encode_trace_constraint_segment(&TraceConstraintSegment { units })
+            .expect("trace constraint evidence should encode"),
+    }
+}
+
+fn trace_constraint_unit_segment(
+    unit: &lzvm_prover::ProveUnitSchedule,
+    unit_index: u32,
+) -> TraceConstraintUnitSegment {
+    TraceConstraintUnitSegment {
+        unit_index,
+        trace_instance_index: 0,
+        trace_row_count: unit.base_domain_size,
+        trace_column_count: u32::try_from(trace_column_count(unit))
+            .expect("trace column count should fit"),
+        regular_constraint_count: 0,
+        trace_extracted: true,
+        regular_constraints_evaluated: true,
+        witness_values_committed: true,
+        constraint_checker_conformant: true,
     }
 }
 
@@ -561,6 +631,86 @@ fn seeded_required_fri_proof_without_opening(
             constant_opening_segment(query_row),
             witness_opening_segment(unit, query_row),
         ],
+    }
+}
+
+fn seeded_proof_with_partial_unit_values(
+    catalog: &KeyDirectoryCatalog,
+    public_values: &PublicValues,
+) -> ProofArtifact {
+    let schedule = derive_prove_schedule(catalog).expect("schedule should derive");
+    let material =
+        build_pcs_material_manifest_segment(&schedule).expect("material manifest should build");
+    let witness_segments = schedule
+        .units
+        .iter()
+        .enumerate()
+        .map(|(index, unit)| {
+            witness_commitment_segment_for_unit(
+                unit,
+                u32::try_from(index).expect("unit index should fit"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let query = build_pcs_query_plan_segment(
+        &schedule,
+        public_values_digest(public_values).expect("digest should compute"),
+        &material,
+        &witness_segments,
+    )
+    .expect("query plan should build");
+    let query_plan = parse_pcs_query_plan_segment(&query.data).expect("query plan should parse");
+    let constant_units = query_plan
+        .units
+        .iter()
+        .map(|query_unit| {
+            constant_opening_unit_segment(query_unit.unit_index, query_unit.queries[0])
+        })
+        .collect::<Vec<_>>();
+    let witness_units = query_plan
+        .units
+        .iter()
+        .map(|query_unit| {
+            let unit_index = usize::try_from(query_unit.unit_index).expect("unit index should fit");
+            witness_opening_unit_segment(
+                &schedule.units[unit_index],
+                query_unit.unit_index,
+                query_unit.queries[0],
+            )
+        })
+        .collect::<Vec<_>>();
+    let trace_units = query_plan
+        .units
+        .iter()
+        .map(|query_unit| {
+            let unit_index = usize::try_from(query_unit.unit_index).expect("unit index should fit");
+            trace_constraint_unit_segment(&schedule.units[unit_index], query_unit.unit_index)
+        })
+        .collect::<Vec<_>>();
+    let unit_values = ProofSegment {
+        id: UNIT_VALUES_SEGMENT_ID,
+        data: encode_unit_values_segment(&UnitValuesSegment {
+            units: vec![UnitValuesUnitSegment {
+                unit_index: 1,
+                trace_instance_index: 0,
+                values: vec![17],
+            }],
+        })
+        .expect("unit values should encode"),
+    };
+
+    let mut segments = vec![material];
+    segments.extend(witness_segments);
+    segments.push(trace_constraint_segment_for_units(trace_units));
+    segments.push(query);
+    segments.push(unit_values);
+    segments.push(constant_opening_segment_for_units(constant_units));
+    segments.push(witness_opening_segment_for_units(witness_units));
+
+    ProofArtifact {
+        setup_hash: public_values.setup_hash,
+        public_values_hash: public_values_digest(public_values).expect("digest should compute"),
+        segments,
     }
 }
 
@@ -812,6 +962,22 @@ fn rejects_seeded_required_pcs_fri_unit_without_opening_segment() {
                 LoadPcsFriOpeningSegmentError::MissingSegment
             )
         )
+    );
+}
+
+#[test]
+fn rejects_seeded_proof_when_unit_values_omit_query_unit() {
+    let catalog = sample_catalog_with_unit_value_units();
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_empty_public_values(setup_hash);
+    let proof = seeded_proof_with_partial_unit_values(&catalog, &public_values);
+
+    let error = validate_setup_preflight(&catalog, &proof, &public_values)
+        .expect_err("unit values should cover every query unit that requires them");
+
+    assert_eq!(
+        error,
+        SetupPreflightError::UnitValues(LoadUnitValuesSegmentError::MissingUnit { unit_index: 0 })
     );
 }
 
