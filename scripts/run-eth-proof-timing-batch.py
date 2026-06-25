@@ -346,8 +346,7 @@ def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
         parts.extend(["--profile-output-dir", display_path_for_shell(profile_output_dir, root)])
     if args.profile_tool != DEFAULT_PROFILE_TOOL:
         parts.extend(["--profile-tool", args.profile_tool])
-    for profile_arg in args.profile_arg:
-        parts.extend(["--profile-arg", profile_arg])
+    parts.extend(profile_arg_cli_parts(args))
     if args.enforce_targets:
         parts.append("--enforce-targets")
     if args.small_max_avg_s is not None:
@@ -520,6 +519,10 @@ def profile_tool_cli_parts(
     return [option, profile_tool_command_arg(raw, root)]
 
 
+def profile_arg_cli_parts(args: argparse.Namespace) -> list[str]:
+    return [f"--profile-arg={value}" for value in args.profile_arg]
+
+
 def resolve_profile_tool(raw: str, root: Path) -> Path | None:
     path = Path(raw)
     candidates: list[Path] = []
@@ -605,7 +608,7 @@ def profile_command_for_env(
         "--cwd",
         ".",
         *profiler_command,
-        *[part for value in args.profile_arg for part in ["--profile-arg", value]],
+        *profile_arg_cli_parts(args),
         "--",
         "sh",
         "-lc",

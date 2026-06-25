@@ -137,6 +137,32 @@ fn assert_verify_required_text_args(command_text: &str, context: &str) {
     }
 }
 
+fn profile_command_dry_run(command_text: &str) -> String {
+    let marker = " -- sh -lc ";
+    let marker_index = command_text
+        .find(marker)
+        .expect("profile command should contain the profiled command separator");
+    let dry_run_command = format!(
+        "{} --dry-run{}",
+        &command_text[..marker_index],
+        &command_text[marker_index..]
+    );
+    let output = Command::new("sh")
+        .arg("-lc")
+        .arg(&dry_run_command)
+        .current_dir(workspace_root())
+        .output()
+        .expect("generated profile command dry-run should execute");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        success,
+        "generated profile command should parse under dry-run: command={dry_run_command} stderr={stderr}"
+    );
+    stdout
+}
+
 #[test]
 fn eth_proof_timing_batch_self_test_runs() {
     let output = Command::new(script_path())
@@ -1024,7 +1050,8 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         "env template command should preserve profiler tuning flags: {stdout}"
     );
     assert!(
-        stdout.contains("--profile-arg --kernel-name-base=demangled"),
+        stdout.contains("--profile-arg=--kernel-name-base=demangled")
+            && !stdout.contains("--profile-arg --kernel-name-base=demangled"),
         "env template command should preserve profiler passthrough args: {stdout}"
     );
     assert!(
@@ -1198,8 +1225,10 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         "ncu command should still request summary files without nsys-only flags: {stdout}"
     );
     assert!(
-        stdout.contains("--profile-arg --kernel-name-base=demangled")
-            && stdout.contains("--profile-arg --launch-skip=1"),
+        stdout.contains("--profile-arg=--kernel-name-base=demangled")
+            && stdout.contains("--profile-arg=--launch-skip=1")
+            && !stdout.contains("--profile-arg --kernel-name-base=demangled")
+            && !stdout.contains("--profile-arg --launch-skip=1"),
         "profile command output should pass profiler-specific args through: {stdout}"
     );
     assert!(
@@ -1295,6 +1324,10 @@ fn eth_proof_timing_batch_profile_commands_skip_verify_when_requested() {
     command
         .arg("--suite")
         .arg("small")
+        .arg("--profile-tool")
+        .arg("both")
+        .arg("--profile-arg=--kernel-name-base=demangled")
+        .arg("--profile-arg=--launch-skip=1")
         .arg("--skip-verify-proof")
         .arg("--print-profile-commands");
     fixture.apply_env(&mut command, SMALL_PREFIX);
@@ -1305,6 +1338,22 @@ fn eth_proof_timing_batch_profile_commands_skip_verify_when_requested() {
     let success = output.status.success();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let nsys_command = stdout
+        .lines()
+        .find(|line| line.starts_with("small_nsys_profile_command="))
+        .expect("nsys profile command should be printed");
+    let ncu_command = stdout
+        .lines()
+        .find(|line| line.starts_with("small_ncu_profile_command="))
+        .expect("ncu profile command should be printed");
+    let nsys_command_text = nsys_command
+        .strip_prefix("small_nsys_profile_command=")
+        .expect("nsys profile command should have the expected key");
+    let ncu_command_text = ncu_command
+        .strip_prefix("small_ncu_profile_command=")
+        .expect("ncu profile command should have the expected key");
+    let nsys_dry_run = profile_command_dry_run(nsys_command_text);
+    let ncu_dry_run = profile_command_dry_run(ncu_command_text);
     fixture.cleanup();
 
     assert!(
@@ -1312,8 +1361,23 @@ fn eth_proof_timing_batch_profile_commands_skip_verify_when_requested() {
         "profile command output should support skip verify: stderr={stderr}"
     );
     assert!(
-        stdout.contains("small_nsys_profile_command="),
-        "profile command should still be printed: {stdout}"
+        stdout.contains("small_nsys_profile_command=")
+            && stdout.contains("small_ncu_profile_command="),
+        "profile commands should still be printed: {stdout}"
+    );
+    assert!(
+        stdout.contains("--profile-arg=--kernel-name-base=demangled")
+            && stdout.contains("--profile-arg=--launch-skip=1")
+            && !stdout.contains("--profile-arg --kernel-name-base=demangled")
+            && !stdout.contains("--profile-arg --launch-skip=1"),
+        "skip verify profile commands should emit copy-paste-safe profiler args: {stdout}"
+    );
+    assert!(
+        nsys_dry_run.contains("--kernel-name-base=demangled")
+            && nsys_dry_run.contains("--launch-skip=1")
+            && ncu_dry_run.contains("--kernel-name-base=demangled")
+            && ncu_dry_run.contains("--launch-skip=1"),
+        "generated profile commands should parse profiler args under dry-run: nsys={nsys_dry_run} ncu={ncu_dry_run}"
     );
     assert!(
         !stdout.contains("verify proof --eth-block-input")
