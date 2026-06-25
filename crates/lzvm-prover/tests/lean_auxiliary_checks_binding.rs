@@ -3,6 +3,30 @@ use std::path::Path;
 #[path = "support/lean_binding.rs"]
 mod lean_binding;
 
+fn quoted_name(raw: &str) -> Option<&str> {
+    raw.strip_prefix('"')?.strip_suffix('"')
+}
+
+fn guest_pc_timing_source_contains(source: &str, line_name: &str, accessor: &str) -> bool {
+    let accessor_name = accessor.strip_suffix("()").unwrap_or(accessor);
+    if source.contains(line_name) && (source.contains(accessor) || source.contains(accessor_name)) {
+        return true;
+    }
+
+    let Some(required_name) = quoted_name(line_name) else {
+        return false;
+    };
+    let Some(method_name) = accessor.strip_suffix("()") else {
+        return false;
+    };
+    let Some(derived_name) = method_name.strip_suffix("_duration") else {
+        return false;
+    };
+    required_name == derived_name
+        && (source.contains(&format!("record_duration!({method_name}"))
+            || source.contains(&format!("record_sampled_duration_count!({method_name}")))
+}
+
 #[test]
 fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -67,6 +91,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let prove_witness_path = crate_root.join("../lzvm-cli/src/prove_witness.rs");
     let prove_witness_source =
         std::fs::read_to_string(&prove_witness_path).expect("prove witness source should read");
+    let gpu_preflight_path = crate_root.join("../lzvm-cli/src/prove_witness/gpu_preflight.rs");
+    let gpu_preflight_source =
+        std::fs::read_to_string(&gpu_preflight_path).expect("GPU preflight source should read");
     let constant_material_path =
         crate_root.join("../lzvm-cli/src/prove_witness/constant_material.rs");
     let constant_material_source = std::fs::read_to_string(&constant_material_path)
@@ -1054,14 +1081,26 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GuestPcTraceLargeGpuGateDecisionMatches")
             && lean_source.contains("largeGpuGateConfigAccepted")
             && lean_source.contains("largeGpuGateConfigImpliesDecisionMatches")
+            && lean_source.contains(
+                "guest_pc_trace_large_gpu_gate_checked_acceptance_requires_runtime_memory_for_large_allowed"
+            )
+            && lean_source.contains(
+                "guest_pc_trace_large_gpu_gate_decision_projects_observed_memory_floor_for_large_allowed"
+            )
             && lean_source.contains("guest_pc_trace_large_gpu_gate_checked_acceptance_sound")
             && lean_source.contains(
                 "guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract"
             )
-            && prove_witness_source.contains("fn validate_large_guest_pc_gpu")
-            && prove_witness_source.contains("instruction_limit.unwrap_or(0) >= 1_000_000")
-            && prove_witness_source.contains("lzvm_prover::gpu_setup_available()"),
-        "Lean auxiliary checks should bind the large guest trace GPU gate to the Rust runtime guard"
+            && prove_witness_source.contains("validate_large_guest_pc_runtime_gpu")
+            && gpu_preflight_source.contains("fn validate_large_guest_pc_gpu")
+            && gpu_preflight_source.contains("fn validate_large_guest_pc_runtime_gpu")
+            && gpu_preflight_source.contains("const GUEST_PC_TRACE_GPU_SIZE_THRESHOLD: u64 = 1_000_000")
+            && gpu_preflight_source
+                .contains("instruction_limit.unwrap_or(0) >= GUEST_PC_TRACE_GPU_SIZE_THRESHOLD")
+            && gpu_preflight_source.contains("lzvm_prover::gpu_setup_available()")
+            && gpu_preflight_source.contains("lzvm_prover::gpu_memory_info()")
+            && gpu_preflight_source.contains("validate_large_guest_pc_gpu_memory"),
+        "Lean auxiliary checks should bind the large guest trace GPU gate to the Rust runtime guard and memory preflight"
     );
     assert!(
         lean_source.contains("GuestPcTraceTracelessCommitmentInputConfig")
@@ -1972,7 +2011,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
     ] {
         assert!(
-            guest_pc_timing_source.contains(line_name) && guest_pc_timing_source.contains(accessor),
+            guest_pc_timing_source_contains(&guest_pc_timing_source, line_name, accessor),
             "CLI guest PC timing output should include {line_name}"
         );
     }
