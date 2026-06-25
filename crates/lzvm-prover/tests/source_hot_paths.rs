@@ -8023,6 +8023,8 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
                 "validate_optional_pcs_fri_opening_proof_segments_with_preflight_values"
             )
             && setup_preflight_source.contains("struct SetupPreflightGlobalValues")
+            && setup_preflight_source.contains("struct SetupPreflightContributionProofValues")
+            && setup_preflight_source.contains("preloaded_packed_proof_values")
             && setup_preflight_source.contains("preloaded_proof_values")
             && setup_preflight_source.contains("derive_global_challenge_from_loaded_contributions")
             && setup_preflight_source.matches("load_group_values_from_segments(").count() == 1

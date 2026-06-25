@@ -152,7 +152,13 @@ pub struct SetupPreflightReport {
 
 struct SetupPreflightGlobalValues {
     proof_values: Vec<Ext3>,
+    packed_proof_values: Option<Vec<Felt>>,
     group_values: Vec<Ext3>,
+}
+
+struct SetupPreflightContributionProofValues {
+    proof_values: Vec<Ext3>,
+    packed_proof_values: Vec<Felt>,
 }
 
 struct SetupPreflightTranscriptChallengeCache<'a> {
@@ -215,11 +221,15 @@ struct SetupPreflightPackedProofValueCache<'a> {
 }
 
 impl<'a> SetupPreflightPackedProofValueCache<'a> {
-    fn new(global_info: &'a GlobalInfo, proof_values: &'a [Ext3]) -> Self {
+    fn new(
+        global_info: &'a GlobalInfo,
+        proof_values: &'a [Ext3],
+        preloaded_packed_proof_values: Option<Vec<Felt>>,
+    ) -> Self {
         Self {
             global_info,
             proof_values,
-            packed_proof_values: None,
+            packed_proof_values: preloaded_packed_proof_values,
         }
     }
 
@@ -774,6 +784,7 @@ pub fn validate_setup_preflight(
     let mut packed_proof_values_cache = SetupPreflightPackedProofValueCache::new(
         &catalog.layout.global_info,
         &global_values.proof_values,
+        global_values.packed_proof_values,
     );
     if !catalog.global_constraints.entries.is_empty() {
         let public_values = public_fields.as_deref().unwrap_or(&[]);
@@ -952,12 +963,15 @@ fn validate_optional_unit_value_segments(
 fn validate_global_value_segments(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
-    preloaded_proof_values: Option<Vec<Ext3>>,
+    preloaded_proof_values: Option<SetupPreflightContributionProofValues>,
 ) -> Result<SetupPreflightGlobalValues, SetupPreflightError> {
-    let proof_values = match preloaded_proof_values {
-        Some(proof_values) => proof_values,
-        None => load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
-            .map_err(SetupPreflightError::ProofValues)?,
+    let (proof_values, packed_proof_values) = match preloaded_proof_values {
+        Some(values) => (values.proof_values, Some(values.packed_proof_values)),
+        None => (
+            load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
+                .map_err(SetupPreflightError::ProofValues)?,
+            None,
+        ),
     };
     let group_values =
         load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
@@ -965,6 +979,7 @@ fn validate_global_value_segments(
 
     Ok(SetupPreflightGlobalValues {
         proof_values,
+        packed_proof_values,
         group_values,
     })
 }
@@ -1028,7 +1043,7 @@ fn validate_optional_contribution_challenge_values(
     proof: &ProofArtifact,
     public_values: &PublicValues,
     contribution_entries: Option<&[ProveContributionEntry]>,
-) -> Result<Option<Vec<Ext3>>, SetupPreflightError> {
+) -> Result<Option<SetupPreflightContributionProofValues>, SetupPreflightError> {
     let Some(challenge_segment) = proof
         .segments
         .iter()
@@ -1064,7 +1079,10 @@ fn validate_optional_contribution_challenge_values(
     if challenge_values.as_slice() != [expected.to_u64s()] {
         return Err(SetupPreflightError::ContributionChallengeValuesMismatch);
     }
-    Ok(Some(proof_values))
+    Ok(Some(SetupPreflightContributionProofValues {
+        proof_values,
+        packed_proof_values,
+    }))
 }
 
 fn validate_setup_proof_segment_ids(segments: &[ProofSegment]) -> Result<(), SetupPreflightError> {
