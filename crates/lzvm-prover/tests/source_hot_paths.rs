@@ -7802,6 +7802,9 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
     let fri_opening_path = crate_root.join("src/pcs_fri/validation.rs");
     let fri_opening_source =
         std::fs::read_to_string(&fri_opening_path).expect("FRI opening source should read");
+    let verifier_query_path = crate_root.join("src/verifier_query.rs");
+    let verifier_query_source =
+        std::fs::read_to_string(&verifier_query_path).expect("verifier query source should read");
 
     assert!(
         lean_root_source.contains("import Lzvm.OpeningSegmentBinding"),
@@ -7847,6 +7850,19 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
                 == 1
             && !optional_fri_validation.contains("validate_pcs_fri_opening_segments("),
         "optional FRI opening validation should reuse parsed query and opening segments"
+    );
+    let verifier_query_validation = function_body(
+        &verifier_query_source,
+        "pub fn validate_verifier_query_outputs_from_segments",
+        "fn verifier_code_with_proof_value_offsets",
+    );
+    assert!(
+        verifier_query_validation.contains("load_pcs_evaluation_segment_from_segments")
+            && verifier_query_validation
+                .contains("load_pcs_evaluation_unit_for_identity_from_parsed_segment")
+            && !verifier_query_validation
+                .contains("load_pcs_evaluation_unit_for_identity_from_segments("),
+        "verifier query output validation should reuse parsed evaluation segments"
     );
     let witness_opening_validation = function_body(
         &witness_opening_source,

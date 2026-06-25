@@ -15,7 +15,8 @@ use crate::constant_opening::{
     LoadConstantOpeningSegmentError, LoadConstantOpeningUnitError,
 };
 use crate::pcs_evaluation::{
-    load_pcs_evaluation_unit_for_identity_from_segments, LoadPcsEvaluationUnitError,
+    load_pcs_evaluation_segment_from_segments,
+    load_pcs_evaluation_unit_for_identity_from_parsed_segment, LoadPcsEvaluationUnitError,
 };
 use crate::pcs_transcript_segments::PcsTranscriptUnitChallenges;
 use crate::proof_values::{load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError};
@@ -638,6 +639,8 @@ pub fn validate_verifier_query_outputs_from_segments(
         .map_err(VerifierFriQueryOutputSegmentsError::ConstantOpening)?;
     let witness_opening = load_witness_opening_segment_from_segments(request.segments)
         .map_err(VerifierFriQueryOutputSegmentsError::WitnessOpening)?;
+    let evaluations = load_pcs_evaluation_segment_from_segments(request.segments)
+        .map_err(VerifierFriQueryOutputSegmentsError::Evaluation)?;
     let proof_values = load_pcs_proof_values_from_segments(request.global_info, request.segments)
         .map_err(VerifierFriQueryOutputSegmentsError::ProofValues)?;
     validate_constant_opening_units_match_query_units(request.query_units, request.segments)
@@ -680,11 +683,11 @@ pub fn validate_verifier_query_outputs_from_segments(
                     && unit.trace_instance_index == query_unit.trace_instance_index
             })
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
-        let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_segments(
+        let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_parsed_segment(
             unit_index,
             query_unit.trace_instance_index,
             unit,
-            request.segments,
+            &evaluations,
         )
         .map_err(VerifierFriQueryOutputSegmentsError::Evaluation)?;
         let challenges = request
@@ -710,7 +713,7 @@ pub fn validate_verifier_query_outputs_from_segments(
                 proof_values: &proof_values,
                 constant_unit,
                 witness_unit,
-                evaluations: &evaluation_unit,
+                evaluations: evaluation_unit,
                 code: &code,
                 publics: request.public_values,
                 fri: opening_unit,
