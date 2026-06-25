@@ -20,7 +20,8 @@ use lzvm_prover::witness_commitment::{
 };
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_opening::{
-    load_witness_opening_segment_from_segments, load_witness_opening_unit_from_segments,
+    load_witness_opening_segment_from_segments,
+    load_witness_opening_unit_for_identity_from_segments, load_witness_opening_unit_from_segments,
     validate_witness_opening_segments, LoadWitnessOpeningSegmentError, LoadWitnessOpeningUnitError,
     ValidateWitnessOpeningSegmentsError,
 };
@@ -46,6 +47,33 @@ fn loads_witness_opening_unit_from_segments() {
     let loaded = load_witness_opening_unit_from_segments(0, &[segment]).expect("unit should load");
 
     assert_eq!(loaded, unit);
+}
+
+#[test]
+fn loads_witness_opening_unit_for_identity_from_segments() {
+    let mut unit = witness_opening_unit(0);
+    unit.trace_instance_index = 2;
+    let segment = witness_opening_proof_segment(vec![unit.clone()]);
+
+    let loaded = load_witness_opening_unit_for_identity_from_segments(0, 2, &[segment])
+        .expect("unit should load");
+
+    assert_eq!(loaded, unit);
+}
+
+#[test]
+fn rejects_witness_opening_unit_trace_identity_mismatch() {
+    let mut unit = witness_opening_unit(0);
+    unit.trace_instance_index = 2;
+    let segment = witness_opening_proof_segment(vec![unit]);
+
+    let error = load_witness_opening_unit_for_identity_from_segments(0, 1, &[segment])
+        .expect_err("unit should require matching trace identity");
+
+    assert_eq!(
+        error,
+        LoadWitnessOpeningUnitError::MissingUnit { unit_index: 0 }
+    );
 }
 
 #[test]
