@@ -245,6 +245,36 @@ theorem assumption_bundle_carries_required_crypto_evidence
     RequiredCryptographicAssumptionStatements assumptions.crypto := by
   exact cryptographic_assumptions_carry_required_evidence assumptions.crypto
 
+theorem assumption_bundle_fiat_shamir_transcript_binding
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.transcriptBound publicInput proof := by
+  exact
+    required_crypto_assumptions_fiat_shamir_transcript_binding
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+
+theorem assumption_bundle_pcs_opening_soundness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.pcsOpeningsValid publicInput proof := by
+  exact
+    required_crypto_assumptions_pcs_opening_soundness
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+
+theorem assumption_bundle_fri_query_soundness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.friQueriesValid publicInput proof := by
+  exact
+    required_crypto_assumptions_fri_query_soundness
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+
 theorem assumption_bundle_merkle_compression_no_collision
     {system : VerifierModel}
     {Digest : Type uDigest}

@@ -63,6 +63,9 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "required_crypto_assumptions_pcs_opening_soundness",
             "required_crypto_assumptions_fri_low_degree_soundness",
             "required_crypto_assumptions_fri_query_soundness",
+            "assumption_bundle_fiat_shamir_transcript_binding",
+            "assumption_bundle_pcs_opening_soundness",
+            "assumption_bundle_fri_query_soundness",
             "required_semantic_assumptions_public_input_binding",
             "required_semantic_assumptions_trace_extraction",
             "required_semantic_assumptions_constraint_satisfaction",
@@ -200,6 +203,25 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             &audit_source,
             theorem_name,
             &[".right.right.right"],
+        );
+    }
+    for theorem_name in [
+        "assumption_bundle_fiat_shamir_transcript_binding",
+        "assumption_bundle_pcs_opening_soundness",
+        "assumption_bundle_fri_query_soundness",
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &audit_source,
+            theorem_name,
+            &[
+                "AssumptionBundle system",
+                "system.accepts publicInput proof",
+            ],
+        );
+        lean_binding::assert_theorem_body_contains(
+            &audit_source,
+            theorem_name,
+            &["assumption_bundle_carries_required_crypto_evidence"],
         );
     }
     lean_binding::assert_theorem_declarations(
