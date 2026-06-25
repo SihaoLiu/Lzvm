@@ -261,12 +261,17 @@ fn validate_optional_pcs_fri_opening_proof_segments_inner(
         return Err(ValidateOptionalPcsFriOpeningProofSegmentsError::UnboundOpeningSegment);
     }
 
-    let query_plan = load_pcs_query_plan_from_segments(request.segments)
-        .map_err(ValidatePcsFriOpeningSegmentsError::QueryPlan)
-        .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Opening)?;
-    let opening = load_pcs_fri_opening_segment_from_segments(request.segments)
-        .map_err(ValidatePcsFriOpeningSegmentsError::Opening)
-        .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Opening)?;
+    let query_plan = load_pcs_query_plan_from_segments(request.segments).map_err(|source| {
+        ValidateOptionalPcsFriOpeningProofSegmentsError::Opening(
+            ValidatePcsFriOpeningSegmentsError::QueryPlan(source),
+        )
+    })?;
+    let opening =
+        load_pcs_fri_opening_segment_from_segments(request.segments).map_err(|source| {
+            ValidateOptionalPcsFriOpeningProofSegmentsError::Opening(
+                ValidatePcsFriOpeningSegmentsError::Opening(source),
+            )
+        })?;
     validate_pcs_fri_opening_units(&request.schedule.units, &query_plan.units, &opening.units)
         .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Opening)?;
 
