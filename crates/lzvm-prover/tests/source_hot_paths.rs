@@ -2103,9 +2103,12 @@ fn lean_challenge_segment_binding_tracks_runtime_transcript_checks() {
     assert!(
         artifact_source.contains("fn validate_contribution_proof_challenge_values")
             && artifact_source.contains("struct ProofBindingSegments")
+            && artifact_source.contains("struct BuiltWitnessContributionSegment")
             && artifact_source.contains("preloaded_challenge_values")
             && artifact_source.contains("preloaded_packed_proof_values")
+            && artifact_source.contains("preloaded_contribution_entries")
             && artifact_source.contains("binding_segments.challenge_values.as_deref()")
+            && artifact_source.contains("derive_global_challenge_from_loaded_contributions")
             && artifact_source.contains("derive_global_challenge_from_proof_segments")
             && artifact_source.contains("CHALLENGE_VALUES_SEGMENT_ID")
             && artifact_source.contains("parse_challenge_values_segment"),

@@ -32,7 +32,8 @@ use lzvm_field::{Ext3, Felt};
 
 use crate::contribution::{
     build_contribution_segment, build_witness_contribution_input,
-    derive_global_challenge_from_proof_segments, derive_worker_contribution_entry,
+    derive_global_challenge_from_loaded_contributions, derive_global_challenge_from_proof_segments,
+    derive_worker_contribution_entry, ProveContributionEntry,
 };
 use crate::group_values::build_group_values_segment;
 use crate::pcs_transcript::aggregate_pcs_final_query_challenges_iter;
@@ -733,7 +734,7 @@ fn build_witness_proof_artifact_for_unit_inner(
     if let Some(unit_values_segment) = unit_values_segment {
         segments.push(unit_values_segment);
     }
-    let has_contribution_segment = if request.include_contribution_segment {
+    let contribution_entries = if request.include_contribution_segment {
         let contribution_source = WitnessContributionSource {
             output: request.output,
             packed_unit_values: unit_values,
@@ -748,13 +749,14 @@ fn build_witness_proof_artifact_for_unit_inner(
             timing.add_contribution_segment(contribution_start.elapsed());
         }
         if let Some(contribution_segment) = contribution_segment {
-            segments.push(contribution_segment);
-            true
+            let entries = contribution_segment.entries;
+            segments.push(contribution_segment.segment);
+            Some(entries)
         } else {
-            false
+            None
         }
     } else {
-        false
+        None
     };
     append_binding_segments(&mut segments, &binding_segments.segments);
     let proof = ProofArtifact {
@@ -762,7 +764,7 @@ fn build_witness_proof_artifact_for_unit_inner(
         public_values_hash,
         segments,
     };
-    if has_contribution_segment {
+    if let Some(contribution_entries) = &contribution_entries {
         if request.challenge_values_segment.is_none() {
             return Err(
                 "verify contribution proof output failed: missing challenge values segment"
@@ -776,6 +778,7 @@ fn build_witness_proof_artifact_for_unit_inner(
             public_values,
             binding_segments.challenge_values.as_deref(),
             Some(&request.output.auxiliary_inputs().proof_values),
+            Some(contribution_entries),
             timing.as_deref_mut(),
         );
         if let Some(timing) = timing {
@@ -838,7 +841,8 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
     if let Some(proof_values_segment) = proof_values_segment {
         segments.push(proof_values_segment);
     }
-    segments.push(contribution_segment);
+    let contribution_entries = contribution_segment.entries;
+    segments.push(contribution_segment.segment);
     append_binding_segments(&mut segments, &binding_segments.segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
@@ -852,6 +856,7 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
             public_values,
             binding_segments.challenge_values.as_deref(),
             Some(&request.output.auxiliary_inputs().proof_values),
+            Some(&contribution_entries),
             None,
         )?;
     }
@@ -934,7 +939,8 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
     if let Some(proof_values_segment) = proof_values_segment {
         segments.push(proof_values_segment);
     }
-    segments.push(contribution_segment);
+    let contribution_entries = contribution_segment.entries;
+    segments.push(contribution_segment.segment);
     append_binding_segments(&mut segments, &binding_segments.segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
@@ -948,6 +954,7 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
             public_values,
             binding_segments.challenge_values.as_deref(),
             Some(&proof_values),
+            Some(&contribution_entries),
             None,
         )?;
     }
@@ -1035,7 +1042,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
             timing.as_deref_mut(),
         )?
     };
-    let has_contribution_segment = if request.include_contribution_segment {
+    let contribution_entries = if request.include_contribution_segment {
         let contribution_sources = request
             .outputs
             .iter()
@@ -1063,18 +1070,19 @@ fn build_witness_proof_artifact_for_all_units_inner(
             timing.add_contribution_segment(contribution_start.elapsed());
         }
         if let Some(contribution_segment) = contribution_segment {
-            proof.segments.push(contribution_segment);
-            true
+            let entries = contribution_segment.entries;
+            proof.segments.push(contribution_segment.segment);
+            Some(entries)
         } else {
-            false
+            None
         }
     } else {
-        false
+        None
     };
     if needs_transcript {
         append_binding_segments(&mut proof.segments, &binding_segments.segments);
     }
-    if has_contribution_segment {
+    if let Some(contribution_entries) = &contribution_entries {
         if request.challenge_values_segment.is_none() {
             return Err(
                 "verify contribution proof output failed: missing challenge values segment"
@@ -1088,6 +1096,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
             public_values,
             binding_segments.challenge_values.as_deref(),
             Some(&proof_values),
+            Some(contribution_entries),
             timing.as_deref_mut(),
         );
         if let Some(timing) = timing {
@@ -1183,6 +1192,7 @@ fn validate_contribution_proof_output(
     public_values: &PublicValues,
     preloaded_challenge_values: Option<&[[u64; 3]]>,
     preloaded_packed_proof_values: Option<&[Felt]>,
+    preloaded_contribution_entries: Option<&[ProveContributionEntry]>,
     timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<(), String> {
     validate_setup_preflight_hashes(catalog, proof, public_values)
@@ -1198,6 +1208,7 @@ fn validate_contribution_proof_output(
             public_values,
             preloaded_challenge_values,
             preloaded_packed_proof_values,
+            preloaded_contribution_entries,
             timing,
         )?;
     }
@@ -1210,6 +1221,7 @@ fn validate_contribution_proof_challenge_values(
     public_values: &PublicValues,
     preloaded_challenge_values: Option<&[[u64; 3]]>,
     preloaded_packed_proof_values: Option<&[Felt]>,
+    preloaded_contribution_entries: Option<&[ProveContributionEntry]>,
     timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<(), String> {
     let owned_challenge_values;
@@ -1246,12 +1258,21 @@ fn validate_contribution_proof_challenge_values(
         }
     };
     let challenge_start = Instant::now();
-    let expected = derive_global_challenge_from_proof_segments(
-        &catalog.layout.global_info,
-        &public_fields,
-        &packed_proof_values,
-        &proof.segments,
-    );
+    let expected = match preloaded_contribution_entries {
+        Some(entries) => derive_global_challenge_from_loaded_contributions(
+            &catalog.layout.global_info,
+            &public_fields,
+            packed_proof_values,
+            &proof.segments,
+            entries,
+        ),
+        None => derive_global_challenge_from_proof_segments(
+            &catalog.layout.global_info,
+            &public_fields,
+            packed_proof_values,
+            &proof.segments,
+        ),
+    };
     if let Some(timing) = timing {
         timing.add_contribution_challenge(challenge_start.elapsed());
     }
@@ -1312,11 +1333,16 @@ struct WitnessContributionSource<'a> {
     packed_unit_values: &'a [Felt],
 }
 
+struct BuiltWitnessContributionSegment {
+    segment: ProofSegment,
+    entries: Vec<ProveContributionEntry>,
+}
+
 fn build_witness_contribution_segment(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     sources: &[WitnessContributionSource<'_>],
-) -> Result<Option<ProofSegment>, String> {
+) -> Result<Option<BuiltWitnessContributionSegment>, String> {
     if sources.is_empty() || catalog.layout.global_info.lattice_size.is_none() {
         return Ok(None);
     }
@@ -1369,8 +1395,9 @@ fn build_witness_contribution_segment(
         entries.push(entry);
     }
 
-    build_contribution_segment(&entries)
-        .map_err(|error| format!("build contribution segment failed: {error}"))
+    let segment = build_contribution_segment(&entries)
+        .map_err(|error| format!("build contribution segment failed: {error}"))?;
+    Ok(segment.map(|segment| BuiltWitnessContributionSegment { segment, entries }))
 }
 
 fn validate_witness_contribution_sources(
