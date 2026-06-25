@@ -20,7 +20,9 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
     assert!(
         lean_source.contains("RuntimeProgramImageCacheBindingValidation")
             && lean_source.contains("RuntimeProgramImageCacheBindingEvidence")
+            && lean_source.contains("RuntimeProgramImageCacheBindingStructuralObligations")
             && lean_source.contains("RuntimeProofArtifactBindingEvidence")
+            && lean_source.contains("RuntimeProofArtifactBindingStructuralObligations")
             && lean_source.contains("RuntimeArtifactEvidence")
             && lean_source.contains("proofSegmentIdsUnique")
             && lean_source.contains("proofUnitValuesTraceIdentityCoverage")
@@ -38,7 +40,26 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "runtime_program_image_cache_binding_checked_acceptance_sound",
             "runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract",
             "runtime_program_image_cache_binding_checked_acceptance_soundness_contract",
+            "runtime_program_image_cache_binding_checked_acceptance_structural_obligations",
+            "runtime_program_image_cache_binding_checked_acceptance_full_contract",
             "runtime_program_image_cache_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_program_image_cache_binding_checked_acceptance_structural_obligations",
+        &[
+            "RuntimeProgramImageCacheBindingCheckedAcceptance",
+            "RuntimeProgramImageCacheBindingStructuralObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_program_image_cache_binding_checked_acceptance_structural_obligations",
+        &[
+            "runtime_program_image_cache_binding_checked_acceptance_evidence",
+            "runtime_program_image_cache_binding_checked_acceptance_artifact_binding",
+            "runtime_proof_artifact_binding_checked_acceptance_structural_obligations",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -89,6 +110,14 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract",
         &["runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_program_image_cache_binding_checked_acceptance_full_contract",
+        &[
+            "runtime_program_image_cache_binding_checked_acceptance_sound",
+            "runtime_program_image_cache_binding_checked_acceptance_structural_obligations",
+        ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,

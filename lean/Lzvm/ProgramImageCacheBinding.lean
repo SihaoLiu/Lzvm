@@ -51,6 +51,25 @@ def RuntimeProgramImageCacheBindingEvidence
     /\ validation.programImageCacheSetupHashMatches artifact publicInput proof
     /\ validation.programImageCacheTreeRootCanonical artifact publicInput proof
 
+def RuntimeProgramImageCacheBindingStructuralObligations
+    (system : VerifierModel)
+    (validation : RuntimeProgramImageCacheBindingValidation system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  RuntimeProgramImageCacheBindingEvidence
+      system
+      validation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeProofArtifactBindingStructuralObligations
+      system
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+
 def RuntimeProgramImageCacheBindingCheckedAcceptance
     (_system : VerifierModel)
     (validation : RuntimeProgramImageCacheBindingValidation _system)
@@ -340,6 +359,47 @@ theorem runtime_program_image_cache_binding_checked_acceptance_artifact_wellform
       segmentIdsUnique,
       unitValuesTraceIdentityCoverage⟩
 
+theorem runtime_program_image_cache_binding_checked_acceptance_structural_obligations
+    {system : VerifierModel}
+    (validation : RuntimeProgramImageCacheBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProgramImageCacheBindingStructuralObligations
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have cacheEvidence :=
+    runtime_program_image_cache_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactAccepted :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactStructural :=
+    runtime_proof_artifact_binding_checked_acceptance_structural_obligations
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  exact
+    And.intro cacheEvidence artifactStructural
+
 theorem runtime_program_image_cache_binding_checked_acceptance_unit_values_trace_identity_coverage
     {system : VerifierModel}
     (validation : RuntimeProgramImageCacheBindingValidation system) :
@@ -533,5 +593,55 @@ theorem runtime_program_image_cache_binding_checked_acceptance_soundness_contrac
       wellformed.right.right.right.right.right.right,
       core,
       sound.right.right.right⟩
+
+theorem runtime_program_image_cache_binding_checked_acceptance_full_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProgramImageCacheBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProgramImageCacheBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProgramImageCacheBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_program_image_cache_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have structural :=
+    runtime_program_image_cache_binding_checked_acceptance_structural_obligations
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro sound.left
+      (And.intro structural sound.right.right)
 
 end Lzvm
