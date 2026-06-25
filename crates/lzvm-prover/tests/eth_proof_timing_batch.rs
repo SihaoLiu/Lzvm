@@ -870,6 +870,91 @@ fn eth_proof_timing_batch_check_profile_tools_fails_when_one_selected_tool_is_mi
 }
 
 #[test]
+fn eth_proof_timing_batch_check_gpu_memory_reports_ready_status() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-gpu-memory-ready");
+    let smi_path = write_executable_script(
+        &fixture.dir,
+        "nvidia-smi-ready",
+        "#!/usr/bin/env python3\nprint('0, 24576, 4096, 20480')\n",
+    );
+    let mut command = Command::new(script_path());
+    command
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch GPU memory check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(success, "GPU memory check should pass: stderr={stderr}");
+    assert!(
+        stdout.contains("gpu_memory_source=arg\n")
+            && stdout.contains(&format!("gpu_memory_command={}\n", smi_path.display()))
+            && stdout.contains("gpu_memory_min_free_mib=1024\n")
+            && stdout.contains("gpu_memory_device_count=1\n")
+            && stdout.contains("gpu_memory_selected_index=0\n")
+            && stdout.contains("gpu_memory_free_mib=20480\n")
+            && stdout.contains("gpu_memory_status=ready\n"),
+        "GPU memory check should report ready capacity: {stdout}"
+    );
+    assert!(
+        !stdout.contains("status=ok\n") && !stdout.contains("proof environment"),
+        "standalone GPU memory check should not require proof inputs: {stdout}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_gpu_memory_fails_when_free_memory_is_low() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-gpu-memory-low");
+    let smi_path = write_executable_script(
+        &fixture.dir,
+        "nvidia-smi-low",
+        "#!/usr/bin/env python3\nprint('0, 24576, 24288, 288')\n",
+    );
+    let mut command = Command::new(script_path());
+    command
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch low GPU memory check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "GPU memory check should fail when free memory is below the configured floor"
+    );
+    assert!(
+        stderr.is_empty(),
+        "low GPU memory should report status on stdout only: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("gpu_memory_free_mib=288\n")
+            && stdout.contains("gpu_memory_min_free_mib=1024\n")
+            && stdout.contains("gpu_memory_status=low\n"),
+        "GPU memory check should explain low free memory: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_prints_env_template_without_config() {
     let mut command = Command::new(script_path());
     command
@@ -931,6 +1016,7 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
     let runner_path = fixture.dir.join("custom runner.py");
     let nsys_path = fixture.dir.join("custom nsys");
     let ncu_path = fixture.dir.join("custom ncu");
+    let smi_path = fixture.dir.join("custom nvidia-smi");
     let nsys_trace = "cpu,nvtx";
     let ncu_set = "full";
     let ncu_target_processes = "application";
@@ -952,6 +1038,11 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
     let ncu_rel = ncu_path
         .strip_prefix(workspace_root())
         .expect("ncu path should be under workspace")
+        .display()
+        .to_string();
+    let smi_rel = smi_path
+        .strip_prefix(workspace_root())
+        .expect("smi path should be under workspace")
         .display()
         .to_string();
     let mut command = Command::new(script_path());
@@ -982,6 +1073,11 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         .arg(ncu_set)
         .arg("--ncu-target-processes")
         .arg(ncu_target_processes)
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("16384")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path)
         .arg("--skip-nsys-export")
         .arg("--profile-arg=--kernel-name-base=demangled")
         .arg("--commit")
@@ -1041,6 +1137,12 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         stdout.contains(&format!("--nsys-command '{nsys_rel}'"))
             && stdout.contains(&format!("--ncu-command '{ncu_rel}'")),
         "env template command should preserve profiler executable paths: {stdout}"
+    );
+    assert!(
+        stdout.contains("--check-gpu-memory")
+            && stdout.contains("--min-gpu-free-mib 16384")
+            && stdout.contains(&format!("--nvidia-smi-command '{smi_rel}'")),
+        "env template command should preserve GPU memory preflight settings: {stdout}"
     );
     assert!(
         stdout.contains(&format!("--nsys-trace {nsys_trace}"))
@@ -2001,5 +2103,12 @@ fn eth_proof_timing_batch_available_suite_uses_only_configured_large_env() {
 fn write_fixture(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, b"fixture").expect("fixture should write");
+    path
+}
+
+fn write_executable_script(dir: &std::path::Path, name: &str, source: &str) -> std::path::PathBuf {
+    let path = dir.join(name);
+    std::fs::write(&path, source).expect("script fixture should write");
+    make_executable(&path);
     path
 }

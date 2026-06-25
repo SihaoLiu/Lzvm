@@ -19,6 +19,8 @@ DEFAULT_PROFILE_TOOL = "nsys"
 DEFAULT_NSYS_TRACE = "cuda,nvtx,osrt"
 DEFAULT_NCU_SET = "basic"
 DEFAULT_NCU_TARGET_PROCESSES = "all"
+DEFAULT_NVIDIA_SMI_COMMAND = "nvidia-smi"
+DEFAULT_MIN_GPU_FREE_MIB = 1024
 
 REQUIRED_PATHS = [
     ("SETUP", "dir"),
@@ -140,6 +142,16 @@ def positive_timeout(raw: str) -> float:
         raise argparse.ArgumentTypeError(f"invalid timeout: {raw!r}") from error
     if value <= 0.0:
         raise argparse.ArgumentTypeError("timeout must be positive")
+    return value
+
+
+def positive_mib(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"invalid MiB value: {raw!r}") from error
+    if value <= 0:
+        raise argparse.ArgumentTypeError("MiB value must be positive")
     return value
 
 
@@ -347,6 +359,11 @@ def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
     if args.profile_tool != DEFAULT_PROFILE_TOOL:
         parts.extend(["--profile-tool", args.profile_tool])
     parts.extend(profile_arg_cli_parts(args))
+    if args.check_gpu_memory:
+        parts.append("--check-gpu-memory")
+    if args.min_gpu_free_mib != DEFAULT_MIN_GPU_FREE_MIB:
+        parts.extend(["--min-gpu-free-mib", str(args.min_gpu_free_mib)])
+    parts.extend(gpu_memory_cli_parts(args, root))
     if args.enforce_targets:
         parts.append("--enforce-targets")
     if args.small_max_avg_s is not None:
@@ -538,6 +555,97 @@ def resolve_profile_tool(raw: str, root: Path) -> Path | None:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return candidate
     return None
+
+
+def gpu_memory_tool_spec(args: argparse.Namespace) -> tuple[str, str]:
+    if args.nvidia_smi_command is not None:
+        return ("arg", args.nvidia_smi_command)
+    env_value = os.environ.get("LZVM_NVIDIA_SMI_COMMAND")
+    if env_value:
+        return ("env", env_value)
+    return ("path", DEFAULT_NVIDIA_SMI_COMMAND)
+
+
+def gpu_memory_cli_parts(args: argparse.Namespace, root: Path) -> list[str]:
+    source, raw = gpu_memory_tool_spec(args)
+    if source == "path":
+        return []
+    return ["--nvidia-smi-command", profile_tool_command_arg(raw, root)]
+
+
+def parse_gpu_memory_rows(text: str) -> list[dict[str, int]]:
+    rows: list[dict[str, int]] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) != 4:
+            raise ValueError(f"expected 4 columns, found {len(parts)}")
+        index, total, used, free = (int(part) for part in parts)
+        if min(index, total, used, free) < 0:
+            raise ValueError("memory values must be nonnegative")
+        rows.append({"index": index, "total": total, "used": used, "free": free})
+    if not rows:
+        raise ValueError("no GPU rows returned")
+    return rows
+
+
+def first_diagnostic_line(text: str) -> str:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[0][:200] if lines else ""
+
+
+def print_gpu_memory_check(args: argparse.Namespace, root: Path) -> bool:
+    source, raw = gpu_memory_tool_spec(args)
+    resolved = resolve_profile_tool(raw, root)
+    print(f"gpu_memory_source={source}")
+    print(f"gpu_memory_command={raw}")
+    print(f"gpu_memory_min_free_mib={args.min_gpu_free_mib}")
+    if resolved is None:
+        print("gpu_memory_status=missing")
+        return False
+    print(f"gpu_memory_resolved={display_path_for_shell(resolved, root)}")
+    query = [
+        str(resolved),
+        "--query-gpu=index,memory.total,memory.used,memory.free",
+        "--format=csv,noheader,nounits",
+    ]
+    try:
+        result = subprocess.run(
+            query,
+            cwd=root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10.0,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print("gpu_memory_status=query_failed")
+        print(f"gpu_memory_error={error}")
+        return False
+    if result.returncode != 0:
+        print("gpu_memory_status=query_failed")
+        print(f"gpu_memory_exit_code={result.returncode}")
+        diagnostic = first_diagnostic_line(result.stderr)
+        if diagnostic:
+            print(f"gpu_memory_error={diagnostic}")
+        return False
+    try:
+        rows = parse_gpu_memory_rows(result.stdout)
+    except ValueError as error:
+        print("gpu_memory_status=parse_failed")
+        print(f"gpu_memory_error={error}")
+        return False
+    selected = max(rows, key=lambda row: row["free"])
+    print(f"gpu_memory_device_count={len(rows)}")
+    print(f"gpu_memory_selected_index={selected['index']}")
+    print(f"gpu_memory_total_mib={selected['total']}")
+    print(f"gpu_memory_used_mib={selected['used']}")
+    print(f"gpu_memory_free_mib={selected['free']}")
+    ready = selected["free"] >= args.min_gpu_free_mib
+    print(f"gpu_memory_status={'ready' if ready else 'low'}")
+    return ready
 
 
 def print_profile_tool_checks(args: argparse.Namespace, root: Path) -> bool:
@@ -759,15 +867,25 @@ def run(args: argparse.Namespace) -> int:
     if args.print_env_template or args.write_env_template is not None:
         return 0
     if args.check_profile_tools:
-        return 0 if print_profile_tool_checks(args, root) else 1
+        profile_ready = print_profile_tool_checks(args, root)
+        gpu_ready = True
+        if args.check_gpu_memory:
+            gpu_ready = print_gpu_memory_check(args, root)
+        return 0 if profile_ready and gpu_ready else 1
     if args.check_env:
         check_env(args, root)
         return 0
     if args.print_profile_commands:
+        if args.check_gpu_memory and not print_gpu_memory_check(args, root):
+            return 1
         print_profile_commands(args, root)
         return 0
     if args.summary is None:
+        if args.check_gpu_memory:
+            return 0 if print_gpu_memory_check(args, root) else 1
         raise SystemExit("--summary is required")
+    if args.check_gpu_memory and not print_gpu_memory_check(args, root):
+        return 1
     command = runner_command(args, root)
     if args.dry_run:
         print("runner_command=" + shlex.join(command))
@@ -782,11 +900,16 @@ def run(args: argparse.Namespace) -> int:
 
 def check_env(args: argparse.Namespace, root: Path) -> None:
     print_profile_tool_checks(args, root)
+    gpu_ready = True
+    if args.check_gpu_memory:
+        gpu_ready = print_gpu_memory_check(args, root)
     selected = selected_envs(args, root)
     ready = [
         (config, mode, configured_paths(config), config.trace_limit())
         for config, mode in selected
     ]
+    if not gpu_ready:
+        raise SystemExit("GPU memory preflight failed")
     print("status=ok")
     for config, mode, paths, trace_limit in ready:
         print(f"{config.label}=ready")
@@ -886,7 +1009,10 @@ def self_test() -> None:
         large_max_avg_s=None,
         print_env_template=False,
         check_profile_tools=False,
+        check_gpu_memory=False,
         print_profile_commands=False,
+        min_gpu_free_mib=DEFAULT_MIN_GPU_FREE_MIB,
+        nvidia_smi_command=None,
         ncu_command=None,
         ncu_set=DEFAULT_NCU_SET,
         ncu_target_processes=DEFAULT_NCU_TARGET_PROCESSES,
@@ -956,6 +1082,9 @@ def main() -> None:
     parser.add_argument("--write-env-template")
     parser.add_argument("--check-profile-tools", action="store_true")
     parser.add_argument("--print-profile-commands", action="store_true")
+    parser.add_argument("--check-gpu-memory", action="store_true")
+    parser.add_argument("--min-gpu-free-mib", type=positive_mib, default=DEFAULT_MIN_GPU_FREE_MIB)
+    parser.add_argument("--nvidia-smi-command")
     parser.add_argument("--profile-output-dir", default=DEFAULT_PROFILE_OUTPUT_DIR)
     parser.add_argument("--nsys-command")
     parser.add_argument("--ncu-command")
