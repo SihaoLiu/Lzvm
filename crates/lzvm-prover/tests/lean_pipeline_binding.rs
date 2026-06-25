@@ -93,6 +93,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement",
             "runtime_pipeline_binding_checked_acceptance_eth_artifact_wellformed_contract",
+            "runtime_pipeline_binding_checked_acceptance_eth_full_contract",
             "runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri",
@@ -715,6 +716,24 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_full_contract",
+        &[
+            "RuntimeEthBlockPublicInputBindingEvidence",
+            "RuntimeEthBlockPublicInputBindingStructuralObligations",
+            "RuntimeArtifactEvidence",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_full_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_eth",
+            "runtime_eth_block_public_input_binding_checked_acceptance_full_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri",
         &[
             "RuntimePipelineBindingCheckedAcceptance",
@@ -945,6 +964,15 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
             "runtime_pipeline_binding_checked_acceptance_verifier_sound_witness",
             "HashCollisionResistanceAssumption",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_sound",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_eth_full_contract",
+            "have ethEvidence := ethFull.left",
+            "have runtimeArtifactEvidence := ethFull.right.right.left",
         ],
     );
     assert!(

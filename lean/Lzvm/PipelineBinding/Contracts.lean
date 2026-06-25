@@ -498,6 +498,14 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_mer
       publicInput
       proof
       ethAccepted
+  have ethFull :=
+    runtime_pipeline_binding_checked_acceptance_eth_full_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   have traceSound :=
     runtime_trace_constraint_artifact_binding_checked_acceptance_sound
       assumptions
@@ -519,9 +527,9 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_mer
       proof
       requiresExternalSource
       queryPlanAccepted
-  have ethEvidence := ethSound.left
+  have ethEvidence := ethFull.left
   have artifactEvidence := ethSound.right.left
-  have runtimeArtifactEvidence := ethSound.right.right.left
+  have runtimeArtifactEvidence := ethFull.right.right.left
   have tracePreflightEvidence := traceSound.left
   have traceConstraintEvidence := traceSound.right.left
   have queryPlanEvidence := queryPlanSound.left
@@ -629,6 +637,14 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_ope
       publicInput
       proof
       ethAccepted
+  have ethFull :=
+    runtime_pipeline_binding_checked_acceptance_eth_full_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   have traceSound :=
     runtime_trace_constraint_artifact_binding_checked_acceptance_sound
       assumptions
@@ -651,9 +667,9 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_ope
       proof
       requiresExternalSource
       queryPlanAccepted
-  have ethEvidence := ethSound.left
+  have ethEvidence := ethFull.left
   have artifactEvidence := ethSound.right.left
-  have runtimeArtifactEvidence := ethSound.right.right.left
+  have runtimeArtifactEvidence := ethFull.right.right.left
   have tracePreflightEvidence := traceSound.left
   have traceConstraintEvidence := traceSound.right.left
   have queryPlanEvidence := queryPlanSound.left
