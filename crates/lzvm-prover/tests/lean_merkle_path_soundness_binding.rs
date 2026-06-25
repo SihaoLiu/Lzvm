@@ -42,6 +42,10 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
         "Lean Merkle path model should expose concrete path data, fold verification, compression collision witnesses, indexed commitment, n-ary arity-2 embedding, and centralized assumption binding"
     );
     assert!(
+        !lean_source.contains("merkleHashCollisionResistance.evidence"),
+        "Merkle path soundness should route bundled hash evidence through the named assumption accessor"
+    );
+    assert!(
         lean_source.contains(
             "hashAssumptions.merkleHashCollisionResistanceStatement =\n    MerkleCompressionNoCollision compress"
         ),
@@ -250,7 +254,7 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
         "different_leaf_same_position_verified_openings_contradict_assumption",
         &[
             "different_leaf_same_position_verified_openings_contradict_no_collision",
-            "hashAssumptions.merkleHashCollisionResistance.evidence",
+            "HashCollisionResistanceAssumption.merkle_hash_collision_resistance",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -323,7 +327,7 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
         "different_leaf_same_position_verified_nary_openings_contradict_assumption",
         &[
             "different_leaf_same_position_verified_nary_openings_contradict_no_collision",
-            "hashAssumptions.merkleHashCollisionResistance.evidence",
+            "HashCollisionResistanceAssumption.merkle_hash_collision_resistance",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

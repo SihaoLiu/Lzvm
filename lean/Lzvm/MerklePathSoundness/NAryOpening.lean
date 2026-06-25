@@ -75,7 +75,8 @@ theorem verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_in
     verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
+          hashAssumptions))
       root
       opening
       verified
@@ -102,7 +103,8 @@ theorem
     nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_no_collision
       (Eq.mp
         centralized
-        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
+          assumptions.crypto.hashCollisionResistance))
       root
       opening
       verified
@@ -174,7 +176,8 @@ theorem
     verified_concrete_nary_merkle_opening_implies_root_commits_to_leaf_at_position_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
+          hashAssumptions))
       root
       opening
       verified
@@ -369,7 +372,8 @@ theorem
     verified_concrete_nary_merkle_opening_arity_two_implies_root_commits_to_leaf_at_index_from_no_collision
       (Eq.mp
         centralized
-        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
+          assumptions.crypto.hashCollisionResistance))
       root
       opening
       openingArity
@@ -400,7 +404,8 @@ theorem
     verified_concrete_nary_merkle_opening_arity_four_implies_root_commits_to_leaf_at_index_from_no_collision
       (Eq.mp
         centralized
-        assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
+          assumptions.crypto.hashCollisionResistance))
       root
       opening
       openingArity
@@ -459,7 +464,8 @@ theorem
     verified_concrete_nary_merkle_opening_arity_two_same_index_leaf_eq_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
+          hashAssumptions))
       root
       opening
       otherOpening
@@ -557,7 +563,8 @@ theorem
     verified_concrete_nary_merkle_opening_arity_four_same_index_leaf_eq_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
+          hashAssumptions))
       root
       opening
       otherOpening
@@ -626,7 +633,8 @@ theorem
     nary_merkle_path_arity_two_index_binding_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
+          hashAssumptions))
       root
       opening.leaf
       opening.layers
@@ -699,7 +707,8 @@ theorem
     nary_merkle_path_arity_four_index_binding_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance
+          hashAssumptions))
       root
       opening.leaf
       opening.layers

@@ -49,7 +49,7 @@ theorem centralized_merkle_compression_collision_free
     merkle_compression_collision_free_of_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance hashAssumptions))
 
 theorem merkle_parent_digest_injective
     {Digest : Type uDigest}
@@ -429,7 +429,7 @@ theorem binary_merkle_opening_to_nary_arity_two_index_binding_from_assumption
       compatible
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance hashAssumptions))
       root
       opening
       verified
@@ -713,7 +713,7 @@ theorem different_leaf_same_position_verified_openings_contradict_assumption
     different_leaf_same_position_verified_openings_contradict_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance hashAssumptions))
       root
       opening
       otherOpening
@@ -825,7 +825,7 @@ theorem verified_concrete_merkle_opening_same_position_leaf_eq_from_assumption
     verified_concrete_merkle_opening_same_position_leaf_eq_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance hashAssumptions))
       root
       opening
       otherOpening
@@ -1000,7 +1000,7 @@ theorem verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from
     verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance hashAssumptions))
       root
       leaf
       path
@@ -1068,7 +1068,7 @@ theorem verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_f
     verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance hashAssumptions))
       root
       leaf
       path
@@ -1156,7 +1156,7 @@ theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_f
     verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance hashAssumptions))
       root
       opening
       verified
@@ -1254,7 +1254,7 @@ theorem verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_positio
     verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance hashAssumptions))
       root
       opening
       verified

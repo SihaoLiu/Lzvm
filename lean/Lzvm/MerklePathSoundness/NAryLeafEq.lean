@@ -67,7 +67,7 @@ theorem
     verified_concrete_nary_merkle_path_arity_two_same_index_leaf_eq_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance hashAssumptions))
       root
       leaf
       path
@@ -169,7 +169,7 @@ theorem
     verified_concrete_nary_merkle_path_arity_four_same_index_leaf_eq_from_no_collision
       (Eq.mp
         centralized
-        hashAssumptions.merkleHashCollisionResistance.evidence)
+        (HashCollisionResistanceAssumption.merkle_hash_collision_resistance hashAssumptions))
       root
       leaf
       path
