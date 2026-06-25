@@ -673,3 +673,29 @@ fn proof_profile_rejects_unsafe_profile_names() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn proof_profile_rejects_dot_profile_names() {
+    for name in [".", ".."] {
+        let output = Command::new(script_path())
+            .arg("--name")
+            .arg(name)
+            .arg("--dry-run")
+            .arg("--")
+            .arg("python3")
+            .arg("-c")
+            .arg("print('timing_total_ms=1000')")
+            .output()
+            .expect("proof profile dry-run should reject dot names");
+
+        assert!(
+            !output.status.success(),
+            "proof profile should reject profile name {name:?}"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("regular profile name"),
+            "dot-name rejection should explain the profile name boundary: stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}

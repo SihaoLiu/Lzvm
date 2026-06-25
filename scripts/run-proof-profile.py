@@ -50,6 +50,8 @@ def profile_name(raw: str | None) -> str:
         raise argparse.ArgumentTypeError(
             "--name may contain only letters, digits, '.', '_', and '-'"
         )
+    if raw in {".", ".."}:
+        raise argparse.ArgumentTypeError("--name must be a regular profile name")
     return raw
 
 
