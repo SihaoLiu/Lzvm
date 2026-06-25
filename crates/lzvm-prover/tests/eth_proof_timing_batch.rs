@@ -1048,6 +1048,65 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
 }
 
 #[test]
+fn eth_proof_timing_batch_env_template_preserves_env_profiler_commands() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-write-env-profile-env");
+    let template_path = fixture.dir.join("real-proof.env");
+    let nsys_path = fixture.dir.join("env nsys");
+    let ncu_path = fixture.dir.join("env ncu");
+    let nsys_rel = nsys_path
+        .strip_prefix(workspace_root())
+        .expect("nsys path should be under workspace")
+        .display()
+        .to_string();
+    let ncu_rel = ncu_path
+        .strip_prefix(workspace_root())
+        .expect("ncu path should be under workspace")
+        .display()
+        .to_string();
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("both")
+        .arg("--profile-tool")
+        .arg("both")
+        .arg("--write-env-template")
+        .arg(&template_path)
+        .env("LZVM_NSYS_COMMAND", &nsys_path)
+        .env("LZVM_NCU_COMMAND", &ncu_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env template should write");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let template = std::fs::read_to_string(&template_path).expect("env template should be written");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "env template should preserve env profiler commands: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains(&format!("--nsys-command '{nsys_rel}'"))
+            && stdout.contains(&format!("--ncu-command '{ncu_rel}'")),
+        "next commands should embed profiler commands selected from env: {stdout}"
+    );
+    assert!(
+        stdout.contains("next_profile_tool_check_command=")
+            && stdout.contains("next_profile_command=")
+            && stdout.contains("next_run_command="),
+        "env template should report every next command with preserved profiler settings: {stdout}"
+    );
+    assert!(
+        !template.contains("LZVM_NSYS_COMMAND") && !template.contains("LZVM_NCU_COMMAND"),
+        "proof env template should not require ambient profiler env exports: {template}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_prints_profile_commands_from_env() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-profile-commands");
     let profile_dir = fixture.dir.join("profiles");
@@ -1165,6 +1224,63 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
             && !stdout.contains("{tmp_dir}")
             && !stdout.contains("{run_padded}"),
         "profile command should expand timing batch tokens to concrete temp paths: {stdout}"
+    );
+    assert!(
+        !profile_created,
+        "printing profile commands should not create profile output directories"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_profile_commands_preserve_env_profiler_commands() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-profile-env-tools");
+    let profile_dir = fixture.dir.join("profiles");
+    let nsys_path = fixture.dir.join("env nsys");
+    let ncu_path = fixture.dir.join("env ncu");
+    let nsys_rel = nsys_path
+        .strip_prefix(workspace_root())
+        .expect("nsys path should be under workspace")
+        .display()
+        .to_string();
+    let ncu_rel = ncu_path
+        .strip_prefix(workspace_root())
+        .expect("ncu path should be under workspace")
+        .display()
+        .to_string();
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--profile-tool")
+        .arg("both")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir)
+        .arg("--print-profile-commands")
+        .env("LZVM_NSYS_COMMAND", &nsys_path)
+        .env("LZVM_NCU_COMMAND", &ncu_path);
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch profile command should print");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let profile_created = profile_dir.exists();
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "profile command output should preserve env profiler commands: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains(&format!("--nsys-command '{nsys_rel}'"))
+            && stdout.contains(&format!("--ncu-command '{ncu_rel}'")),
+        "profile command output should embed profiler commands selected from env: {stdout}"
+    );
+    assert!(
+        !stdout.contains("LZVM_NSYS_COMMAND") && !stdout.contains("LZVM_NCU_COMMAND"),
+        "profile command output should not depend on ambient profiler env names: {stdout}"
     );
     assert!(
         !profile_created,
