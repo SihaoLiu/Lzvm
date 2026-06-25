@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -22,6 +23,7 @@ DEFAULT_NCU_SET = "basic"
 DEFAULT_NCU_TARGET_PROCESSES = "all"
 DEFAULT_NVIDIA_SMI_COMMAND = "nvidia-smi"
 DEFAULT_MIN_GPU_FREE_MIB = 1024
+ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 REQUIRED_PATHS = [
     ("SETUP", "dir"),
@@ -110,6 +112,37 @@ def require_workspace_temp_path(path: Path, root: Path, label: str) -> Path:
     if resolved != temp_dir and temp_dir not in resolved.parents:
         raise SystemExit(f"{label} must be under {temp_dir}: {path}")
     return path
+
+
+def parse_env_file_assignment(line: str, path: Path, line_number: int) -> tuple[str, str] | None:
+    try:
+        parts = shlex.split(line, comments=True, posix=True)
+    except ValueError as error:
+        raise SystemExit(f"{path}:{line_number}: invalid env line: {error}") from error
+    if not parts:
+        return None
+    if parts[0] == "export":
+        parts = parts[1:]
+    if len(parts) != 1 or "=" not in parts[0]:
+        raise SystemExit(f"{path}:{line_number}: expected NAME=value or export NAME=value")
+    name, value = parts[0].split("=", 1)
+    if not ENV_NAME_RE.match(name):
+        raise SystemExit(f"{path}:{line_number}: invalid env name: {name!r}")
+    return (name, value)
+
+
+def load_env_file(path: Path, root: Path) -> None:
+    path = require_workspace_temp_path(path, root, "--env-file")
+    if not path.exists():
+        raise SystemExit(f"--env-file path does not exist: {path}")
+    if not path.is_file():
+        raise SystemExit(f"--env-file must be a file: {path}")
+    with path.open(encoding="utf-8") as source:
+        for line_number, line in enumerate(source, start=1):
+            assignment = parse_env_file_assignment(line, path, line_number)
+            if assignment is not None:
+                name, value = assignment
+                os.environ[name] = value
 
 
 def shell_assign(name: str, value: str | Path) -> str:
@@ -310,7 +343,11 @@ def mode_args(args: argparse.Namespace) -> list[str]:
     return result
 
 
-def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
+def next_command_parts(
+    args: argparse.Namespace,
+    root: Path,
+    env_file: Path | str | None = None,
+) -> list[str]:
     work_dir = require_workspace_temp_path(
         resolve_workspace_path(args.work_dir, root),
         root,
@@ -329,6 +366,14 @@ def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
         "--runs",
         str(args.runs),
     ]
+    env_file_value = env_file if env_file is not None else args.env_file
+    if env_file_value is not None:
+        env_file_path = require_workspace_temp_path(
+            resolve_workspace_path(str(env_file_value), root),
+            root,
+            "--env-file",
+        )
+        parts.extend(["--env-file", display_path_for_shell(env_file_path, root)])
     if args.max_runs is not None:
         parts.extend(["--max-runs", str(args.max_runs)])
     parts.extend(
@@ -384,19 +429,8 @@ def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
     return parts
 
 
-class ShellControl:
-    def __init__(self, text: str):
-        self.text = text
-
-
-SHELL_AND = ShellControl("&&")
-
-
-def shell_join(parts: list[str | Path | ShellControl]) -> str:
-    return " ".join(
-        part.text if isinstance(part, ShellControl) else shell_arg(part)
-        for part in parts
-    )
+def shell_join(parts: list[str | Path]) -> str:
+    return " ".join(shell_arg(part) for part in parts)
 
 
 def write_env_template(args: argparse.Namespace, root: Path) -> None:
@@ -405,21 +439,15 @@ def write_env_template(args: argparse.Namespace, root: Path) -> None:
         root,
         "--write-env-template",
     )
-    base_parts = next_command_parts(args, root)
+    env_path = display_path_for_shell(path, root)
+    base_parts = next_command_parts(args, root, env_file=path)
+    check_command = shell_join([*base_parts, "--check-env"])
+    profile_tool_check_command = shell_join([*base_parts, "--check-profile-tools"])
+    profile_command = shell_join([*base_parts, "--print-profile-commands"])
+    run_command = shell_join([*base_parts, "--summary", "real proof timing"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(env_template_text(args, root), encoding="utf-8")
 
-    env_path = display_path_for_shell(path, root)
-    check_command = shell_join([".", env_path, SHELL_AND, *base_parts, "--check-env"])
-    profile_tool_check_command = shell_join(
-        [".", env_path, SHELL_AND, *base_parts, "--check-profile-tools"]
-    )
-    profile_command = shell_join(
-        [".", env_path, SHELL_AND, *base_parts, "--print-profile-commands"]
-    )
-    run_command = shell_join(
-        [".", env_path, SHELL_AND, *base_parts, "--summary", "real proof timing"]
-    )
     print(f"env_template={env_path}")
     print(f"next_check_command={check_command}")
     print(f"next_profile_tool_check_command={profile_tool_check_command}")
@@ -924,6 +952,8 @@ def run(args: argparse.Namespace) -> int:
         write_env_template(args, root)
     if args.print_env_template or args.write_env_template is not None:
         return 0
+    if args.env_file is not None:
+        load_env_file(resolve_workspace_path(args.env_file, root), root)
     if args.check_profile_tools:
         profile_ready = print_profile_tool_checks(args, root)
         gpu_ready = True
@@ -1049,6 +1079,7 @@ def self_test() -> None:
     args = argparse.Namespace(
         commit="selftest",
         dry_run=False,
+        env_file=None,
         large_mode="combined",
         large_timeout=10.0,
         max_relative_spread=0.10,
@@ -1131,6 +1162,7 @@ def main() -> None:
     parser.add_argument("--path", default="temp/improve-log.csv")
     parser.add_argument("--summary")
     parser.add_argument("--commit")
+    parser.add_argument("--env-file")
     parser.add_argument("--max-relative-spread", type=nonnegative_float, default=0.10)
     parser.add_argument("--runner", default=DEFAULT_RUNNER)
     parser.add_argument("--dry-run", action="store_true")
