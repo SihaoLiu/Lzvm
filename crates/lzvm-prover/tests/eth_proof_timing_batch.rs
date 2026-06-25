@@ -568,6 +568,7 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         .arg(fixture.dir.join("improve-log.csv"))
         .arg("--runner")
         .arg(&runner_path)
+        .arg("--profile-arg=--kernel-name-base=demangled")
         .arg("--commit")
         .arg("&&")
         .arg("--write-env-template")
@@ -617,6 +618,10 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         "env template command should preserve custom runner paths: {stdout}"
     );
     assert!(
+        stdout.contains("--profile-arg --kernel-name-base=demangled"),
+        "env template command should preserve profiler passthrough args: {stdout}"
+    );
+    assert!(
         stdout.contains("--commit '&&'"),
         "env template command should quote commit values that look like shell syntax: {stdout}"
     );
@@ -650,6 +655,8 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         .arg("both")
         .arg("--profile-output-dir")
         .arg(&profile_dir)
+        .arg("--profile-arg=--kernel-name-base=demangled")
+        .arg("--profile-arg=--launch-skip=1")
         .arg("--print-profile-commands");
     fixture.apply_env(&mut command, SMALL_PREFIX);
 
@@ -674,6 +681,11 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
     assert!(
         stdout.contains("--summarize"),
         "profile command output should request summary files: {stdout}"
+    );
+    assert!(
+        stdout.contains("--profile-arg --kernel-name-base=demangled")
+            && stdout.contains("--profile-arg --launch-skip=1"),
+        "profile command output should pass profiler-specific args through: {stdout}"
     );
     assert!(
         stdout.contains("--output-dir")

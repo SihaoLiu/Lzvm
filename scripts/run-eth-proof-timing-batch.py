@@ -332,6 +332,8 @@ def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
         parts.extend(["--profile-output-dir", display_path_for_shell(profile_output_dir, root)])
     if args.profile_tool != DEFAULT_PROFILE_TOOL:
         parts.extend(["--profile-tool", args.profile_tool])
+    for profile_arg in args.profile_arg:
+        parts.extend(["--profile-arg", profile_arg])
     if args.enforce_targets:
         parts.append("--enforce-targets")
     if args.small_max_avg_s is not None:
@@ -502,6 +504,7 @@ def profile_command_for_env(
         "--summarize",
         "--cwd",
         ".",
+        *[part for value in args.profile_arg for part in ["--profile-arg", value]],
         "--",
         "sh",
         "-lc",
@@ -753,6 +756,7 @@ def self_test() -> None:
         print_env_template=False,
         print_profile_commands=False,
         profile_output_dir=DEFAULT_PROFILE_OUTPUT_DIR,
+        profile_arg=[],
         profile_tool=DEFAULT_PROFILE_TOOL,
         write_env_template=None,
         skip_verify_proof=False,
@@ -814,6 +818,7 @@ def main() -> None:
     parser.add_argument("--write-env-template")
     parser.add_argument("--print-profile-commands", action="store_true")
     parser.add_argument("--profile-output-dir", default=DEFAULT_PROFILE_OUTPUT_DIR)
+    parser.add_argument("--profile-arg", action="append", default=[])
     parser.add_argument(
         "--profile-tool",
         choices=["nsys", "ncu", "both"],
