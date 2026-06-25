@@ -7906,9 +7906,9 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
         "fn expected_merkle_level_count",
     );
     assert!(
-        witness_opening_validation.contains("load_witness_commitment_segment_refs")
-            && !witness_opening_validation.contains("load_witness_commitment_segments("),
-        "witness opening validation should borrow witness commitment segments without cloning payloads"
+        witness_opening_validation.contains("load_witness_commitment_segment_refs_with_shapes")
+            && !witness_opening_validation.contains("parse_witness_commitment_segment"),
+        "witness opening validation should reuse loaded witness commitment payloads"
     );
 }
 

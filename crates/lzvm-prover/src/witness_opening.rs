@@ -10,10 +10,7 @@ use lzvm_artifacts::witness_opening_segment::{
     WitnessOpeningQuerySegment, WitnessOpeningSegment, WitnessOpeningSegmentError,
     WitnessOpeningStageSegment, WitnessOpeningUnitSegment, WITNESS_OPENING_SEGMENT_ID,
 };
-use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, witness_commitment_segment_id, WitnessCommitmentSegmentError,
-    WitnessCommitmentSegmentIdentity,
-};
+use lzvm_artifacts::witness_segment::WitnessCommitmentSegmentError;
 use lzvm_field::{Felt, FieldError};
 
 #[cfg(feature = "cuda")]
@@ -27,7 +24,7 @@ use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanS
 use crate::proof_artifact_timing::WitnessOpeningSourceKind;
 use crate::proof_artifact_timing::WitnessProofArtifactTiming;
 use crate::witness_commitment::{
-    load_witness_commitment_segment_refs, open_witness_stage_commitments,
+    load_witness_commitment_segment_refs_with_shapes, open_witness_stage_commitments,
     verify_witness_stage_opening_root, LoadWitnessCommitmentSegmentsError, WitnessStageOpening,
     WitnessStageOpeningError,
 };
@@ -394,7 +391,7 @@ pub fn validate_witness_opening_segments(
         return Err(ValidateWitnessOpeningSegmentsError::UnitCountMismatch);
     }
 
-    let witness_segments = load_witness_commitment_segment_refs(units, segments)
+    let witness_segments = load_witness_commitment_segment_refs_with_shapes(units, segments)
         .map_err(ValidateWitnessOpeningSegmentsError::Commitments)?;
     for query_unit in &query_plan.units {
         let unit_index = usize::try_from(query_unit.unit_index)
@@ -414,30 +411,21 @@ pub fn validate_witness_opening_segments(
             return Err(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index });
         }
 
-        let unit_count = u32::try_from(units.len())
-            .map_err(|_| ValidateWitnessOpeningSegmentsError::SegmentIdOverflow)?;
-        let witness_segment_id = witness_commitment_segment_id(
-            unit_count,
-            WitnessCommitmentSegmentIdentity {
-                unit_index: query_unit.unit_index,
-                trace_instance_index: query_unit.trace_instance_index,
-            },
-        )
-        .map_err(|_| ValidateWitnessOpeningSegmentsError::SegmentIdOverflow)?;
         let witness_segment = witness_segments
             .iter()
-            .find(|segment| segment.id == witness_segment_id)
+            .find(|segment| {
+                segment.identity.unit_index == query_unit.unit_index
+                    && segment.identity.trace_instance_index == query_unit.trace_instance_index
+            })
             .ok_or(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index })?;
-        let witness =
-            parse_witness_commitment_segment(&witness_segment.data).map_err(|source| {
-                ValidateWitnessOpeningSegmentsError::CommitmentSegment { unit_index, source }
-            })?;
         let arity = usize::try_from(unit.merkle_tree_arity)
             .map_err(|_| ValidateWitnessOpeningSegmentsError::ArityOverflow)?;
         let expected_level_count = expected_merkle_level_count(unit.extended_domain_size, arity)?;
 
         for (query, expected_row) in opening_unit.queries.iter().zip(query_unit.queries.iter()) {
-            if query.row_index != *expected_row || query.stages.len() != witness.stages.len() {
+            if query.row_index != *expected_row
+                || query.stages.len() != witness_segment.witness.stages.len()
+            {
                 return Err(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index });
             }
             for stage in &query.stages {
@@ -454,7 +442,8 @@ pub fn validate_witness_opening_segments(
                 {
                     return Err(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index });
                 }
-                let Some(witness_stage) = witness
+                let Some(witness_stage) = witness_segment
+                    .witness
                     .stages
                     .iter()
                     .find(|witness_stage| witness_stage.stage_index == stage.stage_index)
