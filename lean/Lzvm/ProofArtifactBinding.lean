@@ -130,6 +130,20 @@ def RuntimeProofArtifactBindingEvidence
     /\ validation.publicValuesHashMatches artifact publicInput proof
     /\ validation.proofPayloadMatches artifact publicInput proof
 
+def RuntimeProofArtifactBindingStructuralObligations
+    (_system : VerifierModel)
+    (validation : RuntimeProofArtifactBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.proofContainerCanonical artifact publicInput proof
+    /\ validation.proofMetadataCanonical artifact publicInput proof
+    /\ validation.proofSegmentsPresent artifact publicInput proof
+    /\ validation.proofSegmentPayloadsNonempty artifact publicInput proof
+    /\ validation.proofSegmentIdsAllowed artifact publicInput proof
+    /\ validation.proofSegmentIdsUnique artifact publicInput proof
+    /\ validation.proofUnitValuesTraceIdentityCoverage artifact publicInput proof
+
 def RuntimeProofArtifactBindingCheckedAcceptance
     (_system : VerifierModel)
     (validation : RuntimeProofArtifactBindingValidation _system)
@@ -390,6 +404,66 @@ theorem runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed
       proof
       accepted
 
+theorem runtime_proof_artifact_binding_checked_acceptance_structural_obligations
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingStructuralObligations
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (validation.bindingAcceptedImpliesProofContainerCanonical
+        artifact
+        publicInput
+        proof
+        accepted)
+      (And.intro
+        (validation.bindingAcceptedImpliesProofMetadataCanonical
+          artifact
+          publicInput
+          proof
+          accepted)
+        (And.intro
+          (validation.bindingAcceptedImpliesProofSegmentsPresent
+            artifact
+            publicInput
+            proof
+            accepted)
+          (And.intro
+            (validation.bindingAcceptedImpliesProofSegmentPayloadsNonempty
+              artifact
+              publicInput
+              proof
+              accepted)
+            (And.intro
+              (validation.bindingAcceptedImpliesProofSegmentIdsAllowed
+                artifact
+                publicInput
+                proof
+                accepted)
+              (And.intro
+                (validation.bindingAcceptedImpliesProofSegmentIdsUnique
+                  artifact
+                  publicInput
+                  proof
+                  accepted)
+                (validation.bindingAcceptedImpliesProofUnitValuesTraceIdentityCoverage
+                  artifact
+                  publicInput
+                  proof
+                  accepted))))))
+
 theorem runtime_proof_artifact_binding_checked_acceptance_obligations
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -503,6 +577,56 @@ theorem runtime_proof_artifact_binding_checked_acceptance_sound
     And.intro obligations.left
       (And.intro obligations.right.left
         (abstract_verifier_sound assumptions publicInput proof verifierAccepts))
+
+theorem runtime_proof_artifact_binding_checked_acceptance_full_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_proof_artifact_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have structural :=
+    runtime_proof_artifact_binding_checked_acceptance_structural_obligations
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro sound.left
+      (And.intro structural sound.right)
 
 theorem runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract
     {system : VerifierModel}

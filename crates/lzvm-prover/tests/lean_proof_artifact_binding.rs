@@ -22,6 +22,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             && lean_source.contains("def RuntimeProofArtifactBindingValidationAgreement")
             && lean_source.contains("RuntimeConformanceValidationAgreement")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
+            && lean_source.contains("RuntimeProofArtifactBindingStructuralObligations")
             && lean_source.contains("proofContainerCanonical")
             && lean_source.contains("proofMetadataCanonical")
             && lean_source.contains("proofSegmentsPresent")
@@ -43,7 +44,9 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed",
             "runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique",
             "runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage",
+            "runtime_proof_artifact_binding_checked_acceptance_structural_obligations",
             "runtime_proof_artifact_binding_checked_acceptance_sound",
+            "runtime_proof_artifact_binding_checked_acceptance_full_contract",
             "runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract",
         ],
     );
@@ -84,6 +87,19 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_structural_obligations",
+        &[
+            "bindingAcceptedImpliesProofContainerCanonical",
+            "bindingAcceptedImpliesProofMetadataCanonical",
+            "bindingAcceptedImpliesProofSegmentsPresent",
+            "bindingAcceptedImpliesProofSegmentPayloadsNonempty",
+            "bindingAcceptedImpliesProofSegmentIdsAllowed",
+            "bindingAcceptedImpliesProofSegmentIdsUnique",
+            "bindingAcceptedImpliesProofUnitValuesTraceIdentityCoverage",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
         "runtime_proof_artifact_binding_checked_acceptance_sound",
         &[
             "runtime_proof_artifact_binding_checked_acceptance_obligations",
@@ -94,6 +110,14 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_proof_artifact_binding_checked_acceptance_sound",
         &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_full_contract",
+        &[
+            "runtime_proof_artifact_binding_checked_acceptance_sound",
+            "runtime_proof_artifact_binding_checked_acceptance_structural_obligations",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
