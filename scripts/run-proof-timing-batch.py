@@ -40,6 +40,21 @@ def require_workspace_temp_path(path: Path, root: Path, label: str) -> Path:
     return path
 
 
+def current_commit(root: Path) -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "--short=8", "HEAD"],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            "failed to resolve current git commit: " + result.stderr.strip()
+        )
+    return result.stdout.strip()
+
+
 def positive_run_count(raw: str) -> int:
     try:
         value = int(raw)
@@ -512,6 +527,7 @@ def write_batch_json(
     path: Path,
     args: argparse.Namespace,
     max_runs: int,
+    commit: str,
     root: Path,
     batch_dir: Path,
     cwd: Path,
@@ -542,7 +558,7 @@ def write_batch_json(
         "max_relative_spread": args.max_relative_spread,
         "small_max_avg_s": args.small_max_avg_s,
         "large_max_avg_s": args.large_max_avg_s,
-        "commit": args.commit,
+        "commit": commit,
         "summary": args.summary,
         "small_command": args.small_command,
         "large_command": args.large_command,
@@ -594,6 +610,7 @@ def run_batch(args: argparse.Namespace) -> Path:
     max_runs = args.max_runs if args.max_runs is not None else args.runs
     if max_runs < args.runs:
         raise SystemExit("--max-runs must be at least --runs")
+    commit = args.commit or current_commit(root)
 
     append_script = resolve_workspace_path(args.append_script, root)
     if not append_script.exists():
@@ -653,6 +670,7 @@ def run_batch(args: argparse.Namespace) -> Path:
             batch_json_path,
             args,
             max_runs,
+            commit,
             root,
             batch_dir,
             cwd,
@@ -731,7 +749,7 @@ def run_batch(args: argparse.Namespace) -> Path:
         append_improve_log(
             append_script,
             improve_log_path,
-            args.commit,
+            commit,
             args.summary,
             small_logs,
             large_logs,

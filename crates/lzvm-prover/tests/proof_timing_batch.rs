@@ -11,6 +11,23 @@ fn batch_script_path() -> std::path::PathBuf {
     workspace_root().join("scripts/run-proof-timing-batch.py")
 }
 
+fn current_commit() -> String {
+    let output = Command::new("git")
+        .args(["rev-parse", "--short=8", "HEAD"])
+        .current_dir(workspace_root())
+        .output()
+        .expect("git should resolve current commit");
+    assert!(
+        output.status.success(),
+        "git should resolve current commit: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .expect("git output should be utf-8")
+        .trim()
+        .to_owned()
+}
+
 fn test_dir(name: &str) -> std::path::PathBuf {
     workspace_root().join(format!("temp/{name}-{}", std::process::id()))
 }
@@ -236,6 +253,53 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
     assert!(
         contents.contains("\"avg=2.002 samples=2.001;2.002;2.003 used=3/3\""),
         "large timing logs should be averaged from milliseconds: {contents}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn proof_timing_batch_defaults_commit_to_head() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-default-commit");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+    let commit = current_commit();
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg(concat!(
+            "printf 'timing_total_ms=1000\\n",
+            "timing_guest_stage_tree_commit_root_count=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_groups=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n'"
+        ))
+        .arg("--summary")
+        .arg("default commit")
+        .output()
+        .expect("proof timing batch should run");
+    assert!(
+        output.status.success(),
+        "proof timing batch should default commit: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let batch_json = std::fs::read_to_string(single_batch_dir(&dir).join("batch.json"))
+        .expect("batch json should read");
+    assert!(
+        batch_json.contains(&format!("\"commit\": \"{commit}\"")),
+        "batch json should record the effective commit: {batch_json}"
+    );
+    let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
+    assert!(
+        contents.contains(&format!("\"{commit}\"")),
+        "improve log should record the effective commit: {contents}"
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
