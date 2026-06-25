@@ -132,28 +132,12 @@ theorem ignored_metadata_acceptance_verifier_core_contract
       observed
   exact
     And.intro
-      (assumption_bundle_fiat_shamir_transcript_binding
-        assumptions
-        publicInput
-        proof
-        accepted)
+      (assumption_bundle_fiat_shamir_transcript_binding assumptions publicInput proof accepted)
       (And.intro
-        (assumption_bundle_public_input_binding
-          assumptions
-          publicInput
-          proof
-          accepted)
+        (assumption_bundle_public_input_binding assumptions publicInput proof accepted)
         (And.intro
-          (assumption_bundle_pcs_opening_soundness
-            assumptions
-            publicInput
-            proof
-            accepted)
-          (assumption_bundle_fri_query_soundness
-            assumptions
-            publicInput
-            proof
-            accepted)))
+          (assumption_bundle_pcs_opening_soundness assumptions publicInput proof accepted)
+          (assumption_bundle_fri_query_soundness assumptions publicInput proof accepted)))
 
 theorem auxiliary_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -166,28 +150,12 @@ theorem auxiliary_checked_acceptance_verifier_core_contract
   intro publicInput proof checked
   exact
     And.intro
-      (assumption_bundle_fiat_shamir_transcript_binding
-        assumptions
-        publicInput
-        proof
-        checked.left)
+      (assumption_bundle_fiat_shamir_transcript_binding assumptions publicInput proof checked.left)
       (And.intro
-        (assumption_bundle_public_input_binding
-          assumptions
-          publicInput
-          proof
-          checked.left)
+        (assumption_bundle_public_input_binding assumptions publicInput proof checked.left)
         (And.intro
-          (assumption_bundle_pcs_opening_soundness
-            assumptions
-            publicInput
-            proof
-            checked.left)
-          (assumption_bundle_fri_query_soundness
-            assumptions
-            publicInput
-            proof
-            checked.left)))
+          (assumption_bundle_pcs_opening_soundness assumptions publicInput proof checked.left)
+          (assumption_bundle_fri_query_soundness assumptions publicInput proof checked.left)))
 
 structure TimingObservation where
   label : Nat

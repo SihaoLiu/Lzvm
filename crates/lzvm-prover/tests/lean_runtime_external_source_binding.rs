@@ -84,4 +84,14 @@ fn lean_runtime_external_source_binding_exports_core_contract_projection() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_guarded_external_source_checked_acceptance_sound",
+        &["assumption_bundle_pcs_opening_soundness"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_guarded_external_source_checked_acceptance_sound",
+        &["assumptions.crypto.pcs_opening_sound"],
+    );
 }

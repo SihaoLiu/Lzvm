@@ -4,6 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
+import Lzvm.AssumptionAudit
 import Lzvm.Conformance
 import Lzvm.ExternalSource
 
@@ -256,7 +257,11 @@ theorem runtime_guarded_external_source_checked_acceptance_sound
       proof
       artifactAccepted
   have pcsOpenings :=
-    assumptions.crypto.pcs_opening_sound publicInput proof verifierAccepts
+    assumption_bundle_pcs_opening_soundness
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
   have soundWitness :=
     abstract_verifier_sound assumptions publicInput proof verifierAccepts
   exact
