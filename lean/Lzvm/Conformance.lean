@@ -178,7 +178,11 @@ theorem runtime_artifact_checked_acceptance_obligations
       proof
       verifierAccepts
   have publicInputBound :=
-    assumptions.semantic.public_input_binding publicInput proof verifierAccepts
+    assumption_bundle_public_input_binding
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
   have pcsOpenings :=
     assumption_bundle_pcs_opening_soundness
       assumptions

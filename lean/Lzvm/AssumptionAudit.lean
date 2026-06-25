@@ -422,4 +422,48 @@ theorem assumption_bundle_carries_required_semantic_evidence
     RequiredSemanticAssumptionStatements assumptions.semantic := by
   exact semantic_assumptions_carry_required_evidence assumptions.semantic
 
+theorem assumption_bundle_public_input_binding
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.publicInputBound publicInput proof := by
+  exact
+    required_semantic_assumptions_public_input_binding
+      (assumption_bundle_carries_required_semantic_evidence assumptions)
+
+theorem assumption_bundle_trace_extraction
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        exists trace, system.traceConsistent publicInput proof trace := by
+  exact
+    required_semantic_assumptions_trace_extraction
+      (assumption_bundle_carries_required_semantic_evidence assumptions)
+
+theorem assumption_bundle_constraint_satisfaction
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof trace,
+      system.accepts publicInput proof ->
+        system.traceConsistent publicInput proof trace ->
+          exists constraints, system.constraintsSatisfied constraints trace := by
+  exact
+    required_semantic_assumptions_constraint_satisfaction
+      (assumption_bundle_carries_required_semantic_evidence assumptions)
+
+theorem assumption_bundle_witness_extraction
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof trace constraints,
+      system.accepts publicInput proof ->
+        system.publicInputBound publicInput proof ->
+          system.traceConsistent publicInput proof trace ->
+            system.constraintsSatisfied constraints trace ->
+              exists witness, system.witnessMatchesTrace witness trace := by
+  exact
+    required_semantic_assumptions_witness_extraction
+      (assumption_bundle_carries_required_semantic_evidence assumptions)
+
 end Lzvm

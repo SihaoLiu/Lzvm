@@ -24,7 +24,11 @@ theorem abstract_verifier_sound
       proof
       accepted
   have publicInputBound :=
-    assumptions.semantic.public_input_binding publicInput proof accepted
+    assumption_bundle_public_input_binding
+      assumptions
+      publicInput
+      proof
+      accepted
   have pcsOpeningsValid :=
     assumption_bundle_pcs_opening_soundness
       assumptions
@@ -37,12 +41,14 @@ theorem abstract_verifier_sound
       publicInput
       proof
       accepted
-  cases assumptions.semantic.trace_extraction publicInput proof accepted with
+  cases assumption_bundle_trace_extraction assumptions publicInput proof accepted with
   | intro trace traceConsistent =>
-    cases assumptions.semantic.constraint_satisfaction
+    cases assumption_bundle_constraint_satisfaction
+        assumptions
         publicInput proof trace accepted traceConsistent with
     | intro constraints constraintsSatisfied =>
-      cases assumptions.semantic.witness_extraction
+      cases assumption_bundle_witness_extraction
+          assumptions
           publicInput
           proof
           trace

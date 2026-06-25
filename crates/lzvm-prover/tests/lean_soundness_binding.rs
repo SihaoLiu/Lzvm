@@ -38,6 +38,10 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
             "assumption_bundle_fiat_shamir_transcript_binding",
             "assumption_bundle_pcs_opening_soundness",
             "assumption_bundle_fri_query_soundness",
+            "assumption_bundle_public_input_binding",
+            "assumption_bundle_trace_extraction",
+            "assumption_bundle_constraint_satisfaction",
+            "assumption_bundle_witness_extraction",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -47,6 +51,10 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
             "assumptions.crypto.transcript_binding",
             "assumptions.crypto.pcs_opening_sound",
             "assumptions.crypto.fri_query_sound",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.semantic.trace_extraction",
+            "assumptions.semantic.constraint_satisfaction",
+            "assumptions.semantic.witness_extraction",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

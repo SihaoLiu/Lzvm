@@ -72,6 +72,10 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "required_semantic_assumptions_witness_extraction",
             "semantic_assumptions_carry_required_evidence",
             "assumption_bundle_carries_required_semantic_evidence",
+            "assumption_bundle_public_input_binding",
+            "assumption_bundle_trace_extraction",
+            "assumption_bundle_constraint_satisfaction",
+            "assumption_bundle_witness_extraction",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -129,6 +133,21 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "assumptions.witness_extraction",
         ],
     );
+    for theorem_name in [
+        "assumption_bundle_public_input_binding",
+        "assumption_bundle_trace_extraction",
+        "assumption_bundle_constraint_satisfaction",
+        "assumption_bundle_witness_extraction",
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &audit_source,
+            theorem_name,
+            &[
+                "assumption_bundle_carries_required_semantic_evidence",
+                "required_semantic_assumptions_",
+            ],
+        );
+    }
     lean_binding::assert_theorem_prefix_contains(
         &audit_source,
         "required_crypto_assumptions_merkle_compression_no_collision",
