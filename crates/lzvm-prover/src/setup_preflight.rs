@@ -35,10 +35,7 @@ use lzvm_artifacts::trace_constraint_segment::{
 };
 use lzvm_artifacts::unit_values_segment::UNIT_VALUES_SEGMENT_ID;
 use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
-use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, witness_commitment_segment_identity,
-    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
-};
+use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 use lzvm_field::{Ext3, Felt, FieldError};
 
 use crate::constant_opening::{
@@ -87,7 +84,8 @@ use crate::unit_values::{
     validate_unit_values_units_match_query_units_from_segment, LoadUnitValuesSegmentError,
 };
 use crate::witness_commitment::{
-    load_witness_commitment_segment_refs, LoadWitnessCommitmentSegmentsError,
+    load_witness_commitment_segment_refs_with_shapes, LoadWitnessCommitmentSegmentsError,
+    LoadedWitnessCommitmentSegmentRef,
 };
 use crate::witness_opening::{
     validate_witness_opening_segments, ValidateWitnessOpeningSegmentsError,
@@ -761,11 +759,11 @@ pub fn validate_setup_preflight(
 
     validate_pcs_material_manifest_segments(&schedule, &proof.segments)
         .map_err(SetupPreflightError::PcsMaterial)?;
-    let witness_segments = load_witness_commitment_segment_refs(&schedule.units, &proof.segments)
-        .map_err(SetupPreflightError::WitnessCommitment)?;
+    let witness_segments =
+        load_witness_commitment_segment_refs_with_shapes(&schedule.units, &proof.segments)
+            .map_err(SetupPreflightError::WitnessCommitment)?;
     validate_optional_trace_constraint_segment(
         catalog,
-        &schedule,
         &report.trace_constraint_units,
         &witness_segments,
     )?;
@@ -1097,9 +1095,8 @@ fn validate_setup_proof_segment_ids(segments: &[ProofSegment]) -> Result<(), Set
 
 fn validate_optional_trace_constraint_segment(
     catalog: &KeyDirectoryCatalog,
-    schedule: &crate::ProveSchedule,
     trace_constraint_units: &[TraceConstraintPreflightUnit],
-    witness_segments: &[&ProofSegment],
+    witness_segments: &[LoadedWitnessCommitmentSegmentRef<'_>],
 ) -> Result<(), SetupPreflightError> {
     if trace_constraint_units.is_empty() {
         if witness_segments.is_empty() {
@@ -1110,31 +1107,14 @@ fn validate_optional_trace_constraint_segment(
         });
     }
 
-    let unit_count = u32::try_from(schedule.units.len()).map_err(|_| {
-        SetupPreflightError::TraceConstraintBinding {
-            message: "trace constraint evidence unit count overflow".to_owned(),
-        }
-    })?;
     let mut witness_shapes = BTreeMap::new();
     for witness_segment in witness_segments {
-        let identity = witness_commitment_segment_identity(unit_count, witness_segment.id)
-            .map_err(|error| SetupPreflightError::TraceConstraintBinding {
-                message: format!("trace constraint evidence witness identity failed: {error}"),
-            })?
-            .ok_or_else(|| SetupPreflightError::TraceConstraintBinding {
-                message: format!(
-                    "trace constraint evidence missing witness identity for segment {}",
-                    witness_segment.id
-                ),
-            })?;
-        let parsed = parse_witness_commitment_segment(&witness_segment.data).map_err(|error| {
-            SetupPreflightError::TraceConstraintBinding {
-                message: format!("trace constraint evidence witness segment parse failed: {error}"),
-            }
-        })?;
         witness_shapes.insert(
-            (identity.unit_index, identity.trace_instance_index),
-            (parsed.trace_rows, parsed.trace_columns),
+            (
+                witness_segment.identity.unit_index,
+                witness_segment.identity.trace_instance_index,
+            ),
+            (witness_segment.trace_rows, witness_segment.trace_columns),
         );
     }
 

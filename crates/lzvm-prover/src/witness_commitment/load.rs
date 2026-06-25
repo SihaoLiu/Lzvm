@@ -2,12 +2,20 @@ use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, witness_commitment_segment_identity,
-    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    WitnessCommitmentSegmentIdentity, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 
 use crate::ProveUnitSchedule;
 
 use super::LoadWitnessCommitmentSegmentsError;
+
+#[derive(Debug, Clone, Copy)]
+pub struct LoadedWitnessCommitmentSegmentRef<'a> {
+    pub segment: &'a ProofSegment,
+    pub identity: WitnessCommitmentSegmentIdentity,
+    pub trace_rows: u64,
+    pub trace_columns: u64,
+}
 
 pub fn load_witness_commitment_segments(
     units: &[ProveUnitSchedule],
@@ -23,6 +31,18 @@ pub fn load_witness_commitment_segment_refs<'a>(
     units: &[ProveUnitSchedule],
     segments: &'a [ProofSegment],
 ) -> Result<Vec<&'a ProofSegment>, LoadWitnessCommitmentSegmentsError> {
+    Ok(
+        load_witness_commitment_segment_refs_with_shapes(units, segments)?
+            .into_iter()
+            .map(|loaded| loaded.segment)
+            .collect(),
+    )
+}
+
+pub fn load_witness_commitment_segment_refs_with_shapes<'a>(
+    units: &[ProveUnitSchedule],
+    segments: &'a [ProofSegment],
+) -> Result<Vec<LoadedWitnessCommitmentSegmentRef<'a>>, LoadWitnessCommitmentSegmentsError> {
     let unit_count = u32::try_from(units.len())
         .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitCountOverflow)?;
     let Some(end_id) = WITNESS_COMMITMENT_SEGMENT_BASE_ID.checked_add(unit_count) else {
@@ -51,21 +71,20 @@ pub fn load_witness_commitment_segment_refs<'a>(
         if !seen_unit_identities.insert((identity.unit_index, identity.trace_instance_index)) {
             return Err(LoadWitnessCommitmentSegmentsError::DuplicateSegment { unit_index });
         }
-        validate_witness_commitment_segment(units, segment)?;
-        out.push(segment);
+        out.push(validate_witness_commitment_segment(units, segment)?);
     }
 
     if out.is_empty() {
         return Err(LoadWitnessCommitmentSegmentsError::MissingSegment);
     }
-    out.sort_by_key(|segment| segment.id);
+    out.sort_by_key(|loaded| loaded.segment.id);
     Ok(out)
 }
 
-fn validate_witness_commitment_segment(
+fn validate_witness_commitment_segment<'a>(
     units: &[ProveUnitSchedule],
-    segment: &ProofSegment,
-) -> Result<(), LoadWitnessCommitmentSegmentsError> {
+    segment: &'a ProofSegment,
+) -> Result<LoadedWitnessCommitmentSegmentRef<'a>, LoadWitnessCommitmentSegmentsError> {
     let unit_count = u32::try_from(units.len())
         .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitCountOverflow)?;
     let identity = witness_commitment_segment_identity(unit_count, segment.id)
@@ -108,5 +127,10 @@ fn validate_witness_commitment_segment(
             return Err(LoadWitnessCommitmentSegmentsError::EmptyTree { unit_index });
         }
     }
-    Ok(())
+    Ok(LoadedWitnessCommitmentSegmentRef {
+        segment,
+        identity,
+        trace_rows: parsed.trace_rows,
+        trace_columns: parsed.trace_columns,
+    })
 }
