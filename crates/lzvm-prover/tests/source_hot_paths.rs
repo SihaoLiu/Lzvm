@@ -7849,6 +7849,13 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
         "Lean opening segment binding should compose with the opening soundness model"
     );
     assert!(
+        lean_source.contains("openingUnitTraceIdentitiesMatch")
+            && lean_source.contains(
+                "runtime_opening_segment_binding_evidence_implies_trace_identities_match"
+            ),
+        "Lean opening segment binding should expose trace identity matching as checked evidence"
+    );
+    assert!(
         setup_preflight_source.contains("validate_constant_opening_segments")
             && setup_preflight_source.contains("validate_witness_opening_segments")
             && setup_preflight_source.contains("validate_optional_pcs_fri_opening_proof_segments"),
@@ -7860,6 +7867,33 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
             && fri_opening_source.contains("verify_fri_query_path")
             && fri_opening_source.contains("validate_pcs_fri_opening_folds_from_units"),
         "opening validators should keep Merkle path and FRI fold checks"
+    );
+    let constant_opening_validation = function_body(
+        &constant_opening_source,
+        "pub fn validate_constant_opening_segments",
+        "pub fn build_constant_opening_segment",
+    );
+    let witness_opening_validation = function_body(
+        &witness_opening_source,
+        "pub fn validate_witness_opening_segments",
+        "fn expected_merkle_level_count",
+    );
+    let fri_opening_units_validation = function_body(
+        &fri_opening_source,
+        "fn validate_pcs_fri_opening_units",
+        "pub fn validate_pcs_fri_opening_folds_from_units",
+    );
+    assert!(
+        constant_opening_validation
+            .contains("unit.trace_instance_index == query_unit.trace_instance_index")
+            && witness_opening_validation
+                .contains("unit.trace_instance_index == query_unit.trace_instance_index")
+            && witness_opening_validation.contains(
+                "segment.identity.trace_instance_index == query_unit.trace_instance_index"
+            )
+            && fri_opening_units_validation
+                .contains("unit.trace_instance_index == query_unit.trace_instance_index"),
+        "opening validators should match opened units by query-plan trace identity"
     );
     let optional_fri_validation = function_body(
         &fri_opening_source,
@@ -7915,11 +7949,6 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
             && !verifier_query_validation
                 .contains("load_pcs_evaluation_unit_for_identity_from_segments("),
         "verifier query output validation should reuse parsed opening/evaluation segments and proof-value offsets"
-    );
-    let witness_opening_validation = function_body(
-        &witness_opening_source,
-        "pub fn validate_witness_opening_segments",
-        "fn expected_merkle_level_count",
     );
     assert!(
         witness_opening_validation.contains("load_witness_commitment_segment_refs_with_shapes")

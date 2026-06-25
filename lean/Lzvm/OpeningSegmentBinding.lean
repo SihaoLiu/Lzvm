@@ -18,6 +18,7 @@ structure RuntimeOpeningSegmentBindingValidation (system : VerifierModel) where
   openingValidation : RuntimeOpeningValidation system
   openingSegmentBindingAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
   queryPlanBound : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  openingUnitTraceIdentitiesMatch : RuntimeArtifact -> PublicInput -> Proof -> Prop
   constantOpeningSegmentsValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
   witnessOpeningSegmentsValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
   friOpeningSegmentsValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
@@ -31,6 +32,10 @@ structure RuntimeOpeningSegmentBindingValidation (system : VerifierModel) where
     forall artifact publicInput proof,
       openingSegmentBindingAccepted artifact publicInput proof ->
         queryPlanBound artifact publicInput proof
+  openingSegmentBindingAcceptedImpliesTraceIdentitiesMatch :
+    forall artifact publicInput proof,
+      openingSegmentBindingAccepted artifact publicInput proof ->
+        openingUnitTraceIdentitiesMatch artifact publicInput proof
   openingSegmentBindingAcceptedImpliesConstantOpeningSegmentsValid :
     forall artifact publicInput proof,
       openingSegmentBindingAccepted artifact publicInput proof ->
@@ -55,11 +60,13 @@ structure RuntimeOpeningSegmentBindingValidation (system : VerifierModel) where
     forall artifact publicInput proof,
       queryPlanBound artifact publicInput proof ->
         constantOpeningSegmentsValid artifact publicInput proof ->
+          openingUnitTraceIdentitiesMatch artifact publicInput proof ->
           openingValidation.constantOpeningsBound artifact publicInput proof
   openingSegmentChecksImplyWitnessOpeningsBound :
     forall artifact publicInput proof,
       queryPlanBound artifact publicInput proof ->
         witnessOpeningSegmentsValid artifact publicInput proof ->
+          openingUnitTraceIdentitiesMatch artifact publicInput proof ->
           openingValidation.witnessOpeningsBound artifact publicInput proof
   openingSegmentChecksImplyFriOpeningBound :
     forall artifact publicInput proof,
@@ -67,6 +74,7 @@ structure RuntimeOpeningSegmentBindingValidation (system : VerifierModel) where
         friOpeningSegmentsValid artifact publicInput proof ->
           friFoldsValid artifact publicInput proof ->
             verifierQueryOutputsValid artifact publicInput proof ->
+              openingUnitTraceIdentitiesMatch artifact publicInput proof ->
               openingValidation.friOpeningBound artifact publicInput proof
 
 def RuntimeOpeningSegmentBindingBoundContract
@@ -76,6 +84,7 @@ def RuntimeOpeningSegmentBindingBoundContract
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
   validation.queryPlanBound artifact publicInput proof
+    /\ validation.openingUnitTraceIdentitiesMatch artifact publicInput proof
     /\ validation.constantOpeningSegmentsValid artifact publicInput proof
     /\ validation.witnessOpeningSegmentsValid artifact publicInput proof
     /\ validation.friOpeningSegmentsValid artifact publicInput proof
@@ -129,6 +138,12 @@ theorem runtime_opening_segment_binding_checked_acceptance_evidence
       publicInput
       proof
       accepted
+  have traceIdentities :=
+    validation.openingSegmentBindingAcceptedImpliesTraceIdentitiesMatch
+      artifact
+      publicInput
+      proof
+      accepted
   have constantSegments :=
     validation.openingSegmentBindingAcceptedImpliesConstantOpeningSegmentsValid
       artifact
@@ -166,6 +181,7 @@ theorem runtime_opening_segment_binding_checked_acceptance_evidence
       proof
       queryPlanBound
       constantSegments
+      traceIdentities
   have witnessBound :=
     validation.openingSegmentChecksImplyWitnessOpeningsBound
       artifact
@@ -173,6 +189,7 @@ theorem runtime_opening_segment_binding_checked_acceptance_evidence
       proof
       queryPlanBound
       witnessSegments
+      traceIdentities
   have friOpeningBound :=
     validation.openingSegmentChecksImplyFriOpeningBound
       artifact
@@ -182,15 +199,17 @@ theorem runtime_opening_segment_binding_checked_acceptance_evidence
       friSegments
       friFolds
       verifierQueries
+      traceIdentities
   exact
     And.intro queryPlanBound
-      (And.intro constantSegments
-        (And.intro witnessSegments
-          (And.intro friSegments
-            (And.intro friFolds
-              (And.intro verifierQueries
-                (And.intro constantBound
-                  (And.intro witnessBound friOpeningBound)))))))
+      (And.intro traceIdentities
+        (And.intro constantSegments
+          (And.intro witnessSegments
+            (And.intro friSegments
+              (And.intro friFolds
+                (And.intro verifierQueries
+                  (And.intro constantBound
+                    (And.intro witnessBound friOpeningBound))))))))
 
 theorem runtime_opening_segment_binding_evidence_implies_bound_contract
     {system : VerifierModel}
@@ -225,6 +244,20 @@ theorem runtime_opening_segment_binding_evidence_implies_query_plan_bound
   intro artifact publicInput proof evidence
   exact evidence.left
 
+theorem runtime_opening_segment_binding_evidence_implies_trace_identities_match
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.openingUnitTraceIdentitiesMatch artifact publicInput proof := by
+  intro artifact publicInput proof evidence
+  exact evidence.right.left
+
 theorem runtime_opening_segment_binding_evidence_implies_fri_opening_checks
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -242,6 +275,7 @@ theorem runtime_opening_segment_binding_evidence_implies_fri_opening_checks
   intro artifact publicInput proof evidence
   rcases evidence with
     ⟨_queryPlanBound,
+      _traceIdentities,
       _constantSegments,
       _witnessSegments,
       friSegments,
@@ -270,6 +304,7 @@ theorem runtime_opening_segment_binding_evidence_implies_pcs_and_fri
   intro artifact publicInput proof evidence
   rcases evidence with
     ⟨_queryPlanBound,
+      _traceIdentities,
       _constantSegments,
       _witnessSegments,
       _friSegments,
@@ -313,6 +348,7 @@ theorem runtime_opening_segment_binding_evidence_implies_opening_bound_contract
   intro artifact publicInput proof evidence
   rcases evidence with
     ⟨_queryPlanBound,
+      _traceIdentities,
       _constantSegments,
       _witnessSegments,
       _friSegments,

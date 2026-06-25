@@ -663,6 +663,13 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_evidence
       rootMatches
   let segmentValidation := validation.batchRowsValidation.openingSegmentValidation
   let openingValidation := segmentValidation.openingValidation
+  have traceIdentities :=
+    runtime_opening_segment_binding_evidence_implies_trace_identities_match
+      segmentValidation
+      artifact
+      publicInput
+      proof
+      batchEvidence.left
   have witnessSegments :=
     validation.batchRowsValidation.perRowWitnessOpeningRowsImplyWitnessOpeningSegmentsValid
       artifact
@@ -680,6 +687,7 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_evidence
       proof
       queryPlanBound
       witnessSegments
+      traceIdentities
   exact
     And.intro batchEvidence
       (And.intro

@@ -126,6 +126,13 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_evidence
       publicInput
       proof
       accepted
+  have traceIdentities :=
+    runtime_opening_segment_binding_evidence_implies_trace_identities_match
+      validation.openingSegmentValidation
+      artifact
+      publicInput
+      proof
+      segmentSound.left
   have perRowWitnessOpeningRows :=
     validation.batchWitnessOpeningRowsAcceptedImpliesPerRowWitnessOpeningRowsBound
       artifact
@@ -146,6 +153,7 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_evidence
       proof
       queryPlanBound
       witnessOpeningSegments
+      traceIdentities
   exact
     And.intro segmentSound.left
       (And.intro segmentSound.right.left
@@ -392,6 +400,13 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_sound_from_hash_co
       publicInput
       proof
       accepted
+  have traceIdentities :=
+    runtime_opening_segment_binding_evidence_implies_trace_identities_match
+      validation.openingSegmentValidation
+      artifact
+      publicInput
+      proof
+      segmentSound.left
   have perRowWitnessOpeningRows :=
     validation.batchWitnessOpeningRowsAcceptedImpliesPerRowWitnessOpeningRowsBound
       artifact
@@ -412,6 +427,7 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_sound_from_hash_co
       proof
       queryPlanBound
       witnessOpeningSegments
+      traceIdentities
   have evidence :
       RuntimeBatchWitnessOpeningRowsEvidence
         system
