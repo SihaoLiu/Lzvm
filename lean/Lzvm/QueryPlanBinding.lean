@@ -970,8 +970,8 @@ theorem runtime_query_plan_binding_checked_acceptance_sound
       publicInput
       proof
       challengeAccepted
-  have openingSound :=
-    runtime_opening_segment_binding_checked_acceptance_sound
+  have openingFull :=
+    runtime_opening_segment_binding_checked_acceptance_full_soundness_contract
       assumptions
       validation.openingValidation
       artifact
@@ -979,22 +979,15 @@ theorem runtime_query_plan_binding_checked_acceptance_sound
       proof
       requiresExternalSource
       openingAccepted
-  have pcsAndFri :=
-    runtime_opening_evidence_implies_pcs_and_fri
-      validation.openingValidation.openingValidation
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      openingSound.right.left
   exact
     And.intro queryPlanEvidence
       (And.intro challengeSound.left
-        (And.intro openingSound.left
-          (And.intro openingSound.right.left
+        (And.intro openingFull.left
+          (And.intro openingFull.right.left
             (And.intro challengeSound.right.right.left
-              (And.intro pcsAndFri.left
-                (And.intro pcsAndFri.right openingSound.right.right))))))
+              (And.intro openingFull.right.right.right.left
+                (And.intro openingFull.right.right.right.right.left
+                  openingFull.right.right.right.right.right.right))))))
 
 set_option linter.style.longLine false in
 theorem runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening
@@ -1308,6 +1301,144 @@ theorem runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
                 (And.intro transcriptBound
                   (And.intro publicInputBound
                     (And.intro pcsOpeningsValid friQueriesValid))))))))
+
+theorem runtime_query_plan_binding_checked_acceptance_full_soundness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeQueryPlanBindingBoundContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeChallengeSegmentBindingEvidence
+            system
+            validation.challengeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingBoundContract
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeOpeningBoundContract
+            system
+            validation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_query_plan_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  rcases sound with
+    ⟨queryPlanEvidence,
+      challengeEvidence,
+      openingSegmentEvidence,
+      openingEvidence,
+      transcriptBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      soundWitness⟩
+  have queryPlanBound :=
+    runtime_query_plan_binding_evidence_implies_bound_contract
+      validation
+      artifact
+      publicInput
+      proof
+      queryPlanEvidence
+  have openingSegmentBound :=
+    runtime_opening_segment_binding_evidence_implies_bound_contract
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentEvidence
+  have openingAccepted :=
+    runtime_query_plan_binding_checked_acceptance_opening
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingFull :=
+    runtime_opening_segment_binding_checked_acceptance_full_soundness_contract
+      assumptions
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
+  rcases openingFull with
+    ⟨_openingSegmentBoundFromFull,
+      _openingEvidenceFromFull,
+      openingBound,
+      _pcsOpeningsFromFull,
+      _friQueriesFromFull,
+      _openingCoreFromFull,
+      _soundWitnessFromFull⟩
+  have coreContract :=
+    runtime_query_plan_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    And.intro queryPlanEvidence
+      (And.intro queryPlanBound
+        (And.intro challengeEvidence
+          (And.intro openingSegmentEvidence
+            (And.intro openingSegmentBound
+              (And.intro openingEvidence
+                (And.intro openingBound
+                  (And.intro transcriptBound
+                    (And.intro pcsOpeningsValid
+                      (And.intro friQueriesValid
+                        (And.intro coreContract soundWitness))))))))))
 
 theorem runtime_query_plan_binding_checked_acceptance_seeded_opening_and_core_contract
     {system : VerifierModel}

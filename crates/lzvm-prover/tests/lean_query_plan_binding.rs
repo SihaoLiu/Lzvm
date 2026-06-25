@@ -85,6 +85,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_sound_from_concrete_nary_merkle",
             "runtime_query_plan_binding_checked_acceptance_verifier_core_contract",
             "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
+            "runtime_query_plan_binding_checked_acceptance_full_soundness_contract",
             "runtime_query_plan_binding_checked_acceptance_seeded_opening_and_core_contract",
             "runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_and_core_contract",
             "runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_opening_and_core_contract",
@@ -198,6 +199,33 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &[
             "runtime_query_plan_binding_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_full_soundness_contract",
+        &[
+            "RuntimeQueryPlanBindingEvidence",
+            "RuntimeQueryPlanBindingBoundContract",
+            "RuntimeChallengeSegmentBindingEvidence",
+            "RuntimeOpeningSegmentBindingEvidence",
+            "RuntimeOpeningSegmentBindingBoundContract",
+            "RuntimeOpeningEvidence",
+            "RuntimeOpeningBoundContract",
+            "system.transcriptBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_full_soundness_contract",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_sound",
+            "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
+            "runtime_query_plan_binding_checked_acceptance_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -495,6 +523,21 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening",
+        &["runtime_opening_segment_binding_checked_acceptance_sound\n"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_sound",
+        &[
+            "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
+            "openingFull.right.left",
+            "openingFull.right.right.right.left",
+            "openingFull.right.right.right.right.left",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_sound",
         &["runtime_opening_segment_binding_checked_acceptance_sound\n"],
     );
     lean_binding::assert_theorem_body_contains(
