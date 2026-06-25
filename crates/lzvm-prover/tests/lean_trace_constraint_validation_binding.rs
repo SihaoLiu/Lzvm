@@ -31,6 +31,8 @@ fn lean_trace_constraint_validation_binding_exports_core_contract_projection() {
         &lean_source,
         &[
             "runtime_trace_constraint_checked_acceptance_sound",
+            "runtime_trace_constraint_checked_acceptance_obligations",
+            "fromCheckedAcceptance",
             "runtime_trace_constraint_evidence_implies_semantic_evidence_complete",
             "runtime_trace_constraint_checked_acceptance_semantic_evidence_complete",
             "runtime_trace_constraint_evidence_implies_backend_contract",
@@ -61,6 +63,41 @@ fn lean_trace_constraint_validation_binding_exports_core_contract_projection() {
         "runtime_trace_constraint_checked_acceptance_semantic_evidence_complete",
         &["runtime_trace_constraint_checked_acceptance_trace_witness_evidence"],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_obligations",
+        &["RuntimeTraceConstraintSoundnessObligations.fromCheckedAcceptance"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_obligations",
+        &["assumptions.semantic.public_input_binding"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_sound",
+        &["runtime_trace_constraint_evidence_implies_sound_witness"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_sound",
+        &["assumptions.semantic.public_input_binding"],
+    );
+    for theorem_name in [
+        "fromCheckedAcceptance",
+        "runtime_trace_constraint_evidence_implies_sound_witness",
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &lean_source,
+            theorem_name,
+            &["assumption_bundle_public_input_binding"],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &lean_source,
+            theorem_name,
+            &["assumptions.semantic.public_input_binding"],
+        );
+    }
     lean_binding::assert_theorem_prefix_omits(
         &lean_source,
         "runtime_trace_constraint_checked_acceptance_pcs_fri_backend_contract",

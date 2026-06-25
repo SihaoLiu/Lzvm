@@ -4,6 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
+import Lzvm.AssumptionAudit
 import Lzvm.AuxiliaryChecks
 
 /-!
@@ -152,9 +153,17 @@ theorem external_source_opening_checked_acceptance_obligations
   have accepted := acceptedWithExternalSource.left
   have evidence := acceptedWithExternalSource.right
   have transcriptBound :=
-    assumptions.crypto.transcript_binding publicInput proof accepted
+    assumption_bundle_fiat_shamir_transcript_binding
+      assumptions
+      publicInput
+      proof
+      accepted
   have publicInputBound :=
-    assumptions.semantic.public_input_binding publicInput proof accepted
+    assumption_bundle_public_input_binding
+      assumptions
+      publicInput
+      proof
+      accepted
   have pcsOpenings :=
     external_source_opening_checked_acceptance_implies_pcs_openings
       validation
@@ -162,7 +171,11 @@ theorem external_source_opening_checked_acceptance_obligations
       proof
       acceptedWithExternalSource
   have friQueries :=
-    assumptions.crypto.fri_query_sound publicInput proof accepted
+    assumption_bundle_fri_query_soundness
+      assumptions
+      publicInput
+      proof
+      accepted
   exact
     And.intro evidence
       (And.intro transcriptBound

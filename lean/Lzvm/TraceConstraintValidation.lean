@@ -4,6 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
+import Lzvm.AssumptionAudit
 import Lzvm.OpeningValidation
 
 /-!
@@ -626,7 +627,11 @@ theorem fromCheckedAcceptance
       accepted
   have transcriptBound := openingEvidence.left.right.right.left
   have publicInputBound :=
-    assumptions.semantic.public_input_binding publicInput proof verifierAccepts
+    assumption_bundle_public_input_binding
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
   have openingChecks :=
     runtime_opening_evidence_implies_pcs_and_fri
       validation.openingValidation
@@ -923,7 +928,11 @@ theorem runtime_trace_constraint_evidence_implies_sound_witness
       | intro constraints checkedEvidence =>
         have transcriptBound := openingEvidence.left.right.right.left
         have publicInputBound :=
-          assumptions.semantic.public_input_binding publicInput proof verifierAccepts
+          assumption_bundle_public_input_binding
+            assumptions
+            publicInput
+            proof
+            verifierAccepts
         have pcsOpenings := openingChecks.left
         have friQueries := openingChecks.right
         have traceConsistent := checkedEvidence.right.right.right.right.left

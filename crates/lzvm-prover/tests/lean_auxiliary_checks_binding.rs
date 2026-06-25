@@ -316,10 +316,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "ignored_metadata_acceptance_verifier_core_contract",
         &[
             "ignored_metadata_observed_acceptance_projects_verifier_acceptance",
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
+            "assumption_bundle_fiat_shamir_transcript_binding",
+            "assumption_bundle_public_input_binding",
+            "assumption_bundle_pcs_opening_soundness",
+            "assumption_bundle_fri_query_soundness",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -328,16 +328,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &[
             "ignored_metadata_acceptance_verifier_core_contract_via_soundness",
             "ignored_metadata_acceptance_sound",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
         ],
     );
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
         "auxiliary_checked_acceptance_verifier_core_contract",
         &[
-            "assumptions.crypto.transcript_binding",
-            "assumptions.semantic.public_input_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
+            "assumption_bundle_fiat_shamir_transcript_binding",
+            "assumption_bundle_public_input_binding",
+            "assumption_bundle_pcs_opening_soundness",
+            "assumption_bundle_fri_query_soundness",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -346,13 +350,17 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &[
             "sound_witness_implies_verifier_core_contract",
             "abstract_verifier_sound",
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.pcs_opening_sound",
+            "assumptions.crypto.fri_query_sound",
         ],
     );
     for obligation in [
-        "assumptions.crypto.transcript_binding",
-        "assumptions.semantic.public_input_binding",
-        "assumptions.crypto.pcs_opening_sound",
-        "assumptions.crypto.fri_query_sound",
+        "assumption_bundle_fiat_shamir_transcript_binding",
+        "assumption_bundle_public_input_binding",
+        "assumption_bundle_pcs_opening_soundness",
+        "assumption_bundle_fri_query_soundness",
     ] {
         lean_binding::assert_theorem_body_contains_identifier(
             &auxiliary_source,

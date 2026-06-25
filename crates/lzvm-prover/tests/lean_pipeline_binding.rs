@@ -235,7 +235,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_query_plan_binding_checked_acceptance_full_soundness_contract",
             "rcases queryPlanFull",
             "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
-            "assumptions.semantic.public_input_binding",
+            "assumption_bundle_public_input_binding",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -244,6 +244,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_query_plan_binding_checked_acceptance_sound\n",
             "sound_witness_implies_verifier_core_contract",
+            "assumptions.semantic.public_input_binding",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

@@ -27,8 +27,27 @@ fn lean_external_source_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "external_source_opening_checked_acceptance_obligations",
             "external_source_opening_checked_acceptance_sound",
             "external_source_opening_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "external_source_opening_checked_acceptance_obligations",
+        &[
+            "assumption_bundle_fiat_shamir_transcript_binding",
+            "assumption_bundle_public_input_binding",
+            "assumption_bundle_fri_query_soundness",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "external_source_opening_checked_acceptance_obligations",
+        &[
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "assumptions.crypto.fri_query_sound",
         ],
     );
 }

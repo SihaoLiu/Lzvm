@@ -1170,7 +1170,8 @@ theorem runtime_pipeline_binding_checked_acceptance_sound
       proof
       accepted
   have publicInputBound : system.publicInputBound publicInput proof :=
-    assumptions.semantic.public_input_binding
+    assumption_bundle_public_input_binding
+      assumptions
       publicInput
       proof
       verifierAccepted
