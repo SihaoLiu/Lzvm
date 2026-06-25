@@ -600,6 +600,101 @@ fn eth_proof_timing_batch_check_env_resolves_relative_profile_tools_from_workspa
 }
 
 #[test]
+fn eth_proof_timing_batch_check_profile_tools_runs_without_proof_env() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-profile-tools-ready");
+    let profile_dir = fixture.dir.join("profiles");
+    let tool_path = write_fixture(&fixture.dir, "custom-nsys");
+    make_executable(&tool_path);
+    let mut command = Command::new(script_path());
+    command
+        .arg("--check-profile-tools")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir)
+        .arg("--nsys-command")
+        .arg(&tool_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch profile tool check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let profile_created = profile_dir.exists();
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "profile tool check should not require proof envs: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("profile_tool=nsys\n")
+            && stdout.contains("nsys_profiler_source=arg\n")
+            && stdout.contains(&format!("nsys_profiler_command={}\n", tool_path.display()))
+            && stdout.contains("nsys_profiler_status=ready\n"),
+        "profile tool check should report the ready profiler: {stdout}"
+    );
+    assert!(
+        !stdout.contains("status=ok\n") && !stdout.contains("small=ready\n"),
+        "profile tool check should not validate proof envs: {stdout}"
+    );
+    assert!(
+        !profile_created,
+        "profile tool check should not create profile output directories"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_profile_tools_fails_when_selected_tool_is_missing() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-profile-tools-missing");
+    let profile_dir = fixture.dir.join("profiles");
+    let tool_path = fixture.dir.join("missing-ncu");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--check-profile-tools")
+        .arg("--profile-tool")
+        .arg("ncu")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir)
+        .arg("--ncu-command")
+        .arg(&tool_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch missing profile tool check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let profile_created = profile_dir.exists();
+    fixture.cleanup();
+
+    assert!(!success, "missing selected profile tool should fail");
+    assert!(
+        stderr.is_empty(),
+        "missing profile tool should report status on stdout only: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("profile_tool=ncu\n")
+            && stdout.contains("ncu_profiler_source=arg\n")
+            && stdout.contains(&format!("ncu_profiler_command={}\n", tool_path.display()))
+            && stdout.contains("ncu_profiler_status=missing\n")
+            && !stdout.contains("ncu_profiler_resolved="),
+        "missing profile tool check should report the unresolved profiler: {stdout}"
+    );
+    assert!(
+        !stdout.contains("proof environment"),
+        "profile tool check should not require proof envs: {stdout}"
+    );
+    assert!(
+        !profile_created,
+        "missing profile tool check should not create profile output directories"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_prints_env_template_without_config() {
     let mut command = Command::new(script_path());
     command

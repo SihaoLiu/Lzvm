@@ -519,7 +519,7 @@ def resolve_profile_tool(raw: str, root: Path) -> Path | None:
     return None
 
 
-def print_profile_tool_checks(args: argparse.Namespace, root: Path) -> None:
+def print_profile_tool_checks(args: argparse.Namespace, root: Path) -> bool:
     profile_output_dir = require_workspace_temp_path(
         resolve_workspace_path(args.profile_output_dir, root),
         root,
@@ -527,14 +527,18 @@ def print_profile_tool_checks(args: argparse.Namespace, root: Path) -> None:
     )
     print(f"profile_output_dir={display_path_for_shell(profile_output_dir, root)}")
     print(f"profile_tool={args.profile_tool}")
+    all_ready = True
     for tool in selected_profile_tools(args):
         source, raw = profile_tool_spec(args, tool)
         resolved = resolve_profile_tool(raw, root)
+        ready = resolved is not None
+        all_ready = all_ready and ready
         print(f"{tool}_profiler_source={source}")
         print(f"{tool}_profiler_command={raw}")
-        print(f"{tool}_profiler_status={'ready' if resolved is not None else 'missing'}")
+        print(f"{tool}_profiler_status={'ready' if ready else 'missing'}")
         if resolved is not None:
             print(f"{tool}_profiler_resolved={display_path_for_shell(resolved, root)}")
+    return all_ready
 
 
 def profile_command_for_env(
@@ -722,6 +726,8 @@ def run(args: argparse.Namespace) -> int:
         write_env_template(args, root)
     if args.print_env_template or args.write_env_template is not None:
         return 0
+    if args.check_profile_tools:
+        return 0 if print_profile_tool_checks(args, root) else 1
     if args.check_env:
         check_env(args, root)
         return 0
@@ -847,6 +853,7 @@ def self_test() -> None:
         enforce_targets=False,
         large_max_avg_s=None,
         print_env_template=False,
+        check_profile_tools=False,
         print_profile_commands=False,
         ncu_command=None,
         ncu_set=DEFAULT_NCU_SET,
@@ -915,6 +922,7 @@ def main() -> None:
     parser.add_argument("--enforce-targets", action="store_true")
     parser.add_argument("--print-env-template", action="store_true")
     parser.add_argument("--write-env-template")
+    parser.add_argument("--check-profile-tools", action="store_true")
     parser.add_argument("--print-profile-commands", action="store_true")
     parser.add_argument("--profile-output-dir", default=DEFAULT_PROFILE_OUTPUT_DIR)
     parser.add_argument("--nsys-command")
