@@ -641,7 +641,7 @@ pub(crate) fn derive_global_challenge_from_loaded_contributions(
         public_values,
         packed_proof_values,
         &bound_segments,
-        &entries,
+        entries,
     )
 }
 
