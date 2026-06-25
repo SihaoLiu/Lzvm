@@ -18,8 +18,7 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
         "top-level Lean module should import centralized assumptions"
     );
     assert!(
-        assumptions_source.contains("abbrev NamedCryptographicAssumption")
-            && assumptions_source.contains("structure HashCollisionResistanceAssumption")
+        assumptions_source.contains("structure HashCollisionResistanceAssumption")
             && assumptions_source.contains("structure FiatShamirRandomOracleAssumption")
             && assumptions_source.contains("structure PcsOpeningSoundnessAssumption")
             && assumptions_source.contains("structure FriQuerySoundnessAssumption")
@@ -27,6 +26,42 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
             && assumptions_source.contains("structure SemanticAssumptions")
             && assumptions_source.contains("structure AssumptionBundle"),
         "Lean assumptions should centralize named cryptographic, semantic, and bundled obligations"
+    );
+    assert_eq!(
+        structure_field_lines(
+            &assumptions_source,
+            "structure HashCollisionResistanceAssumption",
+            "namespace HashCollisionResistanceAssumption",
+        ),
+        vec![
+            "merkleHashCollisionResistanceStatement : Prop",
+            "transcriptHashCollisionResistanceStatement : Prop",
+        ],
+        "hash collision resistance assumptions should retain explicit statements and proof fields"
+    );
+    assert!(
+        assumptions_source.contains(
+            "merkleHashCollisionResistance :\n    merkleHashCollisionResistanceStatement",
+        ) && assumptions_source.contains(
+            "transcriptHashCollisionResistance :\n    transcriptHashCollisionResistanceStatement",
+        ),
+        "hash collision resistance assumptions should retain explicit proof fields"
+    );
+    assert!(
+        assumptions_source.contains("randomOracleModelStatement : Prop")
+            && assumptions_source.contains("pcsBindingStatement : Prop")
+            && assumptions_source.contains("friLowDegreeSoundnessStatement : Prop"),
+        "Fiat-Shamir, PCS, and FRI assumptions should retain explicit statement fields"
+    );
+    assert!(
+        assumptions_source.contains(
+            "fiatShamirTranscriptBinding :\n    forall publicInput proof,\n      system.accepts publicInput proof ->\n        system.transcriptBound publicInput proof",
+        ) && assumptions_source.contains(
+            "pcsOpeningSoundness :\n    forall publicInput proof,\n      system.accepts publicInput proof ->\n        system.pcsOpeningsValid publicInput proof",
+        ) && assumptions_source.contains(
+            "friQuerySoundness :\n    forall publicInput proof,\n      system.accepts publicInput proof ->\n        system.friQueriesValid publicInput proof",
+        ),
+        "Fiat-Shamir, PCS, and FRI assumptions should retain explicit proof fields"
     );
     assert_eq!(
         structure_field_lines(
@@ -64,15 +99,8 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
         "Lean cryptographic assumptions should expose bundle-level projections and direct named accessors"
     );
     assert!(
-        !assumptions_source.contains("merkleHashCollisionResistance.evidence")
-            && !assumptions_source.contains("transcriptHashCollisionResistance.evidence")
-            && !assumptions_source.contains("randomOracleModel.evidence")
-            && !assumptions_source.contains("fiatShamirTranscriptBinding.evidence")
-            && !assumptions_source.contains("pcsBinding.evidence")
-            && !assumptions_source.contains("pcsOpeningSoundness.evidence")
-            && !assumptions_source.contains("friLowDegreeSoundness.evidence")
-            && !assumptions_source.contains("friQuerySoundness.evidence"),
-        "Lean cryptographic assumptions should not expose raw evidence-field projections"
+        !assumptions_source.contains("NamedCryptographicAssumption"),
+        "Lean cryptographic assumptions should not expose the removed wrapper alias"
     );
     assert!(
         assumptions_source.contains("system.accepts publicInput proof ->")

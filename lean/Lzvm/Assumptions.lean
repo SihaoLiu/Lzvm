@@ -19,16 +19,13 @@ them with component-level theorems tied to concrete artifacts, verifier data,
 and checked execution traces.
 -/
 
-abbrev NamedCryptographicAssumption (statement : Prop) : Prop :=
-  statement
-
 structure HashCollisionResistanceAssumption where
   merkleHashCollisionResistanceStatement : Prop
   transcriptHashCollisionResistanceStatement : Prop
   merkleHashCollisionResistance :
-    NamedCryptographicAssumption merkleHashCollisionResistanceStatement
+    merkleHashCollisionResistanceStatement
   transcriptHashCollisionResistance :
-    NamedCryptographicAssumption transcriptHashCollisionResistanceStatement
+    transcriptHashCollisionResistanceStatement
 
 namespace HashCollisionResistanceAssumption
 
@@ -47,12 +44,11 @@ end HashCollisionResistanceAssumption
 structure FiatShamirRandomOracleAssumption (system : VerifierModel) where
   randomOracleModelStatement : Prop
   randomOracleModel :
-    NamedCryptographicAssumption randomOracleModelStatement
+    randomOracleModelStatement
   fiatShamirTranscriptBinding :
-    NamedCryptographicAssumption
-      (forall publicInput proof,
-        system.accepts publicInput proof ->
-          system.transcriptBound publicInput proof)
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.transcriptBound publicInput proof
 
 namespace FiatShamirRandomOracleAssumption
 
@@ -74,12 +70,11 @@ end FiatShamirRandomOracleAssumption
 
 structure PcsOpeningSoundnessAssumption (system : VerifierModel) where
   pcsBindingStatement : Prop
-  pcsBinding : NamedCryptographicAssumption pcsBindingStatement
+  pcsBinding : pcsBindingStatement
   pcsOpeningSoundness :
-    NamedCryptographicAssumption
-      (forall publicInput proof,
-        system.accepts publicInput proof ->
-          system.pcsOpeningsValid publicInput proof)
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.pcsOpeningsValid publicInput proof
 
 namespace PcsOpeningSoundnessAssumption
 
@@ -102,12 +97,11 @@ end PcsOpeningSoundnessAssumption
 structure FriQuerySoundnessAssumption (system : VerifierModel) where
   friLowDegreeSoundnessStatement : Prop
   friLowDegreeSoundness :
-    NamedCryptographicAssumption friLowDegreeSoundnessStatement
+    friLowDegreeSoundnessStatement
   friQuerySoundness :
-    NamedCryptographicAssumption
-      (forall publicInput proof,
-        system.accepts publicInput proof ->
-          system.friQueriesValid publicInput proof)
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.friQueriesValid publicInput proof
 
 namespace FriQuerySoundnessAssumption
 
