@@ -208,6 +208,32 @@ impl<'a> SetupPreflightTranscriptChallengeCache<'a> {
     }
 }
 
+struct SetupPreflightPackedProofValueCache<'a> {
+    global_info: &'a GlobalInfo,
+    proof_values: &'a [Ext3],
+    packed_proof_values: Option<Vec<Felt>>,
+}
+
+impl<'a> SetupPreflightPackedProofValueCache<'a> {
+    fn new(global_info: &'a GlobalInfo, proof_values: &'a [Ext3]) -> Self {
+        Self {
+            global_info,
+            proof_values,
+            packed_proof_values: None,
+        }
+    }
+
+    fn packed_values(&mut self) -> Result<&[Felt], ProvePcsProofValuesSegmentError> {
+        if self.packed_proof_values.is_none() {
+            self.packed_proof_values = Some(flatten_pcs_proof_values(
+                self.global_info,
+                self.proof_values,
+            )?);
+        }
+        Ok(self.packed_proof_values.as_deref().unwrap_or(&[]))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetupPreflightError {
     Catalog(KeyDirectoryError),
@@ -741,12 +767,16 @@ pub fn validate_setup_preflight(
         transcript_public_fields,
         &proof.segments,
     );
+    let mut packed_proof_values_cache = SetupPreflightPackedProofValueCache::new(
+        &catalog.layout.global_info,
+        &global_values.proof_values,
+    );
     if !catalog.global_constraints.entries.is_empty() {
         let public_values = public_fields.as_deref().unwrap_or(&[]);
-        let packed_proof_values =
-            flatten_pcs_proof_values(&catalog.layout.global_info, &global_values.proof_values)
-                .map_err(ValidateGlobalConstraintProofSegmentsError::PackedProofValues)
-                .map_err(SetupPreflightError::GlobalConstraints)?;
+        let packed_proof_values = packed_proof_values_cache
+            .packed_values()
+            .map_err(ValidateGlobalConstraintProofSegmentsError::PackedProofValues)
+            .map_err(SetupPreflightError::GlobalConstraints)?;
         let challenges = if uses_transcript_inputs {
             transcript_challenges
                 .flat_challenges()
@@ -759,7 +789,7 @@ pub fn validate_setup_preflight(
             &catalog.global_constraints,
             GlobalConstraintInputs {
                 publics: public_values,
-                proof_values: &packed_proof_values,
+                proof_values: packed_proof_values,
                 challenges,
                 group_values: &global_values.group_values,
             },
@@ -777,11 +807,12 @@ pub fn validate_setup_preflight(
             &[]
         };
         let packed_proof_values = if requirements.proof_values {
-            flatten_pcs_proof_values(&catalog.layout.global_info, &global_values.proof_values)
+            packed_proof_values_cache
+                .packed_values()
                 .map_err(ResolveGlobalHintProofSegmentsError::PackedProofValues)
                 .map_err(SetupPreflightError::GlobalHints)?
         } else {
-            Vec::new()
+            &[]
         };
         let challenges = if uses_transcript_inputs && requirements.challenges {
             transcript_challenges
@@ -801,7 +832,7 @@ pub fn validate_setup_preflight(
             &catalog.global_hints,
             GlobalConstraintInputs {
                 publics: public_values,
-                proof_values: &packed_proof_values,
+                proof_values: packed_proof_values,
                 challenges,
                 group_values,
             },
