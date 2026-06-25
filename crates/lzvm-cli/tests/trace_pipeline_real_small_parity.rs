@@ -344,14 +344,38 @@ fn workspace_path(path: PathBuf, workspace: &Path) -> PathBuf {
 }
 
 fn require_workspace_temp_path(path: PathBuf, workspace: &Path, name: &str) -> PathBuf {
-    let temp_dir = normalize_path(workspace.join("temp"));
-    let normalized = normalize_path(path);
+    let temp_dir = resolve_existing_path(workspace.join("temp"));
+    let normalized = resolve_existing_path(path);
     assert!(
         normalized == temp_dir || normalized.starts_with(&temp_dir),
         "{name} path must stay under workspace temp: {}",
         normalized.display()
     );
     normalized
+}
+
+fn resolve_existing_path(path: PathBuf) -> PathBuf {
+    let normalized = normalize_path(path);
+    let mut probe = normalized.as_path();
+    let mut suffix = Vec::new();
+    loop {
+        if probe.exists() {
+            let mut resolved =
+                fs::canonicalize(probe).unwrap_or_else(|_| normalize_path(probe.to_path_buf()));
+            for component in suffix.iter().rev() {
+                resolved.push(component);
+            }
+            return normalize_path(resolved);
+        }
+        let Some(parent) = probe.parent() else {
+            return normalized;
+        };
+        let Some(name) = probe.file_name() else {
+            return normalized;
+        };
+        suffix.push(PathBuf::from(name));
+        probe = parent;
+    }
 }
 
 fn normalize_path(path: PathBuf) -> PathBuf {
@@ -396,6 +420,26 @@ fn real_parity_temp_paths_are_constrained_to_workspace_temp() {
             "WORK_DIR",
         )
     });
+    assert!(rejected.is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn real_parity_temp_paths_reject_existing_symlink_escape() {
+    let workspace = workspace_root();
+    let dir = workspace
+        .join("temp")
+        .join(format!("real-parity-symlink-{}", std::process::id()));
+    let link = dir.join("escape");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("symlink fixture dir should create");
+    std::os::unix::fs::symlink(&workspace, &link).expect("symlink fixture should create");
+
+    let rejected = std::panic::catch_unwind(|| {
+        require_workspace_temp_path(link.join("target"), &workspace, "WORK_DIR")
+    });
+    let _ = fs::remove_dir_all(&dir);
+
     assert!(rejected.is_err());
 }
 
