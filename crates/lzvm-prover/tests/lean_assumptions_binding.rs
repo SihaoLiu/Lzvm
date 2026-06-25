@@ -111,7 +111,7 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
         "Lean semantic assumptions should make accepted-proof binding, trace, constraints, and witness obligations explicit"
     );
     assert!(
-        audit_source.contains("def RequiredSemanticAssumptionStatements")
+        audit_source.contains("structure RequiredSemanticAssumptionStatements")
             && audit_source.contains("required_semantic_assumptions_public_input_binding")
             && audit_source.contains("required_semantic_assumptions_trace_extraction")
             && audit_source.contains("required_semantic_assumptions_constraint_satisfaction")
@@ -119,8 +119,7 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
             && audit_source.contains("assumptions.public_input_binding")
             && audit_source.contains("assumptions.trace_extraction")
             && audit_source.contains("assumptions.constraint_satisfaction")
-            && audit_source.contains("assumptions.witness_extraction")
-            && !audit_source.contains("_assumptions : SemanticAssumptions system) : Prop :=\n  SemanticAssumptions system"),
+            && audit_source.contains("assumptions.witness_extraction"),
         "Lean assumption audit should expose semantic obligations as explicit public input, trace, constraint, and witness statements"
     );
 }

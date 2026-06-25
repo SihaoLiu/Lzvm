@@ -79,6 +79,11 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         ],
     );
     assert!(
+        audit_source.contains("structure RequiredCryptographicAssumptionStatements")
+            && audit_source.contains("structure RequiredSemanticAssumptionStatements"),
+        "assumption audit should express required crypto and semantic obligations as explicit structures"
+    );
+    assert!(
         audit_source
             .contains("HashCollisionResistanceAssumption.transcript_hash_collision_resistance")
             && audit_source.contains("FiatShamirRandomOracleAssumption.random_oracle_model")
@@ -115,43 +120,44 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         &["And.intro rfl", "And.intro rfl (And.intro rfl rfl)"],
     );
     assert!(
-        audit_source.contains("RequiredSemanticAssumptionStatements")
-            && audit_source.contains("(_assumptions : SemanticAssumptions system) : Prop :=")
+        audit_source.contains("publicInputBinding :")
+            && audit_source.contains("traceExtraction :")
+            && audit_source.contains("constraintSatisfaction :")
+            && audit_source.contains("witnessExtraction :")
             && audit_source.contains("system.publicInputBound publicInput proof")
             && audit_source.contains("exists trace, system.traceConsistent publicInput proof trace")
             && audit_source.contains("exists constraints, system.constraintsSatisfied constraints trace")
-            && audit_source.contains("exists witness, system.witnessMatchesTrace witness trace")
-            && !audit_source.contains("_assumptions : SemanticAssumptions system) : Prop :=\n  SemanticAssumptions system"),
-        "assumption audit should expose semantic soundness obligations as explicit public input, trace, constraint, and witness statements"
+            && audit_source.contains("exists witness, system.witnessMatchesTrace witness trace"),
+        "assumption audit should expose semantic soundness obligations as explicit structure fields"
     );
     lean_binding::assert_theorem_body_contains(
         &audit_source,
         "required_semantic_assumptions_public_input_binding",
-        &["rcases required", "publicInputBinding"],
+        &["required.publicInputBinding"],
     );
     lean_binding::assert_theorem_body_contains(
         &audit_source,
         "required_semantic_assumptions_trace_extraction",
-        &["rcases required", "traceExtraction"],
+        &["required.traceExtraction"],
     );
     lean_binding::assert_theorem_body_contains(
         &audit_source,
         "required_semantic_assumptions_constraint_satisfaction",
-        &["rcases required", "constraintSatisfaction"],
+        &["required.constraintSatisfaction"],
     );
     lean_binding::assert_theorem_body_contains(
         &audit_source,
         "required_semantic_assumptions_witness_extraction",
-        &["rcases required", "witnessExtraction"],
+        &["required.witnessExtraction"],
     );
     lean_binding::assert_theorem_body_contains(
         &audit_source,
         "semantic_assumptions_carry_required_evidence",
         &[
-            "assumptions.public_input_binding",
-            "assumptions.trace_extraction",
-            "assumptions.constraint_satisfaction",
-            "assumptions.witness_extraction",
+            "publicInputBinding := assumptions.public_input_binding",
+            "traceExtraction := assumptions.trace_extraction",
+            "constraintSatisfaction := assumptions.constraint_satisfaction",
+            "witnessExtraction := assumptions.witness_extraction",
         ],
     );
     for theorem_name in [
@@ -230,20 +236,35 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         ],
     );
     for theorem_name in [
+        "required_crypto_assumptions_merkle_hash_collision_resistance",
+        "required_crypto_assumptions_transcript_hash_collision_resistance",
+        "required_crypto_assumptions_random_oracle_model",
+        "required_crypto_assumptions_fiat_shamir_transcript_binding",
         "required_crypto_assumptions_pcs_opening_soundness",
         "required_crypto_assumptions_fri_query_soundness",
-        "required_crypto_assumptions_fiat_shamir_transcript_binding",
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &audit_source,
             theorem_name,
             &["RequiredCryptographicAssumptionStatements assumptions"],
         );
-        lean_binding::assert_theorem_body_omits(
-            &audit_source,
-            theorem_name,
-            &[".right.right.right"],
-        );
+        let expected_field = match theorem_name {
+            "required_crypto_assumptions_merkle_hash_collision_resistance" => {
+                "required.merkleHashCollisionResistance"
+            }
+            "required_crypto_assumptions_transcript_hash_collision_resistance" => {
+                "required.transcriptHashCollisionResistance"
+            }
+            "required_crypto_assumptions_random_oracle_model" => "required.randomOracleModel",
+            "required_crypto_assumptions_fiat_shamir_transcript_binding" => {
+                "required.fiatShamirTranscriptBinding"
+            }
+            "required_crypto_assumptions_pcs_opening_soundness" => "required.pcsOpeningSoundness",
+            "required_crypto_assumptions_fri_query_soundness" => "required.friQuerySoundness",
+            _ => unreachable!("unexpected theorem name"),
+        };
+        lean_binding::assert_theorem_body_contains(&audit_source, theorem_name, &[expected_field]);
+        lean_binding::assert_theorem_body_omits(&audit_source, theorem_name, &["rcases required"]);
     }
     for theorem_name in [
         "assumption_bundle_fiat_shamir_transcript_binding",
