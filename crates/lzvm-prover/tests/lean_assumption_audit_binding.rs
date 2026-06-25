@@ -83,6 +83,38 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             && audit_source.contains("structure RequiredSemanticAssumptionStatements"),
         "assumption audit should express required crypto and semantic obligations as explicit structures"
     );
+    assert_eq!(
+        lean_binding::structure_field_names(
+            &audit_source,
+            "structure RequiredCryptographicAssumptionStatements",
+            "def cryptographic_assumptions_required_groups",
+        ),
+        vec![
+            "merkleHashCollisionResistance",
+            "transcriptHashCollisionResistance",
+            "randomOracleModel",
+            "fiatShamirTranscriptBinding",
+            "pcsBinding",
+            "pcsOpeningSoundness",
+            "friLowDegreeSoundness",
+            "friQuerySoundness",
+        ],
+        "required cryptographic assumptions should expose all audited fields in order"
+    );
+    assert_eq!(
+        lean_binding::structure_field_names(
+            &audit_source,
+            "structure RequiredSemanticAssumptionStatements",
+            "theorem required_semantic_assumptions_public_input_binding",
+        ),
+        vec![
+            "publicInputBinding",
+            "traceExtraction",
+            "constraintSatisfaction",
+            "witnessExtraction",
+        ],
+        "required semantic assumptions should expose all audited fields in order"
+    );
     assert!(
         audit_source
             .contains("HashCollisionResistanceAssumption.transcript_hash_collision_resistance")
@@ -120,11 +152,7 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         &["And.intro rfl", "And.intro rfl (And.intro rfl rfl)"],
     );
     assert!(
-        audit_source.contains("publicInputBinding :")
-            && audit_source.contains("traceExtraction :")
-            && audit_source.contains("constraintSatisfaction :")
-            && audit_source.contains("witnessExtraction :")
-            && audit_source.contains("system.publicInputBound publicInput proof")
+        audit_source.contains("system.publicInputBound publicInput proof")
             && audit_source.contains("exists trace, system.traceConsistent publicInput proof trace")
             && audit_source.contains("exists constraints, system.constraintsSatisfied constraints trace")
             && audit_source.contains("exists witness, system.witnessMatchesTrace witness trace"),

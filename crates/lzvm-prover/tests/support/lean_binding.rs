@@ -1,10 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+#[allow(dead_code)]
 pub fn contains_theorem_declaration(source: &str, name: &str) -> bool {
     find_theorem_declaration(&visible_source(source), name).is_some()
 }
 
+#[allow(dead_code)]
 pub fn assert_theorem_declarations(source: &str, names: &[&str]) {
     for name in names {
         assert!(
@@ -176,6 +178,43 @@ pub fn assert_theorem_body_contains(source: &str, name: &str, snippets: &[&str])
             "Lean theorem {name} body should contain {snippet}"
         );
     }
+}
+
+#[allow(dead_code)]
+pub fn structure_field_names(source: &str, start: &str, end: &str) -> Vec<String> {
+    let start_index = source
+        .find(start)
+        .unwrap_or_else(|| panic!("source should contain {start}"));
+    let after_start = &source[start_index..];
+    let end_index = after_start
+        .find(end)
+        .unwrap_or_else(|| panic!("source should contain {end} after {start}"));
+    let mut in_fields = false;
+    let mut fields = Vec::new();
+    for line in after_start[..end_index].lines().map(str::trim) {
+        if line.is_empty() {
+            continue;
+        }
+        if line == "where" || line.ends_with(" where") {
+            in_fields = true;
+            continue;
+        }
+        if !in_fields {
+            continue;
+        }
+        if line.starts_with("structure ")
+            || line.starts_with("namespace ")
+            || line.starts_with("theorem ")
+            || line.starts_with("def ")
+            || line.starts_with("end ")
+        {
+            continue;
+        }
+        if let Some((name, _)) = line.split_once(':') {
+            fields.push(name.trim().to_owned());
+        }
+    }
+    fields
 }
 
 #[allow(dead_code)]

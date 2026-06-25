@@ -1,5 +1,8 @@
 use std::path::Path;
 
+#[path = "support/lean_binding.rs"]
+mod lean_binding;
+
 #[test]
 fn lean_assumptions_exports_centralized_soundness_obligations() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -28,65 +31,75 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
         "Lean assumptions should centralize named cryptographic, semantic, and bundled obligations"
     );
     assert_eq!(
-        structure_field_lines(
+        lean_binding::structure_field_names(
             &assumptions_source,
             "structure HashCollisionResistanceAssumption",
             "namespace HashCollisionResistanceAssumption",
         ),
         vec![
-            "merkleHashCollisionResistanceStatement : Prop",
-            "transcriptHashCollisionResistanceStatement : Prop",
+            "merkleHashCollisionResistanceStatement",
+            "transcriptHashCollisionResistanceStatement",
+            "merkleHashCollisionResistance",
+            "transcriptHashCollisionResistance",
         ],
         "hash collision resistance assumptions should retain explicit statements and proof fields"
     );
-    assert!(
-        assumptions_source.contains(
-            "merkleHashCollisionResistance :\n    merkleHashCollisionResistanceStatement",
-        ) && assumptions_source.contains(
-            "transcriptHashCollisionResistance :\n    transcriptHashCollisionResistanceStatement",
+    assert_eq!(
+        lean_binding::structure_field_names(
+            &assumptions_source,
+            "structure FiatShamirRandomOracleAssumption",
+            "namespace FiatShamirRandomOracleAssumption",
         ),
-        "hash collision resistance assumptions should retain explicit proof fields"
-    );
-    assert!(
-        assumptions_source.contains("randomOracleModelStatement : Prop")
-            && assumptions_source.contains("pcsBindingStatement : Prop")
-            && assumptions_source.contains("friLowDegreeSoundnessStatement : Prop"),
-        "Fiat-Shamir, PCS, and FRI assumptions should retain explicit statement fields"
-    );
-    assert!(
-        assumptions_source.contains(
-            "fiatShamirTranscriptBinding :\n    forall publicInput proof,\n      system.accepts publicInput proof ->\n        system.transcriptBound publicInput proof",
-        ) && assumptions_source.contains(
-            "pcsOpeningSoundness :\n    forall publicInput proof,\n      system.accepts publicInput proof ->\n        system.pcsOpeningsValid publicInput proof",
-        ) && assumptions_source.contains(
-            "friQuerySoundness :\n    forall publicInput proof,\n      system.accepts publicInput proof ->\n        system.friQueriesValid publicInput proof",
-        ),
-        "Fiat-Shamir, PCS, and FRI assumptions should retain explicit proof fields"
+        vec![
+            "randomOracleModelStatement",
+            "randomOracleModel",
+            "fiatShamirTranscriptBinding",
+        ],
+        "Fiat-Shamir assumptions should retain explicit statement and proof fields"
     );
     assert_eq!(
-        structure_field_lines(
+        lean_binding::structure_field_names(
+            &assumptions_source,
+            "structure PcsOpeningSoundnessAssumption",
+            "namespace PcsOpeningSoundnessAssumption",
+        ),
+        vec!["pcsBindingStatement", "pcsBinding", "pcsOpeningSoundness"],
+        "PCS assumptions should retain explicit statement and proof fields"
+    );
+    assert_eq!(
+        lean_binding::structure_field_names(
+            &assumptions_source,
+            "structure FriQuerySoundnessAssumption",
+            "namespace FriQuerySoundnessAssumption",
+        ),
+        vec![
+            "friLowDegreeSoundnessStatement",
+            "friLowDegreeSoundness",
+            "friQuerySoundness",
+        ],
+        "FRI assumptions should retain explicit statement and proof fields"
+    );
+    assert_eq!(
+        lean_binding::structure_field_names(
             &assumptions_source,
             "structure CryptographicAssumptions",
             "namespace CryptographicAssumptions",
         ),
         vec![
-            "hashCollisionResistance : HashCollisionResistanceAssumption",
-            "randomOracleFiatShamir : FiatShamirRandomOracleAssumption system",
-            "pcsSoundness : PcsOpeningSoundnessAssumption system",
-            "friSoundness : FriQuerySoundnessAssumption system",
+            "hashCollisionResistance",
+            "randomOracleFiatShamir",
+            "pcsSoundness",
+            "friSoundness",
         ],
         "cryptographic assumptions should only expose audited hash, transcript, PCS, and FRI groups"
     );
     assert_eq!(
-        structure_field_lines(
+        lean_binding::structure_field_names(
             &assumptions_source,
             "structure AssumptionBundle",
             "end Lzvm",
         ),
-        vec![
-            "crypto : CryptographicAssumptions system",
-            "semantic : SemanticAssumptions system",
-        ],
+        vec!["crypto", "semantic"],
         "assumption bundle should not grow unaudited assumption fields"
     );
     assert!(
@@ -122,20 +135,4 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
             && audit_source.contains("assumptions.witness_extraction"),
         "Lean assumption audit should expose semantic obligations as explicit public input, trace, constraint, and witness statements"
     );
-}
-
-fn structure_field_lines(source: &str, start: &str, end: &str) -> Vec<String> {
-    let start_index = source
-        .find(start)
-        .unwrap_or_else(|| panic!("source should contain {start}"));
-    let after_start = &source[start_index..];
-    let end_index = after_start
-        .find(end)
-        .unwrap_or_else(|| panic!("source should contain {end} after {start}"));
-    after_start[..end_index]
-        .lines()
-        .map(str::trim)
-        .filter(|line| line.contains(" : ") && !line.starts_with("structure "))
-        .map(ToOwned::to_owned)
-        .collect()
 }
