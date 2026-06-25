@@ -542,6 +542,9 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
     let runner_path = fixture.dir.join("custom runner.py");
     let nsys_path = fixture.dir.join("custom nsys");
     let ncu_path = fixture.dir.join("custom ncu");
+    let nsys_trace = "cpu,nvtx";
+    let ncu_set = "full";
+    let ncu_target_processes = "application";
     let template_rel = template_path
         .strip_prefix(workspace_root())
         .expect("template path should be under workspace")
@@ -584,6 +587,13 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         .arg(&nsys_path)
         .arg("--ncu-command")
         .arg(&ncu_path)
+        .arg("--nsys-trace")
+        .arg(nsys_trace)
+        .arg("--ncu-set")
+        .arg(ncu_set)
+        .arg("--ncu-target-processes")
+        .arg(ncu_target_processes)
+        .arg("--skip-nsys-export")
         .arg("--profile-arg=--kernel-name-base=demangled")
         .arg("--commit")
         .arg("&&")
@@ -639,6 +649,13 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         "env template command should preserve profiler executable paths: {stdout}"
     );
     assert!(
+        stdout.contains(&format!("--nsys-trace {nsys_trace}"))
+            && stdout.contains(&format!("--ncu-set {ncu_set}"))
+            && stdout.contains(&format!("--ncu-target-processes {ncu_target_processes}"))
+            && stdout.contains("--skip-nsys-export"),
+        "env template command should preserve profiler tuning flags: {stdout}"
+    );
+    assert!(
         stdout.contains("--profile-arg --kernel-name-base=demangled"),
         "env template command should preserve profiler passthrough args: {stdout}"
     );
@@ -668,6 +685,9 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
     let profile_dir = fixture.dir.join("profiles");
     let nsys_path = fixture.dir.join("custom nsys");
     let ncu_path = fixture.dir.join("custom ncu");
+    let nsys_trace = "cpu,nvtx";
+    let ncu_set = "full";
+    let ncu_target_processes = "application";
     let nsys_rel = nsys_path
         .strip_prefix(workspace_root())
         .expect("nsys path should be under workspace")
@@ -692,6 +712,13 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         .arg(&nsys_path)
         .arg("--ncu-command")
         .arg(&ncu_path)
+        .arg("--nsys-trace")
+        .arg(nsys_trace)
+        .arg("--ncu-set")
+        .arg(ncu_set)
+        .arg("--ncu-target-processes")
+        .arg(ncu_target_processes)
+        .arg("--skip-nsys-export")
         .arg("--profile-arg=--kernel-name-base=demangled")
         .arg("--profile-arg=--launch-skip=1")
         .arg("--print-profile-commands");
@@ -719,6 +746,13 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         stdout.contains(&format!("--nsys-command '{nsys_rel}'"))
             && stdout.contains(&format!("--ncu-command '{ncu_rel}'")),
         "profile command output should route custom profiler executables through the matching tool: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("--nsys-trace {nsys_trace}"))
+            && stdout.contains(&format!("--ncu-set {ncu_set}"))
+            && stdout.contains(&format!("--ncu-target-processes {ncu_target_processes}"))
+            && stdout.contains("--skip-nsys-export"),
+        "profile command output should route profiler tuning flags through the matching tool: {stdout}"
     );
     assert!(
         stdout.contains("--summarize"),

@@ -15,6 +15,9 @@ DEFAULT_BIN_BUILD_COMMAND = "cargo build --release -p lzvm-cli --bin lzvm"
 DEFAULT_RUNNER = "scripts/run-proof-timing-batch.py"
 DEFAULT_PROFILE_OUTPUT_DIR = "temp/proof-profiles"
 DEFAULT_PROFILE_TOOL = "nsys"
+DEFAULT_NSYS_TRACE = "cuda,nvtx,osrt"
+DEFAULT_NCU_SET = "basic"
+DEFAULT_NCU_TARGET_PROCESSES = "all"
 
 REQUIRED_PATHS = [
     ("SETUP", "dir"),
@@ -329,6 +332,14 @@ def next_command_parts(args: argparse.Namespace, root: Path) -> list[str]:
     if args.ncu_command is not None:
         ncu_command = display_path_for_shell(resolve_workspace_path(args.ncu_command, root), root)
         parts.extend(["--ncu-command", ncu_command])
+    if args.nsys_trace != DEFAULT_NSYS_TRACE:
+        parts.extend(["--nsys-trace", args.nsys_trace])
+    if args.ncu_set != DEFAULT_NCU_SET:
+        parts.extend(["--ncu-set", args.ncu_set])
+    if args.ncu_target_processes != DEFAULT_NCU_TARGET_PROCESSES:
+        parts.extend(["--ncu-target-processes", args.ncu_target_processes])
+    if args.skip_nsys_export:
+        parts.append("--skip-nsys-export")
     if args.profile_output_dir != DEFAULT_PROFILE_OUTPUT_DIR:
         profile_output_dir = require_workspace_temp_path(
             resolve_workspace_path(args.profile_output_dir, root),
@@ -507,6 +518,10 @@ def profile_command_for_env(
                 display_path_for_shell(resolve_workspace_path(args.nsys_command, root), root),
             ]
         )
+    if tool == "nsys" and args.nsys_trace != DEFAULT_NSYS_TRACE:
+        profiler_command.extend(["--nsys-trace", args.nsys_trace])
+    if tool == "nsys" and args.skip_nsys_export:
+        profiler_command.append("--skip-nsys-export")
     if tool == "ncu" and args.ncu_command is not None:
         profiler_command.extend(
             [
@@ -514,6 +529,10 @@ def profile_command_for_env(
                 display_path_for_shell(resolve_workspace_path(args.ncu_command, root), root),
             ]
         )
+    if tool == "ncu" and args.ncu_set != DEFAULT_NCU_SET:
+        profiler_command.extend(["--ncu-set", args.ncu_set])
+    if tool == "ncu" and args.ncu_target_processes != DEFAULT_NCU_TARGET_PROCESSES:
+        profiler_command.extend(["--ncu-target-processes", args.ncu_target_processes])
     return [
         "scripts/run-proof-profile.py",
         "--tool",
@@ -778,10 +797,14 @@ def self_test() -> None:
         print_env_template=False,
         print_profile_commands=False,
         ncu_command=None,
+        ncu_set=DEFAULT_NCU_SET,
+        ncu_target_processes=DEFAULT_NCU_TARGET_PROCESSES,
         nsys_command=None,
+        nsys_trace=DEFAULT_NSYS_TRACE,
         profile_output_dir=DEFAULT_PROFILE_OUTPUT_DIR,
         profile_arg=[],
         profile_tool=DEFAULT_PROFILE_TOOL,
+        skip_nsys_export=False,
         write_env_template=None,
         skip_verify_proof=False,
     )
@@ -844,7 +867,11 @@ def main() -> None:
     parser.add_argument("--profile-output-dir", default=DEFAULT_PROFILE_OUTPUT_DIR)
     parser.add_argument("--nsys-command")
     parser.add_argument("--ncu-command")
+    parser.add_argument("--nsys-trace", default=DEFAULT_NSYS_TRACE)
+    parser.add_argument("--ncu-set", default=DEFAULT_NCU_SET)
+    parser.add_argument("--ncu-target-processes", default=DEFAULT_NCU_TARGET_PROCESSES)
     parser.add_argument("--profile-arg", action="append", default=[])
+    parser.add_argument("--skip-nsys-export", action="store_true")
     parser.add_argument(
         "--profile-tool",
         choices=["nsys", "ncu", "both"],
