@@ -35,12 +35,16 @@ namespace HashCollisionResistanceAssumption
 theorem merkle_hash_collision_resistance
     (assumptions : HashCollisionResistanceAssumption) :
     assumptions.merkleHashCollisionResistanceStatement :=
-  assumptions.merkleHashCollisionResistance.evidence
+  by
+    cases assumptions.merkleHashCollisionResistance with
+    | mk evidence => exact evidence
 
 theorem transcript_hash_collision_resistance
     (assumptions : HashCollisionResistanceAssumption) :
     assumptions.transcriptHashCollisionResistanceStatement :=
-  assumptions.transcriptHashCollisionResistance.evidence
+  by
+    cases assumptions.transcriptHashCollisionResistance with
+    | mk evidence => exact evidence
 
 end HashCollisionResistanceAssumption
 
@@ -60,7 +64,19 @@ theorem random_oracle_model
     {system : VerifierModel}
     (assumptions : FiatShamirRandomOracleAssumption system) :
     assumptions.randomOracleModelStatement :=
-  assumptions.randomOracleModel.evidence
+  by
+    cases assumptions.randomOracleModel with
+    | mk evidence => exact evidence
+
+theorem fiat_shamir_transcript_binding
+    {system : VerifierModel}
+    (assumptions : FiatShamirRandomOracleAssumption system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.transcriptBound publicInput proof :=
+  by
+    cases assumptions.fiatShamirTranscriptBinding with
+    | mk evidence => exact evidence
 
 end FiatShamirRandomOracleAssumption
 
@@ -79,7 +95,19 @@ theorem pcs_binding
     {system : VerifierModel}
     (assumptions : PcsOpeningSoundnessAssumption system) :
     assumptions.pcsBindingStatement :=
-  assumptions.pcsBinding.evidence
+  by
+    cases assumptions.pcsBinding with
+    | mk evidence => exact evidence
+
+theorem pcs_opening_soundness
+    {system : VerifierModel}
+    (assumptions : PcsOpeningSoundnessAssumption system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.pcsOpeningsValid publicInput proof :=
+  by
+    cases assumptions.pcsOpeningSoundness with
+    | mk evidence => exact evidence
 
 end PcsOpeningSoundnessAssumption
 
@@ -99,7 +127,19 @@ theorem fri_low_degree_soundness
     {system : VerifierModel}
     (assumptions : FriQuerySoundnessAssumption system) :
     assumptions.friLowDegreeSoundnessStatement :=
-  assumptions.friLowDegreeSoundness.evidence
+  by
+    cases assumptions.friLowDegreeSoundness with
+    | mk evidence => exact evidence
+
+theorem fri_query_soundness
+    {system : VerifierModel}
+    (assumptions : FriQuerySoundnessAssumption system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        system.friQueriesValid publicInput proof :=
+  by
+    cases assumptions.friQuerySoundness with
+    | mk evidence => exact evidence
 
 end FriQuerySoundnessAssumption
 
@@ -117,7 +157,7 @@ def transcript_binding
     forall publicInput proof,
       system.accepts publicInput proof ->
         system.transcriptBound publicInput proof :=
-  assumptions.randomOracleFiatShamir.fiatShamirTranscriptBinding.evidence
+  assumptions.randomOracleFiatShamir.fiat_shamir_transcript_binding
 
 def pcs_opening_sound
     {system : VerifierModel}
@@ -125,7 +165,7 @@ def pcs_opening_sound
     forall publicInput proof,
       system.accepts publicInput proof ->
         system.pcsOpeningsValid publicInput proof :=
-  assumptions.pcsSoundness.pcsOpeningSoundness.evidence
+  assumptions.pcsSoundness.pcs_opening_soundness
 
 def fri_query_sound
     {system : VerifierModel}
@@ -133,7 +173,7 @@ def fri_query_sound
     forall publicInput proof,
       system.accepts publicInput proof ->
         system.friQueriesValid publicInput proof :=
-  assumptions.friSoundness.friQuerySoundness.evidence
+  assumptions.friSoundness.fri_query_soundness
 
 end CryptographicAssumptions
 

@@ -57,8 +57,22 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
     assert!(
         assumptions_source.contains("def transcript_binding")
             && assumptions_source.contains("def pcs_opening_sound")
-            && assumptions_source.contains("def fri_query_sound"),
-        "Lean cryptographic assumptions should expose transcript, PCS, and FRI evidence projections"
+            && assumptions_source.contains("def fri_query_sound")
+            && assumptions_source.contains("theorem fiat_shamir_transcript_binding")
+            && assumptions_source.contains("theorem pcs_opening_soundness")
+            && assumptions_source.contains("theorem fri_query_soundness"),
+        "Lean cryptographic assumptions should expose bundle-level projections and direct named accessors"
+    );
+    assert!(
+        !assumptions_source.contains("merkleHashCollisionResistance.evidence")
+            && !assumptions_source.contains("transcriptHashCollisionResistance.evidence")
+            && !assumptions_source.contains("randomOracleModel.evidence")
+            && !assumptions_source.contains("fiatShamirTranscriptBinding.evidence")
+            && !assumptions_source.contains("pcsBinding.evidence")
+            && !assumptions_source.contains("pcsOpeningSoundness.evidence")
+            && !assumptions_source.contains("friLowDegreeSoundness.evidence")
+            && !assumptions_source.contains("friQuerySoundness.evidence"),
+        "Lean cryptographic assumptions should not expose raw evidence-field projections"
     );
     assert!(
         assumptions_source.contains("system.accepts publicInput proof ->")
