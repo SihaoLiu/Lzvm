@@ -240,6 +240,9 @@ fn collect_uncontrolled_lean_placeholders(path: &Path, violations: &mut Vec<Stri
                     violations.push(format!("{}:{}:{token}", path.display(), line_index + 1));
                 }
             }
+            if line.contains(".evidence") {
+                violations.push(format!("{}:{}:.evidence", path.display(), line_index + 1));
+            }
         }
     }
 }
