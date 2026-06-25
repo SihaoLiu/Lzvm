@@ -288,17 +288,27 @@ impl RealParityConfig {
         let workspace = workspace_root();
         let temp_dir = workspace.join("temp");
         Self {
-            bin: optional_env_path(env_names.bin)
+            bin: optional_env_path(env_names.bin, &workspace)
                 .unwrap_or_else(|| workspace.join("target").join("release").join("lzvm")),
-            setup_dir: required_env_path(env_names.setup),
-            block_input: required_env_path(env_names.block_input),
-            program_image_cache: required_env_path(env_names.program_image_cache),
-            input_data: required_env_path(env_names.input_data),
-            guest_image: required_env_path(env_names.guest_image),
+            setup_dir: required_env_path(env_names.setup, &workspace),
+            block_input: required_env_path(env_names.block_input, &workspace),
+            program_image_cache: required_env_path(env_names.program_image_cache, &workspace),
+            input_data: required_env_path(env_names.input_data, &workspace),
+            guest_image: required_env_path(env_names.guest_image, &workspace),
             trace_limit: env::var(env_names.trace_limit)
                 .unwrap_or_else(|_| default_trace_limit.to_owned()),
-            work_dir: optional_env_path(env_names.work_dir).unwrap_or_else(|| temp_dir.clone()),
-            tmp_dir: optional_env_path(env_names.tmp_dir).unwrap_or_else(|| temp_dir.join("tmp")),
+            work_dir: require_workspace_temp_path(
+                optional_env_path(env_names.work_dir, &workspace)
+                    .unwrap_or_else(|| temp_dir.clone()),
+                &workspace,
+                env_names.work_dir,
+            ),
+            tmp_dir: require_workspace_temp_path(
+                optional_env_path(env_names.tmp_dir, &workspace)
+                    .unwrap_or_else(|| temp_dir.join("tmp")),
+                &workspace,
+                env_names.tmp_dir,
+            ),
         }
     }
 }
@@ -311,18 +321,82 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn optional_env_path(name: &str) -> Option<PathBuf> {
-    env::var_os(name).map(PathBuf::from)
+fn optional_env_path(name: &str, workspace: &Path) -> Option<PathBuf> {
+    env::var_os(name).map(|value| workspace_path(PathBuf::from(value), workspace))
 }
 
-fn required_env_path(name: &str) -> PathBuf {
-    let path = optional_env_path(name).unwrap_or_else(|| panic!("{name} must be set"));
+fn required_env_path(name: &str, workspace: &Path) -> PathBuf {
+    let path = optional_env_path(name, workspace).unwrap_or_else(|| panic!("{name} must be set"));
     assert!(
         path.exists(),
         "{name} path should exist: {}",
         path.display()
     );
     path
+}
+
+fn workspace_path(path: PathBuf, workspace: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else {
+        workspace.join(path)
+    }
+}
+
+fn require_workspace_temp_path(path: PathBuf, workspace: &Path, name: &str) -> PathBuf {
+    let temp_dir = normalize_path(workspace.join("temp"));
+    let normalized = normalize_path(path);
+    assert!(
+        normalized == temp_dir || normalized.starts_with(&temp_dir),
+        "{name} path must stay under workspace temp: {}",
+        normalized.display()
+    );
+    normalized
+}
+
+fn normalize_path(path: PathBuf) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
+}
+
+#[test]
+fn real_parity_relative_env_paths_resolve_from_workspace() {
+    let workspace = workspace_root();
+    let resolved = workspace_path(PathBuf::from("target/release/lzvm"), &workspace);
+
+    assert_eq!(
+        resolved,
+        workspace.join("target").join("release").join("lzvm")
+    );
+}
+
+#[test]
+fn real_parity_temp_paths_are_constrained_to_workspace_temp() {
+    let workspace = workspace_root();
+    let allowed = require_workspace_temp_path(
+        workspace.join("temp").join("real-proof"),
+        &workspace,
+        "WORK_DIR",
+    );
+    assert_eq!(allowed, workspace.join("temp").join("real-proof"));
+
+    let rejected = std::panic::catch_unwind(|| {
+        require_workspace_temp_path(
+            workspace.join("target").join("real-proof"),
+            &workspace,
+            "WORK_DIR",
+        )
+    });
+    assert!(rejected.is_err());
 }
 
 #[test]
