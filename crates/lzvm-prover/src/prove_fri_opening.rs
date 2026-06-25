@@ -19,10 +19,7 @@ use lzvm_artifacts::pcs_material_segment::{
 };
 use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, witness_commitment_segment_id,
-    WitnessCommitmentSegmentIdentity,
-};
+use lzvm_artifacts::witness_segment::WitnessCommitmentSegmentIdentity;
 use lzvm_field::{Ext3, Felt, FieldError};
 
 use crate::pcs_fri::{
@@ -38,6 +35,9 @@ use crate::prove_fri_polynomial::build_pcs_fri_polynomial_values_with_slices_and
 use crate::prove_fri_polynomial::build_pcs_fri_polynomial_values_with_slices_stage_sources_and_fixed_cache;
 use crate::prove_fri_polynomial::{
     build_pcs_fri_polynomial_values, PcsFriFixedColumnsCache, ProvePcsFriPolynomialTraceInput,
+};
+use crate::witness_commitment::{
+    load_witness_commitment_segment_ref_for_identity, LoadWitnessCommitmentSegmentsError,
 };
 use crate::witness_execution::ProveWitnessAuxiliaryInputSlices;
 use crate::ProveSchedule;
@@ -466,32 +466,10 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs_with_timin
             },
         )? as usize;
         validate_material_segment_id(input.material_segment)?;
-        let unit_count = u32::try_from(schedule.units.len()).map_err(|_| {
-            ProvePcsFriTranscriptTraceValuesError::UnitIndexOverflow {
-                unit_index: input.unit_index,
-            }
-        })?;
-        let expected_witness_id = witness_commitment_segment_id(
-            unit_count,
-            WitnessCommitmentSegmentIdentity {
-                unit_index: unit_index_u32,
-                trace_instance_index: input.trace_instance_index,
-            },
-        )
-        .map_err(
-            |_| ProvePcsFriTranscriptTraceValuesError::UnitIndexOverflow {
-                unit_index: input.unit_index,
-            },
-        )?;
-        if input.witness_segment.id != expected_witness_id {
-            return Err(
-                ProvePcsFriTranscriptTraceValuesError::InvalidWitnessSegmentId {
-                    unit_index: input.unit_index,
-                    expected: expected_witness_id,
-                    found: input.witness_segment.id,
-                },
-            );
-        }
+        let witness_identity = WitnessCommitmentSegmentIdentity {
+            unit_index: unit_index_u32,
+            trace_instance_index: input.trace_instance_index,
+        };
         validate_evaluation_segment_id(input.evaluation_segment)?;
 
         let material = material_cache
@@ -502,22 +480,13 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs_with_timin
             .ok_or(ProvePcsFriTranscriptTraceValuesError::MissingMaterialUnit {
                 unit_index: input.unit_index,
             })?;
-        let witness =
-            parse_witness_commitment_segment(&input.witness_segment.data).map_err(|source| {
-                ProvePcsFriTranscriptTraceValuesError::WitnessSegment {
-                    unit_index: input.unit_index,
-                    source,
-                }
-            })?;
-        if witness.unit_index != unit_index_u32 {
-            return Err(
-                ProvePcsFriTranscriptTraceValuesError::SegmentUnitIndexMismatch {
-                    segment: "witness",
-                    expected: unit_index_u32,
-                    found: witness.unit_index,
-                },
-            );
-        }
+        let witness = load_witness_commitment_segment_ref_for_identity(
+            &schedule.units,
+            input.witness_segment,
+            witness_identity,
+        )
+        .map_err(|source| map_transcript_witness_load_error(input.unit_index, source))?
+        .witness;
         let evaluations = evaluation_cache
             .get(input.evaluation_segment)?
             .units
@@ -615,6 +584,25 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs_with_timin
         out.append(&mut built);
     }
     Ok(out)
+}
+
+fn map_transcript_witness_load_error(
+    unit_index: usize,
+    source: LoadWitnessCommitmentSegmentsError,
+) -> ProvePcsFriTranscriptTraceValuesError {
+    match source {
+        LoadWitnessCommitmentSegmentsError::UnexpectedSegment {
+            expected, found, ..
+        } => ProvePcsFriTranscriptTraceValuesError::InvalidWitnessSegmentId {
+            unit_index,
+            expected,
+            found,
+        },
+        LoadWitnessCommitmentSegmentsError::Segment { source, .. } => {
+            ProvePcsFriTranscriptTraceValuesError::WitnessSegment { unit_index, source }
+        }
+        source => ProvePcsFriTranscriptTraceValuesError::WitnessCommitment { unit_index, source },
+    }
 }
 
 pub fn build_pcs_fri_opening_segment_from_transcript_values(

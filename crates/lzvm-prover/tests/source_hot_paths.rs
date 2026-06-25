@@ -7608,6 +7608,11 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
         !helper_body.contains("ProveWitnessAuxiliaryInputs"),
         "borrowed trace segment builder should not rebuild owned auxiliary inputs"
     );
+    assert!(
+        helper_body.contains("load_witness_commitment_segment_ref_for_identity")
+            && !helper_body.contains("parse_witness_commitment_segment"),
+        "borrowed trace segment builder should reuse loaded witness commitment payloads"
+    );
 }
 
 #[test]

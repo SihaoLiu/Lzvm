@@ -394,6 +394,8 @@ pub enum LoadWitnessCommitmentSegmentsError {
     },
     UnexpectedSegment {
         unit_index: usize,
+        expected: u32,
+        found: u32,
     },
     Segment {
         unit_index: usize,
@@ -437,10 +439,14 @@ impl fmt::Display for LoadWitnessCommitmentSegmentsError {
                     "duplicate witness commitment segment for unit {unit_index}"
                 )
             }
-            Self::UnexpectedSegment { unit_index } => {
+            Self::UnexpectedSegment {
+                unit_index,
+                expected,
+                found,
+            } => {
                 write!(
                     f,
-                    "unexpected witness commitment segment for unit {unit_index}"
+                    "unexpected witness commitment segment for unit {unit_index}: expected {expected}, found {found}"
                 )
             }
             Self::Segment { unit_index, source } => write!(

@@ -1,8 +1,9 @@
 use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, witness_commitment_segment_identity,
-    WitnessCommitmentSegment, WitnessCommitmentSegmentIdentity, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    parse_witness_commitment_segment, witness_commitment_segment_id,
+    witness_commitment_segment_identity, WitnessCommitmentSegment,
+    WitnessCommitmentSegmentIdentity, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 
 use crate::ProveUnitSchedule;
@@ -80,6 +81,27 @@ pub fn load_witness_commitment_segment_refs_with_shapes<'a>(
     }
     out.sort_by_key(|loaded| loaded.segment.id);
     Ok(out)
+}
+
+pub fn load_witness_commitment_segment_ref_for_identity<'a>(
+    units: &[ProveUnitSchedule],
+    segment: &'a ProofSegment,
+    identity: WitnessCommitmentSegmentIdentity,
+) -> Result<LoadedWitnessCommitmentSegmentRef<'a>, LoadWitnessCommitmentSegmentsError> {
+    let unit_count = u32::try_from(units.len())
+        .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitCountOverflow)?;
+    let unit_index = usize::try_from(identity.unit_index)
+        .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
+    let expected = witness_commitment_segment_id(unit_count, identity)
+        .map_err(|_| LoadWitnessCommitmentSegmentsError::SegmentIdOverflow)?;
+    if segment.id != expected {
+        return Err(LoadWitnessCommitmentSegmentsError::UnexpectedSegment {
+            unit_index,
+            expected,
+            found: segment.id,
+        });
+    }
+    validate_witness_commitment_segment(units, segment, identity, unit_index)
 }
 
 fn validate_witness_commitment_segment<'a>(

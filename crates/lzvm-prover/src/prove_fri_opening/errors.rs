@@ -14,6 +14,7 @@ use lzvm_field::FieldError;
 use crate::pcs_fri::{PcsFriOpeningBuildError, PcsFriTranscriptCommitmentError};
 use crate::pcs_transcript::PcsTranscriptError;
 use crate::prove_fri_polynomial::ProvePcsFriPolynomialError;
+use crate::witness_commitment::LoadWitnessCommitmentSegmentsError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProvePcsFriOpeningSegmentError {
@@ -90,6 +91,10 @@ pub enum ProvePcsFriTranscriptTraceValuesError {
     WitnessSegment {
         unit_index: usize,
         source: WitnessCommitmentSegmentError,
+    },
+    WitnessCommitment {
+        unit_index: usize,
+        source: LoadWitnessCommitmentSegmentsError,
     },
     EvaluationSegment(PcsEvaluationSegmentError),
     MissingMaterialUnit {
@@ -240,6 +245,10 @@ impl fmt::Display for ProvePcsFriTranscriptTraceValuesError {
                 f,
                 "prove PCS FRI transcript witness segment failed for unit {unit_index}: {source}"
             ),
+            Self::WitnessCommitment { unit_index, source } => write!(
+                f,
+                "prove PCS FRI transcript witness commitment failed for unit {unit_index}: {source}"
+            ),
             Self::EvaluationSegment(error) => write!(
                 f,
                 "prove PCS FRI transcript evaluation segment failed: {error}"
@@ -327,6 +336,7 @@ impl std::error::Error for ProvePcsFriTranscriptTraceValuesError {
         match self {
             Self::MaterialSegment(error) => Some(error),
             Self::WitnessSegment { source, .. } => Some(source),
+            Self::WitnessCommitment { source, .. } => Some(source),
             Self::EvaluationSegment(error) => Some(error),
             Self::Field { source, .. } => Some(source),
             Self::PrefixTranscript { source, .. } => Some(source.as_ref()),

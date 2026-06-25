@@ -20,8 +20,8 @@ use lzvm_prover::witness_commitment::{
 };
 use lzvm_prover::witness_commitment::{extend_witness_stage_leaves, WitnessStageLeafError};
 use lzvm_prover::witness_commitment::{
-    load_witness_commitment_segment_refs, load_witness_commitment_segments,
-    LoadWitnessCommitmentSegmentsError,
+    load_witness_commitment_segment_ref_for_identity, load_witness_commitment_segment_refs,
+    load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
 };
 use lzvm_prover::witness_layout::{derive_witness_trace_layout, WitnessTraceLayoutError};
 use lzvm_prover::witness_trace::parse_witness_trace;
@@ -280,6 +280,53 @@ fn loads_witness_commitment_segment_refs_without_payload_copies() {
     assert_eq!(loaded.len(), 2);
     assert!(std::ptr::eq(loaded[0], &segments[1]));
     assert!(std::ptr::eq(loaded[1], &segments[0]));
+}
+
+#[test]
+fn loads_witness_commitment_segment_ref_for_identity_with_payload() {
+    let units = vec![sample_unit(2, vec![1])];
+    let identity = WitnessCommitmentSegmentIdentity {
+        unit_index: 0,
+        trace_instance_index: 1,
+    };
+    let segment_id = witness_commitment_segment_id(units.len() as u32, identity)
+        .expect("segment id should encode");
+    let payload = sample_witness_commitment_segment(0, &units[0]);
+    let segment = ProofSegment {
+        id: segment_id,
+        data: encode_witness_commitment_segment(&payload).expect("segment should encode"),
+    };
+
+    let loaded = load_witness_commitment_segment_ref_for_identity(&units, &segment, identity)
+        .expect("segment should load");
+
+    assert!(std::ptr::eq(loaded.segment, &segment));
+    assert_eq!(loaded.identity, identity);
+    assert_eq!(loaded.witness, payload);
+}
+
+#[test]
+fn rejects_witness_commitment_segment_ref_identity_mismatch() {
+    let units = vec![sample_unit(2, vec![1])];
+    let segment = witness_commitment_proof_segment(0, &units[0]);
+    let identity = WitnessCommitmentSegmentIdentity {
+        unit_index: 0,
+        trace_instance_index: 1,
+    };
+    let expected = witness_commitment_segment_id(units.len() as u32, identity)
+        .expect("segment id should encode");
+
+    let error = load_witness_commitment_segment_ref_for_identity(&units, &segment, identity)
+        .expect_err("identity mismatch should be rejected");
+
+    assert_eq!(
+        error,
+        LoadWitnessCommitmentSegmentsError::UnexpectedSegment {
+            unit_index: 0,
+            expected,
+            found: segment.id,
+        }
+    );
 }
 
 #[test]
