@@ -135,6 +135,17 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_full_contract",
+        &[
+            "RuntimeEthBlockPublicInputBindingEvidence",
+            "RuntimeProofArtifactBindingEvidence",
+            "RuntimeEthBlockPublicInputBindingStructuralObligations",
+            "RuntimeArtifactEvidence",
+            "SoundWitness system publicInput proof",
+        ],
+    );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",

@@ -942,6 +942,12 @@ theorem runtime_pipeline_binding_checked_acceptance_eth_full_contract
             artifact
             publicInput
             proof
+          /\ RuntimeProofArtifactBindingEvidence
+            system
+            validation.ethBindingValidation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
           /\ RuntimeEthBlockPublicInputBindingStructuralObligations
             system
             validation.ethBindingValidation
@@ -1098,13 +1104,6 @@ theorem runtime_pipeline_binding_checked_acceptance_sound
             requiresExternalSource
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have ethAccepted :=
-    runtime_pipeline_binding_checked_acceptance_eth
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
   have traceAccepted :=
     runtime_pipeline_binding_checked_acceptance_trace
       validation
@@ -1119,14 +1118,6 @@ theorem runtime_pipeline_binding_checked_acceptance_sound
       publicInput
       proof
       accepted
-  have ethSound :=
-    runtime_eth_block_public_input_binding_checked_acceptance_sound
-      assumptions
-      validation.ethBindingValidation
-      artifact
-      publicInput
-      proof
-      ethAccepted
   have ethFull :=
     runtime_pipeline_binding_checked_acceptance_eth_full_contract
       assumptions
@@ -1154,8 +1145,8 @@ theorem runtime_pipeline_binding_checked_acceptance_sound
       requiresExternalSource
       queryPlanAccepted
   have ethEvidence := ethFull.left
-  have artifactEvidence := ethSound.right.left
-  have runtimeArtifactEvidence := ethFull.right.right.left
+  have artifactEvidence := ethFull.right.left
+  have runtimeArtifactEvidence := ethFull.right.right.right.left
   have tracePreflightEvidence := traceSound.left
   have traceConstraintEvidence := traceSound.right.left
   have queryPlanEvidence := queryPlanSound.left

@@ -560,6 +560,12 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_full_contract
             artifact
             publicInput
             proof
+          /\ RuntimeProofArtifactBindingEvidence
+            system
+            validation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
           /\ RuntimeEthBlockPublicInputBindingStructuralObligations
             system
             validation
@@ -591,6 +597,7 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_full_contract
       accepted
   exact
     And.intro sound.left
-      (And.intro structural sound.right.right)
+      (And.intro sound.right.left
+        (And.intro structural sound.right.right))
 
 end Lzvm

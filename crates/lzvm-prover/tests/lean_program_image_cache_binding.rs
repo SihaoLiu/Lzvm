@@ -119,6 +119,17 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "runtime_program_image_cache_binding_checked_acceptance_structural_obligations",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_program_image_cache_binding_checked_acceptance_full_contract",
+        &[
+            "RuntimeProgramImageCacheBindingEvidence",
+            "RuntimeProofArtifactBindingEvidence",
+            "RuntimeProgramImageCacheBindingStructuralObligations",
+            "RuntimeArtifactEvidence",
+            "SoundWitness system publicInput proof",
+        ],
+    );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract",

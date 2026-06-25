@@ -611,6 +611,12 @@ theorem runtime_program_image_cache_binding_checked_acceptance_full_contract
             artifact
             publicInput
             proof
+          /\ RuntimeProofArtifactBindingEvidence
+            system
+            validation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
           /\ RuntimeProgramImageCacheBindingStructuralObligations
             system
             validation
@@ -642,6 +648,7 @@ theorem runtime_program_image_cache_binding_checked_acceptance_full_contract
       accepted
   exact
     And.intro sound.left
-      (And.intro structural sound.right.right)
+      (And.intro sound.right.left
+        (And.intro structural sound.right.right))
 
 end Lzvm

@@ -719,6 +719,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_eth_full_contract",
         &[
             "RuntimeEthBlockPublicInputBindingEvidence",
+            "RuntimeProofArtifactBindingEvidence",
             "RuntimeEthBlockPublicInputBindingStructuralObligations",
             "RuntimeArtifactEvidence",
             "SoundWitness system publicInput proof",
@@ -972,8 +973,14 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_binding_checked_acceptance_eth_full_contract",
             "have ethEvidence := ethFull.left",
-            "have runtimeArtifactEvidence := ethFull.right.right.left",
+            "have artifactEvidence := ethFull.right.left",
+            "have runtimeArtifactEvidence := ethFull.right.right.right.left",
         ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_sound",
+        &["runtime_eth_block_public_input_binding_checked_acceptance_sound"],
     );
     assert!(
         theorem_prefix(

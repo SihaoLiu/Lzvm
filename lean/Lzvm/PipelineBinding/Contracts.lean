@@ -469,13 +469,6 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_mer
             requiresExternalSource
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have ethAccepted :=
-    runtime_pipeline_binding_checked_acceptance_eth
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
   have traceAccepted :=
     runtime_pipeline_binding_checked_acceptance_trace
       validation
@@ -490,14 +483,6 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_mer
       publicInput
       proof
       accepted
-  have ethSound :=
-    runtime_eth_block_public_input_binding_checked_acceptance_sound
-      assumptions
-      validation.ethBindingValidation
-      artifact
-      publicInput
-      proof
-      ethAccepted
   have ethFull :=
     runtime_pipeline_binding_checked_acceptance_eth_full_contract
       assumptions
@@ -528,8 +513,8 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_mer
       requiresExternalSource
       queryPlanAccepted
   have ethEvidence := ethFull.left
-  have artifactEvidence := ethSound.right.left
-  have runtimeArtifactEvidence := ethFull.right.right.left
+  have artifactEvidence := ethFull.right.left
+  have runtimeArtifactEvidence := ethFull.right.right.right.left
   have tracePreflightEvidence := traceSound.left
   have traceConstraintEvidence := traceSound.right.left
   have queryPlanEvidence := queryPlanSound.left
@@ -608,13 +593,6 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_ope
             requiresExternalSource
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have ethAccepted :=
-    runtime_pipeline_binding_checked_acceptance_eth
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
   have traceAccepted :=
     runtime_pipeline_binding_checked_acceptance_trace
       validation
@@ -629,14 +607,6 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_ope
       publicInput
       proof
       accepted
-  have ethSound :=
-    runtime_eth_block_public_input_binding_checked_acceptance_sound
-      assumptions
-      validation.ethBindingValidation
-      artifact
-      publicInput
-      proof
-      ethAccepted
   have ethFull :=
     runtime_pipeline_binding_checked_acceptance_eth_full_contract
       assumptions
@@ -668,8 +638,8 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_ope
       requiresExternalSource
       queryPlanAccepted
   have ethEvidence := ethFull.left
-  have artifactEvidence := ethSound.right.left
-  have runtimeArtifactEvidence := ethFull.right.right.left
+  have artifactEvidence := ethFull.right.left
+  have runtimeArtifactEvidence := ethFull.right.right.right.left
   have tracePreflightEvidence := traceSound.left
   have traceConstraintEvidence := traceSound.right.left
   have queryPlanEvidence := queryPlanSound.left
