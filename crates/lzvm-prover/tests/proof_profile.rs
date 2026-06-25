@@ -1033,6 +1033,76 @@ fn proof_profile_rejects_symlinked_output_path() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn proof_profile_rejects_output_path_replaced_with_symlink() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-symlink-race-{}",
+        std::process::id()
+    ));
+    let profiler_path = output_dir.join("fake-nsys");
+    let profile_dir = output_dir.join("profiles");
+    let json_path = profile_dir.join("race-profile.profile.json");
+    let redirected = output_dir.join("redirected.profile.json");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    std::fs::write(&redirected, "sentinel\n").expect("redirect target should write");
+    write_executable_script(
+        &profiler_path,
+        concat!(
+            "#!/usr/bin/env python3\n",
+            "import pathlib, subprocess, sys\n",
+            "args = sys.argv[1:]\n",
+            "if 'profile' in args and '--output' in args:\n",
+            "    prefix = pathlib.Path(args[args.index('--output') + 1])\n",
+            "    pathlib.Path(str(prefix) + '.nsys-rep').write_text('report\\n', encoding='utf-8')\n",
+            "if '--' in args:\n",
+            "    command = args[args.index('--') + 1:]\n",
+            "    if command:\n",
+            "        raise SystemExit(subprocess.run(command).returncode)\n",
+        ),
+    );
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("nsys")
+        .arg("--nsys-command")
+        .arg(&profiler_path)
+        .arg("--skip-nsys-export")
+        .arg("--output-dir")
+        .arg(&profile_dir)
+        .arg("--name")
+        .arg("race-profile")
+        .arg("--")
+        .arg("python3")
+        .arg("-c")
+        .arg(format!(
+            "import os, pathlib\njson_path = pathlib.Path({:?})\nredirected = pathlib.Path({:?})\njson_path.unlink(missing_ok=True)\nos.symlink(redirected, json_path)\nprint('timing_total_ms=1000')\n",
+            json_path.to_string_lossy(),
+            redirected.to_string_lossy()
+        ))
+        .output()
+        .expect("proof profile should reject replaced symlink output path");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let redirected_text =
+        std::fs::read_to_string(&redirected).expect("redirect target should remain readable");
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(
+        !success,
+        "proof profile should reject output paths replaced with symlinks"
+    );
+    assert!(
+        stderr.contains("output path must not be a symlink"),
+        "no-follow write rejection should explain the path constraint: stderr={stderr}"
+    );
+    assert_eq!(
+        redirected_text, "sentinel\n",
+        "rejected no-follow write should not overwrite a symlink target"
+    );
+}
+
 #[test]
 fn proof_profile_rejects_nsys_summary_without_sqlite_export() {
     let output = Command::new(script_path())

@@ -335,6 +335,24 @@ def reject_symlinked_output_paths(outputs: dict[str, Path]) -> None:
             raise SystemExit(f"{key} output path must not be a symlink: {path}")
 
 
+def open_text_no_follow(path: Path, mode: int = 0o600):
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags, mode)
+    except OSError as error:
+        if path.is_symlink():
+            raise SystemExit(f"output path must not be a symlink: {path}") from error
+        raise
+    return os.fdopen(descriptor, "w", encoding="utf-8")
+
+
+def write_text_no_follow(path: Path, text: str) -> None:
+    with open_text_no_follow(path) as output:
+        output.write(text)
+
+
 def prepare_output_dirs(output_dir: Path, outputs: dict[str, Path]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     reject_symlinked_output_paths(outputs)
@@ -358,13 +376,13 @@ def run_captured(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    stdout_path.write_text(completed.stdout, encoding="utf-8")
-    stderr_path.write_text(completed.stderr, encoding="utf-8")
+    write_text_no_follow(stdout_path, completed.stdout)
+    write_text_no_follow(stderr_path, completed.stderr)
     return completed.returncode
 
 
 def tee_pipe(pipe, output_path: Path, sink) -> None:
-    with output_path.open("w", encoding="utf-8") as output:
+    with open_text_no_follow(output_path) as output:
         for chunk in iter(pipe.readline, ""):
             output.write(chunk)
             output.flush()
@@ -376,14 +394,14 @@ def tee_pipe(pipe, output_path: Path, sink) -> None:
 def write_combined_profile_log(outputs: dict[str, Path]) -> None:
     stdout = outputs["profile_stdout"].read_text(encoding="utf-8")
     stderr = outputs["profile_stderr"].read_text(encoding="utf-8")
-    outputs["profile_log"].write_text(
+    write_text_no_follow(
+        outputs["profile_log"],
         "[stdout]\n"
         + stdout
         + ("" if not stdout or stdout.endswith("\n") else "\n")
         + "[stderr]\n"
         + stderr
         + ("" if not stderr or stderr.endswith("\n") else "\n"),
-        encoding="utf-8",
     )
 
 
@@ -478,9 +496,9 @@ def write_profile_json(
         payload["gpu_memory_check"] = gpu_memory_check
     if error is not None:
         payload["error"] = error
-    outputs["profile_json"].write_text(
+    write_text_no_follow(
+        outputs["profile_json"],
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )
 
 
