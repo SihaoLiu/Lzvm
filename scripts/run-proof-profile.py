@@ -100,7 +100,7 @@ def executable_path(command: str, cwd: Path) -> Path | None:
     if path.is_absolute():
         candidates = [path]
     elif len(path.parts) > 1:
-        candidates = [cwd / path, path]
+        candidates = [cwd / path]
     else:
         found = shutil.which(command)
         candidates = [Path(found)] if found is not None else []

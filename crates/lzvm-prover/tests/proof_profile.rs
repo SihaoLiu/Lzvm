@@ -398,6 +398,55 @@ fn proof_profile_check_tool_reports_missing_profiler() {
 }
 
 #[test]
+fn proof_profile_check_tool_respects_relative_command_cwd() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-check-tool-relative-cwd-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("nsys")
+        .arg("--nsys-command")
+        .arg("scripts/run-proof-profile.py")
+        .arg("--cwd")
+        .arg(&output_dir)
+        .arg("--output-dir")
+        .arg(output_dir.join("profiles"))
+        .arg("--check-tool")
+        .output()
+        .expect("proof profile relative command check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let profile_dir_created = output_dir.join("profiles").exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(
+        !success,
+        "relative profiler path should be checked relative to --cwd, not the caller workspace"
+    );
+    assert!(
+        stderr.is_empty(),
+        "relative command miss should report status on stdout only: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("tool=nsys\n")
+            && stdout.contains("tool_source=arg\n")
+            && stdout.contains("tool_command=scripts/run-proof-profile.py\n")
+            && stdout.contains("tool_status=missing\n")
+            && !stdout.contains("tool_resolved="),
+        "relative command check should not report a workspace-relative false ready: {stdout}"
+    );
+    assert!(
+        !profile_dir_created,
+        "relative command check should not create profile output directories"
+    );
+}
+
+#[test]
 fn proof_profile_check_tool_rejects_output_dir_outside_temp() {
     let output_dir = workspace_root().join(format!(
         "target/proof-profile-check-tool-outside-{}",

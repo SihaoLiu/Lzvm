@@ -555,6 +555,51 @@ fn eth_proof_timing_batch_check_env_reports_profile_tool_status() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_resolves_relative_profile_tools_from_workspace() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-check-env-profile-relative");
+    let profile_dir = fixture.dir.join("profiles");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir)
+        .arg("--nsys-command")
+        .arg("scripts/run-proof-profile.py");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let profile_created = profile_dir.exists();
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "env check should accept workspace-relative profiler paths used by generated profile commands: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("status=ok\n") && stdout.contains("small=ready\n"),
+        "env check should still validate proof envs: {stdout}"
+    );
+    assert!(
+        stdout.contains("nsys_profiler_source=arg\n")
+            && stdout.contains("nsys_profiler_command=scripts/run-proof-profile.py\n")
+            && stdout.contains("nsys_profiler_status=ready\n")
+            && stdout.contains("nsys_profiler_resolved=scripts/run-proof-profile.py\n"),
+        "env check should resolve relative profiler paths from the generated profile cwd: {stdout}"
+    );
+    assert!(
+        !profile_created,
+        "env check should not create profile output directories"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_prints_env_template_without_config() {
     let mut command = Command::new(script_path());
     command

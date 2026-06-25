@@ -508,11 +508,8 @@ def resolve_profile_tool(raw: str, root: Path) -> Path | None:
     if path.is_absolute():
         candidates.append(path)
     elif len(path.parts) > 1:
-        candidates.extend([root / path, path])
+        candidates.append(root / path)
     else:
-        workspace_candidate = root / path
-        if workspace_candidate.exists():
-            candidates.append(workspace_candidate)
         found = shutil.which(raw)
         if found is not None:
             candidates.append(Path(found))
