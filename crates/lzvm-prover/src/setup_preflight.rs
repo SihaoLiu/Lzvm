@@ -648,8 +648,9 @@ pub fn validate_setup_preflight(
     validate_setup_proof_segment_ids(&proof.segments)?;
     validate_optional_contribution_segment(catalog, proof)?;
     validate_optional_challenge_values_segment(proof)?;
-    validate_optional_contribution_challenge_values(catalog, proof, public_values)?;
-    let global_values = validate_global_value_segments(catalog, proof)?;
+    let contribution_proof_values =
+        validate_optional_contribution_challenge_values(catalog, proof, public_values)?;
+    let global_values = validate_global_value_segments(catalog, proof, contribution_proof_values)?;
     let uses_transcript_inputs = uses_transcript_pcs_query_plan_inputs(&proof.segments);
     let needs_public_fields = uses_transcript_inputs
         || !catalog.global_constraints.entries.is_empty()
@@ -913,10 +914,13 @@ fn validate_optional_unit_value_segments(
 fn validate_global_value_segments(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
+    preloaded_proof_values: Option<Vec<Ext3>>,
 ) -> Result<SetupPreflightGlobalValues, SetupPreflightError> {
-    let proof_values =
-        load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
-            .map_err(SetupPreflightError::ProofValues)?;
+    let proof_values = match preloaded_proof_values {
+        Some(proof_values) => proof_values,
+        None => load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
+            .map_err(SetupPreflightError::ProofValues)?,
+    };
     let group_values =
         load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
             .map_err(SetupPreflightError::GroupValues)?;
@@ -985,7 +989,7 @@ fn validate_optional_contribution_challenge_values(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
     public_values: &PublicValues,
-) -> Result<(), SetupPreflightError> {
+) -> Result<Option<Vec<Ext3>>, SetupPreflightError> {
     let has_contribution = proof
         .segments
         .iter()
@@ -998,10 +1002,10 @@ fn validate_optional_contribution_challenge_values(
         if has_contribution {
             return Err(SetupPreflightError::MissingContributionChallengeValues);
         }
-        return Ok(());
+        return Ok(None);
     };
     if !has_contribution {
-        return Ok(());
+        return Ok(None);
     }
 
     let challenge_values = parse_challenge_values_segment(&challenge_segment.data)
@@ -1024,7 +1028,7 @@ fn validate_optional_contribution_challenge_values(
     if challenge_values.as_slice() != [expected.to_u64s()] {
         return Err(SetupPreflightError::ContributionChallengeValuesMismatch);
     }
-    Ok(())
+    Ok(Some(proof_values))
 }
 
 fn validate_setup_proof_segment_ids(segments: &[ProofSegment]) -> Result<(), SetupPreflightError> {
