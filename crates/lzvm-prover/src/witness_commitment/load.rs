@@ -71,7 +71,9 @@ pub fn load_witness_commitment_segment_refs_with_shapes<'a>(
         if !seen_unit_identities.insert((identity.unit_index, identity.trace_instance_index)) {
             return Err(LoadWitnessCommitmentSegmentsError::DuplicateSegment { unit_index });
         }
-        out.push(validate_witness_commitment_segment(units, segment)?);
+        out.push(validate_witness_commitment_segment(
+            units, segment, identity, unit_index,
+        )?);
     }
 
     if out.is_empty() {
@@ -84,14 +86,9 @@ pub fn load_witness_commitment_segment_refs_with_shapes<'a>(
 fn validate_witness_commitment_segment<'a>(
     units: &[ProveUnitSchedule],
     segment: &'a ProofSegment,
+    identity: WitnessCommitmentSegmentIdentity,
+    unit_index: usize,
 ) -> Result<LoadedWitnessCommitmentSegmentRef<'a>, LoadWitnessCommitmentSegmentsError> {
-    let unit_count = u32::try_from(units.len())
-        .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitCountOverflow)?;
-    let identity = witness_commitment_segment_identity(unit_count, segment.id)
-        .map_err(|_| LoadWitnessCommitmentSegmentsError::SegmentIdOverflow)?
-        .ok_or(LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
-    let unit_index = usize::try_from(identity.unit_index)
-        .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
     let parsed = parse_witness_commitment_segment(&segment.data)
         .map_err(|source| LoadWitnessCommitmentSegmentsError::Segment { unit_index, source })?;
     if parsed.unit_index != identity.unit_index {
