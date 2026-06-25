@@ -661,22 +661,36 @@ structure GuestPcTraceSegmentQueueValidation where
 
 structure GuestPcTraceLargeGpuGateConfig where
   defaultLargeTraceInstructionThreshold : Nat
+  defaultMinFreeGpuMemoryBytes : Nat
   requestedInstructionLimit : Option Nat
+  observedFreeGpuMemoryBytes : Option Nat
   gpuBackendAvailable : Bool
   largeTraceAllowed : Bool
 deriving DecidableEq, Repr
 
 def GuestPcTraceLargeGpuGateInstructionThreshold : Nat := 1000000
 
+def GuestPcTraceLargeGpuGateMinFreeGpuMemoryBytes : Nat := 1024 * 1024 * 1024
+
+def GuestPcTraceLargeGpuGateMemoryCheckPasses
+    (config : GuestPcTraceLargeGpuGateConfig) : Bool :=
+  match config.observedFreeGpuMemoryBytes with
+  | some freeBytes =>
+      decide (config.defaultMinFreeGpuMemoryBytes <= freeBytes)
+  | none => false
+
 def GuestPcTraceLargeGpuGateDecisionMatches
     (config : GuestPcTraceLargeGpuGateConfig) : Prop :=
   config.defaultLargeTraceInstructionThreshold =
     GuestPcTraceLargeGpuGateInstructionThreshold
+    /\ config.defaultMinFreeGpuMemoryBytes =
+      GuestPcTraceLargeGpuGateMinFreeGpuMemoryBytes
     /\ match config.requestedInstructionLimit with
       | some limit =>
           config.largeTraceAllowed =
             decide (limit < config.defaultLargeTraceInstructionThreshold
-              \/ config.gpuBackendAvailable)
+              \/ (config.gpuBackendAvailable = true
+                /\ GuestPcTraceLargeGpuGateMemoryCheckPasses config = true))
       | none =>
           config.largeTraceAllowed = true
 
