@@ -774,7 +774,7 @@ def run_profile(args: argparse.Namespace) -> int:
         print_gpu_memory_payload(gpu_memory_payload)
         if not gpu_ready:
             if not args.dry_run:
-                prepare_output_dirs(output_dir, outputs)
+                output_dir.mkdir(parents=True, exist_ok=True)
                 write_profile_json(
                     args,
                     root,

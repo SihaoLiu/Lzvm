@@ -593,6 +593,8 @@ fn proof_profile_records_low_gpu_memory_preflight_in_json() {
     let json_path = profile_dir.join("json-low-gpu.profile.json");
     let json_text = std::fs::read_to_string(&json_path).unwrap_or_default();
     let profiler_ran = profiler_marker.exists();
+    let profile_tmp_dir_created = profile_dir.join("json-low-gpu.tmp").exists();
+    let target_tmp_dir_created = profile_dir.join("json-low-gpu.target.tmp").exists();
     let _ = std::fs::remove_dir_all(&output_dir);
 
     assert!(!success, "low GPU memory should fail the preflight");
@@ -603,6 +605,10 @@ fn proof_profile_records_low_gpu_memory_preflight_in_json() {
     assert!(
         !profiler_ran,
         "profile command should not run after a failed GPU memory preflight"
+    );
+    assert!(
+        !profile_tmp_dir_created && !target_tmp_dir_created,
+        "failed GPU memory preflight should not create profile runtime temp dirs"
     );
     assert!(
         json_text.contains("\"status\": \"gpu_memory_failed\"")
