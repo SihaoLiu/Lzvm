@@ -130,6 +130,24 @@ def reject_symlinked_output_path(path: Path, label: str) -> None:
         raise SystemExit(f"{label} must not be a symlink: {path}")
 
 
+def open_text_no_follow(path: Path, mode: int = 0o600):
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags, mode)
+    except OSError as error:
+        if path.is_symlink():
+            raise SystemExit(f"output path must not be a symlink: {path}") from error
+        raise
+    return os.fdopen(descriptor, "w", encoding="utf-8")
+
+
+def write_text_no_follow(path: Path, text: str) -> None:
+    with open_text_no_follow(path) as output:
+        output.write(text)
+
+
 def parse_env_file_assignment(line: str, path: Path, line_number: int) -> tuple[str, str] | None:
     try:
         parts = shlex.split(line, comments=True, posix=True)
@@ -465,7 +483,7 @@ def write_env_template(args: argparse.Namespace, root: Path) -> None:
     run_command = shell_join([*base_parts, "--summary", "real proof timing"])
     path.parent.mkdir(parents=True, exist_ok=True)
     reject_symlinked_output_path(path, "--write-env-template")
-    path.write_text(env_template_text(args, root), encoding="utf-8")
+    write_text_no_follow(path, env_template_text(args, root))
 
     print(f"env_template={env_path}")
     print(f"next_check_command={check_command}")
