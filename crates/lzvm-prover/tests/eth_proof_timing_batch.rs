@@ -1566,6 +1566,92 @@ fn eth_proof_timing_batch_check_env_rejects_missing_config() {
         stderr.contains("proof environment is incomplete"),
         "env check should explain missing configuration: stderr={stderr}"
     );
+    assert!(
+        stderr.contains("next_env_template_command=scripts/run-eth-proof-timing-batch.py --suite small")
+            && stderr.contains("--write-env-template temp/real-proof.env"),
+        "env check should report the env-template command needed to configure real inputs: stderr={stderr}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_env_reports_template_command_when_no_env_is_available() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-check-env-no-env");
+    let profile_dir = fixture.dir.join("profiles");
+    let nsys_path = write_fixture(&fixture.dir, "env nsys");
+    let ncu_path = write_fixture(&fixture.dir, "env ncu");
+    make_executable(&nsys_path);
+    make_executable(&ncu_path);
+    let profile_rel = profile_dir
+        .strip_prefix(workspace_root())
+        .expect("profile path should be under workspace")
+        .display()
+        .to_string();
+    let nsys_rel = nsys_path
+        .strip_prefix(workspace_root())
+        .expect("nsys path should be under workspace")
+        .display()
+        .to_string();
+    let ncu_rel = ncu_path
+        .strip_prefix(workspace_root())
+        .expect("ncu path should be under workspace")
+        .display()
+        .to_string();
+    let template_path = workspace_root().join("temp/real-proof.env");
+    let _ = std::fs::remove_file(&template_path);
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("available")
+        .arg("--check-env")
+        .arg("--profile-tool")
+        .arg("both")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir)
+        .arg("--nsys-command")
+        .arg(&nsys_path)
+        .arg("--ncu-command")
+        .arg(&ncu_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let template_created = template_path.exists();
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "env check should fail when no proof env is available"
+    );
+    assert!(
+        stdout.contains("profile_tool=both\n")
+            && stdout.contains("nsys_profiler_status=ready\n")
+            && stdout.contains("ncu_profiler_status=ready\n")
+            && !stdout.contains("status=ok\n"),
+        "failed env check should still report profiler readiness without proof readiness: {stdout}"
+    );
+    assert!(
+        stderr.contains("no proof environments available; missing"),
+        "env check should explain that no proof env is available: stderr={stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "next_env_template_command=scripts/run-eth-proof-timing-batch.py --suite available"
+        ) && stderr.contains("--profile-tool both")
+            && stderr.contains(&format!("--profile-output-dir {profile_rel}"))
+            && stderr.contains(&format!("--nsys-command '{nsys_rel}'"))
+            && stderr.contains(&format!("--ncu-command '{ncu_rel}'"))
+            && stderr.contains("--write-env-template temp/real-proof.env"),
+        "env check should preserve profiling options in the env-template command: stderr={stderr}"
+    );
+    assert!(
+        !template_created,
+        "check-env should not create the suggested env template"
+    );
 }
 
 #[test]

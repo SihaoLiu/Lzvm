@@ -13,6 +13,7 @@ LARGE_PREFIX = "LZVM_REAL_LARGE_PARITY"
 DEFAULT_BIN_RELATIVE = Path("target/release/lzvm")
 DEFAULT_BIN_BUILD_COMMAND = "cargo build --release -p lzvm-cli --bin lzvm"
 DEFAULT_RUNNER = "scripts/run-proof-timing-batch.py"
+DEFAULT_ENV_TEMPLATE_PATH = "temp/real-proof.env"
 DEFAULT_PROFILE_OUTPUT_DIR = "temp/proof-profiles"
 DEFAULT_PROFILE_TOOL = "nsys"
 DEFAULT_NSYS_TRACE = "cuda,nvtx,osrt"
@@ -621,6 +622,21 @@ def print_profile_commands(args: argparse.Namespace, root: Path) -> None:
             print(f"{key}={shell_join(command)}")
 
 
+def env_template_command_for_missing_config(args: argparse.Namespace, root: Path) -> str:
+    template_path = require_workspace_temp_path(
+        resolve_workspace_path(DEFAULT_ENV_TEMPLATE_PATH, root),
+        root,
+        "--write-env-template",
+    )
+    return shell_join(
+        [
+            *next_command_parts(args, root),
+            "--write-env-template",
+            display_path_for_shell(template_path, root),
+        ]
+    )
+
+
 def selected_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, str]]:
     small, large = proof_envs(root)
     requested = {
@@ -637,11 +653,20 @@ def selected_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, 
     selected = requested[args.suite]
     if not selected:
         missing = small.missing() + large.missing()
-        raise SystemExit("no proof environments available; missing " + ", ".join(missing))
+        raise SystemExit(
+            "no proof environments available; missing "
+            + ", ".join(missing)
+            + "\nnext_env_template_command="
+            + env_template_command_for_missing_config(args, root)
+        )
     for config, _mode in selected:
         missing = config.missing()
         if missing:
-            raise SystemExit(f"{config.label} proof environment is incomplete: {', '.join(missing)}")
+            raise SystemExit(
+                f"{config.label} proof environment is incomplete: {', '.join(missing)}"
+                + "\nnext_env_template_command="
+                + env_template_command_for_missing_config(args, root)
+            )
     return selected
 
 
