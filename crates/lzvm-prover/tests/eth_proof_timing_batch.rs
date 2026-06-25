@@ -884,6 +884,7 @@ fn eth_proof_timing_batch_check_gpu_memory_reports_ready_status() {
         .arg("1024")
         .arg("--nvidia-smi-command")
         .arg(&smi_path);
+    command.env_remove("CUDA_VISIBLE_DEVICES");
     clear_env(&mut command, SMALL_PREFIX);
     clear_env(&mut command, LARGE_PREFIX);
 
@@ -927,6 +928,7 @@ fn eth_proof_timing_batch_check_gpu_memory_fails_when_free_memory_is_low() {
         .arg("1024")
         .arg("--nvidia-smi-command")
         .arg(&smi_path);
+    command.env_remove("CUDA_VISIBLE_DEVICES");
     clear_env(&mut command, SMALL_PREFIX);
     clear_env(&mut command, LARGE_PREFIX);
 
@@ -955,6 +957,93 @@ fn eth_proof_timing_batch_check_gpu_memory_fails_when_free_memory_is_low() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_gpu_memory_uses_default_cuda_device() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-gpu-memory-default-device");
+    let smi_path = write_executable_script(
+        &fixture.dir,
+        "nvidia-smi-multi",
+        "#!/usr/bin/env python3\nprint('0, GPU-low, 24576, 24288, 288')\nprint('1, GPU-free, 24576, 4096, 20480')\n",
+    );
+    let mut command = Command::new(script_path());
+    command
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path);
+    command.env_remove("CUDA_VISIBLE_DEVICES");
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch multi-GPU memory check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "GPU memory check should not pass by selecting a non-default free GPU"
+    );
+    assert!(
+        stderr.is_empty(),
+        "default GPU memory check should report status on stdout only: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("gpu_memory_device_count=2\n")
+            && stdout.contains("gpu_memory_selected_index=0\n")
+            && stdout.contains("gpu_memory_selected_uuid=GPU-low\n")
+            && stdout.contains("gpu_memory_free_mib=288\n")
+            && stdout.contains("gpu_memory_status=low\n"),
+        "GPU memory check should inspect CUDA device 0 by default: {stdout}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_gpu_memory_uses_first_visible_cuda_device() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-gpu-memory-visible-device");
+    let smi_path = write_executable_script(
+        &fixture.dir,
+        "nvidia-smi-visible",
+        "#!/usr/bin/env python3\nprint('0, GPU-low, 24576, 24288, 288')\nprint('1, GPU-free, 24576, 4096, 20480')\n",
+    );
+    let mut command = Command::new(script_path());
+    command
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path)
+        .env("CUDA_VISIBLE_DEVICES", "1,0");
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch visible GPU memory check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "GPU memory check should use the first CUDA-visible device: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("gpu_memory_cuda_visible_devices=1,0\n")
+            && stdout.contains("gpu_memory_device_count=2\n")
+            && stdout.contains("gpu_memory_selected_index=1\n")
+            && stdout.contains("gpu_memory_selected_uuid=GPU-free\n")
+            && stdout.contains("gpu_memory_free_mib=20480\n")
+            && stdout.contains("gpu_memory_status=ready\n"),
+        "GPU memory check should inspect the first CUDA-visible GPU: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_env_fails_when_gpu_memory_is_low() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-check-env-gpu-memory-low");
     let smi_path = write_executable_script(
@@ -972,6 +1061,7 @@ fn eth_proof_timing_batch_check_env_fails_when_gpu_memory_is_low() {
         .arg("1024")
         .arg("--nvidia-smi-command")
         .arg(&smi_path);
+    command.env_remove("CUDA_VISIBLE_DEVICES");
     fixture.apply_env(&mut command, SMALL_PREFIX);
 
     let output = command

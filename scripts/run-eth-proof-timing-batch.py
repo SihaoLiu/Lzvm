@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 SMALL_PREFIX = "LZVM_REAL_SMALL_PARITY"
 LARGE_PREFIX = "LZVM_REAL_LARGE_PARITY"
@@ -223,6 +224,14 @@ class ProofEnv:
             os.environ.get(self.var("TRACE_LIMIT"), self.default_trace_limit),
             self.var("TRACE_LIMIT"),
         )
+
+
+class GpuMemoryRow(NamedTuple):
+    index: int
+    uuid: str | None
+    total: int
+    used: int
+    free: int
 
 
 def configured_paths(config: ProofEnv) -> dict[str, Path]:
@@ -573,21 +582,60 @@ def gpu_memory_cli_parts(args: argparse.Namespace, root: Path) -> list[str]:
     return ["--nvidia-smi-command", profile_tool_command_arg(raw, root)]
 
 
-def parse_gpu_memory_rows(text: str) -> list[dict[str, int]]:
-    rows: list[dict[str, int]] = []
+def parse_gpu_memory_rows(text: str) -> list[GpuMemoryRow]:
+    rows: list[GpuMemoryRow] = []
     for line in text.splitlines():
         if not line.strip():
             continue
         parts = [part.strip() for part in line.split(",")]
-        if len(parts) != 4:
-            raise ValueError(f"expected 4 columns, found {len(parts)}")
-        index, total, used, free = (int(part) for part in parts)
+        if len(parts) == 4:
+            index_text, total_text, used_text, free_text = parts
+            uuid = None
+        elif len(parts) == 5:
+            index_text, uuid, total_text, used_text, free_text = parts
+            uuid = uuid or None
+        else:
+            raise ValueError(f"expected 4 or 5 columns, found {len(parts)}")
+        index = int(index_text)
+        total = int(total_text)
+        used = int(used_text)
+        free = int(free_text)
         if min(index, total, used, free) < 0:
             raise ValueError("memory values must be nonnegative")
-        rows.append({"index": index, "total": total, "used": used, "free": free})
+        rows.append(GpuMemoryRow(index=index, uuid=uuid, total=total, used=used, free=free))
     if not rows:
         raise ValueError("no GPU rows returned")
     return rows
+
+
+def default_cuda_visible_device() -> str | None:
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible_devices is None:
+        return "0"
+    token = next((part.strip() for part in visible_devices.split(",") if part.strip()), "")
+    if token.lower() in {"", "-1", "none", "nodevfiles", "void"}:
+        return None
+    return token
+
+
+def select_default_cuda_gpu_memory_row(rows: list[GpuMemoryRow]) -> GpuMemoryRow:
+    token = default_cuda_visible_device()
+    if token is None:
+        raise ValueError("CUDA_VISIBLE_DEVICES hides all CUDA devices")
+    if token.isdecimal():
+        requested_index = int(token)
+        for row in rows:
+            if row.index == requested_index:
+                return row
+        if os.environ.get("CUDA_VISIBLE_DEVICES") is None:
+            return rows[0]
+        raise ValueError(
+            f"default CUDA device index {requested_index} was not returned by nvidia-smi"
+        )
+    for row in rows:
+        if row.uuid == token:
+            return row
+    raise ValueError(f"default CUDA device {token!r} was not returned by nvidia-smi")
 
 
 def first_diagnostic_line(text: str) -> str:
@@ -601,13 +649,16 @@ def print_gpu_memory_check(args: argparse.Namespace, root: Path) -> bool:
     print(f"gpu_memory_source={source}")
     print(f"gpu_memory_command={raw}")
     print(f"gpu_memory_min_free_mib={args.min_gpu_free_mib}")
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible_devices is not None:
+        print(f"gpu_memory_cuda_visible_devices={visible_devices}")
     if resolved is None:
         print("gpu_memory_status=missing")
         return False
     print(f"gpu_memory_resolved={display_path_for_shell(resolved, root)}")
     query = [
         str(resolved),
-        "--query-gpu=index,memory.total,memory.used,memory.free",
+        "--query-gpu=index,uuid,memory.total,memory.used,memory.free",
         "--format=csv,noheader,nounits",
     ]
     try:
@@ -637,13 +688,20 @@ def print_gpu_memory_check(args: argparse.Namespace, root: Path) -> bool:
         print("gpu_memory_status=parse_failed")
         print(f"gpu_memory_error={error}")
         return False
-    selected = max(rows, key=lambda row: row["free"])
+    try:
+        selected = select_default_cuda_gpu_memory_row(rows)
+    except ValueError as error:
+        print("gpu_memory_status=device_unavailable")
+        print(f"gpu_memory_error={error}")
+        return False
     print(f"gpu_memory_device_count={len(rows)}")
-    print(f"gpu_memory_selected_index={selected['index']}")
-    print(f"gpu_memory_total_mib={selected['total']}")
-    print(f"gpu_memory_used_mib={selected['used']}")
-    print(f"gpu_memory_free_mib={selected['free']}")
-    ready = selected["free"] >= args.min_gpu_free_mib
+    print(f"gpu_memory_selected_index={selected.index}")
+    if selected.uuid is not None:
+        print(f"gpu_memory_selected_uuid={selected.uuid}")
+    print(f"gpu_memory_total_mib={selected.total}")
+    print(f"gpu_memory_used_mib={selected.used}")
+    print(f"gpu_memory_free_mib={selected.free}")
+    ready = selected.free >= args.min_gpu_free_mib
     print(f"gpu_memory_status={'ready' if ready else 'low'}")
     return ready
 
