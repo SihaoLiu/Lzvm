@@ -235,7 +235,7 @@ fn collect_uncontrolled_lean_placeholders(path: &Path, violations: &mut Vec<Stri
         let source = std::fs::read_to_string(&path).expect("Lean source should read");
         let visible = strip_string_literals(&visible_source(&source));
         for (line_index, line) in visible.lines().enumerate() {
-            for token in ["sorry", "admit", "axiom"] {
+            for token in ["sorry", "admit", "axiom", "opaque"] {
                 if contains_identifier_token(line, token) {
                     violations.push(format!("{}:{}:{token}", path.display(), line_index + 1));
                 }
@@ -428,7 +428,18 @@ fn strip_lean_comments(source: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::theorem_body;
+    use super::{contains_identifier_token, theorem_body};
+
+    #[test]
+    fn placeholder_tokens_match_lean_identifier_boundaries() {
+        assert!(contains_identifier_token(
+            "opaque hiddenProof : True",
+            "opaque"
+        ));
+        assert!(contains_identifier_token("  admit", "admit"));
+        assert!(!contains_identifier_token("opaqueName", "opaque"));
+        assert!(!contains_identifier_token("admittedLemma", "admit"));
+    }
 
     #[test]
     fn theorem_body_stops_before_following_private_theorem() {
