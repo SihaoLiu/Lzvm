@@ -648,6 +648,7 @@ pub fn validate_verifier_query_outputs_from_segments(
     validate_witness_opening_units_match_query_units(request.query_units, request.segments)
         .map_err(VerifierFriQueryOutputSegmentsError::WitnessOpeningUnit)?;
 
+    let mut proof_value_offsets = None;
     for query_unit in request.query_units {
         let unit_index = usize::try_from(query_unit.unit_index)
             .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?;
@@ -698,12 +699,24 @@ pub fn validate_verifier_query_outputs_from_segments(
                     && unit.trace_instance_index == query_unit.trace_instance_index
             })
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
-        let code = verifier_code_with_proof_value_offsets(code, request.global_info).map_err(
-            |source| VerifierFriQueryOutputSegmentsError::Validation {
+
+        if proof_value_offsets.is_none() {
+            proof_value_offsets = Some(proof_value_logical_offsets(request.global_info).map_err(
+                |source| VerifierFriQueryOutputSegmentsError::Validation {
+                    unit_index,
+                    source: VerifierFriQueryOutputValidationError::Query(source),
+                },
+            )?);
+        }
+        let offsets = proof_value_offsets
+            .as_deref()
+            .expect("proof value offsets initialized before verifier code lowering");
+        let code = verifier_code_with_proof_value_offsets(code, offsets).map_err(|source| {
+            VerifierFriQueryOutputSegmentsError::Validation {
                 unit_index,
                 source: VerifierFriQueryOutputValidationError::Query(source),
-            },
-        )?;
+            }
+        })?;
         let valid = validate_verifier_query_outputs_against_fri_opening(
             unit,
             VerifierFriQueryOutputValidationRequest {
@@ -730,9 +743,8 @@ pub fn validate_verifier_query_outputs_from_segments(
 
 fn verifier_code_with_proof_value_offsets(
     code: &VerifierCode,
-    global_info: &GlobalInfo,
+    offsets: &[u32],
 ) -> Result<VerifierCode, VerifierQueryEvalError> {
-    let offsets = proof_value_logical_offsets(global_info)?;
     let mut lowered = code.clone();
     for operation in &mut lowered.operations {
         for source in &mut operation.sources {
