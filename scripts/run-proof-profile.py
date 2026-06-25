@@ -335,6 +335,19 @@ def reject_symlinked_output_paths(outputs: dict[str, Path]) -> None:
             raise SystemExit(f"{key} output path must not be a symlink: {path}")
 
 
+def reject_symlinked_output_keys(outputs: dict[str, Path], keys: list[str]) -> None:
+    for key in keys:
+        path = outputs[key]
+        if path.is_symlink():
+            raise SystemExit(f"{key} output path must not be a symlink: {path}")
+
+
+def profile_tool_output_keys(args: argparse.Namespace) -> list[str]:
+    if args.tool == "nsys":
+        return ["report"]
+    return ["report", "csv"]
+
+
 def open_text_no_follow(path: Path, mode: int = 0o600):
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     if hasattr(os, "O_NOFOLLOW"):
@@ -392,6 +405,7 @@ def tee_pipe(pipe, output_path: Path, sink) -> None:
 
 
 def write_combined_profile_log(outputs: dict[str, Path]) -> None:
+    reject_symlinked_output_keys(outputs, ["profile_stdout", "profile_stderr", "profile_log"])
     stdout = outputs["profile_stdout"].read_text(encoding="utf-8")
     stderr = outputs["profile_stderr"].read_text(encoding="utf-8")
     write_text_no_follow(
@@ -516,6 +530,7 @@ def export_nsys_sqlite(args: argparse.Namespace, root: Path, outputs: dict[str, 
             "nsys export failed with status "
             f"{code}: {outputs['export_stderr']}"
         )
+    reject_symlinked_output_keys(outputs, ["sqlite"])
 
 
 def summarize_nsys(root: Path, outputs: dict[str, Path]) -> None:
@@ -847,6 +862,22 @@ def run_profile(args: argparse.Namespace) -> int:
             gpu_memory_check=gpu_memory_payload,
         )
         return profile_code
+    try:
+        reject_symlinked_output_keys(outputs, profile_tool_output_keys(args))
+    except SystemExit as error:
+        write_profile_json(
+            args,
+            root,
+            cwd,
+            profile_command,
+            command,
+            outputs,
+            "profile_output_failed",
+            profile_exit_code=profile_code,
+            gpu_memory_check=gpu_memory_payload,
+            error=str(error),
+        )
+        raise
     proof_timing_summary_written = False
     tool_summary_paths: list[Path] = []
     if args.summarize:

@@ -1103,6 +1103,82 @@ fn proof_profile_rejects_output_path_replaced_with_symlink() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn proof_profile_rejects_profiler_report_replaced_with_symlink() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-report-symlink-race-{}",
+        std::process::id()
+    ));
+    let profiler_path = output_dir.join("fake-nsys");
+    let profile_dir = output_dir.join("profiles");
+    let redirected = output_dir.join("redirected.nsys-rep");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    std::fs::write(&redirected, "sentinel\n").expect("redirect target should write");
+    write_executable_script(
+        &profiler_path,
+        &format!(
+            concat!(
+                "#!/usr/bin/env python3\n",
+                "import os, pathlib, subprocess, sys\n",
+                "redirected = pathlib.Path({:?})\n",
+                "args = sys.argv[1:]\n",
+                "if 'profile' in args and '--output' in args:\n",
+                "    prefix = pathlib.Path(args[args.index('--output') + 1])\n",
+                "    report = pathlib.Path(str(prefix) + '.nsys-rep')\n",
+                "    report.unlink(missing_ok=True)\n",
+                "    os.symlink(redirected, report)\n",
+                "if '--' in args:\n",
+                "    command = args[args.index('--') + 1:]\n",
+                "    if command:\n",
+                "        raise SystemExit(subprocess.run(command).returncode)\n",
+            ),
+            redirected.to_string_lossy(),
+        ),
+    );
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("nsys")
+        .arg("--nsys-command")
+        .arg(&profiler_path)
+        .arg("--output-dir")
+        .arg(&profile_dir)
+        .arg("--name")
+        .arg("report-race")
+        .arg("--")
+        .arg("python3")
+        .arg("-c")
+        .arg("print('timing_total_ms=1000')")
+        .output()
+        .expect("proof profile should reject replaced profiler report");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let redirected_text =
+        std::fs::read_to_string(&redirected).expect("redirect target should remain readable");
+    let json_text =
+        std::fs::read_to_string(profile_dir.join("report-race.profile.json")).unwrap_or_default();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(
+        !success,
+        "proof profile should reject profiler report symlinks"
+    );
+    assert!(
+        stderr.contains("report output path must not be a symlink"),
+        "report symlink rejection should explain the path constraint: stderr={stderr}"
+    );
+    assert_eq!(
+        redirected_text, "sentinel\n",
+        "rejected profiler report should not overwrite a symlink target"
+    );
+    assert!(
+        json_text.contains("\"status\": \"profile_output_failed\""),
+        "profile JSON should record invalid profiler output: {json_text}"
+    );
+}
+
 #[test]
 fn proof_profile_rejects_nsys_summary_without_sqlite_export() {
     let output = Command::new(script_path())
