@@ -510,7 +510,7 @@ fn build_witness_proof_artifact_for_unit_inner(
         request.eth_block_input,
         request.challenge_values_segment,
     )?;
-    let binding_segments_slice = binding_segments.as_slice();
+    let binding_segments_slice = binding_segments.segments.as_slice();
     let material_segment = build_pcs_material_manifest_segment(request.schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
     let commitments = request.output.commitments();
@@ -756,7 +756,7 @@ fn build_witness_proof_artifact_for_unit_inner(
     } else {
         false
     };
-    append_binding_segments(&mut segments, &binding_segments);
+    append_binding_segments(&mut segments, &binding_segments.segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
@@ -774,6 +774,7 @@ fn build_witness_proof_artifact_for_unit_inner(
             request.catalog,
             &proof,
             public_values,
+            binding_segments.challenge_values.as_deref(),
             timing.as_deref_mut(),
         );
         if let Some(timing) = timing {
@@ -837,14 +838,20 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
         segments.push(proof_values_segment);
     }
     segments.push(contribution_segment);
-    append_binding_segments(&mut segments, &binding_segments);
+    append_binding_segments(&mut segments, &binding_segments.segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
         segments,
     };
     if request.verify_outputs || request.challenge_values_segment.is_some() {
-        validate_contribution_proof_output(request.catalog, &proof, public_values, None)?;
+        validate_contribution_proof_output(
+            request.catalog,
+            &proof,
+            public_values,
+            binding_segments.challenge_values.as_deref(),
+            None,
+        )?;
     }
     Ok(Some(proof))
 }
@@ -926,14 +933,20 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
         segments.push(proof_values_segment);
     }
     segments.push(contribution_segment);
-    append_binding_segments(&mut segments, &binding_segments);
+    append_binding_segments(&mut segments, &binding_segments.segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
         segments,
     };
     if request.verify_outputs || request.challenge_values_segment.is_some() {
-        validate_contribution_proof_output(request.catalog, &proof, public_values, None)?;
+        validate_contribution_proof_output(
+            request.catalog,
+            &proof,
+            public_values,
+            binding_segments.challenge_values.as_deref(),
+            None,
+        )?;
     }
     Ok(Some(proof))
 }
@@ -973,7 +986,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
         request.eth_block_input,
         request.challenge_values_segment,
     )?;
-    let binding_segments_slice = binding_segments.as_slice();
+    let binding_segments_slice = binding_segments.segments.as_slice();
     let proof_values =
         collect_global_proof_values(request.outputs, &request.auxiliary_inputs.proof_values)?;
     let group_values =
@@ -1056,7 +1069,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
         false
     };
     if needs_transcript {
-        append_binding_segments(&mut proof.segments, &binding_segments);
+        append_binding_segments(&mut proof.segments, &binding_segments.segments);
     }
     if has_contribution_segment {
         if request.challenge_values_segment.is_none() {
@@ -1070,6 +1083,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
             request.catalog,
             &proof,
             public_values,
+            binding_segments.challenge_values.as_deref(),
             timing.as_deref_mut(),
         );
         if let Some(timing) = timing {
@@ -1163,6 +1177,7 @@ fn validate_contribution_proof_output(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
     public_values: &PublicValues,
+    preloaded_challenge_values: Option<&[[u64; 3]]>,
     timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<(), String> {
     validate_setup_preflight_hashes(catalog, proof, public_values)
@@ -1172,7 +1187,13 @@ fn validate_contribution_proof_output(
         .iter()
         .any(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
     {
-        validate_contribution_proof_challenge_values(catalog, proof, public_values, timing)?;
+        validate_contribution_proof_challenge_values(
+            catalog,
+            proof,
+            public_values,
+            preloaded_challenge_values,
+            timing,
+        )?;
     }
     Ok(())
 }
@@ -1181,17 +1202,27 @@ fn validate_contribution_proof_challenge_values(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
     public_values: &PublicValues,
+    preloaded_challenge_values: Option<&[[u64; 3]]>,
     timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<(), String> {
-    let segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
-        .ok_or_else(|| {
-            "verify contribution proof output failed: missing challenge values segment".to_owned()
-        })?;
-    let challenge_values = parse_challenge_values_segment(&segment.data)
-        .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+    let owned_challenge_values;
+    let challenge_values = match preloaded_challenge_values {
+        Some(challenge_values) => challenge_values,
+        None => {
+            let segment = proof
+                .segments
+                .iter()
+                .find(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
+                .ok_or_else(|| {
+                    "verify contribution proof output failed: missing challenge values segment"
+                        .to_owned()
+                })?;
+            owned_challenge_values = parse_challenge_values_segment(&segment.data)
+                .map_err(|error| format!("verify contribution proof output failed: {error}"))?
+                .values;
+            &owned_challenge_values
+        }
+    };
     let public_fields = public_values_as_fields(public_values)
         .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
     let proof_values =
@@ -1211,7 +1242,7 @@ fn validate_contribution_proof_challenge_values(
     }
     let expected =
         expected.map_err(|error| format!("verify contribution proof output failed: {error}"))?;
-    if challenge_values.values.as_slice() != [expected.to_u64s()] {
+    if challenge_values.len() != 1 || challenge_values[0] != expected.to_u64s() {
         return Err(
             "verify contribution proof output failed: contribution challenge values mismatch"
                 .to_owned(),
@@ -1220,12 +1251,19 @@ fn validate_contribution_proof_challenge_values(
     Ok(())
 }
 
+#[derive(Debug)]
+struct ProofBindingSegments {
+    segments: Vec<ProofSegment>,
+    challenge_values: Option<Vec<[u64; 3]>>,
+}
+
 fn build_proof_binding_segments(
     cache: Option<&ProgramImageCommitmentCache>,
     eth_block_input: Option<&EthBlockInput>,
     challenge_values_segment: Option<&ProofSegment>,
-) -> Result<Vec<ProofSegment>, String> {
+) -> Result<ProofBindingSegments, String> {
     let mut segments = Vec::new();
+    let mut challenge_values = None;
     if let Some(segment) = build_program_image_cache_proof_segment(cache)? {
         segments.push(segment);
     }
@@ -1239,11 +1277,15 @@ fn build_proof_binding_segments(
                 segment.id
             ));
         }
-        parse_challenge_values_segment(&segment.data)
+        let parsed = parse_challenge_values_segment(&segment.data)
             .map_err(|error| format!("invalid challenge values proof segment: {error}"))?;
+        challenge_values = Some(parsed.values);
         segments.push(segment.clone());
     }
-    Ok(segments)
+    Ok(ProofBindingSegments {
+        segments,
+        challenge_values,
+    })
 }
 
 fn append_binding_segments(segments: &mut Vec<ProofSegment>, binding_segments: &[ProofSegment]) {
