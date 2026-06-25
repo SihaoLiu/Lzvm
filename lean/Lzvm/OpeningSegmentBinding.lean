@@ -1062,4 +1062,72 @@ theorem runtime_opening_segment_binding_checked_acceptance_opening_and_core_cont
         segmentEvidence)
       (And.intro openingEvidence coreContract)
 
+theorem runtime_opening_segment_binding_checked_acceptance_full_soundness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningSegmentBindingBoundContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeOpeningBoundContract
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have segmentEvidence :=
+    runtime_opening_segment_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingAccepted :=
+    runtime_opening_segment_binding_checked_acceptance_opening
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingFull :=
+    runtime_opening_checked_acceptance_full_soundness_contract
+      assumptions
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
+  exact
+    And.intro
+      (runtime_opening_segment_binding_evidence_implies_bound_contract
+        validation
+        artifact
+        publicInput
+        proof
+        segmentEvidence)
+      openingFull
+
 end Lzvm

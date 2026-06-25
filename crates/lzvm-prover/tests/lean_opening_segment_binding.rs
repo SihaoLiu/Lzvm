@@ -48,6 +48,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_checked_acceptance_sound",
             "runtime_opening_segment_binding_checked_acceptance_verifier_core_contract",
             "runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract",
+            "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -356,6 +357,36 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         &[
             "runtime_opening_segment_binding_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
+        &[
+            "RuntimeOpeningSegmentBindingBoundContract",
+            "RuntimeOpeningEvidence",
+            "RuntimeOpeningBoundContract",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
+        &[
+            "runtime_opening_segment_binding_checked_acceptance_evidence",
+            "runtime_opening_segment_binding_checked_acceptance_opening",
+            "runtime_opening_checked_acceptance_full_soundness_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
+        &[
+            "runtime_opening_segment_binding_checked_acceptance_sound",
+            "runtime_opening_checked_acceptance_sound",
         ],
     );
 }
