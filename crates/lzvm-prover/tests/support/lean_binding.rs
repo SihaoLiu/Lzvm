@@ -428,7 +428,7 @@ fn strip_lean_comments(source: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{contains_identifier_token, theorem_body};
+    use super::{contains_identifier_token, strip_string_literals, theorem_body, visible_source};
 
     #[test]
     fn placeholder_tokens_match_lean_identifier_boundaries() {
@@ -439,6 +439,24 @@ mod tests {
         assert!(contains_identifier_token("  admit", "admit"));
         assert!(!contains_identifier_token("opaqueName", "opaque"));
         assert!(!contains_identifier_token("admittedLemma", "admit"));
+    }
+
+    #[test]
+    fn placeholder_scan_ignores_comments_and_string_literals() {
+        let source = r#"
+-- opaque line comment
+/- opaque block comment -/
+def label := "opaque string"
+"#;
+
+        let visible = strip_string_literals(&visible_source(source));
+
+        assert!(
+            !visible
+                .lines()
+                .any(|line| contains_identifier_token(line, "opaque")),
+            "Lean placeholder scan should ignore comments and string literals: {visible}"
+        );
     }
 
     #[test]
