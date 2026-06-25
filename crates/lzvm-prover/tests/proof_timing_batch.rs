@@ -11,6 +11,10 @@ fn batch_script_path() -> std::path::PathBuf {
     workspace_root().join("scripts/run-proof-timing-batch.py")
 }
 
+fn scripts_pycache_path() -> std::path::PathBuf {
+    workspace_root().join("scripts/__pycache__")
+}
+
 fn current_commit() -> String {
     let output = Command::new("git")
         .args(["rev-parse", "--short=8", "HEAD"])
@@ -50,8 +54,10 @@ fn single_batch_dir(dir: &std::path::Path) -> std::path::PathBuf {
 #[test]
 fn proof_timing_batch_discovers_wide_run_status_paths() {
     let script_path = batch_script_path();
+    let pycache_path = scripts_pycache_path();
     let dir = test_dir("proof-timing-batch-wide-status");
     let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&pycache_path);
     std::fs::create_dir_all(&dir).expect("fixture dir should be created");
     std::fs::write(dir.join("small-999.status"), b"status").expect("status should write");
     std::fs::write(dir.join("small-1000.status"), b"status").expect("status should write");
@@ -74,6 +80,7 @@ fn proof_timing_batch_discovers_wide_run_status_paths() {
     );
 
     let output = Command::new("python3")
+        .env("PYTHONDONTWRITEBYTECODE", "1")
         .arg("-c")
         .arg(python)
         .output()
@@ -89,6 +96,10 @@ fn proof_timing_batch_discovers_wide_run_status_paths() {
         discovered,
         vec!["small-999.status", "small-1000.status"],
         "only matching numeric status paths should be discovered in run order"
+    );
+    assert!(
+        !pycache_path.exists(),
+        "python helper import should not leave scripts bytecode cache"
     );
 }
 
