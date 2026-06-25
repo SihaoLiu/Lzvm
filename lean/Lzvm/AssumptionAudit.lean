@@ -50,6 +50,19 @@ def cryptographic_assumptions_required_groups
       pcsSoundness := assumptions.pcsSoundness
       friSoundness := assumptions.friSoundness }
 
+theorem cryptographic_assumptions_required_groups_fields
+    {system : VerifierModel}
+    (assumptions : CryptographicAssumptions system) :
+    (cryptographic_assumptions_required_groups assumptions).hashCollisionResistance =
+        assumptions.hashCollisionResistance
+      /\ (cryptographic_assumptions_required_groups assumptions).randomOracleFiatShamir =
+        assumptions.randomOracleFiatShamir
+      /\ (cryptographic_assumptions_required_groups assumptions).pcsSoundness =
+        assumptions.pcsSoundness
+      /\ (cryptographic_assumptions_required_groups assumptions).friSoundness =
+        assumptions.friSoundness := by
+  exact And.intro rfl (And.intro rfl (And.intro rfl rfl))
+
 theorem required_crypto_assumptions_merkle_hash_collision_resistance
     {system : VerifierModel}
     {assumptions : CryptographicAssumptions system}

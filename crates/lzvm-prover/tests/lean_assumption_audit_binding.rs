@@ -44,6 +44,7 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
     lean_binding::assert_theorem_declarations(
         &audit_source,
         &[
+            "cryptographic_assumptions_required_groups_fields",
             "cryptographic_assumptions_carry_required_evidence",
             "assumption_bundle_carries_required_crypto_evidence",
             "required_crypto_assumptions_merkle_hash_collision_resistance",
@@ -69,6 +70,21 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "semantic_assumptions_carry_required_evidence",
             "assumption_bundle_carries_required_semantic_evidence",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &audit_source,
+        "cryptographic_assumptions_required_groups_fields",
+        &[
+            "hashCollisionResistance",
+            "randomOracleFiatShamir",
+            "pcsSoundness",
+            "friSoundness",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "cryptographic_assumptions_required_groups_fields",
+        &["And.intro rfl", "And.intro rfl (And.intro rfl rfl)"],
     );
     assert!(
         audit_source.contains("RequiredSemanticAssumptionStatements")
