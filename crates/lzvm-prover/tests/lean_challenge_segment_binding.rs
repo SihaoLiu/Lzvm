@@ -36,6 +36,7 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
             "runtime_challenge_segment_binding_checked_acceptance_segment_matches_transcript",
             "runtime_challenge_segment_binding_checked_acceptance_challenge_segment_bound",
             "runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique",
+            "runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_challenge_segment_binding_checked_acceptance_container_canonical",
             "runtime_challenge_segment_binding_checked_acceptance_metadata_canonical",
             "runtime_challenge_segment_binding_checked_acceptance_segment_payloads_nonempty",
@@ -103,6 +104,23 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         &[
             "runtime_challenge_segment_binding_checked_acceptance_transcript",
             "runtime_transcript_binding_checked_acceptance_segment_ids_unique",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        &[
+            "RuntimeChallengeSegmentBindingCheckedAcceptance",
+            "let artifactValidation := validation.transcriptValidation.artifactBindingValidation",
+            "artifactValidation.proofUnitValuesTraceIdentityCoverage",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        &[
+            "runtime_challenge_segment_binding_checked_acceptance_transcript",
+            "runtime_transcript_binding_checked_acceptance_unit_values_trace_identity_coverage",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

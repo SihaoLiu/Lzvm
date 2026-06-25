@@ -23,33 +23,20 @@ theorem runtime_soundness_checked_acceptance_artifact_segment_ids_contract
           publicInput
           proof
           requiresExternalSource ->
+        let artifactValidation := validation.transcriptValidation.artifactBindingValidation
         RuntimeArtifactEvidence
           system
-          validation.transcriptValidation.artifactBindingValidation.runtimeValidation
+          artifactValidation.runtimeValidation
           artifact
           publicInput
           proof
-          /\ validation.transcriptValidation.artifactBindingValidation.proofContainerCanonical
-            artifact
-            publicInput
-            proof
-          /\ validation.transcriptValidation.artifactBindingValidation.proofSegmentsPresent
-            artifact
-            publicInput
-            proof
-          /\ validation.transcriptValidation.artifactBindingValidation.proofMetadataCanonical
-            artifact
-            publicInput
-            proof
-          /\ validation.transcriptValidation.artifactBindingValidation.proofSegmentPayloadsNonempty
-            artifact
-            publicInput
-            proof
-          /\ validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsAllowed
-            artifact
-            publicInput
-            proof
-          /\ validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsUnique
+          /\ artifactValidation.proofContainerCanonical artifact publicInput proof
+          /\ artifactValidation.proofSegmentsPresent artifact publicInput proof
+          /\ artifactValidation.proofMetadataCanonical artifact publicInput proof
+          /\ artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof
+          /\ artifactValidation.proofSegmentIdsAllowed artifact publicInput proof
+          /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
+          /\ artifactValidation.proofUnitValuesTraceIdentityCoverage
             artifact
             publicInput
             proof := by
@@ -94,6 +81,14 @@ theorem runtime_soundness_checked_acceptance_artifact_segment_ids_contract
       proof
       requiresExternalSource
       checked
+  have unitValuesTraceIdentityCoverage :=
+    runtime_soundness_checked_acceptance_unit_values_trace_identity_coverage
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
   have segmentPayloadsNonempty :=
     runtime_soundness_checked_acceptance_segment_payloads_nonempty
       validation
@@ -119,7 +114,9 @@ theorem runtime_soundness_checked_acceptance_artifact_segment_ids_contract
           segmentsPresent
           (And.intro
             metadataCanonical
-            (And.intro segmentPayloadsNonempty (And.intro segmentIdsAllowed segmentIdsUnique)))))
+            (And.intro segmentPayloadsNonempty
+              (And.intro segmentIdsAllowed
+                (And.intro segmentIdsUnique unitValuesTraceIdentityCoverage))))))
 
 theorem runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract
     {system : VerifierModel}

@@ -108,6 +108,28 @@ theorem runtime_soundness_checked_acceptance_segment_ids_unique
       proof
       checked.left
 
+theorem runtime_soundness_checked_acceptance_unit_values_trace_identity_coverage
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        let artifactValidation := validation.transcriptValidation.artifactBindingValidation
+        artifactValidation.proofUnitValuesTraceIdentityCoverage artifact publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    runtime_transcript_binding_checked_acceptance_unit_values_trace_identity_coverage
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      checked.left
+
 theorem runtime_soundness_checked_acceptance_segment_payloads_nonempty
     {system : VerifierModel}
     (validation : RuntimeSoundnessValidation system) :

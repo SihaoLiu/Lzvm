@@ -671,6 +671,36 @@ theorem runtime_pipeline_binding_checked_acceptance_segment_ids_unique
       proof
       queryPlanAccepted
 
+theorem runtime_pipeline_binding_checked_acceptance_unit_values_trace_identity_coverage
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let queryPlanValidation := validation.queryPlanBindingValidation
+        let artifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        artifactValidation.proofUnitValuesTraceIdentityCoverage artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity_coverage
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_container_canonical
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
@@ -872,6 +902,10 @@ theorem runtime_pipeline_binding_checked_acceptance_eth_artifact_wellformed_cont
             publicInput
             proof
           /\ artifactValidation.proofSegmentIdsUnique
+            artifact
+            publicInput
+            proof
+          /\ artifactValidation.proofUnitValuesTraceIdentityCoverage
             artifact
             publicInput
             proof := by

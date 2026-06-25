@@ -79,6 +79,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
             "runtime_pipeline_binding_checked_acceptance_segment_ids_allowed",
             "runtime_pipeline_binding_checked_acceptance_segments_present",
+            "runtime_pipeline_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement",
             "runtime_pipeline_binding_checked_acceptance_eth_artifact_wellformed_contract",
             "runtime_pipeline_binding_checked_acceptance_query_plan_pcs_and_fri",
@@ -547,6 +548,25 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "let artifactValidation :=",
+            "queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation",
+            "artifactValidation.proofUnitValuesTraceIdentityCoverage artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_pipeline_binding_checked_acceptance_container_canonical",
         &[
             "RuntimePipelineBindingCheckedAcceptance",
@@ -671,6 +691,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "artifactValidation.proofSegmentPayloadsNonempty",
             "artifactValidation.proofSegmentIdsAllowed",
             "artifactValidation.proofSegmentIdsUnique",
+            "artifactValidation.proofUnitValuesTraceIdentityCoverage",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -1413,8 +1434,13 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
             )
-            .contains("artifactValidation.proofSegmentIdsUnique artifact publicInput proof"),
-        "audited pipeline segment contract should include audited core, witness, container canonicality, metadata canonicality, segment presence, nonempty payloads, allowed segment IDs, and segment-id uniqueness"
+            .contains("artifactValidation.proofSegmentIdsUnique artifact publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofUnitValuesTraceIdentityCoverage"),
+        "audited pipeline segment contract should include audited core, witness, container canonicality, metadata canonicality, segment presence, nonempty payloads, allowed segment IDs, segment-id uniqueness, and unit-values coverage"
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
@@ -1427,6 +1453,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
             "runtime_pipeline_binding_checked_acceptance_segment_ids_allowed",
             "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
+            "runtime_pipeline_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement",
         ],
     );
@@ -2504,8 +2531,13 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
             )
-            .contains("artifactValidation.proofSegmentIdsUnique artifact publicInput proof"),
-        "required external-source audited segment contract should keep source evidence, container canonicality, metadata canonicality, segment presence, nonempty payloads, allowed segment IDs, and segment-id uniqueness together"
+            .contains("artifactValidation.proofSegmentIdsUnique artifact publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
+            )
+            .contains("artifactValidation.proofUnitValuesTraceIdentityCoverage"),
+        "required external-source audited segment contract should keep source evidence, container canonicality, metadata canonicality, segment presence, nonempty payloads, allowed segment IDs, segment-id uniqueness, and unit-values coverage together"
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
@@ -2518,6 +2550,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
             "runtime_pipeline_binding_checked_acceptance_segment_ids_allowed",
             "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
+            "runtime_pipeline_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement",
         ],
     );

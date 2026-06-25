@@ -27,6 +27,7 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             && lean_source.contains("proofSegmentPayloadsNonempty")
             && lean_source.contains("proofSegmentIdsAllowed")
             && lean_source.contains("proofSegmentIdsUnique")
+            && lean_source.contains("proofUnitValuesTraceIdentityCoverage")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean ETH block public-input binding should expose checked evidence and verifier core clauses"
@@ -70,6 +71,7 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "validation.proofArtifactBindingValidation.proofSegmentPayloadsNonempty",
             "validation.proofArtifactBindingValidation.proofSegmentIdsAllowed",
             "validation.proofArtifactBindingValidation.proofSegmentIdsUnique",
+            "validation.proofArtifactBindingValidation.proofUnitValuesTraceIdentityCoverage",
         ],
     );
     lean_binding::assert_theorem_prefix_omits(
@@ -88,6 +90,7 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_binding_checked_acceptance_segment_payloads_nonempty",
             "runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed",
             "runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique",
+            "runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage",
         ],
     );
     lean_binding::assert_theorem_body_omits(

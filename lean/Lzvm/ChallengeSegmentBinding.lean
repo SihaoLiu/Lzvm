@@ -51,13 +51,12 @@ def RuntimeChallengeSegmentPayloadReuseContract
     (artifact : RuntimeArtifact)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
+  let artifactValidation := validation.transcriptValidation.artifactBindingValidation
   validation.challengeSegmentPayloadValid artifact publicInput proof
     /\ validation.challengeSegmentMatchesTranscript artifact publicInput proof
     /\ validation.transcriptValidation.challengeSegmentBound artifact publicInput proof
-    /\ validation.transcriptValidation.artifactBindingValidation.proofSegmentIdsUnique
-      artifact
-      publicInput
-      proof
+    /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
+    /\ artifactValidation.proofUnitValuesTraceIdentityCoverage artifact publicInput proof
 
 def RuntimeChallengeSegmentBindingCheckedAcceptance
     (_system : VerifierModel)
@@ -273,6 +272,34 @@ theorem runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique
       proof
       transcriptAccepted
 
+theorem runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let artifactValidation := validation.transcriptValidation.artifactBindingValidation
+        artifactValidation.proofUnitValuesTraceIdentityCoverage artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_transcript_binding_checked_acceptance_unit_values_trace_identity_coverage
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+
 theorem runtime_challenge_segment_binding_checked_acceptance_payload_reuse_contract
     {system : VerifierModel}
     (validation : RuntimeChallengeSegmentBindingValidation system) :
@@ -304,10 +331,18 @@ theorem runtime_challenge_segment_binding_checked_acceptance_payload_reuse_contr
       publicInput
       proof
       accepted
+  have unitValuesTraceIdentityCoverage :=
+    runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   exact
     And.intro challengeEvidence.left
       (And.intro challengeEvidence.right.left
-        (And.intro challengeEvidence.right.right segmentIdsUnique))
+        (And.intro challengeEvidence.right.right
+          (And.intro segmentIdsUnique unitValuesTraceIdentityCoverage)))
 
 theorem runtime_challenge_segment_binding_checked_acceptance_container_canonical
     {system : VerifierModel}

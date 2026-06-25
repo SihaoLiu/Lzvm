@@ -71,6 +71,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_seed_binds_witness_tree_digests",
             "runtime_query_plan_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
             "runtime_query_plan_binding_checked_acceptance_segment_ids_unique",
+            "runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_query_plan_binding_checked_acceptance_container_canonical",
             "runtime_query_plan_binding_checked_acceptance_metadata_canonical",
             "runtime_query_plan_binding_checked_acceptance_segment_payloads_nonempty",
@@ -261,6 +262,24 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &[
             "runtime_query_plan_binding_checked_acceptance_challenge",
             "runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        &[
+            "RuntimeQueryPlanBindingCheckedAcceptance",
+            "let artifactValidation :=",
+            "validation.challengeValidation.transcriptValidation.artifactBindingValidation",
+            "artifactValidation.proofUnitValuesTraceIdentityCoverage artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_challenge",
+            "runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -508,7 +527,8 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     assert!(
         query_plan_source.contains("validate_seeded_pcs_query_plan_segments")
             && query_plan_source.contains("build_pcs_query_plan_segment_with_bindings")
-            && query_plan_build_source.contains("hash_witness_commitment_segment_for_query_seed")
+            && query_plan_build_source
+                .contains("hash_loaded_witness_commitment_segment_for_query_seed")
             && query_plan_build_source.contains("stage.tree_digest")
             && fri_validation_source.contains("seeded_query_plan_requires_fri_opening")
             && fri_validation_source.contains("fri_opening_required_units"),

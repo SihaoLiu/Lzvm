@@ -634,6 +634,35 @@ theorem runtime_query_plan_binding_checked_acceptance_segment_ids_unique
       proof
       challengeAccepted
 
+theorem runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity_coverage
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let artifactValidation :=
+          validation.challengeValidation.transcriptValidation.artifactBindingValidation
+        artifactValidation.proofUnitValuesTraceIdentityCoverage artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have challengeAccepted :=
+    runtime_query_plan_binding_checked_acceptance_challenge
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage
+      validation.challengeValidation
+      artifact
+      publicInput
+      proof
+      challengeAccepted
+
 theorem runtime_query_plan_binding_checked_acceptance_container_canonical
     {system : VerifierModel}
     (validation : RuntimeQueryPlanBindingValidation system) :

@@ -267,6 +267,35 @@ theorem runtime_transcript_binding_checked_acceptance_segment_ids_unique
       proof
       artifactAccepted
 
+theorem runtime_transcript_binding_checked_acceptance_unit_values_trace_identity_coverage
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.artifactBindingValidation.proofUnitValuesTraceIdentityCoverage
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage
+      validation.artifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+
 theorem runtime_transcript_binding_checked_acceptance_container_canonical
     {system : VerifierModel}
     (validation : RuntimeTranscriptBindingValidation system) :

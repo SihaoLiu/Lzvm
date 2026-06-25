@@ -36,6 +36,7 @@ fn lean_transcript_binding_exports_core_contract_projection() {
             "runtime_transcript_binding_evidence_implies_payload_contract",
             "runtime_transcript_binding_checked_acceptance_payload_contract",
             "runtime_transcript_binding_checked_acceptance_segment_ids_unique",
+            "runtime_transcript_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_transcript_binding_checked_acceptance_container_canonical",
             "runtime_transcript_binding_checked_acceptance_metadata_canonical",
             "runtime_transcript_binding_checked_acceptance_segment_payloads_nonempty",
@@ -120,6 +121,22 @@ fn lean_transcript_binding_exports_core_contract_projection() {
         &[
             "validation.transcriptAcceptedImpliesArtifactBindingAccepted",
             "runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        &[
+            "RuntimeTranscriptBindingCheckedAcceptance",
+            "validation.artifactBindingValidation.proofUnitValuesTraceIdentityCoverage",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        &[
+            "validation.transcriptAcceptedImpliesArtifactBindingAccepted",
+            "runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

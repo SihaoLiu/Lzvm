@@ -108,6 +108,10 @@ def RuntimeProgramImageCacheBindingSoundnessContract
       artifact
       publicInput
       proof
+    /\ validation.proofArtifactBindingValidation.proofUnitValuesTraceIdentityCoverage
+      artifact
+      publicInput
+      proof
     /\ RuntimeVerifierCoreContract system publicInput proof
     /\ SoundWitness system publicInput proof
 
@@ -265,6 +269,10 @@ theorem runtime_program_image_cache_binding_checked_acceptance_artifact_wellform
           /\ validation.proofArtifactBindingValidation.proofSegmentIdsUnique
             artifact
             publicInput
+            proof
+          /\ validation.proofArtifactBindingValidation.proofUnitValuesTraceIdentityCoverage
+            artifact
+            publicInput
             proof := by
   intro artifact publicInput proof accepted
   have artifactAccepted :=
@@ -316,13 +324,51 @@ theorem runtime_program_image_cache_binding_checked_acceptance_artifact_wellform
       publicInput
       proof
       artifactAccepted
+  have unitValuesTraceIdentityCoverage :=
+    runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
   exact
     ⟨containerCanonical,
       metadataCanonical,
       segmentsPresent,
       segmentPayloadsNonempty,
       segmentIdsAllowed,
-      segmentIdsUnique⟩
+      segmentIdsUnique,
+      unitValuesTraceIdentityCoverage⟩
+
+theorem runtime_program_image_cache_binding_checked_acceptance_unit_values_trace_identity_coverage
+    {system : VerifierModel}
+    (validation : RuntimeProgramImageCacheBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.proofArtifactBindingValidation.proofUnitValuesTraceIdentityCoverage
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
 
 theorem runtime_program_image_cache_binding_checked_acceptance_sound
     {system : VerifierModel}
@@ -483,7 +529,8 @@ theorem runtime_program_image_cache_binding_checked_acceptance_soundness_contrac
       wellformed.right.right.left,
       wellformed.right.right.right.left,
       wellformed.right.right.right.right.left,
-      wellformed.right.right.right.right.right,
+      wellformed.right.right.right.right.right.left,
+      wellformed.right.right.right.right.right.right,
       core,
       sound.right.right.right⟩
 

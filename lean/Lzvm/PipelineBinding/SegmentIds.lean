@@ -53,7 +53,11 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract
           /\ artifactValidation.proofMetadataCanonical artifact publicInput proof
           /\ artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof
           /\ artifactValidation.proofSegmentIdsAllowed artifact publicInput proof
-          /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof := by
+          /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
+          /\ artifactValidation.proofUnitValuesTraceIdentityCoverage
+            artifact
+            publicInput
+            proof := by
   intro artifact publicInput proof _requiresExternalSource accepted
   have compactContract :=
     runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract
@@ -87,6 +91,13 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract
       accepted
   have segmentIdsUnique :=
     runtime_pipeline_binding_checked_acceptance_segment_ids_unique
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have unitValuesTraceIdentityCoverage :=
+    runtime_pipeline_binding_checked_acceptance_unit_values_trace_identity_coverage
       validation
       artifact
       publicInput
@@ -143,7 +154,8 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract
       metadataCanonical,
       segmentPayloadsNonempty,
       segmentIdsAllowed,
-      segmentIdsUnique⟩
+      segmentIdsUnique,
+      unitValuesTraceIdentityCoverage⟩
 
 theorem runtime_pipeline_binding_required_external_source_audited_segment_ids_contract
     {system : VerifierModel}
@@ -195,7 +207,11 @@ theorem runtime_pipeline_binding_required_external_source_audited_segment_ids_co
             /\ artifactValidation.proofMetadataCanonical artifact publicInput proof
             /\ artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof
             /\ artifactValidation.proofSegmentIdsAllowed artifact publicInput proof
-            /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof := by
+            /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
+            /\ artifactValidation.proofUnitValuesTraceIdentityCoverage
+              artifact
+              publicInput
+              proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
   have compactContract :=
     runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract
@@ -230,6 +246,13 @@ theorem runtime_pipeline_binding_required_external_source_audited_segment_ids_co
       accepted
   have segmentIdsUnique :=
     runtime_pipeline_binding_checked_acceptance_segment_ids_unique
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have unitValuesTraceIdentityCoverage :=
+    runtime_pipeline_binding_checked_acceptance_unit_values_trace_identity_coverage
       validation
       artifact
       publicInput
@@ -286,6 +309,7 @@ theorem runtime_pipeline_binding_required_external_source_audited_segment_ids_co
       metadataCanonical,
       segmentPayloadsNonempty,
       segmentIdsAllowed,
-      segmentIdsUnique⟩
+      segmentIdsUnique,
+      unitValuesTraceIdentityCoverage⟩
 
 end Lzvm
