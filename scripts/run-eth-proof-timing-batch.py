@@ -593,6 +593,7 @@ def write_env_template(args: argparse.Namespace, root: Path) -> None:
     base_parts = next_command_parts(args, root, env_file=path)
     check_command = shell_join([*base_parts, "--check-env"])
     profile_tool_check_command = shell_join([*base_parts, "--check-profile-tools"])
+    preflight_command = shell_join([*base_parts, "--check-env", "--check-profile-tools"])
     profile_command = shell_join([*base_parts, "--print-profile-commands"])
     run_command = shell_join([*base_parts, "--summary", "real proof timing"])
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -602,6 +603,7 @@ def write_env_template(args: argparse.Namespace, root: Path) -> None:
     print(f"env_template={env_path}")
     print(f"next_check_command={check_command}")
     print(f"next_profile_tool_check_command={profile_tool_check_command}")
+    print(f"next_preflight_command={preflight_command}")
     print(f"next_profile_command={profile_command}")
     print(f"next_run_command={run_command}")
 

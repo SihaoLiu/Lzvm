@@ -1498,6 +1498,13 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
     );
     assert!(
         stdout.contains(&format!(
+            "next_preflight_command=scripts/run-eth-proof-timing-batch.py --suite both --small-mode pipeline --large-mode work-units --runs 3 --env-file {template_rel}"
+        ))
+            && stdout.contains("--check-env --check-profile-tools"),
+        "env template should report a combined proof and profile preflight command: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
             "next_profile_command=scripts/run-eth-proof-timing-batch.py --suite both --small-mode pipeline --large-mode work-units --runs 3 --env-file {template_rel}"
         )),
         "env template should report a profile command: {stdout}"
