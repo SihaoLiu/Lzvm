@@ -718,6 +718,79 @@ theorem runtime_pipeline_binding_checked_acceptance_query_plan
       proof
       accepted
 
+theorem runtime_pipeline_binding_checked_acceptance_artifact_finalized
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let queryPlanValidation := validation.queryPlanBindingValidation
+        let artifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        RuntimeProofArtifactFinalized
+          system
+          artifactValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_checked_acceptance_artifact_finalized
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let queryPlanValidation := validation.queryPlanBindingValidation
+        let artifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        RuntimeProofArtifactBindingStructuralObligations
+          system
+          artifactValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactFinalized :=
+    runtime_pipeline_binding_checked_acceptance_artifact_finalized
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  let queryPlanValidation := validation.queryPlanBindingValidation
+  let artifactValidation :=
+    queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+  exact
+    runtime_proof_artifact_finalized_structural_obligations
+      artifactValidation
+      artifact
+      publicInput
+      proof
+      artifactFinalized
+
 theorem runtime_pipeline_binding_checked_acceptance_segment_ids_unique
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
@@ -733,20 +806,14 @@ theorem runtime_pipeline_binding_checked_acceptance_segment_ids_unique
           queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofSegmentIdsUnique artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have queryPlanAccepted :=
-    runtime_pipeline_binding_checked_acceptance_query_plan
+  have artifactStructural :=
+    runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_query_plan_binding_checked_acceptance_segment_ids_unique
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      queryPlanAccepted
+  exact artifactStructural.right.right.right.right.right.left
 
 theorem runtime_pipeline_binding_checked_acceptance_unit_values_trace_identity_coverage
     {system : VerifierModel}
@@ -763,20 +830,14 @@ theorem runtime_pipeline_binding_checked_acceptance_unit_values_trace_identity_c
           queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofUnitValuesTraceIdentityCoverage artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have queryPlanAccepted :=
-    runtime_pipeline_binding_checked_acceptance_query_plan
+  have artifactStructural :=
+    runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity_coverage
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      queryPlanAccepted
+  exact artifactStructural.right.right.right.right.right.right
 
 theorem runtime_pipeline_binding_checked_acceptance_container_canonical
     {system : VerifierModel}
@@ -793,20 +854,14 @@ theorem runtime_pipeline_binding_checked_acceptance_container_canonical
           queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofContainerCanonical artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have queryPlanAccepted :=
-    runtime_pipeline_binding_checked_acceptance_query_plan
+  have artifactStructural :=
+    runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_query_plan_binding_checked_acceptance_container_canonical
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      queryPlanAccepted
+  exact artifactStructural.left
 
 theorem runtime_pipeline_binding_checked_acceptance_metadata_canonical
     {system : VerifierModel}
@@ -823,20 +878,14 @@ theorem runtime_pipeline_binding_checked_acceptance_metadata_canonical
           queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofMetadataCanonical artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have queryPlanAccepted :=
-    runtime_pipeline_binding_checked_acceptance_query_plan
+  have artifactStructural :=
+    runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_query_plan_binding_checked_acceptance_metadata_canonical
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      queryPlanAccepted
+  exact artifactStructural.right.left
 
 theorem runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty
     {system : VerifierModel}
@@ -853,20 +902,14 @@ theorem runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty
           queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have queryPlanAccepted :=
-    runtime_pipeline_binding_checked_acceptance_query_plan
+  have artifactStructural :=
+    runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_query_plan_binding_checked_acceptance_segment_payloads_nonempty
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      queryPlanAccepted
+  exact artifactStructural.right.right.right.left
 
 theorem runtime_pipeline_binding_checked_acceptance_segment_ids_allowed
     {system : VerifierModel}
@@ -883,20 +926,14 @@ theorem runtime_pipeline_binding_checked_acceptance_segment_ids_allowed
           queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofSegmentIdsAllowed artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have queryPlanAccepted :=
-    runtime_pipeline_binding_checked_acceptance_query_plan
+  have artifactStructural :=
+    runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_query_plan_binding_checked_acceptance_segment_ids_allowed
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      queryPlanAccepted
+  exact artifactStructural.right.right.right.right.left
 
 theorem runtime_pipeline_binding_checked_acceptance_segments_present
     {system : VerifierModel}
@@ -913,20 +950,14 @@ theorem runtime_pipeline_binding_checked_acceptance_segments_present
           queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofSegmentsPresent artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have queryPlanAccepted :=
-    runtime_pipeline_binding_checked_acceptance_query_plan
+  have artifactStructural :=
+    runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_query_plan_binding_checked_acceptance_segments_present
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      queryPlanAccepted
+  exact artifactStructural.right.right.left
 
 theorem runtime_pipeline_binding_checked_acceptance_artifact_binding_validation_agreement
     {system : VerifierModel}

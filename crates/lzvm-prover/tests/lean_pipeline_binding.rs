@@ -85,6 +85,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions",
             "runtime_pipeline_binding_evidence_implies_pcs_and_fri",
             "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
+            "runtime_pipeline_binding_checked_acceptance_artifact_finalized",
+            "runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations",
             "runtime_pipeline_binding_checked_acceptance_container_canonical",
             "runtime_pipeline_binding_checked_acceptance_metadata_canonical",
             "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
@@ -551,6 +553,44 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_finalized",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "let artifactValidation :=",
+            "RuntimeProofArtifactFinalized",
+            "queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_finalized",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_query_plan_binding_checked_acceptance_artifact_finalized",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "let artifactValidation :=",
+            "RuntimeProofArtifactBindingStructuralObligations",
+            "queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_artifact_finalized",
+            "runtime_proof_artifact_finalized_structural_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
         &[
             "RuntimePipelineBindingCheckedAcceptance",
@@ -563,10 +603,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
-        &[
-            "runtime_pipeline_binding_checked_acceptance_query_plan",
-            "runtime_query_plan_binding_checked_acceptance_segment_ids_unique",
-        ],
+        &["runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -582,10 +619,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_unit_values_trace_identity_coverage",
-        &[
-            "runtime_pipeline_binding_checked_acceptance_query_plan",
-            "runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity_coverage",
-        ],
+        &["runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -601,10 +635,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_container_canonical",
-        &[
-            "runtime_pipeline_binding_checked_acceptance_query_plan",
-            "runtime_query_plan_binding_checked_acceptance_container_canonical",
-        ],
+        &["runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -620,10 +651,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_metadata_canonical",
-        &[
-            "runtime_pipeline_binding_checked_acceptance_query_plan",
-            "runtime_query_plan_binding_checked_acceptance_metadata_canonical",
-        ],
+        &["runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -639,10 +667,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_segment_payloads_nonempty",
-        &[
-            "runtime_pipeline_binding_checked_acceptance_query_plan",
-            "runtime_query_plan_binding_checked_acceptance_segment_payloads_nonempty",
-        ],
+        &["runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -658,10 +683,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_segment_ids_allowed",
-        &[
-            "runtime_pipeline_binding_checked_acceptance_query_plan",
-            "runtime_query_plan_binding_checked_acceptance_segment_ids_allowed",
-        ],
+        &["runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -677,10 +699,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_segments_present",
-        &[
-            "runtime_pipeline_binding_checked_acceptance_query_plan",
-            "runtime_query_plan_binding_checked_acceptance_segments_present",
-        ],
+        &["runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
