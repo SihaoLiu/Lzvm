@@ -93,6 +93,37 @@ def RuntimeTranscriptBindingCheckedAcceptance
     (proof : Proof) : Prop :=
   validation.transcriptBindingAccepted artifact publicInput proof
 
+theorem runtime_transcript_binding_checked_acceptance_artifact_finalized
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactFinalized
+          system
+          validation.artifactBindingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_finalized_from_checked_acceptance
+      validation.artifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+
 theorem runtime_transcript_binding_checked_acceptance_evidence
     {system : VerifierModel}
     (validation : RuntimeTranscriptBindingValidation system) :
@@ -573,32 +604,21 @@ theorem runtime_transcript_binding_checked_acceptance_sound
       publicInput
       proof
       accepted
-  have artifactAccepted :=
-    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+  have artifactFinalized :=
+    runtime_transcript_binding_checked_acceptance_artifact_finalized
+      validation
       artifact
       publicInput
       proof
       accepted
-  have artifactRuntimeEvidence :=
-    runtime_proof_artifact_binding_checked_acceptance_runtime_evidence
+  have artifactFull :=
+    runtime_proof_artifact_finalized_full_contract
+      assumptions
       validation.artifactBindingValidation
       artifact
       publicInput
       proof
-      artifactAccepted
-  have runtimeAccepted :=
-    validation.artifactBindingValidation.bindingAcceptedImpliesRuntimeAccepted
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have verifierAccepts :=
-    runtime_artifact_checked_acceptance_implies_verifier_accepts
-      validation.artifactBindingValidation.runtimeValidation
-      artifact
-      publicInput
-      proof
-      runtimeAccepted
+      artifactFinalized
   have transcriptBound :=
     runtime_transcript_binding_evidence_implies_transcript_bound
       validation
@@ -608,9 +628,8 @@ theorem runtime_transcript_binding_checked_acceptance_sound
       transcriptEvidence
   exact
     And.intro transcriptEvidence
-      (And.intro artifactRuntimeEvidence
-        (And.intro transcriptBound
-          (abstract_verifier_sound assumptions publicInput proof verifierAccepts)))
+      (And.intro artifactFull.right.right.left
+        (And.intro transcriptBound artifactFull.right.right.right))
 
 theorem runtime_transcript_binding_checked_acceptance_full_contract
     {system : VerifierModel}
@@ -676,20 +695,21 @@ theorem runtime_transcript_binding_checked_acceptance_verifier_core_contract
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
-  have artifactAccepted :=
-    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+  have artifactFinalized :=
+    runtime_transcript_binding_checked_acceptance_artifact_finalized
+      validation
       artifact
       publicInput
       proof
       accepted
   exact
-    runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract
+    runtime_proof_artifact_finalized_verifier_core_contract
       assumptions
       validation.artifactBindingValidation
       artifact
       publicInput
       proof
-      artifactAccepted
+      artifactFinalized
 
 theorem runtime_transcript_binding_checked_acceptance_transcript_and_core_contract
     {system : VerifierModel}
