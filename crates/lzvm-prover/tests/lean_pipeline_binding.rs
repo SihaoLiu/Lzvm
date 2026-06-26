@@ -102,6 +102,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_eth_full_contract",
             "runtime_pipeline_binding_checked_acceptance_framed_guest_input",
             "runtime_pipeline_binding_checked_acceptance_framed_guest_input_segment_payload_nonempty",
+            "runtime_pipeline_binding_checked_acceptance_framed_guest_input_co_bindings",
             "runtime_pipeline_binding_checked_acceptance_framed_guest_input_concrete_segment_ids_allowed",
             "runtime_pipeline_binding_checked_acceptance_framed_guest_input_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_framed_guest_input_full_contract",
@@ -853,6 +854,25 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_binding_checked_acceptance_framed_guest_input",
             "runtime_framed_guest_input_binding_checked_acceptance_segment_payload_nonempty",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_framed_guest_input_co_bindings",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RuntimePipelineFramedGuestInputBindingBridge",
+            "framedGuestInputCoBoundWithEthBlock",
+            "framedGuestInputCoBoundWithProgramImage",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_framed_guest_input_co_bindings",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_framed_guest_input",
+            "runtime_framed_guest_input_binding_checked_acceptance_eth_block_co_binding",
+            "runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_co_binding",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

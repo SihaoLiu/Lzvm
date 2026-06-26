@@ -638,6 +638,49 @@ theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input_segment_p
       proof
       framedAccepted
 
+theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input_co_bindings
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system)
+    (bridge : RuntimePipelineFramedGuestInputBindingBridge system validation) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        bridge.framedGuestInputBindingValidation.framedGuestInputCoBoundWithEthBlock
+            artifact
+            publicInput
+            proof
+          /\ bridge.framedGuestInputBindingValidation.framedGuestInputCoBoundWithProgramImage
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have framedAccepted :=
+    runtime_pipeline_binding_checked_acceptance_framed_guest_input
+      validation
+      bridge
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro
+      (runtime_framed_guest_input_binding_checked_acceptance_eth_block_co_binding
+        bridge.framedGuestInputBindingValidation
+        artifact
+        publicInput
+        proof
+        framedAccepted)
+      (runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_co_binding
+        bridge.framedGuestInputBindingValidation
+        artifact
+        publicInput
+        proof
+        framedAccepted)
+
 theorem runtime_pipeline_binding_checked_acceptance_trace
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
