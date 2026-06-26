@@ -21,11 +21,27 @@ def RuntimePerformanceObservedAcceptance
     (proof : Proof) : Prop :=
   IgnoredMetadataObservedAcceptance system summary publicInput proof
 
+def ProofTimingBatchObservedAcceptance
+    (system : VerifierModel)
+    (summary : Option ProofTimingBatchSummary)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  IgnoredMetadataObservedAcceptance system summary publicInput proof
+
 theorem runtime_performance_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
     forall publicInput proof,
       RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        system.accepts publicInput proof := by
+  intro publicInput proof observed
+  exact observed
+
+theorem proof_timing_batch_observed_acceptance_projects_verifier_acceptance
+    {system : VerifierModel}
+    (summary : Option ProofTimingBatchSummary) :
+    forall publicInput proof,
+      ProofTimingBatchObservedAcceptance system summary publicInput proof ->
         system.accepts publicInput proof := by
   intro publicInput proof observed
   exact observed
@@ -85,6 +101,38 @@ theorem runtime_performance_observation_projected_metadata_acceptance_verifier_c
     ignored_metadata_acceptance_verifier_core_contract
       assumptions
       (project summary)
+      publicInput
+      proof
+      observed
+
+theorem proof_timing_batch_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ProofTimingBatchSummary) :
+    forall publicInput proof,
+      ProofTimingBatchObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+
+theorem proof_timing_batch_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ProofTimingBatchSummary) :
+    forall publicInput proof,
+      ProofTimingBatchObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_verifier_core_contract
+      assumptions
+      summary
       publicInput
       proof
       observed
@@ -616,6 +664,61 @@ theorem runtime_performance_observation_finish_timing_acceptance_verifier_core_c
         proof
         observed)
 
+theorem runtime_performance_observation_projects_proof_timing_batch
+    {system : VerifierModel}
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        ProofTimingBatchObservedAcceptance
+          system
+          summary.proofTimingBatch
+          publicInput
+          proof := by
+  intro publicInput proof observed
+  exact observed
+
+theorem runtime_performance_observation_proof_timing_batch_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_sound
+      assumptions
+      summary
+      (fun summary => summary.proofTimingBatch)
+      publicInput
+      proof
+      (runtime_performance_observation_projects_proof_timing_batch
+        summary
+        publicInput
+        proof
+        observed)
+
+theorem runtime_performance_observation_proof_timing_batch_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_verifier_core_contract
+      assumptions
+      summary
+      (fun summary => summary.proofTimingBatch)
+      publicInput
+      proof
+      (runtime_performance_observation_projects_proof_timing_batch
+        summary
+        publicInput
+        proof
+        observed)
+
 structure RuntimePerformanceObservationProjectedCoreContracts
     (system : VerifierModel)
     (publicInput : PublicInput)
@@ -637,6 +740,8 @@ structure RuntimePerformanceObservationProjectedCoreContracts
   cudaAllocatorTiming :
     RuntimeVerifierCoreContract system publicInput proof
   proofArtifactFinishTiming :
+    RuntimeVerifierCoreContract system publicInput proof
+  proofTimingBatch :
     RuntimeVerifierCoreContract system publicInput proof
 
 theorem runtime_performance_observation_projected_core_contracts
@@ -706,6 +811,13 @@ theorem runtime_performance_observation_projected_core_contracts
           observed
       proofArtifactFinishTiming :=
         runtime_performance_observation_finish_timing_acceptance_verifier_core_contract
+          assumptions
+          summary
+          publicInput
+          proof
+          observed
+      proofTimingBatch :=
+        runtime_performance_observation_proof_timing_batch_acceptance_verifier_core_contract
           assumptions
           summary
           publicInput

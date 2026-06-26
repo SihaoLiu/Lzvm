@@ -198,6 +198,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("CudaAllocatorTimingObservedAcceptance")
             && lean_source.contains("ProofArtifactFinishTimingSummary")
             && lean_source.contains("ProofArtifactFinishTimingObservedAcceptance")
+            && lean_source.contains("ProofTimingBatchSummary")
+            && lean_source.contains("ProofTimingBatchObservedAcceptance")
             && lean_source.contains("RuntimePerformanceObservationSummary")
             && lean_source.contains("RuntimePerformanceObservedAcceptance")
             && lean_source.contains("GpuSetupCheckedAcceptance")
@@ -609,7 +611,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         runtime_performance_source
             .contains("structure RuntimePerformanceObservationProjectedCoreContracts")
             && runtime_performance_source.contains("timingObservations :")
-            && runtime_performance_source.contains("proofArtifactFinishTiming :"),
+            && runtime_performance_source.contains("proofArtifactFinishTiming :")
+            && runtime_performance_source.contains("proofTimingBatch :"),
         "Lean runtime performance checks should batch projected wrapper core contracts"
     );
     lean_binding::assert_theorem_body_contains(
@@ -628,6 +631,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "acceptance_verifier_core_contract"
             ),
             "runtime_performance_observation_finish_timing_acceptance_verifier_core_contract",
+            concat!(
+                "runtime_performance_observation_proof_timing_batch_",
+                "acceptance_verifier_core_contract"
+            ),
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -2324,10 +2331,28 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "cudaBackend : Option CudaBackendSummary",
         "cudaAllocatorTiming : Option CudaAllocatorTimingSummary",
         "proofArtifactFinishTiming : Option ProofArtifactFinishTimingSummary",
+        "proofTimingBatch : Option ProofTimingBatchSummary",
     ] {
         assert!(
             lean_source.contains(field),
             "Lean runtime performance observation summary should expose {field}"
+        );
+    }
+    for field in [
+        "smallRunCount : Nat",
+        "largeRunCount : Nat",
+        "smallStableRunCount : Nat",
+        "largeStableRunCount : Nat",
+        "smallStableAverageMilliseconds : Nat",
+        "largeStableAverageMilliseconds : Nat",
+        "smallStableSpreadMilliseconds : Nat",
+        "largeStableSpreadMilliseconds : Nat",
+        "smallTimingParseFailedCount : Nat",
+        "largeTimingParseFailedCount : Nat",
+    ] {
+        assert!(
+            lean_source.contains(field),
+            "Lean proof timing batch summary should expose {field}"
         );
     }
     for line_name in [
@@ -2967,6 +2992,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_aggregate_timing_acceptance_sound",
             "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
             "proof_timing_projected_core_contracts",
+            "proof_timing_batch_observed_acceptance_projects_verifier_acceptance",
+            "proof_timing_batch_acceptance_sound",
+            "proof_timing_batch_acceptance_verifier_core_contract",
             "runtime_performance_observed_acceptance_projects_verifier_acceptance",
             "runtime_performance_observation_acceptance_sound",
             "runtime_performance_observation_acceptance_verifier_core_contract",
@@ -3000,6 +3028,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_projects_proof_artifact_finish_timing",
             "runtime_performance_observation_finish_timing_acceptance_sound",
             "runtime_performance_observation_finish_timing_acceptance_verifier_core_contract",
+            "runtime_performance_observation_projects_proof_timing_batch",
+            "runtime_performance_observation_proof_timing_batch_acceptance_sound",
+            "runtime_performance_observation_proof_timing_batch_acceptance_verifier_core_contract",
             "runtime_performance_observation_projected_core_contracts",
             "gpu_setup_checked_acceptance_projects_constants_sound",
             "gpu_setup_checked_acceptance_sound",

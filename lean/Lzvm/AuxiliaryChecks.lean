@@ -525,6 +525,19 @@ structure ProofArtifactFinishTimingSummary where
   finishContributionVerifyMilliseconds : Nat
 deriving DecidableEq, Repr
 
+structure ProofTimingBatchSummary where
+  smallRunCount : Nat
+  largeRunCount : Nat
+  smallStableRunCount : Nat
+  largeStableRunCount : Nat
+  smallStableAverageMilliseconds : Nat
+  largeStableAverageMilliseconds : Nat
+  smallStableSpreadMilliseconds : Nat
+  largeStableSpreadMilliseconds : Nat
+  smallTimingParseFailedCount : Nat
+  largeTimingParseFailedCount : Nat
+deriving DecidableEq, Repr
+
 structure RuntimePerformanceObservationSummary where
   timingObservations : List TimingObservation
   guestPcTraceTiming : Option GuestPcTraceTimingSummary
@@ -535,6 +548,7 @@ structure RuntimePerformanceObservationSummary where
   cudaBackend : Option CudaBackendSummary
   cudaAllocatorTiming : Option CudaAllocatorTimingSummary
   proofArtifactFinishTiming : Option ProofArtifactFinishTimingSummary
+  proofTimingBatch : Option ProofTimingBatchSummary
 deriving DecidableEq, Repr
 
 structure GpuSetupCacheState where
