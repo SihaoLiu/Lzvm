@@ -8,6 +8,10 @@ use lzvm_artifacts::source_program::{
     SourceProgramArchiveSource,
 };
 
+const HEADER_BYTES: usize = 4 + 4 + 4 + 4;
+const MIN_SOURCE_RECORD_BYTES: usize = 8 + 8;
+const MIN_EDGE_RECORD_BYTES: usize = 4 + 4 + 8 + 1 + 1;
+
 fn temp_file(name: &str) -> PathBuf {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -30,6 +34,10 @@ fn archive_header(source_count: u32, edge_count: u32) -> Vec<u8> {
     bytes.extend_from_slice(&source_count.to_le_bytes());
     bytes.extend_from_slice(&edge_count.to_le_bytes());
     bytes
+}
+
+fn push_u64(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&value.to_le_bytes());
 }
 
 #[test]
@@ -78,7 +86,28 @@ fn rejects_source_program_archives_with_no_sources() {
 fn rejects_source_program_archive_counts_larger_than_payload() {
     assert!(matches!(
         parse_source_program_archive(&archive_header(1, 0)),
-        Err(SourceProgramArchiveError::LengthOverflow)
+        Err(SourceProgramArchiveError::UnexpectedEof {
+            offset: HEADER_BYTES,
+            needed: MIN_SOURCE_RECORD_BYTES,
+            available: 0
+        })
+    ));
+}
+
+#[test]
+fn rejects_source_program_archive_edge_counts_larger_than_payload() {
+    let mut bytes = archive_header(1, 1);
+    push_u64(&mut bytes, 1);
+    bytes.extend_from_slice(b"a");
+    push_u64(&mut bytes, 0);
+
+    assert!(matches!(
+        parse_source_program_archive(&bytes),
+        Err(SourceProgramArchiveError::UnexpectedEof {
+            offset,
+            needed: MIN_EDGE_RECORD_BYTES,
+            available: 0
+        }) if offset == HEADER_BYTES + MIN_SOURCE_RECORD_BYTES + 1
     ));
 }
 
