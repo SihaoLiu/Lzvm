@@ -10,6 +10,11 @@ pub const SOURCE_FIXED_FILE_MANIFEST_FILE: &str = "lzvm.source-fixed-file-manife
 const SOURCE_FIXED_FILE_MANIFEST_KIND: [u8; 4] = *b"sffm";
 const SOURCE_FIXED_FILE_MANIFEST_VERSION: u32 = 1;
 const SOURCE_FIXED_FILE_MANIFEST_SECTION_ID: u32 = 1;
+const U8_BYTES: usize = 1;
+const U64_BYTES: usize = 8;
+const STRING_LEN_BYTES: usize = U64_BYTES;
+const SOURCE_FIXED_FILE_MANIFEST_ENTRY_MIN_BYTES: usize =
+    4 * STRING_LEN_BYTES + 4 * U64_BYTES + 4 * U8_BYTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceFixedFileManifestKind {
@@ -370,9 +375,7 @@ fn parse_source_fixed_file_manifest_payload(
 ) -> Result<SourceFixedFileManifest, SourceFixedFileManifestError> {
     let mut reader = PayloadReader::new(bytes);
     let entry_count = reader.read_u64()?;
-    if entry_count > reader.remaining_len() as u64 {
-        return Err(SourceFixedFileManifestError::LengthOverflow);
-    }
+    reader.require_items(entry_count, SOURCE_FIXED_FILE_MANIFEST_ENTRY_MIN_BYTES)?;
     let entry_count =
         usize::try_from(entry_count).map_err(|_| SourceFixedFileManifestError::LengthOverflow)?;
     let mut entries = Vec::with_capacity(entry_count);
@@ -494,10 +497,6 @@ impl<'a> PayloadReader<'a> {
         }
     }
 
-    fn remaining_len(&self) -> usize {
-        self.bytes.len().saturating_sub(self.offset)
-    }
-
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], SourceFixedFileManifestError> {
         let end = self
             .offset
@@ -513,6 +512,30 @@ impl<'a> PayloadReader<'a> {
         let out = &self.bytes[self.offset..end];
         self.offset = end;
         Ok(out)
+    }
+
+    fn require_items(
+        &self,
+        count: u64,
+        item_bytes: usize,
+    ) -> Result<(), SourceFixedFileManifestError> {
+        let count =
+            usize::try_from(count).map_err(|_| SourceFixedFileManifestError::LengthOverflow)?;
+        let needed = count
+            .checked_mul(item_bytes)
+            .ok_or(SourceFixedFileManifestError::LengthOverflow)?;
+        let end = self
+            .offset
+            .checked_add(needed)
+            .ok_or(SourceFixedFileManifestError::LengthOverflow)?;
+        if end > self.bytes.len() {
+            return Err(SourceFixedFileManifestError::UnexpectedPayloadEof {
+                offset: self.offset,
+                needed,
+                available: self.bytes.len().saturating_sub(self.offset),
+            });
+        }
+        Ok(())
     }
 
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], SourceFixedFileManifestError> {
