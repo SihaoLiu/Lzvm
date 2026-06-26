@@ -188,6 +188,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_concrete_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_seeded_query_requirements_contract",
+            "runtime_pipeline_binding_required_external_source_artifact_contracts_core_contract",
+            "runtime_pipeline_binding_required_external_source_artifact_audited_soundness_core_contract",
         ],
     );
     assert!(
@@ -2572,6 +2574,106 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_binding_required_external_source_contracts_audited_soundness_core_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract",
+            "RuntimePipelineBindingEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_artifact_contracts_core_contract",
+        &[
+            "RuntimeArtifactEvidence",
+            "validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "ExternalSourceOpeningEvidence",
+            "runtime_pipeline_trace_source_validation validation",
+            "runtime_pipeline_opening_source_validation validation",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
+            "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_artifact_contracts_core_contract",
+        &[
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimePipelineBindingEvidence",
+            "RuntimeArtifactSoundnessObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_artifact_contracts_core_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence",
+            "runtime_pipeline_binding_required_external_source_contracts_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_artifact_contracts_core_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_full_soundness_contract",
+            "RuntimePipelineBindingEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_artifact_audited_soundness_core_contract",
+        &[
+            "RuntimeArtifactEvidence",
+            "validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "ExternalSourceOpeningEvidence",
+            "runtime_pipeline_trace_source_validation validation",
+            "runtime_pipeline_opening_source_validation validation",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
+            "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_artifact_audited_soundness_core_contract",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "RuntimeArtifactSoundnessObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_artifact_audited_soundness_core_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_artifact_contracts_core_contract",
+            "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_artifact_audited_soundness_core_contract",
         &[
             "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract",
             "RuntimePipelineBindingEvidence",
