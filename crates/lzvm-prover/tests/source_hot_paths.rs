@@ -8332,6 +8332,9 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     let setup_preflight_path = crate_root.join("src/setup_preflight.rs");
     let setup_preflight_source =
         std::fs::read_to_string(&setup_preflight_path).expect("setup preflight source should read");
+    let proof_segment_ids_path = crate_root.join("src/proof_segment_ids.rs");
+    let proof_segment_ids_source = std::fs::read_to_string(&proof_segment_ids_path)
+        .expect("proof segment ID source should read");
     let query_plan_path = crate_root.join("src/pcs_query_plan.rs");
     let query_plan_source =
         std::fs::read_to_string(&query_plan_path).expect("PCS query plan source should read");
@@ -8463,6 +8466,7 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && setup_preflight_source.contains("struct SetupPreflightContributionProofValues")
             && setup_preflight_source.contains("preloaded_packed_proof_values")
             && setup_preflight_source.contains("preloaded_proof_values")
+            && setup_preflight_source.contains("unexpected_proof_segment_id(segments)")
             && setup_preflight_source.contains("challenge_values.as_deref()")
             && setup_preflight_source.contains("derive_global_challenge_from_loaded_contributions")
             && setup_preflight_source.matches("load_group_values_from_segments(").count() == 1
@@ -8482,6 +8486,27 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && !setup_preflight_source.contains("parse_witness_commitment_segment")
             && !setup_preflight_source.contains("load_witness_commitment_segments("),
         "setup preflight should reuse parsed proof payloads and transcript challenges across checks"
+    );
+    assert!(
+        proof_segment_ids_source.contains("fn is_allowed_proof_segment_id")
+            && proof_segment_ids_source.contains("WITNESS_COMMITMENT_SEGMENT_BASE_ID")
+            && proof_segment_ids_source.contains("PCS_MATERIAL_MANIFEST_SEGMENT_ID")
+            && proof_segment_ids_source.contains("PCS_QUERY_PLAN_SEGMENT_ID")
+            && proof_segment_ids_source.contains("CONSTANT_OPENING_SEGMENT_ID")
+            && proof_segment_ids_source.contains("WITNESS_OPENING_SEGMENT_ID")
+            && proof_segment_ids_source.contains("PCS_FRI_OPENING_SEGMENT_ID")
+            && proof_segment_ids_source.contains("PCS_QUERY_NONCE_SEGMENT_ID")
+            && proof_segment_ids_source.contains("PCS_EVALUATION_SEGMENT_ID")
+            && proof_segment_ids_source.contains("PCS_PROOF_VALUES_SEGMENT_ID")
+            && proof_segment_ids_source.contains("GROUP_VALUES_SEGMENT_ID")
+            && proof_segment_ids_source.contains("CHALLENGE_VALUES_SEGMENT_ID")
+            && proof_segment_ids_source.contains("UNIT_VALUES_SEGMENT_ID")
+            && proof_segment_ids_source.contains("TRACE_CONSTRAINT_SEGMENT_ID")
+            && proof_segment_ids_source.contains("PROGRAM_IMAGE_CACHE_SEGMENT_ID")
+            && proof_segment_ids_source.contains("CONTRIBUTION_SEGMENT_ID")
+            && proof_segment_ids_source.contains("ETH_BLOCK_INPUT_SEGMENT_ID")
+            && proof_segment_ids_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID"),
+        "setup preflight should use the shared allowed proof segment ID set"
     );
 }
 
@@ -8514,6 +8539,9 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
     let proof_preflight_path = crate_root.join("src/proof_preflight.rs");
     let proof_preflight_source =
         std::fs::read_to_string(&proof_preflight_path).expect("proof preflight source should read");
+    let proof_segment_ids_path = crate_root.join("src/proof_segment_ids.rs");
+    let proof_segment_ids_source = std::fs::read_to_string(&proof_segment_ids_path)
+        .expect("proof segment ID source should read");
 
     assert!(
         lean_root_source.contains("import Lzvm.PipelineBinding"),
@@ -8562,6 +8590,9 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
     assert!(
         proof_preflight_source.contains("validate_proof_public_values_for_setup_preflight")
             && proof_preflight_source.contains("validate_trace_constraint_witness_commitments")
+            && proof_preflight_source.contains("unexpected_proof_segment_id(&proof.segments)")
+            && proof_preflight_source.contains("ProofPreflightError::UnexpectedProofSegment")
+            && proof_segment_ids_source.contains("unexpected_proof_segment_id")
             && proof_preflight_source.contains("parse_trace_constraint_segment")
             && proof_preflight_source.contains("TRACE_CONSTRAINT_SEGMENT_ID"),
         "proof preflight should keep public values and trace constraint artifact checks"
