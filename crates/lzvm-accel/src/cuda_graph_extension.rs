@@ -44,6 +44,10 @@ impl CudaRowMajorCosetExtensionGraphKey {
     }
 }
 
+fn saturating_counter_increment(counter: &mut usize) {
+    *counter = counter.saturating_add(1);
+}
+
 impl CudaRowMajorCosetExtensionGraphRunner {
     pub fn new(
         column_count: usize,
@@ -96,13 +100,13 @@ impl CudaRowMajorCosetExtensionGraphRunner {
             }
             self.graph = Some(graph);
             self.graph_key = Some(graph_key);
-            self.capture_count += 1;
+            saturating_counter_increment(&mut self.capture_count);
         }
         self.exec
             .as_ref()
             .expect("graph executable should be initialized")
             .launch(&self.stream)?;
-        self.launch_count += 1;
+        saturating_counter_increment(&mut self.launch_count);
         Ok(())
     }
 
@@ -205,13 +209,13 @@ impl CudaStridedRowMajorCosetExtensionGraphRunner {
             }
             self.graph = Some(graph);
             self.graph_key = Some(graph_key);
-            self.capture_count += 1;
+            saturating_counter_increment(&mut self.capture_count);
         }
         self.exec
             .as_ref()
             .expect("graph executable should be initialized")
             .launch(&self.stream)?;
-        self.launch_count += 1;
+        saturating_counter_increment(&mut self.launch_count);
         Ok(())
     }
 

@@ -375,6 +375,39 @@ fn cuda_on_stream_row_major_extension_returns_after_stream_completion() {
 }
 
 #[test]
+fn cuda_graph_extension_runner_counters_saturate() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let graph_runner_path = crate_root.join("../lzvm-accel/src/cuda_graph_extension.rs");
+    let graph_runner_source = std::fs::read_to_string(&graph_runner_path)
+        .expect("CUDA graph extension source should read");
+
+    assert!(
+        graph_runner_source.contains("fn saturating_counter_increment(counter: &mut usize)")
+            && graph_runner_source.contains("*counter = counter.saturating_add(1);"),
+        "CUDA graph runner counters should share the saturating increment helper"
+    );
+    assert!(
+        !graph_runner_source.contains("capture_count += 1")
+            && !graph_runner_source.contains("launch_count += 1"),
+        "CUDA graph runner counters should avoid raw increments"
+    );
+    assert_eq!(
+        graph_runner_source
+            .matches("saturating_counter_increment(&mut self.capture_count)")
+            .count(),
+        2,
+        "both CUDA graph runners should saturate capture counts"
+    );
+    assert_eq!(
+        graph_runner_source
+            .matches("saturating_counter_increment(&mut self.launch_count)")
+            .count(),
+        2,
+        "both CUDA graph runners should saturate launch counts"
+    );
+}
+
+#[test]
 fn cuda_leaf_extension_has_owning_pending_stream_handle() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let extend_path = crate_root.join("src/witness_commitment/extend.rs");
