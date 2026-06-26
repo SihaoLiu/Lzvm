@@ -106,14 +106,8 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_program_image_cache_binding_checked_acceptance_artifact_wellformed_contract",
         &[
-            "runtime_program_image_cache_binding_checked_acceptance_artifact_binding",
-            "runtime_proof_artifact_binding_checked_acceptance_container_canonical",
-            "runtime_proof_artifact_binding_checked_acceptance_metadata_canonical",
-            "runtime_proof_artifact_binding_checked_acceptance_segments_present",
-            "runtime_proof_artifact_binding_checked_acceptance_segment_payloads_nonempty",
-            "runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed",
-            "runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique",
-            "runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage",
+            "runtime_program_image_cache_binding_checked_acceptance_artifact_finalized",
+            "runtime_proof_artifact_finalized_structural_obligations",
         ],
     );
     lean_binding::assert_theorem_body_contains(

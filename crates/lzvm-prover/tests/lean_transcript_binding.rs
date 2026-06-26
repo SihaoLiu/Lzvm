@@ -77,7 +77,7 @@ fn lean_transcript_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_transcript_binding_checked_acceptance_structural_obligations",
-        &["runtime_transcript_binding_evidence_implies_payload_contract"],
+        &["runtime_transcript_binding_checked_acceptance_payload_contract"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

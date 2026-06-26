@@ -326,70 +326,20 @@ theorem runtime_program_image_cache_binding_checked_acceptance_artifact_wellform
             publicInput
             proof := by
   intro artifact publicInput proof accepted
-  have artifactAccepted :=
-    runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+  have artifactFinalized :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_finalized
       validation
       artifact
       publicInput
       proof
       accepted
-  have containerCanonical :=
-    runtime_proof_artifact_binding_checked_acceptance_container_canonical
-      validation.proofArtifactBindingValidation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have metadataCanonical :=
-    runtime_proof_artifact_binding_checked_acceptance_metadata_canonical
-      validation.proofArtifactBindingValidation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have segmentsPresent :=
-    runtime_proof_artifact_binding_checked_acceptance_segments_present
-      validation.proofArtifactBindingValidation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have segmentPayloadsNonempty :=
-    runtime_proof_artifact_binding_checked_acceptance_segment_payloads_nonempty
-      validation.proofArtifactBindingValidation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have segmentIdsAllowed :=
-    runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed
-      validation.proofArtifactBindingValidation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have segmentIdsUnique :=
-    runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique
-      validation.proofArtifactBindingValidation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have unitValuesTraceIdentityCoverage :=
-    runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage
-      validation.proofArtifactBindingValidation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
   exact
-    ⟨containerCanonical,
-      metadataCanonical,
-      segmentsPresent,
-      segmentPayloadsNonempty,
-      segmentIdsAllowed,
-      segmentIdsUnique,
-      unitValuesTraceIdentityCoverage⟩
+    runtime_proof_artifact_finalized_structural_obligations
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactFinalized
 
 theorem runtime_program_image_cache_binding_checked_acceptance_structural_obligations
     {system : VerifierModel}

@@ -188,8 +188,99 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
     );
     assert!(
         proof_artifact_source.contains("fn finish_proof_artifact(proof: ProofArtifact)")
-            && proof_artifact_source.contains("validate_proof_artifact(&proof)")
-            && proof_artifact_source.matches("finish_proof_artifact(").count() >= 8,
+            && proof_artifact_source.contains("validate_proof_artifact(&proof)"),
         "Rust proof artifact builders should finalize constructed artifacts through invariant validation"
     );
+    assert_production_proof_artifact_literals_are_finalized(&proof_artifact_source);
+}
+
+fn assert_production_proof_artifact_literals_are_finalized(source: &str) {
+    let production_source = source.split("\n#[cfg(test)]").next().unwrap_or(source);
+    let mut search_start = 0;
+    let mut literal_count = 0;
+
+    while let Some(offset) = production_source[search_start..].find("ProofArtifact {") {
+        let literal_start = search_start + offset;
+        literal_count += 1;
+
+        let prefix = production_source[..literal_start].trim_end();
+        if prefix.ends_with("finish_proof_artifact(") {
+            search_start = literal_start + "ProofArtifact {".len();
+            continue;
+        }
+
+        let line_start = production_source[..literal_start]
+            .rfind('\n')
+            .map(|index| index + 1)
+            .unwrap_or(0);
+        let declaration = production_source[line_start..literal_start].trim();
+        assert!(
+            declaration == "let proof =",
+            "ProofArtifact literal on line {} should be assigned to proof before finalization",
+            line_number(production_source, literal_start)
+        );
+
+        let literal_open = production_source[literal_start..]
+            .find('{')
+            .map(|index| literal_start + index)
+            .expect("ProofArtifact literal should have an opening brace");
+        let literal_end = matching_closing_brace(production_source, literal_open)
+            .expect("ProofArtifact literal should have a matching closing brace");
+        let function_end =
+            next_function_start(production_source, literal_end).unwrap_or(production_source.len());
+        let function_tail = &production_source[literal_end..function_end];
+
+        assert!(
+            function_tail.contains("finish_proof_artifact(proof)"),
+            "ProofArtifact literal on line {} should flow through finish_proof_artifact(proof)",
+            line_number(production_source, literal_start)
+        );
+
+        search_start = literal_end + 1;
+    }
+
+    assert!(
+        literal_count > 0,
+        "proof artifact source should construct production ProofArtifact values"
+    );
+}
+
+fn matching_closing_brace(source: &str, open_index: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (offset, ch) in source[open_index..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open_index + offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn next_function_start(source: &str, after: usize) -> Option<usize> {
+    let mut cursor = after;
+    for line in source[after..].split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("fn ")
+            || trimmed.starts_with("pub fn ")
+            || trimmed.starts_with("pub(crate) fn ")
+        {
+            return Some(cursor);
+        }
+        cursor += line.len();
+    }
+    None
+}
+
+fn line_number(source: &str, index: usize) -> usize {
+    source[..index]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1
 }

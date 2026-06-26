@@ -80,10 +80,12 @@ def RuntimeTranscriptBindingStructuralObligations
     (artifact : RuntimeArtifact)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
-  validation.challengeSegmentBound artifact publicInput proof
-    /\ validation.queryPlanBound artifact publicInput proof
-    /\ validation.transcriptPayloadMatchesProof artifact publicInput proof
-    /\ system.transcriptBound publicInput proof
+  RuntimeTranscriptBindingPayloadContract
+    system
+    validation
+    artifact
+    publicInput
+    proof
 
 def RuntimeTranscriptBindingCheckedAcceptance
     (_system : VerifierModel)
@@ -298,17 +300,12 @@ theorem runtime_transcript_binding_checked_acceptance_structural_obligations
           proof := by
   intro artifact publicInput proof accepted
   exact
-    runtime_transcript_binding_evidence_implies_payload_contract
+    runtime_transcript_binding_checked_acceptance_payload_contract
       validation
       artifact
       publicInput
       proof
-      (runtime_transcript_binding_checked_acceptance_evidence
-        validation
-        artifact
-        publicInput
-        proof
-        accepted)
+      accepted
 
 theorem runtime_transcript_binding_checked_acceptance_segment_ids_unique
     {system : VerifierModel}
