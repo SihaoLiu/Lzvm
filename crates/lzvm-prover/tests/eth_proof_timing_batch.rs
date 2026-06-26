@@ -1128,6 +1128,10 @@ fn eth_proof_timing_batch_prints_env_template_without_config() {
         "small template should include every required input: {stdout}"
     );
     assert!(
+        stdout.contains("# INPUT_DATA must be framed guest stdin"),
+        "env template should explain the guest stdin format: {stdout}"
+    );
+    assert!(
         stdout.contains("export LZVM_REAL_SMALL_PARITY_TRACE_LIMIT=120000000"),
         "small template should include optional trace limit default: {stdout}"
     );
@@ -1309,6 +1313,13 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         template.contains("export LZVM_REAL_SMALL_PARITY_SETUP=")
             && template.contains("export LZVM_REAL_LARGE_PARITY_SETUP="),
         "template should include both selected suites: {template}"
+    );
+    assert!(
+        template
+            .matches("# INPUT_DATA must be framed guest stdin")
+            .count()
+            == 2,
+        "template should explain the guest stdin format for both suites: {template}"
     );
     assert!(
         !template.contains("TMP_DIR"),

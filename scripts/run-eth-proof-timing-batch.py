@@ -389,6 +389,8 @@ def env_template_text(args: argparse.Namespace, root: Path) -> str:
         lines.append(f"# run with --{config.label}-mode {mode}")
         lines.append(shell_export(config.var("BIN"), DEFAULT_BIN_RELATIVE))
         for suffix in REQUIRED_SUFFIXES:
+            if suffix == "INPUT_DATA":
+                lines.append("# INPUT_DATA must be framed guest stdin")
             lines.append(shell_export(config.var(suffix), ""))
         lines.append(shell_export(config.var("TRACE_LIMIT"), config.default_trace_limit))
     return "\n".join(lines) + "\n"
