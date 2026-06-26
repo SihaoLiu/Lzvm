@@ -480,6 +480,23 @@ def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
     return mode_env
 
 
+def proof_tuning_args(args: argparse.Namespace) -> list[str]:
+    parts: list[str] = []
+    if args.gpu_preallocate:
+        parts.append("--gpu-preallocate")
+    if args.minimal_memory:
+        parts.append("--minimal-memory")
+    if args.no_pack_trace:
+        parts.append("--no-pack-trace")
+    if args.gpu_streams is not None:
+        parts.extend(["--gpu-streams", str(args.gpu_streams)])
+    if args.witness_thread_pools is not None:
+        parts.extend(["--witness-thread-pools", str(args.witness_thread_pools)])
+    if args.stored_witnesses is not None:
+        parts.extend(["--stored-witnesses", str(args.stored_witnesses)])
+    return parts
+
+
 def effective_max_runs(args: argparse.Namespace) -> int:
     if args.max_runs is not None:
         return args.max_runs
@@ -574,8 +591,7 @@ def next_command_parts(
         parts.extend(["--parallel-lower-job-queue", str(args.parallel_lower_job_queue)])
     if args.segment_commit_workers is not None:
         parts.extend(["--segment-commit-workers", str(args.segment_commit_workers)])
-    if args.gpu_preallocate:
-        parts.append("--gpu-preallocate")
+    parts.extend(proof_tuning_args(args))
     if args.commit is not None:
         parts.extend(["--commit", args.commit])
     return parts
@@ -627,7 +643,7 @@ def command_for_env(
     mode: str,
     verify_proof: bool,
     mode_env: dict[str, str] | None = None,
-    gpu_preallocate: bool = False,
+    proof_args: list[str] | None = None,
 ) -> str:
     paths = configured_paths(config)
     bin_path = paths["bin"]
@@ -649,7 +665,7 @@ def command_for_env(
             "--guest-pc-trace",
             shell_arg(config.trace_limit()),
             "--timings",
-            *(["--gpu-preallocate"] if gpu_preallocate else []),
+            *(proof_args or []),
             "--eth-block-input",
             shell_arg(paths["block_input"]),
             "--program-image-cache",
@@ -963,7 +979,7 @@ def profile_command_for_env(
             mode,
             not args.skip_verify_proof,
             mode_env_for_args(args, mode),
-            args.gpu_preallocate,
+            proof_tuning_args(args),
         ),
         config.label,
         batch_dir,
@@ -1133,7 +1149,7 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
                     mode,
                     not args.skip_verify_proof,
                     mode_env_for_args(args, mode),
-                    args.gpu_preallocate,
+                    proof_tuning_args(args),
                 ),
             ]
         )
@@ -1153,6 +1169,11 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"parallel_lower_job_queue={args.parallel_lower_job_queue or ''}",
         f"segment_commit_workers={args.segment_commit_workers or ''}",
         f"gpu_preallocate={str(args.gpu_preallocate).lower()}",
+        f"minimal_memory={str(args.minimal_memory).lower()}",
+        f"pack_trace={str(not args.no_pack_trace).lower()}",
+        f"gpu_streams={args.gpu_streams or ''}",
+        f"witness_thread_pools={args.witness_thread_pools or ''}",
+        f"stored_witnesses={args.stored_witnesses or ''}",
     ]
     for config, mode in selected:
         max_avg_s = target_max_avg_s(args, config.label)
@@ -1370,6 +1391,11 @@ def self_test() -> None:
         parallel_lower_workers=None,
         segment_commit_workers=None,
         gpu_preallocate=False,
+        minimal_memory=False,
+        no_pack_trace=False,
+        gpu_streams=None,
+        witness_thread_pools=None,
+        stored_witnesses=None,
         print_env_template=False,
         check_profile_tools=False,
         check_gpu_memory=False,
@@ -1470,6 +1496,11 @@ def main() -> None:
     parser.add_argument("--parallel-lower-job-queue", type=positive_integer, default=None)
     parser.add_argument("--segment-commit-workers", type=positive_integer, default=None)
     parser.add_argument("--gpu-preallocate", action="store_true")
+    parser.add_argument("--minimal-memory", action="store_true")
+    parser.add_argument("--no-pack-trace", action="store_true")
+    parser.add_argument("--gpu-streams", type=positive_integer, default=None)
+    parser.add_argument("--witness-thread-pools", type=positive_integer, default=None)
+    parser.add_argument("--stored-witnesses", type=positive_integer, default=None)
     parser.add_argument("--work-dir", default="temp/proof-timing-batch")
     parser.add_argument("--path", default="temp/improve-log.csv")
     parser.add_argument("--summary")

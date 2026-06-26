@@ -344,14 +344,22 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
 }
 
 #[test]
-fn eth_proof_timing_batch_dry_run_passes_gpu_preallocate_to_prove() {
-    let fixture = ProofFixture::new("eth proof timing batch dry run gpu preallocate");
+fn eth_proof_timing_batch_dry_run_passes_proof_tuning_flags_to_prove() {
+    let fixture = ProofFixture::new("eth proof timing batch dry run proof tuning");
     let mut command = Command::new(script_path());
     command
         .arg("--suite")
         .arg("small")
         .arg("--dry-run")
         .arg("--gpu-preallocate")
+        .arg("--minimal-memory")
+        .arg("--no-pack-trace")
+        .arg("--gpu-streams")
+        .arg("7")
+        .arg("--witness-thread-pools")
+        .arg("5")
+        .arg("--stored-witnesses")
+        .arg("3")
         .arg("--work-dir")
         .arg(fixture.dir.join("runs"))
         .arg("--path")
@@ -378,8 +386,20 @@ fn eth_proof_timing_batch_dry_run_passes_gpu_preallocate_to_prove() {
         "dry-run summary should report GPU preallocation: {stdout}"
     );
     assert!(
-        stdout.contains("prove witness --guest-pc-trace 120000000 --timings --gpu-preallocate"),
-        "small command should pass GPU preallocation to proving: {stdout}"
+        stdout.contains("minimal_memory=true\n")
+            && stdout.contains("pack_trace=false\n")
+            && stdout.contains("gpu_streams=7\n")
+            && stdout.contains("witness_thread_pools=5\n")
+            && stdout.contains("stored_witnesses=3\n"),
+        "dry-run summary should report proof tuning flags: {stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "prove witness --guest-pc-trace 120000000 --timings --gpu-preallocate \
+             --minimal-memory --no-pack-trace --gpu-streams 7 --witness-thread-pools 5 \
+             --stored-witnesses 3"
+        ),
+        "small command should pass proof tuning flags to proving: {stdout}"
     );
     let small_command = stdout
         .lines()
@@ -390,8 +410,13 @@ fn eth_proof_timing_batch_dry_run_passes_gpu_preallocate_to_prove() {
         .nth(1)
         .expect("small command should include verification");
     assert!(
-        !verify_command.contains("--gpu-preallocate"),
-        "verify command should not receive proof-only GPU preallocation: {stdout}"
+        !verify_command.contains("--gpu-preallocate")
+            && !verify_command.contains("--minimal-memory")
+            && !verify_command.contains("--no-pack-trace")
+            && !verify_command.contains("--gpu-streams")
+            && !verify_command.contains("--witness-thread-pools")
+            && !verify_command.contains("--stored-witnesses"),
+        "verify command should not receive proof-only tuning flags: {stdout}"
     );
 }
 
