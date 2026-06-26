@@ -151,13 +151,16 @@ fn guest_pc_trace_parallel_lower_job_queue_capacity_is_bounded_and_configurable(
         .expect("guest PC trace env lock should not be poisoned");
     let _queue_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE");
 
-    assert_eq!(guest_pc_trace_parallel_lower_job_queue_capacity(), 4);
+    assert_eq!(guest_pc_trace_parallel_lower_job_queue_capacity(0), 4);
+    assert_eq!(guest_pc_trace_parallel_lower_job_queue_capacity(2), 4);
+    assert_eq!(guest_pc_trace_parallel_lower_job_queue_capacity(8), 8);
+    assert_eq!(guest_pc_trace_parallel_lower_job_queue_capacity(32), 16);
 
     std::env::set_var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE", "9");
-    assert_eq!(guest_pc_trace_parallel_lower_job_queue_capacity(), 9);
+    assert_eq!(guest_pc_trace_parallel_lower_job_queue_capacity(32), 9);
 
     std::env::set_var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE", "0");
-    assert_eq!(guest_pc_trace_parallel_lower_job_queue_capacity(), 4);
+    assert_eq!(guest_pc_trace_parallel_lower_job_queue_capacity(8), 8);
 }
 
 #[test]

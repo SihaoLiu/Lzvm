@@ -7625,7 +7625,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
         let (result_sender, result_receiver) = mpsc::sync_channel(
             guest_pc_trace_parallel_lower_result_queue_capacity(worker_count),
         );
-        let job_queue_capacity = guest_pc_trace_parallel_lower_job_queue_capacity();
+        let job_queue_capacity = guest_pc_trace_parallel_lower_job_queue_capacity(worker_count);
         let mut worker_handles = Vec::with_capacity(worker_count);
         let mut job_senders = Vec::with_capacity(worker_count);
 
@@ -8382,13 +8382,21 @@ fn guest_pc_trace_parallel_lower_result_queue_capacity(worker_count: usize) -> u
 }
 
 const DEFAULT_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE_CAPACITY: usize = 4;
+const MAX_DEFAULT_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE_CAPACITY: usize = 16;
 
-fn guest_pc_trace_parallel_lower_job_queue_capacity() -> usize {
+fn default_guest_pc_trace_parallel_lower_job_queue_capacity(worker_count: usize) -> usize {
+    worker_count.clamp(
+        DEFAULT_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE_CAPACITY,
+        MAX_DEFAULT_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE_CAPACITY,
+    )
+}
+
+fn guest_pc_trace_parallel_lower_job_queue_capacity(worker_count: usize) -> usize {
     std::env::var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(DEFAULT_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE_CAPACITY)
+        .unwrap_or_else(|| default_guest_pc_trace_parallel_lower_job_queue_capacity(worker_count))
 }
 
 fn guest_pc_trace_parallel_lower_work_units_enabled() -> bool {
